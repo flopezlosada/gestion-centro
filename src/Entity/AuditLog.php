@@ -58,16 +58,17 @@ class AuditLog
     private ?string $summary;
 
     /**
-     * Field-level before/after diff for automatic entity-change events, keyed by property name as
-     * {@code ["field" => ["old" => mixed, "new" => mixed]]}. Null for named events with no diff.
+     * Field-level diff for automatic entity-change events, keyed by property name. Scalar/to-one
+     * fields use {@code ["field" => ["old" => mixed, "new" => mixed]]}; to-many/collection fields use
+     * {@code ["field" => ["added" => list, "removed" => list]]}. Null for named events with no diff.
      *
-     * @var array<string, array{old: mixed, new: mixed}>|null
+     * @var array<string, mixed>|null
      */
     #[ORM\Column(type: Types::JSON, nullable: true)]
     private ?array $changes;
 
     /**
-     * @param array<string, array{old: mixed, new: mixed}>|null $changes field-level before/after diff
+     * @param array<string, mixed>|null $changes field-level diff, if any
      */
     public function __construct(
         string $action,
@@ -122,7 +123,7 @@ class AuditLog
     }
 
     /**
-     * @return array<string, array{old: mixed, new: mixed}>|null the field-level diff, if any
+     * @return array<string, mixed>|null the field-level diff, if any
      */
     public function getChanges(): ?array
     {
