@@ -1,0 +1,14 @@
+title = "gestion-centro gitleaks config"
+
+# Build on top of gitleaks' default ruleset.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "DDEV-internal development credentials (not real secrets)"
+# The committed .env points DATABASE_URL at DDEV's internal MySQL service, whose
+# credentials are the fixed dev values db/db. Real secrets live only in .env.local
+# (git-ignored) and in the hosting provider's config, never in the repo.
+regexes = [
+  '''mysql://db:db@db:3306/db''',
+]
