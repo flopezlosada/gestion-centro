@@ -8,6 +8,8 @@ use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\Unit;
 use App\Entity\User;
+use App\Enum\Area;
+use App\Enum\PermissionLevel;
 use App\Enum\TaskType;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
@@ -46,7 +48,8 @@ final class DesignPagesTest extends WebTestCase
     private function seed(): array
     {
         $adminRole = (new Role())->setCode('direction')->setName('Dirección')->setAdmin(true);
-        $teacherRole = (new Role())->setCode('teacher')->setName('Docente');
+        // Read access to Tasks, but no admin and no unit management → can open the page, no history.
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setLevel(Area::TASK, PermissionLevel::READ);
         $this->em->persist($adminRole);
         $this->em->persist($teacherRole);
 
@@ -108,5 +111,26 @@ final class DesignPagesTest extends WebTestCase
 
         self::assertResponseIsSuccessful();
         self::assertSelectorNotExists('.obj-timeline');
+    }
+
+    public function testSuperiorNonAdminSeesActivityHistory(): void
+    {
+        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setLevel(Area::TASK, PermissionLevel::READ);
+        $this->em->persist($headRole);
+        $head = $this->user('jefa@centro.test', $headRole);
+
+        $unit = (new Unit())->setCode('maths')->setName('Matemáticas')->setManager($head);
+        $this->em->persist($unit);
+
+        $task = new Task('Memoria del departamento', SchoolYear::current(new \DateTimeImmutable()), new \DateTimeImmutable('2026-06-30'), TaskType::WITH_DELIVERABLE);
+        $task->setUnit($unit);
+        $this->em->persist($task);
+        $this->em->flush();
+
+        $this->client->loginUser($head);
+        $this->client->request('GET', '/tareas/'.$task->getId());
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('.obj-timeline');
     }
 }

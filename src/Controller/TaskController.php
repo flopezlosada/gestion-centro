@@ -6,8 +6,10 @@ namespace App\Controller;
 
 use App\Entity\Task;
 use App\Entity\User;
+use App\Enum\Area;
 use App\Repository\AuditLogRepository;
 use App\Repository\TaskRepository;
+use App\Security\Voter\AreaVoter;
 use App\Service\OrganizationHierarchy;
 use App\Util\SchoolYear;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -24,6 +26,8 @@ final class TaskController extends AbstractController
     #[Route('/tareas', name: 'task_index', methods: ['GET'])]
     public function index(Request $request, TaskRepository $tasks): Response
     {
+        $this->denyAccessUnlessGranted(AreaVoter::READ, Area::TASK);
+
         $schoolYear = $request->query->getString('curso') ?: SchoolYear::current(new \DateTimeImmutable());
 
         return $this->render('task/index.html.twig', [
@@ -39,6 +43,8 @@ final class TaskController extends AbstractController
         AuditLogRepository $auditLog,
         OrganizationHierarchy $hierarchy,
     ): Response {
+        $this->denyAccessUnlessGranted(AreaVoter::READ, Area::TASK);
+
         // The activity history is recorded for everyone but only superiors (up the chain) and admins
         // may read it on the object's page.
         $canSeeHistory = $this->isGranted('ROLE_ADMIN') || $hierarchy->isSuperiorOf($user, $task->getUnit());

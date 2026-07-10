@@ -27,6 +27,7 @@ final class DemoFixtures extends Fixture
     public function load(ObjectManager $manager): void
     {
         $year = SchoolYear::current(new \DateTimeImmutable());
+        $startYear = (int) substr($year, 0, 4);
 
         $direction = (new Role())->setCode('direction')->setName('Dirección')->setAdmin(true);
         $headDept = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setLevel(Area::TASK, PermissionLevel::WRITE);
@@ -56,10 +57,10 @@ final class DemoFixtures extends Fixture
 
         // A plan for the course with a spread of deadlines, assignees and statuses.
         $plan = [
-            [$reportTpl, '2026-06-30', $maths, $mathsHead, 'in_progress'],
-            [$meetingTpl, '2025-10-15', $maths, $mathsHead, 'validated'],
-            [$reportTpl, '2026-01-31', $studies, $headStudies, 'submitted'],
-            [$meetingTpl, '2025-11-20', $studies, $headStudies, 'done'],
+            [$reportTpl, sprintf('%d-06-30', $startYear + 1), $maths, $mathsHead, 'in_progress'],
+            [$meetingTpl, sprintf('%d-10-15', $startYear), $maths, $mathsHead, 'validated'],
+            [$reportTpl, sprintf('%d-01-31', $startYear + 1), $studies, $headStudies, 'submitted'],
+            [$meetingTpl, sprintf('%d-11-20', $startYear), $studies, $headStudies, 'done'],
         ];
         foreach ($plan as [$tpl, $due, $unit, $assignee, $status]) {
             $task = Task::fromTemplate($tpl, $year, new \DateTimeImmutable($due));
@@ -68,7 +69,7 @@ final class DemoFixtures extends Fixture
         }
 
         // A couple assigned to the teacher, left pending, so their agenda is not empty.
-        foreach (['2025-12-01', '2026-03-15'] as $due) {
+        foreach ([sprintf('%d-12-01', $startYear), sprintf('%d-03-15', $startYear + 1)] as $due) {
             $task = Task::fromTemplate($meetingTpl, $year, new \DateTimeImmutable($due));
             $task->setUnit($maths)->setAssignedUser($teacher);
             $manager->persist($task);

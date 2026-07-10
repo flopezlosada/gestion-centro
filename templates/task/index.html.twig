@@ -1,5 +1,5 @@
 {% extends 'app_shell.html.twig' %}
-{% import '_macros/task.html.twig' as task %}
+{% import '_macros/task.html.twig' as taskUi %}
 
 {% block title %}Tareas {{ schoolYear }} · {{ app_organization_name }}{% endblock %}
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Tareas{% endblock %}
@@ -33,7 +33,7 @@
                             <td>{{ t.unit ? t.unit.name : '—' }}</td>
                             <td>{{ t.assignedUser ? t.assignedUser.fullName : (t.assignedRole ? t.assignedRole.name : '—') }}</td>
                             <td>{{ t.dueDate|date('d/m/Y') }}</td>
-                            <td>{{ task.status_badge(t.status) }}</td>
+                            <td>{{ taskUi.status_badge(t.status) }}</td>
                         </tr>
                     {% endfor %}
                 </tbody>

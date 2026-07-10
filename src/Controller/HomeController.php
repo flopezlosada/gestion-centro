@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\User;
+use App\Enum\Area;
 use App\Repository\TaskRepository;
+use App\Security\Voter\AreaVoter;
 use App\Util\SchoolYear;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Response;
@@ -23,10 +25,14 @@ final class HomeController extends AbstractController
     {
         $schoolYear = SchoolYear::current(new \DateTimeImmutable());
 
+        // The personal agenda is always yours to see; the centre-wide plan needs read access to Tasks.
+        $canSeeCentrePlan = $this->isGranted(AreaVoter::READ, Area::TASK);
+
         return $this->render('home/index.html.twig', [
             'schoolYear' => $schoolYear,
             'agenda' => $tasks->findAgendaFor($user, $schoolYear),
-            'plan' => $tasks->findBySchoolYear($schoolYear),
+            'canSeeCentrePlan' => $canSeeCentrePlan,
+            'plan' => $canSeeCentrePlan ? $tasks->findBySchoolYear($schoolYear) : [],
         ]);
     }
 }

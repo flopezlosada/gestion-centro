@@ -1,5 +1,5 @@
 {% extends 'app_shell.html.twig' %}
-{% import '_macros/task.html.twig' as task %}
+{% import '_macros/task.html.twig' as taskUi %}
 
 {% block title %}Inicio · {{ app_organization_name }}{% endblock %}
 {% block breadcrumb %}Inicio{% endblock %}
@@ -24,10 +24,12 @@
             <span class="stat-figure">{{ agenda|length }}</span>
             <span class="stat-label">Tareas tuyas este curso</span>
         </div>
-        <div class="stat">
-            <span class="stat-figure">{{ plan|length }}</span>
-            <span class="stat-label">Tareas del centro este curso</span>
-        </div>
+        {% if canSeeCentrePlan %}
+            <div class="stat">
+                <span class="stat-figure">{{ plan|length }}</span>
+                <span class="stat-label">Tareas del centro este curso</span>
+            </div>
+        {% endif %}
     </div>
 
     <section class="card">
@@ -49,7 +51,7 @@
                         <tr>
                             <td><a href="{{ path('task_show', { id: t.id }) }}">{{ t.title }}</a>{% if not t.mandatory %} <span class="badge badge--muted">Voluntaria</span>{% endif %}</td>
                             <td>{{ t.dueDate|date('d/m/Y') }}</td>
-                            <td>{{ task.status_badge(t.status) }}</td>
+                            <td>{{ taskUi.status_badge(t.status) }}</td>
                         </tr>
                     {% endfor %}
                 </tbody>
@@ -57,6 +59,7 @@
         {% endif %}
     </section>
 
+    {% if canSeeCentrePlan %}
     <section class="card">
         <div class="page-head">
             <div><h2>Plan del centro</h2><p class="lead">La planificación de referencia del curso {{ schoolYear }}.</p></div>
@@ -75,11 +78,12 @@
                             <td><a href="{{ path('task_show', { id: t.id }) }}">{{ t.title }}</a></td>
                             <td>{{ t.unit ? t.unit.name : '—' }}</td>
                             <td>{{ t.dueDate|date('d/m/Y') }}</td>
-                            <td>{{ task.status_badge(t.status) }}</td>
+                            <td>{{ taskUi.status_badge(t.status) }}</td>
                         </tr>
                     {% endfor %}
                 </tbody>
             </table>
         {% endif %}
     </section>
+    {% endif %}
 {% endblock %}

@@ -29,7 +29,17 @@ class TaskRepository extends ServiceEntityRepository
      */
     public function findBySchoolYear(string $schoolYear): array
     {
-        return $this->findBy(['schoolYear' => $schoolYear], ['dueDate' => 'ASC', 'id' => 'ASC']);
+        // Fetch-join the associations shown in the list/plan to avoid an N+1 per row.
+        return $this->createQueryBuilder('t')
+            ->leftJoin('t.unit', 'unit')->addSelect('unit')
+            ->leftJoin('t.assignedUser', 'assignedUser')->addSelect('assignedUser')
+            ->leftJoin('t.assignedRole', 'assignedRole')->addSelect('assignedRole')
+            ->andWhere('t.schoolYear = :year')
+            ->setParameter('year', $schoolYear)
+            ->orderBy('t.dueDate', 'ASC')
+            ->addOrderBy('t.id', 'ASC')
+            ->getQuery()
+            ->getResult();
     }
 
     /**

@@ -1,5 +1,5 @@
 {% extends 'app_shell.html.twig' %}
-{% import '_macros/task.html.twig' as task %}
+{% import '_macros/task.html.twig' as taskUi %}
 
 {% block title %}{{ task.title }} · {{ app_organization_name }}{% endblock %}
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('task_index') }}">Tareas</a><span class="sep">/</span>{{ task.title }}{% endblock %}
@@ -8,7 +8,7 @@
     <div class="page-head">
         <div>
             <h1>{{ task.title }}</h1>
-            <p class="lead">{{ task.status_badge(task.status) }} · {{ task.type.label }}{% if not task.mandatory %} · Voluntaria{% endif %}</p>
+            <p class="lead">{{ taskUi.status_badge(task.status) }} · {{ task.type.label }}{% if not task.mandatory %} · Voluntaria{% endif %}</p>
         </div>
     </div>
 
