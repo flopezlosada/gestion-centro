@@ -37,7 +37,9 @@ services:
 when@test:
     services:
         # Functional tests drive the task state machines through the same entry point as the app.
-        # It has no consumer yet (a controller will inject it), so the compiler would otherwise
-        # remove this unused private service; expose it publicly in the test env only.
-        App\Service\TaskWorkflow:
+        # TaskWorkflow has no consumer yet (a controller will inject it), so the compiler would
+        # remove this unused private service. A public alias keeps it alive and reachable from the
+        # test container, without redefining the autowired service (so it keeps its Registry arg).
+        test.task_workflow:
+            alias: App\Service\TaskWorkflow
             public: true

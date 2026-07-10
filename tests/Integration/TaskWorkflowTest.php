@@ -22,7 +22,8 @@ final class TaskWorkflowTest extends KernelTestCase
 
     private function taskWorkflow(): TaskWorkflow
     {
-        return self::getContainer()->get(TaskWorkflow::class);
+        /** @var TaskWorkflow */
+        return self::getContainer()->get('test.task_workflow');
     }
 
     public function testDeliverableProgressTransitions(): void

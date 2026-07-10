@@ -48,7 +48,10 @@ final class TaskValidationGuardTest extends WebTestCase
 
     private function canValidate(KernelBrowser $client, Task $task): bool
     {
-        return self::getContainer()->get(TaskWorkflow::class)->for($task)->can($task, 'validate');
+        /** @var TaskWorkflow $workflows */
+        $workflows = self::getContainer()->get('test.task_workflow');
+
+        return $workflows->for($task)->can($task, 'validate');
     }
 
     public function testSuperiorUpTheChainCanValidate(): void
