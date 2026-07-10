@@ -33,3 +33,11 @@ services:
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
+
+when@test:
+    services:
+        # Functional tests drive the task state machines through the same entry point as the app.
+        # It has no consumer yet (a controller will inject it), so the compiler would otherwise
+        # remove this unused private service; expose it publicly in the test env only.
+        App\Service\TaskWorkflow:
+            public: true
