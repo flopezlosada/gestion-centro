@@ -1,11 +1,10 @@
 name: Gitleaks
 
-# Secret scanning on every push (with full history, fetch-depth 0), so no secret ever lands
-# in the repo. The pull_request trigger is intentionally omitted: it only adds a redundant
-# diff-scan that also needs extra API permissions on a private repo, while push already covers
-# every branch update.
+# Secret scanning on every push and PR. The repository is public, so no secret may ever
+# land in history.
 on:
   push:
+  pull_request:
 
 jobs:
   gitleaks:
