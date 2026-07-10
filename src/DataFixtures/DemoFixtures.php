@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\DataFixtures;
 
+use App\Entity\Notification;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskTemplate;
@@ -69,11 +70,17 @@ final class DemoFixtures extends Fixture
         }
 
         // A couple assigned to the teacher, left pending, so their agenda is not empty.
+        $teacherTasks = [];
         foreach ([sprintf('%d-12-01', $startYear), sprintf('%d-03-15', $startYear + 1)] as $due) {
             $task = Task::fromTemplate($meetingTpl, $year, new \DateTimeImmutable($due));
             $task->setUnit($maths)->setAssignedUser($teacher);
             $manager->persist($task);
+            $teacherTasks[] = $task;
         }
+
+        // A couple of demo notices for the teacher so the inbox and its badge are not empty.
+        $manager->persist(new Notification($teacher, 'task.reminder', sprintf('Tarea próxima: %s', $teacherTasks[0]->getTitle()), 'Vence pronto.', $teacherTasks[0]));
+        $manager->persist((new Notification($teacher, 'task.reminder', sprintf('Tarea próxima: %s', $teacherTasks[1]->getTitle()), 'Vence pronto.', $teacherTasks[1]))->markRead());
 
         $manager->flush();
     }
