@@ -1,2 +1,59 @@
 framework:
-    workflows: null
+    workflows:
+        # Simple task: the assignee completes it, the superior validates it. "complete" is progress
+        # declared by the assignee; "validate" is the superior's sign-off (guarded by hierarchy).
+        task_simple:
+            type: state_machine
+            marking_store:
+                type: method
+                property: status
+            supports:
+                - App\Entity\Task
+            initial_marking: pending
+            places:
+                - pending
+                - done
+                - validated
+            transitions:
+                complete:
+                    from: pending
+                    to: done
+                reopen:
+                    from: done
+                    to: pending
+                validate:
+                    from: done
+                    to: validated
+
+        # Task with a deliverable: adds an in-progress and a submission step, plus rejection back to
+        # in-progress. Same split: progress (start/submit) vs the superior's validate/reject.
+        task_with_deliverable:
+            type: state_machine
+            marking_store:
+                type: method
+                property: status
+            supports:
+                - App\Entity\Task
+            initial_marking: pending
+            places:
+                - pending
+                - in_progress
+                - submitted
+                - validated
+                - rejected
+            transitions:
+                start:
+                    from: pending
+                    to: in_progress
+                submit:
+                    from: in_progress
+                    to: submitted
+                validate:
+                    from: submitted
+                    to: validated
+                reject:
+                    from: submitted
+                    to: rejected
+                rework:
+                    from: rejected
+                    to: in_progress

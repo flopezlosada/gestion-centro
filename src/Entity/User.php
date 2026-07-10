@@ -50,6 +50,14 @@ class User implements UserInterface, Auditable
     #[ORM\JoinTable(name: 'user_role')]
     private Collection $assignedRoles;
 
+    /**
+     * The unit (department, office…) this person belongs to, used to walk the chain of command for
+     * escalation and validation. Nullable while the org chart is incomplete.
+     */
+    #[ORM\ManyToOne(targetEntity: Unit::class)]
+    #[ORM\JoinColumn(name: 'unit_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?Unit $unit = null;
+
     public function __construct()
     {
         $this->assignedRoles = new ArrayCollection();
@@ -81,6 +89,18 @@ class User implements UserInterface, Auditable
     {
         // Store normalised so lookups and the unique index are consistent.
         $this->email = strtolower(trim($email));
+
+        return $this;
+    }
+
+    public function getUnit(): ?Unit
+    {
+        return $this->unit;
+    }
+
+    public function setUnit(?Unit $unit): static
+    {
+        $this->unit = $unit;
 
         return $this;
     }
