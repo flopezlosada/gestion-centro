@@ -25,7 +25,9 @@ final class SendTaskRemindersCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $count = $this->notifier->sendDue(new \DateTimeImmutable());
+        // Fix the reference day to the centre's timezone, so "today" does not drift to UTC near
+        // midnight regardless of the host's default timezone.
+        $count = $this->notifier->sendDue(new \DateTimeImmutable('now', new \DateTimeZone('Europe/Madrid')));
         (new SymfonyStyle($input, $output))->success(sprintf('%d avisos enviados.', $count));
 
         return Command::SUCCESS;

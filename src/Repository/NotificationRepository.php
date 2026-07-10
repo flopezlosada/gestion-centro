@@ -29,7 +29,14 @@ class NotificationRepository extends ServiceEntityRepository
      */
     public function findRecentFor(User $user, int $limit = 50): array
     {
-        return $this->findBy(['recipient' => $user], ['createdAt' => 'DESC', 'id' => 'DESC'], $limit);
+        // Fetch-join the linked task: the inbox deep-links to it per row (avoids an N+1).
+        return $this->createQueryBuilder('n')
+            ->leftJoin('n.task', 'task')->addSelect('task')
+            ->andWhere('n.recipient = :user')->setParameter('user', $user)
+            ->orderBy('n.createdAt', 'DESC')->addOrderBy('n.id', 'DESC')
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getResult();
     }
 
     /**
