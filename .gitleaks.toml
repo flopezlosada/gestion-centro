@@ -11,4 +11,8 @@ description = "DDEV-internal development credentials (not real secrets)"
 # (git-ignored) and in the hosting provider's config, never in the repo.
 regexes = [
   '''mysql://db:db@db:3306/db''',
+  # A throwaway dev APP_SECRET was briefly committed and then removed; it never protected
+  # anything real and has since been rotated (the live dev value lives only in .env.local).
+  # Allowlisted so history scans on PRs do not flag this dead value.
+  '''03b61c6f33098eeecb970de3fe82fb0b''',
 ]
