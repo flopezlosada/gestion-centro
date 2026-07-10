@@ -57,6 +57,10 @@ final class OrganizationHierarchy
     public function isSuperiorOf(User $actor, ?Unit $unit): bool
     {
         foreach ($this->managersAbove($unit) as $manager) {
+            // Identity (===) is safe here: managers and the actor come from the same EntityManager
+            // within a request, so Doctrine's identity map guarantees one PHP object per row. Do NOT
+            // "unify" this with User::holdsRole()'s compare-by-id — that pattern exists there for
+            // possibly-unpersisted roles; here it would break the in-memory tests.
             if ($manager === $actor) {
                 return true;
             }

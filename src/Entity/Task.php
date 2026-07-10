@@ -23,7 +23,8 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Entity(repositoryClass: TaskRepository::class)]
 #[ORM\Table(name: 'task')]
 #[ORM\Index(name: 'idx_task_year_due', columns: ['school_year', 'due_date'])]
-#[ORM\Index(name: 'idx_task_status', columns: ['status'])]
+// Leads with due_date to serve findOpenDueOn() (deadline + open status) directly.
+#[ORM\Index(name: 'idx_task_due_status', columns: ['due_date', 'status'])]
 class Task implements Auditable
 {
     #[ORM\Id]
@@ -50,6 +51,7 @@ class Task implements Auditable
     /** Academic year in canonical "YYYY-YYYY" form (see {@see \App\Util\SchoolYear}). */
     #[ORM\Column(name: 'school_year', length: 9)]
     #[Assert\NotBlank]
+    #[Assert\Regex(pattern: '/^\d{4}-\d{4}$/', message: 'El curso debe tener el formato "AAAA-AAAA".')]
     private string $schoolYear;
 
     /** Deadline, fixed at instantiation — never inherited from the template. */

@@ -47,6 +47,14 @@ class Unit implements Auditable
     private ?string $description = null;
 
     /**
+     * Retired units are kept for history (so past tasks keep their context) but no longer used for
+     * new assignments. Soft delete on purpose: a physical delete would fire the database-level
+     * ON DELETE SET NULL on referencing rows, which bypasses Doctrine and is not audited.
+     */
+    #[ORM\Column]
+    private bool $active = true;
+
+    /**
      * The unit directly above in the chain of command (null for the top unit, e.g. management).
      * Escalation walks up this link.
      */
@@ -109,6 +117,18 @@ class Unit implements Auditable
     public function setDescription(?string $description): static
     {
         $this->description = $description;
+
+        return $this;
+    }
+
+    public function isActive(): bool
+    {
+        return $this->active;
+    }
+
+    public function setActive(bool $active): static
+    {
+        $this->active = $active;
 
         return $this;
     }
