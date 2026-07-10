@@ -1,0 +1,39 @@
+{#
+   Histórico de actividad de un objeto, reutilizable en cualquier vista `show`. Recibe:
+     - entries: lista de App\Entity\AuditLog (p. ej. AuditLogRepository::findForSubject()).
+   Muestra quién hizo qué y cuándo, con el diff campo a campo. La VISIBILIDAD la decide quien
+   incluye este partial (p. ej. solo superiores/admin); aquí solo se pinta.
+#}
+{% if entries is empty %}
+    <p class="muted">Sin actividad registrada todavía.</p>
+{% else %}
+    <ol class="obj-timeline">
+        {% for entry in entries %}
+            {% set verb = entry.action|split('.')|last %}
+            {% set verbLabel = { 'created': 'Creación', 'updated': 'Modificación', 'deleted': 'Baja' }[verb]|default(entry.action) %}
+            <li class="obj-timeline__item">
+                <div class="obj-timeline__head">
+                    <span class="obj-timeline__verb">{{ verbLabel }}</span>
+                    <span class="obj-timeline__meta muted">{{ entry.actor|default('Sistema') }} · <time datetime="{{ entry.occurredAt|date('c') }}">{{ entry.occurredAt|date('d/m/Y H:i') }}</time></span>
+                </div>
+                {% if entry.changes %}
+                    <ul class="obj-timeline__changes">
+                        {% for field, change in entry.changes %}
+                            <li>
+                                <span class="obj-timeline__field">{{ field }}</span>
+                                {% if change.added is defined or change.removed is defined %}
+                                    {% if change.added %}<span class="obj-timeline__add">+ {{ change.added|json_encode }}</span>{% endif %}
+                                    {% if change.removed %}<span class="obj-timeline__del">− {{ change.removed|json_encode }}</span>{% endif %}
+                                {% else %}
+                                    <span class="obj-timeline__del">{{ change.old is iterable ? change.old|json_encode : (change.old ?? '∅') }}</span>
+                                    <span aria-hidden="true">→</span>
+                                    <span class="obj-timeline__add">{{ change.new is iterable ? change.new|json_encode : (change.new ?? '∅') }}</span>
+                                {% endif %}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+            </li>
+        {% endfor %}
+    </ol>
+{% endif %}

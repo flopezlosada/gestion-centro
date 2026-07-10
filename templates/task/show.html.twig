@@ -1,0 +1,33 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/task.html.twig' as taskUi %}
+
+{% block title %}{{ task.title }} · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('task_index') }}">Tareas</a><span class="sep">/</span>{{ task.title }}{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>{{ task.title }}</h1>
+            <p class="lead">{{ taskUi.status_badge(task.status) }} · {{ task.type.label }}{% if not task.mandatory %} · Voluntaria{% endif %}</p>
+        </div>
+    </div>
+
+    <div class="card">
+        <dl class="detail-grid">
+            <dt>Curso</dt><dd>{{ task.schoolYear }}</dd>
+            <dt>Fecha límite</dt><dd>{{ task.dueDate|date('d/m/Y') }}</dd>
+            <dt>Unidad</dt><dd>{{ task.unit ? task.unit.name : '—' }}</dd>
+            <dt>Responsable</dt><dd>{{ task.assignedUser ? task.assignedUser.fullName : (task.assignedRole ? task.assignedRole.name : '—') }}</dd>
+            {% if task.description %}<dt>Descripción</dt><dd>{{ task.description|nl2br }}</dd>{% endif %}
+            {% if task.requiresCheckbox %}<dt>Marcada como hecha</dt><dd>{{ task.checkboxDone ? 'Sí' : 'No' }}</dd>{% endif %}
+            {% if task.requiresDocument %}<dt>Entregable</dt><dd>{{ task.deliverableReference ?: 'Pendiente' }}</dd>{% endif %}
+        </dl>
+    </div>
+
+    {% if canSeeHistory %}
+        <section class="card">
+            <div class="page-head"><div><h2>Histórico de actividad</h2><p class="lead">Quién ha hecho qué con esta tarea.</p></div></div>
+            {{ include('_partials/_activity_log.html.twig', { entries: history }) }}
+        </section>
+    {% endif %}
+{% endblock %}

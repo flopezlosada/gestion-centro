@@ -1,0 +1,67 @@
+{% extends 'base.html.twig' %}
+
+{# Layout principal: barra lateral + cabecera + contenido. Las pantallas con sesión extienden
+   ESTE archivo y rellenan {% block body %}; el login extiende 'base.html.twig' directamente. #}
+
+{% set route = app.request.attributes.get('_route') %}
+
+{% block shell %}
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="sidebar-head">
+                <a class="brand" href="{{ path('app_homepage') }}">
+                    <span class="brand-mark">{{ include('partials/_brand_mark.html.twig', { size: 30 }) }}</span>
+                    <span class="brand-name">Gestión del centro</span>
+                </a>
+                <button class="nav-toggle" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="main-nav">
+                    <span class="nav-toggle-bars"></span>
+                </button>
+            </div>
+
+            <nav id="main-nav" class="nav" aria-label="Navegación principal">
+                <a href="{{ path('app_homepage') }}" class="{{ route == 'app_homepage' ? 'is-active' }}">Inicio</a>
+                <a href="{{ path('task_index') }}" class="{{ route starts with 'task_' ? 'is-active' }}">Tareas</a>
+            </nav>
+
+            <div class="nav-backdrop"></div>
+
+            <div class="sidebar-foot">
+                {{ app_organization_name }}<br>
+                Gestión del día a día
+            </div>
+        </aside>
+
+        <div class="main">
+            <header class="topbar">
+                <nav class="breadcrumb" aria-label="Ruta">
+                    {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a>{% endblock %}
+                </nav>
+                <div class="topbar-right">
+                    <div class="theme-toggle" role="group" aria-label="Tema de color">
+                        <button type="button" data-theme-value="light" aria-pressed="true">Claro</button>
+                        <button type="button" data-theme-value="dark" aria-pressed="false">Oscuro</button>
+                    </div>
+                    {% if app.user %}
+                        <span class="user">
+                            <span class="avatar">{{ app.user.fullName|split(' ')|map(w => w|first)|join|slice(0, 2)|upper }}</span>
+                            <span>{{ app.user.fullName }}</span>
+                            <span aria-hidden="true">·</span>
+                            <a href="{{ path('app_logout') }}">Salir</a>
+                        </span>
+                    {% endif %}
+                </div>
+            </header>
+
+            <main class="page">
+                {% for message in app.flashes('success') %}
+                    <div class="flash success">{{ message }}</div>
+                {% endfor %}
+                {% for message in app.flashes('error') %}
+                    <div class="flash error">{{ message }}</div>
+                {% endfor %}
+
+                {% block body %}{% endblock %}
+            </main>
+        </div>
+    </div>
+{% endblock %}
