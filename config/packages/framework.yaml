@@ -2,6 +2,9 @@
 framework:
     secret: '%env(APP_SECRET)%'
 
+    # Spanish UI: validation messages and other framework strings are shown in Spanish.
+    default_locale: es
+
     # Note that the session will be started ONLY if you read or write from it.
     session: true
 

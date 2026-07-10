@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+    <style>
+        .bg { fill: #EBF1EC; }
+        .ink { fill: #2F6B43; }
+        .line { stroke: #2F6B43; }
+        @media (prefers-color-scheme: dark) {
+            .bg { fill: #1A2620; }
+            .ink { fill: #5BA978; }
+            .line { stroke: #5BA978; }
+        }
+    </style>
+    <rect class="bg" width="64" height="64" rx="15"/>
+    <text class="ink" x="32" y="36" font-family="Newsreader, Georgia, serif" font-weight="600" font-size="36" text-anchor="middle">S</text>
+    <path class="line" d="M16 44 H48" fill="none" stroke-width="3" stroke-linecap="round"/>
+    <path class="line" d="M20 50 H44" fill="none" stroke-width="3" stroke-linecap="round"/>
+</svg>

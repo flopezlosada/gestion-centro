@@ -7,12 +7,24 @@
 # Put parameters here that don't need to change on each machine where the app is deployed
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
+    # Private, persistent storage for uploaded files (outside public/, survives deploys).
+    # Built on the project's APP_SHARE_DIR convention.
+    app.uploads_dir: '%kernel.project_dir%/%env(APP_SHARE_DIR)%'
+    # "From" address for the reminder e-mails. Override per environment via MAILER_FROM.
+    app.mailer_from: '%env(MAILER_FROM)%'
+    # Organisation name shown across the app. Generic by default; the centre overrides it per
+    # environment via APP_ORG_NAME (kept out of the repo on purpose).
+    app.organization_name: '%env(default:app_organization_name_default:APP_ORG_NAME)%'
+    app_organization_name_default: 'Centro educativo'
 
 services:
     # default configuration for services in *this* file
     _defaults:
         autowire: true      # Automatically injects dependencies in your services.
         autoconfigure: true # Automatically registers your services as commands, event subscribers, etc.
+        bind:
+            string $uploadsDir: '%app.uploads_dir%'
+            string $publicDir: '%kernel.project_dir%/public'
 
     # makes classes in src/ available to be used as services
     # this creates a service per class whose id is the fully-qualified class name

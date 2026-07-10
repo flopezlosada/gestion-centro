@@ -1,0 +1,13 @@
+framework:
+    html_sanitizer:
+        sanitizers:
+            # Sanitizer for the rich-text body of documents (editor input and .docx import).
+            # Keeps the safe formatting a policy/procedure needs — including tables — and drops the
+            # masthead images (logos): the institutional letterhead is added by the PDF template,
+            # not stored in the body.
+            app.document_body:
+                allow_safe_elements: true
+                drop_elements:
+                    - img
+                    - figure
+                force_https_urls: true

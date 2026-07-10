@@ -1,0 +1,53 @@
+{#
+   Scaffold de formulario compartido. Reemplaza el boilerplate que estaba copiado en cada
+   plantilla de alta/edición: la fila de campo (.form-row con etiqueta, widget, ayuda y errores)
+   y la barra de acciones (Guardar / Cancelar). Así una mejora de UX en los formularios se hace
+   en UN sitio y aplica a todos.
+
+   Uso típico:
+     {% import '_macros/form.html.twig' as f %}
+     <div class="card form-card">
+         {{ form_start(form, { attr: { novalidate: 'novalidate' } }) }}
+             {{ form_errors(form) }}
+             {{ f.fields([form.foo, form.bar]) }}
+             {{ f.actions(path('algo_index')) }}
+         {{ form_end(form) }}
+     </div>
+#}
+
+{#
+   Renderiza una lista de campos, cada uno en su .form-row (etiqueta + widget + ayuda + errores).
+   Se pasa la lista explícita para preservar el orden y la selección exactos de cada formulario.
+#}
+{% macro fields(list) %}
+    {% for field in list %}
+        <div class="form-row">
+            {{ form_label(field) }}
+            {{ form_widget(field) }}
+            {% if field.vars.help %}<p class="help">{{ field.vars.help }}</p>{% endif %}
+            {{ form_errors(field) }}
+        </div>
+    {% endfor %}
+{% endmacro %}
+
+{#
+   Agrupa un bloque de campos bajo un título, para partir los formularios largos en secciones
+   y que no sean un muro de campos. Usa <fieldset>/<legend> (semántica de agrupación accesible).
+#}
+{% macro section(title, list) %}
+    <fieldset class="form-section">
+        <legend class="form-section-title">{{ title }}</legend>
+        {{ _self.fields(list) }}
+    </fieldset>
+{% endmacro %}
+
+{#
+   Barra de acciones del formulario: el botón primario de envío y un enlace de cancelar.
+   cancelUrl: destino del enlace "Cancelar". submitLabel: texto del botón (por defecto "Guardar").
+#}
+{% macro actions(cancelUrl, submitLabel = 'Guardar') %}
+    <div class="form-actions">
+        <button class="btn" type="submit">{{ submitLabel }}</button>
+        <a class="btn secondary" href="{{ cancelUrl }}">Cancelar</a>
+    </div>
+{% endmacro %}

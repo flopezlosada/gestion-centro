@@ -1,0 +1,68 @@
+name: Tests
+
+# Regression gate: runs the PHPUnit suite and PHPStan on every push and PR. Does not deploy.
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: PHPUnit + PHPStan
+    runs-on: ubuntu-latest
+
+    env:
+      APP_ENV: test
+      # Real env var overrides the DDEV DSN from .env (Symfony Dotenv does not override
+      # real environment variables). Points to the CI MySQL service on 127.0.0.1.
+      # Base db name is "app"; in the test environment Doctrine appends the "_test" suffix
+      # (config/packages/doctrine.yaml when@test), so the effective db is "app_test" — which
+      # is the database the MySQL service below creates.
+      DATABASE_URL: 'mysql://root:root@127.0.0.1:3306/app?serverVersion=8.0&charset=utf8mb4'
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: app_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, intl, pdo_mysql
+          coverage: none
+
+      - name: Cache vendor/
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: vendor-php83-${{ hashFiles('composer.lock') }}
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --optimize-autoloader
+
+      # Run migrations (not schema:create) so CI also verifies the migrations are executable
+      # and the resulting schema matches the entity metadata.
+      - name: Run migrations
+        run: php bin/console doctrine:migrations:migrate --no-interaction
+
+      - name: PHPStan
+        run: vendor/bin/phpstan analyse --no-progress
+
+      - name: PHPUnit
+        run: php bin/phpunit --testdox
