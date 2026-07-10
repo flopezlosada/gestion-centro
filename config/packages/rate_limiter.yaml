@@ -1,0 +1,16 @@
+framework:
+    rate_limiter:
+        # Throttles the magic-link request endpoint to prevent abuse and mail-bombing a user.
+        # Per IP; sliding_window is fairer than fixed_window at the window edges.
+        magic_link:
+            policy: 'sliding_window'
+            limit: 5
+            interval: '1 hour'
+
+when@test:
+    framework:
+        rate_limiter:
+            # High limit in tests so the shared client IP does not get throttled across tests
+            # (and across repeated local runs). The throttling behaviour itself is framework code.
+            magic_link:
+                limit: 1000

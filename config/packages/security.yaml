@@ -1,39 +1,46 @@
 security:
-    # https://symfony.com/doc/current/security.html#registering-the-user-hashing-passwords
-    password_hashers:
-        Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface: 'auto'
-
-    # https://symfony.com/doc/current/security.html#loading-the-user-the-user-provider
+    # Passwordless system: users authenticate with a magic link sent by e-mail (and, later,
+    # Google/Educamadrid SSO). No password hashers are configured on purpose.
     providers:
-        users_in_memory: { memory: null }
+        app_user_provider:
+            entity:
+                class: App\Entity\User
+                property: email
 
     firewalls:
         dev:
-            # Ensure dev tools and static assets are always allowed
             pattern: ^/(_profiler|_wdt|assets|build)/
             security: false
         main:
             lazy: true
-            provider: users_in_memory
+            provider: app_user_provider
+            user_checker: App\Security\UserChecker
+            entry_point: App\Security\LoginEntryPoint
+            custom_authenticators:
+                # The magic-link authenticator is registered automatically via the login_link key below.
+                - App\Security\GoogleAuthenticator
+            login_throttling:
+                max_attempts: 5 # per IP + identifier, before the login check is throttled
+                interval: '15 minutes'
+            login_link:
+                check_route: login_check
+                signature_properties: ['id']
+                lifetime: 600 # the link is valid for 10 minutes
+                max_uses: 1 # single-use: the link is invalidated after the first successful use
+            logout:
+                path: app_logout
+                target: login
 
-            # Activate different ways to authenticate:
-            # https://symfony.com/doc/current/security.html#the-firewall
-
-            # https://symfony.com/doc/current/security/impersonating_user.html
-            # switch_user: true
-
-    # Note: Only the *first* matching rule is applied
+    # Only the first matching rule applies.
     access_control:
-        # - { path: ^/admin, roles: ROLE_ADMIN }
-        # - { path: ^/profile, roles: ROLE_USER }
-
-when@test:
-    security:
-        password_hashers:
-            # Password hashers are resource-intensive by design to ensure security.
-            # In tests, it's safe to reduce their cost to improve performance.
-            Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface:
-                algorithm: auto
-                cost: 4 # Lowest possible value for bcrypt
-                time_cost: 3 # Lowest possible value for argon
-                memory_cost: 10 # Lowest possible value for argon
+        - { path: ^/login, roles: PUBLIC_ACCESS }
+        - { path: ^/connect, roles: PUBLIC_ACCESS }
+        # Machine-to-machine cron endpoints are authenticated by a shared secret token in the
+        # controller (not a session), so the firewall must let them through unauthenticated. Each is
+        # pinned to its exact path so a broad ^/cron prefix never opens a future route by accident.
+        # (Added per endpoint as the task-alert cron is built.)
+        # The activity trail is sensitive (it shows everyone's actions): admins only.
+        - { path: ^/audit, roles: ROLE_ADMIN }
+        # User/role administration: admins only.
+        - { path: ^/admin, roles: ROLE_ADMIN }
+        - { path: ^/, roles: ROLE_USER }

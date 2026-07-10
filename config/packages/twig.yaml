@@ -1,5 +1,9 @@
 twig:
     file_name_pattern: '*.twig'
+    globals:
+        # Centre name shown across the UI/e-mails; single source of truth is the app.organization_name
+        # parameter (generic by default, real value set per environment via APP_ORG_NAME).
+        app_organization_name: '%app.organization_name%'
 
 when@test:
     twig:

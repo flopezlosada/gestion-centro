@@ -1,0 +1,70 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Acceso{% endblock %}
+
+{% block shell %}
+    <div class="auth">
+        <div class="auth-card">
+            <div class="brand-mark brand-mark--lg">{{ include('partials/_brand_mark.html.twig', { size: 56 }) }}</div>
+
+            <p class="eyebrow">Sistema de gestión ambiental</p>
+            <h1>Entra en el registro</h1>
+            <p class="auth-lead">Acceso reservado al personal del centro. Cada acción queda registrada con tu nombre y la fecha.</p>
+
+            {% if error is defined and error %}
+                <p class="form-error">{{ error }}</p>
+            {% endif %}
+
+            <form id="login-form" method="post" action="{{ path('login') }}" novalidate>
+                <div class="form-row">
+                    <label for="email">Correo electrónico</label>
+                    <input type="email" id="email" name="email" required autofocus inputmode="email" autocomplete="email">
+                </div>
+                <button class="btn" type="submit">Enviar enlace de acceso</button>
+            </form>
+
+            <hr>
+
+            {% if google_sso_enabled %}
+                <a class="btn secondary" href="{{ path('connect_google') }}">Entrar con cuenta institucional</a>
+            {% else %}
+                <button class="btn secondary" type="button" disabled title="Disponible cuando se configuren las credenciales de acceso">Entrar con cuenta institucional</button>
+                <p class="help">El acceso con cuenta institucional estará disponible próximamente.</p>
+            {% endif %}
+
+            <p class="auth-foot">ISO 14001 · Curso 2025–26</p>
+        </div>
+    </div>
+{% endblock %}
+
+{% block javascripts %}
+    {{ parent() }}
+    {# Validación de cliente con nuestro mensaje en español (la nativa está desactivada).
+       El servidor sigue validando: esto es UX, no la frontera de seguridad. #}
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var form = document.getElementById('login-form');
+            if (!form) {
+                return;
+            }
+            var email = document.getElementById('email');
+            var emailPattern = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+            form.addEventListener('submit', function (event) {
+                var value = (email.value || '').trim();
+                if (value === '' || !emailPattern.test(value)) {
+                    event.preventDefault();
+                    var card = form.closest('.auth-card');
+                    var error = card.querySelector('.js-form-error');
+                    if (!error) {
+                        error = document.createElement('p');
+                        error.className = 'form-error js-form-error';
+                        card.insertBefore(error, card.firstChild);
+                    }
+                    error.textContent = 'Introduce un correo electrónico válido.';
+                    email.focus();
+                }
+            });
+        });
+    </script>
+{% endblock %}

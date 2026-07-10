@@ -1,0 +1,8 @@
+{# Marca SGA: monograma "S" en serif sobre dos líneas (registro/firma).
+   Hereda el color del contenedor vía currentColor, así sigue al tema (claro/oscuro)
+   cuando el contenedor usa `color: var(--accent)`. Parámetro opcional `size` (px). #}
+<svg class="brand-mark-svg" width="{{ size|default(48) }}" height="{{ size|default(48) }}" viewBox="0 0 48 48" role="img" aria-label="SGA — Sistema de Gestión Ambiental">
+    <text x="24" y="28" font-family="Newsreader, Georgia, serif" font-weight="600" font-size="29" text-anchor="middle" fill="currentColor">S</text>
+    <path d="M10 35 H38" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+    <path d="M13 40 H35" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,1441 @@
+/* =============================================================================
+   Sistema de diseño "Registro" — App de Gestión Ambiental ISO 14001
+   Traducción del handoff de claude.design (dirección elegida: "Registro").
+   Todos los colores son TOKENS SEMÁNTICOS: un único juego de nombres cambia de
+   valor entre tema claro (:root) y oscuro ([data-theme="dark"]). Nunca hex
+   sueltos repetidos por el CSS.
+   ============================================================================= */
+
+/* ---- Tokens: tema claro ------------------------------------------------- */
+:root {
+    --canvas: #D9D8D1;          /* lienzo exterior, detrás del contenido */
+    --bg: #FFFFFF;              /* fondo de aplicación */
+    --surface: #FFFFFF;        /* tarjetas y paneles */
+    --surface-sunken: #F4F6F2; /* cabeceras de tabla, inputs, hover suave */
+    --surface-sidebar: #E3E8DF;/* barra lateral (verde salvia) */
+    --border: #E4E6E0;         /* filete / hairline */
+    --border-strong: #CDD2C8;  /* borde marcado (inputs, controles) */
+    --text: #20231E;           /* texto principal */
+    --text-muted: #5C6159;     /* texto secundario */
+    --text-faint: #8A8F86;     /* texto terciario / placeholder */
+    --on-accent: #FFFFFF;      /* texto sobre relleno de acento */
+    --accent: #2F6B43;         /* acción primaria / sello / nav activo */
+    --accent-hover: #275B38;
+    --accent-weak: #E8F0E9;    /* fondo tenue de acento (hover/seleccionado) */
+    --success: #2F6B43;
+    --success-weak: #E8F0E9;
+    --success-text: #235335;
+    --warning: #9A6310;
+    --warning-weak: #F5ECD7;
+    --warning-text: #7A4D0C;
+    --danger: #A23A2D;
+    --danger-weak: #F5E2DE;
+    --danger-text: #8A2E23;
+    --review: #3F6079;
+    --review-weak: #E5EBF0;
+    --review-text: #2F4A60;
+    /* Categóricos de pilar PDCA (calendario): apagados y distintos del ámbar/rojo de urgencia. */
+    --pillar-plan: #5C7A99;
+    --pillar-do: #5F8A5A;
+    --pillar-check: #4F8A86;
+    --pillar-act: #9A6A86;
+    --focus: #2F6B43;
+
+    /* Tipografía */
+    --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
+    --font-body: 'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'Spline Sans Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+    /* Sombras (claro). En oscuro se neutralizan más abajo. */
+    --shadow-card: 0 12px 36px rgba(40, 38, 30, .12);
+    --shadow-mobile: 0 16px 48px rgba(20, 30, 24, .18);
+
+    /* Radios */
+    --radius-sm: 4px;   /* badges, inputs internos */
+    --radius: 5px;      /* botones, items de nav */
+    --radius-lg: 8px;   /* tarjetas, paneles */
+}
+
+/* ---- Tokens: tema oscuro ------------------------------------------------ */
+/* No es un claro invertido: verde-tinta sobrio que mantiene contraste AA. */
+[data-theme="dark"] {
+    --canvas: #0C140F;
+    --bg: #141E18;
+    --surface: #1A2620;
+    --surface-sunken: #121B15;
+    --surface-sidebar: #17221C;
+    --border: #2B3830;
+    --border-strong: #3A4A40;
+    --text: #E9ECE6;
+    --text-muted: #A4ADA3;
+    --text-faint: #757D74;
+    --on-accent: #0E1A12;
+    --accent: #5BA978;
+    --accent-hover: #6FB98A;
+    --accent-weak: #1E3127;
+    --success: #5BA978;
+    --success-weak: #1E3127;
+    --success-text: #9BD2AE;
+    --warning: #D6A24E;
+    --warning-weak: #332915;
+    --warning-text: #E8C588;
+    --danger: #D77C6E;
+    --danger-weak: #34211D;
+    --danger-text: #ECA99E;
+    --review: #88A3C6;
+    --review-weak: #1F2A39;
+    --review-text: #B3C5DE;
+    --pillar-plan: #8FA9C4;
+    --pillar-do: #8FB98A;
+    --pillar-check: #74B8B0;
+    --pillar-act: #C49AB6;
+    --focus: #6FB98A;
+    color-scheme: dark;
+
+    /* En oscuro las sombras son casi imperceptibles: la separación la dan los bordes. */
+    --shadow-card: 0 12px 36px rgba(0, 0, 0, .35);
+    --shadow-mobile: 0 16px 48px rgba(0, 0, 0, .45);
+}
+
+/* ---- Reset y base ------------------------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; }
+
+/* color-scheme atado a NUESTRO tema (no a la preferencia del SO), para que los
+   controles nativos —incluida la lista del <select>— se pinten claros u oscuros
+   en sintonía con la app y no por su cuenta. */
+html { color-scheme: light; }
+
+body {
+    margin: 0;
+    background: var(--canvas);
+    color: var(--text);
+    font: 400 14px/1.5 var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+a { color: var(--accent); }
+
+h1, h2, h3 { font-family: var(--font-display); font-weight: 500; color: var(--text); }
+
+/* Foco de teclado visible (accesibilidad). */
+:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
+/* Respeta la preferencia de movimiento reducido. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+
+/* Etiqueta tipo "eyebrow"/dato en mono mayúsculas. */
+.eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .16em;
+    color: var(--text-muted);
+}
+.mono { font-family: var(--font-mono); }
+.muted { color: var(--text-muted); }
+
+/* =============================================================================
+   Shell de aplicación: barra lateral + cabecera + contenido
+   ============================================================================= */
+.layout {
+    display: grid;
+    grid-template-columns: 230px 1fr;
+    min-height: 100vh;
+    background: var(--canvas);
+}
+
+/* ---- Barra lateral ------------------------------------------------------ */
+.sidebar {
+    background: var(--surface-sidebar);
+    border-right: 1px solid var(--border);
+    padding: 18px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+}
+.sidebar .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    color: var(--text);
+    padding: 4px 6px;
+}
+/* Marca SGA: el SVG hereda el color (currentColor). El contenedor lo fija al acento,
+   así sigue al tema claro/oscuro sin lógica extra. */
+.brand-mark { display: inline-flex; align-items: center; justify-content: center; color: var(--accent); }
+.brand-mark-svg { display: block; }
+.sidebar .brand .brand-mark { width: 30px; height: 30px; }
+.auth-card .brand-mark--lg { justify-content: center; margin: 0 auto 18px; }
+.dash-greeting .brand-mark--lg { flex: none; }
+.sidebar .brand .brand-name { font-family: var(--font-display); font-size: 17px; }
+
+/* Botón hamburguesa: transparente en el flujo de escritorio (oculto), barra superior en móvil.
+   display:contents hace que en escritorio la marca siga en la columna como antes. */
+.sidebar-head { display: contents; }
+.nav-toggle { display: none; background: transparent; border: 0; cursor: pointer; padding: 10px; color: var(--text); }
+.nav-toggle-bars, .nav-toggle-bars::before, .nav-toggle-bars::after {
+    content: ''; display: block; width: 20px; height: 2px; background: currentColor; border-radius: 2px;
+}
+.nav-toggle-bars { position: relative; }
+.nav-toggle-bars::before { position: absolute; top: -6px; left: 0; }
+.nav-toggle-bars::after { position: absolute; top: 6px; left: 0; }
+.nav-backdrop { display: none; }
+
+.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav a {
+    display: block;
+    padding: 7px 12px;
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 14px;
+    transition: background .12s ease, color .12s ease;
+}
+.nav a:hover { background: var(--accent-weak); color: var(--text); }
+.nav a.is-active { background: var(--accent); color: var(--on-accent); }
+
+/* Pilares plegables del menú (ver nav-pillars.js). El grupo se oculta cuando el pilar está
+   colapsado; sin JS nunca se añade .is-collapsed, así que todo queda visible. */
+.nav-pillar { display: flex; flex-direction: column; gap: 2px; }
+.nav-group { display: flex; flex-direction: column; gap: 2px; }
+.nav-pillar.is-collapsed .nav-group { display: none; }
+
+/* Jerarquía visual de tres niveles para que no se confunda lo principal con lo de cada pilar:
+   1) enlaces principales (Inicio, Qué toca, Estructura, Documentos): hijos directos de .nav,
+      con color de texto pleno y algo más de peso;
+   2) cabecera de pilar: la etiqueta "eyebrow" en mayúsculas (.nav-label);
+   3) módulos dentro del pilar: sangrados bajo una guía vertical y atenuados, como subnivel. */
+.nav > a { color: var(--text); font-weight: 500; }
+.nav-group { margin-left: 1.1rem; border-left: 1px solid var(--border); }
+.nav-group a { padding-left: 14px; }
+
+.sidebar .sidebar-foot {
+    margin-top: auto;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    line-height: 1.7;
+    padding: 0 6px;
+}
+
+/* ---- Cabecera ----------------------------------------------------------- */
+.main { display: flex; flex-direction: column; min-width: 0; }
+.topbar {
+    height: 62px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 0 36px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+}
+.breadcrumb {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+.breadcrumb a { color: var(--text-muted); text-decoration: none; }
+.breadcrumb a:hover { color: var(--text); text-decoration: underline; }
+.breadcrumb .sep { color: var(--text-faint); margin: 0 6px; }
+
+.topbar-right { display: flex; align-items: center; gap: 16px; }
+.user {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+.user .avatar {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--on-accent);
+    display: grid; place-items: center;
+    font-family: var(--font-mono);
+    font-size: 10px;
+}
+.user a { color: var(--text-muted); }
+
+/* Conmutador de tema (segmentado claro/oscuro). */
+.theme-toggle {
+    display: inline-flex;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--surface-sunken);
+}
+.theme-toggle button {
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font: 500 12px var(--font-body);
+    padding: 5px 12px;
+    cursor: pointer;
+}
+.theme-toggle button[aria-pressed="true"] {
+    background: var(--accent);
+    color: var(--on-accent);
+}
+
+/* ---- Salto rápido (quick-jump) ------------------------------------------ */
+/* Buscador de la topbar para ir directo a un módulo. El panel de resultados es un
+   desplegable posicionado bajo el input (mismo lenguaje visual que .selectmenu__menu).
+   La lupa va como SVG en data-URI, igual que el buscador de tablas: cero ficheros extra
+   (el hosting va justo de inodos). */
+.quickjump { position: relative; }
+.quickjump__input {
+    width: 220px;
+    padding: 7px 12px 7px 32px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    font: 400 13px var(--font-body);
+    background-color: var(--surface-sunken);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238A8F86' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: 10px center;
+    background-size: 14px;
+    color: var(--text);
+}
+.quickjump__input:focus { border-color: var(--accent); outline-offset: 0; }
+.quickjump__panel {
+    position: absolute; top: calc(100% + 4px); right: 0; z-index: 50;
+    width: 300px; max-width: 80vw;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+}
+.quickjump__panel[hidden] { display: none; }
+.quickjump__list {
+    padding: 4px 0;
+    max-height: min(420px, 60vh); overflow-y: auto;
+}
+.quickjump__item {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 9px 14px; text-decoration: none; color: var(--text);
+    transition: background .12s ease, color .12s ease;
+}
+/* .quickjump__item es display:flex, así que pisa el display:none del atributo hidden del UA:
+   hay que re-ocultar las opciones filtradas explícitamente (mismo caso que las filas de tabla). */
+.quickjump__item[hidden] { display: none; }
+.quickjump__item:hover,
+.quickjump__item.is-active { background: var(--accent-weak); }
+.quickjump__name { font-size: 14px; line-height: 1.3; }
+.quickjump__hint {
+    font-size: 11px; color: var(--text-faint);
+    text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
+}
+.quickjump__empty {
+    margin: 0; padding: 14px; text-align: center;
+    font-size: 13px; color: var(--text-muted);
+}
+.quickjump__empty[hidden] { display: none; }
+
+/* ---- Contenido ---------------------------------------------------------- */
+.page {
+    flex: 1;
+    background: var(--bg);
+    padding: 42px 56px;
+    min-width: 0;
+}
+.page-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 26px;
+}
+.page-head h1 { font-size: 30px; margin: 0 0 4px; line-height: 1.12; letter-spacing: -.01em; }
+.page-head .lead { color: var(--text-muted); margin: 0; max-width: 60ch; }
+
+/* Compat: encabezado simple usado por plantillas sin page-head. */
+.page > h1 { font-size: 28px; margin: 0 0 18px; }
+
+/* =============================================================================
+   Componentes
+   ============================================================================= */
+
+/* ---- Tarjetas / paneles ------------------------------------------------- */
+.card, .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 22px;
+    margin-bottom: 18px;
+}
+
+/* ---- Botones ------------------------------------------------------------ */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: var(--accent);
+    color: var(--on-accent);
+    border: 1px solid var(--accent);
+    padding: 10px 16px;
+    border-radius: var(--radius);
+    font: 500 14px var(--font-body);
+    text-decoration: none;
+    cursor: pointer;
+    transition: background .12s ease, border-color .12s ease;
+}
+.btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn.secondary, .btn-secondary {
+    background: transparent;
+    color: var(--accent);
+    border-color: var(--border-strong);
+}
+.btn.secondary:hover, .btn-secondary:hover { background: var(--surface-sunken); }
+.btn.danger, .btn-danger {
+    background: var(--danger);
+    border-color: var(--danger);
+    color: #fff;
+}
+.btn[disabled] { opacity: .5; cursor: not-allowed; }
+
+/* ---- Barra de herramientas / acciones ----------------------------------- */
+.toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+}
+
+/* ---- Tablas ------------------------------------------------------------- */
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+thead th {
+    text-align: left;
+    background: var(--surface-sunken);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+}
+tbody td {
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+tbody tr:hover { background: var(--accent-weak); }
+/* Enlace del identificador de fila: el nombre actúa como acceso directo al
+   detalle. Sin subrayado en reposo (como .nav a / breadcrumb), se revela al
+   pasar el cursor para no ensuciar la tabla. */
+td a.cell-link { color: var(--accent); text-decoration: none; font-weight: 500; }
+td a.cell-link:hover { text-decoration: underline; }
+td .doc-code { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint); display: block; }
+td .doc-title { font-family: var(--font-display); font-size: 16.5px; }
+
+/* Ficha clave-valor de las pantallas de detalle (identificación de un documento, etc.). */
+.detail-grid { display: grid; grid-template-columns: max-content 1fr; gap: 8px 22px; margin: 0 0 4px; }
+.detail-grid dt { color: var(--text-muted); font-size: 13px; }
+.detail-grid dd { margin: 0; }
+@media (max-width: 560px) {
+    .detail-grid { grid-template-columns: 1fr; gap: 2px 0; }
+    .detail-grid dd { margin-bottom: 8px; }
+}
+/* Versión actualmente en vigor, resaltada en el historial. */
+tbody tr.is-in-force { background: var(--success-weak); }
+
+/* Aviso de situación del documento (anulado/archivado) y formularios de control. */
+.lifecycle-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    margin-bottom: 18px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-sunken);
+}
+.lifecycle-form { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.inline-form { display: inline; }
+.lifecycle-form input[type="text"] {
+    flex: 1 1 280px;
+    padding: 9px 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    font: 400 14px var(--font-body);
+    background: var(--surface);
+    color: var(--text);
+}
+
+/* ---- Herramientas de listado (table-tools.js): búsqueda, filtros, orden ---- */
+/* Barra de controles destacada sobre la tabla: superficie hundida + borde, para que
+   búsqueda y filtros se lean como herramientas (y se usen) en vez de pasar inadvertidos. */
+.table-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 12px;
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+}
+.table-tools__search { flex: 1 1 260px; min-width: 220px; }
+/* El buscador lleva una lupa (SVG en data-URI: sin ficheros extra, el hosting va justo
+   de inodos) para que se reconozca como campo de búsqueda de un vistazo. */
+.table-tools__search input[type="search"] {
+    width: 100%;
+    box-sizing: border-box;
+    appearance: none;
+    -webkit-appearance: none;
+    padding: 10px 12px 10px 38px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    font: 400 14px var(--font-body);
+    background-color: var(--surface);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238A8F86' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: 13px center;
+    background-size: 15px;
+    color: var(--text);
+}
+.table-tools__search input[type="search"]:focus { border-color: var(--accent); outline-offset: 0; }
+/* El filtro reusa .form-row (para que selectmenu.js lo "enhance"), pero aquí va en línea. */
+.table-tools__filter { margin-bottom: 0; flex: 0 1 200px; min-width: 160px; }
+/* El buscador (input nativo) y los filtros (trigger de selectmenu.js) calculan su alto de forma
+   distinta y quedaban desalineados; se les fija la MISMA altura para que casen en la barra. */
+.table-tools__search input[type="search"],
+.table-tools__filter .selectmenu__trigger {
+    height: 40px;
+    box-sizing: border-box;
+}
+
+/* Cabeceras ordenables: afordancia clicable + flecha según aria-sort. */
+thead th.is-sortable { cursor: pointer; user-select: none; }
+thead th.is-sortable:hover { color: var(--text); }
+thead th.is-sortable::after {
+    content: '↕';
+    margin-left: 5px;
+    font-size: 9px;
+    opacity: .35;
+}
+thead th.is-sortable[aria-sort="ascending"]::after  { content: '↑'; opacity: .9; }
+thead th.is-sortable[aria-sort="descending"]::after { content: '↓'; opacity: .9; }
+thead th.is-sortable:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+.table-tools__empty td { text-align: center; padding: 28px 12px; }
+
+/* ---- Badges de estado --------------------------------------------------- */
+.badge {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+}
+.badge--draft   { background: var(--surface-sunken); color: var(--text-muted); border-color: var(--border-strong); }
+.badge--review  { background: var(--review-weak);  color: var(--review-text);  border-color: var(--review); }
+.badge--success { background: var(--success-weak); color: var(--success-text); border-color: var(--success); }
+.badge--warning { background: var(--warning-weak); color: var(--warning-text); border-color: var(--warning); }
+.badge--danger  { background: var(--danger-weak);  color: var(--danger-text);  border-color: var(--danger); }
+.badge--void    { color: var(--text-faint); text-decoration: line-through; }
+.badge--done    { background: var(--surface-sunken); color: var(--text-muted); border-color: var(--border-strong); }
+.badge--muted   { background: var(--surface-sunken); color: var(--text-faint); border-color: var(--border); }
+
+/* Nivel de valoración de riesgo: dato INFORMATIVO (no accionable), por eso es texto coloreado por
+   severidad, no un badge (que se reserva a estados accionables). Escala sobria: trivial apagado. */
+.val--critical { color: var(--danger-text); font-weight: 600; }
+.val--moderate { color: var(--warning-text); }
+.val--trivial  { color: var(--text-muted); }
+
+/* Un badge que además es enlace (estado accionable): sin subrayado y con afordanza al pasar. */
+a.badge { text-decoration: none; cursor: pointer; }
+a.badge:hover { border-color: currentColor; }
+
+/* Ficha de una acción del plan (PC.03.0 §5.3): descripción y eficacia son texto libre y pueden ser
+   largos, así que se muestran en bloques apilados, NO en una tabla que los recortaría. */
+.action-item {
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    margin-bottom: 10px;
+}
+.action-item:last-child { margin-bottom: 0; }
+.action-desc { margin: 0 0 10px; font-weight: 600; }
+/* Un campo por línea (columna): más legible que la fila, y un valor vacío ("—") nunca se lee
+   pegado a la etiqueta del campo siguiente. */
+.action-meta { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+.action-meta .meta-item { font-size: 14px; color: var(--text); }
+/* Grupo del CTA de eficacia: etiqueta + dos botones, para distinguirlo del botón de Autorizar. */
+.action-eval { display: inline-flex; align-items: center; gap: 8px; }
+.meta-label { color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .02em; margin-right: 6px; }
+.action-efficacy {
+    margin: 12px 0 0;
+    padding: 10px 12px;
+    background: var(--surface-sunken);
+    border-radius: var(--radius);
+}
+.action-efficacy .meta-label { display: block; margin: 0 0 3px; }
+.action-edit { margin: 10px 0 0; font-size: 14px; }
+/* Pie de acciones de una ficha: botones/enlaces (autorizar, editar…) en fila, separados de la meta. */
+.action-actions { display: flex; align-items: center; gap: 14px; margin: 12px 0 0; font-size: 14px; }
+/* Fila de acciones de una cabecera (transiciones de estado + editar). */
+.page-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* ---- Formularios -------------------------------------------------------- */
+/* Tarjeta contenedora de un formulario de alta/edición: ancho de línea cómodo y único
+   (antes cada plantilla llevaba un style="max-width" inline distinto). */
+.form-card { max-width: 640px; }
+/* Variante ancha para formularios con contenido tabular (matriz de permisos, checklist). */
+.form-card--wide { max-width: 720px; }
+/* Barra de acciones (Guardar / Cancelar): separación consistente y aire respecto al
+   último campo, en vez de botones pegados sin contenedor. */
+.form-actions { display: flex; align-items: center; gap: 10px; margin-top: 22px; }
+
+/* ---- Editor de documentos (Trix) ---------------------------------------- */
+.document-editor .field { margin-bottom: 20px; }
+.document-editor .field > label { display: block; font-weight: 600; margin-bottom: 4px; }
+.field-help { color: var(--text-muted); font-size: 13px; margin: 0 0 8px; }
+.document-editor trix-editor {
+    min-height: 340px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    font: 400 15px var(--font-body);
+    line-height: 1.55;
+    padding: 14px 16px;
+}
+.document-editor trix-toolbar .trix-button-group { border-color: var(--border-strong); }
+/* Cuerpo renderizado del documento en la ficha y en otras vistas. */
+.document-body { line-height: 1.6; }
+.document-body :where(ul, ol) { padding-left: 1.4em; }
+.document-body h1 { font-size: 20px; }
+.document-body h2 { font-size: 17px; }
+/* Subida discreta (Adjuntar firma): un enlace que abre el selector; el input nativo queda oculto. */
+.file-action { color: var(--accent); cursor: pointer; position: relative; white-space: nowrap; }
+.file-action input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+/* Sección de formulario: agrupa campos bajo un título en los formularios largos. Reset del
+   fieldset nativo + una línea divisoria sutil sobre cada grupo salvo el primero. */
+.form-section { border: 0; margin: 0; padding: 0; min-width: 0; }
+.form-section + .form-section { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--border); }
+.form-section-title {
+    padding: 0;
+    margin-bottom: 14px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.form-row { margin-bottom: 16px; }
+.form-row > label, label.required { display: block; font-weight: 500; margin-bottom: 6px; color: var(--text); }
+.form-row input[type="text"],
+.form-row input[type="email"],
+.form-row input[type="number"],
+.form-row input[type="date"],
+.form-row select,
+.form-row textarea,
+input[type="email"], input[type="text"], select, textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    font: 400 14px var(--font-body);
+    background: var(--surface);
+    color: var(--text);
+}
+/* Textareas más holgados y que crecen con el contenido: field-sizing:content los auto-ajusta en
+   navegadores modernos (degradación limpia al resize manual en los que no lo soporten). */
+.form-row textarea {
+    min-height: 120px;
+    line-height: 1.5;
+    resize: vertical;
+    field-sizing: content;
+    max-height: 60vh;
+}
+/* Select cerrado: chevron propio (como csa-vega). OJO: la lista DESPLEGADA es nativa del
+   SO; en macOS con el SO en oscuro se pinta oscura y el CSS no la fuerza. Para control
+   total habría que un dropdown propio en JS (componente, como csa-dropdown de csa-vega). */
+.form-row select, select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none' stroke='%235C6159' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='1 1.5 6 6.5 11 1.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    padding-right: 36px;
+    cursor: pointer;
+}
+.form-row input:focus, .form-row select:focus, .form-row textarea:focus {
+    border-color: var(--accent);
+    outline-offset: 0;
+}
+.form-row input[type="checkbox"] { width: auto; margin-right: 8px; }
+.help { color: var(--text-muted); font-size: 12.5px; margin: 6px 0 0; }
+
+/* ---- Select "enhanced" (selectmenu.js) -----------------------------------
+   El desplegable nativo del <select> lo pinta el SO y no se puede estilar (sale oscuro
+   en macOS dark). Lo reemplazamos por un menú propio, manteniendo el <select> oculto y
+   funcional. Portado de csa-vega. La flecha usa currentColor (sigue el tema). */
+.selectmenu { position: relative; }
+.selectmenu__native {
+    position: absolute; opacity: 0; width: 1px; height: 1px;
+    margin: -1px; padding: 0; border: 0; overflow: hidden;
+    clip: rect(0 0 0 0); pointer-events: none;
+}
+.selectmenu__trigger {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    width: 100%; box-sizing: border-box;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    font: 400 14px var(--font-body);
+    color: var(--text);
+    text-align: left; cursor: pointer;
+    transition: border-color .12s ease, background .12s ease;
+}
+.selectmenu__trigger:hover { border-color: var(--text-muted); }
+.selectmenu__trigger:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.selectmenu--open .selectmenu__trigger { border-color: var(--accent); }
+.selectmenu__trigger:disabled { opacity: .55; cursor: not-allowed; }
+.selectmenu__value { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.selectmenu__value--placeholder { color: var(--text-faint); }
+.selectmenu__trigger::after {
+    content: ''; flex-shrink: 0; width: 12px; height: 8px;
+    background-color: var(--text-muted);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpolyline points='1 1.5 6 6.5 11 1.5' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat center / contain;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpolyline points='1 1.5 6 6.5 11 1.5' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat center / contain;
+    transition: transform .12s ease;
+}
+.selectmenu--open .selectmenu__trigger::after { transform: rotate(180deg); }
+.selectmenu__menu {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 50;
+    max-height: 280px; overflow-y: auto;
+    margin: 0; padding: 4px 0; list-style: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-card);
+}
+.selectmenu__menu[hidden] { display: none; }
+.selectmenu__option {
+    padding: 9px 12px; font-size: 14px; line-height: 1.4; color: var(--text);
+    cursor: pointer; user-select: none;
+    transition: background .12s ease, color .12s ease;
+}
+.selectmenu__option:hover, .selectmenu__option--active { background: var(--accent-weak); color: var(--text); }
+.selectmenu__option[aria-selected="true"] { font-weight: 500; color: var(--accent); }
+.selectmenu__option--disabled { color: var(--text-faint); cursor: default; }
+.selectmenu__option--disabled:hover { background: transparent; }
+
+/* Errores de formulario de Symfony: se renderizan como <ul><li>. Los estilamos
+   nosotros (los tests dependen del selector .form-row ul li / ul li). */
+.form-row ul, form > ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.form-row ul li, form > ul li { color: var(--danger-text); font-size: 13px; }
+.form-row input[aria-invalid="true"], .form-row select[aria-invalid="true"] { border-color: var(--danger); }
+
+/* Bloque de error global del formulario (también usado en login). */
+.form-error {
+    background: var(--danger-weak);
+    color: var(--danger-text);
+    border: 1px solid var(--danger);
+    padding: 10px 14px;
+    border-radius: var(--radius);
+    margin-bottom: 14px;
+    font-size: 13.5px;
+}
+
+/* ---- Mensajes flash ----------------------------------------------------- */
+.flash {
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    margin-bottom: 16px;
+    border: 1px solid transparent;
+    font-size: 14px;
+}
+.flash.success { background: var(--success-weak); color: var(--success-text); border-color: var(--success); }
+.flash.error   { background: var(--danger-weak);  color: var(--danger-text);  border-color: var(--danger); }
+
+/* ---- Estado vacío (invitación a actuar) --------------------------------- */
+.empty-state {
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-lg);
+    padding: 36px;
+    text-align: center;
+    color: var(--text-muted);
+}
+.empty-state h2 { font-size: 20px; margin: 0 0 8px; }
+.empty-state p { margin: 0 0 16px; }
+
+/* ---- Paginación --------------------------------------------------------- */
+.pagination {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 18px;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+/* ---- Sello tipográfico (elemento de firma) ------------------------------ */
+.seal {
+    width: 96px; height: 96px;
+    border-radius: 50%;
+    border: 1.5px solid var(--accent);
+    box-shadow: inset 0 0 0 4px var(--bg), inset 0 0 0 5.5px var(--accent);
+    display: grid;
+    place-items: center;
+    text-align: center;
+    color: var(--accent);
+    line-height: 1.1;
+}
+.seal .seal-top, .seal .seal-bottom {
+    font-family: var(--font-mono);
+    font-size: 7px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+}
+.seal .seal-main { font-family: var(--font-display); font-size: 22px; font-weight: 500; }
+.seal--tilt { transform: rotate(-5deg); }
+.seal--sm { width: 72px; height: 72px; }
+.seal--sm .seal-main { font-size: 16px; }
+
+/* =============================================================================
+   Layout de autenticación (login / enlace enviado): sin shell, centrado
+   ============================================================================= */
+.auth {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: var(--canvas);
+    position: relative;
+    overflow: hidden;
+}
+/* Marca de agua: círculo grande de acento a baja opacidad. */
+.auth::after {
+    content: "";
+    position: absolute;
+    right: -120px; bottom: -120px;
+    width: 340px; height: 340px;
+    border-radius: 50%;
+    background: var(--accent);
+    opacity: .05;
+    pointer-events: none;
+}
+.auth-card {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 392px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    padding: 40px 36px;
+    text-align: center;
+}
+.auth-card .seal { margin: 0 auto 18px; }
+.auth-card h1 { font-size: 28px; margin: 8px 0 10px; }
+.auth-card .auth-lead { color: var(--text-muted); font-size: 14.5px; margin: 0 0 24px; }
+.auth-card .btn { width: 100%; padding: 13px; }
+.auth-card .auth-secondary { display: inline-block; margin-top: 14px; color: var(--text-muted); font-size: 14px; }
+.auth-card .auth-foot {
+    margin-top: 26px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+}
+.auth-card .form-row { text-align: left; }
+.auth-card hr { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
+
+/* =============================================================================
+   Responsive: la barra lateral colapsa a una nav horizontal en móvil
+   ============================================================================= */
+@media (max-width: 760px) {
+    .layout { grid-template-columns: 1fr; }
+    /* La barra lateral pasa a barra superior; la navegación entra como cajón lateral
+       desde la izquierda, superpuesta sobre el contenido, con fondo oscurecido. */
+    .sidebar {
+        flex-direction: column;
+        gap: 0;
+        padding: 8px 14px;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+    }
+    .sidebar-head { display: flex; align-items: center; justify-content: space-between; }
+    .nav-toggle { display: inline-flex; align-items: center; }
+    .sidebar .sidebar-foot { display: none; }
+
+    .nav {
+        position: fixed; top: 0; left: 0; bottom: 0;
+        width: 78%; max-width: 300px;
+        background: var(--surface-sidebar);
+        border-right: 1px solid var(--border);
+        padding: 16px 14px;
+        gap: 2px;
+        transform: translateX(-100%);
+        transition: transform .22s ease;
+        z-index: 60;
+        overflow-y: auto;
+    }
+    .sidebar.is-open .nav { transform: translateX(0); box-shadow: 0 0 40px rgba(0, 0, 0, .25); }
+    .nav a { padding: 11px 12px; }
+
+    .nav-backdrop {
+        display: block;
+        position: fixed; inset: 0;
+        background: rgba(0, 0, 0, .42);
+        opacity: 0; visibility: hidden;
+        transition: opacity .22s ease;
+        z-index: 55;
+    }
+    .sidebar.is-open .nav-backdrop { opacity: 1; visibility: visible; }
+
+    .topbar { padding: 0 16px; height: auto; min-height: 56px; flex-wrap: wrap; padding-top: 8px; padding-bottom: 8px; }
+    /* La topbar hace wrap en móvil: el buscador ocupa toda la fila y el panel se ancla a ambos
+       lados para no salirse de la pantalla. */
+    .quickjump { flex: 1 1 100%; }
+    .quickjump__input { width: 100%; }
+    .quickjump__panel { left: 0; right: 0; width: auto; max-width: none; }
+    .page { padding: 22px 16px; }
+    .page-head { flex-direction: column; }
+    .page-head h1 { font-size: 24px; }
+    /* Tablas: en móvil cada fila se apila como tarjeta "Etiqueta: valor". Las etiquetas
+       las inyecta responsive-tables.js leyendo las cabeceras (cero ediciones de plantilla). */
+    .card table { min-width: 0; }
+    .card thead { display: none; }
+    .card table, .card tbody, .card tbody tr { display: block; }
+    /* El filtro de table-tools.js oculta filas con [hidden]; aquí .card tbody tr (clase)
+       gana en especificidad al UA stylesheet, así que hay que re-ocultarlas explícitamente. */
+    .card tbody tr[hidden] { display: none; }
+    .card tbody tr {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: 6px 14px;
+        margin-bottom: 10px;
+    }
+    .card tbody tr:hover { background: transparent; }
+    .card tbody td {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 14px;
+        border: 0;
+        padding: 7px 0;
+        text-align: right;
+    }
+    .card tbody td::before {
+        content: attr(data-label);
+        font-family: var(--font-mono);
+        font-size: 10px;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+        text-align: left;
+        flex: none;
+    }
+}
+
+/* =============================================================================
+   Dashboard (panel de inicio)
+   ============================================================================= */
+.dash-greeting {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 32px;
+}
+.dash-greeting h1 { font-size: 34px; margin: 6px 0 8px; line-height: 1.1; letter-spacing: -.01em; }
+.dash-greeting .lead { color: var(--text-muted); margin: 0; max-width: 52ch; }
+.dash-greeting .seal { flex: none; }
+
+.dash-section-label { margin: 0 0 12px; }
+.dash-subhead { margin: 20px 0 10px; }
+
+.quick-links {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+    margin-bottom: 28px;
+}
+.quick-link {
+    display: block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px 18px;
+    text-decoration: none;
+    color: var(--text);
+    transition: border-color .12s ease, background .12s ease;
+}
+.quick-link:hover { border-color: var(--accent); background: var(--accent-weak); }
+.quick-link-title { display: block; font-family: var(--font-display); font-size: 17px; margin-bottom: 4px; }
+.quick-link-title::after { content: " →"; color: var(--accent); }
+.quick-link-desc { display: block; color: var(--text-muted); font-size: 13px; }
+
+.dash-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 18px;
+    align-items: start;
+}
+.dash-figure { font-family: var(--font-display); font-size: 30px; margin: 4px 0 2px; }
+.dash-figure span { font-family: var(--font-body); font-size: 14px; color: var(--text-muted); }
+.dash-note { display: flex; align-items: center; gap: 8px; margin: 16px 0; font-size: 14px; color: var(--text-muted); }
+
+/* ---- Worklist del inicio ("lo que me toca") ------------------------------
+   Semáforo de tres cifras (vencidas / próximas / al día) sobre MIS obligaciones:
+   es el PUNTO FOCAL de la pantalla. La cifra manda — serif grande a plena
+   saturación de estado, con la etiqueta reducida a pie de marcador. Las cifras a
+   cero se retiran (apagadas) para que las que importan brillen; y la alarma real
+   —vencidas con cuenta— recibe tinte + borde de estado, el único color fuerte
+   justificado del tablero. */
+.worklist-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin: 8px 0 32px;
+}
+.stat {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 22px 24px 20px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    text-decoration: none;
+    color: var(--text);
+    transition: border-color .12s ease, background .12s ease;
+}
+.stat:hover { border-color: var(--border-strong); }
+.stat-figure {
+    font-family: var(--font-display);
+    font-size: clamp(2.75rem, 6vw, 3.5rem);
+    font-weight: 500;
+    line-height: .9;
+    letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+}
+.stat-label {
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+/* La cifra es la señal: estado a plena saturación. La identidad de cada cifra no
+   recae solo en el color (WCAG 1.4.1): la etiqueta de texto ya distingue las tres,
+   y la alarma —vencidas— suma una segunda vía visual (tinte + borde) más abajo. */
+.stat--danger  .stat-figure { color: var(--danger); }
+.stat--warning .stat-figure { color: var(--warning); }
+.stat--success .stat-figure { color: var(--success); }
+/* Vencidas con cuenta: la alarma reclama la mirada con tinte y borde de estado. */
+.stat--danger:not(.is-zero) {
+    background: var(--danger-weak);
+    border-color: var(--danger);
+}
+.stat--danger:not(.is-zero) .stat-figure { color: var(--danger-text); }
+.stat--danger:not(.is-zero) .stat-label { color: var(--danger-text); }
+/* Cifras a cero: se apagan y ceden el foco a lo que sí pide acción. */
+.stat.is-zero { background: var(--surface); }
+.stat.is-zero .stat-figure { color: var(--text-faint); }
+.stat.is-zero .stat-label { color: var(--text-faint); }
+
+.worklist { list-style: none; margin: 0 0 18px; padding: 0; }
+.worklist-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    margin-bottom: 10px;
+}
+.worklist-item .badge,
+.worklist-item .btn { flex: none; }
+.worklist-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.worklist-title { font-weight: 500; color: var(--accent); text-decoration: none; }
+.worklist-title:hover { text-decoration: underline; }
+.worklist-code { font-size: 11px; }
+.worklist-due { flex: 0 0 auto; font-size: 13px; white-space: nowrap; color: var(--text-muted); }
+.worklist-due.is-overdue { color: var(--danger-text); font-weight: 500; }
+
+.worklist-clear { margin-bottom: 18px; }
+.worklist-links { display: flex; gap: 20px; flex-wrap: wrap; margin: 4px 0 28px; font-size: 14px; }
+.dash-admin { margin-top: 8px; }
+.dash-admin-links { margin: 12px 0 4px; }
+
+/* ---- Estado del sistema (mapa global por bloques PDCA) --------------------
+   Complementa al worklist personal: mientras aquél dice "lo que TE toca", este da
+   el mapa completo del SGA por fases (Plan/Do/Check/Act) con el estado de cada
+   módulo de un vistazo. El color del badge (misma escala semántica del resto de
+   la app) señala lo grave/pendiente; lo que está al día queda sobrio para que
+   resalte lo que pide acción. Solo aparecen los módulos que el rol puede leer. */
+.system-overview { margin: 8px 0 28px; }
+.system-phase { margin-bottom: 22px; }
+.system-phase-title {
+    font-family: var(--font-body);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 0 0 10px;
+}
+.module-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+}
+.module-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 18px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    text-decoration: none;
+    color: var(--text);
+    transition: border-color .12s ease, background .12s ease;
+}
+.module-card:hover { border-color: var(--border-strong); }
+.module-card-name { font-family: var(--font-display); font-size: 16px; }
+.module-card .badge { align-self: flex-start; }
+/* Lo grave y lo que pide atención reciben tinte de estado (segunda vía visual además
+   del texto del badge, WCAG 1.4.1); lo que está al día o neutro queda sobrio. */
+.module-card--grave { border-color: var(--danger); background: var(--danger-weak); }
+.module-card--attention { border-color: var(--warning); }
+
+/* Guía de flujo de un módulo ("qué falta este curso"): checklist con marcador de estado por paso. */
+.workflow-guide .page-head { margin-bottom: 2px; }
+.workflow-steps { list-style: none; counter-reset: step; margin: 6px 0 0; padding: 0; }
+.workflow-steps > li {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 2px;
+    border-top: 1px solid var(--border);
+}
+.workflow-steps > li:first-child { border-top: none; }
+/* Marcador circular: número por defecto, ✓ cuando está hecho, atenuado cuando está bloqueado. */
+.workflow-steps > li::before {
+    counter-increment: step;
+    content: counter(step);
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 600;
+    background: var(--surface-sunken);
+    color: var(--text-muted);
+    border: 1px solid var(--border-strong);
+}
+/* Pendiente = ámbar (atención), NO verde: el verde queda reservado a lo ya hecho, para que un
+   vistazo distinga "me toca" de "hecho" (--accent y --success son el mismo verde en el tema). */
+.workflow-steps > li.is-pending::before {
+    content: counter(step);
+    background: var(--warning-weak);
+    color: var(--warning-text);
+    border-color: var(--warning);
+}
+.workflow-steps > li.is-done::before {
+    content: "\2713"; /* ✓ */
+    background: var(--success-weak);
+    color: var(--success-text);
+    border-color: var(--success);
+}
+.workflow-steps > li.is-blocked { opacity: .5; }
+.workflow-step-label { flex: 1 1 auto; min-width: 0; }
+.workflow-step-aside { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+
+.activity { list-style: none; margin: 8px 0 0; padding: 0; }
+.activity li {
+    display: grid;
+    grid-template-columns: 64px 1fr auto;
+    gap: 10px;
+    align-items: baseline;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13.5px;
+}
+.activity li:last-child { border-bottom: 0; }
+.activity-when { color: var(--text-faint); font-size: 11.5px; }
+.activity-who { font-size: 12px; }
+.activity-more { display: inline-block; margin-top: 14px; font-size: 13px; text-decoration: none; }
+
+@media (max-width: 760px) {
+    .dash-greeting { flex-direction: column-reverse; align-items: flex-start; gap: 12px; }
+    .dash-greeting h1 { font-size: 26px; }
+    /* En móvil las tres cifras siguen en fila: estrecha el aire para que no se desborden. */
+    .worklist-stats { gap: 8px; }
+    .stat { padding: 16px 14px 14px; }
+    .stat-figure { font-size: clamp(2.25rem, 11vw, 2.75rem); }
+    .activity li { grid-template-columns: 56px 1fr; }
+    .activity-who { grid-column: 2; }
+    /* La fila de tarea apila: etiqueta + título arriba; vencimiento y botón debajo. */
+    .worklist-item { flex-wrap: wrap; }
+    .worklist-due { order: 3; }
+    .worklist-item .btn { order: 4; margin-left: auto; }
+}
+
+/* ---- Permisos por rol: toggle de administrador + matriz segmentada -------
+   El toggle de admin concede acceso total e ignora la matriz; cuando está activo
+   la matriz se atenúa (.is-disabled) vía JS. Cada área es un control segmentado
+   (radios ocultos + labels-botón), coloreado por nivel para escanear de un vistazo:
+   gris = sin acceso, ámbar = lectura, verde = edición. */
+.perm-admin { display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 12px 0; }
+.perm-admin__input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.perm-admin__track {
+    position: relative; flex-shrink: 0; width: 42px; height: 24px;
+    background: var(--border-strong); border-radius: 999px; transition: background var(--t-fast, .15s) ease;
+}
+.perm-admin__thumb {
+    position: absolute; top: 2px; left: 2px; width: 20px; height: 20px;
+    background: var(--surface); border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,.25);
+    transition: transform var(--t-fast, .15s) ease;
+}
+.perm-admin__input:checked + .perm-admin__track { background: var(--accent); }
+.perm-admin__input:checked + .perm-admin__track .perm-admin__thumb { transform: translateX(18px); }
+.perm-admin__input:focus-visible + .perm-admin__track { outline: 2px solid var(--focus); outline-offset: 2px; }
+.perm-admin__text { font-weight: 500; color: var(--text); line-height: 1.3; }
+.perm-admin__text small { display: block; font-weight: 400; font-size: 12.5px; color: var(--text-muted); }
+
+.perm-rows { display: flex; flex-direction: column; margin-top: 8px; }
+.perm-rows.is-disabled { opacity: .45; pointer-events: none; }
+.perm-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+.perm-row:last-child { border-bottom: 0; }
+.perm-row__label { font-size: 14px; font-weight: 500; color: var(--text); }
+
+/* Ancho fijo e idéntico en todas las filas para que las cajas cuadren. */
+.seg {
+    display: flex; flex-shrink: 0; width: 300px; gap: 2px; padding: 2px;
+    background: var(--surface-sunken); border: 1px solid var(--border-strong); border-radius: 999px;
+}
+.seg__input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.seg__btn {
+    flex: 1 1 0; margin: 0; padding: 6px 8px; text-align: center; white-space: nowrap;
+    font-size: 12.5px; font-weight: 500; line-height: 1.2; color: var(--text-muted);
+    cursor: pointer; user-select: none; border-radius: 999px;
+    transition: background var(--t-fast, .15s) ease, color var(--t-fast, .15s) ease;
+}
+.seg__btn:hover { color: var(--text); }
+.seg__input:checked + .seg__btn { color: var(--on-accent); box-shadow: 0 1px 2px rgba(0,0,0,.18); }
+.seg__input[value="none"]:checked + .seg__btn  { background: var(--text-muted); }
+.seg__input[value="read"]:checked + .seg__btn  { background: var(--warning); }
+.seg__input[value="write"]:checked + .seg__btn { background: var(--accent); }
+.seg__input:focus-visible + .seg__btn { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+@media (max-width: 560px) {
+    .perm-row { flex-direction: column; align-items: stretch; gap: 6px; }
+    .seg { width: 100%; }
+}
+
+/* Cabecera de pilar: es un <button> (plegable), pero conserva la estética de etiqueta "eyebrow".
+   La fila completa es clicable; el chevron a la derecha indica abierto/cerrado. */
+.nav-label {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    width: 100%; margin: .7rem 0 .3rem; padding: 4px .9rem;
+    background: transparent; border: 0; cursor: pointer; text-align: left;
+    font-family: inherit; font-size: 11px; font-weight: 600; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--text-faint);
+}
+.nav-label:hover { color: var(--text-muted); }
+/* Chevron CSS (sin imagen): apunta hacia abajo cuando está abierto, a la derecha al colapsar. */
+.nav-label::after {
+    content: ""; width: 6px; height: 6px; flex: none; margin-right: 2px;
+    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+    transform: translateY(-1px) rotate(45deg); transition: transform .15s ease;
+}
+.nav-pillar.is-collapsed .nav-label::after { transform: translateY(1px) rotate(-45deg); }
+
+/* --- Obligations cockpit ("Qué toca" y "Estructura SGA") --- */
+/* Conmutador de ámbito (Mías / Todas): pastillas, misma estética que .theme-toggle. */
+.scope-toggle {
+    display: inline-flex;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--surface-sunken);
+    margin-bottom: 1.2rem;
+}
+.scope-toggle a {
+    padding: 6px 14px;
+    font: 500 13px var(--font-body);
+    color: var(--text-muted);
+    text-decoration: none;
+}
+.scope-toggle a:hover { color: var(--text); }
+.scope-toggle a.is-active { background: var(--accent); color: var(--on-accent); }
+
+.obligation-group { margin-block: 1.6rem; }
+.obligation-group-head { display: flex; align-items: center; gap: .6rem; margin-bottom: .6rem; flex-wrap: wrap; }
+.watch-list { margin: 0; padding-left: 1.2rem; }
+.obligation-help { font-size: .85rem; margin-top: .2rem; max-width: 64ch; }
+.row-actions { text-align: right; white-space: nowrap; }
+.sga-phase { margin-block: 2rem; }
+.sga-phase-head { display: flex; align-items: baseline; gap: .6rem; padding-bottom: .4rem; border-bottom: 1px solid var(--border); }
+.sga-phase-code { color: var(--text-muted); font-size: .9em; }
+/* Resumen de cumplimiento por fase: barra de "al día" + cifras de vencidas/próximas. */
+.sga-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin: 10px 0 4px; }
+.sga-bar { flex: 0 0 160px; height: 6px; border-radius: 999px; background: var(--surface-sunken); overflow: hidden; }
+.sga-bar-fill { display: block; height: 100%; background: var(--success); }
+.sga-stat { font-size: 13px; }
+.sga-stat--danger { color: var(--danger-text); font-weight: 500; }
+.sga-stat--warning { color: var(--warning-text); font-weight: 500; }
+.sga-chapter { margin-top: 1.1rem; }
+
+/* =============================================================================
+   S2 — Admin de roles y usuarios
+   Bloque acotado: listado de roles (lista, no matriz), agrupación por pilares en
+   el editor y selector de roles del usuario. Solo tokens de "Registro".
+   ============================================================================= */
+
+/* --- Listado de roles: una fila por rol con resumen en una línea --- */
+.role-list { list-style: none; margin: 0; padding: 0; }
+.role-list__item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 2px;
+    border-bottom: 1px solid var(--border);
+}
+.role-list__item:last-child { border-bottom: 0; }
+.role-list__main { flex: 1 1 auto; min-width: 0; }
+.role-list__head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.role-list__name { font: 600 16px var(--font-body); color: var(--text); text-decoration: none; }
+.role-list__name:hover { color: var(--accent); text-decoration: underline; }
+.role-list__code { font-size: 12px; }
+.role-list__summary { margin: 2px 0 0; font-size: 13.5px; color: var(--text-muted); }
+.role-list__edit { flex: 0 0 auto; font-size: 14px; color: var(--accent); text-decoration: none; }
+.role-list__edit:hover { text-decoration: underline; }
+
+/* --- Editor de rol: cabecera de cada pilar PDCA sobre sus filas de área --- */
+.perm-group { margin-top: 10px; }
+.perm-group__head {
+    margin: 0;
+    padding: 14px 0 6px;
+    border-top: 1px solid var(--border);
+    font: 600 12px var(--font-body);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+}
+.perm-group:first-child .perm-group__head { border-top: 0; padding-top: 4px; }
+.perm-group__code { color: var(--text-faint); margin-right: 4px; }
+
+/* --- Asignación de roles al usuario: tarjeta por rol con nombre + descripción --- */
+.role-picker { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.role-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    cursor: pointer;
+    transition: border-color .12s ease, background .12s ease;
+}
+.role-option:hover { border-color: var(--accent); }
+.role-option__input { margin-top: 2px; flex: 0 0 auto; accent-color: var(--accent); }
+.role-option__body { display: flex; flex-direction: column; gap: 2px; }
+.role-option__name { font-weight: 500; color: var(--text); line-height: 1.3; }
+.role-option__desc { font-size: 13px; color: var(--text-muted); line-height: 1.35; }
+/* Estado seleccionado: la casilla nativa es el control real; :has solo lo refuerza. */
+.role-option:has(.role-option__input:checked) { border-color: var(--accent); background: var(--accent-weak); }
+
+/* =============================================================================
+   Calendario anual de obligaciones (obligation_calendar)
+   El color del borde agrupa por pilar PDCA; el icono/texto identifican (no solo
+   color, por accesibilidad). La urgencia es un punto, no el color de fondo.
+   ============================================================================= */
+.cal-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 14px 0 18px; padding: 0; font-size: 12px; color: var(--text-muted); }
+.cal-legend li { display: flex; align-items: center; gap: 6px; }
+.cal-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--text-faint); }
+.cal-dot--plan { background: var(--pillar-plan); }
+.cal-dot--do { background: var(--pillar-do); }
+.cal-dot--check { background: var(--pillar-check); }
+.cal-dot--act { background: var(--pillar-act); }
+.cal-dot--overdue { background: var(--danger); }
+.cal-dot--due_soon { background: var(--warning); }
+
+.cal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.cal-month { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px; }
+.cal-month.is-current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.cal-month-name { font-size: 15px; margin: 0 0 10px; }
+.cal-empty { margin: 0; font-size: 12.5px; }
+.cal-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+
+/* Cada marca: borde izquierdo en el color del pilar; toda la fila es clicable. */
+.cal-mark { border-left: 3px solid var(--mark-color, var(--border-strong)); border-radius: 2px; background: var(--surface-sunken); }
+.cal-mark--plan { --mark-color: var(--pillar-plan); }
+.cal-mark--do { --mark-color: var(--pillar-do); }
+.cal-mark--check { --mark-color: var(--pillar-check); }
+.cal-mark--act { --mark-color: var(--pillar-act); }
+.cal-mark--none { --mark-color: var(--border-strong); }
+.cal-mark a, .cal-mark .cal-mark-row { display: flex; align-items: center; gap: 6px; padding: 5px 8px; text-decoration: none; color: var(--text); font-size: 12.5px; }
+.cal-mark a:hover { background: var(--accent-weak); }
+.cal-mark-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-mark-code { font-size: 10px; flex: none; }
+
+.cal-event { margin-top: 22px; }
+.cal-event .cal-list { max-width: 540px; }
+.cal-legend-row { display: flex; flex-wrap: wrap; gap: 6px 28px; align-items: center; margin: 14px 0 18px; }
+.cal-legend-row .cal-legend { margin: 0; }
+.cal-legend-sep { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: var(--text-faint); }
+.cal-note { margin: 16px 0 0; font-size: 12.5px; }
+
+/* Dynamic CollectionType rows (e.g. risk action plan): each entry is a self-contained card with a
+   numbered header ("Acción 1, 2…") and its own small "Quitar", so it is obvious each block is one
+   item and what add/remove affect. The global "+ Añadir" sits in a single .form-actions bar below. */
+.collection-item { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; background: var(--surface-sunken); }
+.collection-item + .collection-item { margin-top: 14px; }
+.collection-item__bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.collection-item__title { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: var(--text-faint); }
+.btn-sm { padding: 4px 12px; font-size: 13px; }
+
+/* Botón de ayuda contextual "?" (el panel lo abre help.js; el estilo vive AQUÍ, no inyectado por JS,
+   para que no haya flash al cargar: el HTML ya trae los "?" y necesitan su tamaño desde el primer
+   pintado). El propio SVG lleva además fill/stroke/tamaño como atributos, como segunda red. */
+.help-btn { display: inline-flex; width: 1.05em; height: 1.05em; flex: none; vertical-align: -0.12em; margin-inline-start: .35em; color: var(--text-muted); text-decoration: none; }
+.help-btn:hover, .help-btn:focus-visible { color: var(--accent); }
+.help-btn__icon { width: 100%; height: 100%; display: block; }
+.help-btn__icon circle { fill: none; stroke: currentColor; stroke-width: 1.4; }
+.help-btn__icon text { fill: currentColor; font-size: 12px; font-weight: 700; font-family: var(--font-body), sans-serif; }
+/* Etiqueta de un campo + su "?" en la misma línea (el <label> deja de ser hijo directo de .form-row,
+   así que este contenedor asume su espaciado). */
+.help-field-label { display: flex; align-items: center; margin-bottom: 6px; font-weight: 500; color: var(--text); }
+.form-row .help-field-label > label { margin-bottom: 0; font-weight: inherit; }

@@ -1,0 +1,15 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Revisa tu correo{% endblock %}
+
+{% block shell %}
+    <div class="auth">
+        <div class="auth-card">
+            <div class="brand-mark brand-mark--lg">{{ include('partials/_brand_mark.html.twig', { size: 56 }) }}</div>
+
+            <h1>Revisa tu correo</h1>
+            <p class="auth-lead">Si <strong>{{ email }}</strong> corresponde a un usuario registrado, te hemos enviado un enlace para entrar. Es válido durante 10 minutos.</p>
+            <a class="btn secondary" href="{{ path('login') }}">Volver</a>
+        </div>
+    </div>
+{% endblock %}
