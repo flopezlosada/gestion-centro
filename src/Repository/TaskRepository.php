@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Repository;
 
+use App\Entity\Role;
 use App\Entity\Task;
+use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
@@ -28,6 +30,38 @@ class TaskRepository extends ServiceEntityRepository
     public function findBySchoolYear(string $schoolYear): array
     {
         return $this->findBy(['schoolYear' => $schoolYear], ['dueDate' => 'ASC', 'id' => 'ASC']);
+    }
+
+    /**
+     * A person's agenda for a course: the tasks assigned to them directly or to any of their roles,
+     * earliest deadline first.
+     *
+     * @param User   $user       the person
+     * @param string $schoolYear the course in "YYYY-YYYY" form
+     *
+     * @return Task[] the person's tasks that course
+     */
+    public function findAgendaFor(User $user, string $schoolYear): array
+    {
+        $roleIds = array_values(array_filter(
+            $user->getAssignedRoles()->map(static fn (Role $role): ?int => $role->getId())->toArray(),
+        ));
+
+        $qb = $this->createQueryBuilder('t')
+            ->andWhere('t.schoolYear = :year')
+            ->setParameter('year', $schoolYear)
+            ->orderBy('t.dueDate', 'ASC')
+            ->addOrderBy('t.id', 'ASC');
+
+        if ([] === $roleIds) {
+            $qb->andWhere('t.assignedUser = :user')->setParameter('user', $user);
+        } else {
+            $qb->andWhere('t.assignedUser = :user OR IDENTITY(t.assignedRole) IN (:roles)')
+                ->setParameter('user', $user)
+                ->setParameter('roles', $roleIds);
+        }
+
+        return $qb->getQuery()->getResult();
     }
 
     /**

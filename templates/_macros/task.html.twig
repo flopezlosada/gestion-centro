@@ -1,0 +1,28 @@
+{#
+   Helpers de presentación de tareas, compartidos por la agenda, el plan y la ficha:
+   la etiqueta humana del estado y su badge de color (reusa las clases de app.css).
+#}
+
+{% macro status_label(status) %}
+    {%- set labels = {
+        'pending': 'Pendiente',
+        'in_progress': 'En curso',
+        'submitted': 'Enviada',
+        'done': 'Hecha',
+        'validated': 'Validada',
+        'rejected': 'Rechazada',
+    } -%}
+    {{- labels[status]|default(status) -}}
+{% endmacro %}
+
+{% macro status_badge(status) %}
+    {%- set classes = {
+        'pending': 'badge--muted',
+        'in_progress': 'badge--review',
+        'submitted': 'badge--warning',
+        'done': 'badge--success',
+        'validated': 'badge--done',
+        'rejected': 'badge--danger',
+    } -%}
+    <span class="badge {{ classes[status]|default('badge--muted') }}">{{ _self.status_label(status) }}</span>
+{% endmacro %}

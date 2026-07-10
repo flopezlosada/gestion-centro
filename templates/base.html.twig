@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>{% block title %}Gestión ISO 14001{% endblock %}</title>
+        <title>{% block title %}{{ app_organization_name }}{% endblock %}</title>
         <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 
         {# Anti-FOUC: fija el tema antes de pintar, según la elección guardada o la preferencia del sistema. #}
@@ -30,14 +30,9 @@
         {% block javascripts %}
             <script src="{{ asset_ver('/js/theme.js') }}"></script>
             <script src="{{ asset_ver('/js/nav.js') }}"></script>
-            <script src="{{ asset_ver('/js/nav-pillars.js') }}"></script>
             <script src="{{ asset_ver('/js/responsive-tables.js') }}"></script>
-            <script src="{{ asset_ver('/js/selectmenu.js') }}"></script>
             <script src="{{ asset_ver('/js/table-tools.js') }}"></script>
-            <script src="{{ asset_ver('/js/quickjump.js') }}"></script>
             <script src="{{ asset_ver('/js/confirm-dialog.js') }}"></script>
-            <script src="{{ asset_ver('/js/collection.js') }}"></script>
-            <script src="{{ asset_ver('/js/help.js') }}"></script>
         {% endblock %}
     </body>
 </html>

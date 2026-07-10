@@ -1,0 +1,85 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/task.html.twig' as task %}
+
+{% block title %}Inicio · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}Inicio{% endblock %}
+
+{% block body %}
+    {% set openStatuses = ['pending', 'in_progress', 'submitted', 'rejected'] %}
+    {% set pending = agenda|filter(t => t.status in openStatuses) %}
+
+    <div class="page-head">
+        <div>
+            <h1>Hola, {{ app.user.fullName|split(' ')|first }}</h1>
+            <p class="lead">Tu día a día del curso {{ schoolYear }}: lo que tienes que hacer y el plan del centro.</p>
+        </div>
+    </div>
+
+    <div class="worklist-stats">
+        <div class="stat">
+            <span class="stat-figure">{{ pending|length }}</span>
+            <span class="stat-label">Tareas tuyas por hacer</span>
+        </div>
+        <div class="stat {{ agenda|length ? 'stat--success' }}">
+            <span class="stat-figure">{{ agenda|length }}</span>
+            <span class="stat-label">Tareas tuyas este curso</span>
+        </div>
+        <div class="stat">
+            <span class="stat-figure">{{ plan|length }}</span>
+            <span class="stat-label">Tareas del centro este curso</span>
+        </div>
+    </div>
+
+    <section class="card">
+        <div class="page-head">
+            <div><h2>Mi agenda</h2><p class="lead">Tus tareas y las de tus responsabilidades, por fecha.</p></div>
+        </div>
+        {% if agenda is empty %}
+            <div class="empty-state">
+                <h2>No tienes tareas asignadas en {{ schoolYear }}</h2>
+                <p>Cuando dirección planifique tareas para ti o para tus roles, aparecerán aquí.</p>
+            </div>
+        {% else %}
+            <table data-list-tools>
+                <thead>
+                    <tr><th>Tarea</th><th>Fecha límite</th><th>Estado</th></tr>
+                </thead>
+                <tbody>
+                    {% for t in agenda %}
+                        <tr>
+                            <td><a href="{{ path('task_show', { id: t.id }) }}">{{ t.title }}</a>{% if not t.mandatory %} <span class="badge badge--muted">Voluntaria</span>{% endif %}</td>
+                            <td>{{ t.dueDate|date('d/m/Y') }}</td>
+                            <td>{{ task.status_badge(t.status) }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </section>
+
+    <section class="card">
+        <div class="page-head">
+            <div><h2>Plan del centro</h2><p class="lead">La planificación de referencia del curso {{ schoolYear }}.</p></div>
+            <div><a class="btn btn-secondary" href="{{ path('task_index') }}">Ver todo</a></div>
+        </div>
+        {% if plan is empty %}
+            <div class="empty-state"><h2>Aún no hay tareas planificadas en {{ schoolYear }}</h2></div>
+        {% else %}
+            <table>
+                <thead>
+                    <tr><th>Tarea</th><th>Unidad</th><th>Fecha límite</th><th>Estado</th></tr>
+                </thead>
+                <tbody>
+                    {% for t in plan|slice(0, 8) %}
+                        <tr>
+                            <td><a href="{{ path('task_show', { id: t.id }) }}">{{ t.title }}</a></td>
+                            <td>{{ t.unit ? t.unit.name : '—' }}</td>
+                            <td>{{ t.dueDate|date('d/m/Y') }}</td>
+                            <td>{{ task.status_badge(t.status) }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </section>
+{% endblock %}

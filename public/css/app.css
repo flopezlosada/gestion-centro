@@ -1439,3 +1439,18 @@ input[type="email"], input[type="text"], select, textarea {
    así que este contenedor asume su espaciado). */
 .help-field-label { display: flex; align-items: center; margin-bottom: 6px; font-weight: 500; color: var(--text); }
 .form-row .help-field-label > label { margin-bottom: 0; font-weight: inherit; }
+
+/* ---- Histórico de actividad por objeto (partial _activity_log, reusable en cualquier show) ----
+   Namespace propio (.obj-timeline*) para no heredar el grid de .activity del panel de inicio. Lista
+   quién hizo qué y cuándo, con el diff campo a campo: valor viejo tachado en rojo → nuevo en acento. */
+.obj-timeline { list-style: none; margin: 8px 0 0; padding: 0; }
+.obj-timeline__item { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.obj-timeline__item:last-child { border-bottom: 0; }
+.obj-timeline__head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.obj-timeline__verb { font-weight: 600; }
+.obj-timeline__meta { font-size: 12.5px; }
+.obj-timeline__changes { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
+.obj-timeline__changes > li { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.obj-timeline__field { min-width: 9ch; color: var(--text-muted); font-variant: small-caps; }
+.obj-timeline__del { color: var(--danger); text-decoration: line-through; }
+.obj-timeline__add { color: var(--accent); }
