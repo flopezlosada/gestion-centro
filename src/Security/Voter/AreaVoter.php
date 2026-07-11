@@ -12,9 +12,10 @@ use Symfony\Component\Security\Core\Authorization\Voter\Voter;
 
 /**
  * Grants read/write access to a functional {@see Area} based on the user's roles. Use as
- * `denyAccessUnlessGranted(AreaVoter::WRITE, $area)` with any {@see Area} case (e.g. CONSUMPTION, WASTE).
+ * `denyAccessUnlessGranted(AreaVoter::WRITE, $area)` with any {@see Area} case (e.g. ADMINISTRATION).
  *
- * ROLE_ADMIN bypasses the matrix; everyone else needs a role that grants the required level.
+ * ROLE_ADMIN (the role's admin flag) bypasses the matrix; everyone else needs a role that grants the
+ * required level. This is what lets Direction manage the administration area without being a superuser.
  *
  * @extends Voter<string, Area>
  */

@@ -5,24 +5,24 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\User;
+use App\Enum\Area;
 use App\Form\UserType;
 use App\Repository\UserRepository;
+use App\Security\Voter\AreaVoter;
 use App\Service\AuditLogger;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
-use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 /**
  * Admin management of users (the access allow-list). Registering a user here is what lets a person
  * sign in; deactivating one revokes access without deleting the record (so their history stays
- * intact). The whole /admin area is restricted to ROLE_ADMIN in security.yaml; the attribute below
- * is a redundant, explicit guard at the controller.
+ * intact). Every action demands write access to the {@see Area::ADMINISTRATION} area (via the
+ * {@see AreaVoter}), so Direction can manage users without holding the superuser admin flag.
  */
 #[Route('/admin/usuarios')]
-#[IsGranted('ROLE_ADMIN')]
 final class AdminUserController extends AbstractController
 {
     public function __construct(private readonly AuditLogger $auditLogger)
@@ -35,6 +35,8 @@ final class AdminUserController extends AbstractController
     #[Route('', name: 'admin_user_index', methods: ['GET'])]
     public function index(UserRepository $users): Response
     {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
+
         return $this->render('admin/user/index.html.twig', [
             'users' => $users->findBy([], ['fullName' => 'ASC']),
         ]);
@@ -70,6 +72,8 @@ final class AdminUserController extends AbstractController
      */
     private function handleForm(User $user, Request $request, EntityManagerInterface $em, bool $isNew): Response
     {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
+
         $form = $this->createForm(UserType::class, $user);
         $form->handleRequest($request);
 

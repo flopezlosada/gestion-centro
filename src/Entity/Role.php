@@ -16,8 +16,10 @@ use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
- * A responsibility within the school (e.g. Direction, Head of Studies, Head of Department, Tutor,
- * Secretary).
+ * A transversal responsibility/permission label within the school (e.g. Dirección, TIC, Docente,
+ * Tutor). It is NOT how the chain of command is expressed: "head of Maths" is not a role but the
+ * person who is the {@see Unit::getManager()} of that unit. Roles carry permissions (the matrix)
+ * and identity labels; the hierarchy lives in the {@see Unit} tree.
  *
  * Roles are a configurable catalog, not a fixed enum: several people can share the same
  * responsibility (co-responsibles) and the admin can add people and split tasks. A
@@ -52,7 +54,7 @@ class Role implements Auditable
 
     /**
      * Read/write access per area: a map of area value => level value. Areas absent from the map
-     * grant no access. Stored as a JSON object in MySQL (e.g. {"task":"write"}); an empty
+     * grant no access. Stored as a JSON object in MySQL (e.g. {"administration":"write"}); an empty
      * map serialises as {} — keep that in mind for any future direct JSON queries.
      *
      * @var array<string, string>

@@ -5,18 +5,18 @@ declare(strict_types=1);
 namespace App\Enum;
 
 /**
- * Functional area of the system over which access (read/write) is granted per role.
+ * Functional area of the system over which access (read/write) is granted per role, through the
+ * permission matrix ({@see \App\Entity\Role} + {@see \App\Security\Voter\AreaVoter}).
  *
- * This catalog grows as each module is built; only areas that have a real module are listed,
- * so the permission matrix never shows knobs for features that do not exist yet. Administrative
- * screens (users, roles, activity trail) are gated by the role's admin flag, not by an area.
+ * Only areas that genuinely require a permission live here. Tasks and the calendar are NOT areas:
+ * they are visible to everyone and filtered by the chain of command, so they carry no matrix knob.
+ * This catalog grows as new gated modules appear. Administration (users, roles, org chart, calendar
+ * of non-teaching days) is the first such area: it lets Direction manage the centre without being a
+ * superuser, while the role's admin flag still bypasses the matrix entirely.
  */
 enum Area: string
 {
-    case TASK = 'task';
-    case TEMPLATE = 'template';
-    case ORGANIZATION = 'organization';
-    case CALENDAR = 'calendar';
+    case ADMINISTRATION = 'administration';
 
     /**
      * Human-facing area name (Spanish), used in the permissions matrix.
@@ -26,16 +26,12 @@ enum Area: string
     public function label(): string
     {
         return match ($this) {
-            self::TASK => 'Tareas',
-            self::TEMPLATE => 'Plantillas de tareas',
-            self::ORGANIZATION => 'Organigrama',
-            self::CALENDAR => 'Calendario',
+            self::ADMINISTRATION => 'Administración',
         };
     }
 
     /**
      * Name of the module's index route, so screens can deep-link to where the area is worked on.
-     * Single source of truth for the sidebar menu's active-item highlight.
      *
      * Convention: the route name ends in '_index'.
      *
@@ -44,10 +40,7 @@ enum Area: string
     public function indexRoute(): string
     {
         return match ($this) {
-            self::TASK => 'task_index',
-            self::TEMPLATE => 'task_template_index',
-            self::ORGANIZATION => 'organization_index',
-            self::CALENDAR => 'calendar_index',
+            self::ADMINISTRATION => 'admin_user_index',
         };
     }
 
@@ -58,6 +51,6 @@ enum Area: string
      */
     public static function inDisplayOrder(): array
     {
-        return [self::TASK, self::TEMPLATE, self::CALENDAR, self::ORGANIZATION];
+        return [self::ADMINISTRATION];
     }
 }
