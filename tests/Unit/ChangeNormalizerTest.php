@@ -32,7 +32,7 @@ final class ChangeNormalizerTest extends TestCase
 
     public function testNormalizeReducesBackedEnumToItsValue(): void
     {
-        self::assertSame('task', ChangeNormalizer::normalize(Area::TASK));
+        self::assertSame('administration', ChangeNormalizer::normalize(Area::ADMINISTRATION));
         self::assertSame('write', ChangeNormalizer::normalize(PermissionLevel::WRITE));
     }
 

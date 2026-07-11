@@ -63,8 +63,10 @@ class Role implements Auditable
     /**
      * Superuser flag: when true this role grants full access to every {@see Area}, bypassing the
      * {@see $permissions} matrix entirely (see {@see \App\Security\Voter\AreaVoter}). It also makes
-     * its holders ROLE_ADMIN — so it gates the /admin and /audit sections too. Explicit on purpose:
-     * admin power is an auditable checkbox, not a side effect of naming a role "admin".
+     * its holders ROLE_ADMIN, which gates the sensitive /audit trail. The /admin back-office itself is
+     * gated by write access to {@see Area::ADMINISTRATION}, which this flag satisfies by bypass — so a
+     * non-superuser role granted that area can also manage. Explicit on purpose: admin power is an
+     * auditable checkbox, not a side effect of naming a role "admin".
      */
     #[ORM\Column]
     private bool $admin = false;

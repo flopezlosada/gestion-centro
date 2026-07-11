@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\Task;
-use App\Enum\Area;
+use App\Entity\User;
 use App\Repository\TaskRepository;
-use App\Security\Voter\AreaVoter;
+use App\Service\TaskVisibility;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\CurrentUser;
 
 /**
  * Monthly calendar view of the course task plan: the same tasks as the list, laid out on a
@@ -32,16 +33,16 @@ final class CalendarController extends AbstractController
      * Renders the month grid for the requested month (or the current one), with the tasks whose
      * deadline falls on each visible day.
      *
-     * @param Request        $request the HTTP request; optional query param "mes" in "YYYY-MM" form
-     * @param TaskRepository $tasks   the task repository
+     * @param Request         $request    the HTTP request; optional query param "mes" in "YYYY-MM" form
+     * @param User            $user       the authenticated user, to scope the visible tasks
+     * @param TaskRepository  $tasks      the task repository
+     * @param TaskVisibility  $visibility the task visibility scope built from the organisation chart
      *
      * @return Response the rendered calendar page
      */
     #[Route('/calendario', name: 'calendar_index', methods: ['GET'])]
-    public function index(Request $request, TaskRepository $tasks): Response
+    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility): Response
     {
-        $this->denyAccessUnlessGranted(AreaVoter::READ, Area::TASK);
-
         $timeZone = new \DateTimeZone(self::TIME_ZONE);
         $today = new \DateTimeImmutable('today', $timeZone);
         $monthStart = $this->resolveMonthStart($request->query->getString('mes'), $today, $timeZone);
@@ -56,7 +57,7 @@ final class CalendarController extends AbstractController
             'monthLabel' => self::MONTH_NAMES[(int) $monthStart->format('n')].' '.$monthStart->format('Y'),
             'prevMonth' => $monthStart->modify('-1 month')->format('Y-m'),
             'nextMonth' => $monthStart->modify('+1 month')->format('Y-m'),
-            'weeks' => $this->buildWeeks($monthStart, $gridStart, $gridEnd, $today, $tasks->findDueBetween($gridStart, $gridEnd)),
+            'weeks' => $this->buildWeeks($monthStart, $gridStart, $gridEnd, $today, $visibility->visibleTo($tasks->findDueBetween($gridStart, $gridEnd), $user, $this->isGranted('ROLE_ADMIN'))),
         ]);
     }
 

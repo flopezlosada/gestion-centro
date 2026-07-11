@@ -8,8 +8,6 @@ use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\Unit;
 use App\Entity\User;
-use App\Enum\Area;
-use App\Enum\PermissionLevel;
 use App\Enum\TaskType;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
@@ -17,8 +15,8 @@ use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 /**
- * The monthly calendar must render for a user with read access to tasks and lay each task out on the
- * grid of the month its deadline falls into.
+ * The monthly calendar must render for any authenticated user and lay each task they may see out on
+ * the grid of the month its deadline falls into.
  */
 final class CalendarPageTest extends WebTestCase
 {
@@ -33,7 +31,7 @@ final class CalendarPageTest extends WebTestCase
 
     public function testCalendarShowsTaskOnItsMonth(): void
     {
-        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setLevel(Area::TASK, PermissionLevel::READ);
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente');
         $this->em->persist($teacherRole);
 
         $teacher = (new User())->setFullName('Profe Test')->setEmail('profe@centro.test')->addAssignedRole($teacherRole);

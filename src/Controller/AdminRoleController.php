@@ -9,21 +9,21 @@ use App\Enum\Area;
 use App\Enum\PermissionLevel;
 use App\Form\RoleType;
 use App\Repository\RoleRepository;
+use App\Security\Voter\AreaVoter;
 use App\Service\AuditLogger;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
-use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 /**
  * Admin management of roles and their per-area permission matrix. The matrix levels are unmapped
  * form fields (one per {@see Area}); this controller writes them back onto the role via
- * {@see Role::setLevel()}. Admins only.
+ * {@see Role::setLevel()}. Gated per action by write permission on the {@see Area::ADMINISTRATION}
+ * area.
  */
 #[Route('/admin/roles')]
-#[IsGranted('ROLE_ADMIN')]
 final class AdminRoleController extends AbstractController
 {
     public function __construct(private readonly AuditLogger $auditLogger)
@@ -36,6 +36,8 @@ final class AdminRoleController extends AbstractController
     #[Route('', name: 'admin_role_index', methods: ['GET'])]
     public function index(RoleRepository $roles): Response
     {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
+
         return $this->render('admin/role/index.html.twig', [
             'roles' => $roles->findAllOrdered(),
         ]);
@@ -72,6 +74,8 @@ final class AdminRoleController extends AbstractController
      */
     private function handleForm(Role $role, Request $request, EntityManagerInterface $em, bool $isNew): Response
     {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
+
         $form = $this->createForm(RoleType::class, $role);
         $form->handleRequest($request);
 

@@ -6,14 +6,13 @@ namespace App\Controller;
 
 use App\Entity\Task;
 use App\Entity\User;
-use App\Enum\Area;
 use App\Form\TaskFormData;
 use App\Form\TaskFormType;
 use App\Repository\AuditLogRepository;
 use App\Repository\TaskRepository;
 use App\Repository\UserRepository;
-use App\Security\Voter\AreaVoter;
 use App\Service\OrganizationHierarchy;
+use App\Service\TaskVisibility;
 use App\Service\TaskWorkflow;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
@@ -31,16 +30,19 @@ final class TaskController extends AbstractController
     /** Transitions reserved to the superior/admin (guarded by the workflow); the rest are progress. */
     private const array SUPERIOR_TRANSITIONS = ['validate', 'reject'];
 
+    /**
+     * The course plan, scoped to the tasks the user may see: their own, those under a unit they are a
+     * superior of, or every task for an admin (see {@see TaskVisibility}). The page itself is open to
+     * any authenticated user; the organisation chart decides what shows up, not the permission matrix.
+     */
     #[Route('/tareas', name: 'task_index', methods: ['GET'])]
-    public function index(Request $request, TaskRepository $tasks): Response
+    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility): Response
     {
-        $this->denyAccessUnlessGranted(AreaVoter::READ, Area::TASK);
-
         $schoolYear = $request->query->getString('curso') ?: SchoolYear::current(new \DateTimeImmutable());
 
         return $this->render('task/index.html.twig', [
             'schoolYear' => $schoolYear,
-            'tasks' => $tasks->findBySchoolYear($schoolYear),
+            'tasks' => $visibility->visibleTo($tasks->findBySchoolYear($schoolYear), $user, $this->isGranted('ROLE_ADMIN')),
         ]);
     }
 
@@ -141,8 +143,6 @@ final class TaskController extends AbstractController
         OrganizationHierarchy $hierarchy,
         TaskWorkflow $workflows,
     ): Response {
-        $this->denyAccessUnlessGranted(AreaVoter::READ, Area::TASK);
-
         // The activity history is recorded for everyone; on the object's page it is shown to the
         // people involved in the task (whoever works on it) and to its superiors/admins — never to
         // an unrelated user.
