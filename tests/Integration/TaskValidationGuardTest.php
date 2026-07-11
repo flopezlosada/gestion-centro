@@ -83,6 +83,32 @@ final class TaskValidationGuardTest extends WebTestCase
         self::assertFalse($this->canValidate($client, $s['task']));
     }
 
+    private function canReject(Task $task): bool
+    {
+        /** @var TaskWorkflow $workflows */
+        $workflows = self::getContainer()->get('test.task_workflow');
+
+        return $workflows->for($task)->can($task, 'reject');
+    }
+
+    public function testSuperiorCanReject(): void
+    {
+        $client = static::createClient();
+        $s = $this->scenario();
+        $client->loginUser($s['headStudies']);
+
+        self::assertTrue($this->canReject($s['task']), 'un superior puede devolver la tarea');
+    }
+
+    public function testOutsiderCannotReject(): void
+    {
+        $client = static::createClient();
+        $s = $this->scenario();
+        $client->loginUser($this->user('otro'));
+
+        self::assertFalse($this->canReject($s['task']), 'devolver es acción de superior, no de cualquiera');
+    }
+
     public function testAssigneeCannotValidateOwnTaskEvenIfManager(): void
     {
         $client = static::createClient();

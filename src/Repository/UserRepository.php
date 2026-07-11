@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repository;
 
 use App\Entity\Role;
+use App\Entity\Unit;
 use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
@@ -47,6 +48,29 @@ class UserRepository extends ServiceEntityRepository
             ->where('r = :role')
             ->andWhere('u.active = true')
             ->setParameter('role', $role)
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Active users belonging to any of the given units, by full name. Used to build the "assign to"
+     * choices, scoped to a creator's own unit and the units below it.
+     *
+     * @param list<Unit> $units the units to look in
+     *
+     * @return User[] the active users in those units
+     */
+    public function findActiveInUnits(array $units): array
+    {
+        if ([] === $units) {
+            return [];
+        }
+
+        return $this->createQueryBuilder('u')
+            ->andWhere('u.unit IN (:units)')
+            ->andWhere('u.active = true')
+            ->setParameter('units', $units)
+            ->orderBy('u.fullName', 'ASC')
             ->getQuery()
             ->getResult();
     }

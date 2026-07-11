@@ -97,6 +97,11 @@ class Task implements Auditable
     #[ORM\Column(name: 'created_at', type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
 
+    /** Who created the task (null for seeded/imported tasks). */
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'created_by_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?User $createdBy = null;
+
     public function __construct(string $title, string $schoolYear, \DateTimeImmutable $dueDate, TaskType $type = TaskType::SIMPLE)
     {
         $this->title = $title;
@@ -308,5 +313,17 @@ class Task implements Auditable
     public function getCreatedAt(): \DateTimeImmutable
     {
         return $this->createdAt;
+    }
+
+    public function getCreatedBy(): ?User
+    {
+        return $this->createdBy;
+    }
+
+    public function setCreatedBy(?User $createdBy): static
+    {
+        $this->createdBy = $createdBy;
+
+        return $this;
     }
 }
