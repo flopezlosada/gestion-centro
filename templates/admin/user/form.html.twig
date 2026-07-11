@@ -1,0 +1,51 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}{{ user.id ? 'Editar usuario' : 'Nuevo usuario' }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('admin_user_index') }}">Usuarios</a><span class="sep">/</span>
+    {{ user.id ? 'Editar' : 'Nuevo' }}
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <h1>{{ user.id ? 'Editar usuario' : 'Nuevo usuario' }}</h1>
+    </div>
+
+    <div class="card form-card">
+        {{ form_start(form, { 'attr': { 'novalidate': 'novalidate' } }) }}
+            {{ form_errors(form) }}
+            {{ f.fields([form.fullName, form.email]) }}
+            <div class="form-row">
+                {{ form_widget(form.active) }} {{ form_label(form.active) }}
+            </div>
+            {{ f.fields([form.unit]) }}
+            <div class="form-row">
+                {{ form_label(form.assignedRoles) }}
+                <p class="help">Marca los roles de esta persona. Suman acceso: basta con que un rol conceda un permiso para tenerlo.</p>
+                {# Cada rol como tarjeta con su nombre + qué puede hacer (descripción inyectada vía
+                   choice_attr), no casillas sueltas. Estado seleccionado vía :has (la casilla nativa
+                   sigue siendo el control real, así que funciona aunque :has no esté soportado). #}
+                <div class="role-picker">
+                    {% for child in form.assignedRoles %}
+                        <label class="role-option">
+                            {{ form_widget(child, { attr: { class: 'role-option__input' } }) }}
+                            <span class="role-option__body">
+                                <span class="role-option__name">{{ child.vars.label }}</span>
+                                {% if child.vars.attr['data-description'] is defined and child.vars.attr['data-description'] %}
+                                    <span class="role-option__desc">{{ child.vars.attr['data-description'] }}</span>
+                                {% endif %}
+                            </span>
+                        </label>
+                    {% else %}
+                        <p class="muted">No hay roles definidos todavía.</p>
+                    {% endfor %}
+                </div>
+                {{ form_errors(form.assignedRoles) }}
+            </div>
+            {{ f.actions(path('admin_user_index')) }}
+        {{ form_end(form) }}
+    </div>
+{% endblock %}

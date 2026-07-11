@@ -1,0 +1,29 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}{{ unit.id ? 'Editar unidad' : 'Nueva unidad' }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('admin_unit_index') }}">Organigrama</a><span class="sep">/</span>
+    {{ unit.id ? 'Editar' : 'Nueva' }}
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <h1>{{ unit.id ? 'Editar unidad' : 'Nueva unidad' }}</h1>
+    </div>
+
+    <div class="card form-card">
+        {{ form_start(form, { 'attr': { 'novalidate': 'novalidate' } }) }}
+            {{ form_errors(form) }}
+            {{ f.fields([form.code, form.name, form.description]) }}
+            <div class="form-row">
+                {{ form_widget(form.active) }} {{ form_label(form.active) }}
+                {% if form.active.vars.help %}<p class="help">{{ form.active.vars.help }}</p>{% endif %}
+            </div>
+            {{ f.fields([form.parent, form.manager]) }}
+            {{ f.actions(path('admin_unit_index')) }}
+        {{ form_end(form) }}
+    </div>
+{% endblock %}

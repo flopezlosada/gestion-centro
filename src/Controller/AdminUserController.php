@@ -1,0 +1,96 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Controller;
+
+use App\Entity\User;
+use App\Form\UserType;
+use App\Repository\UserRepository;
+use App\Service\AuditLogger;
+use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
+
+/**
+ * Admin management of users (the access allow-list). Registering a user here is what lets a person
+ * sign in; deactivating one revokes access without deleting the record (so their history stays
+ * intact). The whole /admin area is restricted to ROLE_ADMIN in security.yaml; the attribute below
+ * is a redundant, explicit guard at the controller.
+ */
+#[Route('/admin/usuarios')]
+#[IsGranted('ROLE_ADMIN')]
+final class AdminUserController extends AbstractController
+{
+    public function __construct(private readonly AuditLogger $auditLogger)
+    {
+    }
+
+    /**
+     * Lists every user ordered by name.
+     */
+    #[Route('', name: 'admin_user_index', methods: ['GET'])]
+    public function index(UserRepository $users): Response
+    {
+        return $this->render('admin/user/index.html.twig', [
+            'users' => $users->findBy([], ['fullName' => 'ASC']),
+        ]);
+    }
+
+    /**
+     * Registers a new user (active by default).
+     */
+    #[Route('/nuevo', name: 'admin_user_new', methods: ['GET', 'POST'])]
+    public function new(Request $request, EntityManagerInterface $em): Response
+    {
+        return $this->handleForm((new User())->setActive(true), $request, $em, true);
+    }
+
+    /**
+     * Edits an existing user.
+     */
+    #[Route('/{id}/editar', name: 'admin_user_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
+    public function edit(User $user, Request $request, EntityManagerInterface $em): Response
+    {
+        return $this->handleForm($user, $request, $em, false);
+    }
+
+    /**
+     * Renders and processes the create/edit form, persisting and auditing on a valid submit.
+     *
+     * @param User                   $user    the user being created or edited
+     * @param Request                $request the current request
+     * @param EntityManagerInterface $em      the entity manager
+     * @param bool                   $isNew   whether this is a creation (affects the audit action)
+     *
+     * @return Response the form page, or a redirect to the list on success
+     */
+    private function handleForm(User $user, Request $request, EntityManagerInterface $em, bool $isNew): Response
+    {
+        $form = $this->createForm(UserType::class, $user);
+        $form->handleRequest($request);
+
+        if ($form->isSubmitted() && $form->isValid()) {
+            $em->persist($user);
+            $em->flush();
+
+            $this->auditLogger->log(
+                $isNew ? 'user.created' : 'user.updated',
+                'User',
+                (string) $user->getId(),
+                sprintf('Usuario %s (%s)', $user->getFullName(), $user->getEmail()),
+            );
+            $this->addFlash('success', 'Usuario guardado.');
+
+            return $this->redirectToRoute('admin_user_index');
+        }
+
+        return $this->render('admin/user/form.html.twig', [
+            'form' => $form,
+            'user' => $user,
+        ]);
+    }
+}

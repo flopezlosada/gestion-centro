@@ -1,0 +1,53 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Roles{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Roles y permisos{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Roles y permisos</h1>
+            <p class="lead">Cada rol define qué puede leer o escribir en cada área. Las personas heredan el acceso de sus roles.</p>
+        </div>
+        <a class="btn" href="{{ path('admin_role_new') }}">+ Nuevo rol</a>
+    </div>
+
+    <div class="card">
+        {% if roles is empty %}
+            <div class="empty-state">
+                <h2>No hay roles todavía</h2>
+                <p>Crea el primer rol y define sus permisos por área.</p>
+                <a class="btn" href="{{ path('admin_role_new') }}">Nuevo rol</a>
+            </div>
+        {% else %}
+            {# Lista (no matriz): cada rol resume su acceso en una línea, calculada desde su mapa de
+               permisos (Role::levelCounts). #}
+            <ul class="role-list">
+                {% for role in roles %}
+                    <li class="role-list__item">
+                        <div class="role-list__main">
+                            <div class="role-list__head">
+                                <a class="role-list__name" href="{{ path('admin_role_edit', { id: role.id }) }}">{{ role.name }}</a>
+                                <span class="mono muted role-list__code">{{ role.code }}</span>
+                            </div>
+                            <p class="role-list__summary">
+                                {%- if role.isAdmin -%}
+                                    Acceso total (administrador)
+                                {%- else -%}
+                                    {%- set c = role.levelCounts -%}
+                                    {%- set parts = [] -%}
+                                    {%- if c.write > 0 %}{% set parts = parts|merge(['Escritura en ' ~ c.write]) %}{% endif -%}
+                                    {%- if c.read > 0 %}{% set parts = parts|merge(['Lectura en ' ~ c.read]) %}{% endif -%}
+                                    {%- if (c.write > 0 or c.read > 0) and c.none > 0 %}{% set parts = parts|merge(['Sin acceso al resto']) %}{% endif -%}
+                                    {{- parts is empty ? 'Sin acceso a ninguna área' : parts|join(' · ') -}}
+                                {%- endif -%}
+                            </p>
+                        </div>
+                        <a class="role-list__edit" href="{{ path('admin_role_edit', { id: role.id }) }}">Editar</a>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    </div>
+{% endblock %}

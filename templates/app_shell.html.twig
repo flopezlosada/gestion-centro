@@ -24,6 +24,17 @@
                 <a href="{{ path('calendar_index') }}" class="{{ route starts with 'calendar_' ? 'is-active' }}">Calendario</a>
                 {% set unread = unread_notifications() %}
                 <a href="{{ path('notification_index') }}" class="{{ route starts with 'notification_' ? 'is-active' }}">Avisos{% if unread > 0 %} <span class="badge badge--danger">{{ unread }}</span>{% endif %}</a>
+
+                {# Administración: alta de personas, roles/permisos y organigrama. Solo para
+                   administradores; la sección /admin está además protegida en security.yaml. #}
+                {% if is_granted('ROLE_ADMIN') %}
+                    <span class="nav-section-title">Administración</span>
+                    <div class="nav-group">
+                        <a href="{{ path('admin_user_index') }}" class="{{ route starts with 'admin_user_' ? 'is-active' }}">Usuarios</a>
+                        <a href="{{ path('admin_role_index') }}" class="{{ route starts with 'admin_role_' ? 'is-active' }}">Roles y permisos</a>
+                        <a href="{{ path('admin_unit_index') }}" class="{{ route starts with 'admin_unit_' ? 'is-active' }}">Unidades</a>
+                    </div>
+                {% endif %}
             </nav>
 
             <div class="nav-backdrop"></div>
