@@ -1,0 +1,62 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/task.html.twig' as taskUi %}
+
+{% block title %}Calendario · {{ monthLabel }} · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Calendario{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Calendario de tareas</h1>
+            <p class="lead">El plan de tareas del centro, mes a mes, por fecha límite.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="calendar-toolbar">
+            <a class="btn secondary btn-sm" href="{{ path('calendar_index', { mes: prevMonth }) }}" rel="prev">‹ Mes anterior</a>
+            <h2 class="calendar-title">{{ monthLabel }}</h2>
+            <a class="btn secondary btn-sm" href="{{ path('calendar_index', { mes: nextMonth }) }}" rel="next">Mes siguiente ›</a>
+        </div>
+
+        <div class="calendar" role="grid" aria-label="Calendario del mes de {{ monthLabel }}">
+            <div class="calendar-weekdays" role="row">
+                {% for weekday in ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] %}
+                    <div class="calendar-weekday" role="columnheader">{{ weekday }}</div>
+                {% endfor %}
+            </div>
+
+            <div class="calendar-grid">
+                {% for week in weeks %}
+                    <div class="calendar-week" role="row">
+                        {% for cell in week %}
+                            <div class="calendar-day{{ cell.inMonth ? '' : ' is-outside' }}{{ cell.isToday ? ' is-today' : '' }}" role="gridcell">
+                                <div class="calendar-daynum">
+                                    <span{% if cell.isToday %} aria-current="date"{% endif %}>{{ cell.date|date('j') }}</span>
+                                </div>
+                                {% if cell.tasks is not empty %}
+                                    <ul class="calendar-tasks">
+                                        {% for t in cell.tasks %}
+                                            <li>
+                                                <a class="calendar-task" href="{{ path('task_show', { id: t.id }) }}" title="{{ t.title }}">
+                                                    {{ taskUi.status_dot(t.status) }}
+                                                    <span class="calendar-task-title">{{ t.title }}</span>
+                                                </a>
+                                            </li>
+                                        {% endfor %}
+                                    </ul>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <ul class="calendar-legend" aria-label="Leyenda de estados">
+            {% for status in ['pending', 'in_progress', 'submitted', 'done', 'validated', 'rejected'] %}
+                <li>{{ taskUi.status_dot(status) }} {{ taskUi.status_label(status) }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+{% endblock %}
