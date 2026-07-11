@@ -18,25 +18,44 @@ use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\CurrentUser;
 
 /**
- * Monthly calendar view of the course task plan: the same tasks as the list, laid out on a
- * seven-column (Mon–Sun) month grid by their deadline, with previous/next month navigation.
+ * Calendar view of the course task plan, laying each task out by its deadline. The same page serves
+ * four zoom levels selected with the "vista" query parameter — day (agenda), week, month and year —
+ * all anchored on the "fecha" (YYYY-MM-DD) parameter, with previous/next navigation per level.
+ *
+ * @phpstan-type DayCell array{date: \DateTimeImmutable, inMonth: bool, isToday: bool, isWeekend: bool, nonLective: ?NonLectiveDay, tasks: Task[]}
+ * @phpstan-type MiniCell array{day: string, date: string, inMonth: bool, isToday: bool, hasTasks: bool, status: ?string}
  */
 final class CalendarController extends AbstractController
 {
-    /** Application time zone: the school lives in peninsular Spain, so "this month" is Madrid's. */
+    /** Application time zone: the school lives in peninsular Spain, so "today" is Madrid's. */
     private const string TIME_ZONE = 'Europe/Madrid';
 
-    /** Spanish month names, indexed 1–12, for the calendar header. */
+    /** The day, week, month and year views, and the one used when "vista" is missing or unknown. */
+    private const array VIEWS = ['dia', 'semana', 'mes', 'anio'];
+    private const string DEFAULT_VIEW = 'mes';
+
+    /** Spanish month names, indexed 1–12, for the calendar labels. */
     private const array MONTH_NAMES = [
         1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril', 5 => 'Mayo', 6 => 'Junio',
         7 => 'Julio', 8 => 'Agosto', 9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre',
     ];
 
+    /** Spanish weekday names, indexed by ISO-8601 day of week (1 = Monday … 7 = Sunday). */
+    private const array WEEKDAY_NAMES = [
+        1 => 'lunes', 2 => 'martes', 3 => 'miércoles', 4 => 'jueves', 5 => 'viernes', 6 => 'sábado', 7 => 'domingo',
+    ];
+
     /**
-     * Renders the month grid for the requested month (or the current one), with the tasks whose
-     * deadline falls on each visible day, and the non-teaching days marked.
+     * Task status priority for the single dot shown per day in the year view, most attention-needing
+     * first: a rejected task must be redone, a pending one not started, and so on down to closed.
+     */
+    private const array STATUS_PRIORITY = ['rejected', 'pending', 'in_progress', 'submitted', 'done', 'validated'];
+
+    /**
+     * Renders the calendar at the requested zoom level and anchor date (both optional), with the
+     * tasks whose deadline falls on each visible day and the non-teaching days marked.
      *
-     * @param Request                 $request        the HTTP request; optional query param "mes" in "YYYY-MM" form
+     * @param Request                 $request        the HTTP request; optional query params "vista" and "fecha"
      * @param User                    $user           the authenticated user, to scope the visible tasks
      * @param TaskRepository          $tasks          the task repository
      * @param TaskVisibility          $visibility     the task visibility scope built from the organisation chart
@@ -50,108 +69,418 @@ final class CalendarController extends AbstractController
     {
         $timeZone = new \DateTimeZone(self::TIME_ZONE);
         $today = new \DateTimeImmutable('today', $timeZone);
-        $monthStart = $this->resolveMonthStart($request->query->getString('mes'), $today, $timeZone);
-        $monthEnd = $monthStart->modify('last day of this month');
+        $view = $this->resolveView($request->query->getString('vista'));
+        $anchor = $this->resolveDate($request->query->getString('fecha'), $today, $timeZone);
 
-        // Extend the range to the full visible grid (from the Monday of the first week to the Sunday
-        // of the last one) so tasks landing on spill-over days of adjacent months also show.
-        $gridStart = $monthStart->modify('-'.((int) $monthStart->format('N') - 1).' days');
-        $gridEnd = $monthEnd->modify('+'.(7 - (int) $monthEnd->format('N')).' days');
+        [$rangeStart, $rangeEnd] = $this->rangeFor($view, $anchor);
+        $visible = $visibility->visibleTo($tasks->findDueBetween($rangeStart, $rangeEnd), $user, $this->isGranted('ROLE_ADMIN'));
+        $byDay = $this->groupByDay($visible);
+        $nonLectiveByDay = $this->indexNonLectiveDays($nonLectiveDays->findBetween($rangeStart, $rangeEnd));
 
-        $visible = $visibility->visibleTo($tasks->findDueBetween($gridStart, $gridEnd), $user, $this->isGranted('ROLE_ADMIN'));
+        $model = match ($view) {
+            'dia' => $this->dayModel($anchor, $today, $byDay, $nonLectiveByDay, $schoolCalendar),
+            'semana' => $this->weekModel($anchor, $today, $byDay, $nonLectiveByDay, $schoolCalendar),
+            'anio' => $this->yearModel($anchor, $today, $byDay, $nonLectiveByDay, $schoolCalendar),
+            default => $this->monthModel($anchor, $today, $byDay, $nonLectiveByDay, $schoolCalendar),
+        };
 
         return $this->render('calendar/index.html.twig', [
-            'monthLabel' => self::MONTH_NAMES[(int) $monthStart->format('n')].' '.$monthStart->format('Y'),
-            'prevMonth' => $monthStart->modify('-1 month')->format('Y-m'),
-            'nextMonth' => $monthStart->modify('+1 month')->format('Y-m'),
-            'weeks' => $this->buildWeeks(
-                $monthStart,
-                $gridStart,
-                $gridEnd,
-                $today,
-                $visible,
-                $nonLectiveDays->findBetween($gridStart, $gridEnd),
-                $schoolCalendar,
-            ),
+            'view' => $view,
+            'anchor' => $anchor,
+            'views' => self::VIEWS,
+            'prevDate' => $this->step($view, $anchor, -1),
+            'nextDate' => $this->step($view, $anchor, 1),
+            'todayDate' => $today->format('Y-m-d'),
+            ...$model,
         ]);
     }
 
     /**
-     * Parses the "mes" query parameter into the first day of that month, falling back to the first
-     * day of the current month when it is missing or malformed.
+     * Normalises the "vista" parameter to one of the known views, falling back to the month view.
      *
-     * @param string             $raw      the raw "mes" value, expected in "YYYY-MM" form
-     * @param \DateTimeImmutable  $today    the reference "today" used for the fallback
-     * @param \DateTimeZone       $timeZone the application time zone
+     * @param string $raw the raw "vista" value
      *
-     * @return \DateTimeImmutable midnight on the first day of the resolved month
+     * @return string one of {@see self::VIEWS}
      */
-    private function resolveMonthStart(string $raw, \DateTimeImmutable $today, \DateTimeZone $timeZone): \DateTimeImmutable
+    private function resolveView(string $raw): string
     {
-        if (1 === preg_match('/^\d{4}-\d{2}$/', $raw)) {
-            $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $raw.'-01', $timeZone);
+        return \in_array($raw, self::VIEWS, true) ? $raw : self::DEFAULT_VIEW;
+    }
+
+    /**
+     * Parses the "fecha" parameter into a day, falling back to today when it is missing or malformed.
+     *
+     * @param string             $raw      the raw "fecha" value, expected in "YYYY-MM-DD" form
+     * @param \DateTimeImmutable $today    the reference "today" used for the fallback
+     * @param \DateTimeZone      $timeZone the application time zone
+     *
+     * @return \DateTimeImmutable midnight on the resolved day
+     */
+    private function resolveDate(string $raw, \DateTimeImmutable $today, \DateTimeZone $timeZone): \DateTimeImmutable
+    {
+        // Validate the calendar date, not just its shape: checkdate() rejects overflow days
+        // (e.g. 2026-02-30) that createFromFormat() would silently roll over into the next month.
+        if (1 === preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $raw, $parts) && \checkdate((int) $parts[2], (int) $parts[3], (int) $parts[1])) {
+            $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $raw, $timeZone);
             if (false !== $parsed) {
                 return $parsed;
             }
         }
 
-        return $today->modify('first day of this month');
+        return $today;
     }
 
     /**
-     * Lays the given tasks out on the month grid: one row per week, seven day cells per row.
+     * The inclusive day range whose tasks the given view needs: the day itself, its Monday–Sunday
+     * week, the full visible month grid (including spill-over days), or the whole calendar year.
      *
-     * @param \DateTimeImmutable $monthStart     the first day of the month being displayed
-     * @param \DateTimeImmutable $gridStart      the first (Monday) day of the visible grid
-     * @param \DateTimeImmutable $gridEnd        the last (Sunday) day of the visible grid
-     * @param \DateTimeImmutable $today          today, to flag the current day
-     * @param Task[]             $tasks          the tasks whose deadline falls within the grid range
-     * @param NonLectiveDay[]    $nonLectiveDays the non-teaching days within the grid range
-     * @param SchoolCalendar     $schoolCalendar the teaching-day calendar, to flag weekends
+     * @param string             $view   the resolved view
+     * @param \DateTimeImmutable $anchor the anchor day
      *
-     * @return list<list<array{date: \DateTimeImmutable, inMonth: bool, isToday: bool, isWeekend: bool, nonLective: ?NonLectiveDay, tasks: Task[]}>> the weeks, each a list of seven day cells
+     * @return array{0: \DateTimeImmutable, 1: \DateTimeImmutable} the range start and end
      */
-    private function buildWeeks(
-        \DateTimeImmutable $monthStart,
-        \DateTimeImmutable $gridStart,
-        \DateTimeImmutable $gridEnd,
-        \DateTimeImmutable $today,
-        array $tasks,
-        array $nonLectiveDays,
-        SchoolCalendar $schoolCalendar,
-    ): array {
+    private function rangeFor(string $view, \DateTimeImmutable $anchor): array
+    {
+        if ('semana' === $view) {
+            $start = $this->weekStart($anchor);
+
+            return [$start, $start->modify('+6 days')];
+        }
+
+        $year = (int) $anchor->format('Y');
+
+        return match ($view) {
+            'dia' => [$anchor, $anchor],
+            'anio' => [$anchor->setDate($year, 1, 1), $anchor->setDate($year, 12, 31)],
+            default => $this->monthGridRange($anchor),
+        };
+    }
+
+    /**
+     * The anchor date shifted one step in the given direction at the granularity of the view: a day,
+     * a week, a month or a year. Used to build the previous/next navigation links.
+     *
+     * @param string             $view   the resolved view
+     * @param \DateTimeImmutable $anchor the current anchor day
+     * @param int                $dir    the direction, -1 for previous or +1 for next
+     *
+     * @return string the shifted day in "YYYY-MM-DD" form
+     */
+    private function step(string $view, \DateTimeImmutable $anchor, int $dir): string
+    {
+        $shifted = match ($view) {
+            'dia' => $anchor->modify(\sprintf('%+d days', $dir)),
+            'semana' => $anchor->modify(\sprintf('%+d days', 7 * $dir)),
+            // Keep the same month/day so switching Year→Month after the jump lands on the right month;
+            // setDate normalises a 29-Feb anchor into a non-leap target year natively.
+            'anio' => $anchor->setDate((int) $anchor->format('Y') + $dir, (int) $anchor->format('n'), (int) $anchor->format('j')),
+            default => $anchor->modify('first day of this month')->modify(\sprintf('%+d month', $dir)),
+        };
+
+        return $shifted->format('Y-m-d');
+    }
+
+    /**
+     * Groups the given tasks by their deadline day, keyed "YYYY-MM-DD".
+     *
+     * @param Task[] $tasks the tasks to group
+     *
+     * @return array<string, Task[]> the tasks indexed by deadline day
+     */
+    private function groupByDay(array $tasks): array
+    {
         $byDay = [];
         foreach ($tasks as $task) {
             $byDay[$task->getDueDate()->format('Y-m-d')][] = $task;
         }
 
-        $nonLectiveByDay = [];
-        foreach ($nonLectiveDays as $day) {
-            $nonLectiveByDay[$day->getDate()->format('Y-m-d')] = $day;
+        return $byDay;
+    }
+
+    /**
+     * Indexes the given non-teaching days by day, keyed "YYYY-MM-DD".
+     *
+     * @param NonLectiveDay[] $days the non-teaching days to index
+     *
+     * @return array<string, NonLectiveDay> the non-teaching days indexed by day
+     */
+    private function indexNonLectiveDays(array $days): array
+    {
+        $byDay = [];
+        foreach ($days as $day) {
+            $byDay[$day->getDate()->format('Y-m-d')] = $day;
         }
 
-        $currentMonth = $monthStart->format('Y-m');
-        $todayKey = $today->format('Y-m-d');
+        return $byDay;
+    }
+
+    /**
+     * The day-view model: the single anchor day as a cell, with the tasks due on it.
+     *
+     * @param \DateTimeImmutable           $anchor          the anchor day
+     * @param \DateTimeImmutable           $today           today, to flag the current day
+     * @param array<string, Task[]>        $byDay           tasks indexed by deadline day
+     * @param array<string, NonLectiveDay> $nonLectiveByDay non-teaching days indexed by day
+     * @param SchoolCalendar               $schoolCalendar  the teaching-day calendar
+     *
+     * @return array{template: string, label: string, day: DayCell} the template and view data
+     */
+    private function dayModel(\DateTimeImmutable $anchor, \DateTimeImmutable $today, array $byDay, array $nonLectiveByDay, SchoolCalendar $schoolCalendar): array
+    {
+        return [
+            'template' => 'calendar/_day.html.twig',
+            'label' => self::WEEKDAY_NAMES[(int) $anchor->format('N')].', '.$anchor->format('j').' de '.$this->monthName($anchor).' de '.$anchor->format('Y'),
+            'day' => $this->cell($anchor, null, $today, $byDay, $nonLectiveByDay, $schoolCalendar),
+        ];
+    }
+
+    /**
+     * The week-view model: the Monday–Sunday week containing the anchor day, as seven cells.
+     *
+     * @param \DateTimeImmutable           $anchor          the anchor day
+     * @param \DateTimeImmutable           $today           today, to flag the current day
+     * @param array<string, Task[]>        $byDay           tasks indexed by deadline day
+     * @param array<string, NonLectiveDay> $nonLectiveByDay non-teaching days indexed by day
+     * @param SchoolCalendar               $schoolCalendar  the teaching-day calendar
+     *
+     * @return array{template: string, label: string, week: list<DayCell>} the template and view data
+     */
+    private function weekModel(\DateTimeImmutable $anchor, \DateTimeImmutable $today, array $byDay, array $nonLectiveByDay, SchoolCalendar $schoolCalendar): array
+    {
+        $start = $this->weekStart($anchor);
+        $end = $start->modify('+6 days');
+        $week = [];
+        for ($day = 0; $day < 7; ++$day) {
+            $week[] = $this->cell($start->modify('+'.$day.' days'), null, $today, $byDay, $nonLectiveByDay, $schoolCalendar);
+        }
+
+        return [
+            'template' => 'calendar/_week.html.twig',
+            'label' => $this->rangeLabel($start, $end),
+            'week' => $week,
+        ];
+    }
+
+    /**
+     * The month-view model: the visible month grid as one row of seven cells per week.
+     *
+     * @param \DateTimeImmutable           $anchor          the anchor day (its month is displayed)
+     * @param \DateTimeImmutable           $today           today, to flag the current day
+     * @param array<string, Task[]>        $byDay           tasks indexed by deadline day
+     * @param array<string, NonLectiveDay> $nonLectiveByDay non-teaching days indexed by day
+     * @param SchoolCalendar               $schoolCalendar  the teaching-day calendar
+     *
+     * @return array{template: string, label: string, weeks: list<list<DayCell>>} the template and view data
+     */
+    private function monthModel(\DateTimeImmutable $anchor, \DateTimeImmutable $today, array $byDay, array $nonLectiveByDay, SchoolCalendar $schoolCalendar): array
+    {
+        return [
+            'template' => 'calendar/_month.html.twig',
+            'label' => $this->monthName($anchor).' '.$anchor->format('Y'),
+            'weeks' => $this->monthWeeks($anchor, $today, $byDay, $nonLectiveByDay, $schoolCalendar),
+        ];
+    }
+
+    /**
+     * The year-view model: the twelve months of the anchor year, each as a compact grid whose days
+     * carry a single status dot when at least one task is due, keyed for the month-view link.
+     *
+     * @param \DateTimeImmutable           $anchor          the anchor day (its year is displayed)
+     * @param \DateTimeImmutable           $today           today, to flag the current day
+     * @param array<string, Task[]>        $byDay           tasks indexed by deadline day
+     * @param array<string, NonLectiveDay> $nonLectiveByDay non-teaching days indexed by day
+     * @param SchoolCalendar               $schoolCalendar  the teaching-day calendar
+     *
+     * @return array{template: string, label: string, months: list<array{name: string, date: string, weeks: list<list<MiniCell>>}>} the template and view data
+     */
+    private function yearModel(\DateTimeImmutable $anchor, \DateTimeImmutable $today, array $byDay, array $nonLectiveByDay, SchoolCalendar $schoolCalendar): array
+    {
+        $months = [];
+        for ($month = 1; $month <= 12; ++$month) {
+            $first = $anchor->setDate((int) $anchor->format('Y'), $month, 1);
+            $weeks = [];
+            foreach ($this->monthWeeks($first, $today, $byDay, $nonLectiveByDay, $schoolCalendar) as $week) {
+                $weeks[] = array_map($this->miniCell(...), $week);
+            }
+            $months[] = [
+                'name' => self::MONTH_NAMES[$month],
+                'date' => $first->format('Y-m-d'),
+                'weeks' => $weeks,
+            ];
+        }
+
+        return [
+            'template' => 'calendar/_year.html.twig',
+            'label' => $anchor->format('Y'),
+            'months' => $months,
+        ];
+    }
+
+    /**
+     * Builds the weeks of the visible grid for the month of the given day: from the Monday of its
+     * first week to the Sunday of its last, seven cells per week.
+     *
+     * @param \DateTimeImmutable           $anchor          the day whose month is laid out
+     * @param \DateTimeImmutable           $today           today, to flag the current day
+     * @param array<string, Task[]>        $byDay           tasks indexed by deadline day
+     * @param array<string, NonLectiveDay> $nonLectiveByDay non-teaching days indexed by day
+     * @param SchoolCalendar               $schoolCalendar  the teaching-day calendar
+     *
+     * @return list<list<DayCell>> the weeks, each a list of seven day cells
+     */
+    private function monthWeeks(\DateTimeImmutable $anchor, \DateTimeImmutable $today, array $byDay, array $nonLectiveByDay, SchoolCalendar $schoolCalendar): array
+    {
+        [$gridStart, $gridEnd] = $this->monthGridRange($anchor);
+        $month = $anchor->format('Y-m');
 
         $weeks = [];
         $cursor = $gridStart;
         while ($cursor <= $gridEnd) {
             $week = [];
             for ($day = 0; $day < 7; ++$day) {
-                $key = $cursor->format('Y-m-d');
-                $week[] = [
-                    'date' => $cursor,
-                    'inMonth' => $cursor->format('Y-m') === $currentMonth,
-                    'isToday' => $key === $todayKey,
-                    'isWeekend' => $schoolCalendar->isWeekend($cursor),
-                    'nonLective' => $nonLectiveByDay[$key] ?? null,
-                    'tasks' => $byDay[$key] ?? [],
-                ];
+                $week[] = $this->cell($cursor, $month, $today, $byDay, $nonLectiveByDay, $schoolCalendar);
                 $cursor = $cursor->modify('+1 day');
             }
             $weeks[] = $week;
         }
 
         return $weeks;
+    }
+
+    /**
+     * The inclusive range of the visible month grid: the Monday of the month's first week to the
+     * Sunday of its last week.
+     *
+     * @param \DateTimeImmutable $anchor the day whose month grid is measured
+     *
+     * @return array{0: \DateTimeImmutable, 1: \DateTimeImmutable} the grid start and end
+     */
+    private function monthGridRange(\DateTimeImmutable $anchor): array
+    {
+        $monthStart = $anchor->modify('first day of this month');
+        $monthEnd = $anchor->modify('last day of this month');
+
+        return [
+            $monthStart->modify('-'.((int) $monthStart->format('N') - 1).' days'),
+            $monthEnd->modify('+'.(7 - (int) $monthEnd->format('N')).' days'),
+        ];
+    }
+
+    /**
+     * The Monday of the ISO week containing the given day.
+     *
+     * @param \DateTimeImmutable $date the day
+     *
+     * @return \DateTimeImmutable the Monday of that week
+     */
+    private function weekStart(\DateTimeImmutable $date): \DateTimeImmutable
+    {
+        return $date->modify('-'.((int) $date->format('N') - 1).' days');
+    }
+
+    /**
+     * Builds one day cell. A cell is "in month" when it belongs to $month (or always, for the day and
+     * week views where $month is null); only in-month days carry the non-teaching marker, so the
+     * month's own non-teaching days stand apart from the neighbouring-month days that spill into the grid.
+     *
+     * @param \DateTimeImmutable           $date            the cell's day
+     * @param string|null                  $month           the displayed month "YYYY-MM", or null to treat every day as in-month
+     * @param \DateTimeImmutable           $today           today, to flag the current day
+     * @param array<string, Task[]>        $byDay           tasks indexed by deadline day
+     * @param array<string, NonLectiveDay> $nonLectiveByDay non-teaching days indexed by day
+     * @param SchoolCalendar               $schoolCalendar  the teaching-day calendar
+     *
+     * @return DayCell the cell
+     */
+    private function cell(\DateTimeImmutable $date, ?string $month, \DateTimeImmutable $today, array $byDay, array $nonLectiveByDay, SchoolCalendar $schoolCalendar): array
+    {
+        $key = $date->format('Y-m-d');
+        $inMonth = null === $month || $date->format('Y-m') === $month;
+
+        return [
+            'date' => $date,
+            'inMonth' => $inMonth,
+            'isToday' => $key === $today->format('Y-m-d'),
+            'isWeekend' => $schoolCalendar->isWeekend($date),
+            // Neighbouring-month days that spill into the grid are context only: don't mark them non-teaching.
+            'nonLective' => $inMonth ? ($nonLectiveByDay[$key] ?? null) : null,
+            'tasks' => $byDay[$key] ?? [],
+        ];
+    }
+
+    /**
+     * Reduces a full day cell to the compact shape the year view needs: the day number, whether it is
+     * in its month, today, and the single representative status dot for the tasks due that day.
+     *
+     * @param DayCell $cell the full day cell built by {@see self::cell()}
+     *
+     * @return MiniCell the compact cell
+     */
+    private function miniCell(array $cell): array
+    {
+        return [
+            'day' => $cell['date']->format('j'),
+            'date' => $cell['date']->format('Y-m-d'),
+            'inMonth' => $cell['inMonth'],
+            'isToday' => $cell['isToday'],
+            'hasTasks' => $cell['inMonth'] && [] !== $cell['tasks'],
+            'status' => $cell['inMonth'] ? $this->topStatus($cell['tasks']) : null,
+        ];
+    }
+
+    /**
+     * The most attention-needing status among the given tasks, per {@see self::STATUS_PRIORITY}, or
+     * null when there are none. Drives the colour of the single dot shown per day in the year view.
+     *
+     * @param Task[] $tasks the tasks due on a day
+     *
+     * @return string|null the representative status, or null when the day has no tasks
+     */
+    private function topStatus(array $tasks): ?string
+    {
+        $best = null;
+        $bestRank = \PHP_INT_MAX;
+        foreach ($tasks as $task) {
+            $rank = array_search($task->getStatus(), self::STATUS_PRIORITY, true);
+            if (false !== $rank && $rank < $bestRank) {
+                $bestRank = $rank;
+                $best = $task->getStatus();
+            }
+        }
+
+        return $best;
+    }
+
+    /**
+     * The Spanish name of the given day's month.
+     *
+     * @param \DateTimeImmutable $date the day
+     *
+     * @return string the month name
+     */
+    private function monthName(\DateTimeImmutable $date): string
+    {
+        return self::MONTH_NAMES[(int) $date->format('n')];
+    }
+
+    /**
+     * A human label for a day range, collapsing the shared month when both ends share it: e.g.
+     * "6 – 12 de julio de 2026", or "29 de junio – 5 de julio de 2026" when the week straddles two months.
+     *
+     * @param \DateTimeImmutable $start the first day of the range
+     * @param \DateTimeImmutable $end   the last day of the range
+     *
+     * @return string the range label
+     */
+    private function rangeLabel(\DateTimeImmutable $start, \DateTimeImmutable $end): string
+    {
+        $sameYear = $start->format('Y') === $end->format('Y');
+        $left = match (true) {
+            $sameYear && $start->format('m') === $end->format('m') => $start->format('j'),
+            $sameYear => $start->format('j').' de '.$this->monthName($start),
+            default => $start->format('j').' de '.$this->monthName($start).' de '.$start->format('Y'),
+        };
+
+        return $left.' – '.$end->format('j').' de '.$this->monthName($end).' de '.$end->format('Y');
     }
 }

@@ -1,0 +1,22 @@
+<div class="calendar-year">
+    {% for month in months %}
+        <a class="cal-mini" href="{{ path('calendar_index', { vista: 'mes', fecha: month.date }) }}" title="Ver {{ month.name }} en vista mensual">
+            <h3 class="cal-mini__name">{{ month.name }}</h3>
+            <div class="cal-mini__grid" aria-hidden="true">
+                {% for wd in ['L', 'M', 'X', 'J', 'V', 'S', 'D'] %}
+                    <span class="cal-mini__wd">{{ wd }}</span>
+                {% endfor %}
+                {% for week in month.weeks %}
+                    {% for cell in week %}
+                        <span class="cal-mini__day{{ cell.inMonth ? '' : ' is-blank' }}{{ cell.isToday ? ' is-today' : '' }}"{% if cell.hasTasks %} title="{{ month.name }} {{ cell.day }}: con tareas"{% endif %}>
+                            {% if cell.inMonth %}
+                                <span class="cal-mini__num">{{ cell.day }}</span>
+                                {% if cell.hasTasks %}<span class="cal-mini__dot calendar-dot--{{ cell.status }}"></span>{% endif %}
+                            {% endif %}
+                        </span>
+                    {% endfor %}
+                {% endfor %}
+            </div>
+        </a>
+    {% endfor %}
+</div>

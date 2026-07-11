@@ -1,0 +1,15 @@
+{% import '_macros/calendar.html.twig' as cal %}
+
+<div class="calendar calendar--week" role="grid" aria-label="Semana del {{ label }}">
+    <div class="calendar-weekdays" role="row">
+        {% for weekday in ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] %}
+            <div class="calendar-weekday{{ loop.index >= 6 ? ' is-weekend' : '' }}" role="columnheader">{{ weekday }}</div>
+        {% endfor %}
+    </div>
+
+    <div class="calendar-grid">
+        <div class="calendar-week" role="row">
+            {% for cell in week %}{{ cal.day_cell(cell) }}{% endfor %}
+        </div>
+    </div>
+</div>
