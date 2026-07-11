@@ -43,6 +43,31 @@ class TaskRepository extends ServiceEntityRepository
     }
 
     /**
+     * Tasks whose deadline falls within an inclusive date range, earliest deadline first. Used by
+     * the monthly calendar to fill a visible month grid.
+     *
+     * @param \DateTimeImmutable $from the first day of the range (inclusive)
+     * @param \DateTimeImmutable $to   the last day of the range (inclusive)
+     *
+     * @return Task[] the tasks due within the range
+     */
+    public function findDueBetween(\DateTimeImmutable $from, \DateTimeImmutable $to): array
+    {
+        // Fetch-join the associations shown on each day cell to avoid an N+1 per row.
+        return $this->createQueryBuilder('t')
+            ->leftJoin('t.unit', 'unit')->addSelect('unit')
+            ->leftJoin('t.assignedUser', 'assignedUser')->addSelect('assignedUser')
+            ->leftJoin('t.assignedRole', 'assignedRole')->addSelect('assignedRole')
+            ->andWhere('t.dueDate BETWEEN :from AND :to')
+            ->setParameter('from', $from->format('Y-m-d'))
+            ->setParameter('to', $to->format('Y-m-d'))
+            ->orderBy('t.dueDate', 'ASC')
+            ->addOrderBy('t.id', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * A person's agenda for a course: the tasks assigned to them directly or to any of their roles,
      * earliest deadline first.
      *

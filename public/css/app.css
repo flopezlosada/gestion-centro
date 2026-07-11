@@ -1518,6 +1518,55 @@ input[type="email"], input[type="text"], select, textarea {
     .agenda-item { padding: 12px 6px; gap: 12px; }
 }
 
+/* =============================================================================
+   Calendario mensual de tareas (calendar_index)
+   Rejilla de 7 columnas (Lun–Dom) con las semanas en filas. Cálida y sobria,
+   coherente con la agenda: cada tarea es un enlace con su puntito de estado.
+   ============================================================================= */
+.calendar-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+.calendar-title { font-size: 22px; margin: 0; text-transform: capitalize; text-align: center; flex: 1 1 auto; }
+
+.calendar { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--surface); }
+.calendar-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); background: var(--surface-sunken); border-bottom: 1px solid var(--border); }
+.calendar-weekday { padding: 9px 10px; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--text-muted); text-align: left; }
+
+.calendar-grid { display: flex; flex-direction: column; }
+.calendar-week { display: grid; grid-template-columns: repeat(7, 1fr); }
+.calendar-week + .calendar-week { border-top: 1px solid var(--border); }
+
+.calendar-day { min-height: 116px; padding: 6px 7px 9px; border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 5px; }
+.calendar-day:first-child { border-left: 0; }
+.calendar-day.is-outside { background: var(--surface-sunken); }
+.calendar-day.is-outside .calendar-daynum { color: var(--text-faint); }
+.calendar-day.is-today { background: var(--accent-weak); }
+
+.calendar-daynum { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-muted); line-height: 1; }
+.calendar-day.is-today .calendar-daynum span { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-weight: 600; }
+
+.calendar-tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.calendar-task { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: var(--radius-sm); text-decoration: none; color: var(--text); font-size: 12.5px; line-height: 1.25; }
+.calendar-task:hover { background: var(--surface-sunken); }
+.calendar-task-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.calendar-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--text-faint); }
+.calendar-dot--pending { background: var(--text-faint); }
+.calendar-dot--in_progress { background: var(--review); }
+.calendar-dot--submitted { background: var(--warning); }
+.calendar-dot--done { background: var(--success); }
+.calendar-dot--validated { background: var(--accent); }
+.calendar-dot--rejected { background: var(--danger); }
+
+.calendar-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 16px 0 0; padding: 0; font-size: 12.5px; color: var(--text-muted); }
+.calendar-legend li { display: flex; align-items: center; gap: 6px; }
+
+/* En pantallas estrechas la rejilla de 7 columnas no cabe: pasa a scroll horizontal
+   conservando la semana completa, con un ancho mínimo legible por día. */
+@media (max-width: 720px) {
+    .calendar { overflow-x: auto; }
+    .calendar-weekdays, .calendar-week { min-width: 640px; }
+    .calendar-day { min-height: 92px; }
+}
+
 /* ---- Organigrama: árbol de unidades (admin/unit/index) ----
    Lista anidada con conector vertical por nivel. Reusa badge/mono/muted; nombre enlazado a la
    edición. Las unidades inactivas se muestran atenuadas y tachadas (soft-delete, no se borran). */
