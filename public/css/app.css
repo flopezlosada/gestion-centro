@@ -8,47 +8,47 @@
 
 /* ---- Tokens: tema claro ------------------------------------------------- */
 :root {
-    --canvas: #D9D8D1;          /* lienzo exterior, detrás del contenido */
-    --bg: #FFFFFF;              /* fondo de aplicación */
-    --surface: #FFFFFF;        /* tarjetas y paneles */
-    --surface-sunken: #F4F6F2; /* cabeceras de tabla, inputs, hover suave */
-    --surface-sidebar: #E3E8DF;/* barra lateral (verde salvia) */
-    --border: #E4E6E0;         /* filete / hairline */
-    --border-strong: #CDD2C8;  /* borde marcado (inputs, controles) */
-    --text: #20231E;           /* texto principal */
-    --text-muted: #5C6159;     /* texto secundario */
-    --text-faint: #8A8F86;     /* texto terciario / placeholder */
+    --canvas: #E8E1D3;          /* lienzo exterior: papel cálido */
+    --bg: #FDFBF6;              /* fondo de aplicación */
+    --surface: #FFFDF9;        /* tarjetas y paneles */
+    --surface-sunken: #F2ECE0; /* cabeceras de tabla, inputs, hover suave */
+    --surface-sidebar: #EFE7D7;/* barra lateral: arena cálida */
+    --border: #E7DFCE;         /* filete / hairline */
+    --border-strong: #D5CAB4;  /* borde marcado (inputs, controles) */
+    --text: #23201B;           /* texto principal (tinta cálida) */
+    --text-muted: #6C645A;     /* texto secundario */
+    --text-faint: #9C9285;     /* texto terciario / placeholder */
     --on-accent: #FFFFFF;      /* texto sobre relleno de acento */
-    --accent: #2F6B43;         /* acción primaria / sello / nav activo */
-    --accent-hover: #275B38;
-    --accent-weak: #E8F0E9;    /* fondo tenue de acento (hover/seleccionado) */
-    --success: #2F6B43;
-    --success-weak: #E8F0E9;
-    --success-text: #235335;
-    --warning: #9A6310;
-    --warning-weak: #F5ECD7;
-    --warning-text: #7A4D0C;
-    --danger: #A23A2D;
-    --danger-weak: #F5E2DE;
-    --danger-text: #8A2E23;
-    --review: #3F6079;
-    --review-weak: #E5EBF0;
-    --review-text: #2F4A60;
-    /* Categóricos de pilar PDCA (calendario): apagados y distintos del ámbar/rojo de urgencia. */
+    --accent: #1F5C57;         /* acción primaria / marca / nav activo (teal) */
+    --accent-hover: #184A46;
+    --accent-weak: #E2ECEA;    /* fondo tenue de acento (hover/seleccionado) */
+    --success: #2E7D5B;
+    --success-weak: #E4F0EA;
+    --success-text: #235B44;
+    --warning: #99691E;        /* vencidas en ámbar suave, NO rojo agresivo */
+    --warning-weak: #F4EAD6;
+    --warning-text: #78511A;
+    --danger: #B4472F;         /* terracota, reservado a acciones destructivas */
+    --danger-weak: #F4E4DE;
+    --danger-text: #8F3624;
+    --review: #46707A;
+    --review-weak: #E4EDEE;
+    --review-text: #315058;
+    /* Categóricos (reservados para el calendario), apagados y distintos del ámbar de vencimiento. */
     --pillar-plan: #5C7A99;
     --pillar-do: #5F8A5A;
     --pillar-check: #4F8A86;
     --pillar-act: #9A6A86;
-    --focus: #2F6B43;
+    --focus: #1F5C57;
 
-    /* Tipografía */
-    --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
-    --font-body: 'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    /* Tipografía: serif expresiva en titulares + sans humanística en el cuerpo */
+    --font-display: 'Fraunces', 'Newsreader', Georgia, 'Times New Roman', serif;
+    --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     --font-mono: 'Spline Sans Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
 
     /* Sombras (claro). En oscuro se neutralizan más abajo. */
-    --shadow-card: 0 12px 36px rgba(40, 38, 30, .12);
-    --shadow-mobile: 0 16px 48px rgba(20, 30, 24, .18);
+    --shadow-card: 0 12px 36px rgba(60, 50, 35, .12);
+    --shadow-mobile: 0 16px 48px rgba(45, 38, 26, .18);
 
     /* Radios */
     --radius-sm: 4px;   /* badges, inputs internos */
@@ -57,39 +57,39 @@
 }
 
 /* ---- Tokens: tema oscuro ------------------------------------------------ */
-/* No es un claro invertido: verde-tinta sobrio que mantiene contraste AA. */
+/* No es un claro invertido: tinta cálida sobria (marrón/teal) con contraste AA. */
 [data-theme="dark"] {
-    --canvas: #0C140F;
-    --bg: #141E18;
-    --surface: #1A2620;
-    --surface-sunken: #121B15;
-    --surface-sidebar: #17221C;
-    --border: #2B3830;
-    --border-strong: #3A4A40;
-    --text: #E9ECE6;
-    --text-muted: #A4ADA3;
-    --text-faint: #757D74;
-    --on-accent: #0E1A12;
-    --accent: #5BA978;
-    --accent-hover: #6FB98A;
-    --accent-weak: #1E3127;
-    --success: #5BA978;
-    --success-weak: #1E3127;
-    --success-text: #9BD2AE;
+    --canvas: #14110C;
+    --bg: #1C1811;
+    --surface: #221E16;
+    --surface-sunken: #17130D;
+    --surface-sidebar: #201C14;
+    --border: #342E23;
+    --border-strong: #48402F;
+    --text: #ECE6DA;
+    --text-muted: #ADA593;
+    --text-faint: #7C7565;
+    --on-accent: #0E1A19;
+    --accent: #5FB3AB;
+    --accent-hover: #74C1BA;
+    --accent-weak: #16302E;
+    --success: #6BBE8F;
+    --success-weak: #16301F;
+    --success-text: #A6DCBB;
     --warning: #D6A24E;
-    --warning-weak: #332915;
+    --warning-weak: #33290F;
     --warning-text: #E8C588;
-    --danger: #D77C6E;
-    --danger-weak: #34211D;
-    --danger-text: #ECA99E;
-    --review: #88A3C6;
-    --review-weak: #1F2A39;
-    --review-text: #B3C5DE;
+    --danger: #E0917B;
+    --danger-weak: #34201A;
+    --danger-text: #F0B2A0;
+    --review: #86ABB3;
+    --review-weak: #16292C;
+    --review-text: #B3CFD5;
     --pillar-plan: #8FA9C4;
     --pillar-do: #8FB98A;
     --pillar-check: #74B8B0;
     --pillar-act: #C49AB6;
-    --focus: #6FB98A;
+    --focus: #74C1BA;
     color-scheme: dark;
 
     /* En oscuro las sombras son casi imperceptibles: la separación la dan los bordes. */
@@ -1454,3 +1454,56 @@ input[type="email"], input[type="text"], select, textarea {
 .obj-timeline__field { min-width: 9ch; color: var(--text-muted); font-variant: small-caps; }
 .obj-timeline__del { color: var(--danger); text-decoration: line-through; }
 .obj-timeline__add { color: var(--accent); }
+
+/* ---- Agenda del inicio ("qué tengo que hacer") --------------------------
+   Checklist familiar: una casilla de 1 clic + título + cuándo/dónde, agrupada por tiempo.
+   Vencidas en ámbar suave (nunca rojo agresivo): que no dé pereza abrirla. */
+.agenda-group { margin: 0 0 22px; }
+.agenda-group__title {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--font-body); font-size: 12.5px; font-weight: 600;
+    letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted);
+    margin: 0 0 8px; padding: 0 2px;
+}
+.agenda-count {
+    display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px;
+    border-radius: 999px; background: var(--surface-sunken); color: var(--text-muted);
+    font-size: 11px; font-weight: 600; letter-spacing: 0;
+}
+.agenda-group--overdue .agenda-group__title { color: var(--warning-text); }
+.agenda-group--overdue .agenda-count { background: var(--warning-weak); color: var(--warning-text); }
+
+.agenda-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.agenda-item {
+    display: flex; align-items: flex-start; gap: 14px;
+    padding: 14px 16px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius-lg);
+    transition: border-color .12s ease, box-shadow .12s ease;
+}
+.agenda-item:hover { border-color: var(--border-strong); }
+.agenda-group--overdue .agenda-item { border-left: 3px solid var(--warning); }
+
+/* Casilla "Hecho": botón que parece checkbox; el check aparece al marcar. */
+.agenda-check { margin: 0; flex: none; }
+.checkbox {
+    display: grid; place-items: center; width: 26px; height: 26px; padding: 0;
+    background: var(--surface); border: 2px solid var(--border-strong); border-radius: 7px;
+    color: var(--on-accent); cursor: pointer; transition: background .12s ease, border-color .12s ease;
+}
+.checkbox:hover { border-color: var(--accent); }
+.checkbox svg { width: 18px; height: 18px; opacity: 0; transition: opacity .1s ease; }
+.checkbox.is-checked { background: var(--accent); border-color: var(--accent); }
+.checkbox.is-checked svg { opacity: 1; }
+.checkbox:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.agenda-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-top: 1px; }
+.agenda-title { font-size: 15px; font-weight: 500; color: var(--text); text-decoration: none; }
+.agenda-title:hover { color: var(--accent); }
+.agenda-meta { font-size: 12.5px; color: var(--text-muted); }
+.agenda-item.is-done .agenda-title { color: var(--text-faint); text-decoration: line-through; }
+.agenda-group--done { opacity: .75; }
+
+@media (max-width: 760px) {
+    .agenda-item { padding: 12px 12px; gap: 12px; }
+    .agenda-title { font-size: 15px; }
+}

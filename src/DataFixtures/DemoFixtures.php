@@ -69,18 +69,26 @@ final class DemoFixtures extends Fixture
             $manager->persist($task);
         }
 
-        // A couple assigned to the teacher, left pending, so their agenda is not empty.
+        // Assigned to the teacher across time buckets so the personal agenda demoes well today:
+        // one overdue (soft), one due today, one this week, and one already done.
+        $today = new \DateTimeImmutable('today');
+        $teacherPlan = [
+            ['Preparar el acta de la CCP', $today, false],
+            ['Entregar la programación de aula', $today->modify('+3 days'), false],
+            ['Revisar las propuestas de mejora del trimestre', $today->modify('-2 days'), false],
+            ['Actualizar el tablón del aula', $today->modify('-10 days'), true],
+        ];
         $teacherTasks = [];
-        foreach ([sprintf('%d-12-01', $startYear), sprintf('%d-03-15', $startYear + 1)] as $due) {
-            $task = Task::fromTemplate($meetingTpl, $year, new \DateTimeImmutable($due));
-            $task->setUnit($maths)->setAssignedUser($teacher);
+        foreach ($teacherPlan as [$title, $due, $done]) {
+            $task = new Task($title, $year, $due, TaskType::SIMPLE);
+            $task->setUnit($maths)->setAssignedUser($teacher)->setCheckboxDone($done);
             $manager->persist($task);
             $teacherTasks[] = $task;
         }
 
         // A couple of demo notices for the teacher so the inbox and its badge are not empty.
-        $manager->persist(new Notification($teacher, 'task.reminder', sprintf('Tarea próxima: %s', $teacherTasks[0]->getTitle()), 'Vence pronto.', $teacherTasks[0]));
-        $manager->persist((new Notification($teacher, 'task.reminder', sprintf('Tarea próxima: %s', $teacherTasks[1]->getTitle()), 'Vence pronto.', $teacherTasks[1]))->markRead());
+        $manager->persist(new Notification($teacher, 'task.reminder', sprintf('Tarea próxima: %s', $teacherTasks[1]->getTitle()), 'Vence en 3 días.', $teacherTasks[1]));
+        $manager->persist((new Notification($teacher, 'task.reminder', sprintf('Tarea de hoy: %s', $teacherTasks[0]->getTitle()), 'Vence hoy.', $teacherTasks[0]))->markRead());
 
         $manager->flush();
     }
