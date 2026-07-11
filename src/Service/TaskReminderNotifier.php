@@ -10,7 +10,9 @@ use App\Entity\User;
 use App\Repository\TaskRepository;
 use App\Repository\UserRepository;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Email;
 
@@ -44,6 +46,7 @@ final class TaskReminderNotifier
         private readonly OrganizationHierarchy $hierarchy,
         private readonly EntityManagerInterface $entityManager,
         private readonly MailerInterface $mailer,
+        private readonly LoggerInterface $logger,
         #[Autowire('%app.mailer_from%')]
         private readonly string $mailerFrom,
     ) {
@@ -98,12 +101,21 @@ final class TaskReminderNotifier
         }
         $this->entityManager->flush();
 
+        // A single bad recipient must not abort the whole nightly batch: the in-app notice is already
+        // saved, so we log the failed e-mail and carry on with the rest.
         foreach ($notifications as $notification) {
-            $this->mailer->send((new Email())
-                ->from($this->mailerFrom)
-                ->to($notification->getRecipient()->getEmail())
-                ->subject($notification->getTitle())
-                ->text((string) $notification->getBody()));
+            try {
+                $this->mailer->send((new Email())
+                    ->from($this->mailerFrom)
+                    ->to($notification->getRecipient()->getEmail())
+                    ->subject($notification->getTitle())
+                    ->text((string) $notification->getBody()));
+            } catch (TransportExceptionInterface $e) {
+                $this->logger->error('No se pudo enviar el aviso por email', [
+                    'recipient' => $notification->getRecipient()->getEmail(),
+                    'exception' => $e,
+                ]);
+            }
         }
 
         return \count($notifications);
@@ -141,6 +153,8 @@ final class TaskReminderNotifier
     private function escalationRecipients(Task $task, int $days): array
     {
         $chain = $this->hierarchy->managersAbove($task->getUnit());
+        // Escalating a task to its own assignee is pointless (they are the one who is late).
+        $chain = array_values(array_filter($chain, static fn (User $m): bool => $m !== $task->getAssignedUser()));
 
         return $days >= 7 ? $chain : \array_slice($chain, 0, 1);
     }

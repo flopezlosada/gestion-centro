@@ -30,7 +30,8 @@ final class TaskReminderCronController extends AbstractController
             throw new AccessDeniedHttpException('Token de cron inválido.');
         }
 
-        $count = $notifier->sendDue(new \DateTimeImmutable());
+        // Reference day in the centre's timezone (see the command for the rationale).
+        $count = $notifier->sendDue(new \DateTimeImmutable('now', new \DateTimeZone('Europe/Madrid')));
 
         return new Response(sprintf('%d avisos enviados.', $count));
     }

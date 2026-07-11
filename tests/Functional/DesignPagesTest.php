@@ -67,16 +67,31 @@ final class DesignPagesTest extends WebTestCase
         return ['task' => $task, 'admin' => $admin, 'teacher' => $teacher];
     }
 
-    public function testHomeDashboardRenders(): void
+    public function testHomeAgendaShowsMyTasks(): void
     {
         $s = $this->seed();
-        $this->client->loginUser($s['admin']);
+        $this->client->loginUser($s['teacher']);
 
         $this->client->request('GET', '/');
 
         self::assertResponseIsSuccessful();
         self::assertSelectorExists('aside.sidebar');
-        self::assertSelectorExists('.worklist-stats');
+        self::assertSelectorTextContains('.agenda-item', 'Memoria del departamento');
+    }
+
+    public function testOneClickDoneTogglesTheTask(): void
+    {
+        $s = $this->seed();
+        $this->client->loginUser($s['teacher']);
+
+        $crawler = $this->client->request('GET', '/');
+        $this->client->submit($crawler->filter('form.agenda-check')->first()->form());
+
+        self::assertResponseRedirects();
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(Task::class)->find($s['task']->getId());
+        self::assertNotNull($reloaded);
+        self::assertTrue($reloaded->isCheckboxDone(), 'la casilla marca la tarea como hecha');
     }
 
     public function testTaskListShowsPlannedTasks(): void

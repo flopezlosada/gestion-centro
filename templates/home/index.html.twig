@@ -1,89 +1,69 @@
 {% extends 'app_shell.html.twig' %}
-{% import '_macros/task.html.twig' as taskUi %}
 
 {% block title %}Inicio · {{ app_organization_name }}{% endblock %}
 {% block breadcrumb %}Inicio{% endblock %}
 
+{# Una fila de la agenda: casilla "Hecho" (1 clic, POST) + título enlazado + cuándo/dónde. #}
+{% macro item(task) %}
+    <li class="agenda-item{{ task.checkboxDone ? ' is-done' }}" id="tarea-{{ task.id }}">
+        <form method="post" action="{{ path('task_toggle_done', { id: task.id }) }}" class="agenda-check">
+            <input type="hidden" name="_token" value="{{ csrf_token('toggle_done' ~ task.id) }}">
+            <button type="submit" class="checkbox{{ task.checkboxDone ? ' is-checked' }}"
+                    aria-pressed="{{ task.checkboxDone ? 'true' : 'false' }}"
+                    aria-label="{{ task.checkboxDone ? 'Marcar como no hecha' : 'Marcar como hecha' }}">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10.5 l3.2 3.2 L15 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+        </form>
+        <div class="agenda-body">
+            <a href="{{ path('task_show', { id: task.id }) }}" class="agenda-title">{{ task.title }}</a>
+            <span class="agenda-meta">
+                {{ task.dueDate|date('d/m/Y') }}{% if task.unit %} · {{ task.unit.name }}{% endif %}{% if not task.mandatory %} · voluntaria{% endif %}
+            </span>
+        </div>
+    </li>
+{% endmacro %}
+
+{% macro section(label, tasks, tone) %}
+    {% if tasks is not empty %}
+        <section class="agenda-group{{ tone ? ' agenda-group--' ~ tone }}">
+            <h2 class="agenda-group__title">{{ label }} <span class="agenda-count">{{ tasks|length }}</span></h2>
+            <ol class="agenda-list">
+                {% for task in tasks %}{{ _self.item(task) }}{% endfor %}
+            </ol>
+        </section>
+    {% endif %}
+{% endmacro %}
+
 {% block body %}
-    {% set openStatuses = ['pending', 'in_progress', 'submitted', 'rejected'] %}
-    {% set pending = agenda|filter(t => t.status in openStatuses) %}
+    {% set pendingCount = buckets.overdue|length + buckets.today|length + buckets.week|length + buckets.later|length %}
 
     <div class="page-head">
         <div>
-            <h1>Hola, {{ app.user.fullName|split(' ')|first }}</h1>
-            <p class="lead">Tu día a día del curso {{ schoolYear }}: lo que tienes que hacer y el plan del centro.</p>
+            <h1>Hola, {{ firstName }}</h1>
+            <p class="lead">
+                {% if pendingCount == 0 %}Nada pendiente por ahora. Buen momento para respirar.
+                {% else %}Esto es lo que tienes que hacer.{% endif %}
+            </p>
         </div>
     </div>
 
-    <div class="worklist-stats">
-        <div class="stat">
-            <span class="stat-figure">{{ pending|length }}</span>
-            <span class="stat-label">Tareas tuyas por hacer</span>
-        </div>
-        <div class="stat {{ agenda|length ? 'stat--success' }}">
-            <span class="stat-figure">{{ agenda|length }}</span>
-            <span class="stat-label">Tareas tuyas este curso</span>
-        </div>
-        {% if canSeeCentrePlan %}
-            <div class="stat">
-                <span class="stat-figure">{{ plan|length }}</span>
-                <span class="stat-label">Tareas del centro este curso</span>
-            </div>
-        {% endif %}
-    </div>
-
-    <section class="card">
-        <div class="page-head">
-            <div><h2>Mi agenda</h2><p class="lead">Tus tareas y las de tus responsabilidades, por fecha.</p></div>
-        </div>
-        {% if agenda is empty %}
+    {% if pendingCount == 0 and buckets.done is empty %}
+        <div class="card">
             <div class="empty-state">
-                <h2>No tienes tareas asignadas en {{ schoolYear }}</h2>
-                <p>Cuando dirección planifique tareas para ti o para tus roles, aparecerán aquí.</p>
+                <h2>Aún no tienes tareas asignadas</h2>
+                <p>Cuando dirección planifique tareas para ti o para tus responsabilidades, aparecerán aquí, ordenadas por fecha.</p>
             </div>
-        {% else %}
-            <table data-list-tools>
-                <thead>
-                    <tr><th>Tarea</th><th>Fecha límite</th><th>Estado</th></tr>
-                </thead>
-                <tbody>
-                    {% for t in agenda %}
-                        <tr>
-                            <td><a href="{{ path('task_show', { id: t.id }) }}">{{ t.title }}</a>{% if not t.mandatory %} <span class="badge badge--muted">Voluntaria</span>{% endif %}</td>
-                            <td>{{ t.dueDate|date('d/m/Y') }}</td>
-                            <td>{{ taskUi.status_badge(t.status) }}</td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        {% endif %}
-    </section>
-
-    {% if canSeeCentrePlan %}
-    <section class="card">
-        <div class="page-head">
-            <div><h2>Plan del centro</h2><p class="lead">La planificación de referencia del curso {{ schoolYear }}.</p></div>
-            <div><a class="btn btn-secondary" href="{{ path('task_index') }}">Ver todo</a></div>
         </div>
-        {% if plan is empty %}
-            <div class="empty-state"><h2>Aún no hay tareas planificadas en {{ schoolYear }}</h2></div>
-        {% else %}
-            <table>
-                <thead>
-                    <tr><th>Tarea</th><th>Unidad</th><th>Fecha límite</th><th>Estado</th></tr>
-                </thead>
-                <tbody>
-                    {% for t in plan|slice(0, 8) %}
-                        <tr>
-                            <td><a href="{{ path('task_show', { id: t.id }) }}">{{ t.title }}</a></td>
-                            <td>{{ t.unit ? t.unit.name : '—' }}</td>
-                            <td>{{ t.dueDate|date('d/m/Y') }}</td>
-                            <td>{{ taskUi.status_badge(t.status) }}</td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    {% else %}
+        {{ _self.section('Vencidas', buckets.overdue, 'overdue') }}
+        {{ _self.section('Hoy', buckets.today) }}
+        {{ _self.section('Próximos 7 días', buckets.week) }}
+        {{ _self.section('Más adelante', buckets.later) }}
+
+        {% if pendingCount == 0 %}
+            <div class="card"><div class="empty-state"><h2>¡Todo hecho! 🎉</h2><p>No te queda nada pendiente. Lo marcado como hecho está abajo.</p></div></div>
         {% endif %}
-    </section>
+
+        {{ _self.section('Hechas', buckets.done, 'done') }}
     {% endif %}
 {% endblock %}

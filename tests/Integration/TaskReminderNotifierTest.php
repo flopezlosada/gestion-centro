@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration;
 
+use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\Unit;
 use App\Entity\User;
@@ -94,5 +95,48 @@ final class TaskReminderNotifierTest extends KernelTestCase
         $this->em->flush();
 
         self::assertSame(0, $this->notifier->sendDue($today));
+    }
+
+    public function testOverdueTaskWithoutUnitDoesNotCrashAndEscalatesToNobody(): void
+    {
+        $today = new \DateTimeImmutable('2026-01-10');
+        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        // Overdue, but the task has no unit → no chain of command to escalate to.
+        $task = new Task('Sin unidad', SchoolYear::current($today), $today->modify('-1 day'), TaskType::SIMPLE);
+        $task->setAssignedUser($this->user('profe@centro.test'));
+        $this->em->persist($task);
+        $this->em->flush();
+
+        self::assertSame(0, $this->notifier->sendDue($today));
+    }
+
+    public function testUnassignedTaskProducesNoReminder(): void
+    {
+        $today = new \DateTimeImmutable('2026-01-10');
+        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        // Due in 7 days but with neither an assigned user nor role.
+        $this->task($today->modify('+7 days'), $unit);
+        $this->em->flush();
+
+        self::assertSame(0, $this->notifier->sendDue($today));
+    }
+
+    public function testRoleWithOnlyInactiveHolderProducesNoReminder(): void
+    {
+        $today = new \DateTimeImmutable('2026-01-10');
+        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+
+        $role = (new Role())->setCode('head_dept')->setName('Jefatura de departamento');
+        $this->em->persist($role);
+        $inactive = $this->user('baja@centro.test')->setActive(false)->addAssignedRole($role);
+        $this->em->persist($inactive);
+
+        $this->task($today->modify('+15 days'), $unit)->setAssignedRole($role);
+        $this->em->flush();
+
+        self::assertSame(0, $this->notifier->sendDue($today), 'an inactive role holder is not a recipient');
     }
 }
