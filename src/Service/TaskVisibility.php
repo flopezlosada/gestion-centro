@@ -43,27 +43,23 @@ final class TaskVisibility
 
         return array_values(array_filter(
             $tasks,
-            fn (Task $task): bool => $this->isOwn($task, $user) || $this->hierarchy->isSuperiorOf($user, $task->getUnit()),
+            fn (Task $task): bool => $this->isVisibleTo($task, $user, false),
         ));
     }
 
     /**
-     * Whether the task is the user's own: assigned to them directly or to a role they hold. Mirrors
-     * the "mine" notion used to decide who may work on a task.
+     * Whether a single task is visible to the user: their own (assigned to them or to a role they
+     * hold), under a unit they are a superior of, or any task for an admin. Same rule as
+     * {@see visibleTo()}, exposed per task so the detail page can enforce it too.
      *
-     * @param Task $task the task to check
-     * @param User $user the person browsing
+     * @param Task $task    the task to check
+     * @param User $user    the person browsing
+     * @param bool $isAdmin whether the user is an admin (sees every task)
      *
-     * @return bool true if the task belongs to the user
+     * @return bool true if the user may see the task
      */
-    private function isOwn(Task $task, User $user): bool
+    public function isVisibleTo(Task $task, User $user, bool $isAdmin): bool
     {
-        if ($task->getAssignedUser() === $user) {
-            return true;
-        }
-
-        $role = $task->getAssignedRole();
-
-        return null !== $role && $user->holdsRole($role);
+        return $isAdmin || $task->isOwnedBy($user) || $this->hierarchy->isSuperiorOf($user, $task->getUnit());
     }
 }

@@ -250,6 +250,24 @@ class Task implements Auditable
         return $this;
     }
 
+    /**
+     * Whether the task belongs to the given user: assigned to them directly or to a role they hold.
+     * The single definition of a task being "theirs", shared by the visibility scope
+     * ({@see \App\Service\TaskVisibility}) and the who-may-work-on-it check in the task controller.
+     *
+     * @param User $user the person to check
+     *
+     * @return bool true if the task is assigned to the user or to one of their roles
+     */
+    public function isOwnedBy(User $user): bool
+    {
+        if ($this->assignedUser === $user) {
+            return true;
+        }
+
+        return null !== $this->assignedRole && $user->holdsRole($this->assignedRole);
+    }
+
     public function getUnit(): ?Unit
     {
         return $this->unit;
