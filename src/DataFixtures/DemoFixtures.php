@@ -86,6 +86,12 @@ final class DemoFixtures extends Fixture
             $teacherTasks[] = $task;
         }
 
+        // A deliverable task in progress, so the teacher's task detail shows the full workbench
+        // (action "Entregar" + the deliverable reference form).
+        $withDeliverable = Task::fromTemplate($reportTpl, $year, $today->modify('+5 days'));
+        $withDeliverable->setUnit($maths)->setAssignedUser($teacher)->setStatus('in_progress');
+        $manager->persist($withDeliverable);
+
         // A couple of demo notices for the teacher so the inbox and its badge are not empty.
         $manager->persist(new Notification($teacher, 'task.reminder', sprintf('Tarea próxima: %s', $teacherTasks[1]->getTitle()), 'Vence en 3 días.', $teacherTasks[1]));
         $manager->persist((new Notification($teacher, 'task.reminder', sprintf('Tarea de hoy: %s', $teacherTasks[0]->getTitle()), 'Vence hoy.', $teacherTasks[0]))->markRead());

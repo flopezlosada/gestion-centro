@@ -6,14 +6,19 @@
 {# Una fila de la agenda: casilla "Hecho" (1 clic, POST) + título enlazado + cuándo/dónde. #}
 {% macro item(task) %}
     <li class="agenda-item{{ task.checkboxDone ? ' is-done' }}" id="tarea-{{ task.id }}">
-        <form method="post" action="{{ path('task_toggle_done', { id: task.id }) }}" class="agenda-check">
-            <input type="hidden" name="_token" value="{{ csrf_token('toggle_done' ~ task.id) }}">
-            <button type="submit" class="checkbox{{ task.checkboxDone ? ' is-checked' }}"
-                    aria-pressed="{{ task.checkboxDone ? 'true' : 'false' }}"
-                    aria-label="{{ task.checkboxDone ? 'Marcar como no hecha' : 'Marcar como hecha' }}">
-                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10.5 l3.2 3.2 L15 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-        </form>
+        {% if task.requiresCheckbox %}
+            <form method="post" action="{{ path('task_toggle_done', { id: task.id }) }}" class="agenda-check">
+                <input type="hidden" name="_token" value="{{ csrf_token('toggle_done' ~ task.id) }}">
+                <button type="submit" class="checkbox{{ task.checkboxDone ? ' is-checked' }}"
+                        aria-pressed="{{ task.checkboxDone ? 'true' : 'false' }}"
+                        title="{{ task.checkboxDone ? 'Hecho — pulsa para deshacer' : 'Marcar como hecho (reversible)' }}"
+                        aria-label="Marcar «{{ task.title }}» como {{ task.checkboxDone ? 'no hecha' : 'hecha' }}">
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10.5 l3.2 3.2 L15 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+            </form>
+        {% else %}
+            <span class="checkbox is-static" aria-hidden="true"></span>
+        {% endif %}
         <div class="agenda-body">
             <a href="{{ path('task_show', { id: task.id }) }}" class="agenda-title">{{ task.title }}</a>
             <span class="agenda-meta">

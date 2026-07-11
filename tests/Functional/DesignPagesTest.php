@@ -148,4 +148,32 @@ final class DesignPagesTest extends WebTestCase
         self::assertResponseIsSuccessful();
         self::assertSelectorExists('.obj-timeline');
     }
+
+    public function testAssigneeCanAdvanceTaskFromDetail(): void
+    {
+        $s = $this->seed();
+        $this->client->loginUser($s['teacher']);
+
+        $crawler = $this->client->request('GET', '/tareas/'.$s['task']->getId());
+        $this->client->submit($crawler->filter('.task-actions form')->first()->form());
+
+        self::assertResponseRedirects();
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(Task::class)->find($s['task']->getId());
+        self::assertNotNull($reloaded);
+        self::assertSame('in_progress', $reloaded->getStatus(), 'el responsable avanza la tarea desde el detalle');
+    }
+
+    public function testNonSuperiorHasNoValidateActionOnSubmittedTask(): void
+    {
+        $s = $this->seed();
+        $s['task']->setStatus('submitted');
+        $this->em->flush();
+        $this->client->loginUser($s['teacher']);
+
+        $this->client->request('GET', '/tareas/'.$s['task']->getId());
+
+        self::assertResponseIsSuccessful();
+        self::assertStringNotContainsString('accion/validate', (string) $this->client->getResponse()->getContent(), 'un no-superior no ve la acción de validar');
+    }
 }
