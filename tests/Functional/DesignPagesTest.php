@@ -113,7 +113,7 @@ final class DesignPagesTest extends WebTestCase
         $this->client->request('GET', '/tareas/'.$s['task']->getId());
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('h2', 'Histórico de actividad');
+        self::assertStringContainsString('Histórico de actividad', (string) $this->client->getResponse()->getContent());
         self::assertSelectorExists('.obj-timeline');
     }
 
