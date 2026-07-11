@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
+use App\Entity\NonLectiveDay;
 use App\Entity\Role;
 use App\Entity\Unit;
 use App\Entity\User;
@@ -164,6 +165,69 @@ final class AdminPanelTest extends WebTestCase
         $created = $this->em->getRepository(User::class)->findOneBy(['email' => 'nueva@centro.test']);
         self::assertInstanceOf(User::class, $created);
         self::assertSame('Nueva Persona', $created->getFullName());
+    }
+
+    public function testCreatingANonLectiveDayPersistsIt(): void
+    {
+        $this->client->loginUser($this->admin());
+
+        $crawler = $this->client->request('GET', '/admin/dias-no-lectivos/nuevo');
+        self::assertResponseIsSuccessful();
+
+        $form = $crawler->selectButton('Guardar')->form([
+            'non_lective_day[date]' => '2026-12-25',
+            'non_lective_day[description]' => 'Navidad',
+        ]);
+        $this->client->submit($form);
+
+        self::assertResponseRedirects('/admin/dias-no-lectivos');
+
+        $created = $this->em->getRepository(NonLectiveDay::class)->findOneBy(['description' => 'Navidad']);
+        self::assertInstanceOf(NonLectiveDay::class, $created);
+        self::assertSame('2026-12-25', $created->getDate()->format('Y-m-d'));
+    }
+
+    public function testDeletingANonLectiveDayRemovesIt(): void
+    {
+        $day = (new NonLectiveDay())->setDate(new \DateTimeImmutable('2026-12-25'))->setDescription('Navidad');
+        $this->em->persist($day);
+        $this->em->flush();
+        $id = $day->getId();
+
+        $this->client->loginUser($this->admin());
+        $crawler = $this->client->request('GET', '/admin/dias-no-lectivos');
+        $this->client->submit($crawler->selectButton('Borrar')->form());
+
+        self::assertResponseRedirects('/admin/dias-no-lectivos');
+        self::assertNull($this->em->getRepository(NonLectiveDay::class)->find($id));
+    }
+
+    public function testDuplicateNonLectiveDayDateIsRejected(): void
+    {
+        $this->em->persist((new NonLectiveDay())->setDate(new \DateTimeImmutable('2026-12-25'))->setDescription('Navidad'));
+        $this->em->flush();
+
+        $this->client->loginUser($this->admin());
+        $crawler = $this->client->request('GET', '/admin/dias-no-lectivos/nuevo');
+        $form = $crawler->selectButton('Guardar')->form([
+            'non_lective_day[date]' => '2026-12-25',
+            'non_lective_day[description]' => 'Navidad (repetido)',
+        ]);
+        $this->client->submit($form);
+
+        // The unique-date constraint rejects it: the form is redisplayed (HTTP 422) and only one row exists.
+        self::assertResponseStatusCodeSame(422);
+        self::assertSelectorTextContains('.form-card', 'Ya existe');
+        self::assertCount(1, $this->em->getRepository(NonLectiveDay::class)->findAll());
+    }
+
+    public function testNonAdminIsForbiddenFromNonLectiveDays(): void
+    {
+        $this->client->loginUser($this->teacher());
+
+        $this->client->request('GET', '/admin/dias-no-lectivos');
+
+        self::assertResponseStatusCodeSame(403);
     }
 
     public function testCreatingAUnitPersistsIt(): void

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\DataFixtures;
 
+use App\Entity\NonLectiveDay;
 use App\Entity\Notification;
 use App\Entity\Role;
 use App\Entity\Task;
@@ -13,6 +14,7 @@ use App\Entity\User;
 use App\Enum\Area;
 use App\Enum\PermissionLevel;
 use App\Enum\TaskType;
+use App\Service\SchoolCalendar;
 use App\Util\SchoolYear;
 use Doctrine\Bundle\FixturesBundle\Fixture;
 use Doctrine\Persistence\ObjectManager;
@@ -25,6 +27,10 @@ use Doctrine\Persistence\ObjectManager;
  */
 final class DemoFixtures extends Fixture
 {
+    public function __construct(private readonly SchoolCalendar $schoolCalendar)
+    {
+    }
+
     public function load(ObjectManager $manager): void
     {
         $year = SchoolYear::current(new \DateTimeImmutable());
@@ -62,7 +68,24 @@ final class DemoFixtures extends Fixture
         $manager->persist($reportTpl);
         $manager->persist($meetingTpl);
 
-        // A plan for the course with a spread of deadlines, assignees and statuses.
+        // Some real Spanish public holidays within the course, so the calendar shows non-teaching
+        // days and deadline validation has something to reject. Weekends are non-teaching on their
+        // own and are NOT stored here.
+        $holidays = [
+            [sprintf('%d-11-01', $startYear), 'Todos los Santos'],
+            [sprintf('%d-12-06', $startYear), 'Día de la Constitución'],
+            [sprintf('%d-12-08', $startYear), 'Inmaculada Concepción'],
+            [sprintf('%d-01-06', $startYear + 1), 'Reyes'],
+            [sprintf('%d-05-01', $startYear + 1), 'Día del Trabajo'],
+        ];
+        $blockedKeys = [];
+        foreach ($holidays as [$date, $description]) {
+            $manager->persist((new NonLectiveDay())->setDate(new \DateTimeImmutable($date))->setDescription($description));
+            $blockedKeys[] = $date;
+        }
+
+        // A plan for the course with a spread of deadlines, assignees and statuses. Nudged onto a
+        // teaching day so no demo task lands on a weekend or holiday.
         $plan = [
             [$reportTpl, sprintf('%d-06-30', $startYear + 1), $maths, $mathsHead, 'in_progress'],
             [$meetingTpl, sprintf('%d-10-15', $startYear), $maths, $mathsHead, 'validated'],
@@ -70,13 +93,16 @@ final class DemoFixtures extends Fixture
             [$meetingTpl, sprintf('%d-11-20', $startYear), $studies, $headStudies, 'done'],
         ];
         foreach ($plan as [$tpl, $due, $unit, $assignee, $status]) {
-            $task = Task::fromTemplate($tpl, $year, new \DateTimeImmutable($due));
+            $dueDate = $this->toLectiveDay(new \DateTimeImmutable($due), $blockedKeys, false);
+            $task = Task::fromTemplate($tpl, $year, $dueDate);
             $task->setUnit($unit)->setAssignedUser($assignee)->setStatus($status);
             $manager->persist($task);
         }
 
         // Assigned to the teacher across time buckets so the personal agenda demoes well today:
-        // one overdue (soft), one due today, one this week, and one already done.
+        // one overdue (soft), one due today, one this week, and one already done. Each nudged onto a
+        // teaching day — forward for today/upcoming, backward for overdue — so none lands on a
+        // weekend or holiday (fixing e.g. "acta de la CCP" landing on a Saturday).
         $today = new \DateTimeImmutable('today');
         $teacherPlan = [
             ['Preparar el acta de la CCP', 'Redactar y subir el acta de la última Comisión de Coordinación Pedagógica.', $today, false],
@@ -86,7 +112,8 @@ final class DemoFixtures extends Fixture
         ];
         $teacherTasks = [];
         foreach ($teacherPlan as [$title, $description, $due, $done]) {
-            $task = new Task($title, $year, $due, TaskType::SIMPLE);
+            $dueDate = $this->toLectiveDay($due, $blockedKeys, $due >= $today);
+            $task = new Task($title, $year, $dueDate, TaskType::SIMPLE);
             $task->setDescription($description)->setUnit($maths)->setAssignedUser($teacher)->setCheckboxDone($done)->setCreatedBy($director);
             $manager->persist($task);
             $teacherTasks[] = $task;
@@ -94,15 +121,47 @@ final class DemoFixtures extends Fixture
 
         // A deliverable task in progress, so the teacher's task detail shows the full workbench
         // (action "Entregar" + the deliverable reference form).
-        $withDeliverable = Task::fromTemplate($reportTpl, $year, $today->modify('+5 days'));
+        $withDeliverable = Task::fromTemplate($reportTpl, $year, $this->toLectiveDay($today->modify('+5 days'), $blockedKeys, true));
         $withDeliverable->setDescription('Memoria anual del departamento con resultados y propuestas para el curso que viene.')
             ->setUnit($maths)->setAssignedUser($teacher)->setStatus('in_progress')->setCreatedBy($director);
         $manager->persist($withDeliverable);
 
-        // A couple of demo notices for the teacher so the inbox and its badge are not empty.
-        $manager->persist(new Notification($teacher, 'task.reminder', sprintf('Tarea próxima: %s', $teacherTasks[1]->getTitle()), 'Vence en 3 días.', $teacherTasks[1]));
-        $manager->persist((new Notification($teacher, 'task.reminder', sprintf('Tarea de hoy: %s', $teacherTasks[0]->getTitle()), 'Vence hoy.', $teacherTasks[0]))->markRead());
+        // A couple of demo notices for the teacher so the inbox and its badge are not empty. The
+        // wording follows the ACTUAL due date after nudging: the first task is only "de hoy" when it
+        // really lands on today (it does not when today is a weekend/holiday and it was pushed on).
+        $pinned = $teacherTasks[0];
+        $pinnedIsToday = $pinned->getDueDate()->format('Y-m-d') === $today->format('Y-m-d');
+        $manager->persist(new Notification($teacher, 'task.reminder', sprintf('Tarea próxima: %s', $teacherTasks[1]->getTitle()), 'Vence pronto.', $teacherTasks[1]));
+        $manager->persist((new Notification(
+            $teacher,
+            'task.reminder',
+            sprintf('Tarea %s: %s', $pinnedIsToday ? 'de hoy' : 'próxima', $pinned->getTitle()),
+            $pinnedIsToday ? 'Vence hoy.' : 'Vence pronto.',
+            $pinned,
+        ))->markRead());
 
         $manager->flush();
     }
+
+    /**
+     * Nudges a demo date onto a teaching day so no seeded task lands on a weekend or holiday. Reuses
+     * {@see SchoolCalendar::isWeekend()} for the weekend rule, but checks the holidays against the
+     * given keys rather than the database, since the seeded rows are not flushed yet at load time.
+     *
+     * @param \DateTimeImmutable $date        the candidate date
+     * @param list<string>       $blockedKeys 'Y-m-d' keys of the seeded non-teaching days to avoid
+     * @param bool               $forward     true to search forward in time, false to search backward
+     *
+     * @return \DateTimeImmutable the nearest teaching day in the chosen direction
+     */
+    private function toLectiveDay(\DateTimeImmutable $date, array $blockedKeys, bool $forward): \DateTimeImmutable
+    {
+        $step = $forward ? '+1 day' : '-1 day';
+        while ($this->schoolCalendar->isWeekend($date) || \in_array($date->format('Y-m-d'), $blockedKeys, true)) {
+            $date = $date->modify($step);
+        }
+
+        return $date;
+    }
 }
+
