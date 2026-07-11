@@ -21,6 +21,7 @@
             <nav id="main-nav" class="nav" aria-label="Navegación principal">
                 <a href="{{ path('app_homepage') }}" class="{{ route == 'app_homepage' ? 'is-active' }}">Inicio</a>
                 <a href="{{ path('task_index') }}" class="{{ route starts with 'task_' ? 'is-active' }}">Tareas</a>
+                <a href="{{ path('calendar_index') }}" class="{{ route starts with 'calendar_' ? 'is-active' }}">Calendario</a>
             </nav>
 
             <div class="nav-backdrop"></div>

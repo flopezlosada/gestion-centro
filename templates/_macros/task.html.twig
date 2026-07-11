@@ -15,6 +15,12 @@
     {{- labels[status]|default(status) -}}
 {% endmacro %}
 
+{% macro status_dot(status) %}
+    {#- Puntito de color por estado para vistas compactas (calendario). Comparte la escala
+        semántica del badge; el valor del estado es la propia clase modificadora. -#}
+    <span class="calendar-dot calendar-dot--{{ status }}" title="{{ _self.status_label(status) }}"></span>
+{% endmacro %}
+
 {% macro status_badge(status) %}
     {%- set classes = {
         'pending': 'badge--muted',
