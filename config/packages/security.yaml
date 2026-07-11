@@ -41,6 +41,8 @@ security:
         - { path: ^/cron/task-reminders$, roles: PUBLIC_ACCESS }
         # The activity trail is sensitive (it shows everyone's actions): admins only.
         - { path: ^/audit, roles: ROLE_ADMIN }
-        # User/role administration: admins only.
-        - { path: ^/admin, roles: ROLE_ADMIN }
+        # User/role/org administration: only requires an authenticated user here; the fine-grained
+        # gate is the AreaVoter on ADMINISTRATION in each admin controller, so a role granted write
+        # access to Administration (e.g. Direction) can manage without being a superuser.
+        - { path: ^/admin, roles: ROLE_USER }
         - { path: ^/, roles: ROLE_USER }

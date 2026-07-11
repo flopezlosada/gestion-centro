@@ -94,14 +94,14 @@ final class EntityAuditSubscriberTest extends KernelTestCase
         $em = $this->entityManager();
 
         $role = $this->makeRole($em);
-        $role->setLevel(Area::TASK, PermissionLevel::WRITE);
+        $role->setLevel(Area::ADMINISTRATION, PermissionLevel::WRITE);
         $em->flush();
 
         $changes = $this->latestChanges($em, 'role.updated', 'Role');
         self::assertIsArray($changes);
         self::assertArrayHasKey('permissions', $changes);
         self::assertSame([], $changes['permissions']['old']);
-        self::assertSame(['task' => 'write'], $changes['permissions']['new']);
+        self::assertSame(['administration' => 'write'], $changes['permissions']['new']);
     }
 
     public function testRoleAssignmentCollectionChangeIsCaptured(): void

@@ -187,9 +187,10 @@ class User implements UserInterface, Auditable
     /**
      * Security roles derived from the assigned responsibilities. Every authenticated user has
      * ROLE_USER; holding any role flagged as admin (see {@see Role::isAdmin()}) adds ROLE_ADMIN,
-     * which gates the /admin and /audit sections and bypasses the per-area matrix in
-     * {@see \App\Security\Voter\AreaVoter}. Admin power is therefore an explicit flag, not a side
-     * effect of a role's code.
+     * which gates the sensitive /audit trail and bypasses the per-area matrix in
+     * {@see \App\Security\Voter\AreaVoter} (so it also opens the /admin back-office, gated by write
+     * access to {@see \App\Enum\Area::ADMINISTRATION}). Admin power is therefore an explicit flag,
+     * not a side effect of a role's code.
      *
      * @return string[]
      */

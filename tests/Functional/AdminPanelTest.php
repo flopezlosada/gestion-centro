@@ -7,6 +7,8 @@ namespace App\Tests\Functional;
 use App\Entity\Role;
 use App\Entity\Unit;
 use App\Entity\User;
+use App\Enum\Area;
+use App\Enum\PermissionLevel;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -42,6 +44,19 @@ final class AdminPanelTest extends WebTestCase
     {
         // A plain user: no admin flag, so no ROLE_ADMIN.
         $user = (new User())->setFullName('Docente Test')->setEmail('profe@centro.test');
+        $this->em->persist($user);
+        $this->em->flush();
+
+        return $user;
+    }
+
+    private function administrationManager(): User
+    {
+        // Write access to Administration via the matrix, but WITHOUT the superuser flag: reaches the
+        // back-office without being ROLE_ADMIN.
+        $role = (new Role())->setCode('direction')->setName('Dirección')->setLevel(Area::ADMINISTRATION, PermissionLevel::WRITE);
+        $this->em->persist($role);
+        $user = (new User())->setFullName('Directora Test')->setEmail('director@centro.test')->addAssignedRole($role);
         $this->em->persist($user);
         $this->em->flush();
 
@@ -100,6 +115,16 @@ final class AdminPanelTest extends WebTestCase
 
         self::assertResponseIsSuccessful();
         self::assertSelectorNotExists('.nav-section-title');
+    }
+
+    public function testAdministrationManagerReachesAdminWithoutSuperuserFlag(): void
+    {
+        $this->client->loginUser($this->administrationManager());
+
+        $this->client->request('GET', '/admin/usuarios');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('h1', 'Usuarios');
     }
 
     public function testNonAdminIsForbiddenFromAdminUsers(): void

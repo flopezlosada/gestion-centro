@@ -30,16 +30,22 @@ final class DemoFixtures extends Fixture
         $year = SchoolYear::current(new \DateTimeImmutable());
         $startYear = (int) substr($year, 0, 4);
 
-        $direction = (new Role())->setCode('direction')->setName('Dirección')->setAdmin(true);
-        $headDept = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setLevel(Area::TASK, PermissionLevel::WRITE);
-        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setLevel(Area::TASK, PermissionLevel::READ);
-        array_map($manager->persist(...), [$direction, $headDept, $teacherRole]);
+        // Direction manages via the permission matrix (write on Administration) WITHOUT the superuser
+        // flag: it reaches /admin but is not ROLE_ADMIN. TIC is the actual superuser (admin flag).
+        // Task access is universal and scoped by the org chart, so the other roles carry no matrix
+        // permissions — they are pure responsibility markers used for assignment and hierarchy.
+        $direction = (new Role())->setCode('direction')->setName('Dirección')->setLevel(Area::ADMINISTRATION, PermissionLevel::WRITE);
+        $tic = (new Role())->setCode('tic')->setName('TIC')->setAdmin(true);
+        $headDept = (new Role())->setCode('head_dept')->setName('Jefatura de departamento');
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente');
+        array_map($manager->persist(...), [$direction, $tic, $headDept, $teacherRole]);
 
         $director = (new User())->setFullName('Ana Directora')->setEmail('director@centro.test')->addAssignedRole($direction);
+        $ticUser = (new User())->setFullName('Tomás TIC')->setEmail('tic@centro.test')->addAssignedRole($tic);
         $headStudies = (new User())->setFullName('Luis Jefatura')->setEmail('jefatura@centro.test')->addAssignedRole($headDept);
         $mathsHead = (new User())->setFullName('María Matemáticas')->setEmail('mates@centro.test')->addAssignedRole($headDept);
         $teacher = (new User())->setFullName('Pedro Docente')->setEmail('profe@centro.test')->addAssignedRole($teacherRole);
-        array_map($manager->persist(...), [$director, $headStudies, $mathsHead, $teacher]);
+        array_map($manager->persist(...), [$director, $ticUser, $headStudies, $mathsHead, $teacher]);
 
         $management = (new Unit())->setCode('management')->setName('Dirección')->setManager($director);
         $studies = (new Unit())->setCode('head_of_studies')->setName('Jefatura de estudios')->setManager($headStudies)->setParent($management);
