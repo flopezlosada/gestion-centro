@@ -1,0 +1,26 @@
+{% import '_macros/task.html.twig' as taskUi %}
+
+<div class="calendar-dayview">
+    {% if day.nonLective %}
+        <p class="calendar-dayview-flag calendar-dayview-flag--nonlective">
+            <span class="calendar-legend-swatch calendar-legend-swatch--nonlective"></span>
+            Día no lectivo · {{ day.nonLective.description }}
+        </p>
+    {% elseif day.isWeekend %}
+        <p class="calendar-dayview-flag">Fin de semana</p>
+    {% endif %}
+
+    {% if day.tasks is empty %}
+        <div class="empty-state">
+            <p>No hay tareas con fecha límite este día.</p>
+        </div>
+    {% else %}
+        <ol class="agenda-list">
+            {# canWork calculado en el cuerpo (aquí `is_granted`/`app` sí están disponibles) y pasado
+               al macro: mismo criterio que TaskController::canWorkOn (admin o dueño de la tarea). #}
+            {% for task in day.tasks %}
+                {{ taskUi.agenda_item(task, is_granted('ROLE_ADMIN') or task.isOwnedBy(app.user)) }}
+            {% endfor %}
+        </ol>
+    {% endif %}
+</div>

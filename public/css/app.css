@@ -1389,12 +1389,12 @@ input[type="email"], input[type="text"], select, textarea {
 .calendar-title { font-size: 22px; margin: 0; text-transform: capitalize; text-align: center; flex: 1 1 auto; }
 
 .calendar { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--surface); }
-.calendar-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); background: var(--surface-sunken); border-bottom: 1px solid var(--border); }
+.calendar-weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); background: var(--surface-sunken); border-bottom: 1px solid var(--border); }
 .calendar-weekday { padding: 9px 10px; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--text-muted); text-align: left; }
 .calendar-weekday.is-weekend { color: var(--text-faint); }
 
 .calendar-grid { display: flex; flex-direction: column; }
-.calendar-week { display: grid; grid-template-columns: repeat(7, 1fr); }
+.calendar-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .calendar-week + .calendar-week { border-top: 1px solid var(--border); }
 
 .calendar-day { min-height: 116px; padding: 6px 7px 9px; border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 5px; }
@@ -1432,6 +1432,35 @@ input[type="email"], input[type="text"], select, textarea {
 .calendar-legend-swatch { width: 12px; height: 12px; border-radius: var(--radius-sm); flex: none; border: 1px solid var(--border-strong); }
 .calendar-legend-swatch--weekend { background: var(--surface-sunken); }
 .calendar-legend-swatch--nonlective { background: var(--surface); box-shadow: inset 3px 0 0 var(--accent); }
+
+/* Selector de nivel de zoom (día/semana/mes/año) y salto a "Hoy": control segmentado. */
+.calendar-views { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.calendar-views-tabs { display: inline-flex; gap: 2px; padding: 3px; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.calendar-view { padding: 5px 14px; border-radius: var(--radius); text-decoration: none; color: var(--text-muted); font-size: 13.5px; font-weight: 500; line-height: 1.5; }
+.calendar-view:hover { color: var(--text); }
+.calendar-view.is-active { padding: 4px 13px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); }
+
+/* Vista semanal: misma rejilla que el mes, con columnas más altas y tareas sin recortar. */
+.calendar--week .calendar-day { min-height: 300px; }
+.calendar--week .calendar-task-title { white-space: normal; }
+
+/* Vista de día: reutiliza la agenda de Inicio; bandera arriba si es no lectivo o fin de semana. */
+.calendar-dayview { display: flex; flex-direction: column; gap: 14px; }
+.calendar-dayview-flag { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text-muted); }
+.calendar-dayview-flag--nonlective { color: var(--accent); font-weight: 600; }
+
+/* Vista anual: doce mini-meses; cada día con tareas lleva un punto de color por estado.
+   Clic en un mini-mes abre la vista mensual de ese mes. */
+.calendar-year { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
+.cal-mini { display: block; padding: 12px 14px 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); text-decoration: none; color: inherit; }
+.cal-mini:hover { border-color: var(--border-strong); background: var(--surface-sunken); }
+.cal-mini__name { margin: 0 0 8px; font-size: 14px; font-weight: 600; color: var(--text); text-transform: capitalize; }
+.cal-mini__grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.cal-mini__wd { font-family: var(--font-mono); font-size: 9.5px; text-transform: uppercase; color: var(--text-faint); text-align: center; padding-bottom: 3px; }
+.cal-mini__day { position: relative; display: flex; align-items: center; justify-content: center; height: 22px; font-size: 11px; color: var(--text-muted); }
+.cal-mini__day.is-blank { visibility: hidden; }
+.cal-mini__day.is-today .cal-mini__num { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.cal-mini__dot { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 5px; height: 5px; border-radius: 50%; }
 
 /* En pantallas estrechas la rejilla de 7 columnas no cabe: pasa a scroll horizontal
    conservando la semana completa, con un ancho mínimo legible por día. */

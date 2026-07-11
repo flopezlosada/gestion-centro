@@ -3,37 +3,13 @@
 {% block title %}Inicio · {{ app_organization_name }}{% endblock %}
 {% block breadcrumb %}Inicio{% endblock %}
 
-{# Una fila de la agenda: casilla "Hecho" (1 clic, POST) + título enlazado + cuándo/dónde. #}
-{% macro item(task) %}
-    <li class="agenda-item{{ task.checkboxDone ? ' is-done' }}" id="tarea-{{ task.id }}">
-        {% if task.requiresCheckbox %}
-            <form method="post" action="{{ path('task_toggle_done', { id: task.id }) }}" class="agenda-check">
-                <input type="hidden" name="_token" value="{{ csrf_token('toggle_done' ~ task.id) }}">
-                <button type="submit" class="checkbox{{ task.checkboxDone ? ' is-checked' }}"
-                        aria-pressed="{{ task.checkboxDone ? 'true' : 'false' }}"
-                        title="{{ task.checkboxDone ? 'Hecho — pulsa para deshacer' : 'Marcar como hecho (reversible)' }}"
-                        aria-label="Marcar «{{ task.title }}» como {{ task.checkboxDone ? 'no hecha' : 'hecha' }}">
-                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10.5 l3.2 3.2 L15 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-            </form>
-        {% else %}
-            <span class="checkbox is-static" aria-hidden="true"></span>
-        {% endif %}
-        <div class="agenda-body">
-            <a href="{{ path('task_show', { id: task.id }) }}" class="agenda-title">{{ task.title }}</a>
-            <span class="agenda-meta">
-                {{ task.dueDate|date('d/m/Y') }}{% if task.unit %} · {{ task.unit.name }}{% endif %}{% if not task.mandatory %} · voluntaria{% endif %}
-            </span>
-        </div>
-    </li>
-{% endmacro %}
-
 {% macro section(label, tasks, tone) %}
+    {% import '_macros/task.html.twig' as taskUi %}
     {% if tasks is not empty %}
         <section class="agenda-group{{ tone ? ' agenda-group--' ~ tone }}">
             <h2 class="agenda-group__title">{{ label }} <span class="agenda-count">{{ tasks|length }}</span></h2>
             <ol class="agenda-list">
-                {% for task in tasks %}{{ _self.item(task) }}{% endfor %}
+                {% for task in tasks %}{{ taskUi.agenda_item(task) }}{% endfor %}
             </ol>
         </section>
     {% endif %}

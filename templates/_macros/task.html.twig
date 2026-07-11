@@ -15,6 +15,40 @@
     {{- labels[status]|default(status) -}}
 {% endmacro %}
 
+{% macro agenda_item(task, canWork = true) %}
+    {#- Una fila de agenda: casilla "Hecho" (1 clic, POST) + título enlazado + cuándo/dónde.
+        Compartida por la agenda de Inicio y la vista de día del calendario. El botón accionable solo
+        se ofrece si `canWork` (mismo criterio que TaskController::canWorkOn); si no, la casilla se
+        muestra estática (refleja el estado, no acciona). El defaulta a true porque Inicio solo lista
+        tareas propias; el calendario, que muestra también tareas visibles por jerarquía ajenas, pasa
+        el flag calculado. Se recibe por parámetro (no vía `is_granted`/`app` aquí dentro) porque las
+        macros de Twig están aisladas del contexto: el cálculo vive en el cuerpo de la plantilla. -#}
+    {% set canToggle = task.requiresCheckbox and canWork %}
+    <li class="agenda-item{{ task.checkboxDone ? ' is-done' }}" id="tarea-{{ task.id }}">
+        {% if canToggle %}
+            <form method="post" action="{{ path('task_toggle_done', { id: task.id }) }}" class="agenda-check">
+                <input type="hidden" name="_token" value="{{ csrf_token('toggle_done' ~ task.id) }}">
+                <button type="submit" class="checkbox{{ task.checkboxDone ? ' is-checked' }}"
+                        aria-pressed="{{ task.checkboxDone ? 'true' : 'false' }}"
+                        title="{{ task.checkboxDone ? 'Hecho — pulsa para deshacer' : 'Marcar como hecho (reversible)' }}"
+                        aria-label="Marcar «{{ task.title }}» como {{ task.checkboxDone ? 'no hecha' : 'hecha' }}">
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10.5 l3.2 3.2 L15 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+            </form>
+        {% else %}
+            <span class="checkbox is-static{{ task.requiresCheckbox and task.checkboxDone ? ' is-checked' }}" aria-hidden="true">
+                {% if task.requiresCheckbox and task.checkboxDone %}<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10.5 l3.2 3.2 L15 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>{% endif %}
+            </span>
+        {% endif %}
+        <div class="agenda-body">
+            <a href="{{ path('task_show', { id: task.id }) }}" class="agenda-title">{{ task.title }}</a>
+            <span class="agenda-meta">
+                {{ task.dueDate|date('d/m/Y') }}{% if task.unit %} · {{ task.unit.name }}{% endif %}{% if not task.mandatory %} · voluntaria{% endif %}
+            </span>
+        </div>
+    </li>
+{% endmacro %}
+
 {% macro status_dot(status) %}
     {#- Puntito de color por estado para vistas compactas (calendario). Comparte la escala
         semántica del badge; el valor del estado es la propia clase modificadora. -#}

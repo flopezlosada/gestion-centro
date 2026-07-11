@@ -1,67 +1,45 @@
 {% extends 'app_shell.html.twig' %}
 {% import '_macros/task.html.twig' as taskUi %}
 
-{% block title %}Calendario · {{ monthLabel }} · {{ app_organization_name }}{% endblock %}
+{% block title %}Calendario · {{ label }} · {{ app_organization_name }}{% endblock %}
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Calendario{% endblock %}
 
 {% block body %}
     <div class="page-head">
         <div>
             <h1>Calendario de tareas</h1>
-            <p class="lead">El plan de tareas del centro, mes a mes, por fecha límite.</p>
+            <p class="lead">El plan de tareas del centro, por fecha límite. Cambia el nivel de zoom: día, semana, mes o año.</p>
         </div>
     </div>
 
     <div class="card">
         <div class="calendar-toolbar">
-            <a class="btn secondary btn-sm" href="{{ path('calendar_index', { mes: prevMonth }) }}" rel="prev">‹ Mes anterior</a>
-            <h2 class="calendar-title">{{ monthLabel }}</h2>
-            <a class="btn secondary btn-sm" href="{{ path('calendar_index', { mes: nextMonth }) }}" rel="next">Mes siguiente ›</a>
+            <a class="btn secondary btn-sm" href="{{ path('calendar_index', { vista: view, fecha: prevDate }) }}" rel="prev">‹ Anterior</a>
+            <h2 class="calendar-title">{{ label }}</h2>
+            <a class="btn secondary btn-sm" href="{{ path('calendar_index', { vista: view, fecha: nextDate }) }}" rel="next">Siguiente ›</a>
         </div>
 
-        <div class="calendar" role="grid" aria-label="Calendario del mes de {{ monthLabel }}">
-            <div class="calendar-weekdays" role="row">
-                {% for weekday in ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] %}
-                    <div class="calendar-weekday{{ loop.index >= 6 ? ' is-weekend' : '' }}" role="columnheader">{{ weekday }}</div>
+        <div class="calendar-views">
+            {% set viewLabels = { dia: 'Día', semana: 'Semana', mes: 'Mes', anio: 'Año' } %}
+            <nav class="calendar-views-tabs" aria-label="Nivel de zoom del calendario">
+                {% for v in views %}
+                    <a class="calendar-view{{ v == view ? ' is-active' }}"{{ v == view ? ' aria-current="page"' }}
+                       href="{{ path('calendar_index', { vista: v, fecha: anchor|date('Y-m-d') }) }}">{{ viewLabels[v] }}</a>
                 {% endfor %}
-            </div>
-
-            <div class="calendar-grid">
-                {% for week in weeks %}
-                    <div class="calendar-week" role="row">
-                        {% for cell in week %}
-                            <div class="calendar-day{{ cell.inMonth ? '' : ' is-outside' }}{{ cell.isToday ? ' is-today' : '' }}{{ cell.isWeekend ? ' is-weekend' : '' }}{{ cell.nonLective ? ' is-nonlective' : '' }}" role="gridcell"{% if cell.nonLective %} title="{{ cell.nonLective.description }}"{% endif %}>
-                                <div class="calendar-daynum">
-                                    <span{% if cell.isToday %} aria-current="date"{% endif %}>{{ cell.date|date('j') }}</span>
-                                </div>
-                                {% if cell.nonLective %}
-                                    <p class="calendar-nonlective">{{ cell.nonLective.description }}</p>
-                                {% endif %}
-                                {% if cell.tasks is not empty %}
-                                    <ul class="calendar-tasks">
-                                        {% for t in cell.tasks %}
-                                            <li>
-                                                <a class="calendar-task" href="{{ path('task_show', { id: t.id }) }}" title="{{ t.title }}">
-                                                    {{ taskUi.status_dot(t.status) }}
-                                                    <span class="calendar-task-title">{{ t.title }}</span>
-                                                </a>
-                                            </li>
-                                        {% endfor %}
-                                    </ul>
-                                {% endif %}
-                            </div>
-                        {% endfor %}
-                    </div>
-                {% endfor %}
-            </div>
+            </nav>
+            <a class="btn secondary btn-sm" href="{{ path('calendar_index', { vista: view, fecha: todayDate }) }}">Hoy</a>
         </div>
 
-        <ul class="calendar-legend" aria-label="Leyenda de estados">
-            {% for status in ['pending', 'in_progress', 'submitted', 'done', 'validated', 'rejected'] %}
-                <li>{{ taskUi.status_dot(status) }} {{ taskUi.status_label(status) }}</li>
-            {% endfor %}
-            <li><span class="calendar-legend-swatch calendar-legend-swatch--weekend"></span> Fin de semana</li>
-            <li><span class="calendar-legend-swatch calendar-legend-swatch--nonlective"></span> Día no lectivo</li>
-        </ul>
+        {% include template %}
+
+        {% if view != 'dia' %}
+            <ul class="calendar-legend" aria-label="Leyenda de estados">
+                {% for status in ['pending', 'in_progress', 'submitted', 'done', 'validated', 'rejected'] %}
+                    <li>{{ taskUi.status_dot(status) }} {{ taskUi.status_label(status) }}</li>
+                {% endfor %}
+                <li><span class="calendar-legend-swatch calendar-legend-swatch--weekend"></span> Fin de semana</li>
+                <li><span class="calendar-legend-swatch calendar-legend-swatch--nonlective"></span> Día no lectivo</li>
+            </ul>
+        {% endif %}
     </div>
 {% endblock %}

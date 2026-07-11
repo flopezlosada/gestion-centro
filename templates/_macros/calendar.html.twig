@@ -1,0 +1,28 @@
+{#
+   Una celda de día del calendario, compartida por las vistas mensual y semanal. El marcador de
+   "no lectivo" solo llega relleno (cell.nonLective) para los días del propio mes: el controlador lo
+   anula en los días de meses colindantes que asoman en la rejilla, así que aquí no hay que filtrar.
+#}
+{% macro day_cell(cell) %}
+    {% import '_macros/task.html.twig' as taskUi %}
+    <div class="calendar-day{{ cell.inMonth ? '' : ' is-outside' }}{{ cell.isToday ? ' is-today' : '' }}{{ cell.isWeekend ? ' is-weekend' : '' }}{{ cell.nonLective ? ' is-nonlective' : '' }}" role="gridcell"{% if cell.nonLective %} title="{{ cell.nonLective.description }}"{% endif %}>
+        <div class="calendar-daynum">
+            <span{% if cell.isToday %} aria-current="date"{% endif %}>{{ cell.date|date('j') }}</span>
+        </div>
+        {% if cell.nonLective %}
+            <p class="calendar-nonlective">{{ cell.nonLective.description }}</p>
+        {% endif %}
+        {% if cell.tasks is not empty %}
+            <ul class="calendar-tasks">
+                {% for t in cell.tasks %}
+                    <li>
+                        <a class="calendar-task" href="{{ path('task_show', { id: t.id }) }}" title="{{ t.title }}">
+                            {{ taskUi.status_dot(t.status) }}
+                            <span class="calendar-task-title">{{ t.title }}</span>
+                        </a>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    </div>
+{% endmacro %}
