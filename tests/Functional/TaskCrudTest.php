@@ -42,8 +42,9 @@ final class TaskCrudTest extends WebTestCase
     {
         $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
-        $this->client->loginUser($this->user('jefa@centro.test', $unit));
+        $user = $this->user('jefa@centro.test', $unit);
         $this->em->flush();
+        $this->client->loginUser($user);
 
         $this->client->request('GET', '/tareas/nueva');
 
@@ -82,9 +83,10 @@ final class TaskCrudTest extends WebTestCase
         $task = new Task('Memoria', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
         $task->setUnit($unit)->setCreatedBy($creator);
         $this->em->persist($task);
+        $stranger = $this->user('otro@centro.test');
         $this->em->flush();
 
-        $this->client->loginUser($this->user('otro@centro.test'));
+        $this->client->loginUser($stranger);
         $this->client->request('GET', '/tareas/'.$task->getId().'/editar');
 
         self::assertResponseStatusCodeSame(403);

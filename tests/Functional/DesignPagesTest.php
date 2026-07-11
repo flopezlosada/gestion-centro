@@ -117,10 +117,27 @@ final class DesignPagesTest extends WebTestCase
         self::assertSelectorExists('.obj-timeline');
     }
 
-    public function testNonSuperiorDoesNotSeeActivityHistory(): void
+    public function testOwnerSeesActivityHistory(): void
     {
+        // The assignee is the task's owner and now sees its own history.
         $s = $this->seed();
         $this->client->loginUser($s['teacher']);
+
+        $this->client->request('GET', '/tareas/'.$s['task']->getId());
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('.obj-timeline');
+    }
+
+    public function testUnrelatedReaderDoesNotSeeActivityHistory(): void
+    {
+        $s = $this->seed();
+        // A reader with access to the module but unrelated to the task (not assignee, not superior).
+        $role = (new Role())->setCode('lector')->setName('Lector')->setLevel(Area::TASK, PermissionLevel::READ);
+        $this->em->persist($role);
+        $reader = $this->user('lector@centro.test', $role);
+        $this->em->flush();
+        $this->client->loginUser($reader);
 
         $this->client->request('GET', '/tareas/'.$s['task']->getId());
 
