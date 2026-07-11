@@ -74,10 +74,20 @@ final class AdminUserController extends AbstractController
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
 
+        // Assigning (or removing) a superuser role is reserved to superusers: an administration-area
+        // manager must not be able to grant themselves ROLE_ADMIN, nor tamper with existing admin
+        // accounts. Snapshot the pre-bind state so editing an admin account is blocked too.
+        $isSuperuser = $this->isGranted('ROLE_ADMIN');
+        $touchedAdminAccount = !$isSuperuser && $this->hasAdminRole($user);
+
         $form = $this->createForm(UserType::class, $user);
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
+            if (!$isSuperuser && ($touchedAdminAccount || $this->hasAdminRole($user))) {
+                throw $this->createAccessDeniedException('Solo un administrador puede gestionar cuentas con rol de administrador.');
+            }
+
             $em->persist($user);
             $em->flush();
 
@@ -96,5 +106,23 @@ final class AdminUserController extends AbstractController
             'form' => $form,
             'user' => $user,
         ]);
+    }
+
+    /**
+     * Whether the user holds any superuser (admin-flagged) role.
+     *
+     * @param User $user the user to inspect
+     *
+     * @return bool true if at least one assigned role has the admin flag
+     */
+    private function hasAdminRole(User $user): bool
+    {
+        foreach ($user->getAssignedRoles() as $role) {
+            if ($role->isAdmin()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

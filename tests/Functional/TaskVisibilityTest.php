@@ -98,4 +98,25 @@ final class TaskVisibilityTest extends WebTestCase
         self::assertStringContainsString('Tarea de Matemáticas', $content);
         self::assertStringContainsString('Tarea de Lengua', $content);
     }
+
+    public function testUserHoldingTheAssignedRoleSeesTheTask(): void
+    {
+        // A task assigned to a ROLE (not a person), in a unit the holder neither belongs to nor manages.
+        $role = (new Role())->setCode('ccp')->setName('Coordinación CCP');
+        $holder = (new User())->setFullName('Rol Holder')->setEmail('holder@centro.test')->addAssignedRole($role);
+        $otherHead = (new User())->setFullName('Otra Jefa')->setEmail('otra@centro.test');
+        $unit = (new Unit())->setCode('lengua')->setName('Departamento de Lengua')->setManager($otherHead);
+
+        $task = (new Task('Tarea por rol', SchoolYear::current(new \DateTimeImmutable()), new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE))
+            ->setUnit($unit)->setAssignedRole($role);
+
+        array_map($this->em->persist(...), [$role, $holder, $otherHead, $unit, $task]);
+        $this->em->flush();
+
+        $this->client->loginUser($holder);
+        $this->client->request('GET', '/tareas');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('table', 'Tarea por rol');
+    }
 }

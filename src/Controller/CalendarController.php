@@ -54,10 +54,10 @@ final class CalendarController extends AbstractController
         $gridEnd = $monthEnd->modify('+'.(7 - (int) $monthEnd->format('N')).' days');
 
         // Same universal-access-with-hierarchy-filter as the task list: only the tasks this user may see.
-        $visible = array_filter(
+        $visible = array_values(array_filter(
             $tasks->findDueBetween($gridStart, $gridEnd),
             static fn (Task $task): bool => $hierarchy->canSeeTask($user, $task),
-        );
+        ));
 
         return $this->render('calendar/index.html.twig', [
             'monthLabel' => self::MONTH_NAMES[(int) $monthStart->format('n')].' '.$monthStart->format('Y'),

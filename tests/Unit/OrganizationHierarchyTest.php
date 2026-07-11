@@ -117,4 +117,14 @@ final class OrganizationHierarchyTest extends TestCase
 
         self::assertFalse($h->canSeeTask($outsider, $task), 'a teacher does not see another unit\'s task');
     }
+
+    public function testTaskWithoutUnitIsSeenOnlyByItsAssignee(): void
+    {
+        [0 => $h] = $this->tree();
+        $assignee = $this->user('assignee');
+        $task = $this->task(null)->setAssignedUser($assignee);
+
+        self::assertTrue($h->canSeeTask($assignee, $task), 'the assignee sees their task even with no unit');
+        self::assertFalse($h->canSeeTask($this->user('outsider'), $task), 'with no unit no superior can be determined');
+    }
 }

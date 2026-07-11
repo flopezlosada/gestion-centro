@@ -140,6 +140,52 @@ final class AdminPanelTest extends WebTestCase
         self::assertSelectorTextContains('.nav-section-title', 'Administración');
     }
 
+    public function testRoleFormHidesAdminToggleForNonSuperuser(): void
+    {
+        // A non-superuser managing the administration area must not even see the admin flag control,
+        // so they cannot promote a role (nor themselves) to superuser.
+        $this->client->loginUser($this->directionNonSuperuser());
+
+        $this->client->request('GET', '/admin/roles/nuevo');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorNotExists('.perm-admin__input');
+    }
+
+    public function testRoleFormShowsAdminToggleForSuperuser(): void
+    {
+        $this->client->loginUser($this->admin());
+
+        $this->client->request('GET', '/admin/roles/nuevo');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('.perm-admin__input');
+    }
+
+    public function testNonSuperuserCannotAssignAnAdminRole(): void
+    {
+        $adminRole = (new Role())->setCode('tic')->setName('TIC')->setAdmin(true);
+        $this->em->persist($adminRole);
+        $this->em->flush();
+
+        $this->client->loginUser($this->directionNonSuperuser());
+
+        $crawler = $this->client->request('GET', '/admin/usuarios/nuevo');
+        self::assertResponseIsSuccessful();
+
+        $form = $crawler->selectButton('Guardar')->form([
+            'user[fullName]' => 'Aspirante Admin',
+            'user[email]' => 'aspirante@centro.test',
+            'user[active]' => true,
+        ]);
+        // Tick the superuser role: the controller must reject this self-escalation attempt.
+        $form['user[assignedRoles]'] = [(string) $adminRole->getId()];
+        $this->client->submit($form);
+
+        self::assertResponseStatusCodeSame(403);
+        self::assertNull($this->em->getRepository(User::class)->findOneBy(['email' => 'aspirante@centro.test']));
+    }
+
     public function testNonAdminIsForbiddenFromAdminUsers(): void
     {
         $this->client->loginUser($this->teacher());

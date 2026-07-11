@@ -58,7 +58,14 @@
         <section class="card">
             <div class="page-head"><div><h2>Entregable</h2><p class="lead">Enlace o referencia al documento (vive en la nube del centro; aquí solo guardamos la referencia).</p></div></div>
             {% if task.deliverableReference %}
-                <p><strong>Referencia:</strong> {% if task.deliverableReference starts with 'http' %}<a href="{{ task.deliverableReference }}" target="_blank" rel="noopener">{{ task.deliverableReference }}</a>{% else %}{{ task.deliverableReference }}{% endif %}</p>
+                {# La referencia apunta a un documento real en la nube del centro: se muestra solo a las
+                   personas implicadas y a sus superiores/admin (canSeeHistory), no a cualquiera que abra
+                   el detalle. #}
+                {% if canSeeHistory %}
+                    <p><strong>Referencia:</strong> {% if task.deliverableReference starts with 'http' %}<a href="{{ task.deliverableReference }}" target="_blank" rel="noopener">{{ task.deliverableReference }}</a>{% else %}{{ task.deliverableReference }}{% endif %}</p>
+                {% else %}
+                    <p class="muted">Hay un entregable, pero no tienes acceso a su referencia.</p>
+                {% endif %}
             {% else %}
                 <p class="muted">Aún no hay entregable.</p>
             {% endif %}
