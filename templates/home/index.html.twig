@@ -50,6 +50,7 @@
                 {% else %}Esto es lo que tienes que hacer.{% endif %}
             </p>
         </div>
+        <div><a class="btn" href="{{ path('task_new') }}">+ Nueva tarea</a></div>
     </div>
 
     {% if pendingCount == 0 and buckets.done is empty %}

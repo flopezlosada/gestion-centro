@@ -73,15 +73,15 @@ final class DemoFixtures extends Fixture
         // one overdue (soft), one due today, one this week, and one already done.
         $today = new \DateTimeImmutable('today');
         $teacherPlan = [
-            ['Preparar el acta de la CCP', $today, false],
-            ['Entregar la programación de aula', $today->modify('+3 days'), false],
-            ['Revisar las propuestas de mejora del trimestre', $today->modify('-2 days'), false],
-            ['Actualizar el tablón del aula', $today->modify('-10 days'), true],
+            ['Preparar el acta de la CCP', 'Redactar y subir el acta de la última Comisión de Coordinación Pedagógica.', $today, false],
+            ['Entregar la programación de aula', 'Revisar la programación con los criterios del departamento antes de entregarla.', $today->modify('+3 days'), false],
+            ['Revisar las propuestas de mejora del trimestre', null, $today->modify('-2 days'), false],
+            ['Actualizar el tablón del aula', null, $today->modify('-10 days'), true],
         ];
         $teacherTasks = [];
-        foreach ($teacherPlan as [$title, $due, $done]) {
+        foreach ($teacherPlan as [$title, $description, $due, $done]) {
             $task = new Task($title, $year, $due, TaskType::SIMPLE);
-            $task->setUnit($maths)->setAssignedUser($teacher)->setCheckboxDone($done);
+            $task->setDescription($description)->setUnit($maths)->setAssignedUser($teacher)->setCheckboxDone($done)->setCreatedBy($director);
             $manager->persist($task);
             $teacherTasks[] = $task;
         }
@@ -89,7 +89,8 @@ final class DemoFixtures extends Fixture
         // A deliverable task in progress, so the teacher's task detail shows the full workbench
         // (action "Entregar" + the deliverable reference form).
         $withDeliverable = Task::fromTemplate($reportTpl, $year, $today->modify('+5 days'));
-        $withDeliverable->setUnit($maths)->setAssignedUser($teacher)->setStatus('in_progress');
+        $withDeliverable->setDescription('Memoria anual del departamento con resultados y propuestas para el curso que viene.')
+            ->setUnit($maths)->setAssignedUser($teacher)->setStatus('in_progress')->setCreatedBy($director);
         $manager->persist($withDeliverable);
 
         // A couple of demo notices for the teacher so the inbox and its badge are not empty.

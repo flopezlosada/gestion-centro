@@ -7,8 +7,11 @@ namespace App\Controller;
 use App\Entity\Task;
 use App\Entity\User;
 use App\Enum\Area;
+use App\Form\TaskFormData;
+use App\Form\TaskFormType;
 use App\Repository\AuditLogRepository;
 use App\Repository\TaskRepository;
+use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
 use App\Service\OrganizationHierarchy;
 use App\Service\TaskWorkflow;
@@ -41,6 +44,95 @@ final class TaskController extends AbstractController
         ]);
     }
 
+    /**
+     * Creates a task. Each user may assign it to themselves or to someone below them in the chain of
+     * command (the scope from {@see OrganizationHierarchy::assignableUnits()}); the choices are
+     * limited to that set and re-checked on submit.
+     */
+    #[Route('/tareas/nueva', name: 'task_new', methods: ['GET', 'POST'])]
+    public function new(Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, UserRepository $users, EntityManagerInterface $entityManager): Response
+    {
+        $assignable = $this->assignableUsers($user, $hierarchy, $users);
+
+        $data = new TaskFormData();
+        $data->assignedUser = $user;
+        $form = $this->createForm(TaskFormType::class, $data, ['assignable_users' => $assignable, 'include_type' => true]);
+        $form->handleRequest($request);
+
+        if ($form->isSubmitted() && $form->isValid()) {
+            if (!\in_array($data->assignedUser, $assignable, true)) {
+                throw $this->createAccessDeniedException('No puedes asignar tareas a esa persona.');
+            }
+
+            $task = new Task($data->title, SchoolYear::current($data->dueDate), $data->dueDate, $data->type);
+            $this->applyFormData($task, $data);
+            $task->setCreatedBy($user);
+            $entityManager->persist($task);
+            $entityManager->flush();
+            $this->addFlash('success', 'Tarea creada.');
+
+            return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
+        }
+
+        return $this->render('task/new.html.twig', ['form' => $form]);
+    }
+
+    /**
+     * Edits a task. Allowed to its creator, a superior of its unit, or an admin. The task type is
+     * not editable (it governs the lifecycle already in progress).
+     */
+    #[Route('/tareas/{id}/editar', name: 'task_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
+    public function edit(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, UserRepository $users, EntityManagerInterface $entityManager): Response
+    {
+        if (!$this->canManage($task, $user, $hierarchy)) {
+            throw $this->createAccessDeniedException('No puedes editar esta tarea.');
+        }
+
+        $assignable = $this->assignableUsers($user, $hierarchy, $users);
+        // Keep the current assignee as a valid choice even if now outside the scope.
+        if (null !== $task->getAssignedUser() && !\in_array($task->getAssignedUser(), $assignable, true)) {
+            $assignable[] = $task->getAssignedUser();
+        }
+
+        $data = TaskFormData::fromTask($task);
+        $form = $this->createForm(TaskFormType::class, $data, ['assignable_users' => $assignable, 'include_type' => false]);
+        $form->handleRequest($request);
+
+        if ($form->isSubmitted() && $form->isValid()) {
+            if (!\in_array($data->assignedUser, $assignable, true)) {
+                throw $this->createAccessDeniedException('No puedes asignar tareas a esa persona.');
+            }
+
+            $this->applyFormData($task, $data);
+            $entityManager->flush();
+            $this->addFlash('success', 'Tarea actualizada.');
+
+            return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
+        }
+
+        return $this->render('task/edit.html.twig', ['form' => $form, 'task' => $task]);
+    }
+
+    /**
+     * Deletes a task. Allowed to its creator, a superior of its unit, or an admin.
+     */
+    #[Route('/tareas/{id}/borrar', name: 'task_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function delete(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, EntityManagerInterface $entityManager): Response
+    {
+        if (!$this->isCsrfTokenValid('task_delete'.$task->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+        if (!$this->canManage($task, $user, $hierarchy)) {
+            throw $this->createAccessDeniedException('No puedes borrar esta tarea.');
+        }
+
+        $entityManager->remove($task);
+        $entityManager->flush();
+        $this->addFlash('success', 'Tarea borrada.');
+
+        return $this->redirectToRoute('task_index');
+    }
+
     #[Route('/tareas/{id}', name: 'task_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function show(
         Task $task,
@@ -51,10 +143,11 @@ final class TaskController extends AbstractController
     ): Response {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::TASK);
 
-        // The activity history is recorded for everyone but only superiors (up the chain) and admins
-        // may read it on the object's page.
-        $canSeeHistory = $this->isGranted('ROLE_ADMIN') || $hierarchy->isSuperiorOf($user, $task->getUnit());
+        // The activity history is recorded for everyone; on the object's page it is shown to the
+        // people involved in the task (whoever works on it) and to its superiors/admins — never to
+        // an unrelated user.
         $canWork = $this->canWorkOn($task, $user);
+        $canSeeHistory = $canWork || $hierarchy->isSuperiorOf($user, $task->getUnit());
 
         return $this->render('task/show.html.twig', [
             'task' => $task,
@@ -169,6 +262,47 @@ final class TaskController extends AbstractController
         // Back to the agenda, landing on the task just ticked. Route-based (no referer) to avoid
         // any open-redirect; _fragment adds the "#tarea-id" anchor.
         return $this->redirectToRoute('app_homepage', ['_fragment' => 'tarea-'.$task->getId()]);
+    }
+
+    /**
+     * Copies the common editable fields from the form data onto the task (title, dates, flags,
+     * assignee and its unit). Does NOT touch the type — that governs the lifecycle.
+     */
+    private function applyFormData(Task $task, TaskFormData $data): void
+    {
+        \assert(null !== $data->dueDate && null !== $data->assignedUser);
+        $task->setTitle($data->title)
+            ->setDescription($data->description)
+            ->setDueDate($data->dueDate)
+            ->setSchoolYear(SchoolYear::current($data->dueDate))
+            ->setMandatory($data->mandatory)
+            ->setRequiresCheckbox($data->requiresCheckbox)
+            ->setRequiresDocument($data->requiresDocument)
+            ->setAssignedUser($data->assignedUser)
+            ->setUnit($data->assignedUser->getUnit());
+    }
+
+    /**
+     * The people a user may assign tasks to: everyone in their unit's subtree, plus themselves.
+     *
+     * @return list<User> the assignable users
+     */
+    private function assignableUsers(User $user, OrganizationHierarchy $hierarchy, UserRepository $users): array
+    {
+        $list = $users->findActiveInUnits($hierarchy->assignableUnits($user));
+        if (!\in_array($user, $list, true)) {
+            $list[] = $user;
+        }
+
+        return $list;
+    }
+
+    /**
+     * Whether the user may edit/delete the task: its creator, a superior of its unit, or an admin.
+     */
+    private function canManage(Task $task, User $user, OrganizationHierarchy $hierarchy): bool
+    {
+        return $this->isGranted('ROLE_ADMIN') || $task->getCreatedBy() === $user || $hierarchy->isSuperiorOf($user, $task->getUnit());
     }
 
     /**

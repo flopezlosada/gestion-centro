@@ -1,0 +1,22 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}Nueva tarea · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('task_index') }}">Tareas</a><span class="sep">/</span>Nueva{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Nueva tarea</h1>
+            <p class="lead">Créala para ti o para alguien de tu equipo.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        {{ form_start(form) }}
+        {{ form_errors(form) }}
+        {{ f.fields([form.title, form.description, form.type, form.dueDate, form.assignedUser, form.mandatory, form.requiresCheckbox, form.requiresDocument]) }}
+        {{ f.actions(path('app_homepage'), 'Crear tarea') }}
+        {{ form_end(form) }}
+    </div>
+{% endblock %}
