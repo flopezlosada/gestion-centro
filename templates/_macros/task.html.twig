@@ -21,6 +21,19 @@
     <span class="calendar-dot calendar-dot--{{ status }}" title="{{ _self.status_label(status) }}"></span>
 {% endmacro %}
 
+{% macro action_label(name) %}
+    {%- set labels = {
+        'start': 'Empezar',
+        'complete': 'Marcar hecha',
+        'submit': 'Entregar',
+        'validate': 'Validar',
+        'reject': 'Devolver',
+        'reopen': 'Reabrir',
+        'rework': 'Retomar',
+    } -%}
+    {{- labels[name]|default(name) -}}
+{% endmacro %}
+
 {% macro status_badge(status) %}
     {%- set classes = {
         'pending': 'badge--muted',

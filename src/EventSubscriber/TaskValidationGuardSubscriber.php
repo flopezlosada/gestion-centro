@@ -17,10 +17,10 @@ use Symfony\Component\Workflow\Event\GuardEvent;
  *  1. Integrity: both task workflows support App\Entity\Task and share place names (pending,
  *     validated), so applying the wrong workflow to a task could move it to a place of the other
  *     lifecycle. Any transition whose workflow does not match the task's own type is blocked.
- *  2. Separation of duties: the "validate" transition may only be fired by a superior of the task's
- *     unit (up the chain of command) or an admin, and never by the task's own assignee. Progress
- *     transitions (complete/submit/…) are NOT restricted here — that will be handled where they are
- *     triggered (controller/voter), like the rest of the app.
+ *  2. Separation of duties: the superior's verdict transitions ("validate" and "reject") may only be
+ *     fired by a superior of the task's unit (up the chain of command) or an admin, and never by the
+ *     task's own assignee. Progress transitions (start/submit/complete/…) are NOT restricted here —
+ *     that is handled where they are triggered (controller/voter), like the rest of the app.
  */
 #[AsEventListener(event: 'workflow.guard')]
 final class TaskValidationGuardSubscriber
@@ -46,20 +46,22 @@ final class TaskValidationGuardSubscriber
             return;
         }
 
-        if ('validate' !== $event->getTransition()->getName()) {
+        // Superior-only transitions (the verdict on someone else's work). Keep this list in sync with
+        // TaskController::SUPERIOR_TRANSITIONS — both must agree on what counts as a superior action.
+        if (!\in_array($event->getTransition()->getName(), ['validate', 'reject'], true)) {
             return;
         }
 
         $actor = $this->security->getUser();
         if (!$actor instanceof User) {
-            $event->setBlocked(true, 'Solo una persona identificada puede validar una tarea.');
+            $event->setBlocked(true, 'Solo una persona identificada puede validar o devolver una tarea.');
 
             return;
         }
 
-        // Separation of duties: you never validate your own task, even if you manage its unit.
+        // Separation of duties: you never validate/reject your own task, even if you manage its unit.
         if ($actor === $task->getAssignedUser()) {
-            $event->setBlocked(true, 'No puedes validar tu propia tarea.');
+            $event->setBlocked(true, 'No puedes validar ni devolver tu propia tarea.');
 
             return;
         }
@@ -69,7 +71,7 @@ final class TaskValidationGuardSubscriber
         }
 
         if (!$this->hierarchy->isSuperiorOf($actor, $task->getUnit())) {
-            $event->setBlocked(true, 'Solo un superior de la unidad puede validar esta tarea.');
+            $event->setBlocked(true, 'Solo un superior de la unidad puede validar o devolver esta tarea.');
         }
     }
 }

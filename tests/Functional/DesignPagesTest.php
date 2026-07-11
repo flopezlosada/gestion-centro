@@ -113,14 +113,31 @@ final class DesignPagesTest extends WebTestCase
         $this->client->request('GET', '/tareas/'.$s['task']->getId());
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('h2', 'Histórico de actividad');
+        self::assertStringContainsString('Histórico de actividad', (string) $this->client->getResponse()->getContent());
         self::assertSelectorExists('.obj-timeline');
     }
 
-    public function testNonSuperiorDoesNotSeeActivityHistory(): void
+    public function testOwnerSeesActivityHistory(): void
     {
+        // The assignee is the task's owner and now sees its own history.
         $s = $this->seed();
         $this->client->loginUser($s['teacher']);
+
+        $this->client->request('GET', '/tareas/'.$s['task']->getId());
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('.obj-timeline');
+    }
+
+    public function testUnrelatedReaderDoesNotSeeActivityHistory(): void
+    {
+        $s = $this->seed();
+        // A reader with access to the module but unrelated to the task (not assignee, not superior).
+        $role = (new Role())->setCode('lector')->setName('Lector')->setLevel(Area::TASK, PermissionLevel::READ);
+        $this->em->persist($role);
+        $reader = $this->user('lector@centro.test', $role);
+        $this->em->flush();
+        $this->client->loginUser($reader);
 
         $this->client->request('GET', '/tareas/'.$s['task']->getId());
 
@@ -147,5 +164,35 @@ final class DesignPagesTest extends WebTestCase
 
         self::assertResponseIsSuccessful();
         self::assertSelectorExists('.obj-timeline');
+    }
+
+    public function testAssigneeCanAdvanceTaskFromDetail(): void
+    {
+        $s = $this->seed();
+        $this->client->loginUser($s['teacher']);
+
+        $crawler = $this->client->request('GET', '/tareas/'.$s['task']->getId());
+        $this->client->submit($crawler->filter('.task-actions form')->first()->form());
+
+        self::assertResponseRedirects();
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(Task::class)->find($s['task']->getId());
+        self::assertNotNull($reloaded);
+        self::assertSame('in_progress', $reloaded->getStatus(), 'el responsable avanza la tarea desde el detalle');
+    }
+
+    public function testNonSuperiorHasNoValidateActionOnSubmittedTask(): void
+    {
+        $s = $this->seed();
+        $s['task']->setStatus('submitted');
+        $this->em->flush();
+        $this->client->loginUser($s['teacher']);
+
+        $this->client->request('GET', '/tareas/'.$s['task']->getId());
+
+        self::assertResponseIsSuccessful();
+        $content = (string) $this->client->getResponse()->getContent();
+        self::assertStringNotContainsString('accion/validate', $content, 'un no-superior no ve la acción de validar');
+        self::assertStringNotContainsString('accion/reject', $content, 'un no-superior no ve la acción de devolver');
     }
 }

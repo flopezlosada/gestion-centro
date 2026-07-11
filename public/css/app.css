@@ -1458,7 +1458,7 @@ input[type="email"], input[type="text"], select, textarea {
 /* ---- Agenda del inicio ("qué tengo que hacer") --------------------------
    Checklist familiar: una casilla de 1 clic + título + cuándo/dónde, agrupada por tiempo.
    Vencidas en ámbar suave (nunca rojo agresivo): que no dé pereza abrirla. */
-.agenda-group { margin: 0 0 22px; }
+.agenda-group { margin: 0 0 28px; max-width: 760px; }
 .agenda-group__title {
     display: flex; align-items: center; gap: 8px;
     font-family: var(--font-body); font-size: 12.5px; font-weight: 600;
@@ -1473,39 +1473,49 @@ input[type="email"], input[type="text"], select, textarea {
 .agenda-group--overdue .agenda-group__title { color: var(--warning-text); }
 .agenda-group--overdue .agenda-count { background: var(--warning-weak); color: var(--warning-text); }
 
-.agenda-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+/* Lista plana estilo Todoist: filas separadas por filete fino, sin cajitas; hover tiñe la fila. */
+.agenda-list { list-style: none; margin: 0; padding: 0; }
 .agenda-item {
-    display: flex; align-items: flex-start; gap: 14px;
-    padding: 14px 16px; background: var(--surface);
-    border: 1px solid var(--border); border-radius: var(--radius-lg);
-    transition: border-color .12s ease, box-shadow .12s ease;
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 12px 10px; border-bottom: 1px solid var(--border); border-radius: 6px;
+    transition: background .12s ease;
 }
-.agenda-item:hover { border-color: var(--border-strong); }
-.agenda-group--overdue .agenda-item { border-left: 3px solid var(--warning); }
+.agenda-item:first-child { border-top: 1px solid var(--border); }
+.agenda-item:hover { background: var(--surface-sunken); }
 
-/* Casilla "Hecho": botón que parece checkbox; el check aparece al marcar. */
+/* Casilla "Hecho": círculo (como Todoist); el check aparece al marcar. */
 .agenda-check { margin: 0; flex: none; }
 .checkbox {
-    display: grid; place-items: center; width: 26px; height: 26px; padding: 0;
-    background: var(--surface); border: 2px solid var(--border-strong); border-radius: 7px;
+    display: grid; place-items: center; width: 22px; height: 22px; padding: 0; margin-top: 1px;
+    background: transparent; border: 2px solid var(--border-strong); border-radius: 50%;
     color: var(--on-accent); cursor: pointer; transition: background .12s ease, border-color .12s ease;
 }
 .checkbox:hover { border-color: var(--accent); }
-.checkbox svg { width: 18px; height: 18px; opacity: 0; transition: opacity .1s ease; }
+.checkbox svg { width: 14px; height: 14px; opacity: 0; transition: opacity .1s ease; }
 .checkbox.is-checked { background: var(--accent); border-color: var(--accent); }
 .checkbox.is-checked svg { opacity: 1; }
 .checkbox:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+/* Tareas que no se cierran por casilla (p. ej. por entregable): marcador estático, no interactivo. */
+.checkbox.is-static { border-style: dashed; border-color: var(--border); cursor: default; }
+
+/* ---- Puesto de trabajo de la tarea (detalle): siguiente paso + acciones del ciclo ---- */
+.task-workbench { display: flex; flex-direction: column; gap: 14px; }
+.task-nextstep { margin: 0; font-size: 15px; color: var(--text); }
+.task-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.task-actions form { margin: 0; }
+.deliverable-form { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.deliverable-input { flex: 1 1 320px; min-width: 0; }
 
 .agenda-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-top: 1px; }
 .agenda-title { font-size: 15px; font-weight: 500; color: var(--text); text-decoration: none; }
 .agenda-title:hover { color: var(--accent); }
 .agenda-meta { font-size: 12.5px; color: var(--text-muted); }
+.agenda-group--overdue .agenda-meta { color: var(--warning-text); }
 .agenda-item.is-done .agenda-title { color: var(--text-faint); text-decoration: line-through; }
-.agenda-group--done { opacity: .75; }
+.agenda-group--done { opacity: .7; }
 
 @media (max-width: 760px) {
-    .agenda-item { padding: 12px 12px; gap: 12px; }
-    .agenda-title { font-size: 15px; }
+    .agenda-item { padding: 12px 6px; gap: 12px; }
 }
 
 /* =============================================================================

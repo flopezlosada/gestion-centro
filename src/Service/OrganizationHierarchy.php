@@ -68,4 +68,38 @@ final class OrganizationHierarchy
 
         return false;
     }
+
+    /**
+     * The units a user may assign tasks to: their own unit and every unit below it in the chain of
+     * command (the subtree). Empty when the user has no unit — they can then only assign to
+     * themselves. Guards against cycles in the parent/child graph.
+     *
+     * @param User $creator the user creating tasks
+     *
+     * @return list<Unit> the assignable units, the creator's own first
+     */
+    public function assignableUnits(User $creator): array
+    {
+        $root = $creator->getUnit();
+        if (null === $root) {
+            return [];
+        }
+
+        $units = [];
+        $seen = [];
+        $stack = [$root];
+        while ([] !== $stack) {
+            $unit = array_pop($stack);
+            if (isset($seen[spl_object_id($unit)])) {
+                continue;
+            }
+            $seen[spl_object_id($unit)] = true;
+            $units[] = $unit;
+            foreach ($unit->getChildren() as $child) {
+                $stack[] = $child;
+            }
+        }
+
+        return $units;
+    }
 }
