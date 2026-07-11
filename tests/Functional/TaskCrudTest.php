@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
+use App\Entity\NonLectiveDay;
 use App\Entity\Task;
 use App\Entity\Unit;
 use App\Entity\User;
@@ -73,6 +74,50 @@ final class TaskCrudTest extends WebTestCase
         self::assertNotNull($task);
         self::assertSame($creator->getId(), $task->getCreatedBy()?->getId());
         self::assertSame($creator->getId(), $task->getAssignedUser()?->getId());
+    }
+
+    public function testCannotCreateTaskDueOnAWeekend(): void
+    {
+        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $creator = $this->user('jefa@centro.test', $unit);
+        $this->em->flush();
+        $this->client->loginUser($creator);
+
+        $crawler = $this->client->request('GET', '/tareas/nueva');
+        $form = $crawler->selectButton('Crear tarea')->form();
+        $form['task_form[title]'] = 'Tarea en sábado';
+        $form['task_form[dueDate]'] = '2026-07-11'; // Saturday
+        $form['task_form[assignedUser]'] = (string) $creator->getId();
+        $this->client->submit($form);
+
+        // Invalid submit: the form is redisplayed with the error (HTTP 422) and nothing is persisted.
+        // The phrase is unique to the validation error (not the field's help text).
+        self::assertResponseStatusCodeSame(422);
+        self::assertStringContainsString('no puede caer en fin de semana', (string) $this->client->getResponse()->getContent());
+        self::assertNull($this->em->getRepository(Task::class)->findOneBy(['title' => 'Tarea en sábado']));
+    }
+
+    public function testCannotCreateTaskDueOnARegisteredHoliday(): void
+    {
+        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $creator = $this->user('jefa@centro.test', $unit);
+        // A Monday marked as a non-teaching day.
+        $this->em->persist((new NonLectiveDay())->setDate(new \DateTimeImmutable('2026-07-13'))->setDescription('Fiesta local'));
+        $this->em->flush();
+        $this->client->loginUser($creator);
+
+        $crawler = $this->client->request('GET', '/tareas/nueva');
+        $form = $crawler->selectButton('Crear tarea')->form();
+        $form['task_form[title]'] = 'Tarea en festivo';
+        $form['task_form[dueDate]'] = '2026-07-13';
+        $form['task_form[assignedUser]'] = (string) $creator->getId();
+        $this->client->submit($form);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertStringContainsString('no puede caer en fin de semana', (string) $this->client->getResponse()->getContent());
+        self::assertNull($this->em->getRepository(Task::class)->findOneBy(['title' => 'Tarea en festivo']));
     }
 
     public function testUnrelatedUserCannotEditTask(): void

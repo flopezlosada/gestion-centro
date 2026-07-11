@@ -1,0 +1,24 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}{{ day.id ? 'Editar día no lectivo' : 'Nuevo día no lectivo' }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('admin_non_lective_day_index') }}">Días no lectivos</a><span class="sep">/</span>
+    {{ day.id ? 'Editar' : 'Nuevo' }}
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <h1>{{ day.id ? 'Editar día no lectivo' : 'Nuevo día no lectivo' }}</h1>
+    </div>
+
+    <div class="card form-card">
+        {{ form_start(form, { 'attr': { 'novalidate': 'novalidate' } }) }}
+            {{ form_errors(form) }}
+            {{ f.fields([form.date, form.description]) }}
+            {{ f.actions(path('admin_non_lective_day_index')) }}
+        {{ form_end(form) }}
+    </div>
+{% endblock %}

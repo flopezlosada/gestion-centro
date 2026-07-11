@@ -1305,6 +1305,11 @@ input[type="email"], input[type="text"], select, textarea {
 .watch-list { margin: 0; padding-left: 1.2rem; }
 .obligation-help { font-size: .85rem; margin-top: .2rem; max-width: 64ch; }
 .row-actions { text-align: right; white-space: nowrap; }
+.row-actions form { display: inline; }
+/* Borrado inline en tablas: botón con apariencia de enlace destructivo (por accesibilidad y CSRF
+   es un <button> dentro de un <form>, no un enlace). */
+.link-danger { background: none; border: 0; padding: 0; margin-left: 14px; color: var(--danger-text); font: inherit; cursor: pointer; }
+.link-danger:hover { text-decoration: underline; }
 .sga-phase { margin-block: 2rem; }
 .sga-phase-head { display: flex; align-items: baseline; gap: .6rem; padding-bottom: .4rem; border-bottom: 1px solid var(--border); }
 .sga-phase-code { color: var(--text-muted); font-size: .9em; }
@@ -1529,6 +1534,7 @@ input[type="email"], input[type="text"], select, textarea {
 .calendar { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--surface); }
 .calendar-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); background: var(--surface-sunken); border-bottom: 1px solid var(--border); }
 .calendar-weekday { padding: 9px 10px; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--text-muted); text-align: left; }
+.calendar-weekday.is-weekend { color: var(--text-faint); }
 
 .calendar-grid { display: flex; flex-direction: column; }
 .calendar-week { display: grid; grid-template-columns: repeat(7, 1fr); }
@@ -1538,7 +1544,15 @@ input[type="email"], input[type="text"], select, textarea {
 .calendar-day:first-child { border-left: 0; }
 .calendar-day.is-outside { background: var(--surface-sunken); }
 .calendar-day.is-outside .calendar-daynum { color: var(--text-faint); }
+/* Fines de semana: no lectivos por definición, en un tono hundido neutro (distinto del ámbar de
+   "vencida") para que la rejilla del mes se lea de un vistazo. */
+.calendar-day.is-weekend { background: var(--surface-sunken); }
+/* Festivos/vacaciones: franja de acento + etiqueta con el motivo, para diferenciarlos del finde. */
+.calendar-day.is-nonlective { box-shadow: inset 3px 0 0 var(--accent); }
+/* "Hoy" manda sobre el fondo de finde/no lectivo. */
 .calendar-day.is-today { background: var(--accent-weak); }
+
+.calendar-nonlective { margin: 0; font-size: 11px; line-height: 1.25; font-weight: 600; color: var(--accent); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
 .calendar-daynum { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-muted); line-height: 1; }
 .calendar-day.is-today .calendar-daynum span { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-weight: 600; }
@@ -1558,6 +1572,9 @@ input[type="email"], input[type="text"], select, textarea {
 
 .calendar-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 16px 0 0; padding: 0; font-size: 12.5px; color: var(--text-muted); }
 .calendar-legend li { display: flex; align-items: center; gap: 6px; }
+.calendar-legend-swatch { width: 12px; height: 12px; border-radius: var(--radius-sm); flex: none; border: 1px solid var(--border-strong); }
+.calendar-legend-swatch--weekend { background: var(--surface-sunken); }
+.calendar-legend-swatch--nonlective { background: var(--surface); box-shadow: inset 3px 0 0 var(--accent); }
 
 /* En pantallas estrechas la rejilla de 7 columnas no cabe: pasa a scroll horizontal
    conservando la semana completa, con un ancho mínimo legible por día. */

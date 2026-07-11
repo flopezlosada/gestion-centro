@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Entity\NonLectiveDay;
 use App\Entity\Task;
 use App\Entity\User;
+use App\Repository\NonLectiveDayRepository;
 use App\Repository\TaskRepository;
+use App\Service\SchoolCalendar;
 use App\Service\TaskVisibility;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -31,17 +34,19 @@ final class CalendarController extends AbstractController
 
     /**
      * Renders the month grid for the requested month (or the current one), with the tasks whose
-     * deadline falls on each visible day.
+     * deadline falls on each visible day, and the non-teaching days marked.
      *
-     * @param Request         $request    the HTTP request; optional query param "mes" in "YYYY-MM" form
-     * @param User            $user       the authenticated user, to scope the visible tasks
-     * @param TaskRepository  $tasks      the task repository
-     * @param TaskVisibility  $visibility the task visibility scope built from the organisation chart
+     * @param Request                 $request        the HTTP request; optional query param "mes" in "YYYY-MM" form
+     * @param User                    $user           the authenticated user, to scope the visible tasks
+     * @param TaskRepository          $tasks          the task repository
+     * @param TaskVisibility          $visibility     the task visibility scope built from the organisation chart
+     * @param NonLectiveDayRepository $nonLectiveDays the non-teaching day repository
+     * @param SchoolCalendar          $schoolCalendar the teaching-day calendar, to flag weekends
      *
      * @return Response the rendered calendar page
      */
     #[Route('/calendario', name: 'calendar_index', methods: ['GET'])]
-    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility): Response
+    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility, NonLectiveDayRepository $nonLectiveDays, SchoolCalendar $schoolCalendar): Response
     {
         $timeZone = new \DateTimeZone(self::TIME_ZONE);
         $today = new \DateTimeImmutable('today', $timeZone);
@@ -53,11 +58,21 @@ final class CalendarController extends AbstractController
         $gridStart = $monthStart->modify('-'.((int) $monthStart->format('N') - 1).' days');
         $gridEnd = $monthEnd->modify('+'.(7 - (int) $monthEnd->format('N')).' days');
 
+        $visible = $visibility->visibleTo($tasks->findDueBetween($gridStart, $gridEnd), $user, $this->isGranted('ROLE_ADMIN'));
+
         return $this->render('calendar/index.html.twig', [
             'monthLabel' => self::MONTH_NAMES[(int) $monthStart->format('n')].' '.$monthStart->format('Y'),
             'prevMonth' => $monthStart->modify('-1 month')->format('Y-m'),
             'nextMonth' => $monthStart->modify('+1 month')->format('Y-m'),
-            'weeks' => $this->buildWeeks($monthStart, $gridStart, $gridEnd, $today, $visibility->visibleTo($tasks->findDueBetween($gridStart, $gridEnd), $user, $this->isGranted('ROLE_ADMIN'))),
+            'weeks' => $this->buildWeeks(
+                $monthStart,
+                $gridStart,
+                $gridEnd,
+                $today,
+                $visible,
+                $nonLectiveDays->findBetween($gridStart, $gridEnd),
+                $schoolCalendar,
+            ),
         ]);
     }
 
@@ -86,13 +101,15 @@ final class CalendarController extends AbstractController
     /**
      * Lays the given tasks out on the month grid: one row per week, seven day cells per row.
      *
-     * @param \DateTimeImmutable $monthStart the first day of the month being displayed
-     * @param \DateTimeImmutable $gridStart  the first (Monday) day of the visible grid
-     * @param \DateTimeImmutable $gridEnd    the last (Sunday) day of the visible grid
-     * @param \DateTimeImmutable $today      today, to flag the current day
-     * @param Task[]             $tasks      the tasks whose deadline falls within the grid range
+     * @param \DateTimeImmutable $monthStart     the first day of the month being displayed
+     * @param \DateTimeImmutable $gridStart      the first (Monday) day of the visible grid
+     * @param \DateTimeImmutable $gridEnd        the last (Sunday) day of the visible grid
+     * @param \DateTimeImmutable $today          today, to flag the current day
+     * @param Task[]             $tasks          the tasks whose deadline falls within the grid range
+     * @param NonLectiveDay[]    $nonLectiveDays the non-teaching days within the grid range
+     * @param SchoolCalendar     $schoolCalendar the teaching-day calendar, to flag weekends
      *
-     * @return list<list<array{date: \DateTimeImmutable, inMonth: bool, isToday: bool, tasks: Task[]}>> the weeks, each a list of seven day cells
+     * @return list<list<array{date: \DateTimeImmutable, inMonth: bool, isToday: bool, isWeekend: bool, nonLective: ?NonLectiveDay, tasks: Task[]}>> the weeks, each a list of seven day cells
      */
     private function buildWeeks(
         \DateTimeImmutable $monthStart,
@@ -100,10 +117,17 @@ final class CalendarController extends AbstractController
         \DateTimeImmutable $gridEnd,
         \DateTimeImmutable $today,
         array $tasks,
+        array $nonLectiveDays,
+        SchoolCalendar $schoolCalendar,
     ): array {
         $byDay = [];
         foreach ($tasks as $task) {
             $byDay[$task->getDueDate()->format('Y-m-d')][] = $task;
+        }
+
+        $nonLectiveByDay = [];
+        foreach ($nonLectiveDays as $day) {
+            $nonLectiveByDay[$day->getDate()->format('Y-m-d')] = $day;
         }
 
         $currentMonth = $monthStart->format('Y-m');
@@ -119,6 +143,8 @@ final class CalendarController extends AbstractController
                     'date' => $cursor,
                     'inMonth' => $cursor->format('Y-m') === $currentMonth,
                     'isToday' => $key === $todayKey,
+                    'isWeekend' => $schoolCalendar->isWeekend($cursor),
+                    'nonLective' => $nonLectiveByDay[$key] ?? null,
                     'tasks' => $byDay[$key] ?? [],
                 ];
                 $cursor = $cursor->modify('+1 day');

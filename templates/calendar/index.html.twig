@@ -22,7 +22,7 @@
         <div class="calendar" role="grid" aria-label="Calendario del mes de {{ monthLabel }}">
             <div class="calendar-weekdays" role="row">
                 {% for weekday in ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] %}
-                    <div class="calendar-weekday" role="columnheader">{{ weekday }}</div>
+                    <div class="calendar-weekday{{ loop.index >= 6 ? ' is-weekend' : '' }}" role="columnheader">{{ weekday }}</div>
                 {% endfor %}
             </div>
 
@@ -30,10 +30,13 @@
                 {% for week in weeks %}
                     <div class="calendar-week" role="row">
                         {% for cell in week %}
-                            <div class="calendar-day{{ cell.inMonth ? '' : ' is-outside' }}{{ cell.isToday ? ' is-today' : '' }}" role="gridcell">
+                            <div class="calendar-day{{ cell.inMonth ? '' : ' is-outside' }}{{ cell.isToday ? ' is-today' : '' }}{{ cell.isWeekend ? ' is-weekend' : '' }}{{ cell.nonLective ? ' is-nonlective' : '' }}" role="gridcell"{% if cell.nonLective %} title="{{ cell.nonLective.description }}"{% endif %}>
                                 <div class="calendar-daynum">
                                     <span{% if cell.isToday %} aria-current="date"{% endif %}>{{ cell.date|date('j') }}</span>
                                 </div>
+                                {% if cell.nonLective %}
+                                    <p class="calendar-nonlective">{{ cell.nonLective.description }}</p>
+                                {% endif %}
                                 {% if cell.tasks is not empty %}
                                     <ul class="calendar-tasks">
                                         {% for t in cell.tasks %}
@@ -57,6 +60,8 @@
             {% for status in ['pending', 'in_progress', 'submitted', 'done', 'validated', 'rejected'] %}
                 <li>{{ taskUi.status_dot(status) }} {{ taskUi.status_label(status) }}</li>
             {% endfor %}
+            <li><span class="calendar-legend-swatch calendar-legend-swatch--weekend"></span> Fin de semana</li>
+            <li><span class="calendar-legend-swatch calendar-legend-swatch--nonlective"></span> Día no lectivo</li>
         </ul>
     </div>
 {% endblock %}
