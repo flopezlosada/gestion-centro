@@ -76,7 +76,9 @@ final class AdminRoleController extends AbstractController
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
 
-        $form = $this->createForm(RoleType::class, $role);
+        // Only a superuser may grant the admin flag: otherwise the field is not even part of the form,
+        // so an administration-area manager cannot promote a role (nor themselves) to superuser.
+        $form = $this->createForm(RoleType::class, $role, [RoleType::CAN_GRANT_ADMIN => $this->isGranted('ROLE_ADMIN')]);
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {

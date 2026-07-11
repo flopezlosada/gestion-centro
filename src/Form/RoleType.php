@@ -22,12 +22,21 @@ use Symfony\Component\OptionsResolver\OptionsResolver;
  * selector is added per {@see Area}; the controller writes the chosen levels back via
  * {@see Role::setLevel()}. Rendered expanded (radios) so the template can paint a segmented control.
  *
+ * The superuser {@see Role::isAdmin()} flag is a privilege-escalation vector (a role that grants it
+ * makes its holders full superusers), so its field only exists when the option
+ * {@see self::CAN_GRANT_ADMIN} is set — i.e. the actor is already a superuser. Making the illegal
+ * state unrepresentable in the form beats a runtime check: Symfony ignores request data for fields
+ * the form never declared, so an administration-area manager cannot promote a role to admin.
+ *
  * @extends AbstractType<Role>
  */
 final class RoleType extends AbstractType
 {
-    /** Prefix of the unmapped per-area level fields, e.g. "perm_task". */
+    /** Prefix of the unmapped per-area level fields, e.g. "perm_administration". */
     public const PERMISSION_PREFIX = 'perm_';
+
+    /** Option name: whether to expose the superuser admin flag (only true for a superuser actor). */
+    public const CAN_GRANT_ADMIN = 'can_grant_admin';
 
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
@@ -37,12 +46,17 @@ final class RoleType extends AbstractType
                 'help' => 'Identificador corto y estable, p. ej. "direccion" o "secretaria".',
             ])
             ->add('name', TextType::class, ['label' => 'Nombre'])
-            ->add('description', TextareaType::class, ['label' => 'Descripción', 'required' => false])
-            ->add('admin', CheckboxType::class, [
+            ->add('description', TextareaType::class, ['label' => 'Descripción', 'required' => false]);
+
+        // The superuser flag is only editable by a superuser; for anyone else the field does not exist
+        // at all, so a role can never be promoted to admin from the administration area (see class doc).
+        if (true === $options[self::CAN_GRANT_ADMIN]) {
+            $builder->add('admin', CheckboxType::class, [
                 'label' => 'Administrador',
                 'required' => false,
                 'help' => 'Acceso total a todas las áreas; ignora los niveles de abajo.',
             ]);
+        }
 
         // One permission selector per area, pre-filled with the role's current level. Unmapped: the
         // controller reads them and calls Role::setLevel(). Added on PRE_SET_DATA so the "data"
@@ -66,6 +80,7 @@ final class RoleType extends AbstractType
 
     public function configureOptions(OptionsResolver $resolver): void
     {
-        $resolver->setDefaults(['data_class' => Role::class]);
+        $resolver->setDefaults(['data_class' => Role::class, self::CAN_GRANT_ADMIN => false]);
+        $resolver->setAllowedTypes(self::CAN_GRANT_ADMIN, 'bool');
     }
 }
