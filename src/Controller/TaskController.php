@@ -141,6 +141,7 @@ final class TaskController extends AbstractController
         #[CurrentUser] User $user,
         AuditLogRepository $auditLog,
         TaskVisibility $visibility,
+        OrganizationHierarchy $hierarchy,
         TaskWorkflow $workflows,
     ): Response {
         // Same organisation-chart scope as the plan and the calendar, enforced here so the detail
@@ -157,6 +158,9 @@ final class TaskController extends AbstractController
         return $this->render('task/show.html.twig', [
             'task' => $task,
             'canWork' => $canWork,
+            // Editing/deleting is a management action (creator/superior/admin), a different set than
+            // "who works on it" — the template gates the Edit link with this.
+            'canManage' => $this->canManage($task, $user, $hierarchy),
             // The lifecycle actions this user may fire now: the workflow's guards already hide the
             // superior-only ones for non-superiors; here we also hide progress ones from outsiders.
             'actions' => $this->availableActions($workflows, $task, $canWork),
@@ -284,6 +288,9 @@ final class TaskController extends AbstractController
             ->setRequiresCheckbox($data->requiresCheckbox)
             ->setRequiresDocument($data->requiresDocument)
             ->setAssignedUser($data->assignedUser)
+            // Assigning a concrete person clears any inherited role assignment, so access stays
+            // bounded to that person (a leftover role would let every role-holder act on it).
+            ->setAssignedRole(null)
             ->setUnit($data->assignedUser->getUnit());
     }
 

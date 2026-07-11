@@ -25,7 +25,7 @@
             <p class="lead">{{ taskUi.status_badge(task.status) }} · {{ task.type.label }}{% if not task.mandatory %} · Voluntaria{% endif %}</p>
             <p class="muted">{{ typeHelp[task.type.value]|default('') }}</p>
         </div>
-        {% if canWork %}
+        {% if canManage %}
             <div><a class="btn btn-secondary" href="{{ path('task_edit', { id: task.id }) }}">Editar</a></div>
         {% endif %}
     </div>
