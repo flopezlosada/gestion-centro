@@ -112,6 +112,12 @@ final class TaskController extends AbstractController
         }
 
         $reference = trim((string) $request->request->get('reference'));
+        if (mb_strlen($reference) > 255) {
+            $this->addFlash('error', 'La referencia es demasiado larga (máximo 255 caracteres).');
+
+            return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
+        }
+
         $task->setDeliverableReference('' !== $reference ? $reference : null);
         $entityManager->flush();
         $this->addFlash('success', 'Entregable actualizado.');

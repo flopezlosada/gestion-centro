@@ -174,6 +174,8 @@ final class DesignPagesTest extends WebTestCase
         $this->client->request('GET', '/tareas/'.$s['task']->getId());
 
         self::assertResponseIsSuccessful();
-        self::assertStringNotContainsString('accion/validate', (string) $this->client->getResponse()->getContent(), 'un no-superior no ve la acción de validar');
+        $content = (string) $this->client->getResponse()->getContent();
+        self::assertStringNotContainsString('accion/validate', $content, 'un no-superior no ve la acción de validar');
+        self::assertStringNotContainsString('accion/reject', $content, 'un no-superior no ve la acción de devolver');
     }
 }
