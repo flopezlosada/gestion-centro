@@ -1,0 +1,43 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Avisos · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Avisos{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Avisos</h1>
+            <p class="lead">Tus recordatorios de tareas y avisos de vencimiento.</p>
+        </div>
+        {% if notifications is not empty %}
+            <form method="post" action="{{ path('notification_mark_read') }}">
+                <input type="hidden" name="_token" value="{{ csrf_token('mark_notifications_read') }}">
+                <button type="submit" class="btn btn-secondary">Marcar todo como leído</button>
+            </form>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        {% if notifications is empty %}
+            <div class="empty-state">
+                <h2>No tienes avisos</h2>
+                <p>Aquí aparecerán los recordatorios de tus tareas y los avisos de vencimiento.</p>
+            </div>
+        {% else %}
+            <ol class="obj-timeline">
+                {% for n in notifications %}
+                    <li class="obj-timeline__item">
+                        <div class="obj-timeline__head">
+                            <span class="obj-timeline__verb">
+                                {% if not n.read %}<span class="badge badge--danger">Nuevo</span> {% endif %}
+                                {% if n.task %}<a href="{{ path('task_show', { id: n.task.id }) }}">{{ n.title }}</a>{% else %}{{ n.title }}{% endif %}
+                            </span>
+                            <span class="obj-timeline__meta muted"><time datetime="{{ n.createdAt|date('c') }}">{{ n.createdAt|date('d/m/Y H:i') }}</time></span>
+                        </div>
+                        {% if n.body %}<p class="muted">{{ n.body }}</p>{% endif %}
+                    </li>
+                {% endfor %}
+            </ol>
+        {% endif %}
+    </div>
+{% endblock %}

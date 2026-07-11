@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\DataFixtures;
 
+use App\Entity\Notification;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskTemplate;
@@ -68,12 +69,33 @@ final class DemoFixtures extends Fixture
             $manager->persist($task);
         }
 
-        // A couple assigned to the teacher, left pending, so their agenda is not empty.
-        foreach ([sprintf('%d-12-01', $startYear), sprintf('%d-03-15', $startYear + 1)] as $due) {
-            $task = Task::fromTemplate($meetingTpl, $year, new \DateTimeImmutable($due));
-            $task->setUnit($maths)->setAssignedUser($teacher);
+        // Assigned to the teacher across time buckets so the personal agenda demoes well today:
+        // one overdue (soft), one due today, one this week, and one already done.
+        $today = new \DateTimeImmutable('today');
+        $teacherPlan = [
+            ['Preparar el acta de la CCP', 'Redactar y subir el acta de la última Comisión de Coordinación Pedagógica.', $today, false],
+            ['Entregar la programación de aula', 'Revisar la programación con los criterios del departamento antes de entregarla.', $today->modify('+3 days'), false],
+            ['Revisar las propuestas de mejora del trimestre', null, $today->modify('-2 days'), false],
+            ['Actualizar el tablón del aula', null, $today->modify('-10 days'), true],
+        ];
+        $teacherTasks = [];
+        foreach ($teacherPlan as [$title, $description, $due, $done]) {
+            $task = new Task($title, $year, $due, TaskType::SIMPLE);
+            $task->setDescription($description)->setUnit($maths)->setAssignedUser($teacher)->setCheckboxDone($done)->setCreatedBy($director);
             $manager->persist($task);
+            $teacherTasks[] = $task;
         }
+
+        // A deliverable task in progress, so the teacher's task detail shows the full workbench
+        // (action "Entregar" + the deliverable reference form).
+        $withDeliverable = Task::fromTemplate($reportTpl, $year, $today->modify('+5 days'));
+        $withDeliverable->setDescription('Memoria anual del departamento con resultados y propuestas para el curso que viene.')
+            ->setUnit($maths)->setAssignedUser($teacher)->setStatus('in_progress')->setCreatedBy($director);
+        $manager->persist($withDeliverable);
+
+        // A couple of demo notices for the teacher so the inbox and its badge are not empty.
+        $manager->persist(new Notification($teacher, 'task.reminder', sprintf('Tarea próxima: %s', $teacherTasks[1]->getTitle()), 'Vence en 3 días.', $teacherTasks[1]));
+        $manager->persist((new Notification($teacher, 'task.reminder', sprintf('Tarea de hoy: %s', $teacherTasks[0]->getTitle()), 'Vence hoy.', $teacherTasks[0]))->markRead());
 
         $manager->flush();
     }

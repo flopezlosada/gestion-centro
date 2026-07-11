@@ -1,0 +1,30 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}Editar: {{ task.title }} · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('task_index') }}">Tareas</a><span class="sep">/</span><a href="{{ path('task_show', { id: task.id }) }}">{{ task.title }}</a><span class="sep">/</span>Editar{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Editar tarea</h1>
+            <p class="lead">Cambia los datos de la tarea. El tipo no se puede cambiar.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        {{ form_start(form) }}
+        {{ form_errors(form) }}
+        {{ f.fields([form.title, form.description, form.dueDate, form.assignedUser, form.mandatory, form.requiresCheckbox, form.requiresDocument]) }}
+        {{ f.actions(path('task_show', { id: task.id })) }}
+        {{ form_end(form) }}
+    </div>
+
+    <div class="card">
+        <div class="page-head"><div><h2>Borrar</h2><p class="lead">Elimina la tarea. No se puede deshacer.</p></div></div>
+        <form method="post" action="{{ path('task_delete', { id: task.id }) }}" data-confirm="¿Seguro que quieres borrar «{{ task.title }}»?">
+            <input type="hidden" name="_token" value="{{ csrf_token('task_delete' ~ task.id) }}">
+            <button type="submit" class="btn btn-danger">Borrar tarea</button>
+        </form>
+    </div>
+{% endblock %}

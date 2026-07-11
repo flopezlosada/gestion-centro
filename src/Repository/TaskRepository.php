@@ -85,7 +85,11 @@ class TaskRepository extends ServiceEntityRepository
      */
     public function findOpenDueOn(\DateTimeImmutable $day, array $openPlaces): array
     {
+        // Fetch-join the associations the reminder engine reads per task, to avoid an N+1.
         return $this->createQueryBuilder('t')
+            ->leftJoin('t.assignedUser', 'assignedUser')->addSelect('assignedUser')
+            ->leftJoin('t.assignedRole', 'assignedRole')->addSelect('assignedRole')
+            ->leftJoin('t.unit', 'unit')->addSelect('unit')
             ->andWhere('t.dueDate = :day')
             ->andWhere('t.status IN (:open)')
             ->setParameter('day', $day->format('Y-m-d'))

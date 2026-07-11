@@ -38,7 +38,7 @@ security:
         # Machine-to-machine cron endpoints are authenticated by a shared secret token in the
         # controller (not a session), so the firewall must let them through unauthenticated. Each is
         # pinned to its exact path so a broad ^/cron prefix never opens a future route by accident.
-        # (Added per endpoint as the task-alert cron is built.)
+        - { path: ^/cron/task-reminders$, roles: PUBLIC_ACCESS }
         # The activity trail is sensitive (it shows everyone's actions): admins only.
         - { path: ^/audit, roles: ROLE_ADMIN }
         # User/role administration: admins only.
