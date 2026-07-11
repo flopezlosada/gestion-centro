@@ -202,11 +202,7 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 500; color: var(--te
 .nav a:hover { background: var(--accent-weak); color: var(--text); }
 .nav a.is-active { background: var(--accent); color: var(--on-accent); }
 
-/* Pilares plegables del menú (ver nav-pillars.js). El grupo se oculta cuando el pilar está
-   colapsado; sin JS nunca se añade .is-collapsed, así que todo queda visible. */
-.nav-pillar { display: flex; flex-direction: column; gap: 2px; }
 .nav-group { display: flex; flex-direction: column; gap: 2px; }
-.nav-pillar.is-collapsed .nav-group { display: none; }
 
 /* Jerarquía visual de tres niveles para que no se confunda lo principal con lo de cada pilar:
    1) enlaces principales (Inicio, Qué toca, Estructura, Documentos): hijos directos de .nav,
@@ -285,61 +281,6 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 500; color: var(--te
     background: var(--accent);
     color: var(--on-accent);
 }
-
-/* ---- Salto rápido (quick-jump) ------------------------------------------ */
-/* Buscador de la topbar para ir directo a un módulo. El panel de resultados es un
-   desplegable posicionado bajo el input (mismo lenguaje visual que .selectmenu__menu).
-   La lupa va como SVG en data-URI, igual que el buscador de tablas: cero ficheros extra
-   (el hosting va justo de inodos). */
-.quickjump { position: relative; }
-.quickjump__input {
-    width: 220px;
-    padding: 7px 12px 7px 32px;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius);
-    font: 400 13px var(--font-body);
-    background-color: var(--surface-sunken);
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238A8F86' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: 10px center;
-    background-size: 14px;
-    color: var(--text);
-}
-.quickjump__input:focus { border-color: var(--accent); outline-offset: 0; }
-.quickjump__panel {
-    position: absolute; top: calc(100% + 4px); right: 0; z-index: 50;
-    width: 300px; max-width: 80vw;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-card);
-    overflow: hidden;
-}
-.quickjump__panel[hidden] { display: none; }
-.quickjump__list {
-    padding: 4px 0;
-    max-height: min(420px, 60vh); overflow-y: auto;
-}
-.quickjump__item {
-    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
-    padding: 9px 14px; text-decoration: none; color: var(--text);
-    transition: background .12s ease, color .12s ease;
-}
-/* .quickjump__item es display:flex, así que pisa el display:none del atributo hidden del UA:
-   hay que re-ocultar las opciones filtradas explícitamente (mismo caso que las filas de tabla). */
-.quickjump__item[hidden] { display: none; }
-.quickjump__item:hover,
-.quickjump__item.is-active { background: var(--accent-weak); }
-.quickjump__name { font-size: 14px; line-height: 1.3; }
-.quickjump__hint {
-    font-size: 11px; color: var(--text-faint);
-    text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
-}
-.quickjump__empty {
-    margin: 0; padding: 14px; text-align: center;
-    font-size: 13px; color: var(--text-muted);
-}
-.quickjump__empty[hidden] { display: none; }
 
 /* ---- Contenido ---------------------------------------------------------- */
 .page {
@@ -513,12 +454,10 @@ tbody tr.is-in-force { background: var(--success-weak); }
     color: var(--text);
 }
 .table-tools__search input[type="search"]:focus { border-color: var(--accent); outline-offset: 0; }
-/* El filtro reusa .form-row (para que selectmenu.js lo "enhance"), pero aquí va en línea. */
+/* El filtro reusa .form-row, pero aquí va en línea. */
 .table-tools__filter { margin-bottom: 0; flex: 0 1 200px; min-width: 160px; }
-/* El buscador (input nativo) y los filtros (trigger de selectmenu.js) calculan su alto de forma
-   distinta y quedaban desalineados; se les fija la MISMA altura para que casen en la barra. */
-.table-tools__search input[type="search"],
-.table-tools__filter .selectmenu__trigger {
+/* Altura fija para que el buscador case con el resto de la barra de herramientas. */
+.table-tools__search input[type="search"] {
     height: 40px;
     box-sizing: border-box;
 }
@@ -691,62 +630,6 @@ input[type="email"], input[type="text"], select, textarea {
 .form-row input[type="checkbox"] { width: auto; margin-right: 8px; }
 .help { color: var(--text-muted); font-size: 12.5px; margin: 6px 0 0; }
 
-/* ---- Select "enhanced" (selectmenu.js) -----------------------------------
-   El desplegable nativo del <select> lo pinta el SO y no se puede estilar (sale oscuro
-   en macOS dark). Lo reemplazamos por un menú propio, manteniendo el <select> oculto y
-   funcional. Portado de csa-vega. La flecha usa currentColor (sigue el tema). */
-.selectmenu { position: relative; }
-.selectmenu__native {
-    position: absolute; opacity: 0; width: 1px; height: 1px;
-    margin: -1px; padding: 0; border: 0; overflow: hidden;
-    clip: rect(0 0 0 0); pointer-events: none;
-}
-.selectmenu__trigger {
-    display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    width: 100%; box-sizing: border-box;
-    padding: 10px 12px;
-    background: var(--surface);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius);
-    font: 400 14px var(--font-body);
-    color: var(--text);
-    text-align: left; cursor: pointer;
-    transition: border-color .12s ease, background .12s ease;
-}
-.selectmenu__trigger:hover { border-color: var(--text-muted); }
-.selectmenu__trigger:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.selectmenu--open .selectmenu__trigger { border-color: var(--accent); }
-.selectmenu__trigger:disabled { opacity: .55; cursor: not-allowed; }
-.selectmenu__value { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.selectmenu__value--placeholder { color: var(--text-faint); }
-.selectmenu__trigger::after {
-    content: ''; flex-shrink: 0; width: 12px; height: 8px;
-    background-color: var(--text-muted);
-    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpolyline points='1 1.5 6 6.5 11 1.5' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat center / contain;
-    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpolyline points='1 1.5 6 6.5 11 1.5' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat center / contain;
-    transition: transform .12s ease;
-}
-.selectmenu--open .selectmenu__trigger::after { transform: rotate(180deg); }
-.selectmenu__menu {
-    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 50;
-    max-height: 280px; overflow-y: auto;
-    margin: 0; padding: 4px 0; list-style: none;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-card);
-}
-.selectmenu__menu[hidden] { display: none; }
-.selectmenu__option {
-    padding: 9px 12px; font-size: 14px; line-height: 1.4; color: var(--text);
-    cursor: pointer; user-select: none;
-    transition: background .12s ease, color .12s ease;
-}
-.selectmenu__option:hover, .selectmenu__option--active { background: var(--accent-weak); color: var(--text); }
-.selectmenu__option[aria-selected="true"] { font-weight: 500; color: var(--accent); }
-.selectmenu__option--disabled { color: var(--text-faint); cursor: default; }
-.selectmenu__option--disabled:hover { background: transparent; }
-
 /* Errores de formulario de Symfony: se renderizan como <ul><li>. Los estilamos
    nosotros (los tests dependen del selector .form-row ul li / ul li). */
 .form-row ul, form > ul { list-style: none; margin: 6px 0 0; padding: 0; }
@@ -914,11 +797,6 @@ input[type="email"], input[type="text"], select, textarea {
     .sidebar.is-open .nav-backdrop { opacity: 1; visibility: visible; }
 
     .topbar { padding: 0 16px; height: auto; min-height: 56px; flex-wrap: wrap; padding-top: 8px; padding-bottom: 8px; }
-    /* La topbar hace wrap en móvil: el buscador ocupa toda la fila y el panel se ancla a ambos
-       lados para no salirse de la pantalla. */
-    .quickjump { flex: 1 1 100%; }
-    .quickjump__input { width: 100%; }
-    .quickjump__panel { left: 0; right: 0; width: auto; max-width: none; }
     .page { padding: 22px 16px; }
     .page-head { flex-direction: column; }
     .page-head h1 { font-size: 24px; }
@@ -1279,7 +1157,6 @@ input[type="email"], input[type="text"], select, textarea {
     border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
     transform: translateY(-1px) rotate(45deg); transition: transform .15s ease;
 }
-.nav-pillar.is-collapsed .nav-label::after { transform: translateY(1px) rotate(-45deg); }
 
 /* --- Obligations cockpit ("Qué toca" y "Estructura SGA") --- */
 /* Conmutador de ámbito (Mías / Todas): pastillas, misma estética que .theme-toggle. */
@@ -1423,27 +1300,7 @@ input[type="email"], input[type="text"], select, textarea {
 .cal-legend-sep { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: var(--text-faint); }
 .cal-note { margin: 16px 0 0; font-size: 12.5px; }
 
-/* Dynamic CollectionType rows (e.g. risk action plan): each entry is a self-contained card with a
-   numbered header ("Acción 1, 2…") and its own small "Quitar", so it is obvious each block is one
-   item and what add/remove affect. The global "+ Añadir" sits in a single .form-actions bar below. */
-.collection-item { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; background: var(--surface-sunken); }
-.collection-item + .collection-item { margin-top: 14px; }
-.collection-item__bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-.collection-item__title { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: var(--text-faint); }
 .btn-sm { padding: 4px 12px; font-size: 13px; }
-
-/* Botón de ayuda contextual "?" (el panel lo abre help.js; el estilo vive AQUÍ, no inyectado por JS,
-   para que no haya flash al cargar: el HTML ya trae los "?" y necesitan su tamaño desde el primer
-   pintado). El propio SVG lleva además fill/stroke/tamaño como atributos, como segunda red. */
-.help-btn { display: inline-flex; width: 1.05em; height: 1.05em; flex: none; vertical-align: -0.12em; margin-inline-start: .35em; color: var(--text-muted); text-decoration: none; }
-.help-btn:hover, .help-btn:focus-visible { color: var(--accent); }
-.help-btn__icon { width: 100%; height: 100%; display: block; }
-.help-btn__icon circle { fill: none; stroke: currentColor; stroke-width: 1.4; }
-.help-btn__icon text { fill: currentColor; font-size: 12px; font-weight: 700; font-family: var(--font-body), sans-serif; }
-/* Etiqueta de un campo + su "?" en la misma línea (el <label> deja de ser hijo directo de .form-row,
-   así que este contenedor asume su espaciado). */
-.help-field-label { display: flex; align-items: center; margin-bottom: 6px; font-weight: 500; color: var(--text); }
-.form-row .help-field-label > label { margin-bottom: 0; font-weight: inherit; }
 
 /* ---- Histórico de actividad por objeto (partial _activity_log, reusable en cualquier show) ----
    Namespace propio (.obj-timeline*) para no heredar el grid de .activity del panel de inicio. Lista
