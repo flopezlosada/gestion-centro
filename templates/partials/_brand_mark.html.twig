@@ -1,8 +1,7 @@
-{# Marca SGA: monograma "S" en serif sobre dos líneas (registro/firma).
-   Hereda el color del contenedor vía currentColor, así sigue al tema (claro/oscuro)
-   cuando el contenedor usa `color: var(--accent)`. Parámetro opcional `size` (px). #}
-<svg class="brand-mark-svg" width="{{ size|default(48) }}" height="{{ size|default(48) }}" viewBox="0 0 48 48" role="img" aria-label="SGA — Sistema de Gestión Ambiental">
-    <text x="24" y="28" font-family="Newsreader, Georgia, serif" font-weight="600" font-size="29" text-anchor="middle" fill="currentColor">S</text>
-    <path d="M10 35 H38" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
-    <path d="M13 40 H35" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+{# Marca del gestor del centro: un check dentro de una casilla redondeada (tarea hecha / agenda).
+   Hereda el color del contenedor vía currentColor, así sigue al tema (claro/oscuro) cuando el
+   contenedor usa `color: var(--accent)`. Parámetro opcional `size` (px). #}
+<svg class="brand-mark-svg" width="{{ size|default(48) }}" height="{{ size|default(48) }}" viewBox="0 0 48 48" role="img" aria-label="Gestión del centro">
+    <rect x="6" y="6" width="36" height="36" rx="10" fill="none" stroke="currentColor" stroke-width="2.6"/>
+    <path d="M15.5 24.5 l5.5 5.5 L33 17.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
