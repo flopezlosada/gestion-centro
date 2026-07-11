@@ -1,0 +1,63 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}{{ role.id ? 'Editar rol' : 'Nuevo rol' }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('admin_role_index') }}">Roles y permisos</a><span class="sep">/</span>
+    {{ role.id ? 'Editar' : 'Nuevo' }}
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <h1>{{ role.id ? 'Editar rol' : 'Nuevo rol' }}</h1>
+    </div>
+
+    <div class="card form-card">
+        {{ form_start(form, { 'attr': { 'novalidate': 'novalidate' } }) }}
+            {{ form_errors(form) }}
+            {{ f.fields([form.code, form.name, form.description]) }}
+
+            <h2 style="font-size: 20px; margin: 24px 0 4px;">Permisos por área</h2>
+            <p class="muted" style="margin-top: 0;">Define el acceso de este rol a cada área. La escritura incluye la lectura.</p>
+
+            {# Administrador: acceso total que ignora la matriz de abajo (atenuada vía JS cuando está activo). #}
+            <label class="perm-admin">
+                {{ form_widget(form.admin, { attr: { class: 'perm-admin__input' } }) }}
+                <span class="perm-admin__track"><span class="perm-admin__thumb"></span></span>
+                <span class="perm-admin__text">{{ form.admin.vars.label }}<small>{{ form.admin.vars.help }}</small></span>
+            </label>
+
+            {# Una fila por área con un control segmentado (radios: Sin acceso / Lectura / Escritura). #}
+            <div class="perm-rows" data-perm-matrix>
+                {% for area in areas %}
+                    {% set child = form['perm_' ~ area.value] %}
+                    <div class="perm-row">
+                        <span class="perm-row__label">{{ child.vars.label }}</span>
+                        <div class="seg">
+                            {% for opt in child %}
+                                {{ form_widget(opt, { attr: { class: 'seg__input' } }) }}
+                                <label class="seg__btn" for="{{ opt.vars.id }}">{{ opt.vars.label }}</label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+
+            {{ f.actions(path('admin_role_index')) }}
+        {{ form_end(form) }}
+    </div>
+
+    {# Atenúa la matriz cuando el rol es administrador: sus niveles no se aplican. #}
+    <script>
+        (function () {
+            var admin = document.querySelector('.perm-admin__input');
+            var matrix = document.querySelector('[data-perm-matrix]');
+            if (!admin || !matrix) return;
+            var sync = function () { matrix.classList.toggle('is-disabled', admin.checked); };
+            admin.addEventListener('change', sync);
+            sync();
+        })();
+    </script>
+{% endblock %}

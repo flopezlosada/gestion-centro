@@ -1,0 +1,53 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Usuarios{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Usuarios{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Usuarios</h1>
+            <p class="lead">Personas con acceso al sistema. Solo quien esté dado de alta aquí puede entrar.</p>
+        </div>
+        <a class="btn" href="{{ path('admin_user_new') }}">+ Nuevo usuario</a>
+    </div>
+
+    <div class="card">
+        {% if users is empty %}
+            <div class="empty-state">
+                <h2>No hay usuarios todavía</h2>
+                <p>Da de alta a la primera persona para que pueda acceder.</p>
+                <a class="btn" href="{{ path('admin_user_new') }}">Nuevo usuario</a>
+            </div>
+        {% else %}
+            <table data-list-tools>
+                <thead>
+                    <tr><th>Nombre</th><th>Correo</th><th data-filter>Activo</th><th>Unidad</th><th>Roles</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                        <tr>
+                            <td>{{ user.fullName }}</td>
+                            <td>{{ user.email }}</td>
+                            <td>
+                                {% if user.active %}
+                                    <span class="badge badge--success">Activo</span>
+                                {% else %}
+                                    <span class="badge badge--draft">Inactivo</span>
+                                {% endif %}
+                            </td>
+                            <td class="muted">{{ user.unit ? user.unit.name : '—' }}</td>
+                            <td class="muted">
+                                {%- for role in user.assignedRoles -%}
+                                    {{ role.name }}{% if not loop.last %}, {% endif %}
+                                {%- else -%}—{%- endfor -%}
+                            </td>
+                            <td><a href="{{ path('admin_user_edit', { id: user.id }) }}">Editar</a></td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}

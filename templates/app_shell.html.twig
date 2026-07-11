@@ -21,6 +21,17 @@
             <nav id="main-nav" class="nav" aria-label="Navegación principal">
                 <a href="{{ path('app_homepage') }}" class="{{ route == 'app_homepage' ? 'is-active' }}">Inicio</a>
                 <a href="{{ path('task_index') }}" class="{{ route starts with 'task_' ? 'is-active' }}">Tareas</a>
+
+                {# Administración: alta de personas, roles/permisos y organigrama. Solo para
+                   administradores; la sección /admin está además protegida en security.yaml. #}
+                {% if is_granted('ROLE_ADMIN') %}
+                    <span class="nav-section-title">Administración</span>
+                    <div class="nav-group">
+                        <a href="{{ path('admin_user_index') }}" class="{{ route starts with 'admin_user_' ? 'is-active' }}">Usuarios</a>
+                        <a href="{{ path('admin_role_index') }}" class="{{ route starts with 'admin_role_' ? 'is-active' }}">Roles y permisos</a>
+                        <a href="{{ path('admin_unit_index') }}" class="{{ route starts with 'admin_unit_' ? 'is-active' }}">Unidades</a>
+                    </div>
+                {% endif %}
             </nav>
 
             <div class="nav-backdrop"></div>
