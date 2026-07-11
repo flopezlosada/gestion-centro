@@ -22,12 +22,15 @@
             <h2 style="font-size: 20px; margin: 24px 0 4px;">Permisos por área</h2>
             <p class="muted" style="margin-top: 0;">Define el acceso de este rol a cada área. La escritura incluye la lectura.</p>
 
-            {# Administrador: acceso total que ignora la matriz de abajo (atenuada vía JS cuando está activo). #}
-            <label class="perm-admin">
-                {{ form_widget(form.admin, { attr: { class: 'perm-admin__input' } }) }}
-                <span class="perm-admin__track"><span class="perm-admin__thumb"></span></span>
-                <span class="perm-admin__text">{{ form.admin.vars.label }}<small>{{ form.admin.vars.help }}</small></span>
-            </label>
+            {# Administrador: acceso total que ignora la matriz de abajo (atenuada vía JS cuando está
+               activo). El campo solo existe si el actor es superusuario; para el resto ni se renderiza. #}
+            {% if form.admin is defined %}
+                <label class="perm-admin">
+                    {{ form_widget(form.admin, { attr: { class: 'perm-admin__input' } }) }}
+                    <span class="perm-admin__track"><span class="perm-admin__thumb"></span></span>
+                    <span class="perm-admin__text">{{ form.admin.vars.label }}<small>{{ form.admin.vars.help }}</small></span>
+                </label>
+            {% endif %}
 
             {# Una fila por área con un control segmentado (radios: Sin acceso / Lectura / Escritura). #}
             <div class="perm-rows" data-perm-matrix>
