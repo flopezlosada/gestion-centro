@@ -25,9 +25,10 @@
                 {% set unread = unread_notifications() %}
                 <a href="{{ path('notification_index') }}" class="{{ route starts with 'notification_' ? 'is-active' }}">Avisos{% if unread > 0 %} <span class="badge badge--danger">{{ unread }}</span>{% endif %}</a>
 
-                {# Administración: alta de personas, roles/permisos y organigrama. Solo para
-                   administradores; la sección /admin está además protegida en security.yaml. #}
-                {% if is_granted('ROLE_ADMIN') %}
+                {# Administración: alta de personas, roles/permisos y organigrama. Visible para quien
+                   tenga escritura en el área de Administración (Dirección la gestiona sin ser
+                   superusuario); el flag admin la concede igualmente al saltarse la matriz. #}
+                {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ADMINISTRATION')) %}
                     <span class="nav-section-title">Administración</span>
                     <div class="nav-group">
                         <a href="{{ path('admin_user_index') }}" class="{{ route starts with 'admin_user_' ? 'is-active' }}">Usuarios</a>

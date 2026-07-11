@@ -24,7 +24,7 @@ final class EntityAuditSubscriberTest extends KernelTestCase
         return self::getContainer()->get(EntityManagerInterface::class);
     }
 
-    private function makeRole(EntityManagerInterface $em, string $code = 'head_dept', string $name = 'Jefatura de departamento'): Role
+    private function makeRole(EntityManagerInterface $em, string $code = 'coordination', string $name = 'Coordinación docente'): Role
     {
         $role = (new Role())->setCode($code)->setName($name);
         $em->persist($role);
@@ -62,14 +62,14 @@ final class EntityAuditSubscriberTest extends KernelTestCase
         $em = $this->entityManager();
 
         $role = $this->makeRole($em);
-        $role->setName('Jefatura de Matemáticas');
+        $role->setName('Coordinación TIC');
         $em->flush();
 
         $changes = $this->latestChanges($em, 'role.updated', 'Role');
         self::assertIsArray($changes);
         self::assertArrayHasKey('name', $changes);
-        self::assertSame('Jefatura de departamento', $changes['name']['old']);
-        self::assertSame('Jefatura de Matemáticas', $changes['name']['new']);
+        self::assertSame('Coordinación docente', $changes['name']['old']);
+        self::assertSame('Coordinación TIC', $changes['name']['new']);
     }
 
     public function testDeleteIsCapturedWithSubjectId(): void
@@ -94,14 +94,14 @@ final class EntityAuditSubscriberTest extends KernelTestCase
         $em = $this->entityManager();
 
         $role = $this->makeRole($em);
-        $role->setLevel(Area::TASK, PermissionLevel::WRITE);
+        $role->setLevel(Area::ADMINISTRATION, PermissionLevel::WRITE);
         $em->flush();
 
         $changes = $this->latestChanges($em, 'role.updated', 'Role');
         self::assertIsArray($changes);
         self::assertArrayHasKey('permissions', $changes);
         self::assertSame([], $changes['permissions']['old']);
-        self::assertSame(['task' => 'write'], $changes['permissions']['new']);
+        self::assertSame(['administration' => 'write'], $changes['permissions']['new']);
     }
 
     public function testRoleAssignmentCollectionChangeIsCaptured(): void

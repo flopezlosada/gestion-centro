@@ -8,8 +8,6 @@ use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\Unit;
 use App\Entity\User;
-use App\Enum\Area;
-use App\Enum\PermissionLevel;
 use App\Enum\TaskType;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
@@ -33,7 +31,8 @@ final class CalendarPageTest extends WebTestCase
 
     public function testCalendarShowsTaskOnItsMonth(): void
     {
-        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setLevel(Area::TASK, PermissionLevel::READ);
+        // A plain label role: the teacher sees the task on the calendar by being its assignee.
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente');
         $this->em->persist($teacherRole);
 
         $teacher = (new User())->setFullName('Profe Test')->setEmail('profe@centro.test')->addAssignedRole($teacherRole);

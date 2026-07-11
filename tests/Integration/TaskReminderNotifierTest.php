@@ -129,7 +129,7 @@ final class TaskReminderNotifierTest extends KernelTestCase
         $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
 
-        $role = (new Role())->setCode('head_dept')->setName('Jefatura de departamento');
+        $role = (new Role())->setCode('coordination')->setName('Coordinación docente');
         $this->em->persist($role);
         $inactive = $this->user('baja@centro.test')->setActive(false)->addAssignedRole($role);
         $this->em->persist($inactive);

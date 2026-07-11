@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Service;
 
+use App\Entity\Task;
 use App\Entity\Unit;
 use App\Entity\User;
 
@@ -67,6 +68,39 @@ final class OrganizationHierarchy
         }
 
         return false;
+    }
+
+    /**
+     * Whether the user may see the given task in the centre-wide list and calendar. Tasks are of
+     * universal access but filtered by the chain of command: a task is visible when it is assigned
+     * to the user (directly or through one of their roles), when the user is a superior of the task's
+     * unit (their department's tasks, and above), or when the user is an administrator (sees them all).
+     *
+     * Deliberately expressed here, over the entity graph, so both {@see \App\Controller\TaskController}
+     * and {@see \App\Controller\CalendarController} filter with one shared, unit-testable rule.
+     *
+     * @param User $user the user whose visibility is checked
+     * @param Task $task the task to test
+     *
+     * @return bool true if the user may see the task
+     */
+    public function canSeeTask(User $user, Task $task): bool
+    {
+        // getRoles() already derives ROLE_ADMIN from the role admin flag (see User::getRoles()).
+        if (\in_array('ROLE_ADMIN', $user->getRoles(), true)) {
+            return true;
+        }
+
+        if ($task->getAssignedUser() === $user) {
+            return true;
+        }
+
+        $role = $task->getAssignedRole();
+        if (null !== $role && $user->holdsRole($role)) {
+            return true;
+        }
+
+        return $this->isSuperiorOf($user, $task->getUnit());
     }
 
     /**

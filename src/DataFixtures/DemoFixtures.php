@@ -18,8 +18,10 @@ use Doctrine\Bundle\FixturesBundle\Fixture;
 use Doctrine\Persistence\ObjectManager;
 
 /**
- * Demo data to see the app working locally: a small org chart (management → head of studies →
- * maths), a few people, task templates and a plan for the current course with varied statuses.
+ * Demo data to see the app working locally, mirroring a real secondary school (IES): the org chart
+ * as a tree (Dirección → Jefatura de estudios → departamentos), where each department is led by a
+ * teacher who is its unit manager (NOT a "head" role), plus roles for permissions only, task
+ * templates and a plan for the current course with varied statuses.
  *
  * Not for production. Load with: ddev exec php bin/console doctrine:fixtures:load
  */
@@ -30,29 +32,49 @@ final class DemoFixtures extends Fixture
         $year = SchoolYear::current(new \DateTimeImmutable());
         $startYear = (int) substr($year, 0, 4);
 
-        $direction = (new Role())->setCode('direction')->setName('Dirección')->setAdmin(true);
-        $headDept = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setLevel(Area::TASK, PermissionLevel::WRITE);
-        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setLevel(Area::TASK, PermissionLevel::READ);
-        array_map($manager->persist(...), [$direction, $headDept, $teacherRole]);
+        // Roles carry PERMISSIONS and labels, not the chain of command. "Dirección" manages the
+        // administration area through the matrix (no admin flag: it demonstrates the fine-grained
+        // gate); "TIC" is the superuser (admin flag, bypasses the matrix); "Docente" is a plain label
+        // (task access is universal and filtered by the unit hierarchy, so it needs no matrix level).
+        $direction = (new Role())->setCode('direction')->setName('Dirección')
+            ->setDescription('Equipo directivo: gestiona la administración del centro sin ser superusuario.')
+            ->setLevel(Area::ADMINISTRATION, PermissionLevel::WRITE);
+        $tic = (new Role())->setCode('tic')->setName('TIC (Administrador)')
+            ->setDescription('Perfil técnico con acceso total al sistema (superusuario).')
+            ->setAdmin(true);
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')
+            ->setDescription('Profesorado del centro.');
+        array_map($manager->persist(...), [$direction, $tic, $teacherRole]);
 
+        // People. Department heads (María, Lucía) and the head of studies (Luis) are teachers; their
+        // authority comes from being the manager of their unit, below, not from any special role.
         $director = (new User())->setFullName('Ana Directora')->setEmail('director@centro.test')->addAssignedRole($direction);
-        $headStudies = (new User())->setFullName('Luis Jefatura')->setEmail('jefatura@centro.test')->addAssignedRole($headDept);
-        $mathsHead = (new User())->setFullName('María Matemáticas')->setEmail('mates@centro.test')->addAssignedRole($headDept);
+        $admin = (new User())->setFullName('Tomás TIC')->setEmail('tic@centro.test')->addAssignedRole($tic);
+        $headStudies = (new User())->setFullName('Luis Jefatura')->setEmail('jefatura@centro.test')->addAssignedRole($teacherRole);
+        $mathsHead = (new User())->setFullName('María Matemáticas')->setEmail('mates@centro.test')->addAssignedRole($teacherRole);
+        $langHead = (new User())->setFullName('Lucía Lengua')->setEmail('lengua@centro.test')->addAssignedRole($teacherRole);
         $teacher = (new User())->setFullName('Pedro Docente')->setEmail('profe@centro.test')->addAssignedRole($teacherRole);
-        array_map($manager->persist(...), [$director, $headStudies, $mathsHead, $teacher]);
+        array_map($manager->persist(...), [$director, $admin, $headStudies, $mathsHead, $langHead, $teacher]);
 
+        // Org chart: Dirección at the top, Jefatura de estudios below, then the departments. Each
+        // department's manager is the teacher who leads it, so a Maths task escalates María → Luis → Ana.
         $management = (new Unit())->setCode('management')->setName('Dirección')->setManager($director);
         $studies = (new Unit())->setCode('head_of_studies')->setName('Jefatura de estudios')->setManager($headStudies)->setParent($management);
         $maths = (new Unit())->setCode('maths')->setName('Departamento de Matemáticas')->setManager($mathsHead)->setParent($studies);
-        array_map($manager->persist(...), [$management, $studies, $maths]);
+        $lang = (new Unit())->setCode('lengua')->setName('Departamento de Lengua')->setManager($langHead)->setParent($studies);
+        array_map($manager->persist(...), [$management, $studies, $maths, $lang]);
 
         $director->setUnit($management);
+        $admin->setUnit($management);
         $headStudies->setUnit($studies);
         $mathsHead->setUnit($maths);
+        $langHead->setUnit($lang);
         $teacher->setUnit($maths);
 
-        $reportTpl = (new TaskTemplate())->setTitle('Memoria del departamento')->setType(TaskType::WITH_DELIVERABLE)->setResponsibleRole($headDept)->setRequiresDocument(true);
-        $meetingTpl = (new TaskTemplate())->setTitle('Acta de reunión de departamento')->setType(TaskType::SIMPLE)->setResponsibleRole($headDept);
+        // Templates leave the responsible open: each course's instance is assigned to the department
+        // head (the unit manager) explicitly, not to a fixed role.
+        $reportTpl = (new TaskTemplate())->setTitle('Memoria del departamento')->setType(TaskType::WITH_DELIVERABLE)->setRequiresDocument(true);
+        $meetingTpl = (new TaskTemplate())->setTitle('Acta de reunión de departamento')->setType(TaskType::SIMPLE);
         $manager->persist($reportTpl);
         $manager->persist($meetingTpl);
 
@@ -60,6 +82,7 @@ final class DemoFixtures extends Fixture
         $plan = [
             [$reportTpl, sprintf('%d-06-30', $startYear + 1), $maths, $mathsHead, 'in_progress'],
             [$meetingTpl, sprintf('%d-10-15', $startYear), $maths, $mathsHead, 'validated'],
+            [$reportTpl, sprintf('%d-06-30', $startYear + 1), $lang, $langHead, 'in_progress'],
             [$reportTpl, sprintf('%d-01-31', $startYear + 1), $studies, $headStudies, 'submitted'],
             [$meetingTpl, sprintf('%d-11-20', $startYear), $studies, $headStudies, 'done'],
         ];

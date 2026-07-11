@@ -5,24 +5,26 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\Unit;
+use App\Enum\Area;
 use App\Form\UnitType;
 use App\Repository\UnitRepository;
+use App\Security\Voter\AreaVoter;
 use App\Service\AuditLogger;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
-use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 /**
  * Admin management of the org chart: the {@see Unit}s that form the chain of command and their
  * managers. This is what escalation and validation walk over. Units are soft-deleted (deactivated)
  * rather than removed, so past tasks keep their context and the database-level ON DELETE SET NULL
- * on referencing rows never fires unaudited. Admins only.
+ * on referencing rows never fires unaudited. Every action demands write access to the
+ * {@see Area::ADMINISTRATION} area (via the {@see AreaVoter}), so Direction can manage the org chart
+ * without holding the superuser admin flag.
  */
 #[Route('/admin/unidades')]
-#[IsGranted('ROLE_ADMIN')]
 final class AdminUnitController extends AbstractController
 {
     public function __construct(private readonly AuditLogger $auditLogger)
@@ -35,6 +37,8 @@ final class AdminUnitController extends AbstractController
     #[Route('', name: 'admin_unit_index', methods: ['GET'])]
     public function index(UnitRepository $units): Response
     {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
+
         return $this->render('admin/unit/index.html.twig', [
             'roots' => $units->findBy(['parent' => null], ['name' => 'ASC']),
         ]);
@@ -70,6 +74,8 @@ final class AdminUnitController extends AbstractController
      */
     private function handleForm(Unit $unit, Request $request, EntityManagerInterface $em, bool $isNew): Response
     {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
+
         // Pass the unit so the form can drop it (and its whole subtree) from the "parent" choices,
         // making a cycle in the chain of command unrepresentable rather than just discouraged.
         $form = $this->createForm(UnitType::class, $unit, ['current_unit' => $unit]);

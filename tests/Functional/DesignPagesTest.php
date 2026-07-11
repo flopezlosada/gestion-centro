@@ -8,8 +8,6 @@ use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\Unit;
 use App\Entity\User;
-use App\Enum\Area;
-use App\Enum\PermissionLevel;
 use App\Enum\TaskType;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
@@ -48,8 +46,8 @@ final class DesignPagesTest extends WebTestCase
     private function seed(): array
     {
         $adminRole = (new Role())->setCode('direction')->setName('Dirección')->setAdmin(true);
-        // Read access to Tasks, but no admin and no unit management → can open the page, no history.
-        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setLevel(Area::TASK, PermissionLevel::READ);
+        // A plain label role: task access is universal, so the teacher sees the task by being its assignee.
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente');
         $this->em->persist($adminRole);
         $this->em->persist($teacherRole);
 
@@ -132,8 +130,9 @@ final class DesignPagesTest extends WebTestCase
     public function testUnrelatedReaderDoesNotSeeActivityHistory(): void
     {
         $s = $this->seed();
-        // A reader with access to the module but unrelated to the task (not assignee, not superior).
-        $role = (new Role())->setCode('lector')->setName('Lector')->setLevel(Area::TASK, PermissionLevel::READ);
+        // An authenticated user unrelated to the task (not assignee, not superior, not admin): they can
+        // open the detail but its activity history stays hidden.
+        $role = (new Role())->setCode('lector')->setName('Lector');
         $this->em->persist($role);
         $reader = $this->user('lector@centro.test', $role);
         $this->em->flush();
@@ -147,7 +146,8 @@ final class DesignPagesTest extends WebTestCase
 
     public function testSuperiorNonAdminSeesActivityHistory(): void
     {
-        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setLevel(Area::TASK, PermissionLevel::READ);
+        // A superior by being the unit's manager (not by any role): they see the task's history.
+        $headRole = (new Role())->setCode('teacher')->setName('Docente');
         $this->em->persist($headRole);
         $head = $this->user('jefa@centro.test', $headRole);
 

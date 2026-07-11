@@ -41,6 +41,8 @@ security:
         - { path: ^/cron/task-reminders$, roles: PUBLIC_ACCESS }
         # The activity trail is sensitive (it shows everyone's actions): admins only.
         - { path: ^/audit, roles: ROLE_ADMIN }
-        # User/role administration: admins only.
-        - { path: ^/admin, roles: ROLE_ADMIN }
+        # Administration (users, roles, org chart, non-teaching days): any authenticated user may reach
+        # the firewall, but each controller demands AREA_WRITE on ADMINISTRATION via the AreaVoter, so
+        # Direction manages the centre without being a superuser while the admin flag still bypasses it.
+        - { path: ^/admin, roles: ROLE_USER }
         - { path: ^/, roles: ROLE_USER }
