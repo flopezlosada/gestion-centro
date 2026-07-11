@@ -23,7 +23,7 @@ final class TaskVisibilityTest extends TestCase
         return (new User())->setFullName($name)->setEmail($name.'@example.test');
     }
 
-    private function task(Unit $unit, ?User $assignee): Task
+    private function task(?Unit $unit, ?User $assignee): Task
     {
         $task = new Task('Tarea', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
         $task->setUnit($unit);
@@ -88,5 +88,17 @@ final class TaskVisibilityTest extends TestCase
         ['teacher' => $teacher, 'mine' => $mine, 'dept' => $dept, 'top' => $top, 0 => $visibility] = $this->scenario();
 
         self::assertSame([$mine, $dept, $top], $visibility->visibleTo([$mine, $dept, $top], $teacher, true), 'an admin bypasses the scope');
+    }
+
+    public function testTaskWithoutUnitIsVisibleOnlyToItsOwnerOrAnAdmin(): void
+    {
+        ['teacher' => $teacher, 'director' => $director, 0 => $visibility] = $this->scenario();
+        // A unit-less task (ad-hoc, or orphaned by ON DELETE SET NULL): with no unit there is no chain
+        // of command to be a superior of, so it reaches only its own assignee (fail-closed) and admins.
+        $orphan = $this->task(null, $teacher);
+
+        self::assertTrue($visibility->isVisibleTo($orphan, $teacher, false), 'the assignee sees their unit-less task');
+        self::assertFalse($visibility->isVisibleTo($orphan, $director, false), 'with no unit no superior can reach it');
+        self::assertTrue($visibility->isVisibleTo($orphan, $director, true), 'an admin still sees it');
     }
 }

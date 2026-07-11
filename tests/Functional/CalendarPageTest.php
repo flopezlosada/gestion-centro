@@ -53,4 +53,31 @@ final class CalendarPageTest extends WebTestCase
         self::assertSelectorExists('.calendar-grid');
         self::assertSelectorTextContains('.calendar-grid', 'Memoria del departamento');
     }
+
+    public function testCalendarHidesTasksOutsideTheUsersScope(): void
+    {
+        $teacher = (new User())->setFullName('Profe Test')->setEmail('profe@centro.test');
+        $colleague = (new User())->setFullName('Colega Test')->setEmail('colega@centro.test');
+        array_map($this->em->persist(...), [$teacher, $colleague]);
+
+        $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($maths);
+        $teacher->setUnit($maths);
+        $colleague->setUnit($maths);
+
+        $due = new \DateTimeImmutable('2026-07-15');
+        $year = SchoolYear::current($due);
+        $mine = (new Task('Tarea propia', $year, $due, TaskType::SIMPLE))->setUnit($maths)->setAssignedUser($teacher);
+        $others = (new Task('Tarea ajena', $year, $due, TaskType::SIMPLE))->setUnit($maths)->setAssignedUser($colleague);
+        array_map($this->em->persist(...), [$mine, $others]);
+        $this->em->flush();
+
+        $this->client->loginUser($teacher);
+        $this->client->request('GET', '/calendario?mes=2026-07');
+        $content = (string) $this->client->getResponse()->getContent();
+
+        self::assertResponseIsSuccessful();
+        self::assertStringContainsString('Tarea propia', $content);
+        self::assertStringNotContainsString('Tarea ajena', $content, "a colleague's task is not on the teacher's calendar");
+    }
 }

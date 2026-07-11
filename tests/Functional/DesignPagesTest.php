@@ -128,11 +128,12 @@ final class DesignPagesTest extends WebTestCase
         self::assertSelectorExists('.obj-timeline');
     }
 
-    public function testUnrelatedReaderDoesNotSeeActivityHistory(): void
+    public function testUnrelatedUserIsForbiddenFromTaskDetail(): void
     {
         $s = $this->seed();
-        // An authenticated user unrelated to the task (not assignee, not superior): the detail page is
-        // open to everyone, but the activity history is not.
+        // An authenticated user unrelated to the task (not assignee, not superior): the detail is
+        // scoped by the org chart just like the plan, so it is forbidden — not merely stripped of its
+        // history.
         $role = (new Role())->setCode('lector')->setName('Lector');
         $this->em->persist($role);
         $reader = $this->user('lector@centro.test', $role);
@@ -141,8 +142,7 @@ final class DesignPagesTest extends WebTestCase
 
         $this->client->request('GET', '/tareas/'.$s['task']->getId());
 
-        self::assertResponseIsSuccessful();
-        self::assertSelectorNotExists('.obj-timeline');
+        self::assertResponseStatusCodeSame(403);
     }
 
     public function testSuperiorNonAdminSeesActivityHistory(): void

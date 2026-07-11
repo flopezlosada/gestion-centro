@@ -140,14 +140,19 @@ final class TaskController extends AbstractController
         Task $task,
         #[CurrentUser] User $user,
         AuditLogRepository $auditLog,
-        OrganizationHierarchy $hierarchy,
+        TaskVisibility $visibility,
         TaskWorkflow $workflows,
     ): Response {
-        // The activity history is recorded for everyone; on the object's page it is shown to the
-        // people involved in the task (whoever works on it) and to its superiors/admins — never to
-        // an unrelated user.
+        // Same organisation-chart scope as the plan and the calendar, enforced here so the detail
+        // cannot be reached by guessing an id: only the task's own people, a superior of its unit, or
+        // an admin may open it.
+        if (!$visibility->isVisibleTo($task, $user, $this->isGranted('ROLE_ADMIN'))) {
+            throw $this->createAccessDeniedException('No puedes ver esta tarea.');
+        }
+
+        // Everyone who reaches this point (own people, superiors, admins) is exactly who may see the
+        // task's activity history, so the timeline is shown to every viewer.
         $canWork = $this->canWorkOn($task, $user);
-        $canSeeHistory = $canWork || $hierarchy->isSuperiorOf($user, $task->getUnit());
 
         return $this->render('task/show.html.twig', [
             'task' => $task,
@@ -155,8 +160,8 @@ final class TaskController extends AbstractController
             // The lifecycle actions this user may fire now: the workflow's guards already hide the
             // superior-only ones for non-superiors; here we also hide progress ones from outsiders.
             'actions' => $this->availableActions($workflows, $task, $canWork),
-            'canSeeHistory' => $canSeeHistory,
-            'history' => $canSeeHistory ? $auditLog->findForSubject('Task', (string) $task->getId()) : [],
+            'canSeeHistory' => true,
+            'history' => $auditLog->findForSubject('Task', (string) $task->getId()),
         ]);
     }
 
@@ -310,12 +315,6 @@ final class TaskController extends AbstractController
      */
     private function canWorkOn(Task $task, User $user): bool
     {
-        if ($this->isGranted('ROLE_ADMIN') || $task->getAssignedUser() === $user) {
-            return true;
-        }
-
-        $role = $task->getAssignedRole();
-
-        return null !== $role && $user->holdsRole($role);
+        return $this->isGranted('ROLE_ADMIN') || $task->isOwnedBy($user);
     }
 }
