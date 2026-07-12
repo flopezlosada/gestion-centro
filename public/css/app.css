@@ -1293,25 +1293,6 @@ input[type="email"], input[type="text"], select, textarea {
    el editor y selector de roles del usuario. Solo tokens de "Registro".
    ============================================================================= */
 
-/* --- Listado de roles: una fila por rol con resumen en una línea --- */
-.role-list { list-style: none; margin: 0; padding: 0; }
-.role-list__item {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 14px 2px;
-    border-bottom: 1px solid var(--border);
-}
-.role-list__item:last-child { border-bottom: 0; }
-.role-list__main { flex: 1 1 auto; min-width: 0; }
-.role-list__head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.role-list__name { font: 600 16px var(--font-body); color: var(--text); text-decoration: none; }
-.role-list__name:hover { color: var(--accent); text-decoration: underline; }
-.role-list__code { font-size: 12px; }
-.role-list__summary { margin: 2px 0 0; font-size: 13.5px; color: var(--text-muted); }
-.role-list__edit { flex: 0 0 auto; font-size: 14px; color: var(--accent); text-decoration: none; }
-.role-list__edit:hover { text-decoration: underline; }
-
 /* --- Editor de rol: cabecera de cada pilar PDCA sobre sus filas de área --- */
 .perm-group { margin-top: 10px; }
 .perm-group__head {

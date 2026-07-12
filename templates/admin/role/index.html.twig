@@ -21,21 +21,20 @@
                 <a class="btn" href="{{ path('admin_role_new') }}">Nuevo rol</a>
             </div>
         {% else %}
-            {# Lista (no matriz): cada rol resume su acceso en una línea, calculada desde su mapa de
-               permisos (Role::levelCounts). #}
-            <ul class="role-list">
-                {% for role in roles %}
-                    <li class="role-list__item">
-                        <div class="role-list__main">
-                            <div class="role-list__head">
-                                <a class="role-list__name" href="{{ path('admin_role_edit', { id: role.id }) }}">{{ role.name }}</a>
-                                <span class="mono muted role-list__code">{{ role.code }}</span>
-                            </div>
-                        </div>
-                        <a class="role-list__edit" href="{{ path('admin_role_edit', { id: role.id }) }}">Editar</a>
-                    </li>
-                {% endfor %}
-            </ul>
+            <table data-list-tools>
+                <thead>
+                    <tr><th>Nombre</th><th>Código</th><th data-nosort></th></tr>
+                </thead>
+                <tbody>
+                    {% for role in roles %}
+                        <tr>
+                            <td><a href="{{ path('admin_role_edit', { id: role.id }) }}">{{ role.name }}</a></td>
+                            <td class="mono muted">{{ role.code }}</td>
+                            <td class="row-actions"><a href="{{ path('admin_role_edit', { id: role.id }) }}">Editar</a></td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         {% endif %}
     </div>
 {% endblock %}
