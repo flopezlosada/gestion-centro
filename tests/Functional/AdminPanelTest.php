@@ -320,7 +320,7 @@ final class AdminPanelTest extends WebTestCase
 
         $created = $this->em->getRepository(AcademicYear::class)->findOneBy(['schoolYear' => '2026-2027']);
         self::assertInstanceOf(AcademicYear::class, $created);
-        self::assertSame('2026-06-22', $created->getYearEnd()->format('Y-m-d'));
+        self::assertSame('2027-06-22', $created->getYearEnd()->format('Y-m-d'));
     }
 
     public function testOutOfOrderTermsAreRejected(): void
