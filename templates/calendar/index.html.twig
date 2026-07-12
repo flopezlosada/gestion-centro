@@ -37,6 +37,8 @@
                 {% for status in ['pending', 'in_progress', 'submitted', 'done', 'validated', 'rejected'] %}
                     <li><button type="button" class="calendar-legend__toggle" data-filter-status="{{ status }}" aria-pressed="true">{{ taskUi.status_dot(status) }} {{ taskUi.status_label(status) }}</button></li>
                 {% endfor %}
+                {# Los eventos personales no filtran por estado (no lo tienen); solo se explica el marcador. #}
+                <li class="calendar-legend__static"><span class="calendar-dot calendar-dot--event"></span> Evento personal</li>
             </ul>
         {% endif %}
     </div>
