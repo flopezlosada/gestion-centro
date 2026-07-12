@@ -10,7 +10,7 @@
             <h2 class="agenda-group__title">{{ label }} <span class="agenda-count">{{ entries|length }}</span></h2>
             <ol class="agenda-list">
                 {% for entry in entries %}
-                    {% if entry.kind == 'task' %}{{ taskUi.agenda_item(entry.task) }}{% else %}{{ taskUi.event_item(entry.event) }}{% endif %}
+                    {% if entry.kind == 'task' %}{{ taskUi.agenda_item(entry.task) }}{% else %}{{ taskUi.event_item(entry.event, 'home') }}{% endif %}
                 {% endfor %}
             </ol>
         </section>
@@ -37,8 +37,8 @@
     {% if pendingCount == 0 and buckets.done is empty %}
         <div class="card">
             <div class="empty-state">
-                <h2>Aún no tienes tareas asignadas</h2>
-                <p>Cuando dirección planifique tareas para ti o para tus responsabilidades, aparecerán aquí, ordenadas por fecha.</p>
+                <h2>Nada en tu agenda por ahora</h2>
+                <p>Aquí verás las tareas que dirección planifique para ti y los eventos personales que crees, ordenados por fecha.</p>
             </div>
         </div>
     {% else %}

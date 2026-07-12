@@ -43,17 +43,20 @@
     </li>
 {% endmacro %}
 
-{% macro event_item(event) %}
+{% macro event_item(event, returnTo = 'agenda') %}
     {#- Fila de agenda para un evento PERSONAL (privado de su dueño): casilla "Hecho" de 1 clic +
         título enlazado a su edición + cuándo (día y hora, o "Todo el día"), con un badge "Personal"
         para distinguirlo de una tarea institucional. A diferencia de `agenda_item`, el evento no tiene
         workflow ni estado: solo el `done`. La casilla siempre acciona porque estos eventos solo se
-        listan a su propio dueño (nadie más los ve). -#}
+        listan a su propio dueño (nadie más los ve). `returnTo` (lista cerrada: 'home' | 'agenda')
+        indica al controlador a qué pantalla volver tras marcar, para no sacar al usuario de donde está. -#}
     <li class="agenda-item{{ event.done ? ' is-done' }}" id="evento-{{ event.id }}">
         <form method="post" action="{{ path('personal_event_toggle_done', { id: event.id }) }}" class="agenda-check">
             <input type="hidden" name="_token" value="{{ csrf_token('personal_event_done' ~ event.id) }}">
+            <input type="hidden" name="from" value="{{ returnTo }}">
             <button type="submit" class="checkbox{{ event.done ? ' is-checked' }}"
                     aria-pressed="{{ event.done ? 'true' : 'false' }}"
+                    title="{{ event.done ? 'Hecho — pulsa para deshacer' : 'Marcar como hecho (reversible)' }}"
                     aria-label="Marcar «{{ event.title }}» como {{ event.done ? 'no hecho' : 'hecho' }}">
                 <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10.5 l3.2 3.2 L15 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>

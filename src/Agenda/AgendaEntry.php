@@ -30,11 +30,25 @@ final readonly class AgendaEntry
     ) {
     }
 
+    /**
+     * Wraps an institutional task, keyed by its deadline and its progress checkbox.
+     *
+     * @param Task $task the task to wrap
+     *
+     * @return self the agenda entry
+     */
     public static function fromTask(Task $task): self
     {
         return new self(self::KIND_TASK, $task->getDueDate(), $task->isCheckboxDone(), $task, null);
     }
 
+    /**
+     * Wraps a personal event, keyed by its start instant and its done flag.
+     *
+     * @param PersonalEvent $event the event to wrap
+     *
+     * @return self the agenda entry
+     */
     public static function fromEvent(PersonalEvent $event): self
     {
         return new self(self::KIND_EVENT, $event->getStartAt(), $event->isDone(), null, $event);
