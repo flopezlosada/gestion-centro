@@ -1,0 +1,48 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Trimestres{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Trimestres{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Trimestres del curso</h1>
+            <p class="lead">Fechas de inicio y fin de cada trimestre. Sirven para calcular los plazos de las tareas (p. ej. «fin del trimestre» o «antes de vacaciones») y para generar las tareas de cada curso.</p>
+        </div>
+        <a class="btn" href="{{ path('admin_academic_year_new') }}">+ Nuevo curso</a>
+    </div>
+
+    <div class="card">
+        {% if years is empty %}
+            <div class="empty-state">
+                <h2>Aún no hay ningún curso definido</h2>
+                <p>Define los trimestres del curso para poder fijar plazos relativos al calendario y generar las tareas del año.</p>
+                <a class="btn" href="{{ path('admin_academic_year_new') }}">Nuevo curso</a>
+            </div>
+        {% else %}
+            <table data-list-tools>
+                <thead>
+                    <tr><th>Curso</th><th>1.er trimestre</th><th>2.º trimestre</th><th>3.er trimestre</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for year in years %}
+                        <tr>
+                            <td class="mono">{{ year.schoolYear }}</td>
+                            <td class="mono">{{ year.term1Start|date('d/m/Y') }} – {{ year.term1End|date('d/m/Y') }}</td>
+                            <td class="mono">{{ year.term2Start|date('d/m/Y') }} – {{ year.term2End|date('d/m/Y') }}</td>
+                            <td class="mono">{{ year.term3Start|date('d/m/Y') }} – {{ year.term3End|date('d/m/Y') }}</td>
+                            <td class="row-actions">
+                                <a href="{{ path('admin_academic_year_edit', { id: year.id }) }}">Editar</a>
+                                <form method="post" action="{{ path('admin_academic_year_delete', { id: year.id }) }}" data-confirm="¿Seguro que quieres borrar la estructura del curso {{ year.schoolYear }}?">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('academic_year_delete' ~ year.id) }}">
+                                    <button type="submit" class="link-danger">Borrar</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}

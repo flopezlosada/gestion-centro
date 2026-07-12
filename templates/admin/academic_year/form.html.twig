@@ -1,0 +1,27 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}{{ year.id ? 'Editar curso' : 'Nuevo curso' }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('admin_academic_year_index') }}">Trimestres</a><span class="sep">/</span>
+    {{ year.id ? 'Editar' : 'Nuevo' }}
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <h1>{{ year.id ? 'Editar estructura del curso' : 'Nueva estructura del curso' }}</h1>
+    </div>
+
+    <div class="card form-card">
+        {{ form_start(form, { 'attr': { 'novalidate': 'novalidate' } }) }}
+            {{ form_errors(form) }}
+            {{ f.fields([form.schoolYear]) }}
+            {{ f.section('1.er trimestre', [form.term1Start, form.term1End]) }}
+            {{ f.section('2.º trimestre', [form.term2Start, form.term2End]) }}
+            {{ f.section('3.er trimestre', [form.term3Start, form.term3End]) }}
+            {{ f.actions(path('admin_academic_year_index')) }}
+        {{ form_end(form) }}
+    </div>
+{% endblock %}

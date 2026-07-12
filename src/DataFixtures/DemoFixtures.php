@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\DataFixtures;
 
+use App\Entity\AcademicYear;
 use App\Entity\NonLectiveDay;
 use App\Entity\Notification;
 use App\Entity\Role;
@@ -35,6 +36,18 @@ final class DemoFixtures extends Fixture
     {
         $year = SchoolYear::current(new \DateTimeImmutable());
         $startYear = (int) substr($year, 0, 4);
+
+        // Term structure of the demo course, so deadline anchors and yearly generation have a calendar
+        // to work against. Dates are illustrative (a typical Spanish IES trimester layout).
+        $academicYear = (new AcademicYear())
+            ->setSchoolYear($year)
+            ->setTerm1Start(new \DateTimeImmutable($startYear.'-09-15'))
+            ->setTerm1End(new \DateTimeImmutable($startYear.'-12-22'))
+            ->setTerm2Start(new \DateTimeImmutable(($startYear + 1).'-01-08'))
+            ->setTerm2End(new \DateTimeImmutable(($startYear + 1).'-03-27'))
+            ->setTerm3Start(new \DateTimeImmutable(($startYear + 1).'-04-07'))
+            ->setTerm3End(new \DateTimeImmutable(($startYear + 1).'-06-22'));
+        $manager->persist($academicYear);
 
         // Direction manages via the permission matrix (write on Administration) WITHOUT the superuser
         // flag: it reaches /admin but is not ROLE_ADMIN. TIC is the actual superuser (admin flag).
