@@ -1,0 +1,50 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Catálogo de tareas{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Catálogo de tareas{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Catálogo de tareas</h1>
+            <p class="lead">Las tareas recurrentes del curso. De aquí se generan las tareas de cada año; su regla de fecha decide el plazo.</p>
+        </div>
+        <a class="btn" href="{{ path('admin_task_template_new') }}">+ Nueva plantilla</a>
+    </div>
+
+    <div class="card">
+        {% if templates is empty %}
+            <div class="empty-state">
+                <h2>Aún no hay plantillas</h2>
+                <p>Crea la primera tarea recurrente del catálogo (p. ej. «Memoria del departamento»).</p>
+                <a class="btn" href="{{ path('admin_task_template_new') }}">Nueva plantilla</a>
+            </div>
+        {% else %}
+            <table data-list-tools>
+                <thead>
+                    <tr><th>Título</th><th>Tipo</th><th>Responsable</th><th>Regla de fecha</th><th>Estado</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for template in templates %}
+                        {% set rule = template.dueDateRule %}
+                        <tr>
+                            <td>{{ template.title }}</td>
+                            <td>{{ template.type.label }}</td>
+                            <td>{{ template.responsibleRole ? template.responsibleRole.name : '—' }}</td>
+                            <td>{{ rule ? rule.kind.label : 'A mano' }}</td>
+                            <td>{{ template.active ? 'Activa' : 'Retirada' }}</td>
+                            <td class="row-actions">
+                                <a href="{{ path('admin_task_template_edit', { id: template.id }) }}">Editar</a>
+                                <form method="post" action="{{ path('admin_task_template_delete', { id: template.id }) }}" data-confirm="¿Seguro que quieres borrar la plantilla «{{ template.title }}»?">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('task_template_delete' ~ template.id) }}">
+                                    <button type="submit" class="link-danger">Borrar</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}
