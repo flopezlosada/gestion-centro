@@ -1,17 +1,17 @@
 {% extends 'app_shell.html.twig' %}
 {% import '_macros/form.html.twig' as f %}
 
-{% block title %}{{ year.id ? 'Editar curso' : 'Nuevo curso' }}{% endblock %}
+{% block title %}{{ year.id ? 'Editar año escolar' : 'Nuevo año escolar' }}{% endblock %}
 
 {% block breadcrumb %}
     <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
-    <a href="{{ path('admin_academic_year_index') }}">Trimestres</a><span class="sep">/</span>
+    <a href="{{ path('admin_academic_year_index') }}">Años escolares</a><span class="sep">/</span>
     {{ year.id ? 'Editar' : 'Nuevo' }}
 {% endblock %}
 
 {% block body %}
     <div class="page-head">
-        <h1>{{ year.id ? 'Editar estructura del curso' : 'Nueva estructura del curso' }}</h1>
+        <h1>{{ year.id ? 'Editar año escolar' : 'Nuevo año escolar' }}</h1>
     </div>
 
     <div class="card form-card">

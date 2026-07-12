@@ -579,7 +579,7 @@ final class AdminPanelTest extends WebTestCase
 
         $this->client->loginUser($this->admin());
         $crawler = $this->client->request('GET', '/admin/trimestres');
-        $this->client->submit($crawler->selectButton('Generar tareas')->form());
+        $this->client->submit($crawler->selectButton('Generar año escolar')->form());
 
         self::assertResponseRedirects('/tareas?curso=2026-2027');
         self::assertCount(3, $this->em->getRepository(Task::class)->findBy(['schoolYear' => '2026-2027']));

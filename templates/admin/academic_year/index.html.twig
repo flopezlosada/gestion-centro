@@ -1,24 +1,24 @@
 {% extends 'app_shell.html.twig' %}
 
-{% block title %}Trimestres{% endblock %}
+{% block title %}Años escolares{% endblock %}
 
-{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Trimestres{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Años escolares{% endblock %}
 
 {% block body %}
     <div class="page-head">
         <div>
-            <h1>Trimestres del curso</h1>
-            <p class="lead">Fechas de inicio y fin de cada trimestre. Sirven para calcular los plazos de las tareas (p. ej. «fin del trimestre» o «antes de vacaciones») y para generar las tareas de cada curso.</p>
+            <h1>Años escolares</h1>
+            <p class="lead">Cada año escolar con las fechas de sus tres trimestres. Sirven para calcular los plazos de las tareas (p. ej. «fin del trimestre» o «antes de vacaciones») y para generar las tareas del año con un clic.</p>
         </div>
-        <a class="btn" href="{{ path('admin_academic_year_new') }}">+ Nuevo curso</a>
+        <a class="btn" href="{{ path('admin_academic_year_new') }}">+ Nuevo año escolar</a>
     </div>
 
     <div class="card">
         {% if years is empty %}
             <div class="empty-state">
-                <h2>Aún no hay ningún curso definido</h2>
-                <p>Define los trimestres del curso para poder fijar plazos relativos al calendario y generar las tareas del año.</p>
-                <a class="btn" href="{{ path('admin_academic_year_new') }}">Nuevo curso</a>
+                <h2>Aún no hay ningún año escolar definido</h2>
+                <p>Define un año escolar con sus trimestres para poder fijar plazos relativos al calendario y generar las tareas del año.</p>
+                <a class="btn" href="{{ path('admin_academic_year_new') }}">Nuevo año escolar</a>
             </div>
         {% else %}
             <table data-list-tools>
@@ -36,7 +36,7 @@
                                 <a href="{{ path('admin_academic_year_edit', { id: year.id }) }}">Editar</a>
                                 <form method="post" action="{{ path('admin_academic_year_generate', { id: year.id }) }}" data-confirm="¿Generar las tareas del curso {{ year.schoolYear }}? Se crearán las tareas de las plantillas con regla de fecha (no se duplican las que ya existan).">
                                     <input type="hidden" name="_token" value="{{ csrf_token('academic_year_generate' ~ year.id) }}">
-                                    <button type="submit" class="link-action">Generar tareas</button>
+                                    <button type="submit" class="link-action">Generar año escolar</button>
                                 </form>
                                 <form method="post" action="{{ path('admin_academic_year_delete', { id: year.id }) }}" data-confirm="¿Seguro que quieres borrar la estructura del curso {{ year.schoolYear }}?">
                                     <input type="hidden" name="_token" value="{{ csrf_token('academic_year_delete' ~ year.id) }}">
