@@ -141,8 +141,7 @@ final class TaskCrudTest extends WebTestCase
         self::assertSelectorNotExists('[name="task_form[assignedRole]"]');
         $form = $crawler->selectButton('Guardar')->form();
         // Touch only an unrelated field, as the user did when the bug surfaced.
-        $form['task_form[requiresDocument]']->tick();
-        $this->client->submit($form);
+        $this->client->submit($form, ['task_form[requiresDocument]' => '1']);
 
         self::assertResponseRedirects();
         $this->em->clear();
