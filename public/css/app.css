@@ -1187,6 +1187,8 @@ input[type="email"], input[type="text"], select, textarea {
    es un <button> dentro de un <form>, no un enlace). */
 .link-danger { background: none; border: 0; padding: 0; margin-left: 14px; color: var(--danger-text); font: inherit; cursor: pointer; }
 .link-danger:hover { text-decoration: underline; }
+.link-action { background: none; border: 0; padding: 0; margin-left: 14px; color: var(--accent); font: inherit; cursor: pointer; }
+.link-action:hover { text-decoration: underline; }
 .sga-phase { margin-block: 2rem; }
 .sga-phase-head { display: flex; align-items: baseline; gap: .6rem; padding-bottom: .4rem; border-bottom: 1px solid var(--border); }
 .sga-phase-code { color: var(--text-muted); font-size: .9em; }

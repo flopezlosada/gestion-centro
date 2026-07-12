@@ -27,4 +27,19 @@ class TaskTemplateRepository extends ServiceEntityRepository
     {
         return $this->findBy(['active' => true], ['title' => 'ASC']);
     }
+
+    /**
+     * Every template for the admin list: active ones first, then alphabetically by title.
+     *
+     * @return TaskTemplate[] the templates ordered for display
+     */
+    public function findAllOrdered(): array
+    {
+        return $this->createQueryBuilder('t')
+            ->orderBy('t.active', 'DESC')
+            ->addOrderBy('t.title', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
 }
+
