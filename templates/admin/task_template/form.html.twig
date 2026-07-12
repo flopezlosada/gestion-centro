@@ -1,0 +1,33 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}{{ template.id ? 'Editar plantilla' : 'Nueva plantilla' }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('admin_task_template_index') }}">Catálogo de tareas</a><span class="sep">/</span>
+    {{ template.id ? 'Editar' : 'Nueva' }}
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <h1>{{ template.id ? 'Editar plantilla' : 'Nueva plantilla' }}</h1>
+    </div>
+
+    <div class="card form-card">
+        {{ form_start(form, { 'attr': { 'novalidate': 'novalidate' } }) }}
+            {{ form_errors(form) }}
+            {{ f.fields([form.title, form.description, form.type, form.responsibleRole]) }}
+            {{ f.section('Comportamiento', [form.mandatory, form.requiresDocument, form.requiresCheckbox, form.active]) }}
+            {{ f.section('Regla de fecha límite (opcional)', [
+                form.ruleKind,
+                form.ruleMonth, form.ruleDay,
+                form.ruleWeekday, form.ruleOrdinal,
+                form.ruleAnchor, form.ruleOffsetDays,
+                form.ruleBoundary
+            ]) }}
+            <p class="help">Rellena solo los campos del tipo de regla elegido; el resto se ignora. Sin regla, el plazo se pone a mano al generar el curso.</p>
+            {{ f.actions(path('admin_task_template_index')) }}
+        {{ form_end(form) }}
+    </div>
+{% endblock %}

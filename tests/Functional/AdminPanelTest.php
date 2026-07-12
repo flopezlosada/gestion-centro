@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
+use App\DueDate\PerTerm;
 use App\Entity\AcademicYear;
 use App\Entity\NonLectiveDay;
 use App\Entity\Role;
+use App\Entity\TaskTemplate;
 use App\Entity\Unit;
 use App\Entity\User;
 use App\Enum\Area;
+use App\Enum\DueDateRuleKind;
 use App\Enum\PermissionLevel;
+use App\Enum\TaskType;
+use App\Enum\TermBoundary;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -453,5 +458,114 @@ final class AdminPanelTest extends WebTestCase
             ->setTerm2End(new \DateTimeImmutable(($start + 1).'-03-27'))
             ->setTerm3Start(new \DateTimeImmutable(($start + 1).'-04-07'))
             ->setTerm3End(new \DateTimeImmutable(($start + 1).'-06-22'));
+    }
+
+    public function testCreatingATaskTemplatePersistsIt(): void
+    {
+        $this->client->loginUser($this->admin());
+
+        $crawler = $this->client->request('GET', '/admin/catalogo/nueva');
+        self::assertResponseIsSuccessful();
+
+        $form = $crawler->selectButton('Guardar')->form([
+            'task_template[title]' => 'Memoria del departamento',
+            'task_template[type]' => TaskType::WITH_DELIVERABLE->value,
+            'task_template[active]' => true,
+        ]);
+        $this->client->submit($form);
+
+        self::assertResponseRedirects('/admin/catalogo');
+
+        $created = $this->em->getRepository(TaskTemplate::class)->findOneBy(['title' => 'Memoria del departamento']);
+        self::assertInstanceOf(TaskTemplate::class, $created);
+        self::assertNull($created->getDueDateRule(), 'no rule chosen');
+    }
+
+    public function testCreatingATemplateWithAPerTermRuleStoresTheRule(): void
+    {
+        $this->client->loginUser($this->admin());
+
+        $crawler = $this->client->request('GET', '/admin/catalogo/nueva');
+        $form = $crawler->selectButton('Guardar')->form([
+            'task_template[title]' => 'Acta de reunión',
+            'task_template[type]' => TaskType::SIMPLE->value,
+            'task_template[active]' => true,
+            'task_template[ruleKind]' => DueDateRuleKind::PER_TERM->value,
+            'task_template[ruleBoundary]' => TermBoundary::END->value,
+        ]);
+        $this->client->submit($form);
+
+        self::assertResponseRedirects('/admin/catalogo');
+
+        $created = $this->em->getRepository(TaskTemplate::class)->findOneBy(['title' => 'Acta de reunión']);
+        self::assertInstanceOf(TaskTemplate::class, $created);
+        $rule = $created->getDueDateRule();
+        self::assertInstanceOf(PerTerm::class, $rule);
+        self::assertSame(['kind' => 'per_term', 'boundary' => 'end'], $rule->toArray());
+    }
+
+    public function testCreatingATemplateWithAFixedRuleStoresTheRule(): void
+    {
+        $this->client->loginUser($this->admin());
+
+        $crawler = $this->client->request('GET', '/admin/catalogo/nueva');
+        $form = $crawler->selectButton('Guardar')->form([
+            'task_template[title]' => 'Entregar programación',
+            'task_template[type]' => TaskType::SIMPLE->value,
+            'task_template[active]' => true,
+            'task_template[ruleKind]' => DueDateRuleKind::FIXED->value,
+            'task_template[ruleMonth]' => '9',
+            'task_template[ruleDay]' => '30',
+        ]);
+        $this->client->submit($form);
+
+        self::assertResponseRedirects('/admin/catalogo');
+
+        $created = $this->em->getRepository(TaskTemplate::class)->findOneBy(['title' => 'Entregar programación']);
+        self::assertInstanceOf(TaskTemplate::class, $created);
+        self::assertSame(['kind' => 'fixed', 'month' => 9, 'day' => 30], $created->getDueDateRule()?->toArray());
+    }
+
+    public function testIncompleteRuleIsRejectedNotFatal(): void
+    {
+        $this->client->loginUser($this->admin());
+
+        $crawler = $this->client->request('GET', '/admin/catalogo/nueva');
+        // "Fixed" chosen but the day is left blank: a form error, never a 500.
+        $form = $crawler->selectButton('Guardar')->form([
+            'task_template[title]' => 'Regla incompleta',
+            'task_template[type]' => TaskType::SIMPLE->value,
+            'task_template[active]' => true,
+            'task_template[ruleKind]' => DueDateRuleKind::FIXED->value,
+            'task_template[ruleMonth]' => '9',
+        ]);
+        $this->client->submit($form);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertCount(0, $this->em->getRepository(TaskTemplate::class)->findAll());
+    }
+
+    public function testDeletingATaskTemplateRemovesIt(): void
+    {
+        $template = (new TaskTemplate())->setTitle('A borrar')->setType(TaskType::SIMPLE);
+        $this->em->persist($template);
+        $this->em->flush();
+        $id = $template->getId();
+
+        $this->client->loginUser($this->admin());
+        $crawler = $this->client->request('GET', '/admin/catalogo');
+        $this->client->submit($crawler->selectButton('Borrar')->form());
+
+        self::assertResponseRedirects('/admin/catalogo');
+        self::assertNull($this->em->getRepository(TaskTemplate::class)->find($id));
+    }
+
+    public function testNonAdminIsForbiddenFromTaskTemplates(): void
+    {
+        $this->client->loginUser($this->teacher());
+
+        $this->client->request('GET', '/admin/catalogo');
+
+        self::assertResponseStatusCodeSame(403);
     }
 }
