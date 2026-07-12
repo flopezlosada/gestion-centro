@@ -1,17 +1,17 @@
 {% extends 'app_shell.html.twig' %}
 {% import '_macros/form.html.twig' as f %}
 
-{% block title %}{{ unit.id ? 'Editar unidad' : 'Nueva unidad' }}{% endblock %}
+{% block title %}{{ unit.id ? 'Editar departamento' : 'Nuevo departamento' }}{% endblock %}
 
 {% block breadcrumb %}
     <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
-    <a href="{{ path('admin_unit_index') }}">Organigrama</a><span class="sep">/</span>
-    {{ unit.id ? 'Editar' : 'Nueva' }}
+    <a href="{{ path('admin_unit_index') }}">Departamentos</a><span class="sep">/</span>
+    {{ unit.id ? 'Editar' : 'Nuevo' }}
 {% endblock %}
 
 {% block body %}
     <div class="page-head">
-        <h1>{{ unit.id ? 'Editar unidad' : 'Nueva unidad' }}</h1>
+        <h1>{{ unit.id ? 'Editar departamento' : 'Nuevo departamento' }}</h1>
     </div>
 
     <div class="card form-card">
@@ -22,7 +22,6 @@
                 {{ form_widget(form.active) }} {{ form_label(form.active) }}
                 {% if form.active.vars.help %}<p class="help">{{ form.active.vars.help }}</p>{% endif %}
             </div>
-            {{ f.fields([form.parent, form.manager]) }}
             {{ f.actions(path('admin_unit_index')) }}
         {{ form_end(form) }}
     </div>
