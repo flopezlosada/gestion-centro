@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\DataFixtures;
 
-use App\DueDate\PerTerm;
-use App\DueDate\RelativeToAnchor;
 use App\Entity\AcademicYear;
 use App\Entity\NonLectiveDay;
 use App\Entity\Notification;
@@ -14,23 +12,19 @@ use App\Entity\Task;
 use App\Entity\TaskTemplate;
 use App\Entity\Unit;
 use App\Entity\User;
-use App\Enum\Area;
-use App\Enum\CalendarAnchor;
-use App\Enum\PermissionLevel;
 use App\Enum\TaskType;
-use App\Enum\TermBoundary;
 use App\Service\SchoolCalendar;
 use App\Util\SchoolYear;
-use Doctrine\Bundle\FixturesBundle\Fixture;
+use Doctrine\Common\DataFixtures\DependentFixtureInterface;
 use Doctrine\Persistence\ObjectManager;
 
 /**
- * Demo data to see the app working locally: a small org chart (management → head of studies →
- * maths), a few people, task templates and a plan for the current course with varied statuses.
- *
- * Not for production. Load with: ddev exec php bin/console doctrine:fixtures:load
+ * Sample data to see the app working locally: a small org chart (management → head of studies →
+ * maths), a few people, the course term structure and a plan with varied statuses. The roles and the
+ * template catalog it wires to are the GOLDEN backbone ({@see RoleFixtures}, {@see TaskTemplateFixtures});
+ * this only adds the volatile example layer (DEMO). Not for production.
  */
-final class DemoFixtures extends Fixture
+final class DemoFixtures extends AbstractDemoFixture implements DependentFixtureInterface
 {
     public function __construct(private readonly SchoolCalendar $schoolCalendar)
     {
@@ -53,25 +47,11 @@ final class DemoFixtures extends Fixture
             ->setTerm3End(new \DateTimeImmutable(($startYear + 1).'-06-22'));
         $manager->persist($academicYear);
 
-        // Direction manages via the permission matrix (write on Administration) WITHOUT the superuser
-        // flag: it reaches /admin but is not ROLE_ADMIN. TIC is the actual superuser (admin flag).
-        // Task access is universal and scoped by the org chart, so the other roles carry no matrix
-        // permissions — they are pure responsibility markers used for assignment and hierarchy.
-        $direction = (new Role())->setCode('direction')->setName('Dirección')->setLevel(Area::ADMINISTRATION, PermissionLevel::WRITE);
-        $tic = (new Role())->setCode('tic')->setName('TIC')->setAdmin(true);
-        // Direction and head of studies are the school's leadership: only they may change a task's
-        // responsible role (see TaskController::canEditTaskRole). Head of studies carries no matrix
-        // permission — the role exists so that leadership can be identified for that privilege.
-        $headOfStudies = (new Role())->setCode('head_of_studies')->setName('Jefatura de estudios');
-        $headDept = (new Role())->setCode('head_dept')->setName('Jefatura de departamento');
-        $teacherRole = (new Role())->setCode('teacher')->setName('Docente');
-        array_map($manager->persist(...), [$direction, $tic, $headOfStudies, $headDept, $teacherRole]);
-
-        $director = (new User())->setFullName('Ana Directora')->setEmail('director@centro.test')->addAssignedRole($direction);
-        $ticUser = (new User())->setFullName('Tomás TIC')->setEmail('tic@centro.test')->addAssignedRole($tic);
-        $headStudies = (new User())->setFullName('Luis Jefatura')->setEmail('jefatura@centro.test')->addAssignedRole($headOfStudies);
-        $mathsHead = (new User())->setFullName('María Matemáticas')->setEmail('mates@centro.test')->addAssignedRole($headDept);
-        $teacher = (new User())->setFullName('Pedro Docente')->setEmail('profe@centro.test')->addAssignedRole($teacherRole);
+        $director = (new User())->setFullName('Ana Directora')->setEmail('director@centro.test')->addAssignedRole($this->role('direction'));
+        $ticUser = (new User())->setFullName('Tomás TIC')->setEmail('tic@centro.test')->addAssignedRole($this->role('tic'));
+        $headStudies = (new User())->setFullName('Luis Jefatura')->setEmail('jefatura@centro.test')->addAssignedRole($this->role('head_of_studies'));
+        $mathsHead = (new User())->setFullName('María Matemáticas')->setEmail('mates@centro.test')->addAssignedRole($this->role('head_dept'));
+        $teacher = (new User())->setFullName('Pedro Docente')->setEmail('profe@centro.test')->addAssignedRole($this->role('teacher'));
         array_map($manager->persist(...), [$director, $ticUser, $headStudies, $mathsHead, $teacher]);
 
         $management = (new Unit())->setCode('management')->setName('Dirección')->setManager($director);
@@ -84,15 +64,8 @@ final class DemoFixtures extends Fixture
         $mathsHead->setUnit($maths);
         $teacher->setUnit($maths);
 
-        // Two catalogue templates with deadline rules, so the yearly generation has something to
-        // compute: the department report is due at the end of the course; the meeting minutes recur
-        // at the end of every term.
-        $reportTpl = (new TaskTemplate())->setTitle('Memoria del departamento')->setType(TaskType::WITH_DELIVERABLE)->setResponsibleRole($headDept)->setRequiresDocument(true)
-            ->setDueDateRule(new RelativeToAnchor(CalendarAnchor::YEAR_END, 0));
-        $meetingTpl = (new TaskTemplate())->setTitle('Acta de reunión de departamento')->setType(TaskType::SIMPLE)->setResponsibleRole($headDept)
-            ->setDueDateRule(new PerTerm(TermBoundary::END));
-        $manager->persist($reportTpl);
-        $manager->persist($meetingTpl);
+        $reportTpl = $this->getReference(TaskTemplateFixtures::REPORT, TaskTemplate::class);
+        $meetingTpl = $this->getReference(TaskTemplateFixtures::MEETING, TaskTemplate::class);
 
         // Some real Spanish public holidays within the course, so the calendar shows non-teaching
         // days and deadline validation has something to reject. Weekends are non-teaching on their
@@ -127,8 +100,7 @@ final class DemoFixtures extends Fixture
 
         // Assigned to the teacher across time buckets so the personal agenda demoes well today:
         // one overdue (soft), one due today, one this week, and one already done. Each nudged onto a
-        // teaching day — forward for today/upcoming, backward for overdue — so none lands on a
-        // weekend or holiday (fixing e.g. "acta de la CCP" landing on a Saturday).
+        // teaching day — forward for today/upcoming, backward for overdue.
         $today = new \DateTimeImmutable('today');
         $teacherPlan = [
             ['Preparar el acta de la CCP', 'Redactar y subir el acta de la última Comisión de Coordinación Pedagógica.', $today, false],
@@ -145,16 +117,13 @@ final class DemoFixtures extends Fixture
             $teacherTasks[] = $task;
         }
 
-        // A deliverable task in progress, so the teacher's task detail shows the full workbench
-        // (action "Entregar" + the deliverable reference form).
+        // A deliverable task in progress, so the teacher's task detail shows the full workbench.
         $withDeliverable = Task::fromTemplate($reportTpl, $year, $this->toLectiveDay($today->modify('+5 days'), $blockedKeys, true));
         $withDeliverable->setDescription('Memoria anual del departamento con resultados y propuestas para el curso que viene.')
             ->setUnit($maths)->setAssignedUser($teacher)->setStatus('in_progress')->setCreatedBy($director);
         $manager->persist($withDeliverable);
 
-        // A couple of demo notices for the teacher so the inbox and its badge are not empty. The
-        // wording follows the ACTUAL due date after nudging: the first task is only "de hoy" when it
-        // really lands on today (it does not when today is a weekend/holiday and it was pushed on).
+        // A couple of demo notices for the teacher so the inbox and its badge are not empty.
         $pinned = $teacherTasks[0];
         $pinnedIsToday = $pinned->getDueDate()->format('Y-m-d') === $today->format('Y-m-d');
         $manager->persist(new Notification($teacher, 'task.reminder', sprintf('Tarea próxima: %s', $teacherTasks[1]->getTitle()), 'Vence pronto.', $teacherTasks[1]));
@@ -170,9 +139,27 @@ final class DemoFixtures extends Fixture
     }
 
     /**
-     * Nudges a demo date onto a teaching day so no seeded task lands on a weekend or holiday. Reuses
-     * {@see SchoolCalendar::isWeekend()} for the weekend rule, but checks the holidays against the
-     * given keys rather than the database, since the seeded rows are not flushed yet at load time.
+     * @return list<class-string>
+     */
+    public function getDependencies(): array
+    {
+        return [RoleFixtures::class, TaskTemplateFixtures::class];
+    }
+
+    /**
+     * The golden role with the given code, wired via its fixture reference.
+     *
+     * @param string $code the role code
+     *
+     * @return Role the referenced role
+     */
+    private function role(string $code): Role
+    {
+        return $this->getReference(RoleFixtures::ref($code), Role::class);
+    }
+
+    /**
+     * Nudges a demo date onto a teaching day so no seeded task lands on a weekend or holiday.
      *
      * @param \DateTimeImmutable $date        the candidate date
      * @param list<string>       $blockedKeys 'Y-m-d' keys of the seeded non-teaching days to avoid
@@ -190,4 +177,3 @@ final class DemoFixtures extends Fixture
         return $date;
     }
 }
-

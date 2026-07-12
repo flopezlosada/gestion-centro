@@ -81,7 +81,7 @@ final class ImportRosterCommand extends Command
             }
 
             $user->setFullName($row['full_name'])->setEmail($row['email'])->setUnit($unit);
-            $user->addAssignedRole($this->role('docente', 'Docente'));
+            $user->addAssignedRole($this->role('teacher', 'Docente'));
             $cargoRole = $this->roleForCargo($row['cargo']);
             if (null !== $cargoRole) {
                 $user->addAssignedRole($cargoRole);
@@ -214,13 +214,15 @@ final class ImportRosterCommand extends Command
     {
         $c = mb_strtoupper($cargo);
 
+        // Codes match the app's canonical role catalog (see RoleFixtures / TaskController), so a
+        // `--group=golden` + import upserts the same roles rather than creating Spanish duplicates.
         return match (true) {
-            str_contains($c, 'DIRECTOR') => $this->role('direccion', 'Dirección', static function (Role $r): void {
+            str_contains($c, 'DIRECTOR') => $this->role('direction', 'Dirección', static function (Role $r): void {
                 $r->setLevel(Area::ADMINISTRATION, PermissionLevel::WRITE);
             }),
-            str_contains($c, 'ADJ') => $this->role('jefatura_adjunta', 'Jefatura de estudios adjunta'),
-            str_contains($c, 'JEFE DE ESTUDIOS'), str_contains($c, 'JEFA DE ESTUDIOS') => $this->role('jefatura_estudios', 'Jefatura de estudios'),
-            str_contains($c, 'SECRETARI') => $this->role('secretaria', 'Secretaría'),
+            str_contains($c, 'ADJ') => $this->role('head_of_studies_deputy', 'Jefatura de estudios adjunta'),
+            str_contains($c, 'JEFE DE ESTUDIOS'), str_contains($c, 'JEFA DE ESTUDIOS') => $this->role('head_of_studies', 'Jefatura de estudios'),
+            str_contains($c, 'SECRETARI') => $this->role('secretary', 'Secretaría'),
             str_starts_with($c, 'TUTOR') => $this->role('tutor', 'Tutor/a'),
             default => null,
         };

@@ -67,13 +67,13 @@ final class ImportRosterCommandTest extends KernelTestCase
         self::assertSame('Matemáticas', $director->getUnit()?->getName());
 
         $codes = array_map(static fn (Role $r) => $r->getCode(), $director->getAssignedRoles()->toArray());
-        self::assertContains('docente', $codes, 'everyone is a teacher');
-        self::assertContains('direccion', $codes);
+        self::assertContains('teacher', $codes, 'everyone is a teacher');
+        self::assertContains('direction', $codes);
 
         // Only Dirección gets back-office access.
-        $direccion = $this->em->getRepository(Role::class)->findOneBy(['code' => 'direccion']);
-        self::assertInstanceOf(Role::class, $direccion);
-        self::assertSame(PermissionLevel::WRITE, $direccion->getLevel(Area::ADMINISTRATION));
+        $direction = $this->em->getRepository(Role::class)->findOneBy(['code' => 'direction']);
+        self::assertInstanceOf(Role::class, $direction);
+        self::assertSame(PermissionLevel::WRITE, $direction->getLevel(Area::ADMINISTRATION));
     }
 
     public function testReRunIsIdempotent(): void
