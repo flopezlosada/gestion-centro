@@ -1,0 +1,47 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Mi agenda · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Agenda{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Mi agenda</h1>
+            <p class="lead">Tus citas y recordatorios. Privados: solo los ves tú.</p>
+        </div>
+        <div><a class="btn" href="{{ path('personal_event_new') }}">+ Nuevo evento</a></div>
+    </div>
+
+    <div class="card">
+        {% if events is empty %}
+            <div class="empty-state">
+                <h2>No tienes nada próximo</h2>
+                <p>Crea un evento para tu tutoría, una reunión o un recordatorio.</p>
+            </div>
+        {% else %}
+            <ul class="agenda-list">
+                {% for e in events %}
+                    <li class="agenda-item{{ e.done ? ' is-done' }}">
+                        <form method="post" action="{{ path('personal_event_toggle_done', { id: e.id }) }}" class="agenda-check">
+                            <input type="hidden" name="_token" value="{{ csrf_token('personal_event_done' ~ e.id) }}">
+                            <button type="submit" class="checkbox{{ e.done ? ' is-checked' }}"
+                                    aria-pressed="{{ e.done ? 'true' : 'false' }}"
+                                    aria-label="Marcar «{{ e.title }}» como {{ e.done ? 'no hecho' : 'hecho' }}">
+                                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10.5 l3.2 3.2 L15 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            </button>
+                        </form>
+                        <div class="agenda-body">
+                            <a href="{{ path('personal_event_edit', { id: e.id }) }}" class="agenda-title">{{ e.title }}</a>
+                            <span class="agenda-meta">
+                                {{ e.startAt|date('d/m/Y') }} ·
+                                {%- if e.allDay %} Todo el día
+                                {%- else %} {{ e.startAt|date('H:i') }}{% if e.endAt %}–{{ e.endAt|date('H:i') }}{% endif %}
+                                {%- endif %}
+                            </span>
+                        </div>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    </div>
+{% endblock %}
