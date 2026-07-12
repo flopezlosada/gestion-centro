@@ -15,7 +15,7 @@
         {% if cell.tasks is not empty %}
             <ul class="calendar-tasks">
                 {% for t in cell.tasks %}
-                    <li>
+                    <li data-status="{{ t.status }}">
                         <a class="calendar-task" href="{{ path('task_show', { id: t.id }) }}" title="{{ t.title }}">
                             {{ taskUi.status_dot(t.status) }}
                             <span class="calendar-task-title">{{ t.title }}</span>

@@ -88,6 +88,32 @@ final class CalendarPageTest extends WebTestCase
         self::assertCount(12, $crawler->filter('.cal-mini'));
     }
 
+    public function testMonthViewLegendIsAStatusFilterAndTasksCarryTheirStatus(): void
+    {
+        $teacher = $this->teacherWithTask(new \DateTimeImmutable('2026-07-15'), 'Memoria del departamento');
+
+        $this->client->loginUser($teacher);
+        $crawler = $this->client->request('GET', '/calendario?vista=mes&fecha=2026-07-15');
+
+        self::assertResponseIsSuccessful();
+        // The legend renders as clickable status toggles, and each task chip carries its status so the
+        // client-side filter can hide/show it.
+        self::assertSelectorExists('.calendar-legend__toggle[data-filter-status="pending"]');
+        self::assertSelectorExists('.calendar-tasks li[data-status]');
+    }
+
+    public function testYearViewOffersTermFilterButtons(): void
+    {
+        $this->em->persist($this->academicYear('2025-2026'));
+        $teacher = $this->teacherWithTask(new \DateTimeImmutable('2026-07-15'), 'Memoria del departamento');
+
+        $this->client->loginUser($teacher);
+        $this->client->request('GET', '/calendario?vista=anio&fecha=2026-07-15');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('.cal-year-legend__filter[data-filter-term="1"]');
+    }
+
     public function testYearViewMarksTermsAndNonLectiveDays(): void
     {
         // 15 Jul 2026 falls in the 2025-2026 school year; give it a term structure and a holiday.
