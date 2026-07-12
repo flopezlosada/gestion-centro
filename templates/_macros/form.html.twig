@@ -42,6 +42,39 @@
 {% endmacro %}
 
 {#
+   Un campo booleano como interruptor (switch) en vez del checkbox cuadrado nativo del navegador.
+   El <input type="checkbox"> real sigue en el DOM (solo oculto visualmente vía .switch__input), así
+   que es accesible y se envía como cualquier checkbox: no hay JS de por medio, la pista la pinta el
+   CSS con :checked. La etiqueta y la ayuda salen del propio campo (field.vars), y el <label> envuelve
+   al input para que al pulsar en todo el bloque conmute.
+#}
+{% macro toggle(field) %}
+    <div class="switch-row">
+        <label class="switch">
+            {{ form_widget(field, { attr: { class: 'switch__input' } }) }}
+            <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+            <span class="switch__text">
+                <span class="switch__label">{{ field.vars.label }}</span>
+                {% if field.vars.help %}<span class="switch__help">{{ field.vars.help }}</span>{% endif %}
+            </span>
+        </label>
+        {{ form_errors(field) }}
+    </div>
+{% endmacro %}
+
+{#
+   Un grupo de campos booleanos como interruptores (ver `toggle`). Se pasa la lista explícita para
+   preservar el orden. Úsalo para las "opciones" de un formulario (obligatoria, lleva entregable…).
+#}
+{% macro toggles(list) %}
+    <div class="switches">
+        {% for field in list %}
+            {{ _self.toggle(field) }}
+        {% endfor %}
+    </div>
+{% endmacro %}
+
+{#
    Barra de acciones del formulario: el botón primario de envío y un enlace de cancelar.
    cancelUrl: destino del enlace "Cancelar". submitLabel: texto del botón (por defecto "Guardar").
 #}
