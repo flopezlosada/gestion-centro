@@ -25,9 +25,10 @@ final class TaskActivityPresenter
 {
     /**
      * Presentation metadata per {@see \App\Entity\Task} property. `kind` selects the value formatter;
-     * `ref` fields additionally carry the related entity `class` and the `getter` that yields its name.
+     * `ref` fields additionally carry the related entity `class`, whose id is resolved to a name in
+     * {@see self::resolveReferencedNames()}.
      *
-     * @var array<string, array{label: string, kind: string, class?: class-string, getter?: string}>
+     * @var array<string, array{label: string, kind: string, class?: class-string}>
      */
     private const array FIELDS = [
         'title' => ['label' => 'Título', 'kind' => 'text'],
@@ -37,16 +38,16 @@ final class TaskActivityPresenter
         'dueDate' => ['label' => 'Fecha límite', 'kind' => 'date'],
         'mandatory' => ['label' => 'Obligatoria', 'kind' => 'bool'],
         'status' => ['label' => 'Estado', 'kind' => 'status'],
-        'assignedRole' => ['label' => 'Rol responsable', 'kind' => 'ref', 'class' => Role::class, 'getter' => 'getName'],
-        'assignedUser' => ['label' => 'Responsable', 'kind' => 'ref', 'class' => User::class, 'getter' => 'getFullName'],
-        'unit' => ['label' => 'Unidad', 'kind' => 'ref', 'class' => Unit::class, 'getter' => 'getName'],
+        'assignedRole' => ['label' => 'Rol responsable', 'kind' => 'ref', 'class' => Role::class],
+        'assignedUser' => ['label' => 'Responsable', 'kind' => 'ref', 'class' => User::class],
+        'unit' => ['label' => 'Unidad', 'kind' => 'ref', 'class' => Unit::class],
         'requiresDocument' => ['label' => 'Requiere documento', 'kind' => 'bool'],
         'requiresCheckbox' => ['label' => 'Requiere confirmación', 'kind' => 'bool'],
         'checkboxDone' => ['label' => 'Confirmada por el responsable', 'kind' => 'bool'],
         'deliverableReference' => ['label' => 'Referencia del entregable', 'kind' => 'text'],
-        'template' => ['label' => 'Plantilla', 'kind' => 'ref', 'class' => TaskTemplate::class, 'getter' => 'getTitle'],
+        'template' => ['label' => 'Plantilla', 'kind' => 'ref', 'class' => TaskTemplate::class],
         'createdAt' => ['label' => 'Creada', 'kind' => 'datetime'],
-        'createdBy' => ['label' => 'Creada por', 'kind' => 'ref', 'class' => User::class, 'getter' => 'getFullName'],
+        'createdBy' => ['label' => 'Creada por', 'kind' => 'ref', 'class' => User::class],
     ];
 
     /** Placeholder shown when a value is absent (null or empty). */
@@ -157,9 +158,9 @@ final class TaskActivityPresenter
     /**
      * Renders one value for a non-technical reader, according to its field kind.
      *
-     * @param array{label: string, kind: string, class?: class-string, getter?: string} $meta  the field metadata
-     * @param mixed                                                                       $value the raw stored value
-     * @param array<class-string, array<int, string>>                                     $names resolved id → name maps
+     * @param array{label: string, kind: string, class?: class-string} $meta  the field metadata
+     * @param mixed                                                      $value the raw stored value
+     * @param array<class-string, array<int, string>>                    $names resolved id → name maps
      *
      * @return string the display string
      */
@@ -175,7 +176,7 @@ final class TaskActivityPresenter
             'datetime' => $this->formatDate($value, 'd/m/Y H:i'),
             'type' => TaskType::tryFrom((string) $value)?->label() ?? (string) $value,
             'status' => TaskStatus::label((string) $value),
-            'ref' => $names[$meta['class']][(int) $value] ?? sprintf('#%s (eliminado)', $value),
+            'ref' => $names[$meta['class'] ?? ''][(int) $value] ?? sprintf('#%d (eliminado)', (int) $value),
             default => (string) $value,
         };
     }
@@ -210,13 +211,6 @@ final class TaskActivityPresenter
      */
     private function resolveReferencedNames(array $entries): array
     {
-        $getterByClass = [];
-        foreach (self::FIELDS as $meta) {
-            if ('ref' === $meta['kind']) {
-                $getterByClass[$meta['class']] = $meta['getter'];
-            }
-        }
-
         $idsByClass = [];
         foreach ($entries as $entry) {
             foreach ($entry->getChanges() ?? [] as $field => $change) {
@@ -233,12 +227,38 @@ final class TaskActivityPresenter
             }
         }
 
+        // Each ref class is resolved with a literal repository call and a typed extractor, so both the
+        // id and the name are read on the concrete entity (keeps the whole chain type-safe).
+        return array_filter([
+            Role::class => $this->mapNames(array_values($idsByClass[Role::class] ?? []), Role::class, static fn (Role $r): array => [(int) $r->getId(), $r->getName()]),
+            User::class => $this->mapNames(array_values($idsByClass[User::class] ?? []), User::class, static fn (User $u): array => [(int) $u->getId(), $u->getFullName()]),
+            Unit::class => $this->mapNames(array_values($idsByClass[Unit::class] ?? []), Unit::class, static fn (Unit $u): array => [(int) $u->getId(), $u->getName()]),
+            TaskTemplate::class => $this->mapNames(array_values($idsByClass[TaskTemplate::class] ?? []), TaskTemplate::class, static fn (TaskTemplate $t): array => [(int) $t->getId(), $t->getTitle()]),
+        ]);
+    }
+
+    /**
+     * Loads the given entities of one type in a single query and builds an id → name map. The
+     * extractor reads the concrete entity, so no method is ever called on a bare {@see object}.
+     *
+     * @template T of object
+     *
+     * @param list<int>                    $ids     the ids to load (empty means no query)
+     * @param class-string<T>              $class   the entity class to load
+     * @param callable(T): array{int, string} $extract maps a loaded entity to [id, name]
+     *
+     * @return array<int, string> the id → name map
+     */
+    private function mapNames(array $ids, string $class, callable $extract): array
+    {
+        if ([] === $ids) {
+            return [];
+        }
+
         $names = [];
-        foreach ($idsByClass as $class => $ids) {
-            $getter = $getterByClass[$class];
-            foreach ($this->entityManager->getRepository($class)->findBy(['id' => array_values($ids)]) as $entity) {
-                $names[$class][$entity->getId()] = (string) $entity->{$getter}();
-            }
+        foreach ($this->entityManager->getRepository($class)->findBy(['id' => $ids]) as $entity) {
+            [$id, $name] = $extract($entity);
+            $names[$id] = $name;
         }
 
         return $names;

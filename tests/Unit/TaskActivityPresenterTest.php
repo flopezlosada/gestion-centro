@@ -8,7 +8,7 @@ use App\Entity\AuditLog;
 use App\Entity\User;
 use App\Support\TaskActivityPresenter;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\Persistence\ObjectRepository;
+use Doctrine\ORM\EntityRepository;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -42,7 +42,7 @@ final class TaskActivityPresenterTest extends TestCase
      */
     private function emReturning(array $entities): EntityManagerInterface
     {
-        $repo = $this->createMock(ObjectRepository::class);
+        $repo = $this->createMock(EntityRepository::class);
         $repo->method('findBy')->willReturn($entities);
         $em = $this->createMock(EntityManagerInterface::class);
         $em->method('getRepository')->willReturn($repo);
@@ -143,7 +143,7 @@ final class TaskActivityPresenterTest extends TestCase
         $ana = $this->user('Ana Ruiz', 'ana@centro.test', 7);
         $luis = $this->user('Luis Gil', 'luis@centro.test', 9);
 
-        $repo = $this->createMock(ObjectRepository::class);
+        $repo = $this->createMock(EntityRepository::class);
         $repo->expects(self::once())->method('findBy')->willReturn([$ana, $luis]);
 
         $em = $this->createMock(EntityManagerInterface::class);
