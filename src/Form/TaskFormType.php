@@ -53,9 +53,21 @@ final class TaskFormType extends AbstractType
                 'choices' => $options['assignable_users'],
                 'choice_label' => 'fullName',
             ])
-            ->add('mandatory', CheckboxType::class, ['label' => 'Obligatoria', 'required' => false])
-            ->add('requiresCheckbox', CheckboxType::class, ['label' => 'Se marca hecha con una casilla', 'required' => false])
-            ->add('requiresDocument', CheckboxType::class, ['label' => 'Lleva entregable (documento)', 'required' => false]);
+            ->add('mandatory', CheckboxType::class, [
+                'label' => 'Obligatoria',
+                'required' => false,
+                'help' => 'Las obligatorias cuentan como pendientes hasta cerrarse; las voluntarias son opcionales.',
+            ])
+            ->add('requiresCheckbox', CheckboxType::class, [
+                'label' => 'Se marca hecha con una casilla',
+                'required' => false,
+                'help' => 'Aparece una casilla de "hecho" de un clic en la agenda para cerrarla.',
+            ])
+            ->add('requiresDocument', CheckboxType::class, [
+                'label' => 'Lleva entregable',
+                'required' => false,
+                'help' => 'Pide una referencia al documento entregable (un enlace, nunca el archivo).',
+            ]);
 
         // The responsible role is a structural, leadership-only field: it appears only when the
         // controller allows it (direction / head of studies). For everyone else it is absent, so a

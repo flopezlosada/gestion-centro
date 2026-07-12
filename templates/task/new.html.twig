@@ -15,7 +15,13 @@
     <div class="card">
         {{ form_start(form) }}
         {{ form_errors(form) }}
-        {{ f.fields([form.title, form.description, form.type, form.dueDate, form.assignedUser]|merge(form.assignedRole is defined ? [form.assignedRole] : [])|merge([form.mandatory, form.requiresCheckbox, form.requiresDocument])) }}
+        {{ f.section('Qué hay que hacer', [form.title, form.description]|merge(form.type is defined ? [form.type] : [])) }}
+        {{ f.section('Cuándo', [form.dueDate]) }}
+        {{ f.section('Quién responde', [form.assignedUser]|merge(form.assignedRole is defined ? [form.assignedRole] : [])) }}
+        <fieldset class="form-section">
+            <legend class="form-section-title">Opciones</legend>
+            {{ f.toggles([form.mandatory, form.requiresCheckbox, form.requiresDocument]) }}
+        </fieldset>
         {{ f.actions(path('app_homepage'), 'Crear tarea') }}
         {{ form_end(form) }}
     </div>

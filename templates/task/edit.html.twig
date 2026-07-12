@@ -15,7 +15,13 @@
     <div class="card">
         {{ form_start(form) }}
         {{ form_errors(form) }}
-        {{ f.fields([form.title, form.description, form.dueDate, form.assignedUser]|merge(form.assignedRole is defined ? [form.assignedRole] : [])|merge([form.mandatory, form.requiresCheckbox, form.requiresDocument])) }}
+        {{ f.section('Qué hay que hacer', [form.title, form.description]) }}
+        {{ f.section('Cuándo', [form.dueDate]) }}
+        {{ f.section('Quién responde', [form.assignedUser]|merge(form.assignedRole is defined ? [form.assignedRole] : [])) }}
+        <fieldset class="form-section">
+            <legend class="form-section-title">Opciones</legend>
+            {{ f.toggles([form.mandatory, form.requiresCheckbox, form.requiresDocument]) }}
+        </fieldset>
         {{ f.actions(path('task_show', { id: task.id })) }}
         {{ form_end(form) }}
     </div>
