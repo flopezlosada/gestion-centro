@@ -127,4 +127,84 @@ final class PersonalEventRecurrenceTest extends WebTestCase
         $this->em->clear();
         self::assertSame(2, $this->em->getRepository(PersonalEvent::class)->count(['title' => 'Reunión semanal']));
     }
+
+    public function testAnotherUserCannotDeleteSomeoneElsesSeries(): void
+    {
+        $owner = $this->user('duena@centro.test');
+        $stranger = $this->user('otro@centro.test');
+        $events = $this->makeSeries($owner, 'Serie ajena', 3);
+
+        $this->client->loginUser($stranger);
+        // A stranger's series delete is refused (CSRF or ownership gate) and the series must survive.
+        $this->client->request('POST', '/agenda/'.$events[0]->getId().'/borrar-serie', ['_token' => 'wrong']);
+
+        self::assertResponseStatusCodeSame(403);
+        $this->em->clear();
+        self::assertSame(3, $this->em->getRepository(PersonalEvent::class)->count(['title' => 'Serie ajena']));
+    }
+
+    public function testRecurringBeyondTwoYearsIsRejected(): void
+    {
+        $user = $this->user('profe@centro.test');
+        $this->em->flush();
+        $this->client->loginUser($user);
+
+        $crawler = $this->client->request('GET', '/agenda/nueva');
+        $form = $crawler->selectButton('Crear evento')->form();
+        $form['personal_event_form[title]'] = 'Serie demasiado larga';
+        $form['personal_event_form[day]'] = '2026-03-02';
+        $form['personal_event_form[startTime]'] = '10:00';
+        $form['personal_event_form[repeat]'] = 'weekly';
+        $form['personal_event_form[repeatUntil]'] = '2029-03-02'; // three years out
+        $this->client->submit($form);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertStringContainsString('más de dos años', (string) $this->client->getResponse()->getContent());
+        self::assertSame(0, $this->em->getRepository(PersonalEvent::class)->count(['title' => 'Serie demasiado larga']));
+    }
+
+    public function testRepeatUntilBeforeTheStartDayIsRejected(): void
+    {
+        $user = $this->user('profe@centro.test');
+        $this->em->flush();
+        $this->client->loginUser($user);
+
+        $crawler = $this->client->request('GET', '/agenda/nueva');
+        $form = $crawler->selectButton('Crear evento')->form();
+        $form['personal_event_form[title]'] = 'Fin antes del inicio';
+        $form['personal_event_form[day]'] = '2026-03-10';
+        $form['personal_event_form[startTime]'] = '10:00';
+        $form['personal_event_form[repeat]'] = 'weekly';
+        $form['personal_event_form[repeatUntil]'] = '2026-03-02'; // before the start day
+        $this->client->submit($form);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertStringContainsString('anterior al día', (string) $this->client->getResponse()->getContent());
+        self::assertSame(0, $this->em->getRepository(PersonalEvent::class)->count(['title' => 'Fin antes del inicio']));
+    }
+
+    public function testAllDayRecurringMaterialisesAllDayOccurrences(): void
+    {
+        $user = $this->user('profe@centro.test');
+        $this->em->flush();
+        $this->client->loginUser($user);
+
+        $crawler = $this->client->request('GET', '/agenda/nueva');
+        $form = $crawler->selectButton('Crear evento')->form();
+        $form['personal_event_form[title]'] = 'Semana temática';
+        $form['personal_event_form[day]'] = '2026-03-02';
+        $form['personal_event_form[repeat]'] = 'weekly';
+        $form['personal_event_form[repeatUntil]'] = '2026-03-16';
+        // Tick "all day" via submit() (the crawler union return type forbids ->tick()).
+        $this->client->submit($form, ['personal_event_form[allDay]' => '1']);
+
+        self::assertResponseRedirects('/agenda');
+        $this->em->clear();
+        $events = $this->em->getRepository(PersonalEvent::class)->findBy(['title' => 'Semana temática'], ['startAt' => 'ASC']);
+        self::assertCount(3, $events);
+        foreach ($events as $event) {
+            self::assertTrue($event->isAllDay());
+            self::assertNull($event->getEndAt());
+        }
+    }
 }

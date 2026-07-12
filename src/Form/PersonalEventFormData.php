@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Form;
 
-use App\Agenda\RecurrenceExpander;
 use App\Entity\PersonalEvent;
+use App\Enum\RecurrenceFrequency;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
@@ -34,8 +34,8 @@ final class PersonalEventFormData
     /** End time as "HH:MM", or null when the entry has no explicit end. */
     public ?string $endTime = null;
 
-    /** Recurrence frequency: one of {@see RecurrenceExpander}'s NONE/WEEKLY/MONTHLY. */
-    public string $repeat = RecurrenceExpander::NONE;
+    /** Recurrence frequency. */
+    public RecurrenceFrequency $repeat = RecurrenceFrequency::NONE;
 
     /** Last day the recurrence reaches (inclusive); required when repeating, ignored otherwise. */
     public ?\DateTimeImmutable $repeatUntil = null;
@@ -76,7 +76,7 @@ final class PersonalEventFormData
     #[Assert\Callback]
     public function validateRecurrence(ExecutionContextInterface $context): void
     {
-        if (RecurrenceExpander::NONE === $this->repeat || null === $this->day) {
+        if (RecurrenceFrequency::NONE === $this->repeat || null === $this->day) {
             return;
         }
         if (null === $this->repeatUntil) {

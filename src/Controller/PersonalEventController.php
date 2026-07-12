@@ -150,10 +150,11 @@ final class PersonalEventController extends AbstractController
         if (null === $seriesId) {
             $entityManager->remove($event);
             $entityManager->flush();
+            $this->addFlash('success', 'Evento borrado.');
         } else {
-            $events->deleteSeries($user, $seriesId);
+            $deleted = $events->deleteSeries($user, $seriesId);
+            $this->addFlash('success', \sprintf('Serie borrada: %d eventos.', $deleted));
         }
-        $this->addFlash('success', 'Serie borrada.');
 
         return $this->redirectToRoute('personal_event_index');
     }

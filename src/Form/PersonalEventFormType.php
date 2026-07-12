@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace App\Form;
 
-use App\Agenda\RecurrenceExpander;
+use App\Enum\RecurrenceFrequency;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
+use Symfony\Component\Form\Extension\Core\Type\EnumType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
@@ -66,13 +67,10 @@ final class PersonalEventFormType extends AbstractType
         // its own. So the fields appear only when the controller asks for them (on the new form).
         if (true === $options['include_recurrence']) {
             $builder
-                ->add('repeat', ChoiceType::class, [
+                ->add('repeat', EnumType::class, [
                     'label' => 'Repetir',
-                    'choices' => [
-                        'No se repite' => RecurrenceExpander::NONE,
-                        'Cada semana' => RecurrenceExpander::WEEKLY,
-                        'Cada mes' => RecurrenceExpander::MONTHLY,
-                    ],
+                    'class' => RecurrenceFrequency::class,
+                    'choice_label' => static fn (RecurrenceFrequency $frequency): string => $frequency->label(),
                 ])
                 ->add('repeatUntil', DateType::class, [
                     'label' => 'Repetir hasta',
