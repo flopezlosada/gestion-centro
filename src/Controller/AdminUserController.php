@@ -7,6 +7,7 @@ namespace App\Controller;
 use App\Entity\User;
 use App\Enum\Area;
 use App\Form\UserType;
+use App\Repository\UnitRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
 use App\Service\AuditLogger;
@@ -44,12 +45,19 @@ final class AdminUserController extends AbstractController
     }
 
     /**
-     * Registers a new user (active by default).
+     * Registers a new user (active by default). An optional "unit" query parameter pre-selects the
+     * department, so the "+ Nuevo profesor" link on a department lands with it already filled in.
      */
     #[Route('/nuevo', name: 'admin_user_new', methods: ['GET', 'POST'])]
-    public function new(Request $request, EntityManagerInterface $em): Response
+    public function new(Request $request, EntityManagerInterface $em, UnitRepository $units): Response
     {
-        return $this->handleForm((new User())->setActive(true), $request, $em, true);
+        $user = (new User())->setActive(true);
+        $unitId = $request->query->getInt('unit');
+        if (0 !== $unitId && null !== ($unit = $units->find($unitId))) {
+            $user->setUnit($unit);
+        }
+
+        return $this->handleForm($user, $request, $em, true);
     }
 
     /**
