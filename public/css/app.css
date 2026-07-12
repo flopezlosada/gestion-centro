@@ -1439,7 +1439,6 @@ input[type="email"], input[type="text"], select, textarea {
 .calendar-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 16px 0 0; padding: 0; font-size: 12.5px; color: var(--text-muted); }
 .calendar-legend li { display: flex; align-items: center; gap: 6px; }
 .calendar-legend-swatch { width: 12px; height: 12px; border-radius: var(--radius-sm); flex: none; border: 1px solid var(--border-strong); }
-.calendar-legend-swatch--weekend { background: var(--surface-sunken); }
 .calendar-legend-swatch--nonlective { background: var(--surface); box-shadow: inset 3px 0 0 var(--accent); }
 
 /* Filtro del calendario: leyenda de estados clicable (aditiva) y ocultado de lo filtrado. */

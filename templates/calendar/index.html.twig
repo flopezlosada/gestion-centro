@@ -37,8 +37,6 @@
                 {% for status in ['pending', 'in_progress', 'submitted', 'done', 'validated', 'rejected'] %}
                     <li><button type="button" class="calendar-legend__toggle" data-filter-status="{{ status }}" aria-pressed="true">{{ taskUi.status_dot(status) }} {{ taskUi.status_label(status) }}</button></li>
                 {% endfor %}
-                <li><span class="calendar-legend-swatch calendar-legend-swatch--weekend"></span> Fin de semana</li>
-                <li><span class="calendar-legend-swatch calendar-legend-swatch--nonlective"></span> Día no lectivo</li>
             </ul>
         {% endif %}
     </div>
