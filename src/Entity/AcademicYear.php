@@ -228,6 +228,22 @@ class AcademicYear implements Auditable
     }
 
     /**
+     * The calendar year the given month falls in for this course. A course runs September→August, so
+     * months from September on belong to the first calendar year and January→August to the next
+     * (e.g. for 2026-2027: October → 2026, February → 2027).
+     *
+     * @param int $month the month, 1 (January) to 12 (December)
+     *
+     * @return int the four-digit calendar year that month falls in for this course
+     */
+    public function calendarYearForMonth(int $month): int
+    {
+        $firstYear = (int) $this->term1Start->format('Y');
+
+        return $month >= 9 ? $firstYear : $firstYear + 1;
+    }
+
+    /**
      * The first teaching day of the given term.
      *
      * @param int $term the term number, 1 to 3

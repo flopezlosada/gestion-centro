@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Contract\Auditable;
+use App\DueDate\DueDateRule;
+use App\DueDate\DueDateRuleFactory;
 use App\Enum\TaskType;
 use App\Repository\TaskTemplateRepository;
 use Doctrine\DBAL\Types\Types;
@@ -13,8 +15,9 @@ use Symfony\Component\Validator\Constraints as Assert;
 
 /**
  * A recurring task of the school's annual cycle (the valuable core of the catalogue). It is a
- * template, not a dated task: it is instantiated into a concrete {@see Task} each course, and the
- * due date is fixed at instantiation — it is never inherited from the template.
+ * template, not a dated task: it is instantiated into a concrete {@see Task} each course. The due
+ * date of each instance may be computed by an optional {@see DueDateRule} (so the yearly generation
+ * can stamp deadlines automatically), or left to be set by hand when no rule is defined.
  */
 #[ORM\Entity(repositoryClass: TaskTemplateRepository::class)]
 #[ORM\Table(name: 'task_template')]
@@ -60,6 +63,15 @@ class TaskTemplate implements Auditable
     /** Retired templates are kept for history but no longer instantiated. */
     #[ORM\Column]
     private bool $active = true;
+
+    /**
+     * The rule that computes this template's due date(s) for a course, or null when the deadline is
+     * set by hand each course. Persisted as JSON and exposed as a {@see DueDateRule} value object.
+     *
+     * @var array<string, mixed>|null
+     */
+    #[ORM\Column(type: Types::JSON, nullable: true)]
+    private ?array $dueDateRule = null;
 
     public function getId(): ?int
     {
@@ -158,6 +170,28 @@ class TaskTemplate implements Auditable
     public function setActive(bool $active): static
     {
         $this->active = $active;
+
+        return $this;
+    }
+
+    /**
+     * The deadline rule for this template, or null when the due date is set by hand each course.
+     *
+     * @return DueDateRule|null the rule, rebuilt from its stored form
+     */
+    public function getDueDateRule(): ?DueDateRule
+    {
+        return null === $this->dueDateRule ? null : DueDateRuleFactory::fromArray($this->dueDateRule);
+    }
+
+    /**
+     * Sets (or clears, with null) the deadline rule, storing it in its JSON form.
+     *
+     * @param DueDateRule|null $rule the rule to store, or null to compute the deadline by hand
+     */
+    public function setDueDateRule(?DueDateRule $rule): static
+    {
+        $this->dueDateRule = $rule?->toArray();
 
         return $this;
     }

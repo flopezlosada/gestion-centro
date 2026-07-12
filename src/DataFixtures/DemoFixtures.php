@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\DataFixtures;
 
+use App\DueDate\PerTerm;
+use App\DueDate\RelativeToAnchor;
 use App\Entity\AcademicYear;
 use App\Entity\NonLectiveDay;
 use App\Entity\Notification;
@@ -13,8 +15,10 @@ use App\Entity\TaskTemplate;
 use App\Entity\Unit;
 use App\Entity\User;
 use App\Enum\Area;
+use App\Enum\CalendarAnchor;
 use App\Enum\PermissionLevel;
 use App\Enum\TaskType;
+use App\Enum\TermBoundary;
 use App\Service\SchoolCalendar;
 use App\Util\SchoolYear;
 use Doctrine\Bundle\FixturesBundle\Fixture;
@@ -76,8 +80,13 @@ final class DemoFixtures extends Fixture
         $mathsHead->setUnit($maths);
         $teacher->setUnit($maths);
 
-        $reportTpl = (new TaskTemplate())->setTitle('Memoria del departamento')->setType(TaskType::WITH_DELIVERABLE)->setResponsibleRole($headDept)->setRequiresDocument(true);
-        $meetingTpl = (new TaskTemplate())->setTitle('Acta de reunión de departamento')->setType(TaskType::SIMPLE)->setResponsibleRole($headDept);
+        // Two catalogue templates with deadline rules, so the yearly generation has something to
+        // compute: the department report is due at the end of the course; the meeting minutes recur
+        // at the end of every term.
+        $reportTpl = (new TaskTemplate())->setTitle('Memoria del departamento')->setType(TaskType::WITH_DELIVERABLE)->setResponsibleRole($headDept)->setRequiresDocument(true)
+            ->setDueDateRule(new RelativeToAnchor(CalendarAnchor::YEAR_END, 0));
+        $meetingTpl = (new TaskTemplate())->setTitle('Acta de reunión de departamento')->setType(TaskType::SIMPLE)->setResponsibleRole($headDept)
+            ->setDueDateRule(new PerTerm(TermBoundary::END));
         $manager->persist($reportTpl);
         $manager->persist($meetingTpl);
 
