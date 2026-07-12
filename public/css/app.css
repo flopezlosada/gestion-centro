@@ -298,6 +298,7 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 500; color: var(--te
 }
 .page-head h1 { font-size: 30px; margin: 0 0 4px; line-height: 1.12; letter-spacing: -.01em; }
 .page-head .lead { color: var(--text-muted); margin: 0; max-width: 60ch; }
+.page-head-actions { display: flex; gap: 10px; flex: none; }
 
 /* Compat: encabezado simple usado por plantillas sin page-head. */
 .page > h1 { font-size: 28px; margin: 0 0 18px; }

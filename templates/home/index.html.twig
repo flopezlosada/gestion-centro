@@ -3,13 +3,15 @@
 {% block title %}Inicio · {{ app_organization_name }}{% endblock %}
 {% block breadcrumb %}Inicio{% endblock %}
 
-{% macro section(label, tasks, tone) %}
+{% macro section(label, entries, tone) %}
     {% import '_macros/task.html.twig' as taskUi %}
-    {% if tasks is not empty %}
+    {% if entries is not empty %}
         <section class="agenda-group{{ tone ? ' agenda-group--' ~ tone }}">
-            <h2 class="agenda-group__title">{{ label }} <span class="agenda-count">{{ tasks|length }}</span></h2>
+            <h2 class="agenda-group__title">{{ label }} <span class="agenda-count">{{ entries|length }}</span></h2>
             <ol class="agenda-list">
-                {% for task in tasks %}{{ taskUi.agenda_item(task) }}{% endfor %}
+                {% for entry in entries %}
+                    {% if entry.kind == 'task' %}{{ taskUi.agenda_item(entry.task) }}{% else %}{{ taskUi.event_item(entry.event) }}{% endif %}
+                {% endfor %}
             </ol>
         </section>
     {% endif %}
@@ -26,7 +28,10 @@
                 {% else %}Esto es lo que tienes que hacer.{% endif %}
             </p>
         </div>
-        <div><a class="btn" href="{{ path('task_new') }}">+ Nueva tarea</a></div>
+        <div class="page-head-actions">
+            <a class="btn secondary" href="{{ path('personal_event_new') }}">+ Nuevo evento</a>
+            <a class="btn" href="{{ path('task_new') }}">+ Nueva tarea</a>
+        </div>
     </div>
 
     {% if pendingCount == 0 and buckets.done is empty %}
