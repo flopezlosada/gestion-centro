@@ -1,0 +1,30 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Error · Gestión del centro{% endblock %}
+
+{% block shell %}
+    <div class="auth">
+        <div class="auth-card">
+            <div class="brand-mark brand-mark--lg">{{ include('partials/_brand_mark.html.twig', { size: 56 }) }}</div>
+
+            {% set code = status_code|default(500) %}
+            <p class="eyebrow">Gestión del centro</p>
+            <h1>{{ code == 404 ? 'Página no encontrada' : 'Algo ha ido mal' }}</h1>
+            <p class="auth-lead">
+                {% if code == 404 %}
+                    La página que buscas no existe o se ha movido.
+                {% elseif code == 403 %}
+                    No tienes permiso para acceder a esta página.
+                {% elseif code == 429 %}
+                    Has hecho demasiadas peticiones seguidas. Espera un momento y vuelve a intentarlo.
+                {% else %}
+                    Ha ocurrido un error inesperado. Si persiste, avisa a quien administra la aplicación.
+                {% endif %}
+            </p>
+
+            <a class="btn" href="{{ path('app_homepage') }}">Volver al inicio</a>
+
+            <p class="auth-foot">Error {{ code }}</p>
+        </div>
+    </div>
+{% endblock %}

@@ -11,7 +11,7 @@
 
     function apply(theme) {
         document.documentElement.setAttribute('data-theme', theme);
-        try { localStorage.setItem('sga-theme', theme); } catch (e) { /* almacenamiento no disponible */ }
+        try { localStorage.setItem('gc-theme', theme); } catch (e) { /* almacenamiento no disponible */ }
         document.querySelectorAll('.theme-toggle button[data-theme-value]').forEach(function (btn) {
             btn.setAttribute('aria-pressed', String(btn.getAttribute('data-theme-value') === theme));
         });
