@@ -1,0 +1,96 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Tests\Functional;
+
+use App\Entity\PersonalEvent;
+use App\Entity\User;
+use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Bundle\FrameworkBundle\KernelBrowser;
+use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+
+/**
+ * The landing agenda mixes the user's tasks and their private personal events — but only their own:
+ * a personal event is never shown on someone else's home page.
+ */
+final class HomeAgendaTest extends WebTestCase
+{
+    private KernelBrowser $client;
+    private EntityManagerInterface $em;
+
+    protected function setUp(): void
+    {
+        $this->client = static::createClient();
+        $this->em = self::getContainer()->get(EntityManagerInterface::class);
+    }
+
+    private function user(string $email): User
+    {
+        $user = (new User())->setFullName(ucfirst(explode('@', $email)[0]).' Test')->setEmail($email);
+        $this->em->persist($user);
+
+        return $user;
+    }
+
+    public function testOwnPersonalEventShowsOnTheHomeAgenda(): void
+    {
+        $user = $this->user('profe@centro.test');
+        // A couple of days out so it lands in the "next 7 days" bucket regardless of wall-clock.
+        $event = new PersonalEvent($user, 'Tutoría con familia', new \DateTimeImmutable('+2 days'));
+        $this->em->persist($event);
+        $this->em->flush();
+
+        $this->client->loginUser($user);
+        $this->client->request('GET', '/');
+
+        self::assertResponseIsSuccessful();
+        self::assertStringContainsString('Tutoría con familia', (string) $this->client->getResponse()->getContent());
+    }
+
+    public function testOverduePersonalEventStillShowsOnTheHomeAgenda(): void
+    {
+        $user = $this->user('profe@centro.test');
+        // A few days in the past: within the "from a month back" window, so it must still surface
+        // (in the "Vencidas" bucket) rather than be silently dropped.
+        $event = new PersonalEvent($user, 'Recordatorio vencido', new \DateTimeImmutable('-5 days'));
+        $this->em->persist($event);
+        $this->em->flush();
+
+        $this->client->loginUser($user);
+        $this->client->request('GET', '/');
+
+        self::assertResponseIsSuccessful();
+        self::assertStringContainsString('Recordatorio vencido', (string) $this->client->getResponse()->getContent());
+    }
+
+    public function testDonePersonalEventShowsOnTheHomeAgenda(): void
+    {
+        $user = $this->user('profe@centro.test');
+        $event = (new PersonalEvent($user, 'Evento ya hecho', new \DateTimeImmutable('+2 days')))->setDone(true);
+        $this->em->persist($event);
+        $this->em->flush();
+
+        $this->client->loginUser($user);
+        $this->client->request('GET', '/');
+
+        self::assertResponseIsSuccessful();
+        // Done entries are kept apart in the "Hechas" bucket, but still rendered.
+        self::assertStringContainsString('Evento ya hecho', (string) $this->client->getResponse()->getContent());
+    }
+
+    public function testAnotherUsersPersonalEventDoesNotShowOnMyHomeAgenda(): void
+    {
+        $owner = $this->user('duena@centro.test');
+        $me = $this->user('yo@centro.test');
+        $event = new PersonalEvent($owner, 'Cita privada ajena', new \DateTimeImmutable('+2 days'));
+        $this->em->persist($event);
+        $this->em->flush();
+
+        $this->client->loginUser($me);
+        $this->client->request('GET', '/');
+
+        self::assertResponseIsSuccessful();
+        self::assertStringNotContainsString('Cita privada ajena', (string) $this->client->getResponse()->getContent());
+    }
+}

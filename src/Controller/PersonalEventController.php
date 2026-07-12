@@ -102,7 +102,9 @@ final class PersonalEventController extends AbstractController
     }
 
     /**
-     * One-click "done" toggle from the agenda. Only its owner may do it.
+     * One-click "done" toggle from the agenda. Only its owner may do it. Returns to whichever screen
+     * fired it — the home agenda (anchored on the row) or the agenda list — from a closed set of
+     * values ("from"), never the Referer, to rule out an open redirect.
      */
     #[Route('/agenda/{id}/hecho', name: 'personal_event_toggle_done', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function toggleDone(PersonalEvent $event, Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager): Response
@@ -114,6 +116,10 @@ final class PersonalEventController extends AbstractController
 
         $event->setDone(!$event->isDone());
         $entityManager->flush();
+
+        if ('home' === $request->request->get('from')) {
+            return $this->redirectToRoute('app_homepage', ['_fragment' => 'evento-'.$event->getId()]);
+        }
 
         return $this->redirectToRoute('personal_event_index');
     }
