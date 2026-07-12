@@ -92,7 +92,7 @@ final class AdminPanelTest extends WebTestCase
         self::assertSelectorTextContains('h1', 'Roles y permisos');
     }
 
-    public function testAdminSeesUnitOrgChart(): void
+    public function testAdminSeesDepartmentList(): void
     {
         $unit = (new Unit())->setCode('management')->setName('Equipo directivo');
         $this->em->persist($unit);
@@ -102,7 +102,22 @@ final class AdminPanelTest extends WebTestCase
         $this->client->request('GET', '/admin/unidades');
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('.unit-tree', 'Equipo directivo');
+        self::assertSelectorTextContains('table', 'Equipo directivo');
+    }
+
+    public function testDeletingADepartmentRemovesIt(): void
+    {
+        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $this->em->flush();
+        $id = $unit->getId();
+
+        $this->client->loginUser($this->admin());
+        $crawler = $this->client->request('GET', '/admin/unidades');
+        $this->client->submit($crawler->selectButton('Borrar')->form());
+
+        self::assertResponseRedirects('/admin/unidades');
+        self::assertNull($this->em->getRepository(Unit::class)->find($id));
     }
 
     public function testUnitShowListsItsHeadAndPeople(): void

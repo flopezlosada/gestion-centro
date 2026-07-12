@@ -32,7 +32,7 @@ final class AdminUnitController extends AbstractController
     }
 
     /**
-     * Shows the org chart as a tree rooted at the units with no parent (the top of the chain).
+     * Lists the departments (flat, by name) so they can be searched, sorted and filtered.
      */
     #[Route('', name: 'admin_unit_index', methods: ['GET'])]
     public function index(UnitRepository $units): Response
@@ -40,7 +40,7 @@ final class AdminUnitController extends AbstractController
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
 
         return $this->render('admin/unit/index.html.twig', [
-            'roots' => $units->findBy(['parent' => null], ['name' => 'ASC']),
+            'departments' => $units->findBy([], ['name' => 'ASC']),
         ]);
     }
 
@@ -141,12 +141,34 @@ final class AdminUnitController extends AbstractController
     }
 
     /**
-     * Edits an existing unit.
+     * Edits an existing department.
      */
     #[Route('/{id}/editar', name: 'admin_unit_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
     public function edit(Unit $unit, Request $request, EntityManagerInterface $em): Response
     {
         return $this->handleForm($unit, $request, $em, false);
+    }
+
+    /**
+     * Permanently deletes a department. Its people are left without one and referencing rows are set
+     * null at the database level; use "desactivar" (edit) instead to keep it for the record.
+     */
+    #[Route('/{id}/borrar', name: 'admin_unit_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function delete(Unit $unit, Request $request, EntityManagerInterface $em): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
+        if (!$this->isCsrfTokenValid('unit_delete'.$unit->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+
+        $summary = sprintf('Departamento %s (%s)', $unit->getName(), $unit->getCode());
+        $id = (string) $unit->getId();
+        $em->remove($unit);
+        $em->flush();
+        $this->auditLogger->log('unit.deleted', 'Unit', $id, $summary);
+        $this->addFlash('success', 'Departamento eliminado.');
+
+        return $this->redirectToRoute('admin_unit_index');
     }
 
     /**
@@ -163,9 +185,7 @@ final class AdminUnitController extends AbstractController
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
 
-        // Pass the unit so the form can drop it (and its whole subtree) from the "parent" choices,
-        // making a cycle in the chain of command unrepresentable rather than just discouraged.
-        $form = $this->createForm(UnitType::class, $unit, ['current_unit' => $unit]);
+        $form = $this->createForm(UnitType::class, $unit);
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
@@ -176,9 +196,9 @@ final class AdminUnitController extends AbstractController
                 $isNew ? 'unit.created' : 'unit.updated',
                 'Unit',
                 (string) $unit->getId(),
-                sprintf('Unidad %s (%s)', $unit->getName(), $unit->getCode()),
+                sprintf('Departamento %s (%s)', $unit->getName(), $unit->getCode()),
             );
-            $this->addFlash('success', 'Unidad guardada.');
+            $this->addFlash('success', 'Departamento guardado.');
 
             return $this->redirectToRoute('admin_unit_index');
         }
