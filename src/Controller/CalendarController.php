@@ -78,10 +78,13 @@ final class CalendarController extends AbstractController
 
         [$rangeStart, $rangeEnd] = $this->rangeFor($view, $anchor);
         $visible = $visibility->visibleTo($tasks->findDueBetween($rangeStart, $rangeEnd), $user, $this->isGranted('ROLE_ADMIN'));
-        $byDay = $this->groupByDay($visible);
+        $byDay = $this->groupByDay($visible, static fn (Task $task): string => $task->getDueDate()->format('Y-m-d'));
         // The user's own private events in the same window (scoped by owner in the repository). The
         // range end is a day at midnight, so widen it to the end of that day to catch events with a time.
-        $eventsByDay = $this->groupEventsByDay($personalEvents->findForOwnerBetween($user, $rangeStart, $rangeEnd->setTime(23, 59, 59)));
+        $eventsByDay = $this->groupByDay(
+            $personalEvents->findForOwnerBetween($user, $rangeStart, $rangeEnd->setTime(23, 59, 59)),
+            static fn (PersonalEvent $event): string => $event->getStartAt()->format('Y-m-d'),
+        );
         $nonLectiveByDay = $this->indexNonLectiveDays($nonLectiveDays->findBetween($rangeStart, $rangeEnd));
 
         $model = match ($view) {
@@ -212,34 +215,21 @@ final class CalendarController extends AbstractController
     }
 
     /**
-     * Groups the given tasks by their deadline day, keyed "YYYY-MM-DD".
+     * Groups the given items by day (keyed "YYYY-MM-DD"), where each item's day is read by $dayOf.
+     * Shared by tasks (by deadline) and personal events (by start), so the two never drift apart.
      *
-     * @param Task[] $tasks the tasks to group
+     * @template T
      *
-     * @return array<string, Task[]> the tasks indexed by deadline day
+     * @param T[]                 $items the items to group
+     * @param callable(T): string $dayOf reads an item's "YYYY-MM-DD" day
+     *
+     * @return array<string, T[]> the items indexed by day
      */
-    private function groupByDay(array $tasks): array
+    private function groupByDay(array $items, callable $dayOf): array
     {
         $byDay = [];
-        foreach ($tasks as $task) {
-            $byDay[$task->getDueDate()->format('Y-m-d')][] = $task;
-        }
-
-        return $byDay;
-    }
-
-    /**
-     * Groups the given personal events by their start day, keyed "YYYY-MM-DD".
-     *
-     * @param PersonalEvent[] $events the events to group
-     *
-     * @return array<string, PersonalEvent[]> the events indexed by start day
-     */
-    private function groupEventsByDay(array $events): array
-    {
-        $byDay = [];
-        foreach ($events as $event) {
-            $byDay[$event->getStartAt()->format('Y-m-d')][] = $event;
+        foreach ($items as $item) {
+            $byDay[$dayOf($item)][] = $item;
         }
 
         return $byDay;

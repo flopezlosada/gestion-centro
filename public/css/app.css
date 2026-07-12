@@ -1521,6 +1521,7 @@ input[type="email"], input[type="text"], select, textarea {
 .calendar-legend__toggle { display: inline-flex; align-items: center; gap: 6px; padding: 2px 5px; margin: -2px -5px; background: none; border: 0; border-radius: var(--radius-sm); font: inherit; color: inherit; cursor: pointer; }
 .calendar-legend__toggle:hover { background: var(--surface-sunken); }
 .calendar-legend__toggle.is-off { opacity: .4; text-decoration: line-through; }
+.calendar-legend__static { display: inline-flex; align-items: center; gap: 6px; }
 .cal-year-legend__filter { padding: 3px 9px; margin: -3px 0; background: none; border: 0; border-radius: 999px; font: inherit; color: inherit; cursor: pointer; }
 .cal-year-legend__filter:hover { background: var(--surface-sunken); }
 .cal-year-legend__filter[aria-pressed="true"] { background: var(--accent-weak); color: var(--text); font-weight: 500; }

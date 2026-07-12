@@ -69,6 +69,22 @@ final class CalendarPersonalEventsTest extends WebTestCase
         self::assertSelectorTextContains('.calendar-dayview', 'Tutoría con familia');
     }
 
+    public function testWeekViewIncludesLateEventOnTheLastDayOfTheRange(): void
+    {
+        $owner = $this->user('profe@centro.test');
+        // Sunday 19 July 2026 closes the week of the 15th; a 23:30 start must not be dropped by the
+        // range end, which the controller widens from midnight to 23:59:59.
+        $event = new PersonalEvent($owner, 'Reunión tardía', new \DateTimeImmutable('2026-07-19 23:30'));
+        $this->em->persist($event);
+        $this->em->flush();
+
+        $this->client->loginUser($owner);
+        $this->client->request('GET', '/calendario?vista=semana&fecha=2026-07-15');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('.calendar-grid', 'Reunión tardía');
+    }
+
     public function testAnotherUsersPersonalEventIsNotOnMyCalendar(): void
     {
         $owner = $this->user('duena@centro.test');
@@ -78,6 +94,20 @@ final class CalendarPersonalEventsTest extends WebTestCase
 
         $this->client->loginUser($stranger);
         $this->client->request('GET', '/calendario?vista=mes&fecha=2026-07-15');
+
+        self::assertResponseIsSuccessful();
+        self::assertStringNotContainsString('Cita privada ajena', (string) $this->client->getResponse()->getContent());
+    }
+
+    public function testAnotherUsersPersonalEventIsNotOnMyDayView(): void
+    {
+        $owner = $this->user('duena@centro.test');
+        $this->eventFor($owner, 'Cita privada ajena');
+        $stranger = $this->user('otro@centro.test');
+        $this->em->flush();
+
+        $this->client->loginUser($stranger);
+        $this->client->request('GET', '/calendario?vista=dia&fecha=2026-07-15');
 
         self::assertResponseIsSuccessful();
         self::assertStringNotContainsString('Cita privada ajena', (string) $this->client->getResponse()->getContent());
