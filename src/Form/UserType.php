@@ -45,7 +45,7 @@ final class UserType extends AbstractType
                 'label' => 'Unidad',
                 'required' => false,
                 'placeholder' => '— Sin unidad —',
-                'help' => 'Su departamento u oficina: sitúa a la persona en la cadena de mando.',
+                'help' => 'El departamento al que pertenece. Marca su sitio en el organigrama: de quién depende y a quién dirige. Es dónde está, no qué hace (eso son los roles).',
                 'query_builder' => static fn (UnitRepository $repo) => $repo->createQueryBuilder('u')->orderBy('u.name', 'ASC'),
             ])
             ->add('assignedRoles', EntityType::class, [

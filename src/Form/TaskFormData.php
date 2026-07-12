@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Form;
 
+use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\User;
 use App\Enum\TaskType;
@@ -30,6 +31,13 @@ final class TaskFormData
     #[Assert\NotNull(message: 'Elige a quién se asigna la tarea.')]
     public ?User $assignedUser = null;
 
+    /**
+     * The responsible role (the structural function that owns the task, e.g. head of department).
+     * Coexists with {@see $assignedUser}; only leadership may change it, so the field is present in
+     * the form only for them (see {@see TaskFormType} `include_role`).
+     */
+    public ?Role $assignedRole = null;
+
     public bool $mandatory = true;
 
     public bool $requiresCheckbox = true;
@@ -51,6 +59,7 @@ final class TaskFormData
         $data->type = $task->getType();
         $data->dueDate = $task->getDueDate();
         $data->assignedUser = $task->getAssignedUser();
+        $data->assignedRole = $task->getAssignedRole();
         $data->mandatory = $task->isMandatory();
         $data->requiresCheckbox = $task->requiresCheckbox();
         $data->requiresDocument = $task->requiresDocument();

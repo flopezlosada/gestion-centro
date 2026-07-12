@@ -59,13 +59,17 @@ final class DemoFixtures extends Fixture
         // permissions — they are pure responsibility markers used for assignment and hierarchy.
         $direction = (new Role())->setCode('direction')->setName('Dirección')->setLevel(Area::ADMINISTRATION, PermissionLevel::WRITE);
         $tic = (new Role())->setCode('tic')->setName('TIC')->setAdmin(true);
+        // Direction and head of studies are the school's leadership: only they may change a task's
+        // responsible role (see TaskController::canEditTaskRole). Head of studies carries no matrix
+        // permission — the role exists so that leadership can be identified for that privilege.
+        $headOfStudies = (new Role())->setCode('head_of_studies')->setName('Jefatura de estudios');
         $headDept = (new Role())->setCode('head_dept')->setName('Jefatura de departamento');
         $teacherRole = (new Role())->setCode('teacher')->setName('Docente');
-        array_map($manager->persist(...), [$direction, $tic, $headDept, $teacherRole]);
+        array_map($manager->persist(...), [$direction, $tic, $headOfStudies, $headDept, $teacherRole]);
 
         $director = (new User())->setFullName('Ana Directora')->setEmail('director@centro.test')->addAssignedRole($direction);
         $ticUser = (new User())->setFullName('Tomás TIC')->setEmail('tic@centro.test')->addAssignedRole($tic);
-        $headStudies = (new User())->setFullName('Luis Jefatura')->setEmail('jefatura@centro.test')->addAssignedRole($headDept);
+        $headStudies = (new User())->setFullName('Luis Jefatura')->setEmail('jefatura@centro.test')->addAssignedRole($headOfStudies);
         $mathsHead = (new User())->setFullName('María Matemáticas')->setEmail('mates@centro.test')->addAssignedRole($headDept);
         $teacher = (new User())->setFullName('Pedro Docente')->setEmail('profe@centro.test')->addAssignedRole($teacherRole);
         array_map($manager->persist(...), [$director, $ticUser, $headStudies, $mathsHead, $teacher]);

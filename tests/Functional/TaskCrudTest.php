@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Functional;
 
 use App\Entity\NonLectiveDay;
+use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\Unit;
 use App\Entity\User;
@@ -118,6 +119,125 @@ final class TaskCrudTest extends WebTestCase
         self::assertResponseStatusCodeSame(422);
         self::assertStringContainsString('no puede caer en fin de semana', (string) $this->client->getResponse()->getContent());
         self::assertNull($this->em->getRepository(Task::class)->findOneBy(['title' => 'Tarea en festivo']));
+    }
+
+    public function testEditingTaskKeepsItsResponsibleRole(): void
+    {
+        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $role = (new Role())->setCode('head_dept')->setName('Jefatura de departamento');
+        $this->em->persist($role);
+        $creator = $this->user('jefa@centro.test', $unit);
+        // A task carrying BOTH a responsible role (structural, from a template) and a concrete
+        // assignee — exactly the shape the fixtures create and the edit form used to destroy.
+        $task = new Task('Acta de reunión', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
+        $task->setUnit($unit)->setAssignedRole($role)->setAssignedUser($creator)->setCreatedBy($creator);
+        $this->em->persist($task);
+        $this->em->flush();
+
+        $this->client->loginUser($creator);
+        $crawler = $this->client->request('GET', '/tareas/'.$task->getId().'/editar');
+        // A department head is not leadership: the role field is not even offered to them.
+        self::assertSelectorNotExists('[name="task_form[assignedRole]"]');
+        $form = $crawler->selectButton('Guardar')->form();
+        // Touch only an unrelated field, as the user did when the bug surfaced.
+        $form['task_form[requiresDocument]']->tick();
+        $this->client->submit($form);
+
+        self::assertResponseRedirects();
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(Task::class)->find($task->getId());
+        self::assertNotNull($reloaded);
+        self::assertTrue($reloaded->requiresDocument());
+        // The role must survive the edit (the whole point of the fix).
+        self::assertSame($role->getId(), $reloaded->getAssignedRole()?->getId());
+        self::assertSame($creator->getId(), $reloaded->getAssignedUser()?->getId());
+    }
+
+    public function testLeadershipCanChangeResponsibleRole(): void
+    {
+        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $oldRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento');
+        $newRole = (new Role())->setCode('ccp')->setName('Coordinación pedagógica');
+        $this->em->persist($oldRole);
+        $this->em->persist($newRole);
+        // A director holds the 'direction' role (leadership) — not the admin flag, so this exercises
+        // the role-based permission, not the ROLE_ADMIN shortcut.
+        $direction = (new Role())->setCode('direction')->setName('Dirección');
+        $this->em->persist($direction);
+        $director = $this->user('director@centro.test', $unit);
+        $director->addAssignedRole($direction);
+        $task = new Task('Acta de reunión', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
+        $task->setUnit($unit)->setAssignedRole($oldRole)->setAssignedUser($director)->setCreatedBy($director);
+        $this->em->persist($task);
+        $this->em->flush();
+
+        $this->client->loginUser($director);
+        $crawler = $this->client->request('GET', '/tareas/'.$task->getId().'/editar');
+        self::assertSelectorExists('[name="task_form[assignedRole]"]');
+        $form = $crawler->selectButton('Guardar')->form();
+        $form['task_form[assignedRole]'] = (string) $newRole->getId();
+        $this->client->submit($form);
+
+        self::assertResponseRedirects();
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(Task::class)->find($task->getId());
+        self::assertNotNull($reloaded);
+        self::assertSame($newRole->getId(), $reloaded->getAssignedRole()?->getId());
+    }
+
+    public function testSuperiorCanWorkOnASubordinatesTask(): void
+    {
+        // studies is the parent of maths, so the head of studies is a superior of a maths teacher.
+        $studies = (new Unit())->setCode('studies')->setName('Jefatura de estudios');
+        $maths = (new Unit())->setCode('maths')->setName('Matemáticas')->setParent($studies);
+        $this->em->persist($studies);
+        $this->em->persist($maths);
+        $headStudies = $this->user('jefatura@centro.test', $studies);
+        $studies->setManager($headStudies);
+        $teacher = $this->user('profe@centro.test', $maths);
+        // A task owned by the teacher — the head of studies is neither its assignee nor a role holder.
+        $task = new Task('Acta', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
+        $task->setUnit($maths)->setAssignedUser($teacher)->setCreatedBy($teacher);
+        $this->em->persist($task);
+        $this->em->flush();
+
+        $this->client->loginUser($headStudies);
+        $crawler = $this->client->request('GET', '/tareas/'.$task->getId());
+        self::assertResponseIsSuccessful();
+        // The progress action is offered to the superior, proving they may work on it.
+        self::assertSelectorExists('form[action$="/accion/complete"]');
+        $this->client->submit($crawler->filter('form[action$="/accion/complete"]')->form());
+
+        self::assertResponseRedirects();
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(Task::class)->find($task->getId());
+        self::assertSame('done', $reloaded?->getStatus());
+    }
+
+    public function testLateralUserIsNeitherSuperiorNorCanReachTheTask(): void
+    {
+        // Two sibling departments: a teacher in one is not a superior of a task in the other, so
+        // widening canWorkOn to superiors must not leak a lateral colleague's task to them.
+        $studies = (new Unit())->setCode('studies')->setName('Jefatura de estudios');
+        $maths = (new Unit())->setCode('maths')->setName('Matemáticas')->setParent($studies);
+        $language = (new Unit())->setCode('language')->setName('Lengua')->setParent($studies);
+        $this->em->persist($studies);
+        $this->em->persist($maths);
+        $this->em->persist($language);
+        $mathsTeacher = $this->user('mates@centro.test', $maths);
+        $languageTeacher = $this->user('lengua@centro.test', $language);
+        $task = new Task('Acta', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
+        $task->setUnit($maths)->setAssignedUser($mathsTeacher)->setCreatedBy($mathsTeacher);
+        $this->em->persist($task);
+        $this->em->flush();
+
+        // The language teacher is neither the assignee, a role holder, nor a superior of maths.
+        $this->client->loginUser($languageTeacher);
+        $this->client->request('GET', '/tareas/'.$task->getId());
+
+        self::assertResponseStatusCodeSame(403);
     }
 
     public function testUnrelatedUserCannotEditTask(): void
