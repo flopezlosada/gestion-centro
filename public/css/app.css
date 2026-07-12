@@ -1479,7 +1479,10 @@ input[type="email"], input[type="text"], select, textarea {
 .cal-mini.cal-term--3 { border-top: 3px solid var(--cal-term-3); }
 .cal-mini__name { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .cal-mini__term { font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint); }
-.cal-mini__day.is-nonlective { color: var(--text-faint); background: var(--surface-sunken); border-radius: 4px; }
+/* No lectivo en el mini-mes: fondo tenue que rellena la celda ENTERA, sin redondear. Así los findes
+   (columnas contiguas) forman una banda continua limpia y se distinguen a la primera; el
+   border-radius anterior hacía que cada celda pareciera una "píldora" suelta. */
+.cal-mini__day.is-nonlective { background: var(--surface-sunken); }
 
 /* Leyenda de trimestres y días no lectivos, sobre la rejilla del año. */
 .cal-year-legend { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 14px; font-size: 12px; color: var(--text-muted); }
@@ -1490,7 +1493,9 @@ input[type="email"], input[type="text"], select, textarea {
 .cal-year-legend__swatch.cal-term--3 { background: var(--cal-term-3); }
 .cal-year-legend__swatch--nonlective { background: var(--surface-sunken); border: 1px solid var(--border-strong); }
 .cal-mini { display: block; padding: 12px 14px 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); text-decoration: none; color: inherit; }
-.cal-mini:hover { border-color: var(--border-strong); background: var(--surface-sunken); }
+/* Hover solo en el borde (como .module-card): cambiar el fondo lo igualaba al de las bandas de
+   finde y las hacía desaparecer al pasar el ratón. */
+.cal-mini:hover { border-color: var(--border-strong); }
 .cal-mini__name { margin: 0 0 8px; font-size: 14px; font-weight: 600; color: var(--text); text-transform: capitalize; }
 .cal-mini__grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .cal-mini__wd { font-family: var(--font-mono); font-size: 9.5px; text-transform: uppercase; color: var(--text-faint); text-align: center; padding-bottom: 3px; }
