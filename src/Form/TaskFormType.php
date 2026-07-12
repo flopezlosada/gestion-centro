@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Form;
 
+use App\Entity\Role;
 use App\Entity\User;
 use App\Enum\TaskType;
 use App\Service\SchoolCalendar;
@@ -23,6 +24,8 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
  * Create/edit form for a task. The "assign to" choices are scoped by the controller to the people
  * the creator may assign to (themselves + their subordinates). The task type is only editable on
  * creation ({@see $options['include_type']}), since changing it mid-lifecycle would break the state.
+ * The responsible-role field appears only when the controller grants it ({@see $options['include_role']}),
+ * as reassigning the function that owns a task is reserved to the school's leadership.
  *
  * @extends AbstractType<TaskFormData>
  */
@@ -53,6 +56,20 @@ final class TaskFormType extends AbstractType
             ->add('mandatory', CheckboxType::class, ['label' => 'Obligatoria', 'required' => false])
             ->add('requiresCheckbox', CheckboxType::class, ['label' => 'Se marca hecha con una casilla', 'required' => false])
             ->add('requiresDocument', CheckboxType::class, ['label' => 'Lleva entregable (documento)', 'required' => false]);
+
+        // The responsible role is a structural, leadership-only field: it appears only when the
+        // controller allows it (direction / head of studies). For everyone else it is absent, so a
+        // routine edit can never alter it.
+        if (true === $options['include_role']) {
+            $builder->add('assignedRole', EntityType::class, [
+                'label' => 'Rol responsable',
+                'class' => Role::class,
+                'choice_label' => 'name',
+                'required' => false,
+                'placeholder' => '— Sin rol —',
+                'help' => 'La función que responde de la tarea (además de la persona asignada).',
+            ]);
+        }
 
         if (true === $options['include_type']) {
             $builder->add('type', EnumType::class, [
@@ -85,8 +102,10 @@ final class TaskFormType extends AbstractType
             'data_class' => TaskFormData::class,
             'assignable_users' => [],
             'include_type' => true,
+            'include_role' => false,
         ]);
         $resolver->setAllowedTypes('assignable_users', 'array');
         $resolver->setAllowedTypes('include_type', 'bool');
+        $resolver->setAllowedTypes('include_role', 'bool');
     }
 }

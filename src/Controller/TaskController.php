@@ -57,9 +57,10 @@ final class TaskController extends AbstractController
     {
         $assignable = $this->assignableUsers($user, $hierarchy, $users);
 
+        $canEditRole = $this->canEditTaskRole($user);
         $data = new TaskFormData();
         $data->assignedUser = $user;
-        $form = $this->createForm(TaskFormType::class, $data, ['assignable_users' => $assignable, 'include_type' => true]);
+        $form = $this->createForm(TaskFormType::class, $data, ['assignable_users' => $assignable, 'include_type' => true, 'include_role' => $canEditRole]);
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
@@ -68,7 +69,7 @@ final class TaskController extends AbstractController
             }
 
             $task = new Task($data->title, SchoolYear::current($data->dueDate), $data->dueDate, $data->type);
-            $this->applyFormData($task, $data);
+            $this->applyFormData($task, $data, $canEditRole);
             $task->setCreatedBy($user);
             $entityManager->persist($task);
             $entityManager->flush();
@@ -97,8 +98,9 @@ final class TaskController extends AbstractController
             $assignable[] = $task->getAssignedUser();
         }
 
+        $canEditRole = $this->canEditTaskRole($user);
         $data = TaskFormData::fromTask($task);
-        $form = $this->createForm(TaskFormType::class, $data, ['assignable_users' => $assignable, 'include_type' => false]);
+        $form = $this->createForm(TaskFormType::class, $data, ['assignable_users' => $assignable, 'include_type' => false, 'include_role' => $canEditRole]);
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
@@ -106,7 +108,7 @@ final class TaskController extends AbstractController
                 throw $this->createAccessDeniedException('No puedes asignar tareas a esa persona.');
             }
 
-            $this->applyFormData($task, $data);
+            $this->applyFormData($task, $data, $canEditRole);
             $entityManager->flush();
             $this->addFlash('success', 'Tarea actualizada.');
 
@@ -155,7 +157,7 @@ final class TaskController extends AbstractController
 
         // Everyone who reaches this point (own people, superiors, admins) is exactly who may see the
         // task's activity history, so the timeline is shown to every viewer.
-        $canWork = $this->canWorkOn($task, $user);
+        $canWork = $this->canWorkOn($task, $user, $hierarchy);
 
         return $this->render('task/show.html.twig', [
             'task' => $task,
@@ -178,12 +180,12 @@ final class TaskController extends AbstractController
      * Progress transitions require the assignee; validate/reject are gated by the workflow guard.
      */
     #[Route('/tareas/{id}/accion/{transition}', name: 'task_transition', requirements: ['id' => '\d+', 'transition' => '[a-z_]+'], methods: ['POST'])]
-    public function transition(Task $task, string $transition, Request $request, #[CurrentUser] User $user, TaskWorkflow $workflows, EntityManagerInterface $entityManager): Response
+    public function transition(Task $task, string $transition, Request $request, #[CurrentUser] User $user, TaskWorkflow $workflows, OrganizationHierarchy $hierarchy, EntityManagerInterface $entityManager): Response
     {
         if (!$this->isCsrfTokenValid('task_transition'.$task->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
-        if (!\in_array($transition, self::SUPERIOR_TRANSITIONS, true) && !$this->canWorkOn($task, $user)) {
+        if (!\in_array($transition, self::SUPERIOR_TRANSITIONS, true) && !$this->canWorkOn($task, $user, $hierarchy)) {
             throw $this->createAccessDeniedException('Esta tarea no es tuya.');
         }
 
@@ -205,12 +207,12 @@ final class TaskController extends AbstractController
      * cloud — never the content). Only whoever works on the task, and only if it expects a document.
      */
     #[Route('/tareas/{id}/entregable', name: 'task_set_deliverable', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function setDeliverable(Task $task, Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager): Response
+    public function setDeliverable(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, EntityManagerInterface $entityManager): Response
     {
         if (!$this->isCsrfTokenValid('task_deliverable'.$task->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
-        if (!$this->canWorkOn($task, $user)) {
+        if (!$this->canWorkOn($task, $user, $hierarchy)) {
             throw $this->createAccessDeniedException('Esta tarea no es tuya.');
         }
         if (!$task->requiresDocument()) {
@@ -256,12 +258,12 @@ final class TaskController extends AbstractController
      * task's role, or an admin may do it.
      */
     #[Route('/tareas/{id}/hecho', name: 'task_toggle_done', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function toggleDone(Task $task, Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager): Response
+    public function toggleDone(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, EntityManagerInterface $entityManager): Response
     {
         if (!$this->isCsrfTokenValid('toggle_done'.$task->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
-        if (!$this->canWorkOn($task, $user)) {
+        if (!$this->canWorkOn($task, $user, $hierarchy)) {
             throw $this->createAccessDeniedException('Esta tarea no es tuya.');
         }
         if (!$task->requiresCheckbox()) {
@@ -279,9 +281,12 @@ final class TaskController extends AbstractController
 
     /**
      * Copies the common editable fields from the form data onto the task (title, dates, flags,
-     * assignee and its unit). Does NOT touch the type — that governs the lifecycle.
+     * assignee and its unit). Does NOT touch the type — that governs the lifecycle. The responsible
+     * role coexists with the assignee (the role is the structural function from the template; the
+     * person is a concrete assignee on top of it) and is leadership-only: it is written only when
+     * $applyRole is true, so a routine edit by anyone else leaves it untouched.
      */
-    private function applyFormData(Task $task, TaskFormData $data): void
+    private function applyFormData(Task $task, TaskFormData $data, bool $applyRole): void
     {
         \assert(null !== $data->dueDate && null !== $data->assignedUser);
         $task->setTitle($data->title)
@@ -292,10 +297,10 @@ final class TaskController extends AbstractController
             ->setRequiresCheckbox($data->requiresCheckbox)
             ->setRequiresDocument($data->requiresDocument)
             ->setAssignedUser($data->assignedUser)
-            // Assigning a concrete person clears any inherited role assignment, so access stays
-            // bounded to that person (a leftover role would let every role-holder act on it).
-            ->setAssignedRole(null)
             ->setUnit($data->assignedUser->getUnit());
+        if ($applyRole) {
+            $task->setAssignedRole($data->assignedRole);
+        }
     }
 
     /**
@@ -322,10 +327,24 @@ final class TaskController extends AbstractController
     }
 
     /**
-     * Whether the user may act on the task: it is theirs, one of their roles', or they are an admin.
+     * Whether the user may change a task's responsible role — a structural decision reserved to the
+     * school's leadership: whoever holds the direction or head-of-studies role (or an admin). This
+     * is an extra privilege on top of {@see canManage()}: a department head can edit a task but not
+     * reassign the function that owns it.
      */
-    private function canWorkOn(Task $task, User $user): bool
+    private function canEditTaskRole(User $user): bool
     {
-        return $this->isGranted('ROLE_ADMIN') || $task->isOwnedBy($user);
+        return $this->isGranted('ROLE_ADMIN') || $user->holdsRoleCode('direction') || $user->holdsRoleCode('head_of_studies');
+    }
+
+    /**
+     * Whether the user may act on the task: it is theirs (their person or one of their roles'), they
+     * are a superior of its unit in the chain of command, or they are an admin. Superiors can step in
+     * and do a subordinate's task (e.g. a task on a "teacher" role that the head of department ends
+     * up doing), which the org chart already lets them see and validate.
+     */
+    private function canWorkOn(Task $task, User $user, OrganizationHierarchy $hierarchy): bool
+    {
+        return $this->isGranted('ROLE_ADMIN') || $task->isOwnedBy($user) || $hierarchy->isSuperiorOf($user, $task->getUnit());
     }
 }

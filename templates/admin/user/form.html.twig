@@ -24,7 +24,7 @@
             {{ f.fields([form.unit]) }}
             <div class="form-row">
                 {{ form_label(form.assignedRoles) }}
-                <p class="help">Marca los roles de esta persona. Suman acceso: basta con que un rol conceda un permiso para tenerlo.</p>
+                <p class="help">Qué es y qué puede hacer esta persona; puede tener varios (p. ej. dirección y, además, docente). Si la unidad dice dónde está en el organigrama, el rol dice su función y sus permisos. Suman: basta con que un rol conceda un permiso para tenerlo.</p>
                 {# Cada rol como tarjeta con su nombre + qué puede hacer (descripción inyectada vía
                    choice_attr), no casillas sueltas. Estado seleccionado vía :has (la casilla nativa
                    sigue siendo el control real, así que funciona aunque :has no esté soportado). #}

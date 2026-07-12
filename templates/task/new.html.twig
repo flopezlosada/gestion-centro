@@ -15,7 +15,7 @@
     <div class="card">
         {{ form_start(form) }}
         {{ form_errors(form) }}
-        {{ f.fields([form.title, form.description, form.type, form.dueDate, form.assignedUser, form.mandatory, form.requiresCheckbox, form.requiresDocument]) }}
+        {{ f.fields([form.title, form.description, form.type, form.dueDate, form.assignedUser]|merge(form.assignedRole is defined ? [form.assignedRole] : [])|merge([form.mandatory, form.requiresCheckbox, form.requiresDocument])) }}
         {{ f.actions(path('app_homepage'), 'Crear tarea') }}
         {{ form_end(form) }}
     </div>
