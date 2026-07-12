@@ -8,6 +8,7 @@ use App\DueDate\PerTerm;
 use App\Entity\AcademicYear;
 use App\Entity\NonLectiveDay;
 use App\Entity\Role;
+use App\Entity\Task;
 use App\Entity\TaskTemplate;
 use App\Entity\Unit;
 use App\Entity\User;
@@ -565,6 +566,33 @@ final class AdminPanelTest extends WebTestCase
         $this->client->loginUser($this->teacher());
 
         $this->client->request('GET', '/admin/catalogo');
+
+        self::assertResponseStatusCodeSame(403);
+    }
+
+    public function testGeneratingCourseTasksCreatesThemAndRedirectsToThePlan(): void
+    {
+        $year = $this->academicYear('2026-2027');
+        $this->em->persist($year);
+        $this->em->persist((new TaskTemplate())->setTitle('Acta de reunión')->setType(TaskType::SIMPLE)->setDueDateRule(new PerTerm(TermBoundary::END)));
+        $this->em->flush();
+
+        $this->client->loginUser($this->admin());
+        $crawler = $this->client->request('GET', '/admin/trimestres');
+        $this->client->submit($crawler->selectButton('Generar tareas')->form());
+
+        self::assertResponseRedirects('/tareas?curso=2026-2027');
+        self::assertCount(3, $this->em->getRepository(Task::class)->findBy(['schoolYear' => '2026-2027']));
+    }
+
+    public function testNonAdminCannotGenerateCourseTasks(): void
+    {
+        $year = $this->academicYear('2026-2027');
+        $this->em->persist($year);
+        $this->em->flush();
+
+        $this->client->loginUser($this->teacher());
+        $this->client->request('POST', '/admin/trimestres/'.$year->getId().'/generar');
 
         self::assertResponseStatusCodeSame(403);
     }

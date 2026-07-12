@@ -123,4 +123,31 @@ class TaskRepository extends ServiceEntityRepository
             ->getQuery()
             ->getResult();
     }
+
+    /**
+     * The set of "templateId|Y-m-d" keys already generated for a course, so the yearly generation can
+     * skip re-creating a task it already produced (idempotent re-runs). One query, no per-item lookup.
+     *
+     * @param string $schoolYear the course in "YYYY-YYYY" form
+     *
+     * @return array<string, true> a lookup set keyed by "templateId|dueDate"
+     */
+    public function generatedKeysFor(string $schoolYear): array
+    {
+        /** @var list<array{tpl: int, due: \DateTimeImmutable}> $rows */
+        $rows = $this->createQueryBuilder('t')
+            ->select('IDENTITY(t.template) AS tpl', 't.dueDate AS due')
+            ->andWhere('t.schoolYear = :year')
+            ->andWhere('t.template IS NOT NULL')
+            ->setParameter('year', $schoolYear)
+            ->getQuery()
+            ->getArrayResult();
+
+        $keys = [];
+        foreach ($rows as $row) {
+            $keys[$row['tpl'].'|'.$row['due']->format('Y-m-d')] = true;
+        }
+
+        return $keys;
+    }
 }

@@ -34,6 +34,10 @@
                             <td class="mono">{{ year.term3Start|date('d/m/Y') }} – {{ year.term3End|date('d/m/Y') }}</td>
                             <td class="row-actions">
                                 <a href="{{ path('admin_academic_year_edit', { id: year.id }) }}">Editar</a>
+                                <form method="post" action="{{ path('admin_academic_year_generate', { id: year.id }) }}" data-confirm="¿Generar las tareas del curso {{ year.schoolYear }}? Se crearán las tareas de las plantillas con regla de fecha (no se duplican las que ya existan).">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('academic_year_generate' ~ year.id) }}">
+                                    <button type="submit" class="link-action">Generar tareas</button>
+                                </form>
                                 <form method="post" action="{{ path('admin_academic_year_delete', { id: year.id }) }}" data-confirm="¿Seguro que quieres borrar la estructura del curso {{ year.schoolYear }}?">
                                     <input type="hidden" name="_token" value="{{ csrf_token('academic_year_delete' ~ year.id) }}">
                                     <button type="submit" class="link-danger">Borrar</button>
