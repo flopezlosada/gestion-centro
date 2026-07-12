@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
+use App\Entity\AcademicYear;
 use App\Entity\NonLectiveDay;
 use App\Entity\Role;
 use App\Entity\Unit;
@@ -295,5 +296,61 @@ final class AdminPanelTest extends WebTestCase
         $created = $this->em->getRepository(Unit::class)->findOneBy(['code' => 'maths']);
         self::assertInstanceOf(Unit::class, $created);
         self::assertSame('Matemáticas', $created->getName());
+    }
+
+    public function testCreatingAnAcademicYearPersistsIt(): void
+    {
+        $this->client->loginUser($this->admin());
+
+        $crawler = $this->client->request('GET', '/admin/trimestres/nuevo');
+        self::assertResponseIsSuccessful();
+
+        $form = $crawler->selectButton('Guardar')->form([
+            'academic_year[schoolYear]' => '2026-2027',
+            'academic_year[term1Start]' => '2026-09-15',
+            'academic_year[term1End]' => '2026-12-22',
+            'academic_year[term2Start]' => '2027-01-08',
+            'academic_year[term2End]' => '2027-03-27',
+            'academic_year[term3Start]' => '2027-04-07',
+            'academic_year[term3End]' => '2027-06-22',
+        ]);
+        $this->client->submit($form);
+
+        self::assertResponseRedirects('/admin/trimestres');
+
+        $created = $this->em->getRepository(AcademicYear::class)->findOneBy(['schoolYear' => '2026-2027']);
+        self::assertInstanceOf(AcademicYear::class, $created);
+        self::assertSame('2026-06-22', $created->getYearEnd()->format('Y-m-d'));
+    }
+
+    public function testOutOfOrderTermsAreRejected(): void
+    {
+        $this->client->loginUser($this->admin());
+
+        $crawler = $this->client->request('GET', '/admin/trimestres/nuevo');
+        // Second term starts before the first one ends: the class invariant must reject it.
+        $form = $crawler->selectButton('Guardar')->form([
+            'academic_year[schoolYear]' => '2026-2027',
+            'academic_year[term1Start]' => '2026-09-15',
+            'academic_year[term1End]' => '2026-12-22',
+            'academic_year[term2Start]' => '2026-12-01',
+            'academic_year[term2End]' => '2027-03-27',
+            'academic_year[term3Start]' => '2027-04-07',
+            'academic_year[term3End]' => '2027-06-22',
+        ]);
+        $this->client->submit($form);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertSelectorTextContains('.form-card', 'orden');
+        self::assertCount(0, $this->em->getRepository(AcademicYear::class)->findAll());
+    }
+
+    public function testNonAdminIsForbiddenFromAcademicYears(): void
+    {
+        $this->client->loginUser($this->teacher());
+
+        $this->client->request('GET', '/admin/trimestres');
+
+        self::assertResponseStatusCodeSame(403);
     }
 }
