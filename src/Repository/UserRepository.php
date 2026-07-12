@@ -74,5 +74,17 @@ class UserRepository extends ServiceEntityRepository
             ->getQuery()
             ->getResult();
     }
+
+    /**
+     * Everyone who belongs to a unit, by full name. Used by the department detail.
+     *
+     * @param Unit $unit the unit (department)
+     *
+     * @return User[] the people in that unit
+     */
+    public function findByUnit(Unit $unit): array
+    {
+        return $this->findBy(['unit' => $unit], ['fullName' => 'ASC']);
+    }
 }
 

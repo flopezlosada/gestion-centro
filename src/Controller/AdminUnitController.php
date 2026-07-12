@@ -8,6 +8,7 @@ use App\Entity\Unit;
 use App\Enum\Area;
 use App\Form\UnitType;
 use App\Repository\UnitRepository;
+use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
 use App\Service\AuditLogger;
 use Doctrine\ORM\EntityManagerInterface;
@@ -40,6 +41,20 @@ final class AdminUnitController extends AbstractController
 
         return $this->render('admin/unit/index.html.twig', [
             'roots' => $units->findBy(['parent' => null], ['name' => 'ASC']),
+        ]);
+    }
+
+    /**
+     * Shows a department: its head (manager) and the people who belong to it.
+     */
+    #[Route('/{id}', name: 'admin_unit_show', requirements: ['id' => '\d+'], methods: ['GET'])]
+    public function show(Unit $unit, UserRepository $users): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
+
+        return $this->render('admin/unit/show.html.twig', [
+            'unit' => $unit,
+            'members' => $users->findByUnit($unit),
         ]);
     }
 

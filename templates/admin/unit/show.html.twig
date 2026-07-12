@@ -1,0 +1,42 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}{{ unit.name }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('admin_unit_index') }}">Departamentos</a><span class="sep">/</span>
+    {{ unit.name }}
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>{{ unit.name }}</h1>
+            <p class="lead">Jefatura: {{ unit.manager ? unit.manager.fullName : '— sin asignar —' }}</p>
+        </div>
+        <a class="btn secondary" href="{{ path('admin_unit_edit', { id: unit.id }) }}">Editar</a>
+    </div>
+
+    <div class="card">
+        <div class="page-head"><div><h2>Profesorado del departamento</h2></div></div>
+        {% if members is empty %}
+            <div class="empty-state">
+                <p>Nadie asignado a este departamento todavía.</p>
+            </div>
+        {% else %}
+            <table data-list-tools>
+                <thead>
+                    <tr><th>Nombre</th><th>Correo</th></tr>
+                </thead>
+                <tbody>
+                    {% for m in members %}
+                        <tr>
+                            <td>{{ m.fullName }}{% if unit.manager and m.id == unit.manager.id %} <span class="badge">Jefatura</span>{% endif %}</td>
+                            <td class="mono">{{ m.email }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}

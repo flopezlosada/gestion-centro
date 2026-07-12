@@ -31,18 +31,6 @@
                                 <a class="role-list__name" href="{{ path('admin_role_edit', { id: role.id }) }}">{{ role.name }}</a>
                                 <span class="mono muted role-list__code">{{ role.code }}</span>
                             </div>
-                            <p class="role-list__summary">
-                                {%- if role.isAdmin -%}
-                                    Acceso total (administrador)
-                                {%- else -%}
-                                    {%- set c = role.levelCounts -%}
-                                    {%- set parts = [] -%}
-                                    {%- if c.write > 0 %}{% set parts = parts|merge(['Escritura en ' ~ c.write]) %}{% endif -%}
-                                    {%- if c.read > 0 %}{% set parts = parts|merge(['Lectura en ' ~ c.read]) %}{% endif -%}
-                                    {%- if (c.write > 0 or c.read > 0) and c.none > 0 %}{% set parts = parts|merge(['Sin acceso al resto']) %}{% endif -%}
-                                    {{- parts is empty ? 'Sin acceso a ninguna área' : parts|join(' · ') -}}
-                                {%- endif -%}
-                            </p>
                         </div>
                         <a class="role-list__edit" href="{{ path('admin_role_edit', { id: role.id }) }}">Editar</a>
                     </li>

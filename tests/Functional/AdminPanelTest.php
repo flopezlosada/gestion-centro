@@ -105,6 +105,26 @@ final class AdminPanelTest extends WebTestCase
         self::assertSelectorTextContains('.unit-tree', 'Equipo directivo');
     }
 
+    public function testUnitShowListsItsHeadAndPeople(): void
+    {
+        $head = (new User())->setFullName('María Matemáticas')->setEmail('mates@centro.test');
+        $this->em->persist($head);
+        $maths = (new Unit())->setCode('maths')->setName('Matemáticas')->setManager($head);
+        $this->em->persist($maths);
+        $head->setUnit($maths);
+        $teacher = (new User())->setFullName('Pedro Docente')->setEmail('pedro@centro.test')->setUnit($maths);
+        $this->em->persist($teacher);
+        $this->em->flush();
+
+        $this->client->loginUser($this->admin());
+        $this->client->request('GET', '/admin/unidades/'.$maths->getId());
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('h1', 'Matemáticas');
+        self::assertSelectorTextContains('.page-head', 'María Matemáticas'); // head shown
+        self::assertSelectorTextContains('table', 'Pedro Docente');
+    }
+
     public function testAdminNavAppearsForAdmin(): void
     {
         $this->client->loginUser($this->admin());
