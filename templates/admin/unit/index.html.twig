@@ -1,17 +1,16 @@
 {% extends 'app_shell.html.twig' %}
 
-{% block title %}Unidades{% endblock %}
+{% block title %}Departamentos{% endblock %}
 
-{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Organigrama{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Departamentos{% endblock %}
 
 {# Nodo del árbol: se pinta a sí mismo y, recursivamente, sus unidades hijas. Materializa la cadena
    de mando (Unit.parent), de la que dependen el escalado y la validación. #}
 {% macro node(unit) %}
     <li>
         <div class="unit-node {{ unit.active ? '' : 'unit-node--inactive' }}">
-            <a class="unit-node__name" href="{{ path('admin_unit_edit', { id: unit.id }) }}">{{ unit.name }}</a>
-            <span class="mono muted unit-node__code">{{ unit.code }}</span>
-            {% if not unit.active %}<span class="badge badge--draft">Inactiva</span>{% endif %}
+            <a class="unit-node__name" href="{{ path('admin_unit_show', { id: unit.id }) }}">{{ unit.name }}</a>
+            {% if not unit.active %}<span class="badge badge--draft">Inactivo</span>{% endif %}
             <span class="unit-node__meta">Responsable: {{ unit.manager ? unit.manager.fullName : '— sin asignar —' }}</span>
             <a class="unit-node__edit" href="{{ path('admin_unit_edit', { id: unit.id }) }}">Editar</a>
         </div>
@@ -28,18 +27,18 @@
 {% block body %}
     <div class="page-head">
         <div>
-            <h1>Organigrama</h1>
-            <p class="lead">Las unidades del centro y su cadena de mando. Cada unidad tiene un responsable que valida sus tareas y recibe los escalados.</p>
+            <h1>Departamentos</h1>
+            <p class="lead">Los departamentos del centro y su cadena de mando. Cada uno tiene una jefatura que valida sus tareas y recibe los escalados.</p>
         </div>
-        <a class="btn" href="{{ path('admin_unit_new') }}">+ Nueva unidad</a>
+        <a class="btn" href="{{ path('admin_unit_new') }}">+ Nuevo departamento</a>
     </div>
 
     <div class="card">
         {% if roots is empty %}
             <div class="empty-state">
-                <h2>No hay unidades todavía</h2>
-                <p>Crea la primera unidad (normalmente el equipo directivo, en la cúspide de la jerarquía).</p>
-                <a class="btn" href="{{ path('admin_unit_new') }}">Nueva unidad</a>
+                <h2>No hay departamentos todavía</h2>
+                <p>Crea el primer departamento (o el equipo directivo, en la cúspide de la jerarquía).</p>
+                <a class="btn" href="{{ path('admin_unit_new') }}">Nuevo departamento</a>
             </div>
         {% else %}
             <ul class="unit-tree">
