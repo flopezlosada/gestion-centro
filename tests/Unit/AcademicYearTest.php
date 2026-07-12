@@ -93,4 +93,23 @@ final class AcademicYearTest extends TestCase
 
         $year->validateTermOrder($context);
     }
+
+    /**
+     * Dates that are well ordered but fall outside the labelled course are rejected on the school-year
+     * field, so the deadline engine can trust {@see findBySchoolYear()} returns the right dates.
+     */
+    public function testDatesNotBelongingToTheLabelledCourseAreRejected(): void
+    {
+        // Ordered and consistent term dates for 2026-2027, but labelled as a different course.
+        $year = $this->validYear()->setSchoolYear('2030-2031');
+
+        $builder = $this->createMock(ConstraintViolationBuilderInterface::class);
+        $builder->method('atPath')->with('schoolYear')->willReturnSelf();
+        $builder->expects(self::once())->method('addViolation');
+
+        $context = $this->createMock(ExecutionContextInterface::class);
+        $context->expects(self::once())->method('buildViolation')->willReturn($builder);
+
+        $year->validateTermOrder($context);
+    }
 }

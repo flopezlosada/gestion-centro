@@ -345,6 +345,88 @@ final class AdminPanelTest extends WebTestCase
         self::assertCount(0, $this->em->getRepository(AcademicYear::class)->findAll());
     }
 
+    public function testMislabelledAcademicYearIsRejected(): void
+    {
+        $this->client->loginUser($this->admin());
+
+        $crawler = $this->client->request('GET', '/admin/trimestres/nuevo');
+        // Dates are well ordered but belong to 2026-2027, labelled as a different course.
+        $form = $crawler->selectButton('Guardar')->form([
+            'academic_year[schoolYear]' => '2030-2031',
+            'academic_year[term1Start]' => '2026-09-15',
+            'academic_year[term1End]' => '2026-12-22',
+            'academic_year[term2Start]' => '2027-01-08',
+            'academic_year[term2End]' => '2027-03-27',
+            'academic_year[term3Start]' => '2027-04-07',
+            'academic_year[term3End]' => '2027-06-22',
+        ]);
+        $this->client->submit($form);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertSelectorTextContains('.form-card', 'no corresponden al curso');
+        self::assertCount(0, $this->em->getRepository(AcademicYear::class)->findAll());
+    }
+
+    public function testInvalidSchoolYearFormatIsRejected(): void
+    {
+        $this->client->loginUser($this->admin());
+
+        $crawler = $this->client->request('GET', '/admin/trimestres/nuevo');
+        $form = $crawler->selectButton('Guardar')->form([
+            'academic_year[schoolYear]' => '26-27',
+            'academic_year[term1Start]' => '2026-09-15',
+            'academic_year[term1End]' => '2026-12-22',
+            'academic_year[term2Start]' => '2027-01-08',
+            'academic_year[term2End]' => '2027-03-27',
+            'academic_year[term3Start]' => '2027-04-07',
+            'academic_year[term3End]' => '2027-06-22',
+        ]);
+        $this->client->submit($form);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertSelectorTextContains('.form-card', 'formato');
+        self::assertCount(0, $this->em->getRepository(AcademicYear::class)->findAll());
+    }
+
+    public function testDuplicateAcademicYearIsRejected(): void
+    {
+        $this->em->persist($this->academicYear('2026-2027'));
+        $this->em->flush();
+
+        $this->client->loginUser($this->admin());
+        $crawler = $this->client->request('GET', '/admin/trimestres/nuevo');
+        $form = $crawler->selectButton('Guardar')->form([
+            'academic_year[schoolYear]' => '2026-2027',
+            'academic_year[term1Start]' => '2026-09-15',
+            'academic_year[term1End]' => '2026-12-22',
+            'academic_year[term2Start]' => '2027-01-08',
+            'academic_year[term2End]' => '2027-03-27',
+            'academic_year[term3Start]' => '2027-04-07',
+            'academic_year[term3End]' => '2027-06-22',
+        ]);
+        $this->client->submit($form);
+
+        // The unique-course constraint rejects it: the form is redisplayed (422) and only one row exists.
+        self::assertResponseStatusCodeSame(422);
+        self::assertSelectorTextContains('.form-card', 'Ya existe');
+        self::assertCount(1, $this->em->getRepository(AcademicYear::class)->findAll());
+    }
+
+    public function testDeletingAnAcademicYearRemovesIt(): void
+    {
+        $year = $this->academicYear('2026-2027');
+        $this->em->persist($year);
+        $this->em->flush();
+        $id = $year->getId();
+
+        $this->client->loginUser($this->admin());
+        $crawler = $this->client->request('GET', '/admin/trimestres');
+        $this->client->submit($crawler->selectButton('Borrar')->form());
+
+        self::assertResponseRedirects('/admin/trimestres');
+        self::assertNull($this->em->getRepository(AcademicYear::class)->find($id));
+    }
+
     public function testNonAdminIsForbiddenFromAcademicYears(): void
     {
         $this->client->loginUser($this->teacher());
@@ -352,5 +434,24 @@ final class AdminPanelTest extends WebTestCase
         $this->client->request('GET', '/admin/trimestres');
 
         self::assertResponseStatusCodeSame(403);
+    }
+
+    /**
+     * A valid, well-ordered course structure for the given school year, ready to persist.
+     *
+     * @param string $schoolYear the course code, in "YYYY-YYYY" form
+     */
+    private function academicYear(string $schoolYear): AcademicYear
+    {
+        $start = (int) substr($schoolYear, 0, 4);
+
+        return (new AcademicYear())
+            ->setSchoolYear($schoolYear)
+            ->setTerm1Start(new \DateTimeImmutable($start.'-09-15'))
+            ->setTerm1End(new \DateTimeImmutable($start.'-12-22'))
+            ->setTerm2Start(new \DateTimeImmutable(($start + 1).'-01-08'))
+            ->setTerm2End(new \DateTimeImmutable(($start + 1).'-03-27'))
+            ->setTerm3Start(new \DateTimeImmutable(($start + 1).'-04-07'))
+            ->setTerm3End(new \DateTimeImmutable(($start + 1).'-06-22'));
     }
 }

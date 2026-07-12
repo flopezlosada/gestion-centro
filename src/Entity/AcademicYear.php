@@ -6,6 +6,7 @@ namespace App\Entity;
 
 use App\Contract\Auditable;
 use App\Repository\AcademicYearRepository;
+use App\Util\SchoolYear;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
@@ -38,7 +39,7 @@ class AcademicYear implements Auditable
     /** The course this structure describes, in "YYYY-YYYY" form (e.g. "2026-2027"). Unique. */
     #[ORM\Column(name: 'school_year', length: 9, unique: true)]
     #[Assert\NotBlank(message: 'Indica el curso (p. ej. "2026-2027").')]
-    #[Assert\Regex(pattern: '/^\d{4}-\d{4}$/', message: 'El curso debe tener el formato "2026-2027".')]
+    #[Assert\Regex(pattern: '/^\d{4}-\d{4}$/D', message: 'El curso debe tener el formato "2026-2027".')]
     private string $schoolYear;
 
     /** First teaching day of the first term. */
@@ -72,9 +73,11 @@ class AcademicYear implements Auditable
     private \DateTimeImmutable $term3End;
 
     /**
-     * Validates that the six dates are strictly ordered: each term starts on or before it ends, and
-     * every term ends before the next one starts. Enforced as a class constraint so an overlapping or
-     * out-of-order course structure can never be persisted.
+     * Validates the six dates as a whole: they must be strictly increasing (no day belongs to two
+     * terms) and they must fall inside the course they are labelled with. Enforced as a class
+     * constraint so an overlapping, out-of-order or mislabelled structure can never be persisted —
+     * the deadline engine reads this by {@see AcademicYearRepository::findBySchoolYear()} and must be
+     * able to trust that the term dates really are that course's.
      *
      * @param ExecutionContextInterface $context the validation context to report violations to
      */
@@ -85,22 +88,33 @@ class AcademicYear implements Auditable
             return;
         }
 
-        $steps = [
-            ['term1Start', $this->term1Start, 'term1End', $this->term1End],
-            ['term1End', $this->term1End, 'term2Start', $this->term2Start],
-            ['term2Start', $this->term2Start, 'term2End', $this->term2End],
-            ['term2End', $this->term2End, 'term3Start', $this->term3Start],
-            ['term3Start', $this->term3Start, 'term3End', $this->term3End],
+        // Every boundary must come strictly after the previous one: a term ends after it starts, and
+        // the next term starts after the previous one ends (a shared day would belong to both).
+        $ordered = [
+            ['term1End', $this->term1Start, $this->term1End],
+            ['term2Start', $this->term1End, $this->term2Start],
+            ['term2End', $this->term2Start, $this->term2End],
+            ['term3Start', $this->term2End, $this->term3Start],
+            ['term3End', $this->term3Start, $this->term3End],
         ];
 
-        foreach ($steps as [$fromLabel, $from, $toField, $to]) {
-            if ($from > $to) {
+        foreach ($ordered as [$toField, $from, $to]) {
+            if ($from >= $to) {
                 $context->buildViolation('Las fechas de los trimestres deben ir en orden: cada inicio antes de su fin y cada trimestre antes del siguiente.')
                     ->atPath($toField)
                     ->addViolation();
 
                 return;
             }
+        }
+
+        // The term dates must belong to the labelled course, or the deadline engine would read them
+        // under the wrong key. The course runs Sep→Aug, so both the first day (term 1 start) and the
+        // last (term 3 end) must map to the same "YYYY-YYYY" as the label.
+        if (SchoolYear::current($this->term1Start) !== $this->schoolYear || SchoolYear::current($this->term3End) !== $this->schoolYear) {
+            $context->buildViolation('Las fechas de los trimestres no corresponden al curso indicado. Revisa el curso o las fechas.')
+                ->atPath('schoolYear')
+                ->addViolation();
         }
     }
 

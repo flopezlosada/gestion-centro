@@ -18,7 +18,9 @@
         {{ form_start(form, { 'attr': { 'novalidate': 'novalidate' } }) }}
             {{ form_errors(form) }}
             {{ f.fields([form.schoolYear]) }}
-            {{ f.fields([form.term1Start, form.term1End, form.term2Start, form.term2End, form.term3Start, form.term3End]) }}
+            {{ f.section('1.er trimestre', [form.term1Start, form.term1End]) }}
+            {{ f.section('2.º trimestre', [form.term2Start, form.term2End]) }}
+            {{ f.section('3.er trimestre', [form.term3Start, form.term3End]) }}
             {{ f.actions(path('admin_academic_year_index')) }}
         {{ form_end(form) }}
     </div>
