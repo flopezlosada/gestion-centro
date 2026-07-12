@@ -1460,7 +1460,26 @@ input[type="email"], input[type="text"], select, textarea {
 
 /* Vista anual: doce mini-meses; cada día con tareas lleva un punto de color por estado.
    Clic en un mini-mes abre la vista mensual de ese mes. */
-.calendar-year { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
+/* Colores suaves de los tres trimestres, reutilizados por las tarjetas de mes y la leyenda. */
+:root { --cal-term-1: #2f9e8f; --cal-term-2: #d98a2b; --cal-term-3: #7a6cf0; }
+
+/* Vista año = curso escolar en una rejilla fija de 3 columnas (12 meses → 3×4). */
+.calendar-year { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.cal-mini.cal-term--1 { border-top: 3px solid var(--cal-term-1); }
+.cal-mini.cal-term--2 { border-top: 3px solid var(--cal-term-2); }
+.cal-mini.cal-term--3 { border-top: 3px solid var(--cal-term-3); }
+.cal-mini__name { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.cal-mini__term { font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint); }
+.cal-mini__day.is-nonlective { color: var(--text-faint); background: var(--surface-sunken); border-radius: 4px; }
+
+/* Leyenda de trimestres y días no lectivos, sobre la rejilla del año. */
+.cal-year-legend { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 14px; font-size: 12px; color: var(--text-muted); }
+.cal-year-legend__item { display: inline-flex; align-items: center; gap: 6px; }
+.cal-year-legend__swatch { width: 12px; height: 12px; border-radius: 3px; }
+.cal-year-legend__swatch.cal-term--1 { background: var(--cal-term-1); }
+.cal-year-legend__swatch.cal-term--2 { background: var(--cal-term-2); }
+.cal-year-legend__swatch.cal-term--3 { background: var(--cal-term-3); }
+.cal-year-legend__swatch--nonlective { background: var(--surface-sunken); border: 1px solid var(--border-strong); }
 .cal-mini { display: block; padding: 12px 14px 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); text-decoration: none; color: inherit; }
 .cal-mini:hover { border-color: var(--border-strong); background: var(--surface-sunken); }
 .cal-mini__name { margin: 0 0 8px; font-size: 14px; font-weight: 600; color: var(--text); text-transform: capitalize; }
