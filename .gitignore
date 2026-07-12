@@ -16,3 +16,6 @@
 
 # Worktrees de agentes (no versionar)
 /.claude/worktrees/
+
+# Datos reales del centro (PII) — nunca al repo, cargados por app:import-roster
+/fixtures/real/

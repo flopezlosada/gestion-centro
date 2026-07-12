@@ -2,20 +2,20 @@
 
 Pipeline en dos etapas para cargar el listado de docentes del centro en la base de datos. El **código**
 vive aquí; los **datos** (con datos personales y el nombre del centro) NO entran al repositorio — el CSV
-y el PDF de origen son gitignored (van bajo `var/`, que está ignorado).
+y el PDF de origen viven bajo `fixtures/real/`, que está gitignored (igual que en el proyecto ISO).
 
 ## Etapas
 
 1. **Extraer** el PDF oficial a texto con columnas alineadas:
 
    ```bash
-   pdftotext -layout docentes-email.pdf var/import/docentes.txt
+   pdftotext -layout docentes-email.pdf fixtures/real/docentes.txt
    ```
 
 2. **Normalizar** a un CSV estable (`full_name,email,department,cargo`):
 
    ```bash
-   python3 import/normalize_roster.py < var/import/docentes.txt > var/import/roster.csv
+   python3 import/normalize_roster.py < fixtures/real/docentes.txt > fixtures/real/roster.csv
    ```
 
    El parseo se ancla en el email institucional y en el conjunto cerrado de departamentos
@@ -25,8 +25,8 @@ y el PDF de origen son gitignored (van bajo `var/`, que está ignorado).
 3. **Importar** a la base de datos (idempotente; `--dry-run` para ver el resumen sin escribir):
 
    ```bash
-   ddev exec php bin/console app:import-roster var/import/roster.csv --dry-run
-   ddev exec php bin/console app:import-roster var/import/roster.csv
+   ddev exec php bin/console app:import-roster fixtures/real/roster.csv --dry-run
+   ddev exec php bin/console app:import-roster fixtures/real/roster.csv
    ```
 
    Personas por email, departamentos y roles por código: re-ejecutar tras un cambio a mitad de curso

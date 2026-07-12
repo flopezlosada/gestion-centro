@@ -31,9 +31,31 @@ Autenticación **passwordless** (magic-link + SSO Google/Educamadrid). Entorno d
 ddev start
 ddev composer install
 ddev exec php bin/console doctrine:migrations:migrate --no-interaction
-ddev exec php bin/console doctrine:fixtures:load --no-interaction   # datos de demo
+ddev exec php bin/console doctrine:fixtures:load --no-interaction   # golden + demo (todo)
 ddev launch
 ```
+
+### Datos: golden / demo / real
+
+Las fixtures son sintéticas (sin datos personales, seguras en git) y se dividen en dos grupos, como en
+el proyecto ISO:
+
+```bash
+ddev exec php bin/console doctrine:fixtures:load                  # golden + demo (todo)
+ddev exec php bin/console doctrine:fixtures:load --group=golden   # solo el esqueleto de producción (roles + catálogo de plantillas)
+ddev exec php bin/console doctrine:fixtures:load --group=demo     # golden + datos de ejemplo (personas, plan…)
+```
+
+Una instancia local **realista** (esqueleto + claustro real, sin duplicados) =
+`--group=golden` + el import del claustro (idempotente, upsert de los roles golden por código):
+
+```bash
+ddev exec php bin/console doctrine:fixtures:load --group=golden --no-interaction
+ddev exec php bin/console app:import-roster fixtures/real/roster.csv   # datos reales (PII), gitignored
+```
+
+Los datos reales del centro (PII) **nunca** se siembran en git: viven bajo `fixtures/real/` (ignorado)
+y se cargan con `app:import-roster` (ver `import/README.md`).
 
 Login (passwordless): en `/login` introduce un correo de la demo —`director@centro.test` (dirección) o
 `profe@centro.test` (docente)— y abre el **enlace mágico** en Mailpit (`ddev launch -m`).
