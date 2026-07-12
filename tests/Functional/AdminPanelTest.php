@@ -137,9 +137,9 @@ final class AdminPanelTest extends WebTestCase
 
         $this->client->loginUser($this->admin());
 
-        // Add Ana to the department.
+        // Add Ana to the department (she sorts first among the candidate rows).
         $crawler = $this->client->request('GET', '/admin/unidades/'.$mathsId);
-        $this->client->submit($crawler->selectButton('Añadir al departamento')->form(['user' => (string) $anaId]));
+        $this->client->submit($crawler->selectButton('Añadir')->form());
         self::assertResponseRedirects('/admin/unidades/'.$mathsId);
         $this->em->clear();
         self::assertSame('Matemáticas', $this->em->getRepository(User::class)->find($anaId)?->getUnit()?->getName());

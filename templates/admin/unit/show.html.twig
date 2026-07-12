@@ -60,24 +60,37 @@
         {% endif %}
     </div>
 
-    <div class="card form-card">
-        <div class="page-head"><div><h2>Añadir profesorado</h2></div></div>
+    <div class="card">
+        <div class="page-head">
+            <div>
+                <h2>Añadir profesorado</h2>
+                <p class="lead">Busca a alguien que ya esté dado de alta y añádelo (si estaba en otro departamento, se mueve), o crea una persona nueva.</p>
+            </div>
+            <a class="btn" href="{{ path('admin_user_new', { unit: unit.id }) }}">+ Nuevo profesor</a>
+        </div>
         {% if candidates is empty %}
             <p class="help">No hay más personas que añadir.</p>
         {% else %}
-            <form method="post" action="{{ path('admin_unit_add_member', { id: unit.id }) }}">
-                <input type="hidden" name="_token" value="{{ csrf_token('unit_add_member' ~ unit.id) }}">
-                <div class="form-row">
-                    <label for="add-member">Persona</label>
-                    <select id="add-member" name="user" required>
-                        <option value="">— Elige a una persona —</option>
-                        {% for c in candidates %}
-                            <option value="{{ c.id }}">{{ c.fullName }}{% if c.unit %} · {{ c.unit.name }}{% endif %}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <button class="btn" type="submit">Añadir al departamento</button>
-            </form>
+            <table data-list-tools>
+                <thead>
+                    <tr><th>Nombre</th><th data-filter>Departamento actual</th><th data-nosort></th></tr>
+                </thead>
+                <tbody>
+                    {% for c in candidates %}
+                        <tr>
+                            <td>{{ c.fullName }}</td>
+                            <td>{{ c.unit ? c.unit.name : '— sin departamento —' }}</td>
+                            <td class="row-actions">
+                                <form method="post" action="{{ path('admin_unit_add_member', { id: unit.id }) }}">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('unit_add_member' ~ unit.id) }}">
+                                    <input type="hidden" name="user" value="{{ c.id }}">
+                                    <button type="submit" class="link-action">Añadir</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         {% endif %}
     </div>
 {% endblock %}
