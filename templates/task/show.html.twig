@@ -94,7 +94,7 @@
     {% if canSeeHistory %}
         <section class="card">
             <div class="page-head"><div><h2>Histórico de actividad</h2><p class="lead">Quién ha hecho qué con esta tarea.</p></div></div>
-            {{ include('_partials/_activity_log.html.twig', { entries: history }) }}
+            {{ include('_partials/_activity_log.html.twig', { rows: activityRows, isAdmin: isAdmin }) }}
         </section>
     {% endif %}
 {% endblock %}

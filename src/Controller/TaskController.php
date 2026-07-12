@@ -14,6 +14,7 @@ use App\Repository\UserRepository;
 use App\Service\OrganizationHierarchy;
 use App\Service\TaskVisibility;
 use App\Service\TaskWorkflow;
+use App\Support\TaskActivityPresenter;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -143,6 +144,7 @@ final class TaskController extends AbstractController
         TaskVisibility $visibility,
         OrganizationHierarchy $hierarchy,
         TaskWorkflow $workflows,
+        TaskActivityPresenter $activity,
     ): Response {
         // Same organisation-chart scope as the plan and the calendar, enforced here so the detail
         // cannot be reached by guessing an id: only the task's own people, a superior of its unit, or
@@ -165,7 +167,9 @@ final class TaskController extends AbstractController
             // superior-only ones for non-superiors; here we also hide progress ones from outsiders.
             'actions' => $this->availableActions($workflows, $task, $canWork),
             'canSeeHistory' => true,
-            'history' => $auditLog->findForSubject('Task', (string) $task->getId()),
+            // The trail humanised for non-technical readers; the raw diff rides along for admins only.
+            'activityRows' => $activity->present($auditLog->findForSubject('Task', (string) $task->getId())),
+            'isAdmin' => $this->isGranted('ROLE_ADMIN'),
         ]);
     }
 
