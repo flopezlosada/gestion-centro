@@ -1,14 +1,24 @@
+<div class="cal-year-legend" aria-hidden="true">
+    <span class="cal-year-legend__item"><span class="cal-year-legend__swatch cal-term--1"></span>1.er trimestre</span>
+    <span class="cal-year-legend__item"><span class="cal-year-legend__swatch cal-term--2"></span>2.º trimestre</span>
+    <span class="cal-year-legend__item"><span class="cal-year-legend__swatch cal-term--3"></span>3.er trimestre</span>
+    <span class="cal-year-legend__item"><span class="cal-year-legend__swatch cal-year-legend__swatch--nonlective"></span>No lectivo</span>
+</div>
+
 <div class="calendar-year">
     {% for month in months %}
-        <a class="cal-mini" href="{{ path('calendar_index', { vista: 'mes', fecha: month.date }) }}" title="Ver {{ month.name }} en vista mensual">
-            <h3 class="cal-mini__name">{{ month.name }}</h3>
+        <a class="cal-mini{% if month.term %} cal-term--{{ month.term }}{% endif %}" href="{{ path('calendar_index', { vista: 'mes', fecha: month.date }) }}" title="Ver {{ month.name }} en vista mensual">
+            <h3 class="cal-mini__name">
+                {{ month.name }}
+                {% if month.term %}<span class="cal-mini__term">{{ month.term }}.{{ month.term == 1 ? 'er' : 'º' }} trim.</span>{% endif %}
+            </h3>
             <div class="cal-mini__grid" aria-hidden="true">
                 {% for wd in ['L', 'M', 'X', 'J', 'V', 'S', 'D'] %}
                     <span class="cal-mini__wd">{{ wd }}</span>
                 {% endfor %}
                 {% for week in month.weeks %}
                     {% for cell in week %}
-                        <span class="cal-mini__day{{ cell.inMonth ? '' : ' is-blank' }}{{ cell.isToday ? ' is-today' : '' }}"{% if cell.hasTasks %} title="{{ month.name }} {{ cell.day }}: con tareas"{% endif %}>
+                        <span class="cal-mini__day{{ cell.inMonth ? '' : ' is-blank' }}{{ cell.isToday ? ' is-today' : '' }}{{ cell.isNonLective ? ' is-nonlective' : '' }}"{% if cell.hasTasks %} title="{{ month.name }} {{ cell.day }}: con tareas"{% elseif cell.isNonLective %} title="{{ month.name }} {{ cell.day }}: no lectivo"{% endif %}>
                             {% if cell.inMonth %}
                                 <span class="cal-mini__num">{{ cell.day }}</span>
                                 {% if cell.hasTasks %}<span class="cal-mini__dot calendar-dot--{{ cell.status }}"></span>{% endif %}

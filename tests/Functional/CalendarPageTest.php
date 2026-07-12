@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
+use App\Entity\AcademicYear;
+use App\Entity\NonLectiveDay;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\Unit;
@@ -84,6 +86,38 @@ final class CalendarPageTest extends WebTestCase
 
         self::assertResponseIsSuccessful();
         self::assertCount(12, $crawler->filter('.cal-mini'));
+    }
+
+    public function testYearViewMarksTermsAndNonLectiveDays(): void
+    {
+        // 15 Jul 2026 falls in the 2025-2026 school year; give it a term structure and a holiday.
+        $this->em->persist($this->academicYear('2025-2026'));
+        $this->em->persist((new NonLectiveDay())->setDate(new \DateTimeImmutable('2025-12-25'))->setDescription('Navidad'));
+        $teacher = $this->teacherWithTask(new \DateTimeImmutable('2026-07-15'), 'Memoria del departamento');
+
+        $this->client->loginUser($teacher);
+        $crawler = $this->client->request('GET', '/calendario?vista=anio&fecha=2026-07-15');
+
+        self::assertResponseIsSuccessful();
+        self::assertGreaterThan(0, $crawler->filter('.cal-mini.cal-term--1')->count(), 'a month is tinted by its term');
+        self::assertGreaterThan(0, $crawler->filter('.cal-mini__day.is-nonlective')->count(), 'a non-teaching day is marked');
+    }
+
+    /**
+     * A valid, well-ordered term structure for the given school year.
+     */
+    private function academicYear(string $schoolYear): AcademicYear
+    {
+        $start = (int) substr($schoolYear, 0, 4);
+
+        return (new AcademicYear())
+            ->setSchoolYear($schoolYear)
+            ->setTerm1Start(new \DateTimeImmutable($start.'-09-15'))
+            ->setTerm1End(new \DateTimeImmutable($start.'-12-22'))
+            ->setTerm2Start(new \DateTimeImmutable(($start + 1).'-01-08'))
+            ->setTerm2End(new \DateTimeImmutable(($start + 1).'-03-27'))
+            ->setTerm3Start(new \DateTimeImmutable(($start + 1).'-04-07'))
+            ->setTerm3End(new \DateTimeImmutable(($start + 1).'-06-22'));
     }
 
     /**

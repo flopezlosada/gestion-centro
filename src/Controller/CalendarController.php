@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Entity\AcademicYear;
 use App\Entity\NonLectiveDay;
 use App\Entity\Task;
 use App\Entity\User;
+use App\Repository\AcademicYearRepository;
 use App\Repository\NonLectiveDayRepository;
 use App\Repository\TaskRepository;
 use App\Service\SchoolCalendar;
@@ -23,7 +25,7 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
  * all anchored on the "fecha" (YYYY-MM-DD) parameter, with previous/next navigation per level.
  *
  * @phpstan-type DayCell array{date: \DateTimeImmutable, inMonth: bool, isToday: bool, isWeekend: bool, nonLective: ?NonLectiveDay, tasks: Task[]}
- * @phpstan-type MiniCell array{day: string, date: string, inMonth: bool, isToday: bool, hasTasks: bool, status: ?string}
+ * @phpstan-type MiniCell array{day: string, date: string, inMonth: bool, isToday: bool, hasTasks: bool, status: ?string, isNonLective: bool}
  */
 final class CalendarController extends AbstractController
 {
@@ -65,7 +67,7 @@ final class CalendarController extends AbstractController
      * @return Response the rendered calendar page
      */
     #[Route('/calendario', name: 'calendar_index', methods: ['GET'])]
-    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility, NonLectiveDayRepository $nonLectiveDays, SchoolCalendar $schoolCalendar): Response
+    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility, NonLectiveDayRepository $nonLectiveDays, SchoolCalendar $schoolCalendar, AcademicYearRepository $academicYears): Response
     {
         $timeZone = new \DateTimeZone(self::TIME_ZONE);
         $today = new \DateTimeImmutable('today', $timeZone);
@@ -80,7 +82,7 @@ final class CalendarController extends AbstractController
         $model = match ($view) {
             'dia' => $this->dayModel($anchor, $today, $byDay, $nonLectiveByDay, $schoolCalendar),
             'semana' => $this->weekModel($anchor, $today, $byDay, $nonLectiveByDay, $schoolCalendar),
-            'anio' => $this->yearModel($anchor, $today, $byDay, $nonLectiveByDay, $schoolCalendar),
+            'anio' => $this->yearModel($anchor, $today, $byDay, $nonLectiveByDay, $schoolCalendar, $academicYears),
             default => $this->monthModel($anchor, $today, $byDay, $nonLectiveByDay, $schoolCalendar),
         };
 
@@ -149,11 +151,35 @@ final class CalendarController extends AbstractController
 
         $year = (int) $anchor->format('Y');
 
+        if ('anio' === $view) {
+            // The year view shows the SCHOOL year (September→August), not the calendar year, so its
+            // three terms read left to right.
+            $start = $this->schoolYearStart($anchor);
+
+            return [$start, $start->modify('+1 year')->modify('-1 day')];
+        }
+
         return match ($view) {
             'dia' => [$anchor, $anchor],
-            'anio' => [$anchor->setDate($year, 1, 1), $anchor->setDate($year, 12, 31)],
             default => $this->monthGridRange($anchor),
         };
+    }
+
+    /**
+     * The first day (1 September) of the school year the anchor falls in. From September on the anchor
+     * is in the year that starts that calendar year; before September, in the one that started the
+     * previous year.
+     *
+     * @param \DateTimeImmutable $anchor the anchor day
+     *
+     * @return \DateTimeImmutable 1 September of the school year's starting calendar year
+     */
+    private function schoolYearStart(\DateTimeImmutable $anchor): \DateTimeImmutable
+    {
+        $year = (int) $anchor->format('Y');
+        $startYear = (int) $anchor->format('n') >= 9 ? $year : $year - 1;
+
+        return $anchor->setDate($startYear, 9, 1);
     }
 
     /**
@@ -282,38 +308,68 @@ final class CalendarController extends AbstractController
     }
 
     /**
-     * The year-view model: the twelve months of the anchor year, each as a compact grid whose days
-     * carry a single status dot when at least one task is due, keyed for the month-view link.
+     * The year-view model: the twelve months of the SCHOOL year (September→August), each as a compact
+     * grid whose days carry a single status dot when a task is due and a muted style when non-teaching.
+     * Each month is tagged with the term (1–3) it belongs to, when the school year's structure is
+     * defined, so the view can colour the three terms.
      *
-     * @param \DateTimeImmutable           $anchor          the anchor day (its year is displayed)
+     * @param \DateTimeImmutable           $anchor          the anchor day (its school year is displayed)
      * @param \DateTimeImmutable           $today           today, to flag the current day
      * @param array<string, Task[]>        $byDay           tasks indexed by deadline day
      * @param array<string, NonLectiveDay> $nonLectiveByDay non-teaching days indexed by day
      * @param SchoolCalendar               $schoolCalendar  the teaching-day calendar
+     * @param AcademicYearRepository       $academicYears   the school-year structure repository
      *
-     * @return array{template: string, label: string, months: list<array{name: string, date: string, weeks: list<list<MiniCell>>}>} the template and view data
+     * @return array{template: string, label: string, months: list<array{name: string, date: string, term: ?int, weeks: list<list<MiniCell>>}>} the template and view data
      */
-    private function yearModel(\DateTimeImmutable $anchor, \DateTimeImmutable $today, array $byDay, array $nonLectiveByDay, SchoolCalendar $schoolCalendar): array
+    private function yearModel(\DateTimeImmutable $anchor, \DateTimeImmutable $today, array $byDay, array $nonLectiveByDay, SchoolCalendar $schoolCalendar, AcademicYearRepository $academicYears): array
     {
+        $start = $this->schoolYearStart($anchor);
+        $startYear = (int) $start->format('Y');
+        $schoolYear = \sprintf('%d-%d', $startYear, $startYear + 1);
+        $structure = $academicYears->findBySchoolYear($schoolYear);
+
         $months = [];
-        for ($month = 1; $month <= 12; ++$month) {
-            $first = $anchor->setDate((int) $anchor->format('Y'), $month, 1);
+        for ($i = 0; $i < 12; ++$i) {
+            $first = $start->modify(\sprintf('+%d months', $i));
             $weeks = [];
             foreach ($this->monthWeeks($first, $today, $byDay, $nonLectiveByDay, $schoolCalendar) as $week) {
                 $weeks[] = array_map($this->miniCell(...), $week);
             }
             $months[] = [
-                'name' => self::MONTH_NAMES[$month],
+                'name' => self::MONTH_NAMES[(int) $first->format('n')],
                 'date' => $first->format('Y-m-d'),
+                'term' => null !== $structure ? $this->termForMonth($structure, $first) : null,
                 'weeks' => $weeks,
             ];
         }
 
         return [
             'template' => 'calendar/_year.html.twig',
-            'label' => $anchor->format('Y'),
+            'label' => $schoolYear,
             'months' => $months,
         ];
+    }
+
+    /**
+     * The term (1–3) a month belongs to, judged by its middle day, or null when that falls in a break
+     * or the summer (outside every term).
+     *
+     * @param AcademicYear       $structure the school year's term structure
+     * @param \DateTimeImmutable $first     the first day of the month
+     *
+     * @return int|null the term number, or null if the month sits outside the terms
+     */
+    private function termForMonth(AcademicYear $structure, \DateTimeImmutable $first): ?int
+    {
+        $mid = $first->modify('+14 days');
+        foreach ([1, 2, 3] as $term) {
+            if ($mid >= $structure->getTermStart($term) && $mid <= $structure->getTermEnd($term)) {
+                return $term;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -425,6 +481,7 @@ final class CalendarController extends AbstractController
             'isToday' => $cell['isToday'],
             'hasTasks' => $cell['inMonth'] && [] !== $cell['tasks'],
             'status' => $cell['inMonth'] ? $this->topStatus($cell['tasks']) : null,
+            'isNonLective' => $cell['inMonth'] && null !== $cell['nonLective'],
         ];
     }
 
