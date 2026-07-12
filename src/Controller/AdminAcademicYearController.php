@@ -5,15 +5,18 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\AcademicYear;
+use App\Entity\User;
 use App\Enum\Area;
 use App\Form\AcademicYearType;
 use App\Repository\AcademicYearRepository;
 use App\Security\Voter\AreaVoter;
+use App\Service\TaskGenerator;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\CurrentUser;
 
 /**
  * Admin management of the school-year structure: the start and end dates of the three terms for each
@@ -54,6 +57,23 @@ final class AdminAcademicYearController extends AbstractController
     public function edit(AcademicYear $year, Request $request, EntityManagerInterface $em): Response
     {
         return $this->handleForm($year, $request, $em);
+    }
+
+    /**
+     * Generates the course's tasks from the catalogue (templates with a deadline rule). Idempotent:
+     * re-running only adds what is missing. Redirects to the course plan so the result is visible.
+     */
+    #[Route('/{id}/generar', name: 'admin_academic_year_generate', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function generate(AcademicYear $year, Request $request, #[CurrentUser] User $user, TaskGenerator $generator): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
+        if (!$this->isCsrfTokenValid('academic_year_generate'.$year->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+
+        $this->addFlash('success', $generator->generate($year, $user)->summary());
+
+        return $this->redirectToRoute('task_index', ['curso' => $year->getSchoolYear()]);
     }
 
     /**

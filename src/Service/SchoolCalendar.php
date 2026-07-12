@@ -44,4 +44,27 @@ final class SchoolCalendar
         // ISO-8601 day of week: 6 = Saturday, 7 = Sunday.
         return (int) $date->format('N') >= 6;
     }
+
+    /**
+     * The given day if it is a teaching day, otherwise the nearest earlier teaching day. Used when a
+     * computed deadline lands on a weekend or holiday: a deadline is moved earlier, never later, so it
+     * still falls within its intended period. Bounded so a long closure can never loop forever — if no
+     * teaching day is found within a month back, the original date is returned unchanged.
+     *
+     * @param \DateTimeImmutable $date the candidate deadline
+     *
+     * @return \DateTimeImmutable a teaching day on or before it (or the input if none is found)
+     */
+    public function onOrBeforeLectiveDay(\DateTimeImmutable $date): \DateTimeImmutable
+    {
+        $day = $date;
+        for ($i = 0; $i < 31; ++$i) {
+            if ($this->isLective($day)) {
+                return $day;
+            }
+            $day = $day->modify('-1 day');
+        }
+
+        return $date;
+    }
 }
