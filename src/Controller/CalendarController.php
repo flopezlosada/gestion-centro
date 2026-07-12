@@ -481,7 +481,8 @@ final class CalendarController extends AbstractController
             'isToday' => $cell['isToday'],
             'hasTasks' => $cell['inMonth'] && [] !== $cell['tasks'],
             'status' => $cell['inMonth'] ? $this->topStatus($cell['tasks']) : null,
-            'isNonLective' => $cell['inMonth'] && null !== $cell['nonLective'],
+            // Non-teaching: a weekend or a registered holiday. Both are shown muted in the year grid.
+            'isNonLective' => $cell['inMonth'] && ($cell['isWeekend'] || null !== $cell['nonLective']),
         ];
     }
 
