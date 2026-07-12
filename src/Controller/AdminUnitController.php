@@ -55,7 +55,80 @@ final class AdminUnitController extends AbstractController
         return $this->render('admin/unit/show.html.twig', [
             'unit' => $unit,
             'members' => $users->findByUnit($unit),
+            // People who could be added (anyone not already in this department).
+            'candidates' => $users->findNotInUnit($unit),
         ]);
+    }
+
+    /**
+     * Sets (or clears, with an empty value) the department's head, which must be one of its members.
+     * The head is who validates the department's tasks and receives its escalations.
+     */
+    #[Route('/{id}/jefatura', name: 'admin_unit_set_manager', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function setManager(Unit $unit, Request $request, UserRepository $users, EntityManagerInterface $em): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
+        if (!$this->isCsrfTokenValid('unit_manager'.$unit->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+
+        $userId = (string) $request->request->get('user');
+        $manager = '' === $userId ? null : $users->find((int) $userId);
+        if (null !== $manager && $manager->getUnit() !== $unit) {
+            throw $this->createAccessDeniedException('La jefatura debe pertenecer al departamento.');
+        }
+
+        $unit->setManager($manager);
+        $em->flush();
+        $this->addFlash('success', null === $manager ? 'Jefatura sin asignar.' : sprintf('Jefatura asignada a %s.', $manager->getFullName()));
+
+        return $this->redirectToRoute('admin_unit_show', ['id' => $unit->getId()]);
+    }
+
+    /**
+     * Adds a person to the department (moving them from any previous one).
+     */
+    #[Route('/{id}/profesorado', name: 'admin_unit_add_member', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function addMember(Unit $unit, Request $request, UserRepository $users, EntityManagerInterface $em): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
+        if (!$this->isCsrfTokenValid('unit_add_member'.$unit->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+
+        $user = $users->find((int) $request->request->get('user'));
+        if (null !== $user) {
+            $user->setUnit($unit);
+            $em->flush();
+            $this->addFlash('success', sprintf('%s añadido/a al departamento.', $user->getFullName()));
+        }
+
+        return $this->redirectToRoute('admin_unit_show', ['id' => $unit->getId()]);
+    }
+
+    /**
+     * Removes a person from the department (leaves them without one). If they were the head, the
+     * headship is cleared too — one cannot lead a department one no longer belongs to.
+     */
+    #[Route('/{id}/profesorado/{userId}/quitar', name: 'admin_unit_remove_member', requirements: ['id' => '\d+', 'userId' => '\d+'], methods: ['POST'])]
+    public function removeMember(Unit $unit, int $userId, Request $request, UserRepository $users, EntityManagerInterface $em): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
+        if (!$this->isCsrfTokenValid('unit_remove_member'.$userId, (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+
+        $user = $users->find($userId);
+        if (null !== $user && $user->getUnit() === $unit) {
+            if ($unit->getManager() === $user) {
+                $unit->setManager(null);
+            }
+            $user->setUnit(null);
+            $em->flush();
+            $this->addFlash('success', sprintf('%s quitado/a del departamento.', $user->getFullName()));
+        }
+
+        return $this->redirectToRoute('admin_unit_show', ['id' => $unit->getId()]);
     }
 
     /**

@@ -86,5 +86,23 @@ class UserRepository extends ServiceEntityRepository
     {
         return $this->findBy(['unit' => $unit], ['fullName' => 'ASC']);
     }
+
+    /**
+     * Everyone NOT already in the given unit (including people with no unit), by full name. Used to
+     * offer candidates to add to a department.
+     *
+     * @param Unit $unit the unit (department) to exclude
+     *
+     * @return User[] the people who could be added to it
+     */
+    public function findNotInUnit(Unit $unit): array
+    {
+        return $this->createQueryBuilder('u')
+            ->andWhere('u.unit IS NULL OR u.unit != :unit')
+            ->setParameter('unit', $unit)
+            ->orderBy('u.fullName', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
 }
 

@@ -125,6 +125,32 @@ final class AdminPanelTest extends WebTestCase
         self::assertSelectorTextContains('table', 'Pedro Docente');
     }
 
+    public function testDepartmentMembershipAndHeadCanBeManagedFromItsPage(): void
+    {
+        $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($maths);
+        $ana = (new User())->setFullName('Ana Docente')->setEmail('ana@centro.test');
+        $this->em->persist($ana);
+        $this->em->flush();
+        $mathsId = $maths->getId();
+        $anaId = $ana->getId();
+
+        $this->client->loginUser($this->admin());
+
+        // Add Ana to the department.
+        $crawler = $this->client->request('GET', '/admin/unidades/'.$mathsId);
+        $this->client->submit($crawler->selectButton('Añadir al departamento')->form(['user' => (string) $anaId]));
+        self::assertResponseRedirects('/admin/unidades/'.$mathsId);
+        $this->em->clear();
+        self::assertSame('Matemáticas', $this->em->getRepository(User::class)->find($anaId)?->getUnit()?->getName());
+
+        // Designate Ana (the only member) as head.
+        $crawler = $this->client->request('GET', '/admin/unidades/'.$mathsId);
+        $this->client->submit($crawler->selectButton('Hacer jefatura')->form());
+        $this->em->clear();
+        self::assertSame($anaId, $this->em->getRepository(Unit::class)->find($mathsId)?->getManager()?->getId());
+    }
+
     public function testAdminNavAppearsForAdmin(): void
     {
         $this->client->loginUser($this->admin());
