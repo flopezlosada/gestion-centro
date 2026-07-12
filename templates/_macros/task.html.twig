@@ -4,14 +4,8 @@
 #}
 
 {% macro status_label(status) %}
-    {%- set labels = {
-        'pending': 'Pendiente',
-        'in_progress': 'En curso',
-        'submitted': 'Enviada',
-        'done': 'Hecha',
-        'validated': 'Validada',
-        'rejected': 'Rechazada',
-    } -%}
+    {#- Etiquetas en App\Support\TaskStatus::LABELS (única fuente, compartida con el presenter). -#}
+    {%- set labels = constant('App\\Support\\TaskStatus::LABELS') -%}
     {{- labels[status]|default(status) -}}
 {% endmacro %}
 

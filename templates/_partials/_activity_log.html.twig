@@ -1,37 +1,53 @@
 {#
-   Histórico de actividad de un objeto, reutilizable en cualquier vista `show`. Recibe:
-     - entries: lista de App\Entity\AuditLog (p. ej. AuditLogRepository::findForSubject()).
-   Muestra quién hizo qué y cuándo, con el diff campo a campo. La VISIBILIDAD la decide quien
-   incluye este partial (p. ej. solo superiores/admin); aquí solo se pinta.
+   Histórico de actividad ya "presentado" por App\Support\TaskActivityPresenter. Recibe:
+     - rows: filas humanizadas (verbLabel, actor, occurredAt, summary, changes, raw).
+     - isAdmin: si es true, añade un desplegable con el detalle técnico crudo (nombres de campo/valores).
+   La VISIBILIDAD del histórico la decide quien incluye este partial; aquí solo se pinta.
 #}
-{% if entries is empty %}
+{% if rows is empty %}
     <p class="muted">Sin actividad registrada todavía.</p>
 {% else %}
     <ol class="obj-timeline">
-        {% for entry in entries %}
-            {% set verb = entry.action|split('.')|last %}
-            {% set verbLabel = { 'created': 'Creación', 'updated': 'Modificación', 'deleted': 'Baja' }[verb]|default(entry.action) %}
+        {% for row in rows %}
             <li class="obj-timeline__item">
                 <div class="obj-timeline__head">
-                    <span class="obj-timeline__verb">{{ verbLabel }}</span>
-                    <span class="obj-timeline__meta muted">{{ entry.actor|default('Sistema') }} · <time datetime="{{ entry.occurredAt|date('c') }}">{{ entry.occurredAt|date('d/m/Y H:i') }}</time></span>
+                    <span class="obj-timeline__verb">{{ row.verbLabel }}</span>
+                    <span class="obj-timeline__meta muted">{{ row.actor|default('Sistema') }} · <time datetime="{{ row.occurredAt|date('c') }}">{{ row.occurredAt|date('d/m/Y H:i') }}</time></span>
                 </div>
-                {% if entry.changes %}
+                {% if row.summary %}
+                    <p class="obj-timeline__summary">{{ row.summary }}</p>
+                {% elseif row.changes is not empty %}
                     <ul class="obj-timeline__changes">
-                        {% for field, change in entry.changes %}
+                        {% for change in row.changes %}
                             <li>
-                                <span class="obj-timeline__field">{{ field }}</span>
-                                {% if change.added is defined or change.removed is defined %}
-                                    {% if change.added %}<span class="obj-timeline__add">+ {{ change.added|json_encode }}</span>{% endif %}
-                                    {% if change.removed %}<span class="obj-timeline__del">− {{ change.removed|json_encode }}</span>{% endif %}
-                                {% else %}
-                                    <span class="obj-timeline__del">{{ change.old is iterable ? change.old|json_encode : (change.old ?? '∅') }}</span>
-                                    <span aria-hidden="true">→</span>
-                                    <span class="obj-timeline__add">{{ change.new is iterable ? change.new|json_encode : (change.new ?? '∅') }}</span>
-                                {% endif %}
+                                <span class="obj-timeline__label">{{ change.label }}:</span>
+                                <span class="obj-timeline__del">{{ change.old }}</span>
+                                <span aria-hidden="true">→</span>
+                                <span class="obj-timeline__add">{{ change.new }}</span>
                             </li>
                         {% endfor %}
                     </ul>
+                {% endif %}
+                {# Detalle técnico crudo, solo para admin: nombres de campo y valores tal cual se guardaron. #}
+                {% if isAdmin and row.raw %}
+                    <details class="obj-timeline__raw">
+                        <summary class="muted">Ver detalle técnico</summary>
+                        <ul class="obj-timeline__changes">
+                            {% for field, change in row.raw %}
+                                <li>
+                                    <span class="obj-timeline__field">{{ field }}</span>
+                                    {% if change.added is defined or change.removed is defined %}
+                                        {% if change.added %}<span class="obj-timeline__add">+ {{ change.added|json_encode }}</span>{% endif %}
+                                        {% if change.removed %}<span class="obj-timeline__del">− {{ change.removed|json_encode }}</span>{% endif %}
+                                    {% else %}
+                                        <span class="obj-timeline__del">{{ change.old is iterable ? change.old|json_encode : (change.old ?? '∅') }}</span>
+                                        <span aria-hidden="true">→</span>
+                                        <span class="obj-timeline__add">{{ change.new is iterable ? change.new|json_encode : (change.new ?? '∅') }}</span>
+                                    {% endif %}
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    </details>
                 {% endif %}
             </li>
         {% endfor %}

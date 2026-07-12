@@ -1314,8 +1314,15 @@ input[type="email"], input[type="text"], select, textarea {
 .obj-timeline__changes { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
 .obj-timeline__changes > li { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 13px; }
 .obj-timeline__field { min-width: 9ch; color: var(--text-muted); font-variant: small-caps; }
+.obj-timeline__label { color: var(--text-muted); font-weight: 600; }
 .obj-timeline__del { color: var(--danger); text-decoration: line-through; }
 .obj-timeline__add { color: var(--accent); }
+/* Resumen de alta/baja: frase completa, sin diff campo a campo. */
+.obj-timeline__summary { margin: 6px 0 0; font-size: 13.5px; }
+/* Detalle técnico crudo, plegado por defecto y solo visible para admin. */
+.obj-timeline__raw { margin: 8px 0 0; }
+.obj-timeline__raw > summary { font-size: 12.5px; cursor: pointer; }
+.obj-timeline__raw[open] > summary { margin-bottom: 4px; }
 
 /* ---- Agenda del inicio ("qué tengo que hacer") --------------------------
    Checklist familiar: una casilla de 1 clic + título + cuándo/dónde, agrupada por tiempo.
