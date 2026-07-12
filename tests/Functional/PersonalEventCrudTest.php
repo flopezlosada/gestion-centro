@@ -80,8 +80,9 @@ final class PersonalEventCrudTest extends WebTestCase
         $form = $crawler->selectButton('Crear evento')->form();
         $form['personal_event_form[title]'] = 'Jornada de puertas abiertas';
         $form['personal_event_form[day]'] = '2026-09-20';
-        $form['personal_event_form[allDay]']->tick();
-        $this->client->submit($form);
+        // Tick "all day" by passing the value to submit() (the project's convention for checkboxes,
+        // as in TaskCrudTest) rather than ->tick(), which the crawler's union return type disallows.
+        $this->client->submit($form, ['personal_event_form[allDay]' => '1']);
 
         self::assertResponseRedirects('/agenda');
         $this->em->clear();
