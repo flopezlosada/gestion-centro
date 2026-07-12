@@ -18,10 +18,10 @@
                 {% endfor %}
                 {% for week in month.weeks %}
                     {% for cell in week %}
-                        <span class="cal-mini__day{{ cell.inMonth ? '' : ' is-blank' }}{{ cell.isToday ? ' is-today' : '' }}{{ cell.isNonLective ? ' is-nonlective' : '' }}"{% if cell.hasTasks %} title="{{ month.name }} {{ cell.day }}: con tareas"{% elseif cell.isNonLective %} title="{{ month.name }} {{ cell.day }}: no lectivo"{% endif %}>
+                        <span class="cal-mini__day{{ cell.inMonth ? '' : ' is-blank' }}{{ cell.isToday ? ' is-today' : '' }}{{ cell.isNonLective ? ' is-nonlective' : '' }}"{% if cell.hasTasks and cell.hasEvents %} title="{{ month.name }} {{ cell.day }}: con tareas y eventos"{% elseif cell.hasTasks %} title="{{ month.name }} {{ cell.day }}: con tareas"{% elseif cell.hasEvents %} title="{{ month.name }} {{ cell.day }}: con eventos"{% elseif cell.isNonLective %} title="{{ month.name }} {{ cell.day }}: no lectivo"{% endif %}>
                             {% if cell.inMonth %}
                                 <span class="cal-mini__num">{{ cell.day }}</span>
-                                {% if cell.hasTasks %}<span class="cal-mini__dot calendar-dot--{{ cell.status }}" data-status="{{ cell.status }}"></span>{% endif %}
+                                {% if cell.hasTasks %}<span class="cal-mini__dot calendar-dot--{{ cell.status }}" data-status="{{ cell.status }}"></span>{% elseif cell.hasEvents %}<span class="cal-mini__dot calendar-dot--event"></span>{% endif %}
                             {% endif %}
                         </span>
                     {% endfor %}

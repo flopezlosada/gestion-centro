@@ -10,9 +10,9 @@
         <p class="calendar-dayview-flag">Fin de semana</p>
     {% endif %}
 
-    {% if day.tasks is empty %}
+    {% if day.tasks is empty and day.events is empty %}
         <div class="empty-state">
-            <p>No hay tareas con fecha límite este día.</p>
+            <p>No hay tareas ni eventos este día.</p>
         </div>
     {% else %}
         <ol class="agenda-list">
@@ -20,6 +20,10 @@
                al macro: mismo criterio que TaskController::canWorkOn (admin o dueño de la tarea). #}
             {% for task in day.tasks %}
                 {{ taskUi.agenda_item(task, is_granted('ROLE_ADMIN') or task.isOwnedBy(app.user)) }}
+            {% endfor %}
+            {# Los eventos personales son privados del usuario; solo llegan aquí los suyos. #}
+            {% for event in day.events %}
+                {{ taskUi.event_item(event) }}
             {% endfor %}
         </ol>
     {% endif %}
