@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Agenda\RecurrenceExpander;
 use App\Entity\PersonalEvent;
 use App\Entity\User;
 use App\Form\PersonalEventFormData;
@@ -37,22 +38,30 @@ final class PersonalEventController extends AbstractController
     }
 
     /**
-     * Creates a personal entry owned by the current user.
+     * Creates a personal entry owned by the current user. When it recurs, every occurrence is
+     * materialised as its own event sharing a series id, so each stays an ordinary editable entry.
      */
     #[Route('/agenda/nueva', name: 'personal_event_new', methods: ['GET', 'POST'])]
-    public function new(Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager): Response
+    public function new(Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager, RecurrenceExpander $recurrence): Response
     {
         $data = new PersonalEventFormData();
-        $form = $this->createForm(PersonalEventFormType::class, $data);
+        $form = $this->createForm(PersonalEventFormType::class, $data, ['include_recurrence' => true]);
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
             \assert(null !== $data->day);
-            $event = new PersonalEvent($user, $data->title, $data->day);
-            $this->applyFormData($event, $data);
-            $entityManager->persist($event);
+            $days = $recurrence->expand($data->day, $data->repeat, $data->repeatUntil ?? $data->day);
+            // A series id ties the occurrences together (for "delete the whole series"); a one-off has none.
+            $seriesId = \count($days) > 1 ? bin2hex(random_bytes(16)) : null;
+
+            foreach ($days as $day) {
+                $event = new PersonalEvent($user, $data->title, $day);
+                $this->applyFormData($event, $data, $day);
+                $event->setSeriesId($seriesId);
+                $entityManager->persist($event);
+            }
             $entityManager->flush();
-            $this->addFlash('success', 'Evento creado.');
+            $this->addFlash('success', null !== $seriesId ? \sprintf('Serie creada: %d eventos.', \count($days)) : 'Evento creado.');
 
             return $this->redirectToRoute('personal_event_index');
         }
@@ -73,7 +82,8 @@ final class PersonalEventController extends AbstractController
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
-            $this->applyFormData($event, $data);
+            \assert(null !== $data->day);
+            $this->applyFormData($event, $data, $data->day);
             $entityManager->flush();
             $this->addFlash('success', 'Evento actualizado.');
 
@@ -125,28 +135,53 @@ final class PersonalEventController extends AbstractController
     }
 
     /**
-     * Copies the validated form data onto the entry, composing the day plus "HH:MM" times back into
-     * instants: an all-day entry starts at midnight with no end; a timed one uses the chosen times.
+     * Deletes the whole recurring series the entry belongs to (or just the entry, if it is a one-off).
+     * Owner-scoped like every other action.
+     */
+    #[Route('/agenda/{id}/borrar-serie', name: 'personal_event_delete_series', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function deleteSeries(PersonalEvent $event, Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager, PersonalEventRepository $events): Response
+    {
+        if (!$this->isCsrfTokenValid('personal_event_delete_series'.$event->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+        $this->denyUnlessOwner($event, $user);
+
+        $seriesId = $event->getSeriesId();
+        if (null === $seriesId) {
+            $entityManager->remove($event);
+            $entityManager->flush();
+        } else {
+            $events->deleteSeries($user, $seriesId);
+        }
+        $this->addFlash('success', 'Serie borrada.');
+
+        return $this->redirectToRoute('personal_event_index');
+    }
+
+    /**
+     * Copies the validated form data onto the entry, composing the given day plus the "HH:MM" times
+     * into instants: an all-day entry starts at midnight with no end; a timed one uses the chosen
+     * times. The day is passed explicitly so a recurring create can reuse this for every occurrence.
      *
      * @param PersonalEvent         $event the entry to update
-     * @param PersonalEventFormData $data  the validated form data (day is guaranteed non-null)
+     * @param PersonalEventFormData $data  the validated form data
+     * @param \DateTimeImmutable    $day   the occurrence day to place the entry on
      */
-    private function applyFormData(PersonalEvent $event, PersonalEventFormData $data): void
+    private function applyFormData(PersonalEvent $event, PersonalEventFormData $data, \DateTimeImmutable $day): void
     {
-        \assert(null !== $data->day);
         $event->setTitle($data->title)
             ->setDescription($data->description)
             ->setAllDay($data->allDay);
 
         if ($data->allDay) {
-            $event->setStartAt($data->day)->setEndAt(null);
+            $event->setStartAt($day)->setEndAt(null);
 
             return;
         }
 
         \assert(null !== $data->startTime);
-        $event->setStartAt($this->at($data->day, $data->startTime))
-            ->setEndAt(null !== $data->endTime ? $this->at($data->day, $data->endTime) : null);
+        $event->setStartAt($this->at($day, $data->startTime))
+            ->setEndAt(null !== $data->endTime ? $this->at($day, $data->endTime) : null);
     }
 
     /**

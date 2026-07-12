@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Form;
 
+use App\Agenda\RecurrenceExpander;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
@@ -60,6 +61,27 @@ final class PersonalEventFormType extends AbstractType
                 'choices' => $slots,
                 'help' => 'Opcional. Déjalo vacío si no tiene una hora de fin.',
             ]);
+
+        // Recurrence is a create-time decision: once materialised into occurrences, each is edited on
+        // its own. So the fields appear only when the controller asks for them (on the new form).
+        if (true === $options['include_recurrence']) {
+            $builder
+                ->add('repeat', ChoiceType::class, [
+                    'label' => 'Repetir',
+                    'choices' => [
+                        'No se repite' => RecurrenceExpander::NONE,
+                        'Cada semana' => RecurrenceExpander::WEEKLY,
+                        'Cada mes' => RecurrenceExpander::MONTHLY,
+                    ],
+                ])
+                ->add('repeatUntil', DateType::class, [
+                    'label' => 'Repetir hasta',
+                    'widget' => 'single_text',
+                    'input' => 'datetime_immutable',
+                    'required' => false,
+                    'help' => 'Solo si se repite: el último día en que aparece.',
+                ]);
+        }
     }
 
     /**
@@ -81,6 +103,10 @@ final class PersonalEventFormType extends AbstractType
 
     public function configureOptions(OptionsResolver $resolver): void
     {
-        $resolver->setDefaults(['data_class' => PersonalEventFormData::class]);
+        $resolver->setDefaults([
+            'data_class' => PersonalEventFormData::class,
+            'include_recurrence' => false,
+        ]);
+        $resolver->setAllowedTypes('include_recurrence', 'bool');
     }
 }

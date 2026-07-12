@@ -22,6 +22,8 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Table(name: 'personal_event')]
 // Serves the owner's agenda list and calendar range queries (owner + time window) directly.
 #[ORM\Index(name: 'idx_personal_event_owner_start', columns: ['owner_id', 'start_at'])]
+// Serves deleting a whole recurring series (owner + series) in one query.
+#[ORM\Index(name: 'idx_personal_event_owner_series', columns: ['owner_id', 'series_id'])]
 class PersonalEvent
 {
     #[ORM\Id]
@@ -57,6 +59,14 @@ class PersonalEvent
     /** Simple personal "done" tick (this is a diary, not a workflow). */
     #[ORM\Column]
     private bool $done = false;
+
+    /**
+     * Identifier shared by all occurrences materialised from one recurring entry (e.g. "every Monday
+     * until June"), or null for a one-off. Lets the whole series be deleted together while each
+     * occurrence stays an ordinary, independently editable event.
+     */
+    #[ORM\Column(name: 'series_id', length: 32, nullable: true)]
+    private ?string $seriesId = null;
 
     #[ORM\Column(name: 'created_at', type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
@@ -162,6 +172,28 @@ class PersonalEvent
         $this->done = $done;
 
         return $this;
+    }
+
+    public function getSeriesId(): ?string
+    {
+        return $this->seriesId;
+    }
+
+    public function setSeriesId(?string $seriesId): static
+    {
+        $this->seriesId = $seriesId;
+
+        return $this;
+    }
+
+    /**
+     * Whether this entry is one occurrence of a recurring series (as opposed to a one-off).
+     *
+     * @return bool true when it belongs to a series
+     */
+    public function isRecurring(): bool
+    {
+        return null !== $this->seriesId;
     }
 
     public function getCreatedAt(): \DateTimeImmutable

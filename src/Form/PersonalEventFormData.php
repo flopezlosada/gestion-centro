@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Form;
 
+use App\Agenda\RecurrenceExpander;
 use App\Entity\PersonalEvent;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
@@ -33,6 +34,12 @@ final class PersonalEventFormData
     /** End time as "HH:MM", or null when the entry has no explicit end. */
     public ?string $endTime = null;
 
+    /** Recurrence frequency: one of {@see RecurrenceExpander}'s NONE/WEEKLY/MONTHLY. */
+    public string $repeat = RecurrenceExpander::NONE;
+
+    /** Last day the recurrence reaches (inclusive); required when repeating, ignored otherwise. */
+    public ?\DateTimeImmutable $repeatUntil = null;
+
     /**
      * Cross-field rules that a single-field constraint cannot express: a timed entry needs a start,
      * and the end (if any) must come after it. Times are "HH:MM" strings, so a lexicographic compare
@@ -56,6 +63,39 @@ final class PersonalEventFormData
         if (null !== $this->endTime && $this->endTime <= $this->startTime) {
             $context->buildViolation('La hora de fin debe ser posterior a la de inicio.')
                 ->atPath('endTime')
+                ->addViolation();
+        }
+    }
+
+    /**
+     * Recurrence rules: a repeating entry needs an end day, no earlier than its start and within a
+     * two-year horizon (so a single series can never materialise an unbounded number of occurrences).
+     *
+     * @param ExecutionContextInterface $context the validation context to attach violations to
+     */
+    #[Assert\Callback]
+    public function validateRecurrence(ExecutionContextInterface $context): void
+    {
+        if (RecurrenceExpander::NONE === $this->repeat || null === $this->day) {
+            return;
+        }
+        if (null === $this->repeatUntil) {
+            $context->buildViolation('Indica hasta qué día se repite.')
+                ->atPath('repeatUntil')
+                ->addViolation();
+
+            return;
+        }
+        if ($this->repeatUntil < $this->day) {
+            $context->buildViolation('La fecha de fin de la repetición no puede ser anterior al día del evento.')
+                ->atPath('repeatUntil')
+                ->addViolation();
+
+            return;
+        }
+        if ($this->repeatUntil > $this->day->modify('+2 years')) {
+            $context->buildViolation('La repetición no puede abarcar más de dos años.')
+                ->atPath('repeatUntil')
                 ->addViolation();
         }
     }
