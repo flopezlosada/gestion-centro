@@ -62,4 +62,25 @@ class PersonalEventRepository extends ServiceEntityRepository
             ->getQuery()
             ->getResult();
     }
+
+    /**
+     * Deletes every occurrence of a recurring series owned by the given user, in one query. Scoped by
+     * owner — the privacy boundary — so a series id alone can never reach another user's events.
+     *
+     * @param User   $owner    the owner whose series to delete
+     * @param string $seriesId the series identifier shared by the occurrences
+     *
+     * @return int the number of occurrences deleted
+     */
+    public function deleteSeries(User $owner, string $seriesId): int
+    {
+        return (int) $this->createQueryBuilder('e')
+            ->delete()
+            ->andWhere('e.owner = :owner')
+            ->andWhere('e.seriesId = :series')
+            ->setParameter('owner', $owner)
+            ->setParameter('series', $seriesId)
+            ->getQuery()
+            ->execute();
+    }
 }

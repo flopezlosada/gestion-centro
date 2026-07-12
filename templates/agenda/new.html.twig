@@ -22,6 +22,12 @@
             {{ f.toggles([form.allDay]) }}
             {{ f.fields([form.startTime, form.endTime]) }}
         </fieldset>
+        {% if form.repeat is defined %}
+            <fieldset class="form-section">
+                <legend class="form-section-title">Repetición</legend>
+                {{ f.fields([form.repeat, form.repeatUntil]) }}
+            </fieldset>
+        {% endif %}
         {{ f.actions(path('personal_event_index'), 'Crear evento') }}
         {{ form_end(form) }}
     </div>

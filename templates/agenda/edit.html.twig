@@ -8,7 +8,10 @@
     <div class="page-head">
         <div>
             <h1>Editar evento</h1>
-            <p class="lead">Cambia los datos de tu evento.</p>
+            <p class="lead">
+                {% if event.recurring %}Este evento se repite; los cambios afectan solo a esta fecha.
+                {% else %}Cambia los datos de tu evento.{% endif %}
+            </p>
         </div>
     </div>
 
@@ -28,9 +31,17 @@
 
     <div class="card">
         <div class="page-head"><div><h2>Borrar</h2><p class="lead">Elimina el evento. No se puede deshacer.</p></div></div>
-        <form method="post" action="{{ path('personal_event_delete', { id: event.id }) }}" data-confirm="¿Seguro que quieres borrar «{{ event.title }}»?">
-            <input type="hidden" name="_token" value="{{ csrf_token('personal_event_delete' ~ event.id) }}">
-            <button type="submit" class="btn btn-danger">Borrar evento</button>
-        </form>
+        <div class="form-actions">
+            <form method="post" action="{{ path('personal_event_delete', { id: event.id }) }}" data-confirm="¿Seguro que quieres borrar «{{ event.title }}»?">
+                <input type="hidden" name="_token" value="{{ csrf_token('personal_event_delete' ~ event.id) }}">
+                <button type="submit" class="btn btn-danger">Borrar {{ event.recurring ? 'solo este' : 'evento' }}</button>
+            </form>
+            {% if event.recurring %}
+                <form method="post" action="{{ path('personal_event_delete_series', { id: event.id }) }}" data-confirm="¿Borrar TODA la serie de «{{ event.title }}»? No se puede deshacer.">
+                    <input type="hidden" name="_token" value="{{ csrf_token('personal_event_delete_series' ~ event.id) }}">
+                    <button type="submit" class="btn btn-danger">Borrar toda la serie</button>
+                </form>
+            {% endif %}
+        </div>
     </div>
 {% endblock %}

@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Form;
 
+use App\Enum\RecurrenceFrequency;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
+use Symfony\Component\Form\Extension\Core\Type\EnumType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
@@ -60,6 +62,24 @@ final class PersonalEventFormType extends AbstractType
                 'choices' => $slots,
                 'help' => 'Opcional. Déjalo vacío si no tiene una hora de fin.',
             ]);
+
+        // Recurrence is a create-time decision: once materialised into occurrences, each is edited on
+        // its own. So the fields appear only when the controller asks for them (on the new form).
+        if (true === $options['include_recurrence']) {
+            $builder
+                ->add('repeat', EnumType::class, [
+                    'label' => 'Repetir',
+                    'class' => RecurrenceFrequency::class,
+                    'choice_label' => static fn (RecurrenceFrequency $frequency): string => $frequency->label(),
+                ])
+                ->add('repeatUntil', DateType::class, [
+                    'label' => 'Repetir hasta',
+                    'widget' => 'single_text',
+                    'input' => 'datetime_immutable',
+                    'required' => false,
+                    'help' => 'Solo si se repite: el último día en que aparece.',
+                ]);
+        }
     }
 
     /**
@@ -81,6 +101,10 @@ final class PersonalEventFormType extends AbstractType
 
     public function configureOptions(OptionsResolver $resolver): void
     {
-        $resolver->setDefaults(['data_class' => PersonalEventFormData::class]);
+        $resolver->setDefaults([
+            'data_class' => PersonalEventFormData::class,
+            'include_recurrence' => false,
+        ]);
+        $resolver->setAllowedTypes('include_recurrence', 'bool');
     }
 }
