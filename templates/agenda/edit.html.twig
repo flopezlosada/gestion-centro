@@ -1,0 +1,36 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}Editar evento · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('personal_event_index') }}">Agenda</a><span class="sep">/</span>Editar{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Editar evento</h1>
+            <p class="lead">Cambia los datos de tu evento.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        {{ form_start(form) }}
+        {{ form_errors(form) }}
+        {{ f.section('Qué', [form.title, form.description]) }}
+        <fieldset class="form-section">
+            <legend class="form-section-title">Cuándo</legend>
+            {{ f.fields([form.day]) }}
+            {{ f.toggles([form.allDay]) }}
+            {{ f.fields([form.startTime, form.endTime]) }}
+        </fieldset>
+        {{ f.actions(path('personal_event_index'), 'Guardar') }}
+        {{ form_end(form) }}
+    </div>
+
+    <div class="card">
+        <div class="page-head"><div><h2>Borrar</h2><p class="lead">Elimina el evento. No se puede deshacer.</p></div></div>
+        <form method="post" action="{{ path('personal_event_delete', { id: event.id }) }}" data-confirm="¿Seguro que quieres borrar «{{ event.title }}»?">
+            <input type="hidden" name="_token" value="{{ csrf_token('personal_event_delete' ~ event.id) }}">
+            <button type="submit" class="btn btn-danger">Borrar evento</button>
+        </form>
+    </div>
+{% endblock %}
