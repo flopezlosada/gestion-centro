@@ -11,6 +11,7 @@ use App\Entity\User;
 use App\Form\PersonalEventFormData;
 use App\Form\PersonalEventFormType;
 use App\Repository\PersonalEventRepository;
+use App\Util\CalendarDate;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -47,6 +48,11 @@ final class PersonalEventController extends AbstractController
     public function new(Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager, RecurrenceExpander $recurrence): Response
     {
         $data = new PersonalEventFormData();
+        // Prefill the day when arriving from the calendar's "+ Nuevo evento" (?fecha=YYYY-MM-DD); an
+        // invalid/missing value simply leaves it empty. Anchor the midnight in PHP's default time zone
+        // (the one the DateType renders in and Doctrine hydrates in) so the prefilled day is never
+        // shifted by a mismatched zone.
+        $data->day = CalendarDate::parse($request->query->getString('fecha'), new \DateTimeZone(date_default_timezone_get()));
         $form = $this->createForm(PersonalEventFormType::class, $data, ['include_recurrence' => true]);
         $form->handleRequest($request);
 

@@ -15,6 +15,7 @@ use App\Repository\PersonalEventRepository;
 use App\Repository\TaskRepository;
 use App\Service\SchoolCalendar;
 use App\Service\TaskVisibility;
+use App\Util\CalendarDate;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -128,16 +129,7 @@ final class CalendarController extends AbstractController
      */
     private function resolveDate(string $raw, \DateTimeImmutable $today, \DateTimeZone $timeZone): \DateTimeImmutable
     {
-        // Validate the calendar date, not just its shape: checkdate() rejects overflow days
-        // (e.g. 2026-02-30) that createFromFormat() would silently roll over into the next month.
-        if (1 === preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $raw, $parts) && \checkdate((int) $parts[2], (int) $parts[3], (int) $parts[1])) {
-            $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $raw, $timeZone);
-            if (false !== $parsed) {
-                return $parsed;
-            }
-        }
-
-        return $today;
+        return CalendarDate::parse($raw, $timeZone) ?? $today;
     }
 
     /**

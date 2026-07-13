@@ -1,6 +1,12 @@
 {% import '_macros/task.html.twig' as taskUi %}
+{% import '_macros/calendar.html.twig' as cal %}
 
 <div class="calendar-dayview">
+    <div class="calendar-dayview-actions">
+        {# Alta rápida del propio día (botón visible, no el "+" de hover de la rejilla). #}
+        {{ cal.add_menu(day, 'inline') }}
+    </div>
+
     {% if day.nonLective %}
         <p class="calendar-dayview-flag calendar-dayview-flag--nonlective">
             <span class="calendar-legend-swatch calendar-legend-swatch--nonlective"></span>

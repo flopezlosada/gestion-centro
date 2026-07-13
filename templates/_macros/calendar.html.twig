@@ -1,4 +1,29 @@
 {#
+   Alta rápida desde un día: un <details> nativo que despliega un mini-menú anclado (Nueva tarea /
+   Nuevo evento) enlazando a los formularios de alta con el día prerrellenado (?fecha=). Funciona sin
+   JS (day-add.js solo lo reposiciona y lo cierra al pinchar fuera). "Nueva tarea" solo cuando el día
+   es lectivo: en finde/no lectivo la tarea la rechazaría la validación, pero el evento sí tiene
+   sentido. Dos variantes: 'corner' (el "+" discreto de las celdas de mes/semana) e 'inline' (un
+   botón visible con texto, para la vista de día). Espera un objeto con .date, .isWeekend y
+   .nonLective (una DayCell).
+#}
+{% macro add_menu(cell, variant = 'corner') %}
+    {% set fecha = cell.date|date('Y-m-d') %}
+    <details class="day-add day-add--{{ variant }}">
+        <summary class="day-add__btn" aria-label="Añadir el {{ cell.date|date('j/n/Y') }}">
+            <span class="day-add__plus" aria-hidden="true">+</span>
+            {% if variant == 'inline' %}<span class="day-add__label">Añadir</span>{% endif %}
+        </summary>
+        <div class="day-add__menu">
+            {% if not cell.isWeekend and cell.nonLective is null %}
+                <a class="day-add__item" href="{{ path('task_new', { fecha: fecha }) }}">Nueva tarea</a>
+            {% endif %}
+            <a class="day-add__item" href="{{ path('personal_event_new', { fecha: fecha }) }}">Nuevo evento</a>
+        </div>
+    </details>
+{% endmacro %}
+
+{#
    Una celda de día del calendario, compartida por las vistas mensual y semanal. El marcador de
    "no lectivo" solo llega relleno (cell.nonLective) para los días del propio mes: el controlador lo
    anula en los días de meses colindantes que asoman en la rejilla, así que aquí no hay que filtrar.
@@ -8,6 +33,10 @@
     <div class="calendar-day{{ cell.inMonth ? '' : ' is-outside' }}{{ cell.isToday ? ' is-today' : '' }}{{ cell.isWeekend ? ' is-weekend' : '' }}{{ cell.nonLective ? ' is-nonlective' : '' }}" role="gridcell"{% if cell.nonLective %} title="{{ cell.nonLective.description }}"{% endif %}>
         <div class="calendar-daynum">
             <span{% if cell.isToday %} aria-current="date"{% endif %}>{{ cell.date|date('j') }}</span>
+            {# Solo en días del propio mes: en los de relleno de meses colindantes el controlador anula
+               cell.nonLective (es solo contexto visual), así que su estado lectivo no es fiable para
+               decidir si ofrecer "Nueva tarea". Su alta se hace navegando a su mes real. #}
+            {% if cell.inMonth %}{{ _self.add_menu(cell) }}{% endif %}
         </div>
         {% if cell.nonLective %}
             <p class="calendar-nonlective">{{ cell.nonLective.description }}</p>
