@@ -55,6 +55,14 @@ class Unit implements Auditable
     private bool $active = true;
 
     /**
+     * Whether this unit is a department (Matemáticas, Lengua…) as opposed to a leadership box
+     * (dirección, jefatura de estudios). Only departments are offered when a task's responsibility is
+     * a per-department role. Defaults to true — most units are departments.
+     */
+    #[ORM\Column(name: 'is_department')]
+    private bool $isDepartment = true;
+
+    /**
      * The unit directly above in the chain of command (null for the top unit, e.g. management).
      * Escalation walks up this link.
      */
@@ -129,6 +137,18 @@ class Unit implements Auditable
     public function setActive(bool $active): static
     {
         $this->active = $active;
+
+        return $this;
+    }
+
+    public function isDepartment(): bool
+    {
+        return $this->isDepartment;
+    }
+
+    public function setIsDepartment(bool $isDepartment): static
+    {
+        $this->isDepartment = $isDepartment;
 
         return $this;
     }

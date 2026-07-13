@@ -118,4 +118,9 @@
             {{ form_errors(form.responsibilityUnit) }}
         </div>
     {% endif %}
+    {#- Vista previa (task-form.js): a quién resuelve el rol + departamento elegido. -#}
+    <div class="form-row" data-responsibles data-responsibles-url="{{ path('task_responsibles') }}">
+        <span class="form-label-lite">Responsable(s)</span>
+        <p class="responsables" data-responsibles-list>—</p>
+    </div>
 {% endmacro %}

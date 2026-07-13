@@ -24,6 +24,7 @@ use App\Util\CalendarDate;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
@@ -95,6 +96,25 @@ final class TaskController extends AbstractController
         }
 
         return $this->render('task/new.html.twig', ['form' => $form]);
+    }
+
+    /**
+     * The people a role + (department) currently resolves to, for the live "responsable(s)" preview in
+     * the task form. Returns their names as JSON; a per-department role needs the department, a
+     * centre-wide one ignores it.
+     */
+    #[Route('/tareas/responsables', name: 'task_responsibles', methods: ['GET'])]
+    public function responsibles(Request $request, RoleRepository $roles, EntityManagerInterface $entityManager): JsonResponse
+    {
+        $role = $roles->find($request->query->getInt('role'));
+        if (null === $role) {
+            return $this->json(['holders' => []]);
+        }
+
+        $unit = $role->isPerDepartment() ? $entityManager->getRepository(Unit::class)->find($request->query->getInt('unit')) : null;
+        $holders = (new TaskResponsibility($role, $unit))->holders();
+
+        return $this->json(['holders' => array_map(static fn (User $holder): string => $holder->getFullName(), $holders)]);
     }
 
     /**
@@ -398,7 +418,8 @@ final class TaskController extends AbstractController
             $units[] = $own;
         }
 
-        return $units;
+        // Only departments are valid targets for a per-department role (not leadership boxes).
+        return array_values(array_filter($units, static fn (Unit $unit): bool => $unit->isDepartment()));
     }
 
     /**
