@@ -74,20 +74,22 @@ final class AdminEventCategoryTest extends WebTestCase
 
     public function testDuplicateCategoryNameIsRejected(): void
     {
+        // A name outside the seeded catalogue (the migration seeds General/Docencia/Reunión/Tutoría/
+        // Personal, present in the test DB), so this test owns the only "Claustro".
         $this->client->loginUser($this->admin());
-        $this->em->persist((new EventCategory())->setName('Reunión')->setColor(CategoryColor::TEAL));
+        $this->em->persist((new EventCategory())->setName('Claustro')->setColor(CategoryColor::TEAL));
         $this->em->flush();
 
         $crawler = $this->client->request('GET', '/admin/categorias-evento/nueva');
         $form = $crawler->selectButton('Guardar')->form();
-        $form['event_category[name]'] = 'Reunión';
+        $form['event_category[name]'] = 'Claustro';
         $form['event_category[color]'] = 'blue';
         $this->client->submit($form);
 
-        // The unique-name constraint rejects it: the form is redisplayed (422) and only one row exists.
+        // The unique-name constraint rejects it: the form is redisplayed (422) and no second row is created.
         self::assertResponseStatusCodeSame(422);
         self::assertStringContainsString('Ya existe una categoría', (string) $this->client->getResponse()->getContent());
-        self::assertCount(1, $this->em->getRepository(EventCategory::class)->findAll());
+        self::assertCount(1, $this->em->getRepository(EventCategory::class)->findBy(['name' => 'Claustro']));
     }
 
     public function testTeacherCannotReachTheCategoriesAdmin(): void

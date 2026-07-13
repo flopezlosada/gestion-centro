@@ -235,8 +235,10 @@ final class PersonalEventCrudTest extends WebTestCase
     public function testEditingPreloadsAndChangesTheCategory(): void
     {
         $owner = $this->user('profe@centro.test');
-        $meeting = (new EventCategory())->setName('Reunión')->setColor(CategoryColor::TEAL);
-        $tutoring = (new EventCategory())->setName('Tutoría')->setColor(CategoryColor::GREEN);
+        // Names outside the seeded catalogue (General/Docencia/Reunión/Tutoría/Personal, present in
+        // the test DB), so they cannot clash with a seeded row under the unique-name constraint.
+        $meeting = (new EventCategory())->setName('Claustro')->setColor(CategoryColor::TEAL);
+        $tutoring = (new EventCategory())->setName('Excursión')->setColor(CategoryColor::GREEN);
         $this->em->persist($meeting);
         $this->em->persist($tutoring);
         $event = (new PersonalEvent($owner, 'Reunión de nivel', new \DateTimeImmutable('2026-09-15 10:00')))
