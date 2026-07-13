@@ -54,6 +54,37 @@ final class TaskCrudTest extends WebTestCase
         self::assertSelectorExists('form');
     }
 
+    public function testNewTaskPrefillsDueDateFromQuery(): void
+    {
+        // Arriving from the calendar's "+ Nueva tarea" carries the clicked day as ?fecha=; the
+        // deadline field must render already filled with it.
+        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $user = $this->user('jefa@centro.test', $unit);
+        $this->em->flush();
+        $this->client->loginUser($user);
+
+        $this->client->request('GET', '/tareas/nueva?fecha=2026-09-15');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('[name="task_form[dueDate]"][value="2026-09-15"]');
+    }
+
+    public function testNewTaskIgnoresAnInvalidFechaQuery(): void
+    {
+        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $user = $this->user('jefa@centro.test', $unit);
+        $this->em->flush();
+        $this->client->loginUser($user);
+
+        // A non-date value must not blow up: the form simply renders with an empty deadline.
+        $this->client->request('GET', '/tareas/nueva?fecha=no-es-fecha');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('[name="task_form[dueDate]"]');
+    }
+
     public function testCreateTaskRecordsCreatorAndAssignee(): void
     {
         $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
