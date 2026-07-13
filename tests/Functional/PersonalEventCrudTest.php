@@ -228,4 +228,30 @@ final class PersonalEventCrudTest extends WebTestCase
         self::assertNotNull($event);
         self::assertSame(EventCategory::GENERAL, $event->getCategory());
     }
+
+    public function testEditingPreloadsAndChangesTheCategory(): void
+    {
+        $owner = $this->user('profe@centro.test');
+        $event = (new PersonalEvent($owner, 'Reunión de nivel', new \DateTimeImmutable('2026-09-15 10:00')))
+            ->setCategory(EventCategory::MEETING);
+        $this->em->persist($event);
+        $this->em->flush();
+        $id = (int) $event->getId();
+
+        $this->client->loginUser($owner);
+        $crawler = $this->client->request('GET', '/agenda/'.$id.'/editar');
+        self::assertResponseIsSuccessful();
+        // The edit form preloads the current category as the selected option.
+        self::assertSelectorExists('[name="personal_event_form[category]"] option[value="meeting"][selected]');
+
+        $form = $crawler->selectButton('Guardar')->form();
+        $form['personal_event_form[category]'] = 'tutoring';
+        $this->client->submit($form);
+
+        self::assertResponseRedirects('/agenda');
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(PersonalEvent::class)->find($id);
+        self::assertNotNull($reloaded);
+        self::assertSame(EventCategory::TUTORING, $reloaded->getCategory());
+    }
 }
