@@ -8,43 +8,73 @@ use App\Repository\TaskResponsibilityRepository;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
- * What structurally justifies a task being someone's job — the third axis, kept apart from hierarchy
- * ({@see Unit::$manager}, the single-holder post) and permissions ({@see Role}, the multi-holder
- * function). A task has exactly one, in one of three shapes ({@see CargoResponsibility},
- * {@see PersonResponsibility}, {@see RoleResponsibility}); single-table inheritance makes the illegal
- * "two shapes at once" state unrepresentable, instead of three nullable columns held together by a
- * convention. Delegation ({@see Task::$delegatedTo}) and history freezing ({@see Task::$completedBy})
- * are separate layers on {@see Task}, not shapes here.
+ * Who a task is the job of, chosen as a role plus — when the role is scoped to a department
+ * ({@see Role::isPerDepartment()}) — that department. The responsible people are NOT stored: they are
+ * resolved live from the role's current holders (filtered to the department when applicable), so if
+ * whoever holds "jefe de departamento de Matemáticas" changes, the task follows the new holder
+ * automatically. A specific person is never picked here (that is what {@see Task::$delegatedTo} is for).
  */
 #[ORM\Entity(repositoryClass: TaskResponsibilityRepository::class)]
 #[ORM\Table(name: 'task_responsibility')]
-#[ORM\InheritanceType('SINGLE_TABLE')]
-#[ORM\DiscriminatorColumn(name: 'kind', type: 'string', length: 20)]
-#[ORM\DiscriminatorMap([
-    'cargo' => CargoResponsibility::class,
-    'person' => PersonResponsibility::class,
-    'role' => RoleResponsibility::class,
-])]
-abstract class TaskResponsibility
+class TaskResponsibility
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
     private ?int $id = null;
 
+    /** The responsible function. */
+    #[ORM\ManyToOne(targetEntity: Role::class)]
+    #[ORM\JoinColumn(name: 'role_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
+    private Role $role;
+
+    /** The department, when the role is per-department; null for centre-wide roles. */
+    #[ORM\ManyToOne(targetEntity: Unit::class)]
+    #[ORM\JoinColumn(name: 'unit_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?Unit $unit;
+
+    public function __construct(Role $role, ?Unit $unit = null)
+    {
+        $this->role = $role;
+        $this->unit = $unit;
+    }
+
     public function getId(): ?int
     {
         return $this->id;
     }
 
+    public function getRole(): Role
+    {
+        return $this->role;
+    }
+
+    public function getUnit(): ?Unit
+    {
+        return $this->unit;
+    }
+
     /**
-     * The people who currently hold this responsibility, resolved live (never a stored snapshot), so
-     * a change of a unit's manager or a role's membership is reflected immediately. Empty when nobody
-     * holds it right now.
+     * The people who hold this responsibility right now: the role's active holders, narrowed to the
+     * department when the role is per-department. Resolved live, so a change of holder is reflected at
+     * once with nothing stored.
      *
      * @return list<User> the current holders
      */
-    abstract public function holders(): array;
+    public function holders(): array
+    {
+        $holders = array_filter(
+            $this->role->getUsers()->toArray(),
+            static fn (User $user): bool => $user->isActive(),
+        );
+
+        if (null !== $this->unit) {
+            $unit = $this->unit;
+            $holders = array_filter($holders, static fn (User $user): bool => $user->getUnit() === $unit);
+        }
+
+        return array_values($holders);
+    }
 
     /**
      * Whether the given user is one of the current holders.
@@ -59,10 +89,13 @@ abstract class TaskResponsibility
     }
 
     /**
-     * A short human label for lists and the task detail (e.g. "Jefatura de Matemáticas", a person's
-     * name, or a role name).
+     * A short human label for lists and the task detail (e.g. "Jefatura de departamento de
+     * Matemáticas", or just "Dirección" for a centre-wide role).
      *
      * @return string the label
      */
-    abstract public function label(): string;
+    public function label(): string
+    {
+        return null !== $this->unit ? $this->role->getName().' de '.$this->unit->getName() : $this->role->getName();
+    }
 }

@@ -1,25 +1,25 @@
-// Task form: show only the responsibility field that matches the chosen mode (cargo/person/role).
-// Progressive enhancement — with no JS every field stays visible and validation still guides the user.
+// Task form cascade: show the department step only when the chosen role is per-department.
+// Progressive enhancement — with no JS the department field stays visible and validation guides.
 (function () {
   'use strict';
 
-  var modeInputs = document.querySelectorAll('.resp-mode input[type="radio"]');
-  if (!modeInputs.length) {
-    return; // No mode selector on this page (a plain creator only ever sees the person field).
+  var roleSelect = document.querySelector('[name$="[responsibilityRole]"]');
+  var deptRow = document.querySelector('.form-row[data-dept-step]');
+  if (!roleSelect || !deptRow) {
+    return;
   }
 
-  var rows = document.querySelectorAll('.form-row[data-resp-mode]');
+  function selectedIsPerDepartment() {
+    var option = roleSelect.options[roleSelect.selectedIndex];
+    return !!option && option.getAttribute('data-per-department') === '1';
+  }
 
   function apply() {
-    var checked = document.querySelector('.resp-mode input[type="radio"]:checked');
-    var mode = checked ? checked.value : null;
-    rows.forEach(function (row) {
-      row.hidden = mode !== null && row.getAttribute('data-resp-mode') !== mode;
-    });
+    deptRow.hidden = !selectedIsPerDepartment();
   }
 
-  modeInputs.forEach(function (input) {
-    input.addEventListener('change', apply);
-  });
+  // The native select stays the source of truth even when select-menu.js enhances it, and it fires
+  // "change" on selection, so listening here works with or without the custom combobox.
+  roleSelect.addEventListener('change', apply);
   apply();
 })();

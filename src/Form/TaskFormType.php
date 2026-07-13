@@ -6,14 +6,11 @@ namespace App\Form;
 
 use App\Entity\Role;
 use App\Entity\Unit;
-use App\Entity\User;
-use App\Enum\ResponsibilityMode;
 use App\Service\SchoolCalendar;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
-use Symfony\Component\Form\Extension\Core\Type\EnumType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
@@ -22,11 +19,10 @@ use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /**
- * Create/edit form for a task. The responsibility is chosen by mode ({@see ResponsibilityMode}): a
- * plain creator only ever assigns a person (no mode selector); leadership
- * ({@see $options['include_structural']}) additionally gets "cargo" (a department's head, which
- * follows the post) and "rol". The lifecycle (simple vs deliverable) is derived by the controller
- * from the single deliverable toggle, shown only on creation ({@see $options['include_deliverable']}).
+ * Create/edit form for a task. The responsibility is a cascade: pick a role, then — only if the role
+ * is per-department — the department. Each role option carries data-per-department so task-form.js can
+ * show the department step only when it applies. The lifecycle is derived by the controller from the
+ * single deliverable toggle, shown only on creation ({@see $options['include_deliverable']}).
  *
  * @extends AbstractType<TaskFormData>
  */
@@ -48,56 +44,30 @@ final class TaskFormType extends AbstractType
                 'help' => 'Debe ser un día lectivo: ni fin de semana ni día no lectivo.',
                 'constraints' => [new Assert\Callback($this->validateLectiveDeadline(...))],
             ])
-            ->add('mandatory', CheckboxType::class, [
-                'label' => 'Obligatoria',
-                'required' => false,
-                'help' => 'Las obligatorias cuentan como pendientes hasta cerrarse; las voluntarias son opcionales.',
-            ]);
-
-        // Leadership can target a post or a role, not just a person; a plain creator only sees the
-        // person picker, so its responsibility is always a person (the default mode).
-        if (true === $options['include_structural']) {
-            $builder->add('responsibilityMode', EnumType::class, [
-                'label' => 'Responsable',
-                'class' => ResponsibilityMode::class,
-                'choice_label' => static fn (ResponsibilityMode $mode): string => $mode->label(),
-                'expanded' => true,
-                'row_attr' => ['class' => 'resp-mode'],
-            ]);
-            $builder->add('responsibilityUnit', EntityType::class, [
-                'label' => 'Departamento (su jefatura)',
+            ->add('responsibilityRole', EntityType::class, [
+                'label' => 'Rol responsable',
+                'class' => Role::class,
+                'choices' => $options['assignable_roles'],
+                'choice_label' => 'name',
+                'placeholder' => '— Elige rol —',
+                // Marks which roles need a department, so the JS shows/hides the department step.
+                'choice_attr' => static fn (Role $role): array => ['data-per-department' => $role->isPerDepartment() ? '1' : '0'],
+            ])
+            ->add('responsibilityUnit', EntityType::class, [
+                'label' => 'Departamento',
                 'class' => Unit::class,
                 'choices' => $options['assignable_units'],
                 'choice_label' => 'name',
                 'required' => false,
                 'placeholder' => '— Elige departamento —',
-                'help' => 'Responsable = quien sea la jefatura de ese departamento en cada momento.',
-                'row_attr' => ['data-resp-mode' => 'cargo'],
-            ]);
-            $builder->add('responsibilityRole', EntityType::class, [
-                'label' => 'Rol',
-                'class' => Role::class,
-                'choices' => $options['assignable_roles'],
-                'choice_label' => 'name',
+                'help' => 'Responsable = quien tenga ese rol en ese departamento en cada momento.',
+                'row_attr' => ['data-dept-step' => '1'],
+            ])
+            ->add('mandatory', CheckboxType::class, [
+                'label' => 'Obligatoria',
                 'required' => false,
-                'placeholder' => '— Elige rol —',
-                'row_attr' => ['data-resp-mode' => 'role'],
+                'help' => 'Las obligatorias cuentan como pendientes hasta cerrarse; las voluntarias son opcionales.',
             ]);
-        }
-
-        // The person picker: shown to leadership (for person mode) and to any creator who commands
-        // others. A lone creator gets no picker — the controller assigns the task to themselves.
-        if (true === $options['include_structural'] || true === $options['include_assignee']) {
-            $builder->add('assignedUser', EntityType::class, [
-                'label' => 'Persona',
-                'class' => User::class,
-                'choices' => $options['assignable_users'],
-                'choice_label' => 'fullName',
-                'required' => false,
-                'placeholder' => '— Elige persona —',
-                'row_attr' => ['data-resp-mode' => 'person'],
-            ]);
-        }
 
         // The single deliverable switch also decides the lifecycle (see the controller). Only on
         // creation: the lifecycle cannot change once the task is running.
@@ -130,18 +100,12 @@ final class TaskFormType extends AbstractType
     {
         $resolver->setDefaults([
             'data_class' => TaskFormData::class,
-            'assignable_users' => [],
-            'assignable_units' => [],
             'assignable_roles' => [],
-            'include_structural' => false,
-            'include_assignee' => false,
+            'assignable_units' => [],
             'include_deliverable' => true,
         ]);
-        $resolver->setAllowedTypes('assignable_users', 'array');
-        $resolver->setAllowedTypes('assignable_units', 'array');
         $resolver->setAllowedTypes('assignable_roles', 'array');
-        $resolver->setAllowedTypes('include_structural', 'bool');
-        $resolver->setAllowedTypes('include_assignee', 'bool');
+        $resolver->setAllowedTypes('assignable_units', 'array');
         $resolver->setAllowedTypes('include_deliverable', 'bool');
     }
 }

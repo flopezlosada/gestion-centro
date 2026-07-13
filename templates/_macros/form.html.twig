@@ -104,27 +104,18 @@
 {% endmacro %}
 
 {#
-   El bloque "Responsable" de la tarea: el selector de modo (cargo/persona/rol, solo para liderazgo)
-   y el campo de cada modo, marcado con data-resp-mode para que task-form.js muestre solo el que toca.
-   Sin JS se ven todos y la validación guía. Un creador raso solo ve el campo de persona.
+   El bloque "Responsable" de la tarea: la cascada rol → departamento. El paso de departamento va
+   marcado con data-dept-step para que task-form.js lo muestre solo si el rol elegido es de
+   departamento. Sin JS se ve siempre y la validación guía.
 #}
 {% macro responsibility(form) %}
-    {% if form.responsibilityMode is defined %}
-        <div class="form-row resp-mode">
-            {{ form_label(form.responsibilityMode) }}
-            {{ form_widget(form.responsibilityMode) }}
-            {{ form_errors(form.responsibilityMode) }}
+    {{ _self.field(form.responsibilityRole) }}
+    {% if form.responsibilityUnit is defined %}
+        <div class="form-row" data-dept-step="1">
+            {{ form_label(form.responsibilityUnit) }}
+            {{ form_widget(form.responsibilityUnit) }}
+            {% if form.responsibilityUnit.vars.help %}<p class="help">{{ form.responsibilityUnit.vars.help }}</p>{% endif %}
+            {{ form_errors(form.responsibilityUnit) }}
         </div>
     {% endif %}
-    {% for name, mode in { responsibilityUnit: 'cargo', assignedUser: 'person', responsibilityRole: 'role' } %}
-        {% if form.children[name] is defined %}
-            {% set child = form.children[name] %}
-            <div class="form-row" data-resp-mode="{{ mode }}">
-                {{ form_label(child) }}
-                {{ form_widget(child) }}
-                {% if child.vars.help %}<p class="help">{{ child.vars.help }}</p>{% endif %}
-                {{ form_errors(child) }}
-            </div>
-        {% endif %}
-    {% endfor %}
 {% endmacro %}

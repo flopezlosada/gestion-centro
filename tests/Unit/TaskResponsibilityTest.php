@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit;
 
-use App\Entity\CargoResponsibility;
-use App\Entity\PersonResponsibility;
 use App\Entity\Role;
-use App\Entity\RoleResponsibility;
 use App\Entity\Task;
+use App\Entity\TaskResponsibility;
 use App\Entity\Unit;
 use App\Entity\User;
 use App\Enum\TaskType;
@@ -16,94 +14,103 @@ use Doctrine\Common\Collections\ArrayCollection;
 use PHPUnit\Framework\TestCase;
 
 /**
- * The three responsibility shapes and how a task resolves its owner: a cargo follows the unit's
- * current manager (live), a person is a fixed snapshot, a role is its active members, delegation
- * overrides all of it, and an un-migrated task still falls back to its assignee.
+ * A task's responsibility is "role + (department)", resolved live from the role's current holders
+ * (narrowed to the department when the role is per-department). If whoever holds the role there
+ * changes, the task follows the new holder — nothing is stored.
  */
 final class TaskResponsibilityTest extends TestCase
 {
-    private function user(string $name, bool $active = true): User
-    {
-        return (new User())->setFullName($name)->setEmail(strtolower($name).'@centro.test')->setActive($active);
-    }
-
     private function unit(string $name): Unit
     {
         return (new Unit())->setCode(strtolower($name))->setName($name);
     }
 
+    private function user(string $name, ?Unit $unit = null, bool $active = true): User
+    {
+        $user = (new User())->setFullName($name)->setEmail(strtolower($name).'@centro.test')->setActive($active);
+
+        return null !== $unit ? $user->setUnit($unit) : $user;
+    }
+
+    /**
+     * A role whose holders collection is populated directly (addAssignedRole only touches the User side).
+     */
+    private function role(string $name, bool $perDepartment, User ...$holders): Role
+    {
+        $role = (new Role())->setCode(strtolower($name))->setName($name)->setPerDepartment($perDepartment);
+        (new \ReflectionProperty(Role::class, 'users'))->setValue($role, new ArrayCollection($holders));
+
+        return $role;
+    }
+
     private function task(): Task
     {
-        return new Task('Memoria final', '2025-2026', new \DateTimeImmutable('2026-05-31'), TaskType::SIMPLE);
+        return new Task('Memoria', '2025-2026', new \DateTimeImmutable('2026-05-31'), TaskType::SIMPLE);
     }
 
-    public function testCargoResolvesToTheUnitManager(): void
+    public function testPerDepartmentRoleResolvesToHoldersInThatDepartment(): void
     {
-        $head = $this->user('Ana');
-        $responsibility = new CargoResponsibility($this->unit('Matematicas')->setManager($head));
+        $maths = $this->unit('Matematicas');
+        $lengua = $this->unit('Lengua');
+        $ana = $this->user('Ana', $maths);
+        $beto = $this->user('Beto', $lengua);
+        $teacher = $this->role('Profesor', true, $ana, $beto);
 
-        self::assertSame([$head], $responsibility->holders());
-        self::assertTrue($responsibility->isHeldBy($head));
+        $responsibility = new TaskResponsibility($teacher, $maths);
+
+        self::assertSame([$ana], $responsibility->holders(), 'only the holder in that department');
+        self::assertTrue($responsibility->isHeldBy($ana));
+        self::assertFalse($responsibility->isHeldBy($beto));
     }
 
-    public function testCargoFollowsWhenTheManagerChanges(): void
+    public function testFollowsWhenTheHolderChanges(): void
     {
-        $ana = $this->user('Ana');
-        $beto = $this->user('Beto');
-        $maths = $this->unit('Matematicas')->setManager($ana);
-        $task = $this->task()->setResponsibility(new CargoResponsibility($maths));
+        $maths = $this->unit('Matematicas');
+        $ana = $this->user('Ana', $maths);
+        $headDept = $this->role('Jefatura de departamento', true, $ana);
+        $task = $this->task()->setResponsibility(new TaskResponsibility($headDept, $maths));
 
         self::assertTrue($task->isOwnedBy($ana));
         self::assertSame($ana, $task->resolveResponsible());
 
-        $maths->setManager($beto);
+        // The head of the department changes: Ana out, Beto in (same role, same department).
+        $beto = $this->user('Beto', $maths);
+        (new \ReflectionProperty(Role::class, 'users'))->setValue($headDept, new ArrayCollection([$beto]));
 
         self::assertFalse($task->isOwnedBy($ana), 'the old head no longer owns it');
         self::assertTrue($task->isOwnedBy($beto));
         self::assertSame($beto, $task->resolveResponsible(), 'the task follows the new head, with nothing copied');
     }
 
-    public function testCargoHasNoHolderWithoutAnActiveManager(): void
+    public function testCentreWideRoleIgnoresDepartment(): void
     {
-        $maths = $this->unit('Matematicas');
-        self::assertSame([], (new CargoResponsibility($maths))->holders(), 'no manager, no holder');
+        $ana = $this->user('Ana', $this->unit('Matematicas'));
+        $direction = $this->role('Direccion', false, $ana);
 
-        $maths->setManager($this->user('Ana', active: false));
-        self::assertSame([], (new CargoResponsibility($maths))->holders(), 'an inactive manager holds nothing');
-    }
-
-    public function testPersonIsAFixedSnapshot(): void
-    {
-        $ana = $this->user('Ana');
-        $responsibility = new PersonResponsibility($ana);
+        $responsibility = new TaskResponsibility($direction, null);
 
         self::assertSame([$ana], $responsibility->holders());
-        self::assertTrue($responsibility->isHeldBy($ana));
-        self::assertSame('Ana', $responsibility->label());
+        self::assertSame('Direccion', $responsibility->label());
     }
 
-    public function testRoleHoldersAreItsActiveMembers(): void
+    public function testInactiveHoldersAreExcluded(): void
     {
-        $role = (new Role())->setCode('teacher')->setName('Docente');
-        $active = $this->user('Ana');
-        $inactive = $this->user('Beto', active: false);
-        // addAssignedRole only touches the User side; populate the inverse collection directly.
-        (new \ReflectionProperty(Role::class, 'users'))->setValue($role, new ArrayCollection([$active, $inactive]));
+        $maths = $this->unit('Matematicas');
+        $active = $this->user('Ana', $maths);
+        $inactive = $this->user('Beto', $maths, active: false);
+        $teacher = $this->role('Profesor', true, $active, $inactive);
 
-        $responsibility = new RoleResponsibility($role);
-
-        self::assertSame([$active], $responsibility->holders());
-        self::assertTrue($responsibility->isHeldBy($active));
-        self::assertFalse($responsibility->isHeldBy($inactive), 'an inactive member does not hold it');
+        self::assertSame([$active], (new TaskResponsibility($teacher, $maths))->holders());
     }
 
-    public function testDelegationOverridesTheStructuralResponsibility(): void
+    public function testDelegationOverridesTheResponsibility(): void
     {
-        $head = $this->user('Ana');
-        $delegatee = $this->user('Beto');
-        $maths = $this->unit('Matematicas')->setManager($head);
+        $maths = $this->unit('Matematicas');
+        $head = $this->user('Ana', $maths);
+        $delegatee = $this->user('Beto', $maths);
+        $headDept = $this->role('Jefatura de departamento', true, $head);
         $task = $this->task()
-            ->setResponsibility(new CargoResponsibility($maths))
+            ->setResponsibility(new TaskResponsibility($headDept, $maths))
             ->setDelegatedTo($delegatee);
 
         self::assertTrue($task->isOwnedBy($delegatee));
@@ -111,12 +118,11 @@ final class TaskResponsibilityTest extends TestCase
         self::assertSame($delegatee, $task->resolveResponsible());
     }
 
-    public function testFallsBackToTheAssigneeWhenNoResponsibilityIsSet(): void
+    public function testLabelIncludesTheDepartmentForPerDepartmentRoles(): void
     {
-        $ana = $this->user('Ana');
-        $task = $this->task()->setAssignedUser($ana);
+        $maths = $this->unit('Matematicas');
+        $teacher = $this->role('Profesor', true);
 
-        self::assertTrue($task->isOwnedBy($ana), 'legacy rows without a responsibility still resolve via the assignee');
-        self::assertSame($ana, $task->resolveResponsible());
+        self::assertSame('Profesor de Matematicas', (new TaskResponsibility($teacher, $maths))->label());
     }
 }
