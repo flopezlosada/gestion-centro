@@ -80,6 +80,16 @@ class Task implements Auditable
     #[ORM\JoinColumn(name: 'unit_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
     private ?Unit $unit = null;
 
+    /**
+     * What structurally makes this task someone's job: a post (unit's manager), a specific person, or
+     * a role. Resolved live, so a cargo task follows the current post-holder. Owned by the task
+     * (cascade + orphan removal). Nullable during the transition from the old assignedRole/assignedUser
+     * columns; {@see resolveResponsible()} and {@see isOwnedBy()} fall back to those while it is null.
+     */
+    #[ORM\OneToOne(targetEntity: TaskResponsibility::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
+    #[ORM\JoinColumn(name: 'responsibility_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?TaskResponsibility $responsibility = null;
+
     #[ORM\Column]
     private bool $requiresDocument = false;
 
@@ -285,6 +295,12 @@ class Task implements Auditable
             return $this->delegatedTo === $user;
         }
 
+        // The structural responsibility, resolved live, is authoritative once set.
+        if (null !== $this->responsibility) {
+            return $this->responsibility->isHeldBy($user);
+        }
+
+        // Fallback for rows not yet migrated to a responsibility (transition safety net).
         if ($this->assignedUser === $user) {
             return true;
         }
@@ -403,7 +419,27 @@ class Task implements Auditable
      */
     public function resolveResponsible(): ?User
     {
-        return $this->delegatedTo ?? $this->assignedUser;
+        if (null !== $this->delegatedTo) {
+            return $this->delegatedTo;
+        }
+
+        if (null !== $this->responsibility) {
+            return $this->responsibility->holders()[0] ?? null;
+        }
+
+        return $this->assignedUser;
+    }
+
+    public function getResponsibility(): ?TaskResponsibility
+    {
+        return $this->responsibility;
+    }
+
+    public function setResponsibility(?TaskResponsibility $responsibility): static
+    {
+        $this->responsibility = $responsibility;
+
+        return $this;
     }
 
     /**
