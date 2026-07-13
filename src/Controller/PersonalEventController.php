@@ -172,6 +172,7 @@ final class PersonalEventController extends AbstractController
     {
         $event->setTitle($data->title)
             ->setDescription($data->description)
+            ->setCategory($data->category)
             ->setAllDay($data->allDay);
 
         if ($data->allDay) {

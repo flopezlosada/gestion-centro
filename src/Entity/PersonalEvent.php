@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Enum\EventCategory;
 use App\Repository\PersonalEventRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
@@ -55,6 +56,10 @@ class PersonalEvent
     /** All-day entry: the times are ignored and only the day is shown. */
     #[ORM\Column(name: 'all_day')]
     private bool $allDay = false;
+
+    /** Colour-coding category. Defaults to general; the DB default keeps existing rows valid. */
+    #[ORM\Column(length: 20, enumType: EventCategory::class, options: ['default' => 'general'])]
+    private EventCategory $category = EventCategory::GENERAL;
 
     /** Simple personal "done" tick (this is a diary, not a workflow). */
     #[ORM\Column]
@@ -158,6 +163,18 @@ class PersonalEvent
     public function setAllDay(bool $allDay): static
     {
         $this->allDay = $allDay;
+
+        return $this;
+    }
+
+    public function getCategory(): EventCategory
+    {
+        return $this->category;
+    }
+
+    public function setCategory(EventCategory $category): static
+    {
+        $this->category = $category;
 
         return $this;
     }

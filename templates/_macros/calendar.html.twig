@@ -29,7 +29,7 @@
             <ul class="calendar-events">
                 {% for e in cell.events %}
                     <li>
-                        <a class="calendar-event{{ e.done ? ' is-done' : '' }}" href="{{ path('personal_event_edit', { id: e.id }) }}" title="{{ e.title }}{% if not e.allDay %} · {{ e.startAt|date('H:i') }}{% endif %} · Personal">
+                        <a class="calendar-event {{ e.category.cssClass }}{{ e.done ? ' is-done' : '' }}" href="{{ path('personal_event_edit', { id: e.id }) }}" title="{{ e.title }}{% if not e.allDay %} · {{ e.startAt|date('H:i') }}{% endif %} · {{ e.category.label }}">
                             <span class="calendar-dot calendar-dot--event"></span>
                             <span class="calendar-task-title">{% if not e.allDay %}{{ e.startAt|date('H:i') }} {% endif %}{{ e.title }}</span>
                         </a>

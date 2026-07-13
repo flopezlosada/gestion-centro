@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Form;
 
 use App\Entity\PersonalEvent;
+use App\Enum\EventCategory;
 use App\Enum\RecurrenceFrequency;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
@@ -27,6 +28,9 @@ final class PersonalEventFormData
     public ?\DateTimeImmutable $day = null;
 
     public bool $allDay = false;
+
+    /** Colour-coding category. */
+    public EventCategory $category = EventCategory::GENERAL;
 
     /** Start time as "HH:MM", or null for an all-day entry. */
     public ?string $startTime = null;
@@ -115,6 +119,7 @@ final class PersonalEventFormData
         $data->description = $event->getDescription();
         $data->day = $event->getStartAt()->setTime(0, 0);
         $data->allDay = $event->isAllDay();
+        $data->category = $event->getCategory();
         if (!$event->isAllDay()) {
             $data->startTime = $event->getStartAt()->format('H:i');
             $data->endTime = $event->getEndAt()?->format('H:i');
