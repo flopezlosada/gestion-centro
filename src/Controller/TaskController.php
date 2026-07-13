@@ -418,17 +418,6 @@ final class TaskController extends AbstractController
     }
 
     /**
-     * Whether the user may change a task's responsible role — a structural decision reserved to the
-     * school's leadership: whoever holds the direction or head-of-studies role (or an admin). This
-     * is an extra privilege on top of {@see canManage()}: a department head can edit a task but not
-     * reassign the function that owns it.
-     */
-    private function canEditTaskRole(User $user): bool
-    {
-        return $this->isGranted('ROLE_ADMIN') || $user->holdsRoleCode('direction') || $user->holdsRoleCode('head_of_studies');
-    }
-
-    /**
      * Whether the user may act on the task: it is theirs (their person or one of their roles'), they
      * are a superior of its unit in the chain of command, or they are an admin. Superiors can step in
      * and do a subordinate's task (e.g. a task on a "teacher" role that the head of department ends
