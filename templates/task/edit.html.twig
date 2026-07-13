@@ -23,8 +23,7 @@
             </div>
             {{ f.field(form.description) }}
             {{ f.field(form.dueDate) }}
-            {% if form.assignedUser is defined %}{{ f.field(form.assignedUser) }}{% endif %}
-            {% if form.assignedRole is defined %}{{ f.field(form.assignedRole) }}{% endif %}
+            {{ f.responsibility(form) }}
             {{ f.toggles([form.mandatory]) }}
             <div class="stackform__foot">
                 <a class="btn secondary" href="{{ path('task_show', { id: task.id }) }}">Cancelar</a>

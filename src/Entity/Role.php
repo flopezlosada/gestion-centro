@@ -71,6 +71,15 @@ class Role implements Auditable
     #[ORM\Column]
     private bool $admin = false;
 
+    /**
+     * Whether this role is scoped to a department: a holder is "X of a given department" (jefe de
+     * departamento, profesor), so choosing this role as a task's responsibility also requires picking
+     * the department. Centre-wide roles (dirección, jefatura de estudios) have this false — there is a
+     * single set of holders regardless of department.
+     */
+    #[ORM\Column(name: 'per_department')]
+    private bool $perDepartment = false;
+
     /** @var Collection<int, User> */
     #[ORM\ManyToMany(targetEntity: User::class, mappedBy: 'assignedRoles')]
     private Collection $users;
@@ -129,6 +138,18 @@ class Role implements Auditable
     public function setAdmin(bool $admin): static
     {
         $this->admin = $admin;
+
+        return $this;
+    }
+
+    public function isPerDepartment(): bool
+    {
+        return $this->perDepartment;
+    }
+
+    public function setPerDepartment(bool $perDepartment): static
+    {
+        $this->perDepartment = $perDepartment;
 
         return $this;
     }

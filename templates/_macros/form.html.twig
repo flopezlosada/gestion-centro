@@ -102,3 +102,20 @@
         <a class="btn secondary" href="{{ cancelUrl }}">Cancelar</a>
     </div>
 {% endmacro %}
+
+{#
+   El bloque "Responsable" de la tarea: la cascada rol → departamento. El paso de departamento va
+   marcado con data-dept-step para que task-form.js lo muestre solo si el rol elegido es de
+   departamento. Sin JS se ve siempre y la validación guía.
+#}
+{% macro responsibility(form) %}
+    {{ _self.field(form.responsibilityRole) }}
+    {% if form.responsibilityUnit is defined %}
+        <div class="form-row" data-dept-step="1">
+            {{ form_label(form.responsibilityUnit) }}
+            {{ form_widget(form.responsibilityUnit) }}
+            {% if form.responsibilityUnit.vars.help %}<p class="help">{{ form.responsibilityUnit.vars.help }}</p>{% endif %}
+            {{ form_errors(form.responsibilityUnit) }}
+        </div>
+    {% endif %}
+{% endmacro %}

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Form;
 
 use App\Entity\Role;
-use App\Entity\User;
+use App\Entity\Unit;
 use App\Service\SchoolCalendar;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
@@ -19,13 +19,10 @@ use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /**
- * Create/edit form for a task, kept intentionally light. The lifecycle (simple vs deliverable) is not
- * a field the user picks: it is derived by the controller from the single "carries a deliverable"
- * toggle, and whether a task closes with a checkbox is app behaviour, not a per-task choice. The
- * "assign to" field appears only when the creator actually commands others ({@see $options['include_assignee']});
- * a plain member has no picker and the task is theirs. The responsible-role field is leadership-only
- * ({@see $options['include_role']}); the deliverable toggle only on creation ({@see $options['include_deliverable']}),
- * since the lifecycle cannot change once running.
+ * Create/edit form for a task. The responsibility is a cascade: pick a role, then — only if the role
+ * is per-department — the department. Each role option carries data-per-department so task-form.js can
+ * show the department step only when it applies. The lifecycle is derived by the controller from the
+ * single deliverable toggle, shown only on creation ({@see $options['include_deliverable']}).
  *
  * @extends AbstractType<TaskFormData>
  */
@@ -47,35 +44,30 @@ final class TaskFormType extends AbstractType
                 'help' => 'Debe ser un día lectivo: ni fin de semana ni día no lectivo.',
                 'constraints' => [new Assert\Callback($this->validateLectiveDeadline(...))],
             ])
+            ->add('responsibilityRole', EntityType::class, [
+                'label' => 'Rol responsable',
+                'class' => Role::class,
+                'choices' => $options['assignable_roles'],
+                'choice_label' => 'name',
+                'placeholder' => '— Elige rol —',
+                // Marks which roles need a department, so the JS shows/hides the department step.
+                'choice_attr' => static fn (Role $role): array => ['data-per-department' => $role->isPerDepartment() ? '1' : '0'],
+            ])
+            ->add('responsibilityUnit', EntityType::class, [
+                'label' => 'Departamento',
+                'class' => Unit::class,
+                'choices' => $options['assignable_units'],
+                'choice_label' => 'name',
+                'required' => false,
+                'placeholder' => '— Elige departamento —',
+                'help' => 'Responsable = quien tenga ese rol en ese departamento en cada momento.',
+                'row_attr' => ['data-dept-step' => '1'],
+            ])
             ->add('mandatory', CheckboxType::class, [
                 'label' => 'Obligatoria',
                 'required' => false,
                 'help' => 'Las obligatorias cuentan como pendientes hasta cerrarse; las voluntarias son opcionales.',
             ]);
-
-        // Only offered when the creator commands others; a plain member's task is simply theirs.
-        if (true === $options['include_assignee']) {
-            $builder->add('assignedUser', EntityType::class, [
-                'label' => 'Responsable',
-                'class' => User::class,
-                'choices' => $options['assignable_users'],
-                'choice_label' => 'fullName',
-            ]);
-        }
-
-        // The responsible role is a structural, leadership-only field: it appears only when the
-        // controller allows it (direction / head of studies). For everyone else it is absent, so a
-        // routine edit can never alter it.
-        if (true === $options['include_role']) {
-            $builder->add('assignedRole', EntityType::class, [
-                'label' => 'Rol responsable',
-                'class' => Role::class,
-                'choice_label' => 'name',
-                'required' => false,
-                'placeholder' => '— Sin rol —',
-                'help' => 'La función que responde de la tarea (además de la persona asignada).',
-            ]);
-        }
 
         // The single deliverable switch also decides the lifecycle (see the controller). Only on
         // creation: the lifecycle cannot change once the task is running.
@@ -108,14 +100,12 @@ final class TaskFormType extends AbstractType
     {
         $resolver->setDefaults([
             'data_class' => TaskFormData::class,
-            'assignable_users' => [],
-            'include_role' => false,
-            'include_assignee' => false,
+            'assignable_roles' => [],
+            'assignable_units' => [],
             'include_deliverable' => true,
         ]);
-        $resolver->setAllowedTypes('assignable_users', 'array');
-        $resolver->setAllowedTypes('include_role', 'bool');
-        $resolver->setAllowedTypes('include_assignee', 'bool');
+        $resolver->setAllowedTypes('assignable_roles', 'array');
+        $resolver->setAllowedTypes('assignable_units', 'array');
         $resolver->setAllowedTypes('include_deliverable', 'bool');
     }
 }

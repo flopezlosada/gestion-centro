@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Entity\Role;
 use App\Entity\Task;
+use App\Entity\TaskResponsibility;
+use App\Entity\Unit;
 use App\Entity\User;
 use App\Enum\TaskType;
 use App\Form\TaskFormData;
 use App\Form\TaskFormType;
 use App\Repository\AuditLogRepository;
+use App\Repository\RoleRepository;
 use App\Repository\TaskRepository;
 use App\Repository\UserRepository;
 use App\Service\OrganizationHierarchy;
@@ -55,39 +59,33 @@ final class TaskController extends AbstractController
      * limited to that set and re-checked on submit.
      */
     #[Route('/tareas/nueva', name: 'task_new', methods: ['GET', 'POST'])]
-    public function new(Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, UserRepository $users, EntityManagerInterface $entityManager): Response
+    public function new(Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, EntityManagerInterface $entityManager): Response
     {
-        $assignable = $this->assignableUsers($user, $hierarchy, $users);
-        // Only offer the assignee picker when the creator actually commands someone else; otherwise
-        // the task is simply theirs and no picker is shown.
-        $canAssignOthers = \count($assignable) > 1;
+        $units = $this->assignableDepartments($user, $hierarchy);
+        $roleChoices = $roles->findAllOrdered();
 
-        $canEditRole = $this->canEditTaskRole($user);
         $data = new TaskFormData();
-        $data->assignedUser = $user;
         // Prefill the deadline when arriving from the calendar's "+ Nueva tarea" (?fecha=YYYY-MM-DD).
         // An invalid/missing value leaves it empty; a non-teaching day is still caught by the form's
         // lective-day validation on submit. Anchor the midnight in PHP's default time zone — the one
-        // the DateType renders the value in (view_timezone defaults to it) and the one Doctrine
-        // hydrates dates in — so the prefilled day is never shifted (a Madrid-anchored midnight shown
-        // by a UTC server would render as the previous day).
+        // the DateType renders the value in and Doctrine hydrates dates in — so the prefilled day is
+        // never shifted (a Madrid-anchored midnight shown by a UTC server would render as the day before).
         $data->dueDate = CalendarDate::parse($request->query->getString('fecha'), new \DateTimeZone(date_default_timezone_get()));
-        $form = $this->createForm(TaskFormType::class, $data, ['assignable_users' => $assignable, 'include_role' => $canEditRole, 'include_assignee' => $canAssignOthers, 'include_deliverable' => true]);
+        $form = $this->createForm(TaskFormType::class, $data, [
+            'assignable_roles' => $roleChoices,
+            'assignable_units' => $units,
+            'include_deliverable' => true,
+        ]);
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
-            if (!$canAssignOthers) {
-                $data->assignedUser = $user;
-            }
-            if (!\in_array($data->assignedUser, $assignable, true)) {
-                throw $this->createAccessDeniedException('No puedes asignar tareas a esa persona.');
-            }
+            $this->assertResponsibilityAllowed($data, $units);
 
             // The deliverable toggle also picks the lifecycle: a deliverable task carries the
             // progress/submission/validation flow; a plain one is the simple do-and-validate lifecycle.
             $type = $data->requiresDocument ? TaskType::WITH_DELIVERABLE : TaskType::SIMPLE;
             $task = new Task($data->title, SchoolYear::current($data->dueDate), $data->dueDate, $type);
-            $this->applyFormData($task, $data, $canEditRole);
+            $this->applyFormData($task, $data);
             $task->setCreatedBy($user);
             $entityManager->persist($task);
             $entityManager->flush();
@@ -104,34 +102,33 @@ final class TaskController extends AbstractController
      * not editable (it governs the lifecycle already in progress).
      */
     #[Route('/tareas/{id}/editar', name: 'task_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
-    public function edit(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, UserRepository $users, EntityManagerInterface $entityManager): Response
+    public function edit(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, EntityManagerInterface $entityManager): Response
     {
         if (!$this->canManage($task, $user, $hierarchy)) {
             throw $this->createAccessDeniedException('No puedes editar esta tarea.');
         }
 
-        $assignable = $this->assignableUsers($user, $hierarchy, $users);
-        // Keep the current assignee as a valid choice even if now outside the scope.
-        if (null !== $task->getAssignedUser() && !\in_array($task->getAssignedUser(), $assignable, true)) {
-            $assignable[] = $task->getAssignedUser();
+        $units = $this->assignableDepartments($user, $hierarchy);
+        // Keep the task's current department as a valid choice even if now outside the scope.
+        $currentUnit = $task->getResponsibility()?->getUnit();
+        if (null !== $currentUnit && !\in_array($currentUnit, $units, true)) {
+            $units[] = $currentUnit;
         }
+        $roleChoices = $roles->findAllOrdered();
 
-        $canAssignOthers = \count($assignable) > 1;
-        $canEditRole = $this->canEditTaskRole($user);
         $data = TaskFormData::fromTask($task);
         // The deliverable toggle is not shown on edit: the lifecycle is fixed once the task is running.
-        $form = $this->createForm(TaskFormType::class, $data, ['assignable_users' => $assignable, 'include_role' => $canEditRole, 'include_assignee' => $canAssignOthers, 'include_deliverable' => false]);
+        $form = $this->createForm(TaskFormType::class, $data, [
+            'assignable_roles' => $roleChoices,
+            'assignable_units' => $units,
+            'include_deliverable' => false,
+        ]);
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
-            if (!$canAssignOthers) {
-                $data->assignedUser = $task->getAssignedUser() ?? $user;
-            }
-            if (!\in_array($data->assignedUser, $assignable, true)) {
-                throw $this->createAccessDeniedException('No puedes asignar tareas a esa persona.');
-            }
+            $this->assertResponsibilityAllowed($data, $units);
 
-            $this->applyFormData($task, $data, $canEditRole);
+            $this->applyFormData($task, $data);
             $entityManager->flush();
             $this->addFlash('success', 'Tarea actualizada.');
 
@@ -168,19 +165,27 @@ final class TaskController extends AbstractController
         AuditLogRepository $auditLog,
         TaskVisibility $visibility,
         OrganizationHierarchy $hierarchy,
+        UserRepository $users,
         TaskWorkflow $workflows,
         TaskActivityPresenter $activity,
     ): Response {
         // Same organisation-chart scope as the plan and the calendar, enforced here so the detail
         // cannot be reached by guessing an id: only the task's own people, a superior of its unit, or
         // an admin may open it.
-        if (!$visibility->isVisibleTo($task, $user, $this->isGranted('ROLE_ADMIN'))) {
+        $isAdmin = $this->isGranted('ROLE_ADMIN');
+        if (!$visibility->isVisibleTo($task, $user, $isAdmin)) {
             throw $this->createAccessDeniedException('No puedes ver esta tarea.');
         }
 
         // Everyone who reaches this point (own people, superiors, admins) is exactly who may see the
         // task's activity history, so the timeline is shown to every viewer.
         $canWork = $this->canWorkOn($task, $user, $hierarchy);
+
+        // Delegation is a superior's operational call: hand the task to a subordinate they command.
+        $canDelegate = $isAdmin || $hierarchy->isSuperiorOf($user, $task->getUnit());
+        $delegatable = $canDelegate
+            ? array_values(array_filter($this->assignableUsers($user, $hierarchy, $users), static fn (User $u): bool => $u !== $user))
+            : [];
 
         return $this->render('task/show.html.twig', [
             'task' => $task,
@@ -192,10 +197,45 @@ final class TaskController extends AbstractController
             // superior-only ones for non-superiors; here we also hide progress ones from outsiders.
             'actions' => $this->availableActions($workflows, $task, $canWork),
             'canSeeHistory' => true,
+            // Only a superior with subordinates gets the delegate control.
+            'canDelegate' => $canDelegate && [] !== $delegatable,
+            'delegatable' => $delegatable,
             // The trail humanised for non-technical readers; the raw diff rides along for admins only.
             'activityRows' => $activity->present($auditLog->findForSubject('Task', (string) $task->getId())),
-            'isAdmin' => $this->isGranted('ROLE_ADMIN'),
+            'isAdmin' => $isAdmin,
         ]);
+    }
+
+    /**
+     * Delegates the task to a subordinate (or clears the delegation, restoring the structural
+     * responsibility). A superior's operational action: allowed to a superior of the task's unit or an
+     * admin, and only onto someone they actually command.
+     */
+    #[Route('/tareas/{id}/delegar', name: 'task_delegate', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function delegate(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, UserRepository $users, EntityManagerInterface $entityManager): Response
+    {
+        if (!$this->isCsrfTokenValid('task_delegate'.$task->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+        if (!$this->isGranted('ROLE_ADMIN') && !$hierarchy->isSuperiorOf($user, $task->getUnit())) {
+            throw $this->createAccessDeniedException('Solo un superior de la unidad puede delegar esta tarea.');
+        }
+
+        $delegateeId = (string) $request->request->get('delegatedTo');
+        if ('' === $delegateeId) {
+            // Recall: back to the structural responsibility.
+            $task->setDelegatedTo(null);
+        } else {
+            $delegatee = $users->find((int) $delegateeId);
+            if (null === $delegatee || $delegatee === $user || !\in_array($delegatee, $this->assignableUsers($user, $hierarchy, $users), true)) {
+                throw $this->createAccessDeniedException('No puedes delegar en esa persona.');
+            }
+            $task->setDelegatedTo($delegatee);
+        }
+        $entityManager->flush();
+        $this->addFlash('success', 'Delegación actualizada.');
+
+        return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
     }
 
     /**
@@ -309,21 +349,56 @@ final class TaskController extends AbstractController
      * person is a concrete assignee on top of it) and is leadership-only: it is written only when
      * $applyRole is true, so a routine edit by anyone else leaves it untouched.
      */
-    private function applyFormData(Task $task, TaskFormData $data, bool $applyRole): void
+    private function applyFormData(Task $task, TaskFormData $data): void
     {
-        \assert(null !== $data->dueDate && null !== $data->assignedUser);
+        \assert(null !== $data->dueDate && null !== $data->responsibilityRole);
         $task->setTitle($data->title)
             ->setDescription($data->description)
             ->setDueDate($data->dueDate)
             ->setSchoolYear(SchoolYear::current($data->dueDate))
             ->setMandatory($data->mandatory)
             ->setRequiresCheckbox($data->requiresCheckbox)
-            ->setRequiresDocument($data->requiresDocument)
-            ->setAssignedUser($data->assignedUser)
-            ->setUnit($data->assignedUser->getUnit());
-        if ($applyRole) {
-            $task->setAssignedRole($data->assignedRole);
+            ->setRequiresDocument($data->requiresDocument);
+
+        // Responsibility = role + (department, only for per-department roles). The department is also
+        // the task's unit context for hierarchy/escalation. assignedUser is kept as a mirror of the
+        // current holder for the legacy queries still reading it during the transition.
+        $role = $data->responsibilityRole;
+        $unit = $role->isPerDepartment() ? $data->responsibilityUnit : null;
+        $task->setResponsibility(new TaskResponsibility($role, $unit))->setUnit($unit);
+        $task->setAssignedUser($task->resolveResponsible());
+    }
+
+    /**
+     * Guards that a per-department responsibility targets a department the creator may use, re-checked
+     * server-side on top of the form's own choice list.
+     *
+     * @param list<Unit> $assignableUnits the departments the creator may target
+     */
+    private function assertResponsibilityAllowed(TaskFormData $data, array $assignableUnits): void
+    {
+        if (null !== $data->responsibilityRole
+            && $data->responsibilityRole->isPerDepartment()
+            && !\in_array($data->responsibilityUnit, $assignableUnits, true)) {
+            throw $this->createAccessDeniedException('No puedes asignar la tarea a ese departamento.');
         }
+    }
+
+    /**
+     * The departments a user may target as a task's responsibility: those they command (superior of)
+     * plus their own, so a member can still set a task for a role within their own department.
+     *
+     * @return list<Unit> the assignable departments
+     */
+    private function assignableDepartments(User $user, OrganizationHierarchy $hierarchy): array
+    {
+        $units = $hierarchy->assignableUnits($user);
+        $own = $user->getUnit();
+        if (null !== $own && !\in_array($own, $units, true)) {
+            $units[] = $own;
+        }
+
+        return $units;
     }
 
     /**
@@ -347,17 +422,6 @@ final class TaskController extends AbstractController
     private function canManage(Task $task, User $user, OrganizationHierarchy $hierarchy): bool
     {
         return $this->isGranted('ROLE_ADMIN') || $task->getCreatedBy() === $user || $hierarchy->isSuperiorOf($user, $task->getUnit());
-    }
-
-    /**
-     * Whether the user may change a task's responsible role — a structural decision reserved to the
-     * school's leadership: whoever holds the direction or head-of-studies role (or an admin). This
-     * is an extra privilege on top of {@see canManage()}: a department head can edit a task but not
-     * reassign the function that owns it.
-     */
-    private function canEditTaskRole(User $user): bool
-    {
-        return $this->isGranted('ROLE_ADMIN') || $user->holdsRoleCode('direction') || $user->holdsRoleCode('head_of_studies');
     }
 
     /**

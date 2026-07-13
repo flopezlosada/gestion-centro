@@ -44,9 +44,11 @@ final class RoleFixtures extends AbstractGoldenFixture
             (new Role())->setCode('head_of_studies')->setName('Jefatura de estudios'),
             (new Role())->setCode('head_of_studies_deputy')->setName('Jefatura de estudios adjunta'),
             (new Role())->setCode('secretary')->setName('Secretaría'),
-            (new Role())->setCode('head_dept')->setName('Jefatura de departamento'),
-            (new Role())->setCode('tutor')->setName('Tutor/a'),
-            (new Role())->setCode('teacher')->setName('Docente'),
+            // Per-department roles: a holder is "X of a given department", so a task's responsibility on
+            // one of these also needs the department (resolved live to whoever holds it there).
+            (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true),
+            (new Role())->setCode('tutor')->setName('Tutor/a')->setPerDepartment(true),
+            (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true),
         ];
 
         foreach ($catalog as $role) {

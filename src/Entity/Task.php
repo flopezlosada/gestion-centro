@@ -80,6 +80,16 @@ class Task implements Auditable
     #[ORM\JoinColumn(name: 'unit_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
     private ?Unit $unit = null;
 
+    /**
+     * What structurally makes this task someone's job: a post (unit's manager), a specific person, or
+     * a role. Resolved live, so a cargo task follows the current post-holder. Owned by the task
+     * (cascade + orphan removal). Nullable during the transition from the old assignedRole/assignedUser
+     * columns; {@see resolveResponsible()} and {@see isOwnedBy()} fall back to those while it is null.
+     */
+    #[ORM\OneToOne(targetEntity: TaskResponsibility::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
+    #[ORM\JoinColumn(name: 'responsibility_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?TaskResponsibility $responsibility = null;
+
     #[ORM\Column]
     private bool $requiresDocument = false;
 
@@ -101,6 +111,25 @@ class Task implements Auditable
     #[ORM\ManyToOne(targetEntity: User::class)]
     #[ORM\JoinColumn(name: 'created_by_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
     private ?User $createdBy = null;
+
+    /**
+     * Explicit delegation override: a superior may hand the task to a specific subordinate, on top of
+     * (not replacing) its structural responsibility, so "who does it now" is this person while the
+     * task still knows what it structurally is. Null means no delegation — the responsibility holder
+     * does it.
+     */
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'delegated_to_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?User $delegatedTo = null;
+
+    /**
+     * Who actually did the task, frozen once when it reaches the terminal "validated" state. A
+     * historical fact (same idiom as {@see $createdBy}): later changes to the responsibility holder or
+     * a unit's manager never rewrite it. Null while the task is still open.
+     */
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'completed_by_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?User $completedBy = null;
 
     public function __construct(string $title, string $schoolYear, \DateTimeImmutable $dueDate, TaskType $type = TaskType::SIMPLE)
     {
@@ -261,6 +290,17 @@ class Task implements Auditable
      */
     public function isOwnedBy(User $user): bool
     {
+        // A delegation overrides the structural responsibility: only the delegatee owns it then.
+        if (null !== $this->delegatedTo) {
+            return $this->delegatedTo === $user;
+        }
+
+        // The structural responsibility, resolved live, is authoritative once set.
+        if (null !== $this->responsibility) {
+            return $this->responsibility->isHeldBy($user);
+        }
+
+        // Fallback for rows not yet migrated to a responsibility (transition safety net).
         if ($this->assignedUser === $user) {
             return true;
         }
@@ -343,5 +383,73 @@ class Task implements Auditable
         $this->createdBy = $createdBy;
 
         return $this;
+    }
+
+    public function getDelegatedTo(): ?User
+    {
+        return $this->delegatedTo;
+    }
+
+    public function setDelegatedTo(?User $delegatedTo): static
+    {
+        $this->delegatedTo = $delegatedTo;
+
+        return $this;
+    }
+
+    public function getCompletedBy(): ?User
+    {
+        return $this->completedBy;
+    }
+
+    public function setCompletedBy(?User $completedBy): static
+    {
+        $this->completedBy = $completedBy;
+
+        return $this;
+    }
+
+    /**
+     * The single person on the hook for this task right now: the delegatee if it has been delegated,
+     * otherwise the assigned person. Resolved live; null when nobody concrete is set (e.g. a
+     * role-only task with no individual). Extended in later phases to resolve a structural
+     * responsibility (a unit's manager); today it reads the stored assignee.
+     *
+     * @return User|null the current responsible person, or null
+     */
+    public function resolveResponsible(): ?User
+    {
+        if (null !== $this->delegatedTo) {
+            return $this->delegatedTo;
+        }
+
+        if (null !== $this->responsibility) {
+            return $this->responsibility->holders()[0] ?? null;
+        }
+
+        return $this->assignedUser;
+    }
+
+    public function getResponsibility(): ?TaskResponsibility
+    {
+        return $this->responsibility;
+    }
+
+    public function setResponsibility(?TaskResponsibility $responsibility): static
+    {
+        $this->responsibility = $responsibility;
+
+        return $this;
+    }
+
+    /**
+     * Who to show as responsible: the frozen {@see $completedBy} once the task is closed (a historical
+     * fact that never changes), or the live {@see resolveResponsible()} while it is still open.
+     *
+     * @return User|null the person to display as responsible, or null
+     */
+    public function responsibleForDisplay(): ?User
+    {
+        return $this->completedBy ?? $this->resolveResponsible();
     }
 }

@@ -85,12 +85,38 @@
             <dt>Curso</dt><dd>{{ task.schoolYear }}</dd>
             <dt>Fecha límite</dt><dd>{{ task.dueDate|date('d/m/Y') }}</dd>
             <dt>Unidad</dt><dd>{{ task.unit ? task.unit.name : '—' }}</dd>
-            <dt>Responsable</dt><dd>{{ task.assignedUser ? task.assignedUser.fullName : '—' }}</dd>
-            {% if task.assignedRole %}<dt>Rol responsable</dt><dd>{{ task.assignedRole.name }}</dd>{% endif %}
+            <dt>Responsable</dt>
+            <dd>
+                {%- set who = task.responsibleForDisplay -%}
+                {{ who ? who.fullName : '—' }}
+                {%- if task.responsibility %} ({{ task.responsibility.label }}){% endif -%}
+                {%- if task.delegatedTo %} · delegada{% endif -%}
+            </dd>
             {% if task.requiresCheckbox %}<dt>Hecha por el responsable</dt><dd>{{ task.checkboxDone ? 'Sí' : 'No' }}</dd>{% endif %}
             <dt>Creada</dt><dd>{{ task.createdAt|date('d/m/Y') }}{% if task.createdBy %} · por {{ task.createdBy.fullName }}{% endif %}</dd>
         </dl>
     </section>
+
+    {% if canDelegate %}
+        <section class="card">
+            <div class="page-head"><div><h2>Delegar</h2><p class="lead">Pásala a alguien de tu equipo. Estructuralmente sigue siendo {{ task.responsibility ? task.responsibility.label : 'de su responsable' }}.</p></div></div>
+            <form method="post" action="{{ path('task_delegate', { id: task.id }) }}" class="stackform">
+                <input type="hidden" name="_token" value="{{ csrf_token('task_delegate' ~ task.id) }}">
+                <div class="form-row">
+                    <label for="delegatedTo">Delegar en</label>
+                    <select name="delegatedTo" id="delegatedTo">
+                        <option value="">— Sin delegar —</option>
+                        {% for u in delegatable %}
+                            <option value="{{ u.id }}"{{ task.delegatedTo and task.delegatedTo.id == u.id ? ' selected' : '' }}>{{ u.fullName }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="stackform__foot">
+                    <button class="btn" type="submit">Guardar delegación</button>
+                </div>
+            </form>
+        </section>
+    {% endif %}
 
     {% if canSeeHistory %}
         <section class="card">

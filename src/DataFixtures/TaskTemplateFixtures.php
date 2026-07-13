@@ -6,7 +6,6 @@ namespace App\DataFixtures;
 
 use App\DueDate\PerTerm;
 use App\DueDate\RelativeToAnchor;
-use App\Entity\Role;
 use App\Entity\TaskTemplate;
 use App\Enum\CalendarAnchor;
 use App\Enum\TaskType;
@@ -27,13 +26,14 @@ final class TaskTemplateFixtures extends AbstractGoldenFixture implements Depend
 
     public function load(ObjectManager $manager): void
     {
-        $headDept = $this->getReference(RoleFixtures::ref('head_dept'), Role::class);
-
+        // These are department posts' tasks (the head of each department). The per-department cargo
+        // wiring lives with task generation (a separate ticket); the templates themselves no longer
+        // carry a role — "head of department" is a post (Unit::manager), not a role.
         // The department report is due at the end of the course; the meeting minutes recur at the end
         // of every term.
-        $report = (new TaskTemplate())->setTitle('Memoria del departamento')->setType(TaskType::WITH_DELIVERABLE)->setResponsibleRole($headDept)->setRequiresDocument(true)
+        $report = (new TaskTemplate())->setTitle('Memoria del departamento')->setType(TaskType::WITH_DELIVERABLE)->setRequiresDocument(true)
             ->setDueDateRule(new RelativeToAnchor(CalendarAnchor::YEAR_END, 0));
-        $meeting = (new TaskTemplate())->setTitle('Acta de reunión de departamento')->setType(TaskType::SIMPLE)->setResponsibleRole($headDept)
+        $meeting = (new TaskTemplate())->setTitle('Acta de reunión de departamento')->setType(TaskType::SIMPLE)
             ->setDueDateRule(new PerTerm(TermBoundary::END));
 
         $manager->persist($report);
