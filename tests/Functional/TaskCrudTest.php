@@ -66,7 +66,6 @@ final class TaskCrudTest extends WebTestCase
         $form = $crawler->selectButton('Crear tarea')->form();
         $form['task_form[title]'] = 'Preparar la evaluación';
         $form['task_form[dueDate]'] = '2026-09-15';
-        $form['task_form[assignedUser]'] = (string) $creator->getId();
         $this->client->submit($form);
 
         self::assertResponseRedirects();
@@ -89,7 +88,6 @@ final class TaskCrudTest extends WebTestCase
         $form = $crawler->selectButton('Crear tarea')->form();
         $form['task_form[title]'] = 'Tarea en sábado';
         $form['task_form[dueDate]'] = '2026-07-11'; // Saturday
-        $form['task_form[assignedUser]'] = (string) $creator->getId();
         $this->client->submit($form);
 
         // Invalid submit: the form is redisplayed with the error (HTTP 422) and nothing is persisted.
@@ -113,7 +111,6 @@ final class TaskCrudTest extends WebTestCase
         $form = $crawler->selectButton('Crear tarea')->form();
         $form['task_form[title]'] = 'Tarea en festivo';
         $form['task_form[dueDate]'] = '2026-07-13';
-        $form['task_form[assignedUser]'] = (string) $creator->getId();
         $this->client->submit($form);
 
         self::assertResponseStatusCodeSame(422);
@@ -139,15 +136,13 @@ final class TaskCrudTest extends WebTestCase
         $crawler = $this->client->request('GET', '/tareas/'.$task->getId().'/editar');
         // A department head is not leadership: the role field is not even offered to them.
         self::assertSelectorNotExists('[name="task_form[assignedRole]"]');
-        $form = $crawler->selectButton('Guardar')->form();
-        // Touch only an unrelated field, as the user did when the bug surfaced.
-        $this->client->submit($form, ['task_form[requiresDocument]' => '1']);
+        // Just save the edit (the deliverable/type is no longer an editable field).
+        $this->client->submit($crawler->selectButton('Guardar')->form());
 
         self::assertResponseRedirects();
         $this->em->clear();
         $reloaded = $this->em->getRepository(Task::class)->find($task->getId());
         self::assertNotNull($reloaded);
-        self::assertTrue($reloaded->requiresDocument());
         // The role must survive the edit (the whole point of the fix).
         self::assertSame($role->getId(), $reloaded->getAssignedRole()?->getId());
         self::assertSame($creator->getId(), $reloaded->getAssignedUser()?->getId());

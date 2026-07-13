@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Agenda\PersonalAgenda;
 use App\Agenda\RecurrenceExpander;
 use App\Entity\PersonalEvent;
 use App\Entity\User;
@@ -25,15 +26,16 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
 final class PersonalEventController extends AbstractController
 {
     /**
-     * The owner's upcoming entries (from the start of today), earliest first.
+     * The user's personal agenda: the tasks assigned to them plus their own reminders and
+     * appointments, merged and split into time buckets ({@see PersonalAgenda}).
      */
     #[Route('/agenda', name: 'personal_event_index', methods: ['GET'])]
-    public function index(#[CurrentUser] User $user, PersonalEventRepository $events): Response
+    public function index(#[CurrentUser] User $user, PersonalAgenda $agenda): Response
     {
         $today = new \DateTimeImmutable('today', new \DateTimeZone('Europe/Madrid'));
 
         return $this->render('agenda/index.html.twig', [
-            'events' => $events->findUpcomingFor($user, $today),
+            'buckets' => $agenda->bucketsFor($user, $today),
         ]);
     }
 
@@ -112,9 +114,9 @@ final class PersonalEventController extends AbstractController
     }
 
     /**
-     * One-click "done" toggle from the agenda. Only its owner may do it. Returns to whichever screen
-     * fired it — the home agenda (anchored on the row) or the agenda list — from a closed set of
-     * values ("from"), never the Referer, to rule out an open redirect.
+     * One-click "done" toggle from the agenda. Only its owner may do it. Returns to the agenda,
+     * landing on the row just ticked ("#evento-id"). Route-based (never the Referer) to rule out an
+     * open redirect.
      */
     #[Route('/agenda/{id}/hecho', name: 'personal_event_toggle_done', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function toggleDone(PersonalEvent $event, Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager): Response
@@ -127,11 +129,7 @@ final class PersonalEventController extends AbstractController
         $event->setDone(!$event->isDone());
         $entityManager->flush();
 
-        if ('home' === $request->request->get('from')) {
-            return $this->redirectToRoute('app_homepage', ['_fragment' => 'evento-'.$event->getId()]);
-        }
-
-        return $this->redirectToRoute('personal_event_index');
+        return $this->redirectToRoute('personal_event_index', ['_fragment' => 'evento-'.$event->getId()]);
     }
 
     /**
@@ -172,18 +170,19 @@ final class PersonalEventController extends AbstractController
     {
         $event->setTitle($data->title)
             ->setDescription($data->description)
-            ->setCategory($data->category)
-            ->setAllDay($data->allDay);
+            ->setCategory($data->category);
 
-        if ($data->allDay) {
-            $event->setStartAt($day)->setEndAt(null);
+        // No time chosen → a reminder: it sits on the day, marked internally as all-day (never shown
+        // as "todo el día"). A time → an appointment, with an optional end.
+        if (null === $data->startTime) {
+            $event->setStartAt($day)->setEndAt(null)->setAllDay(true);
 
             return;
         }
 
-        \assert(null !== $data->startTime);
         $event->setStartAt($this->at($day, $data->startTime))
-            ->setEndAt(null !== $data->endTime ? $this->at($day, $data->endTime) : null);
+            ->setEndAt(null !== $data->endTime ? $this->at($day, $data->endTime) : null)
+            ->setAllDay(false);
     }
 
     /**

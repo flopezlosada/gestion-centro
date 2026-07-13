@@ -183,7 +183,7 @@ final class PersonalEventRecurrenceTest extends WebTestCase
         self::assertSame(0, $this->em->getRepository(PersonalEvent::class)->count(['title' => 'Fin antes del inicio']));
     }
 
-    public function testAllDayRecurringMaterialisesAllDayOccurrences(): void
+    public function testNoTimeRecurringMaterialisesNoTimeOccurrences(): void
     {
         $user = $this->user('profe@centro.test');
         $this->em->flush();
@@ -191,16 +191,16 @@ final class PersonalEventRecurrenceTest extends WebTestCase
 
         $crawler = $this->client->request('GET', '/agenda/nueva');
         $form = $crawler->selectButton('Crear evento')->form();
-        $form['personal_event_form[title]'] = 'Semana temática';
+        $form['personal_event_form[title]'] = 'Recordatorio semanal';
         $form['personal_event_form[day]'] = '2026-03-02';
         $form['personal_event_form[repeat]'] = 'weekly';
         $form['personal_event_form[repeatUntil]'] = '2026-03-16';
-        // Tick "all day" via submit() (the crawler union return type forbids ->tick()).
-        $this->client->submit($form, ['personal_event_form[allDay]' => '1']);
+        // No start time: every occurrence is a no-time reminder.
+        $this->client->submit($form);
 
         self::assertResponseRedirects('/agenda');
         $this->em->clear();
-        $events = $this->em->getRepository(PersonalEvent::class)->findBy(['title' => 'Semana temática'], ['startAt' => 'ASC']);
+        $events = $this->em->getRepository(PersonalEvent::class)->findBy(['title' => 'Recordatorio semanal'], ['startAt' => 'ASC']);
         self::assertCount(3, $events);
         foreach ($events as $event) {
             self::assertTrue($event->isAllDay());

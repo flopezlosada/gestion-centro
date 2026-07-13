@@ -15,14 +15,22 @@
     <div class="card">
         {{ form_start(form) }}
         {{ form_errors(form) }}
-        {{ f.section('Qué hay que hacer', [form.title, form.description]) }}
-        {{ f.section('Cuándo', [form.dueDate]) }}
-        {{ f.section('Quién responde', [form.assignedUser]|merge(form.assignedRole is defined ? [form.assignedRole] : [])) }}
-        <fieldset class="form-section">
-            <legend class="form-section-title">Opciones</legend>
-            {{ f.toggles([form.mandatory, form.requiresCheckbox, form.requiresDocument]) }}
-        </fieldset>
-        {{ f.actions(path('task_show', { id: task.id })) }}
+        <div class="stackform">
+            <div class="form-row">
+                {{ form_label(form.title) }}
+                {{ form_widget(form.title, { attr: { class: 'field-title' } }) }}
+                {{ form_errors(form.title) }}
+            </div>
+            {{ f.field(form.description) }}
+            {{ f.field(form.dueDate) }}
+            {% if form.assignedUser is defined %}{{ f.field(form.assignedUser) }}{% endif %}
+            {% if form.assignedRole is defined %}{{ f.field(form.assignedRole) }}{% endif %}
+            {{ f.toggles([form.mandatory]) }}
+            <div class="stackform__foot">
+                <a class="btn secondary" href="{{ path('task_show', { id: task.id }) }}">Cancelar</a>
+                <button class="btn" type="submit">Guardar</button>
+            </div>
+        </div>
         {{ form_end(form) }}
     </div>
 

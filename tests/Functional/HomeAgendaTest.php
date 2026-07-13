@@ -11,8 +11,9 @@ use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 /**
- * The landing agenda mixes the user's tasks and their private personal events — but only their own:
- * a personal event is never shown on someone else's home page.
+ * The landing agenda (served at /agenda, where the site root redirects) mixes the user's tasks and
+ * their private personal events — but only their own: a personal event is never shown on someone
+ * else's agenda.
  */
 final class HomeAgendaTest extends WebTestCase
 {
@@ -42,7 +43,7 @@ final class HomeAgendaTest extends WebTestCase
         $this->em->flush();
 
         $this->client->loginUser($user);
-        $this->client->request('GET', '/');
+        $this->client->request('GET', '/agenda');
 
         self::assertResponseIsSuccessful();
         self::assertStringContainsString('Tutoría con familia', (string) $this->client->getResponse()->getContent());
@@ -58,7 +59,7 @@ final class HomeAgendaTest extends WebTestCase
         $this->em->flush();
 
         $this->client->loginUser($user);
-        $this->client->request('GET', '/');
+        $this->client->request('GET', '/agenda');
 
         self::assertResponseIsSuccessful();
         self::assertStringContainsString('Recordatorio vencido', (string) $this->client->getResponse()->getContent());
@@ -72,7 +73,7 @@ final class HomeAgendaTest extends WebTestCase
         $this->em->flush();
 
         $this->client->loginUser($user);
-        $this->client->request('GET', '/');
+        $this->client->request('GET', '/agenda');
 
         self::assertResponseIsSuccessful();
         // Done entries are kept apart in the "Hechas" bucket, but still rendered.
@@ -88,9 +89,20 @@ final class HomeAgendaTest extends WebTestCase
         $this->em->flush();
 
         $this->client->loginUser($me);
-        $this->client->request('GET', '/');
+        $this->client->request('GET', '/agenda');
 
         self::assertResponseIsSuccessful();
         self::assertStringNotContainsString('Cita privada ajena', (string) $this->client->getResponse()->getContent());
+    }
+
+    public function testTheSiteRootRedirectsToTheAgenda(): void
+    {
+        $user = $this->user('profe@centro.test');
+        $this->em->flush();
+
+        $this->client->loginUser($user);
+        $this->client->request('GET', '/');
+
+        self::assertResponseRedirects('/agenda');
     }
 }

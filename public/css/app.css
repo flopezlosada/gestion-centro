@@ -654,6 +654,19 @@ input[type="email"], input[type="text"], select, textarea {
 .switch__label { font-weight: 500; color: var(--text); }
 .switch__help { font-size: 12.5px; color: var(--text-muted); line-height: 1.4; }
 
+/* ---- Alta/edición de tarea y evento: formulario vertical, de ancho contenido y con ritmo amplio.
+   Campos apilados y claramente separados (título y descripción son campos distintos), sin cabeceras
+   en mayúsculas. Los campos condicionales ocultos no ocupan espacio. Tokens de "Registro". ---- */
+.stackform { max-width: 560px; }
+.stackform .form-row { margin-bottom: 18px; }
+.stackform [data-qa-when][hidden] { display: none; }
+/* El título es el campo protagonista: algo mayor para marcar jerarquía sobre el resto. */
+.stackform .field-title { font-size: 16px; font-weight: 500; }
+/* Barra de acciones separada del último campo, alineada a la derecha. */
+.stackform__foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border); }
+.quickadd__opts { margin-top: 20px; }
+.quickadd__foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+
 /* ---- Desplegable propio de <select> (select-menu.js) ----
    Reemplaza la lista nativa del SO (incontrolable por CSS) por un listbox del tema. El <select>
    nativo queda oculto pero en el DOM y se envía igual; sin JS no lleva .cselect__native y se ve normal. */
@@ -1515,17 +1528,27 @@ input[type="email"], input[type="text"], select, textarea {
    un color compartido con un estado de tarea resulte ambiguo. */
 .calendar-dot--event { background: var(--event-color, var(--text-muted)); border-radius: 2px; }
 
-/* ---- Categorías de evento personal: cada clase fija --event-color con un token EXISTENTE del tema
-   (soporte claro/oscuro gratis, cero hex nuevos). La consumen el punto del calendario y el badge de
-   la agenda. ---- */
-.event-cat--general  { --event-color: var(--text-muted); }
-.event-cat--teaching { --event-color: var(--review); }
-.event-cat--meeting  { --event-color: var(--accent); }
-.event-cat--tutoring { --event-color: var(--success); }
-.event-cat--personal { --event-color: var(--warning); }
+/* ---- Paleta de color de categoría (CategoryColor): cada clase fija --event-color con un token
+   EXISTENTE del tema (soporte claro/oscuro gratis, cero hex nuevos). La consumen el punto del
+   calendario, el badge de la agenda y los swatches del formulario admin. ---- */
+.cat-color--slate { --event-color: var(--text-muted); }
+.cat-color--teal  { --event-color: var(--accent); }
+.cat-color--blue  { --event-color: var(--review); }
+.cat-color--green { --event-color: var(--success); }
+.cat-color--amber { --event-color: var(--warning); }
+.cat-color--red   { --event-color: var(--danger); }
 /* Badge de categoría en las filas de agenda: un punto de color + la etiqueta. */
 .event-badge { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted); }
 .event-badge::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--event-color, var(--text-muted)); flex: none; }
+
+/* ---- Selector de color en swatches (form admin de categoría): radio oculto + etiqueta-chip. ---- */
+.swatch-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+.swatch { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px 6px 9px; border: 1px solid var(--border-strong); border-radius: 999px; cursor: pointer; }
+.swatch input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.swatch__chip { width: 14px; height: 14px; border-radius: 4px; background: var(--event-color, var(--text-muted)); flex: none; }
+.swatch__name { font-size: 13px; color: var(--text); }
+.swatch:has(input:checked) { border-color: var(--accent); background: var(--accent-weak); }
+.swatch:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 .calendar-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 16px 0 0; padding: 0; font-size: 12.5px; color: var(--text-muted); }
 .calendar-legend li { display: flex; align-items: center; gap: 6px; }

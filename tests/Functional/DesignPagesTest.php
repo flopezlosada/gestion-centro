@@ -71,7 +71,7 @@ final class DesignPagesTest extends WebTestCase
         $s = $this->seed();
         $this->client->loginUser($s['teacher']);
 
-        $this->client->request('GET', '/');
+        $this->client->request('GET', '/agenda');
 
         self::assertResponseIsSuccessful();
         self::assertSelectorExists('aside.sidebar');
@@ -83,7 +83,7 @@ final class DesignPagesTest extends WebTestCase
         $s = $this->seed();
         $this->client->loginUser($s['teacher']);
 
-        $crawler = $this->client->request('GET', '/');
+        $crawler = $this->client->request('GET', '/agenda');
         $this->client->submit($crawler->filter('form.agenda-check')->first()->form());
 
         self::assertResponseRedirects();

@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
+use App\Entity\EventCategory;
 use App\Entity\PersonalEvent;
 use App\Entity\User;
-use App\Enum\EventCategory;
+use App\Enum\CategoryColor;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -71,7 +72,7 @@ final class PersonalEventCrudTest extends WebTestCase
         self::assertSame('2026-09-15 11:00', $event->getEndAt()?->format('Y-m-d H:i'));
     }
 
-    public function testCreateAllDayEventIgnoresTimes(): void
+    public function testCreateNoTimeReminderHasNoTime(): void
     {
         $owner = $this->user('profe@centro.test');
         $this->em->flush();
@@ -79,22 +80,21 @@ final class PersonalEventCrudTest extends WebTestCase
 
         $crawler = $this->client->request('GET', '/agenda/nueva');
         $form = $crawler->selectButton('Crear evento')->form();
-        $form['personal_event_form[title]'] = 'Jornada de puertas abiertas';
+        $form['personal_event_form[title]'] = 'Llamar a la familia de Pepito';
         $form['personal_event_form[day]'] = '2026-09-20';
-        // Tick "all day" by passing the value to submit() (the project's convention for checkboxes,
-        // as in TaskCrudTest) rather than ->tick(), which the crawler's union return type disallows.
-        $this->client->submit($form, ['personal_event_form[allDay]' => '1']);
+        // No start time chosen: it is a reminder, sits on the day with no time.
+        $this->client->submit($form);
 
         self::assertResponseRedirects('/agenda');
         $this->em->clear();
-        $event = $this->em->getRepository(PersonalEvent::class)->findOneBy(['title' => 'Jornada de puertas abiertas']);
+        $event = $this->em->getRepository(PersonalEvent::class)->findOneBy(['title' => 'Llamar a la familia de Pepito']);
         self::assertNotNull($event);
         self::assertTrue($event->isAllDay());
         self::assertSame('2026-09-20 00:00', $event->getStartAt()->format('Y-m-d H:i'));
         self::assertNull($event->getEndAt());
     }
 
-    public function testTimedEventWithoutStartTimeIsRejected(): void
+    public function testEndTimeWithoutStartTimeIsRejected(): void
     {
         $owner = $this->user('profe@centro.test');
         $this->em->flush();
@@ -102,14 +102,15 @@ final class PersonalEventCrudTest extends WebTestCase
 
         $crawler = $this->client->request('GET', '/agenda/nueva');
         $form = $crawler->selectButton('Crear evento')->form();
-        $form['personal_event_form[title]'] = 'Sin hora';
+        $form['personal_event_form[title]'] = 'Fin sin inicio';
         $form['personal_event_form[day]'] = '2026-09-15';
-        // Not all-day and no start time: invalid.
+        // An end time with no start time makes no sense.
+        $form['personal_event_form[endTime]'] = '11:00';
         $this->client->submit($form);
 
         self::assertResponseStatusCodeSame(422);
         self::assertStringContainsString('hora de inicio', (string) $this->client->getResponse()->getContent());
-        self::assertNull($this->em->getRepository(PersonalEvent::class)->findOneBy(['title' => 'Sin hora']));
+        self::assertNull($this->em->getRepository(PersonalEvent::class)->findOneBy(['title' => 'Fin sin inicio']));
     }
 
     public function testEndTimeBeforeStartTimeIsRejected(): void
@@ -191,25 +192,27 @@ final class PersonalEventCrudTest extends WebTestCase
     public function testCreateEventWithChosenCategoryPersistsIt(): void
     {
         $owner = $this->user('profe@centro.test');
+        $category = (new EventCategory())->setName('Claustro')->setColor(CategoryColor::TEAL);
+        $this->em->persist($category);
         $this->em->flush();
         $this->client->loginUser($owner);
 
         $crawler = $this->client->request('GET', '/agenda/nueva');
         $form = $crawler->selectButton('Crear evento')->form();
-        $form['personal_event_form[title]'] = 'Claustro';
+        $form['personal_event_form[title]'] = 'Reunión de claustro';
         $form['personal_event_form[day]'] = '2026-09-15';
         $form['personal_event_form[startTime]'] = '10:00';
-        $form['personal_event_form[category]'] = 'meeting';
+        $form['personal_event_form[category]'] = (string) $category->getId();
         $this->client->submit($form);
 
         self::assertResponseRedirects('/agenda');
         $this->em->clear();
-        $event = $this->em->getRepository(PersonalEvent::class)->findOneBy(['title' => 'Claustro']);
+        $event = $this->em->getRepository(PersonalEvent::class)->findOneBy(['title' => 'Reunión de claustro']);
         self::assertNotNull($event);
-        self::assertSame(EventCategory::MEETING, $event->getCategory());
+        self::assertSame($category->getId(), $event->getCategory()?->getId());
     }
 
-    public function testEventWithoutAChosenCategoryDefaultsToGeneral(): void
+    public function testEventWithoutAChosenCategoryIsUncategorised(): void
     {
         $owner = $this->user('profe@centro.test');
         $this->em->flush();
@@ -226,32 +229,39 @@ final class PersonalEventCrudTest extends WebTestCase
         $this->em->clear();
         $event = $this->em->getRepository(PersonalEvent::class)->findOneBy(['title' => 'Nota rápida']);
         self::assertNotNull($event);
-        self::assertSame(EventCategory::GENERAL, $event->getCategory());
+        self::assertNull($event->getCategory());
     }
 
     public function testEditingPreloadsAndChangesTheCategory(): void
     {
         $owner = $this->user('profe@centro.test');
+        // Names outside the seeded catalogue (General/Docencia/Reunión/Tutoría/Personal, present in
+        // the test DB), so they cannot clash with a seeded row under the unique-name constraint.
+        $meeting = (new EventCategory())->setName('Claustro')->setColor(CategoryColor::TEAL);
+        $tutoring = (new EventCategory())->setName('Excursión')->setColor(CategoryColor::GREEN);
+        $this->em->persist($meeting);
+        $this->em->persist($tutoring);
         $event = (new PersonalEvent($owner, 'Reunión de nivel', new \DateTimeImmutable('2026-09-15 10:00')))
-            ->setCategory(EventCategory::MEETING);
+            ->setCategory($meeting);
         $this->em->persist($event);
         $this->em->flush();
         $id = (int) $event->getId();
+        $tutoringId = (int) $tutoring->getId();
 
         $this->client->loginUser($owner);
         $crawler = $this->client->request('GET', '/agenda/'.$id.'/editar');
         self::assertResponseIsSuccessful();
         // The edit form preloads the current category as the selected option.
-        self::assertSelectorExists('[name="personal_event_form[category]"] option[value="meeting"][selected]');
+        self::assertSelectorExists('[name="personal_event_form[category]"] option[value="'.$meeting->getId().'"][selected]');
 
         $form = $crawler->selectButton('Guardar')->form();
-        $form['personal_event_form[category]'] = 'tutoring';
+        $form['personal_event_form[category]'] = (string) $tutoringId;
         $this->client->submit($form);
 
         self::assertResponseRedirects('/agenda');
         $this->em->clear();
         $reloaded = $this->em->getRepository(PersonalEvent::class)->find($id);
         self::assertNotNull($reloaded);
-        self::assertSame(EventCategory::TUTORING, $reloaded->getCategory());
+        self::assertSame($tutoringId, $reloaded->getCategory()?->getId());
     }
 }

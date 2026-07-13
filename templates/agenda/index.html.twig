@@ -1,30 +1,38 @@
 {% extends 'app_shell.html.twig' %}
 {% import '_macros/task.html.twig' as taskUi %}
 
-{% block title %}Mi agenda · {{ app_organization_name }}{% endblock %}
-{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Agenda{% endblock %}
+{% block title %}Agenda personal · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}Agenda personal{% endblock %}
 
 {% block body %}
+    {% set pendingCount = buckets.overdue|length + buckets.today|length + buckets.week|length + buckets.later|length %}
+
     <div class="page-head">
         <div>
-            <h1>Mi agenda</h1>
-            <p class="lead">Tus citas y recordatorios. Privados: solo los ves tú.</p>
+            <h1>Agenda personal</h1>
+            <p class="lead">Lo que tienes que hacer: las tareas que te asignan y los recordatorios o citas que te pongas tú. Lo tuyo es privado, solo lo ves tú.</p>
         </div>
-        <div><a class="btn" href="{{ path('personal_event_new') }}">+ Nuevo evento</a></div>
+        <div><a class="btn" href="{{ path('personal_event_new') }}">+ Nuevo</a></div>
     </div>
 
-    <div class="card">
-        {% if events is empty %}
+    {% if pendingCount == 0 and buckets.done is empty %}
+        <div class="card">
             <div class="empty-state">
-                <h2>No tienes nada próximo</h2>
-                <p>Crea un evento para tu tutoría, una reunión o un recordatorio.</p>
+                <h2>No tienes nada por ahora</h2>
+                <p>Aquí verás las tareas que te asignen y los recordatorios o citas que te pongas tú.</p>
+                <a class="btn" href="{{ path('personal_event_new') }}">Añadir algo</a>
             </div>
-        {% else %}
-            <ul class="agenda-list">
-                {# Una sola fuente de verdad para la fila de evento: el mismo macro que usa Inicio.
-                   returnTo='agenda' para que al marcar "hecho" se vuelva aquí. #}
-                {% for e in events %}{{ taskUi.event_item(e, 'agenda') }}{% endfor %}
-            </ul>
+        </div>
+    {% else %}
+        {{ taskUi.agenda_section('Vencidas', buckets.overdue, 'overdue') }}
+        {{ taskUi.agenda_section('Hoy', buckets.today) }}
+        {{ taskUi.agenda_section('Próximos 7 días', buckets.week) }}
+        {{ taskUi.agenda_section('Más adelante', buckets.later) }}
+
+        {% if pendingCount == 0 %}
+            <div class="card"><div class="empty-state"><h2>¡Todo hecho! 🎉</h2><p>No te queda nada pendiente. Lo marcado como hecho está abajo.</p></div></div>
         {% endif %}
-    </div>
+
+        {{ taskUi.agenda_section('Hechas', buckets.done, 'done') }}
+    {% endif %}
 {% endblock %}

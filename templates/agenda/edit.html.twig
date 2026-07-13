@@ -18,14 +18,22 @@
     <div class="card">
         {{ form_start(form) }}
         {{ form_errors(form) }}
-        {{ f.section('Qué', [form.title, form.description, form.category]) }}
-        <fieldset class="form-section">
-            <legend class="form-section-title">Cuándo</legend>
-            {{ f.fields([form.day]) }}
-            {{ f.toggles([form.allDay]) }}
-            {{ f.fields([form.startTime, form.endTime]) }}
-        </fieldset>
-        {{ f.actions(path('personal_event_index'), 'Guardar') }}
+        <div class="stackform">
+            <div class="form-row">
+                {{ form_label(form.title) }}
+                {{ form_widget(form.title, { attr: { class: 'field-title' } }) }}
+                {{ form_errors(form.title) }}
+            </div>
+            {{ f.field(form.description) }}
+            {{ f.field(form.day) }}
+            {{ f.field(form.startTime) }}
+            {{ f.field(form.endTime, 'hasstart') }}
+            {{ f.field(form.category) }}
+            <div class="stackform__foot">
+                <a class="btn secondary" href="{{ path('personal_event_index') }}">Cancelar</a>
+                <button class="btn" type="submit">Guardar</button>
+            </div>
+        </div>
         {{ form_end(form) }}
     </div>
 

@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace App\Form;
 
-use App\Enum\EventCategory;
+use App\Entity\EventCategory;
 use App\Enum\RecurrenceFrequency;
+use App\Repository\EventCategoryRepository;
+use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
-use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
 use Symfony\Component\Form\Extension\Core\Type\EnumType;
@@ -33,6 +34,10 @@ final class PersonalEventFormType extends AbstractType
     private const int SLOT_TO = 23 * 60 + 45;    // 23:45
     private const int SLOT_STEP = 15;            // quarter-hour granularity
 
+    public function __construct(private readonly EventCategoryRepository $categories)
+    {
+    }
+
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
         $slots = $this->timeSlots();
@@ -40,10 +45,13 @@ final class PersonalEventFormType extends AbstractType
         $builder
             ->add('title', TextType::class, ['label' => 'Título'])
             ->add('description', TextareaType::class, ['label' => 'Descripción', 'required' => false])
-            ->add('category', EnumType::class, [
+            ->add('category', EntityType::class, [
                 'label' => 'Categoría',
                 'class' => EventCategory::class,
-                'choice_label' => static fn (EventCategory $category): string => $category->label(),
+                'choices' => $this->categories->findAllOrdered(),
+                'choice_label' => 'name',
+                'required' => false,
+                'placeholder' => 'Sin categoría',
                 'help' => 'Le da un color en tu agenda y calendario.',
             ])
             ->add('day', DateType::class, [
@@ -51,23 +59,19 @@ final class PersonalEventFormType extends AbstractType
                 'widget' => 'single_text',
                 'input' => 'datetime_immutable',
             ])
-            ->add('allDay', CheckboxType::class, [
-                'label' => 'Todo el día',
-                'required' => false,
-                'help' => 'Sin hora concreta: solo ocupa el día en tu agenda.',
-            ])
             ->add('startTime', ChoiceType::class, [
-                'label' => 'Desde',
+                'label' => 'Hora',
                 'required' => false,
-                'placeholder' => '— Hora —',
+                'placeholder' => '— Sin hora —',
                 'choices' => $slots,
+                'help' => 'Déjalo en «Sin hora» si es un recordatorio sin hora concreta.',
             ])
             ->add('endTime', ChoiceType::class, [
                 'label' => 'Hasta',
                 'required' => false,
                 'placeholder' => '— Sin fin —',
                 'choices' => $slots,
-                'help' => 'Opcional. Déjalo vacío si no tiene una hora de fin.',
+                'help' => 'Opcional, si tiene una hora de fin.',
             ]);
 
         // Recurrence is a create-time decision: once materialised into occurrences, each is edited on

@@ -1,0 +1,38 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}{{ category.id ? 'Editar categoría' : 'Nueva categoría' }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('admin_event_category_index') }}">Categorías de evento</a><span class="sep">/</span>
+    {{ category.id ? 'Editar' : 'Nueva' }}
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <h1>{{ category.id ? 'Editar categoría' : 'Nueva categoría' }}</h1>
+    </div>
+
+    <div class="card form-card">
+        {{ form_start(form, { 'attr': { 'novalidate': 'novalidate' } }) }}
+            {{ form_errors(form) }}
+            {{ f.fields([form.name]) }}
+            <div class="form-row">
+                {{ form_label(form.color) }}
+                {# Paleta de swatches: cada opción es una etiqueta con su color; el radio real queda oculto. #}
+                <div class="swatch-picker">
+                    {% for choice in form.color %}
+                        <label class="swatch cat-color--{{ choice.vars.value }}">
+                            {{ form_widget(choice) }}
+                            <span class="swatch__chip" aria-hidden="true"></span>
+                            <span class="swatch__name">{{ choice.vars.label }}</span>
+                        </label>
+                    {% endfor %}
+                </div>
+                {{ form_errors(form.color) }}
+            </div>
+            {{ f.actions(path('admin_event_category_index')) }}
+        {{ form_end(form) }}
+    </div>
+{% endblock %}

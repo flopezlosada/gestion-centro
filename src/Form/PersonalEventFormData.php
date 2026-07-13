@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Form;
 
+use App\Entity\EventCategory;
 use App\Entity\PersonalEvent;
-use App\Enum\EventCategory;
 use App\Enum\RecurrenceFrequency;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
@@ -27,15 +27,13 @@ final class PersonalEventFormData
     #[Assert\NotNull(message: 'Pon el día.')]
     public ?\DateTimeImmutable $day = null;
 
-    public bool $allDay = false;
+    /** Colour-coding category, or null for uncategorised. */
+    public ?EventCategory $category = null;
 
-    /** Colour-coding category. */
-    public EventCategory $category = EventCategory::GENERAL;
-
-    /** Start time as "HH:MM", or null for an all-day entry. */
+    /** Start time as "HH:MM", or null for a no-time reminder (e.g. "llamar a Pepito"). */
     public ?string $startTime = null;
 
-    /** End time as "HH:MM", or null when the entry has no explicit end. */
+    /** End time as "HH:MM", or null when there is no explicit end (only valid with a start time). */
     public ?string $endTime = null;
 
     /** Recurrence frequency. */
@@ -45,22 +43,21 @@ final class PersonalEventFormData
     public ?\DateTimeImmutable $repeatUntil = null;
 
     /**
-     * Cross-field rules that a single-field constraint cannot express: a timed entry needs a start,
-     * and the end (if any) must come after it. Times are "HH:MM" strings, so a lexicographic compare
-     * is a chronological compare.
+     * Cross-field rules a single-field constraint cannot express: an end time only makes sense with a
+     * start time, and it must come after it. No start time at all is fine — that is a reminder. Times
+     * are "HH:MM" strings, so a lexicographic compare is a chronological compare.
      *
      * @param ExecutionContextInterface $context the validation context to attach violations to
      */
     #[Assert\Callback]
     public function validateTimes(ExecutionContextInterface $context): void
     {
-        if ($this->allDay) {
-            return;
-        }
         if (null === $this->startTime) {
-            $context->buildViolation('Indica la hora de inicio o marca «Todo el día».')
-                ->atPath('startTime')
-                ->addViolation();
+            if (null !== $this->endTime) {
+                $context->buildViolation('Pon primero la hora de inicio.')
+                    ->atPath('endTime')
+                    ->addViolation();
+            }
 
             return;
         }
@@ -118,8 +115,9 @@ final class PersonalEventFormData
         $data->title = $event->getTitle();
         $data->description = $event->getDescription();
         $data->day = $event->getStartAt()->setTime(0, 0);
-        $data->allDay = $event->isAllDay();
         $data->category = $event->getCategory();
+        // A timed entry prefills its time(s); a no-time reminder ({@see PersonalEvent::isAllDay()})
+        // leaves them empty.
         if (!$event->isAllDay()) {
             $data->startTime = $event->getStartAt()->format('H:i');
             $data->endTime = $event->getEndAt()?->format('H:i');

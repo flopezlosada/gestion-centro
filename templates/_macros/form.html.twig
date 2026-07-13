@@ -31,6 +31,24 @@
 {% endmacro %}
 
 {#
+   Un campo compacto para la fila de metadatos del alta rápida (quick-add): etiqueta pequeña +
+   control + errores. Sin la ayuda larga (estorba en el layout en fila; va en el placeholder o se omite).
+#}
+{#
+   Un campo apilado (etiqueta + control + ayuda + errores), como `fields` pero de uno en uno y con
+   soporte para ocultado condicional: `when` pone data-qa-when, y agenda-form.js lo muestra solo
+   cuando se cumple la condición (p. ej. las horas solo si NO es "todo el día"). Sin JS, se ve siempre.
+#}
+{% macro field(field, when = null) %}
+    <div class="form-row"{% if when %} data-qa-when="{{ when }}"{% endif %}>
+        {{ form_label(field) }}
+        {{ form_widget(field) }}
+        {% if field.vars.help %}<p class="help">{{ field.vars.help }}</p>{% endif %}
+        {{ form_errors(field) }}
+    </div>
+{% endmacro %}
+
+{#
    Agrupa un bloque de campos bajo un título, para partir los formularios largos en secciones
    y que no sean un muro de campos. Usa <fieldset>/<legend> (semántica de agrupación accesible).
 #}

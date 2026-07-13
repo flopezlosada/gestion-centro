@@ -6,6 +6,7 @@ namespace App\Controller;
 
 use App\Entity\Task;
 use App\Entity\User;
+use App\Enum\TaskType;
 use App\Form\TaskFormData;
 use App\Form\TaskFormType;
 use App\Repository\AuditLogRepository;
@@ -56,19 +57,28 @@ final class TaskController extends AbstractController
     public function new(Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, UserRepository $users, EntityManagerInterface $entityManager): Response
     {
         $assignable = $this->assignableUsers($user, $hierarchy, $users);
+        // Only offer the assignee picker when the creator actually commands someone else; otherwise
+        // the task is simply theirs and no picker is shown.
+        $canAssignOthers = \count($assignable) > 1;
 
         $canEditRole = $this->canEditTaskRole($user);
         $data = new TaskFormData();
         $data->assignedUser = $user;
-        $form = $this->createForm(TaskFormType::class, $data, ['assignable_users' => $assignable, 'include_type' => true, 'include_role' => $canEditRole]);
+        $form = $this->createForm(TaskFormType::class, $data, ['assignable_users' => $assignable, 'include_role' => $canEditRole, 'include_assignee' => $canAssignOthers, 'include_deliverable' => true]);
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
+            if (!$canAssignOthers) {
+                $data->assignedUser = $user;
+            }
             if (!\in_array($data->assignedUser, $assignable, true)) {
                 throw $this->createAccessDeniedException('No puedes asignar tareas a esa persona.');
             }
 
-            $task = new Task($data->title, SchoolYear::current($data->dueDate), $data->dueDate, $data->type);
+            // The deliverable toggle also picks the lifecycle: a deliverable task carries the
+            // progress/submission/validation flow; a plain one is the simple do-and-validate lifecycle.
+            $type = $data->requiresDocument ? TaskType::WITH_DELIVERABLE : TaskType::SIMPLE;
+            $task = new Task($data->title, SchoolYear::current($data->dueDate), $data->dueDate, $type);
             $this->applyFormData($task, $data, $canEditRole);
             $task->setCreatedBy($user);
             $entityManager->persist($task);
@@ -98,12 +108,17 @@ final class TaskController extends AbstractController
             $assignable[] = $task->getAssignedUser();
         }
 
+        $canAssignOthers = \count($assignable) > 1;
         $canEditRole = $this->canEditTaskRole($user);
         $data = TaskFormData::fromTask($task);
-        $form = $this->createForm(TaskFormType::class, $data, ['assignable_users' => $assignable, 'include_type' => false, 'include_role' => $canEditRole]);
+        // The deliverable toggle is not shown on edit: the lifecycle is fixed once the task is running.
+        $form = $this->createForm(TaskFormType::class, $data, ['assignable_users' => $assignable, 'include_role' => $canEditRole, 'include_assignee' => $canAssignOthers, 'include_deliverable' => false]);
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
+            if (!$canAssignOthers) {
+                $data->assignedUser = $task->getAssignedUser() ?? $user;
+            }
             if (!\in_array($data->assignedUser, $assignable, true)) {
                 throw $this->createAccessDeniedException('No puedes asignar tareas a esa persona.');
             }
@@ -276,7 +291,7 @@ final class TaskController extends AbstractController
 
         // Back to the agenda, landing on the task just ticked. Route-based (no referer) to avoid
         // any open-redirect; _fragment adds the "#tarea-id" anchor.
-        return $this->redirectToRoute('app_homepage', ['_fragment' => 'tarea-'.$task->getId()]);
+        return $this->redirectToRoute('personal_event_index', ['_fragment' => 'tarea-'.$task->getId()]);
     }
 
     /**
