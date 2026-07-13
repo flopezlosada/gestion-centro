@@ -170,7 +170,7 @@ final class AdminPanelTest extends WebTestCase
     {
         $this->client->loginUser($this->admin());
 
-        $this->client->request('GET', '/');
+        $this->client->request('GET', '/agenda');
 
         self::assertResponseIsSuccessful();
         self::assertSelectorTextContains('.nav-section-title', 'Administración');
@@ -180,7 +180,7 @@ final class AdminPanelTest extends WebTestCase
     {
         $this->client->loginUser($this->teacher());
 
-        $this->client->request('GET', '/');
+        $this->client->request('GET', '/agenda');
 
         self::assertResponseIsSuccessful();
         self::assertSelectorNotExists('.nav-section-title');

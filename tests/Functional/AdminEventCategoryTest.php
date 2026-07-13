@@ -72,6 +72,24 @@ final class AdminEventCategoryTest extends WebTestCase
         self::assertNull($this->em->getRepository(EventCategory::class)->find($id));
     }
 
+    public function testDuplicateCategoryNameIsRejected(): void
+    {
+        $this->client->loginUser($this->admin());
+        $this->em->persist((new EventCategory())->setName('Reunión')->setColor(CategoryColor::TEAL));
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/admin/categorias-evento/nueva');
+        $form = $crawler->selectButton('Guardar')->form();
+        $form['event_category[name]'] = 'Reunión';
+        $form['event_category[color]'] = 'blue';
+        $this->client->submit($form);
+
+        // The unique-name constraint rejects it: the form is redisplayed (422) and only one row exists.
+        self::assertResponseStatusCodeSame(422);
+        self::assertStringContainsString('Ya existe una categoría', (string) $this->client->getResponse()->getContent());
+        self::assertCount(1, $this->em->getRepository(EventCategory::class)->findAll());
+    }
+
     public function testTeacherCannotReachTheCategoriesAdmin(): void
     {
         $teacher = (new User())->setFullName('Docente Test')->setEmail('profe@centro.test');

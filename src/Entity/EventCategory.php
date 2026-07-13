@@ -8,6 +8,7 @@ use App\Contract\Auditable;
 use App\Enum\CategoryColor;
 use App\Repository\EventCategoryRepository;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -20,6 +21,8 @@ use Symfony\Component\Validator\Constraints as Assert;
  */
 #[ORM\Entity(repositoryClass: EventCategoryRepository::class)]
 #[ORM\Table(name: 'event_category')]
+#[ORM\UniqueConstraint(name: 'uniq_event_category_name', columns: ['name'])]
+#[UniqueEntity(fields: ['name'], message: 'Ya existe una categoría con ese nombre.')]
 class EventCategory implements Auditable
 {
     #[ORM\Id]
