@@ -15,7 +15,7 @@
     <div class="card">
         {{ form_start(form) }}
         {{ form_errors(form) }}
-        {{ f.section('Qué', [form.title, form.description]) }}
+        {{ f.section('Qué', [form.title, form.description, form.category]) }}
         <fieldset class="form-section">
             <legend class="form-section-title">Cuándo</legend>
             {{ f.fields([form.day]) }}

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Form;
 
+use App\Enum\EventCategory;
 use App\Enum\RecurrenceFrequency;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
@@ -39,6 +40,12 @@ final class PersonalEventFormType extends AbstractType
         $builder
             ->add('title', TextType::class, ['label' => 'Título'])
             ->add('description', TextareaType::class, ['label' => 'Descripción', 'required' => false])
+            ->add('category', EnumType::class, [
+                'label' => 'Categoría',
+                'class' => EventCategory::class,
+                'choice_label' => static fn (EventCategory $category): string => $category->label(),
+                'help' => 'Le da un color en tu agenda y calendario.',
+            ])
             ->add('day', DateType::class, [
                 'label' => 'Día',
                 'widget' => 'single_text',

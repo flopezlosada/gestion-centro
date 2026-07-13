@@ -67,7 +67,7 @@
                 {{ event.startAt|date('d/m/Y') }}
                 {%- if event.allDay %} · Todo el día
                 {%- else %} · {{ event.startAt|date('H:i') }}{% if event.endAt %}–{{ event.endAt|date('H:i') }}{% endif %}
-                {%- endif %} · <span class="badge badge--muted">Personal</span>
+                {%- endif %} · <span class="event-badge {{ event.category.cssClass }}">{{ event.category.label }}</span>
             </span>
         </div>
     </li>
