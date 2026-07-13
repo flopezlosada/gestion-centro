@@ -4,12 +4,19 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Entity\CargoResponsibility;
+use App\Entity\PersonResponsibility;
+use App\Entity\Role;
+use App\Entity\RoleResponsibility;
 use App\Entity\Task;
+use App\Entity\Unit;
 use App\Entity\User;
+use App\Enum\ResponsibilityMode;
 use App\Enum\TaskType;
 use App\Form\TaskFormData;
 use App\Form\TaskFormType;
 use App\Repository\AuditLogRepository;
+use App\Repository\RoleRepository;
 use App\Repository\TaskRepository;
 use App\Repository\UserRepository;
 use App\Service\OrganizationHierarchy;
@@ -54,32 +61,42 @@ final class TaskController extends AbstractController
      * limited to that set and re-checked on submit.
      */
     #[Route('/tareas/nueva', name: 'task_new', methods: ['GET', 'POST'])]
-    public function new(Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, UserRepository $users, EntityManagerInterface $entityManager): Response
+    public function new(Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, UserRepository $users, RoleRepository $roles, EntityManagerInterface $entityManager): Response
     {
         $assignable = $this->assignableUsers($user, $hierarchy, $users);
         // Only offer the assignee picker when the creator actually commands someone else; otherwise
         // the task is simply theirs and no picker is shown.
         $canAssignOthers = \count($assignable) > 1;
+        // Leadership can additionally target a post (cargo) or a role, not just a person.
+        $isLeadership = $this->canEditTaskRole($user);
+        $units = $hierarchy->assignableUnits($user);
+        $roleChoices = $roles->findAllOrdered();
 
-        $canEditRole = $this->canEditTaskRole($user);
         $data = new TaskFormData();
         $data->assignedUser = $user;
-        $form = $this->createForm(TaskFormType::class, $data, ['assignable_users' => $assignable, 'include_role' => $canEditRole, 'include_assignee' => $canAssignOthers, 'include_deliverable' => true]);
+        $form = $this->createForm(TaskFormType::class, $data, [
+            'assignable_users' => $assignable,
+            'assignable_units' => $units,
+            'assignable_roles' => $roleChoices,
+            'include_structural' => $isLeadership,
+            'include_assignee' => $canAssignOthers,
+            'include_deliverable' => true,
+        ]);
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
-            if (!$canAssignOthers) {
+            // A lone creator with no picker always gets a person task assigned to themselves.
+            if (!$canAssignOthers && !$isLeadership) {
+                $data->responsibilityMode = ResponsibilityMode::PERSON;
                 $data->assignedUser = $user;
             }
-            if (!\in_array($data->assignedUser, $assignable, true)) {
-                throw $this->createAccessDeniedException('No puedes asignar tareas a esa persona.');
-            }
+            $this->assertResponsibilityAllowed($data, $assignable, $units, $roleChoices);
 
             // The deliverable toggle also picks the lifecycle: a deliverable task carries the
             // progress/submission/validation flow; a plain one is the simple do-and-validate lifecycle.
             $type = $data->requiresDocument ? TaskType::WITH_DELIVERABLE : TaskType::SIMPLE;
             $task = new Task($data->title, SchoolYear::current($data->dueDate), $data->dueDate, $type);
-            $this->applyFormData($task, $data, $canEditRole);
+            $this->applyFormData($task, $data);
             $task->setCreatedBy($user);
             $entityManager->persist($task);
             $entityManager->flush();
@@ -96,7 +113,7 @@ final class TaskController extends AbstractController
      * not editable (it governs the lifecycle already in progress).
      */
     #[Route('/tareas/{id}/editar', name: 'task_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
-    public function edit(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, UserRepository $users, EntityManagerInterface $entityManager): Response
+    public function edit(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, UserRepository $users, RoleRepository $roles, EntityManagerInterface $entityManager): Response
     {
         if (!$this->canManage($task, $user, $hierarchy)) {
             throw $this->createAccessDeniedException('No puedes editar esta tarea.');
@@ -104,26 +121,42 @@ final class TaskController extends AbstractController
 
         $assignable = $this->assignableUsers($user, $hierarchy, $users);
         // Keep the current assignee as a valid choice even if now outside the scope.
-        if (null !== $task->getAssignedUser() && !\in_array($task->getAssignedUser(), $assignable, true)) {
-            $assignable[] = $task->getAssignedUser();
+        $currentPerson = $task->getAssignedUser();
+        if (null !== $currentPerson && !\in_array($currentPerson, $assignable, true)) {
+            $assignable[] = $currentPerson;
         }
 
         $canAssignOthers = \count($assignable) > 1;
-        $canEditRole = $this->canEditTaskRole($user);
+        $isLeadership = $this->canEditTaskRole($user);
+        $units = $hierarchy->assignableUnits($user);
+        // Keep the task's current cargo unit as a valid choice even if now outside the scope.
+        $responsibility = $task->getResponsibility();
+        $currentUnit = $responsibility instanceof CargoResponsibility ? $responsibility->getUnit() : null;
+        if (null !== $currentUnit && !\in_array($currentUnit, $units, true)) {
+            $units[] = $currentUnit;
+        }
+        $roleChoices = $roles->findAllOrdered();
+
         $data = TaskFormData::fromTask($task);
         // The deliverable toggle is not shown on edit: the lifecycle is fixed once the task is running.
-        $form = $this->createForm(TaskFormType::class, $data, ['assignable_users' => $assignable, 'include_role' => $canEditRole, 'include_assignee' => $canAssignOthers, 'include_deliverable' => false]);
+        $form = $this->createForm(TaskFormType::class, $data, [
+            'assignable_users' => $assignable,
+            'assignable_units' => $units,
+            'assignable_roles' => $roleChoices,
+            'include_structural' => $isLeadership,
+            'include_assignee' => $canAssignOthers,
+            'include_deliverable' => false,
+        ]);
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
-            if (!$canAssignOthers) {
-                $data->assignedUser = $task->getAssignedUser() ?? $user;
+            if (!$canAssignOthers && !$isLeadership) {
+                $data->responsibilityMode = ResponsibilityMode::PERSON;
+                $data->assignedUser = $currentPerson ?? $user;
             }
-            if (!\in_array($data->assignedUser, $assignable, true)) {
-                throw $this->createAccessDeniedException('No puedes asignar tareas a esa persona.');
-            }
+            $this->assertResponsibilityAllowed($data, $assignable, $units, $roleChoices);
 
-            $this->applyFormData($task, $data, $canEditRole);
+            $this->applyFormData($task, $data);
             $entityManager->flush();
             $this->addFlash('success', 'Tarea actualizada.');
 
@@ -301,20 +334,56 @@ final class TaskController extends AbstractController
      * person is a concrete assignee on top of it) and is leadership-only: it is written only when
      * $applyRole is true, so a routine edit by anyone else leaves it untouched.
      */
-    private function applyFormData(Task $task, TaskFormData $data, bool $applyRole): void
+    private function applyFormData(Task $task, TaskFormData $data): void
     {
-        \assert(null !== $data->dueDate && null !== $data->assignedUser);
+        \assert(null !== $data->dueDate);
         $task->setTitle($data->title)
             ->setDescription($data->description)
             ->setDueDate($data->dueDate)
             ->setSchoolYear(SchoolYear::current($data->dueDate))
             ->setMandatory($data->mandatory)
             ->setRequiresCheckbox($data->requiresCheckbox)
-            ->setRequiresDocument($data->requiresDocument)
-            ->setAssignedUser($data->assignedUser)
-            ->setUnit($data->assignedUser->getUnit());
-        if ($applyRole) {
-            $task->setAssignedRole($data->assignedRole);
+            ->setRequiresDocument($data->requiresDocument);
+
+        // Build the responsibility from the chosen mode. assignedUser/unit are kept as a mirror of the
+        // current holder for the legacy queries still reading them during the transition.
+        if (ResponsibilityMode::CARGO === $data->responsibilityMode) {
+            \assert(null !== $data->responsibilityUnit);
+            $task->setResponsibility(new CargoResponsibility($data->responsibilityUnit))
+                ->setAssignedUser($data->responsibilityUnit->getManager())
+                ->setUnit($data->responsibilityUnit);
+        } elseif (ResponsibilityMode::ROLE === $data->responsibilityMode) {
+            \assert(null !== $data->responsibilityRole);
+            $task->setResponsibility(new RoleResponsibility($data->responsibilityRole))
+                ->setAssignedUser(null)
+                ->setUnit(null);
+        } else {
+            \assert(null !== $data->assignedUser);
+            $task->setResponsibility(new PersonResponsibility($data->assignedUser))
+                ->setAssignedUser($data->assignedUser)
+                ->setUnit($data->assignedUser->getUnit());
+        }
+    }
+
+    /**
+     * Guards that the chosen responsibility target is within the creator's authority (a person they
+     * command, a unit they are a superior of, or an allowed role), re-checked server-side on top of
+     * the form's own choice lists.
+     *
+     * @param list<User> $assignableUsers the people the creator may assign to
+     * @param list<Unit> $assignableUnits the units whose cargo the creator may target
+     * @param Role[]     $assignableRoles the roles the creator may target
+     */
+    private function assertResponsibilityAllowed(TaskFormData $data, array $assignableUsers, array $assignableUnits, array $assignableRoles): void
+    {
+        $allowed = match ($data->responsibilityMode) {
+            ResponsibilityMode::CARGO => \in_array($data->responsibilityUnit, $assignableUnits, true),
+            ResponsibilityMode::ROLE => \in_array($data->responsibilityRole, $assignableRoles, true),
+            ResponsibilityMode::PERSON => \in_array($data->assignedUser, $assignableUsers, true),
+        };
+
+        if (!$allowed) {
+            throw $this->createAccessDeniedException('No puedes asignar la tarea a esa responsabilidad.');
         }
     }
 

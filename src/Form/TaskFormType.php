@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Form;
 
 use App\Entity\Role;
+use App\Entity\Unit;
 use App\Entity\User;
+use App\Enum\ResponsibilityMode;
 use App\Service\SchoolCalendar;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
+use Symfony\Component\Form\Extension\Core\Type\EnumType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
@@ -19,13 +22,11 @@ use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /**
- * Create/edit form for a task, kept intentionally light. The lifecycle (simple vs deliverable) is not
- * a field the user picks: it is derived by the controller from the single "carries a deliverable"
- * toggle, and whether a task closes with a checkbox is app behaviour, not a per-task choice. The
- * "assign to" field appears only when the creator actually commands others ({@see $options['include_assignee']});
- * a plain member has no picker and the task is theirs. The responsible-role field is leadership-only
- * ({@see $options['include_role']}); the deliverable toggle only on creation ({@see $options['include_deliverable']}),
- * since the lifecycle cannot change once running.
+ * Create/edit form for a task. The responsibility is chosen by mode ({@see ResponsibilityMode}): a
+ * plain creator only ever assigns a person (no mode selector); leadership
+ * ({@see $options['include_structural']}) additionally gets "cargo" (a department's head, which
+ * follows the post) and "rol". The lifecycle (simple vs deliverable) is derived by the controller
+ * from the single deliverable toggle, shown only on creation ({@see $options['include_deliverable']}).
  *
  * @extends AbstractType<TaskFormData>
  */
@@ -53,27 +54,48 @@ final class TaskFormType extends AbstractType
                 'help' => 'Las obligatorias cuentan como pendientes hasta cerrarse; las voluntarias son opcionales.',
             ]);
 
-        // Only offered when the creator commands others; a plain member's task is simply theirs.
-        if (true === $options['include_assignee']) {
-            $builder->add('assignedUser', EntityType::class, [
+        // Leadership can target a post or a role, not just a person; a plain creator only sees the
+        // person picker, so its responsibility is always a person (the default mode).
+        if (true === $options['include_structural']) {
+            $builder->add('responsibilityMode', EnumType::class, [
                 'label' => 'Responsable',
-                'class' => User::class,
-                'choices' => $options['assignable_users'],
-                'choice_label' => 'fullName',
+                'class' => ResponsibilityMode::class,
+                'choice_label' => static fn (ResponsibilityMode $mode): string => $mode->label(),
+                'expanded' => true,
+                'row_attr' => ['class' => 'resp-mode'],
+            ]);
+            $builder->add('responsibilityUnit', EntityType::class, [
+                'label' => 'Departamento (su jefatura)',
+                'class' => Unit::class,
+                'choices' => $options['assignable_units'],
+                'choice_label' => 'name',
+                'required' => false,
+                'placeholder' => '— Elige departamento —',
+                'help' => 'Responsable = quien sea la jefatura de ese departamento en cada momento.',
+                'row_attr' => ['data-resp-mode' => 'cargo'],
+            ]);
+            $builder->add('responsibilityRole', EntityType::class, [
+                'label' => 'Rol',
+                'class' => Role::class,
+                'choices' => $options['assignable_roles'],
+                'choice_label' => 'name',
+                'required' => false,
+                'placeholder' => '— Elige rol —',
+                'row_attr' => ['data-resp-mode' => 'role'],
             ]);
         }
 
-        // The responsible role is a structural, leadership-only field: it appears only when the
-        // controller allows it (direction / head of studies). For everyone else it is absent, so a
-        // routine edit can never alter it.
-        if (true === $options['include_role']) {
-            $builder->add('assignedRole', EntityType::class, [
-                'label' => 'Rol responsable',
-                'class' => Role::class,
-                'choice_label' => 'name',
+        // The person picker: shown to leadership (for person mode) and to any creator who commands
+        // others. A lone creator gets no picker — the controller assigns the task to themselves.
+        if (true === $options['include_structural'] || true === $options['include_assignee']) {
+            $builder->add('assignedUser', EntityType::class, [
+                'label' => 'Persona',
+                'class' => User::class,
+                'choices' => $options['assignable_users'],
+                'choice_label' => 'fullName',
                 'required' => false,
-                'placeholder' => '— Sin rol —',
-                'help' => 'La función que responde de la tarea (además de la persona asignada).',
+                'placeholder' => '— Elige persona —',
+                'row_attr' => ['data-resp-mode' => 'person'],
             ]);
         }
 
@@ -109,12 +131,16 @@ final class TaskFormType extends AbstractType
         $resolver->setDefaults([
             'data_class' => TaskFormData::class,
             'assignable_users' => [],
-            'include_role' => false,
+            'assignable_units' => [],
+            'assignable_roles' => [],
+            'include_structural' => false,
             'include_assignee' => false,
             'include_deliverable' => true,
         ]);
         $resolver->setAllowedTypes('assignable_users', 'array');
-        $resolver->setAllowedTypes('include_role', 'bool');
+        $resolver->setAllowedTypes('assignable_units', 'array');
+        $resolver->setAllowedTypes('assignable_roles', 'array');
+        $resolver->setAllowedTypes('include_structural', 'bool');
         $resolver->setAllowedTypes('include_assignee', 'bool');
         $resolver->setAllowedTypes('include_deliverable', 'bool');
     }

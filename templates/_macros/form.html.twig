@@ -102,3 +102,29 @@
         <a class="btn secondary" href="{{ cancelUrl }}">Cancelar</a>
     </div>
 {% endmacro %}
+
+{#
+   El bloque "Responsable" de la tarea: el selector de modo (cargo/persona/rol, solo para liderazgo)
+   y el campo de cada modo, marcado con data-resp-mode para que task-form.js muestre solo el que toca.
+   Sin JS se ven todos y la validación guía. Un creador raso solo ve el campo de persona.
+#}
+{% macro responsibility(form) %}
+    {% if form.responsibilityMode is defined %}
+        <div class="form-row resp-mode">
+            {{ form_label(form.responsibilityMode) }}
+            {{ form_widget(form.responsibilityMode) }}
+            {{ form_errors(form.responsibilityMode) }}
+        </div>
+    {% endif %}
+    {% for name, mode in { responsibilityUnit: 'cargo', assignedUser: 'person', responsibilityRole: 'role' } %}
+        {% if form.children[name] is defined %}
+            {% set child = form.children[name] %}
+            <div class="form-row" data-resp-mode="{{ mode }}">
+                {{ form_label(child) }}
+                {{ form_widget(child) }}
+                {% if child.vars.help %}<p class="help">{{ child.vars.help }}</p>{% endif %}
+                {{ form_errors(child) }}
+            </div>
+        {% endif %}
+    {% endfor %}
+{% endmacro %}

@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Tests\Functional;
 
 use App\Entity\NonLectiveDay;
+use App\Entity\PersonResponsibility;
 use App\Entity\Role;
+use App\Entity\RoleResponsibility;
 use App\Entity\Task;
 use App\Entity\Unit;
 use App\Entity\User;
@@ -148,14 +150,12 @@ final class TaskCrudTest extends WebTestCase
         self::assertSame($creator->getId(), $reloaded->getAssignedUser()?->getId());
     }
 
-    public function testLeadershipCanChangeResponsibleRole(): void
+    public function testLeadershipCanAssignATaskToARole(): void
     {
         $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
-        $oldRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento');
-        $newRole = (new Role())->setCode('ccp')->setName('Coordinación pedagógica');
-        $this->em->persist($oldRole);
-        $this->em->persist($newRole);
+        $role = (new Role())->setCode('ccp')->setName('Coordinación pedagógica');
+        $this->em->persist($role);
         // A director holds the 'direction' role (leadership) — not the admin flag, so this exercises
         // the role-based permission, not the ROLE_ADMIN shortcut.
         $direction = (new Role())->setCode('direction')->setName('Dirección');
@@ -163,22 +163,27 @@ final class TaskCrudTest extends WebTestCase
         $director = $this->user('director@centro.test', $unit);
         $director->addAssignedRole($direction);
         $task = new Task('Acta de reunión', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
-        $task->setUnit($unit)->setAssignedRole($oldRole)->setAssignedUser($director)->setCreatedBy($director);
+        $task->setUnit($unit)->setAssignedUser($director)->setResponsibility(new PersonResponsibility($director))->setCreatedBy($director);
         $this->em->persist($task);
         $this->em->flush();
+        $roleId = (int) $role->getId();
 
         $this->client->loginUser($director);
         $crawler = $this->client->request('GET', '/tareas/'.$task->getId().'/editar');
-        self::assertSelectorExists('[name="task_form[assignedRole]"]');
+        // Leadership gets the responsibility-mode selector (a plain member does not).
+        self::assertSelectorExists('[name="task_form[responsibilityMode]"]');
         $form = $crawler->selectButton('Guardar')->form();
-        $form['task_form[assignedRole]'] = (string) $newRole->getId();
+        $form['task_form[responsibilityMode]'] = 'role';
+        $form['task_form[responsibilityRole]'] = (string) $roleId;
         $this->client->submit($form);
 
         self::assertResponseRedirects();
         $this->em->clear();
         $reloaded = $this->em->getRepository(Task::class)->find($task->getId());
         self::assertNotNull($reloaded);
-        self::assertSame($newRole->getId(), $reloaded->getAssignedRole()?->getId());
+        $responsibility = $reloaded->getResponsibility();
+        self::assertInstanceOf(RoleResponsibility::class, $responsibility);
+        self::assertSame($roleId, $responsibility->getRole()?->getId());
     }
 
     public function testSuperiorCanWorkOnASubordinatesTask(): void
