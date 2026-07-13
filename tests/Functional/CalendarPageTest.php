@@ -168,6 +168,76 @@ final class CalendarPageTest extends WebTestCase
         return $teacher;
     }
 
+    public function testMonthCellOffersQuickAddLinksPrefilledWithTheDay(): void
+    {
+        // A plain teaching day (no holiday, not a weekend) offers both "Nueva tarea" and "Nuevo
+        // evento", each carrying the cell's day as ?fecha= so the create form arrives prefilled.
+        $teacher = $this->teacherWithTask(new \DateTimeImmutable('2026-07-15'), 'Memoria del departamento');
+
+        $this->client->loginUser($teacher);
+        $this->client->request('GET', '/calendario?vista=mes&fecha=2026-07-15');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('.day-add__item[href="/tareas/nueva?fecha=2026-07-15"]');
+        self::assertSelectorExists('.day-add__item[href="/agenda/nueva?fecha=2026-07-15"]');
+    }
+
+    public function testWeekendCellOffersOnlyTheEventQuickAdd(): void
+    {
+        // Saturday 18 July 2026: a task would be rejected as non-teaching, so the cell offers only the
+        // personal-event quick-add, never the task one.
+        $teacher = $this->teacherWithTask(new \DateTimeImmutable('2026-07-15'), 'Memoria del departamento');
+
+        $this->client->loginUser($teacher);
+        $this->client->request('GET', '/calendario?vista=mes&fecha=2026-07-15');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('.day-add__item[href="/agenda/nueva?fecha=2026-07-18"]');
+        self::assertSelectorNotExists('.day-add__item[href="/tareas/nueva?fecha=2026-07-18"]');
+    }
+
+    public function testHolidayCellOffersOnlyTheEventQuickAdd(): void
+    {
+        // Thursday 16 July 2026 marked as a holiday: a weekday, but non-teaching, so — like a weekend —
+        // only the personal-event quick-add is offered.
+        $this->em->persist((new NonLectiveDay())->setDate(new \DateTimeImmutable('2026-07-16'))->setDescription('Festivo local'));
+        $teacher = $this->teacherWithTask(new \DateTimeImmutable('2026-07-15'), 'Memoria del departamento');
+
+        $this->client->loginUser($teacher);
+        $this->client->request('GET', '/calendario?vista=mes&fecha=2026-07-15');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('.day-add__item[href="/agenda/nueva?fecha=2026-07-16"]');
+        self::assertSelectorNotExists('.day-add__item[href="/tareas/nueva?fecha=2026-07-16"]');
+    }
+
+    public function testDayViewOffersTheQuickAddPrefilledWithTheDay(): void
+    {
+        // The day view carries the same quick-add, as a visible button, prefilled with the shown day.
+        $teacher = $this->teacherWithTask(new \DateTimeImmutable('2026-07-15'), 'Memoria del departamento');
+
+        $this->client->loginUser($teacher);
+        $this->client->request('GET', '/calendario?vista=dia&fecha=2026-07-15');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('.calendar-dayview .day-add--inline');
+        self::assertSelectorExists('.calendar-dayview .day-add__item[href="/tareas/nueva?fecha=2026-07-15"]');
+        self::assertSelectorExists('.calendar-dayview .day-add__item[href="/agenda/nueva?fecha=2026-07-15"]');
+    }
+
+    public function testDayViewQuickAddOnAWeekendOffersOnlyTheEvent(): void
+    {
+        // Saturday 18 July 2026: the day view's quick-add drops the task option, like the grid cells.
+        $teacher = $this->teacherWithTask(new \DateTimeImmutable('2026-07-15'), 'Memoria del departamento');
+
+        $this->client->loginUser($teacher);
+        $this->client->request('GET', '/calendario?vista=dia&fecha=2026-07-18');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('.calendar-dayview .day-add__item[href="/agenda/nueva?fecha=2026-07-18"]');
+        self::assertSelectorNotExists('.calendar-dayview .day-add__item[href="/tareas/nueva?fecha=2026-07-18"]');
+    }
+
     public function testCalendarHidesTasksOutsideTheUsersScope(): void
     {
         $teacher = (new User())->setFullName('Profe Test')->setEmail('profe@centro.test');

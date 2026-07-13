@@ -48,6 +48,33 @@ final class PersonalEventCrudTest extends WebTestCase
         self::assertSelectorExists('form');
     }
 
+    public function testNewEventPrefillsDayFromQuery(): void
+    {
+        // Arriving from the calendar's "+ Nuevo evento" carries the clicked day as ?fecha=; the form's
+        // day field must render already filled with it.
+        $user = $this->user('profe@centro.test');
+        $this->em->flush();
+        $this->client->loginUser($user);
+
+        $this->client->request('GET', '/agenda/nueva?fecha=2026-07-15');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('[name="personal_event_form[day]"][value="2026-07-15"]');
+    }
+
+    public function testNewEventIgnoresAnInvalidFechaQuery(): void
+    {
+        $user = $this->user('profe@centro.test');
+        $this->em->flush();
+        $this->client->loginUser($user);
+
+        // A non-date value must not blow up: the form simply renders with an empty day.
+        $this->client->request('GET', '/agenda/nueva?fecha=no-es-fecha');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('[name="personal_event_form[day]"]');
+    }
+
     public function testCreateTimedEventRecordsOwnerAndComposesInstants(): void
     {
         $owner = $this->user('profe@centro.test');

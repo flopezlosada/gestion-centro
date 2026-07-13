@@ -20,6 +20,7 @@ use App\Service\OrganizationHierarchy;
 use App\Service\TaskVisibility;
 use App\Service\TaskWorkflow;
 use App\Support\TaskActivityPresenter;
+use App\Util\CalendarDate;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -64,6 +65,12 @@ final class TaskController extends AbstractController
         $roleChoices = $roles->findAllOrdered();
 
         $data = new TaskFormData();
+        // Prefill the deadline when arriving from the calendar's "+ Nueva tarea" (?fecha=YYYY-MM-DD).
+        // An invalid/missing value leaves it empty; a non-teaching day is still caught by the form's
+        // lective-day validation on submit. Anchor the midnight in PHP's default time zone — the one
+        // the DateType renders the value in and Doctrine hydrates dates in — so the prefilled day is
+        // never shifted (a Madrid-anchored midnight shown by a UTC server would render as the day before).
+        $data->dueDate = CalendarDate::parse($request->query->getString('fecha'), new \DateTimeZone(date_default_timezone_get()));
         $form = $this->createForm(TaskFormType::class, $data, [
             'assignable_roles' => $roleChoices,
             'assignable_units' => $units,
