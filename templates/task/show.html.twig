@@ -85,8 +85,13 @@
             <dt>Curso</dt><dd>{{ task.schoolYear }}</dd>
             <dt>Fecha límite</dt><dd>{{ task.dueDate|date('d/m/Y') }}</dd>
             <dt>Unidad</dt><dd>{{ task.unit ? task.unit.name : '—' }}</dd>
-            <dt>Responsable</dt><dd>{{ task.assignedUser ? task.assignedUser.fullName : '—' }}</dd>
-            {% if task.assignedRole %}<dt>Rol responsable</dt><dd>{{ task.assignedRole.name }}</dd>{% endif %}
+            <dt>Responsable</dt>
+            <dd>
+                {%- set who = task.responsibleForDisplay -%}
+                {{ who ? who.fullName : '—' }}
+                {%- if task.responsibility %} ({{ task.responsibility.label }}){% endif -%}
+                {%- if task.delegatedTo %} · delegada{% endif -%}
+            </dd>
             {% if task.requiresCheckbox %}<dt>Hecha por el responsable</dt><dd>{{ task.checkboxDone ? 'Sí' : 'No' }}</dd>{% endif %}
             <dt>Creada</dt><dd>{{ task.createdAt|date('d/m/Y') }}{% if task.createdBy %} · por {{ task.createdBy.fullName }}{% endif %}</dd>
         </dl>

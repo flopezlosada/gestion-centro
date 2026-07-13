@@ -44,7 +44,8 @@ final class RoleFixtures extends AbstractGoldenFixture
             (new Role())->setCode('head_of_studies')->setName('Jefatura de estudios'),
             (new Role())->setCode('head_of_studies_deputy')->setName('Jefatura de estudios adjunta'),
             (new Role())->setCode('secretary')->setName('Secretaría'),
-            (new Role())->setCode('head_dept')->setName('Jefatura de departamento'),
+            // "Jefatura de departamento" is NOT a role: it is a post, held via Unit::manager. A task
+            // for the head of a department is a CargoResponsibility on that unit, resolved live.
             (new Role())->setCode('tutor')->setName('Tutor/a'),
             (new Role())->setCode('teacher')->setName('Docente'),
         ];

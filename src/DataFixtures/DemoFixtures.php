@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\DataFixtures;
 
 use App\Entity\AcademicYear;
+use App\Entity\CargoResponsibility;
 use App\Entity\NonLectiveDay;
 use App\Entity\Notification;
+use App\Entity\PersonResponsibility;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskTemplate;
@@ -50,7 +52,9 @@ final class DemoFixtures extends AbstractDemoFixture implements DependentFixture
         $director = (new User())->setFullName('Ana Directora')->setEmail('director@centro.test')->addAssignedRole($this->role('direction'));
         $ticUser = (new User())->setFullName('Tomás TIC')->setEmail('tic@centro.test')->addAssignedRole($this->role('tic'));
         $headStudies = (new User())->setFullName('Luis Jefatura')->setEmail('jefatura@centro.test')->addAssignedRole($this->role('head_of_studies'));
-        $mathsHead = (new User())->setFullName('María Matemáticas')->setEmail('mates@centro.test')->addAssignedRole($this->role('head_dept'));
+        // María teaches (a role/permission) and, separately, holds the Maths department post below
+        // (Unit::manager) — the post is what makes her "the head", not a role.
+        $mathsHead = (new User())->setFullName('María Matemáticas')->setEmail('mates@centro.test')->addAssignedRole($this->role('teacher'));
         $teacher = (new User())->setFullName('Pedro Docente')->setEmail('profe@centro.test')->addAssignedRole($this->role('teacher'));
         array_map($manager->persist(...), [$director, $ticUser, $headStudies, $mathsHead, $teacher]);
 
@@ -94,7 +98,14 @@ final class DemoFixtures extends AbstractDemoFixture implements DependentFixture
         foreach ($plan as [$tpl, $due, $unit, $assignee, $status]) {
             $dueDate = $this->toLectiveDay(new \DateTimeImmutable($due), $blockedKeys, false);
             $task = Task::fromTemplate($tpl, $year, $dueDate);
-            $task->setUnit($unit)->setAssignedUser($assignee)->setStatus($status);
+            // A department post's task: responsibility is the CARGO (the unit's current manager), so it
+            // follows whoever holds the post. assignedUser mirrors the current holder for now (the old
+            // columns are still read by some queries during the transition).
+            $task->setUnit($unit)->setAssignedUser($assignee)->setResponsibility(new CargoResponsibility($unit))->setStatus($status);
+            if ('validated' === $status) {
+                // Closed: freeze who did it (the completion subscriber only fires on a real transition).
+                $task->setCompletedBy($assignee);
+            }
             $manager->persist($task);
         }
 
@@ -112,7 +123,8 @@ final class DemoFixtures extends AbstractDemoFixture implements DependentFixture
         foreach ($teacherPlan as [$title, $description, $due, $done]) {
             $dueDate = $this->toLectiveDay($due, $blockedKeys, $due >= $today);
             $task = new Task($title, $year, $dueDate, TaskType::SIMPLE);
-            $task->setDescription($description)->setUnit($maths)->setAssignedUser($teacher)->setCheckboxDone($done)->setCreatedBy($director);
+            $task->setDescription($description)->setUnit($maths)->setAssignedUser($teacher)
+                ->setResponsibility(new PersonResponsibility($teacher))->setCheckboxDone($done)->setCreatedBy($director);
             $manager->persist($task);
             $teacherTasks[] = $task;
         }
@@ -120,7 +132,7 @@ final class DemoFixtures extends AbstractDemoFixture implements DependentFixture
         // A deliverable task in progress, so the teacher's task detail shows the full workbench.
         $withDeliverable = Task::fromTemplate($reportTpl, $year, $this->toLectiveDay($today->modify('+5 days'), $blockedKeys, true));
         $withDeliverable->setDescription('Memoria anual del departamento con resultados y propuestas para el curso que viene.')
-            ->setUnit($maths)->setAssignedUser($teacher)->setStatus('in_progress')->setCreatedBy($director);
+            ->setUnit($maths)->setAssignedUser($teacher)->setResponsibility(new PersonResponsibility($teacher))->setStatus('in_progress')->setCreatedBy($director);
         $manager->persist($withDeliverable);
 
         // A couple of demo notices for the teacher so the inbox and its badge are not empty.
