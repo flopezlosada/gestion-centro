@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
+use App\Entity\CargoResponsibility;
 use App\Entity\NonLectiveDay;
 use App\Entity\PersonResponsibility;
 use App\Entity\Role;
@@ -237,6 +238,40 @@ final class TaskCrudTest extends WebTestCase
         $this->client->request('GET', '/tareas/'.$task->getId());
 
         self::assertResponseStatusCodeSame(403);
+    }
+
+    public function testSuperiorCanDelegateToASubordinate(): void
+    {
+        // studies is the parent of maths; the head of studies is a superior of the maths department.
+        $studies = (new Unit())->setCode('studies')->setName('Jefatura de estudios');
+        $maths = (new Unit())->setCode('maths')->setName('Matemáticas')->setParent($studies);
+        $this->em->persist($studies);
+        $this->em->persist($maths);
+        $headStudies = $this->user('jefatura@centro.test', $studies);
+        $studies->setManager($headStudies);
+        $mathsHead = $this->user('mates@centro.test', $maths);
+        $maths->setManager($mathsHead);
+        $teacher = $this->user('profe@centro.test', $maths);
+        // A cargo task of the maths department (its head's), which a superior delegates downward.
+        $task = new Task('Memoria', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
+        $task->setUnit($maths)->setResponsibility(new CargoResponsibility($maths))->setAssignedUser($mathsHead)->setCreatedBy($headStudies);
+        $this->em->persist($task);
+        $this->em->flush();
+        $teacherId = (int) $teacher->getId();
+
+        $this->client->loginUser($headStudies);
+        $crawler = $this->client->request('GET', '/tareas/'.$task->getId());
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('select[name="delegatedTo"]');
+        $form = $crawler->filter('form[action$="/delegar"]')->form();
+        $form['delegatedTo'] = (string) $teacherId;
+        $this->client->submit($form);
+
+        self::assertResponseRedirects();
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(Task::class)->find($task->getId());
+        self::assertNotNull($reloaded);
+        self::assertSame($teacherId, $reloaded->getDelegatedTo()?->getId(), 'the task is now delegated to the subordinate');
     }
 
     public function testUnrelatedUserCannotEditTask(): void

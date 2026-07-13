@@ -193,19 +193,27 @@ final class TaskController extends AbstractController
         AuditLogRepository $auditLog,
         TaskVisibility $visibility,
         OrganizationHierarchy $hierarchy,
+        UserRepository $users,
         TaskWorkflow $workflows,
         TaskActivityPresenter $activity,
     ): Response {
         // Same organisation-chart scope as the plan and the calendar, enforced here so the detail
         // cannot be reached by guessing an id: only the task's own people, a superior of its unit, or
         // an admin may open it.
-        if (!$visibility->isVisibleTo($task, $user, $this->isGranted('ROLE_ADMIN'))) {
+        $isAdmin = $this->isGranted('ROLE_ADMIN');
+        if (!$visibility->isVisibleTo($task, $user, $isAdmin)) {
             throw $this->createAccessDeniedException('No puedes ver esta tarea.');
         }
 
         // Everyone who reaches this point (own people, superiors, admins) is exactly who may see the
         // task's activity history, so the timeline is shown to every viewer.
         $canWork = $this->canWorkOn($task, $user, $hierarchy);
+
+        // Delegation is a superior's operational call: hand the task to a subordinate they command.
+        $canDelegate = $isAdmin || $hierarchy->isSuperiorOf($user, $task->getUnit());
+        $delegatable = $canDelegate
+            ? array_values(array_filter($this->assignableUsers($user, $hierarchy, $users), static fn (User $u): bool => $u !== $user))
+            : [];
 
         return $this->render('task/show.html.twig', [
             'task' => $task,
@@ -217,10 +225,45 @@ final class TaskController extends AbstractController
             // superior-only ones for non-superiors; here we also hide progress ones from outsiders.
             'actions' => $this->availableActions($workflows, $task, $canWork),
             'canSeeHistory' => true,
+            // Only a superior with subordinates gets the delegate control.
+            'canDelegate' => $canDelegate && [] !== $delegatable,
+            'delegatable' => $delegatable,
             // The trail humanised for non-technical readers; the raw diff rides along for admins only.
             'activityRows' => $activity->present($auditLog->findForSubject('Task', (string) $task->getId())),
-            'isAdmin' => $this->isGranted('ROLE_ADMIN'),
+            'isAdmin' => $isAdmin,
         ]);
+    }
+
+    /**
+     * Delegates the task to a subordinate (or clears the delegation, restoring the structural
+     * responsibility). A superior's operational action: allowed to a superior of the task's unit or an
+     * admin, and only onto someone they actually command.
+     */
+    #[Route('/tareas/{id}/delegar', name: 'task_delegate', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function delegate(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, UserRepository $users, EntityManagerInterface $entityManager): Response
+    {
+        if (!$this->isCsrfTokenValid('task_delegate'.$task->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+        if (!$this->isGranted('ROLE_ADMIN') && !$hierarchy->isSuperiorOf($user, $task->getUnit())) {
+            throw $this->createAccessDeniedException('Solo un superior de la unidad puede delegar esta tarea.');
+        }
+
+        $delegateeId = (string) $request->request->get('delegatedTo');
+        if ('' === $delegateeId) {
+            // Recall: back to the structural responsibility.
+            $task->setDelegatedTo(null);
+        } else {
+            $delegatee = $users->find((int) $delegateeId);
+            if (null === $delegatee || $delegatee === $user || !\in_array($delegatee, $this->assignableUsers($user, $hierarchy, $users), true)) {
+                throw $this->createAccessDeniedException('No puedes delegar en esa persona.');
+            }
+            $task->setDelegatedTo($delegatee);
+        }
+        $entityManager->flush();
+        $this->addFlash('success', 'Delegación actualizada.');
+
+        return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
     }
 
     /**
