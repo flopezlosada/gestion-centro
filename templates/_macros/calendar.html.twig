@@ -8,9 +8,12 @@
    .nonLective (una DayCell).
 #}
 {% macro add_menu(cell, variant = 'corner') %}
-    {% set fecha = cell.date|date('Y-m-d') %}
+    {# `false` como zona: NO convertir a la zona del servidor. Las fechas del calendario están
+       ancladas a medianoche de Madrid; sin esto, un servidor en UTC (como CI) las retrocedería un
+       día y el ?fecha= saldría desplazado. #}
+    {% set fecha = cell.date|date('Y-m-d', false) %}
     <details class="day-add day-add--{{ variant }}">
-        <summary class="day-add__btn" aria-label="Añadir el {{ cell.date|date('j/n/Y') }}">
+        <summary class="day-add__btn" aria-label="Añadir el {{ cell.date|date('j/n/Y', false) }}">
             <span class="day-add__plus" aria-hidden="true">+</span>
             {% if variant == 'inline' %}<span class="day-add__label">Añadir</span>{% endif %}
         </summary>
