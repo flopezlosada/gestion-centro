@@ -242,36 +242,32 @@ final class TaskCrudTest extends WebTestCase
 
     public function testSuperiorCanDelegateToASubordinate(): void
     {
-        // studies is the parent of maths; the head of studies is a superior of the maths department.
-        $studies = (new Unit())->setCode('studies')->setName('Jefatura de estudios');
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas')->setParent($studies);
-        $this->em->persist($studies);
-        $this->em->persist($maths);
-        $headStudies = $this->user('jefatura@centro.test', $studies);
-        $studies->setManager($headStudies);
-        $mathsHead = $this->user('mates@centro.test', $maths);
-        $maths->setManager($mathsHead);
-        $teacher = $this->user('profe@centro.test', $maths);
-        // A cargo task of the maths department (its head's), which a superior delegates downward.
+        // A head who manages their own department and a member in it — the head is that member's superior.
+        $dept = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($dept);
+        $boss = $this->user('jefa@centro.test', $dept);
+        $dept->setManager($boss);
+        $member = $this->user('profe@centro.test', $dept);
+        // A cargo task of the department (its head's), which the head delegates to a member.
         $task = new Task('Memoria', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
-        $task->setUnit($maths)->setResponsibility(new CargoResponsibility($maths))->setAssignedUser($mathsHead)->setCreatedBy($headStudies);
+        $task->setUnit($dept)->setResponsibility(new CargoResponsibility($dept))->setAssignedUser($boss)->setCreatedBy($boss);
         $this->em->persist($task);
         $this->em->flush();
-        $teacherId = (int) $teacher->getId();
+        $memberId = (int) $member->getId();
 
-        $this->client->loginUser($headStudies);
+        $this->client->loginUser($boss);
         $crawler = $this->client->request('GET', '/tareas/'.$task->getId());
         self::assertResponseIsSuccessful();
         self::assertSelectorExists('select[name="delegatedTo"]');
         $form = $crawler->filter('form[action$="/delegar"]')->form();
-        $form['delegatedTo'] = (string) $teacherId;
+        $form['delegatedTo'] = (string) $memberId;
         $this->client->submit($form);
 
         self::assertResponseRedirects();
         $this->em->clear();
         $reloaded = $this->em->getRepository(Task::class)->find($task->getId());
         self::assertNotNull($reloaded);
-        self::assertSame($teacherId, $reloaded->getDelegatedTo()?->getId(), 'the task is now delegated to the subordinate');
+        self::assertSame($memberId, $reloaded->getDelegatedTo()?->getId(), 'the task is now delegated to the subordinate');
     }
 
     public function testUnrelatedUserCannotEditTask(): void
