@@ -9,7 +9,7 @@
     <div class="layout">
         <aside class="sidebar">
             <div class="sidebar-head">
-                <a class="brand" href="{{ path('app_homepage') }}">
+                <a class="brand" href="{{ path('personal_event_index') }}">
                     <span class="brand-mark">{{ include('partials/_brand_mark.html.twig', { size: 30 }) }}</span>
                     <span class="brand-name">Gestión del centro</span>
                 </a>
@@ -19,9 +19,8 @@
             </div>
 
             <nav id="main-nav" class="nav" aria-label="Navegación principal">
-                <a href="{{ path('app_homepage') }}" class="{{ route == 'app_homepage' ? 'is-active' }}">Inicio</a>
-                <a href="{{ path('task_index') }}" class="{{ route starts with 'task_' ? 'is-active' }}">Tareas</a>
-                <a href="{{ path('personal_event_index') }}" class="{{ route starts with 'personal_event_' ? 'is-active' }}">Agenda</a>
+                <a href="{{ path('personal_event_index') }}" class="{{ route == 'app_homepage' or route starts with 'personal_event_' ? 'is-active' }}">Agenda personal</a>
+                <a href="{{ path('task_index') }}" class="{{ route starts with 'task_' ? 'is-active' }}">Tareas del centro</a>
                 <a href="{{ path('calendar_index') }}" class="{{ route starts with 'calendar_' ? 'is-active' }}">Calendario</a>
                 {% set unread = unread_notifications() %}
                 <a href="{{ path('notification_index') }}" class="{{ route starts with 'notification_' ? 'is-active' }}">Avisos{% if unread > 0 %} <span class="badge badge--danger">{{ unread }}</span>{% endif %}</a>
@@ -38,6 +37,7 @@
                         <a href="{{ path('admin_task_template_index') }}" class="{{ route starts with 'admin_task_template_' ? 'is-active' }}">Catálogo de tareas</a>
                         <a href="{{ path('admin_academic_year_index') }}" class="{{ route starts with 'admin_academic_year_' ? 'is-active' }}">Años escolares</a>
                         <a href="{{ path('admin_non_lective_day_index') }}" class="{{ route starts with 'admin_non_lective_day_' ? 'is-active' }}">Días no lectivos</a>
+                        <a href="{{ path('admin_event_category_index') }}" class="{{ route starts with 'admin_event_category_' ? 'is-active' }}">Categorías de evento</a>
                     </div>
                 {% endif %}
             </nav>

@@ -70,13 +70,16 @@ final class OrganizationHierarchy
     }
 
     /**
-     * The units a user may assign tasks to: their own unit and every unit below it in the chain of
-     * command (the subtree). Empty when the user has no unit — they can then only assign to
-     * themselves. Guards against cycles in the parent/child graph.
+     * The units a user may assign tasks to: those in their own unit's subtree that they actually
+     * command — i.e. of which they are a {@see self::isSuperiorOf() superior} (the manager of that
+     * unit or of one above it). Merely belonging to a unit does NOT let you assign tasks to the rest
+     * of its members; that takes being their manager. A plain member (superior of nothing) gets an
+     * empty list and can only assign to themselves. Empty too when the user has no unit. Guards
+     * against cycles in the parent/child graph.
      *
      * @param User $creator the user creating tasks
      *
-     * @return list<Unit> the assignable units, the creator's own first
+     * @return list<Unit> the assignable units
      */
     public function assignableUnits(User $creator): array
     {
@@ -94,7 +97,10 @@ final class OrganizationHierarchy
                 continue;
             }
             $seen[spl_object_id($unit)] = true;
-            $units[] = $unit;
+            // Only units the creator is a superior of: being in a unit is not commanding it.
+            if ($this->isSuperiorOf($creator, $unit)) {
+                $units[] = $unit;
+            }
             foreach ($unit->getChildren() as $child) {
                 $stack[] = $child;
             }

@@ -1,0 +1,46 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Categorías de evento{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Categorías de evento{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Categorías de evento</h1>
+            <p class="lead">Etiquetas de color con las que el profesorado clasifica sus eventos personales de agenda. Borrar una categoría deja sus eventos sin categoría, no los elimina.</p>
+        </div>
+        <a class="btn" href="{{ path('admin_event_category_new') }}">+ Nueva categoría</a>
+    </div>
+
+    <div class="card">
+        {% if categories is empty %}
+            <div class="empty-state">
+                <h2>No hay categorías todavía</h2>
+                <p>Crea la primera para que el profesorado pueda clasificar sus eventos por color.</p>
+                <a class="btn" href="{{ path('admin_event_category_new') }}">Nueva categoría</a>
+            </div>
+        {% else %}
+            <table data-list-tools>
+                <thead>
+                    <tr><th>Categoría</th><th>Color</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for category in categories %}
+                        <tr>
+                            <td><span class="event-badge {{ category.color.cssClass }}">{{ category.name }}</span></td>
+                            <td>{{ category.color.label }}</td>
+                            <td class="row-actions">
+                                <a href="{{ path('admin_event_category_edit', { id: category.id }) }}">Editar</a>
+                                <form method="post" action="{{ path('admin_event_category_delete', { id: category.id }) }}" data-confirm="¿Seguro que quieres borrar la categoría «{{ category.name }}»? Sus eventos quedarán sin categoría.">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('event_category_delete' ~ category.id) }}">
+                                    <button type="submit" class="link-danger">Borrar</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}
