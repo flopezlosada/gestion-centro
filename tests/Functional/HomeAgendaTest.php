@@ -11,9 +11,9 @@ use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 /**
- * The landing agenda (served at /agenda, where the site root redirects) mixes the user's tasks and
- * their private personal events — but only their own: a personal event is never shown on someone
- * else's agenda.
+ * The landing agenda (served at /agenda) mixes the user's tasks and their private personal events —
+ * but only their own: a personal event is never shown on someone else's agenda. The site root (/) is
+ * the panel/dashboard, a separate page.
  */
 final class HomeAgendaTest extends WebTestCase
 {
@@ -95,7 +95,7 @@ final class HomeAgendaTest extends WebTestCase
         self::assertStringNotContainsString('Cita privada ajena', (string) $this->client->getResponse()->getContent());
     }
 
-    public function testTheSiteRootRedirectsToTheAgenda(): void
+    public function testTheSiteRootShowsThePanel(): void
     {
         $user = $this->user('profe@centro.test');
         $this->em->flush();
@@ -103,6 +103,7 @@ final class HomeAgendaTest extends WebTestCase
         $this->client->loginUser($user);
         $this->client->request('GET', '/');
 
-        self::assertResponseRedirects('/agenda');
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('h1', 'panel');
     }
 }

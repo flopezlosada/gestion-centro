@@ -179,6 +179,10 @@
         });
 
         pop.addEventListener('click', function (e) {
+            // Un clic dentro del calendario no debe llegar a los listeners "clic fuera" de document:
+            // render() reescribe pop.innerHTML y deja el botón pulsado detached, con lo que
+            // e.target.closest('.cdate') daría null y cerrarían el calendario al navegar de mes.
+            e.stopPropagation();
             var nav = e.target.closest('.cdate__nav');
             if (nav) { step(+nav.dataset.step); focusActive(); return; }
             var day = e.target.closest('.cdate__day');
@@ -216,8 +220,14 @@
         }
     });
 
-    function init() {
-        document.querySelectorAll('input[type="date"]').forEach(function (input) {
+    // Realza todos los input[type=date] dentro de `root` (o el documento). Expuesto globalmente para
+    // que quien inserte campos de fecha por JS después de la carga (p. ej. table-tools.js con su filtro
+    // de rango) pueda darles el mismo calendario. Idempotente: salta los ya realzados (dentro de .cdate).
+    window.enhanceDateFields = function (root) {
+        (root || document).querySelectorAll('input[type="date"]').forEach(function (input) {
+            if (input.closest('.cdate')) {
+                return;
+            }
             try {
                 enhance(input);
             } catch (err) {
@@ -226,6 +236,10 @@
                 }
             }
         });
+    };
+
+    function init() {
+        window.enhanceDateFields(document);
     }
 
     if (document.readyState === 'loading') {

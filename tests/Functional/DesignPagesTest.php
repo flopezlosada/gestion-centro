@@ -173,13 +173,16 @@ final class DesignPagesTest extends WebTestCase
         $this->client->loginUser($s['teacher']);
 
         $crawler = $this->client->request('GET', '/tareas/'.$s['task']->getId());
-        $this->client->submit($crawler->filter('.task-actions form')->first()->form());
+        // Entregar una tarea con entregable adjunta la referencia del documento en el mismo paso.
+        $form = $crawler->filter('.task-actions form')->first()->form();
+        $form['reference'] = 'https://cloud.educa.madrid.org/memoria';
+        $this->client->submit($form);
 
         self::assertResponseRedirects();
         $this->em->clear();
         $reloaded = $this->em->getRepository(Task::class)->find($s['task']->getId());
         self::assertNotNull($reloaded);
-        self::assertSame('in_progress', $reloaded->getStatus(), 'el responsable avanza la tarea desde el detalle');
+        self::assertSame('submitted', $reloaded->getStatus(), 'el responsable entrega la tarea desde el detalle');
     }
 
     public function testNonSuperiorHasNoValidateActionOnSubmittedTask(): void

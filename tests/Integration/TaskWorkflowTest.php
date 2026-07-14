@@ -10,8 +10,8 @@ use App\Service\TaskWorkflow;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 /**
- * The task state machines must model progress (assignee) and validation (superior) as distinct
- * transitions, and the validate transition must be blocked unless a superior is authenticated.
+ * The single task lifecycle (Pendiente → Entregada → Finalizada, con Cancelada aparte) is shared by
+ * every task regardless of type; "validate" must be blocked unless a superior is authenticated.
  */
 final class TaskWorkflowTest extends KernelTestCase
 {
@@ -26,28 +26,25 @@ final class TaskWorkflowTest extends KernelTestCase
         return self::getContainer()->get('test.task_workflow');
     }
 
-    public function testDeliverableProgressTransitions(): void
+    public function testSubmitTakesATaskToEntregada(): void
     {
         self::bootKernel();
         $task = $this->newTask(TaskType::WITH_DELIVERABLE);
         $workflow = $this->taskWorkflow()->for($task);
 
         self::assertSame('pending', $task->getStatus());
-        $workflow->apply($task, 'start');
-        self::assertSame('in_progress', $task->getStatus());
         $workflow->apply($task, 'submit');
         self::assertSame('submitted', $task->getStatus());
     }
 
-    public function testSimpleTaskCanBeCompletedByAssignee(): void
+    public function testSimpleAndDeliverableShareTheSameLifecycle(): void
     {
         self::bootKernel();
-        $task = $this->newTask(TaskType::SIMPLE);
-        $workflow = $this->taskWorkflow()->for($task);
+        $simple = $this->newTask(TaskType::SIMPLE);
+        $deliverable = $this->newTask(TaskType::WITH_DELIVERABLE);
 
-        self::assertTrue($workflow->can($task, 'complete'), 'the assignee can declare a simple task done');
-        $workflow->apply($task, 'complete');
-        self::assertSame('done', $task->getStatus());
+        self::assertTrue($this->taskWorkflow()->for($simple)->can($simple, 'submit'), 'una tarea simple también se entrega');
+        self::assertTrue($this->taskWorkflow()->for($deliverable)->can($deliverable, 'submit'));
     }
 
     public function testValidateIsBlockedWithoutAuthenticatedSuperior(): void
@@ -55,9 +52,19 @@ final class TaskWorkflowTest extends KernelTestCase
         self::bootKernel();
         $task = $this->newTask(TaskType::WITH_DELIVERABLE);
         $workflow = $this->taskWorkflow()->for($task);
-        $workflow->apply($task, 'start');
         $workflow->apply($task, 'submit');
 
         self::assertFalse($workflow->can($task, 'validate'), 'validation must require an authenticated superior');
+    }
+
+    public function testATaskCanBeCancelledFromPending(): void
+    {
+        self::bootKernel();
+        $task = $this->newTask(TaskType::SIMPLE);
+        $workflow = $this->taskWorkflow()->for($task);
+
+        self::assertTrue($workflow->can($task, 'cancel'), 'una tarea pendiente se puede cancelar');
+        $workflow->apply($task, 'cancel');
+        self::assertSame('cancelled', $task->getStatus());
     }
 }

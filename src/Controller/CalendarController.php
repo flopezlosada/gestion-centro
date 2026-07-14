@@ -52,9 +52,10 @@ final class CalendarController extends AbstractController
 
     /**
      * Task status priority for the single dot shown per day in the year view, most attention-needing
-     * first: a rejected task must be redone, a pending one not started, and so on down to closed.
+     * first: pendiente (por hacer), entregada (a validar), finalizada y por último cancelada. Un único
+     * ciclo de vida (ver config/packages/workflow.yaml).
      */
-    private const array STATUS_PRIORITY = ['rejected', 'pending', 'in_progress', 'submitted', 'done', 'validated'];
+    private const array STATUS_PRIORITY = ['pending', 'submitted', 'validated', 'cancelled'];
 
     /**
      * Renders the calendar at the requested zoom level and anchor date (both optional), with the

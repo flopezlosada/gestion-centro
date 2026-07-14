@@ -96,13 +96,10 @@
 
 {% macro action_label(name) %}
     {%- set labels = {
-        'start': 'Empezar',
-        'complete': 'Marcar hecha',
         'submit': 'Entregar',
         'validate': 'Validar',
         'reject': 'Devolver',
-        'reopen': 'Reabrir',
-        'rework': 'Retomar',
+        'cancel': 'Cancelar',
     } -%}
     {{- labels[name]|default(name) -}}
 {% endmacro %}
@@ -110,11 +107,39 @@
 {% macro status_badge(status) %}
     {%- set classes = {
         'pending': 'badge--muted',
-        'in_progress': 'badge--review',
         'submitted': 'badge--warning',
-        'done': 'badge--success',
-        'validated': 'badge--done',
-        'rejected': 'badge--danger',
+        'validated': 'badge--success',
+        'cancelled': 'badge--void',
     } -%}
     <span class="badge {{ classes[status]|default('badge--muted') }}">{{ _self.status_label(status) }}</span>
+{% endmacro %}
+
+{% macro status_chip(status) %}
+    {#- Como status_badge pero con punto de color a la izquierda, para los listados (estilo chip). El
+        punto toma el color del tono vía currentColor, así no duplica la paleta. -#}
+    {%- set classes = {
+        'pending': 'badge--muted',
+        'submitted': 'badge--warning',
+        'validated': 'badge--success',
+        'cancelled': 'badge--void',
+    } -%}
+    {%- set cls = classes[status]|default('badge--muted') -%}
+    {#- data-tone (el sufijo del tono) lo lee table-tools.js para pintar el mismo color en el popover del filtro. -#}
+    <span class="badge chip {{ cls }}" data-tone="{{ cls|replace({'badge--': ''}) }}"><span class="chip__dot" aria-hidden="true"></span>{{ _self.status_label(status) }}</span>
+{% endmacro %}
+
+{% macro person(user) %}
+    {#- Celda de persona: avatar con iniciales + nombre. Reutilizada en el plan, el panel y las
+        fichas. El tono del avatar es estable por persona (longitud del nombre), para dar color sin
+        aleatoriedad. Con user nulo (rol sin titular) muestra un guion discreto. -#}
+    {%- if user is null -%}
+        <span class="cell-muted">—</span>
+    {%- else -%}
+        {%- set words = user.fullName|trim|split(' ')|filter(w => w|length > 0) -%}
+        {%- set initials = words|map(w => w|first)|slice(0, 2)|join('') -%}
+        {#- Color estable por persona: el id reparte uniformemente entre la paleta (8 tonos); si no hay
+            id (usuario sin persistir), cae al largo del nombre. -#}
+        {%- set tint = (user.id ?? user.fullName|length) % 8 -%}
+        <span class="person"><span class="person__avatar person__avatar--{{ tint }}" aria-hidden="true">{{ initials|upper }}</span><span class="person__name">{{ user.fullName }}</span></span>
+    {%- endif -%}
 {% endmacro %}

@@ -28,11 +28,13 @@ use Symfony\Component\Mime\Email;
  */
 final class TaskReminderNotifier
 {
-    /** Statuses where the assignee still has to act (so a due-date reminder to them is useful). */
-    private const array ASSIGNEE_OPEN = ['pending', 'in_progress', 'rejected'];
+    /** Places where the assignee still has to act (Pendiente): útil recordarle la fecha. Una Entregada
+     * espera al superior, no al responsable. */
+    private const array ASSIGNEE_OPEN = ['pending'];
 
-    /** Statuses that are not closed yet (anything but validated), for escalation. */
-    private const array NOT_CLOSED = ['pending', 'in_progress', 'submitted', 'done', 'rejected'];
+    /** Places that are not closed yet (Pendiente o Entregada), for escalation. Finalizada y Cancelada
+     * son cierres. */
+    private const array NOT_CLOSED = ['pending', 'submitted'];
 
     /** Days before the deadline to remind the assignee. */
     private const array REMIND_BEFORE_DAYS = [15, 7];

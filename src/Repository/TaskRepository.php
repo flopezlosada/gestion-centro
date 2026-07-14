@@ -48,6 +48,47 @@ class TaskRepository extends ServiceEntityRepository
     }
 
     /**
+     * The distinct school years that have at least one task, most recent first. Feeds the course
+     * selector so the plan and the panel can look at past courses (the histórico).
+     *
+     * @return list<string> the school years in "YYYY-YYYY" form, newest first
+     */
+    public function schoolYearsWithTasks(): array
+    {
+        $rows = $this->createQueryBuilder('t')
+            ->select('DISTINCT t.schoolYear AS y')
+            ->orderBy('t.schoolYear', 'DESC')
+            ->getQuery()
+            ->getScalarResult();
+
+        return array_map(static fn (array $row): string => (string) $row['y'], $rows);
+    }
+
+    /**
+     * The tasks a given person is the concrete assignee of, for a course, earliest deadline first.
+     * Powers the "sus tareas" block on a user's admin profile. Fetch-joins the associations the list
+     * renders (unit + responsibility role) to avoid an N+1 per row.
+     *
+     * @param User   $user       the assignee
+     * @param string $schoolYear the course in "YYYY-YYYY" form
+     *
+     * @return Task[] the tasks assigned to the user in that course
+     */
+    public function findAssignedTo(User $user, string $schoolYear): array
+    {
+        return $this->createQueryBuilder('t')
+            ->leftJoin('t.unit', 'unit')->addSelect('unit')
+            ->leftJoin('t.responsibility', 'resp')->addSelect('resp')
+            ->leftJoin('resp.role', 'respRole')->addSelect('respRole')
+            ->andWhere('t.assignedUser = :user')->setParameter('user', $user)
+            ->andWhere('t.schoolYear = :year')->setParameter('year', $schoolYear)
+            ->orderBy('t.dueDate', 'ASC')
+            ->addOrderBy('t.id', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * Tasks whose deadline falls within an inclusive date range, earliest deadline first. Used by
      * the monthly calendar to fill a visible month grid.
      *
@@ -147,14 +188,16 @@ class TaskRepository extends ServiceEntityRepository
      */
     public function findOpenByResponsibility(Role $role, ?Department $unit, string $schoolYear): array
     {
+        // "Abierta" = ni finalizada ni cancelada: las cerradas (de cualquier forma) son histórico y no
+        // se reasignan en un relevo de jefatura.
         $qb = $this->createQueryBuilder('t')
             ->join('t.responsibility', 'resp')
             ->andWhere('resp.role = :role')
             ->andWhere('t.schoolYear = :year')
-            ->andWhere('t.status != :closed')
+            ->andWhere('t.status NOT IN (:closed)')
             ->setParameter('role', $role)
             ->setParameter('year', $schoolYear)
-            ->setParameter('closed', 'validated');
+            ->setParameter('closed', ['validated', 'cancelled']);
 
         if (null === $unit) {
             $qb->andWhere('resp.unit IS NULL');

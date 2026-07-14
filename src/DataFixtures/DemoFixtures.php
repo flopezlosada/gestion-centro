@@ -98,10 +98,10 @@ final class DemoFixtures extends AbstractDemoFixture implements DependentFixture
         // A plan spread over deadlines/statuses. Department tasks live in Maths; the centre ones
         // (head of studies' responsibility) carry no department (unit null).
         $plan = [
-            [$reportTpl, sprintf('%d-06-30', $startYear + 1), $maths, $mathsHead, 'in_progress'],
+            [$reportTpl, sprintf('%d-06-30', $startYear + 1), $maths, $mathsHead, 'submitted'],
             [$meetingTpl, sprintf('%d-10-15', $startYear), $maths, $mathsHead, 'validated'],
             [$reportTpl, sprintf('%d-01-31', $startYear + 1), null, $headStudies, 'submitted'],
-            [$meetingTpl, sprintf('%d-11-20', $startYear), null, $headStudies, 'done'],
+            [$meetingTpl, sprintf('%d-11-20', $startYear), null, $headStudies, 'validated'],
         ];
         $headDeptRole = $this->role('head_dept');
         $headStudiesRole = $this->role('head_of_studies');
@@ -146,7 +146,7 @@ final class DemoFixtures extends AbstractDemoFixture implements DependentFixture
         // A deliverable task in progress, so the teacher's task detail shows the full workbench.
         $withDeliverable = Task::fromTemplate($reportTpl, $year, $this->toLectiveDay($today->modify('+5 days'), $blockedKeys, true));
         $withDeliverable->setDescription('Memoria anual del departamento con resultados y propuestas para el curso que viene.')
-            ->setUnit($maths)->setAssignedUser($teacher)->setResponsibility(new TaskResponsibility($this->role('teacher'), $maths))->setStatus('in_progress')->setCreatedBy($director);
+            ->setUnit($maths)->setAssignedUser($teacher)->setResponsibility(new TaskResponsibility($this->role('teacher'), $maths))->setStatus('submitted')->setDeliverableReference('https://cloud.educa.madrid.org/memoria-mates')->setCreatedBy($director);
         $manager->persist($withDeliverable);
 
         // A couple of demo notices for the teacher so the inbox and its badge are not empty.

@@ -387,6 +387,34 @@ td a.cell-link:hover { text-decoration: underline; }
 td .doc-code { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint); display: block; }
 td .doc-title { font-family: var(--font-display); font-size: 16.5px; }
 
+/* Celda de persona: avatar de iniciales + nombre (plan, panel, fichas). */
+.person { display: inline-flex; align-items: center; gap: 9px; min-width: 0; }
+.person__avatar {
+    flex-shrink: 0; width: 28px; height: 28px; border-radius: 7px;
+    display: grid; place-items: center;
+    background: var(--accent-weak); color: var(--accent);
+    font-family: var(--font-display); font-weight: 600; font-size: 11.5px;
+    letter-spacing: -.01em; line-height: 1;
+}
+.person__name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cell-muted { color: var(--text-faint); }
+/* Paleta del avatar: 8 tonos DEL TEMA en versión SUAVE (fondo tenue + inicial de color), el mismo
+   lenguaje que los badges, para que casen con el sistema cálido. El fondo se mezcla con la superficie
+   con color-mix, así se adapta solo a claro/oscuro. Color estable por persona (id % 8). */
+.person__avatar { color: var(--av); background: color-mix(in srgb, var(--av) 16%, var(--surface)); }
+.person__avatar--0 { --av: var(--accent); }
+.person__avatar--1 { --av: var(--review); }
+.person__avatar--2 { --av: var(--success); }
+.person__avatar--3 { --av: var(--warning); }
+.person__avatar--4 { --av: var(--danger); }
+.person__avatar--5 { --av: var(--pillar-plan); }
+.person__avatar--6 { --av: var(--pillar-do); }
+.person__avatar--7 { --av: var(--pillar-act); }
+
+/* Chip de estado: badge con punto de color a la izquierda (el punto hereda el tono con currentColor). */
+.chip { display: inline-flex; align-items: center; gap: 6px; }
+.chip__dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
 /* Ficha clave-valor de las pantallas de detalle (identificación de un documento, etc.). */
 .detail-grid { display: grid; grid-template-columns: max-content 1fr; gap: 8px 22px; margin: 0 0 4px; }
 .detail-grid dt { color: var(--text-muted); font-size: 13px; }
@@ -435,7 +463,7 @@ tbody tr.is-in-force { background: var(--success-weak); }
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
 }
-.table-tools__search { flex: 1 1 260px; min-width: 220px; }
+.table-tools__search { flex: 0 1 340px; min-width: 200px; }
 /* El buscador lleva una lupa (SVG en data-URI: sin ficheros extra, el hosting va justo
    de inodos) para que se reconozca como campo de búsqueda de un vistazo. */
 .table-tools__search input[type="search"] {
@@ -455,12 +483,102 @@ tbody tr.is-in-force { background: var(--success-weak); }
     color: var(--text);
 }
 .table-tools__search input[type="search"]:focus { border-color: var(--accent); outline-offset: 0; }
-/* El filtro reusa .form-row, pero aquí va en línea. */
-.table-tools__filter { margin-bottom: 0; flex: 0 1 200px; min-width: 160px; }
-/* Altura fija para que el buscador case con el resto de la barra de herramientas. */
-.table-tools__search input[type="search"] {
-    height: 40px;
-    box-sizing: border-box;
+/* Filtros de listado: chip + popover (patrón del listado de socixs, en vez del combobox pesado).
+   Chip compacto que abre un popover de opciones; alineado por su propia altura fija (40px). */
+.tt-filter { position: relative; }
+.tt-chip {
+    display: inline-flex; align-items: center; gap: 8px; height: 40px;
+    padding: 0 12px; box-sizing: border-box;
+    border: 1px solid var(--border-strong); border-radius: var(--radius);
+    background: var(--surface); color: var(--text-muted);
+    font: 500 13px var(--font-body); cursor: pointer; white-space: nowrap;
+}
+.tt-chip:hover { color: var(--text); }
+.tt-chip[aria-expanded="true"] { border-color: var(--accent); }
+.tt-chip.is-active { background: var(--accent-weak); color: var(--text); border-color: var(--accent); }
+.tt-chip__chevron { color: var(--text-faint); font-size: 10px; }
+
+.tt-pop {
+    position: absolute; z-index: 40; top: calc(100% + 5px); left: 0;
+    min-width: 190px; max-width: 300px; max-height: 320px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 2px; padding: 5px; margin: 0;
+    background: var(--surface); border: 1px solid var(--border-strong);
+    border-radius: var(--radius); box-shadow: var(--shadow-card);
+}
+.tt-pop[hidden] { display: none; }
+.tt-pop__opt {
+    display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    padding: 8px 10px; border: 0; border-radius: var(--radius-sm);
+    background: transparent; color: var(--text); font: 400 13.5px var(--font-body); cursor: pointer;
+}
+/* Casilla de verificación (multi-selección): cuadro vacío por defecto, relleno con check al marcar. */
+.tt-pop__opt::before {
+    content: ""; flex: none; width: 16px; height: 16px; box-sizing: border-box;
+    border: 1.5px solid var(--border-strong); border-radius: 4px; background: var(--surface);
+}
+.tt-pop__opt[aria-selected="true"] { font-weight: 600; }
+.tt-pop__opt[aria-selected="true"]::before {
+    border-color: var(--accent);
+    background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") center / 11px no-repeat;
+}
+.tt-pop__opt:hover { background: var(--accent-weak); }
+/* Punto de color del estado en el popover: mismo tono que el chip de la tabla. */
+.tt-pop__dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); }
+.tt-pop__dot[data-tone="review"]  { background: var(--review-text); }
+.tt-pop__dot[data-tone="warning"] { background: var(--warning-text); }
+.tt-pop__dot[data-tone="success"] { background: var(--success-text); }
+.tt-pop__dot[data-tone="danger"]  { background: var(--danger-text); }
+.tt-pop__dot[data-tone="done"]    { background: var(--text-muted); }
+.tt-pop__dot[data-tone="muted"]   { background: var(--text-faint); }
+.tt-pop__dot[data-tone="accent"]  { background: var(--accent); }
+
+/* Filtro por rango de fechas: dos campos Desde/Hasta apilados, a ancho completo, dentro del popover. */
+/* overflow visible + sin tope de alto: el calendario propio (.cdate) es absolute y se saldría del
+   popover si éste recortara. */
+.tt-pop--range { padding: 12px; gap: 12px; min-width: 214px; overflow: visible; max-height: none; }
+.tt-range__field { display: flex; flex-direction: column; gap: 5px; }
+.tt-range__field span { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+.tt-range__field input[type="date"] {
+    width: 100%; box-sizing: border-box;
+    padding: 9px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius);
+    font: 400 13px var(--font-body); background: var(--surface); color: var(--text); color-scheme: light dark;
+}
+.tt-range__field input[type="date"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak); }
+
+/* Fecha límite vencida (tarea abierta con fecha pasada): color de alerta tenue, sin gritar. */
+td.due-overdue { color: var(--danger-text); }
+
+/* Selector de curso (histórico): cursos como pastillas; el actual, resaltado en acento. */
+.year-nav { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.year-nav__item {
+    padding: 4px 11px; border: 1px solid var(--border-strong); border-radius: 999px;
+    font-size: 12.5px; color: var(--text-muted); text-decoration: none; font-variant-numeric: tabular-nums;
+}
+.year-nav__item:hover { color: var(--text); border-color: var(--text-faint); }
+.year-nav__item.is-active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 500; }
+
+/* Botón "Limpiar": acción sutil de texto, aparece sólo con filtros/búsqueda activos. */
+.tt-clear {
+    align-self: center; height: 40px; padding: 0 10px;
+    border: 0; background: transparent; cursor: pointer;
+    color: var(--danger-text); font: 500 12.5px var(--font-body);
+    border-radius: var(--radius);
+}
+.tt-clear:hover { background: var(--danger-weak); }
+.tt-clear[hidden] { display: none; }
+
+/* Contador de resultados a la derecha: su margen automático hace de separador (search+filtros a la
+   izquierda, limpiar + contador a la derecha, como en el listado de CSA). */
+.tt-count {
+    margin-left: auto; align-self: center;
+    font-size: 12.5px; color: var(--text-muted);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+/* Buscador: misma altura que los chips (40px) para que la barra quede alineada. */
+.table-tools__search input[type="search"] { height: 40px; box-sizing: border-box; }
+@media (max-width: 640px) {
+    .tt-filter { flex: 1 1 auto; }
+    .tt-count { margin-left: 0; width: 100%; text-align: right; }
 }
 
 /* Cabeceras ordenables: afordancia clicable + flecha según aria-sort. */
@@ -475,6 +593,12 @@ thead th.is-sortable::after {
 thead th.is-sortable[aria-sort="ascending"]::after  { content: '↑'; opacity: .9; }
 thead th.is-sortable[aria-sort="descending"]::after { content: '↓'; opacity: .9; }
 thead th.is-sortable:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+/* Columna ordenada activa: fondo tenue de acento + texto/flecha en acento, para que se vea cuál
+   manda el orden (el color solo, en 10px, no se apreciaba). */
+thead th.is-sortable[aria-sort="ascending"],
+thead th.is-sortable[aria-sort="descending"] { color: var(--accent); background: var(--accent-weak); }
+thead th.is-sortable[aria-sort="ascending"]::after,
+thead th.is-sortable[aria-sort="descending"]::after { opacity: 1; }
 
 .table-tools__empty td { text-align: center; padding: 28px 12px; }
 
@@ -497,6 +621,7 @@ thead th.is-sortable:focus-visible { outline: 2px solid var(--focus); outline-of
 .badge--void    { color: var(--text-faint); text-decoration: line-through; }
 .badge--done    { background: var(--surface-sunken); color: var(--text-muted); border-color: var(--border-strong); }
 .badge--muted   { background: var(--surface-sunken); color: var(--text-faint); border-color: var(--border); }
+.badge--accent  { background: var(--accent-weak);    color: var(--accent);      border-color: var(--accent); }
 
 /* Nivel de valoración de riesgo: dato INFORMATIVO (no accionable), por eso es texto coloreado por
    severidad, no un badge (que se reserva a estados accionables). Escala sobria: trivial apagado. */
@@ -996,6 +1121,45 @@ input[type="email"], input[type="text"], select, textarea {
     grid-template-columns: repeat(3, 1fr);
     gap: 14px;
     margin: 8px 0 32px;
+}
+/* Panel: cuatro cifras que particionan las tareas (vencidas / pendientes / en curso / cerradas). */
+.worklist-stats--4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 720px) { .worklist-stats--4 { grid-template-columns: repeat(2, 1fr); } }
+
+/* ---- Barra de progreso (panel: % cerradas) ------------------------------- */
+.progress {
+    display: block; width: 100%; height: 10px;
+    background: var(--surface-sunken); border-radius: 999px; overflow: hidden;
+}
+.progress__bar {
+    display: block; height: 100%;
+    background: var(--success); border-radius: 999px;
+    transition: width .3s ease;
+}
+.progress-hero { margin-bottom: 18px; }
+.progress-hero__head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+.progress-hero__pct {
+    font-family: var(--font-display); font-size: clamp(2rem, 5vw, 2.75rem);
+    font-weight: 500; line-height: .9; letter-spacing: -.02em;
+    color: var(--success); font-variant-numeric: tabular-nums;
+}
+.progress-hero__caption { font-size: 13.5px; color: var(--text-muted); }
+
+/* ---- Avance por departamento --------------------------------------------- */
+.dept-progress { display: flex; flex-direction: column; gap: 12px; }
+.dept-progress__row {
+    display: grid; grid-template-columns: minmax(140px, 1fr) 2fr auto;
+    align-items: center; gap: 14px;
+}
+.dept-progress__name { font-weight: 500; font-size: 13.5px; }
+.dept-progress__bar { height: 8px; }
+.dept-progress__meta {
+    font-size: 12.5px; color: var(--text-muted); white-space: nowrap;
+    font-variant-numeric: tabular-nums; text-align: right; min-width: 88px;
+}
+@media (max-width: 720px) {
+    .dept-progress__row { grid-template-columns: 1fr auto; }
+    .dept-progress__bar { grid-column: 1 / -1; order: 3; }
 }
 .stat {
     display: flex;
@@ -1535,12 +1699,12 @@ input[type="email"], input[type="text"], select, textarea {
 .calendar-task-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .calendar-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--text-faint); }
+/* Puntos del calendario por estado del ciclo único: pendiente (gris), entregada (ámbar), finalizada
+   (verde, como el chip) y cancelada (anillo hueco, para distinguirla del gris de pendiente). */
 .calendar-dot--pending { background: var(--text-faint); }
-.calendar-dot--in_progress { background: var(--review); }
 .calendar-dot--submitted { background: var(--warning); }
-.calendar-dot--done { background: var(--success); }
-.calendar-dot--validated { background: var(--accent); }
-.calendar-dot--rejected { background: var(--danger); }
+.calendar-dot--validated { background: var(--success); }
+.calendar-dot--cancelled { background: transparent; border: 1.5px solid var(--text-faint); box-sizing: border-box; }
 /* Eventos personales en la celda: como las tareas, con separación sutil arriba y marcador neutro
    (no llevan estado de workflow, así que no reusan la escala de color de los estados). */
 .calendar-events { list-style: none; margin: 3px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }

@@ -58,7 +58,7 @@ final class TaskCompletionSubscriberTest extends TestCase
     {
         $task = $this->task()->setAssignedUser($this->user('Ana'));
 
-        (new TaskCompletionSubscriber())($this->entering($task, 'done'));
+        (new TaskCompletionSubscriber())($this->entering($task, 'submitted'));
 
         self::assertNull($task->getCompletedBy());
     }

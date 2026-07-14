@@ -13,34 +13,39 @@
         <a class="btn" href="{{ path('admin_non_lective_day_new') }}">+ Nuevo día no lectivo</a>
     </div>
 
-    <div class="card">
-        {% if days is empty %}
+    {% if groups is empty %}
+        <div class="card">
             <div class="empty-state">
                 <h2>No hay días no lectivos todavía</h2>
                 <p>Añade el primer festivo o periodo de vacaciones. Los fines de semana ya son no lectivos, no hace falta añadirlos.</p>
                 <a class="btn" href="{{ path('admin_non_lective_day_new') }}">Nuevo día no lectivo</a>
             </div>
-        {% else %}
-            <table data-list-tools>
-                <thead>
-                    <tr><th>Fecha</th><th>Descripción</th><th></th></tr>
-                </thead>
-                <tbody>
-                    {% for day in days %}
-                        <tr>
-                            <td class="mono">{{ day.date|date('d/m/Y') }}</td>
-                            <td>{{ day.description }}</td>
-                            <td class="row-actions">
-                                <a href="{{ path('admin_non_lective_day_edit', { id: day.id }) }}">Editar</a>
-                                <form method="post" action="{{ path('admin_non_lective_day_delete', { id: day.id }) }}" data-confirm="¿Seguro que quieres borrar «{{ day.description }}» ({{ day.date|date('d/m/Y') }})?">
-                                    <input type="hidden" name="_token" value="{{ csrf_token('non_lective_day_delete' ~ day.id) }}">
-                                    <button type="submit" class="link-danger">Borrar</button>
-                                </form>
-                            </td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        {% endif %}
-    </div>
+        </div>
+    {% else %}
+        {% for schoolYear, days in groups %}
+            <div class="card">
+                <div class="page-head"><div><h2>Curso {{ schoolYear }}</h2></div></div>
+                <table>
+                    <thead>
+                        <tr><th>Fecha</th><th>Descripción</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        {% for day in days %}
+                            <tr>
+                                <td class="mono">{{ day.date|date('d/m/Y') }}</td>
+                                <td>{{ day.description }}</td>
+                                <td class="row-actions">
+                                    <a href="{{ path('admin_non_lective_day_edit', { id: day.id }) }}">Editar</a>
+                                    <form method="post" action="{{ path('admin_non_lective_day_delete', { id: day.id }) }}" data-confirm="¿Seguro que quieres borrar «{{ day.description }}» ({{ day.date|date('d/m/Y') }})?">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('non_lective_day_delete' ~ day.id) }}">
+                                        <button type="submit" class="link-danger">Borrar</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endfor %}
+    {% endif %}
 {% endblock %}

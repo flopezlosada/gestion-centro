@@ -9,6 +9,7 @@ use App\Enum\Area;
 use App\Form\NonLectiveDayType;
 use App\Repository\NonLectiveDayRepository;
 use App\Security\Voter\AreaVoter;
+use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -26,15 +27,25 @@ use Symfony\Component\Routing\Attribute\Route;
 final class AdminNonLectiveDayController extends AbstractController
 {
     /**
-     * Lists every non-teaching day, earliest first.
+     * Lists the non-teaching days grouped by school year (most recent course first), earliest day
+     * first within each course. A day's course is derived from its date ({@see SchoolYear::current}),
+     * so no stored year is needed.
      */
     #[Route('', name: 'admin_non_lective_day_index', methods: ['GET'])]
     public function index(NonLectiveDayRepository $days): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
 
+        // findAllOrdered() comes earliest-first, so each group keeps that order; krsort puts the newest
+        // course on top.
+        $byYear = [];
+        foreach ($days->findAllOrdered() as $day) {
+            $byYear[SchoolYear::current($day->getDate())][] = $day;
+        }
+        krsort($byYear);
+
         return $this->render('admin/non_lective_day/index.html.twig', [
-            'days' => $days->findAllOrdered(),
+            'groups' => $byYear,
         ]);
     }
 

@@ -47,9 +47,17 @@ final class TaskController extends AbstractController
     public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility): Response
     {
         $schoolYear = $request->query->getString('curso') ?: SchoolYear::current(new \DateTimeImmutable());
+        // Cursos entre los que se puede navegar (histórico): los que tienen tareas + el actual, por si
+        // aún no tiene ninguna. Se ofrece el selector solo cuando hay más de uno.
+        $years = $tasks->schoolYearsWithTasks();
+        if (!\in_array($schoolYear, $years, true)) {
+            $years[] = $schoolYear;
+            rsort($years);
+        }
 
         return $this->render('task/index.html.twig', [
             'schoolYear' => $schoolYear,
+            'years' => $years,
             'tasks' => $visibility->visibleTo($tasks->findBySchoolYear($schoolYear), $user, $this->isGranted('ROLE_ADMIN')),
         ]);
     }
@@ -63,7 +71,7 @@ final class TaskController extends AbstractController
     public function new(Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, UserRepository $users, DepartmentRepository $unitRepository, EntityManagerInterface $entityManager): Response
     {
         $units = $this->assignableDepartments($user, $hierarchy, $unitRepository);
-        $roleChoices = $roles->findAllOrdered();
+        $roleChoices = $this->assignableRoles($user, $roles->findAllOrdered(), $hierarchy);
         $userChoices = $this->assignableUsers($user, $hierarchy, $users, $unitRepository);
 
         $data = new TaskFormData();
@@ -82,7 +90,7 @@ final class TaskController extends AbstractController
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
-            $this->assertResponsibilityAllowed($data, $units, $userChoices);
+            $this->assertResponsibilityAllowed($data, $roleChoices, $units, $userChoices);
 
             // The deliverable toggle also picks the lifecycle: a deliverable task carries the
             // progress/submission/validation flow; a plain one is the simple do-and-validate lifecycle.
@@ -117,7 +125,12 @@ final class TaskController extends AbstractController
         if (null !== $currentUnit && !\in_array($currentUnit, $units, true)) {
             $units[] = $currentUnit;
         }
-        $roleChoices = $roles->findAllOrdered();
+        $roleChoices = $this->assignableRoles($user, $roles->findAllOrdered(), $hierarchy);
+        // Keep the task's current role as a valid choice even if now outside the scope.
+        $currentRole = $task->getResponsibility()?->getRole();
+        if (null !== $currentRole && !\in_array($currentRole, $roleChoices, true)) {
+            $roleChoices[] = $currentRole;
+        }
         $userChoices = $this->assignableUsers($user, $hierarchy, $users, $unitRepository);
         // Keep the task's current assignee as a valid choice even if now outside the scope.
         $currentAssignee = $task->getAssignedUser();
@@ -136,7 +149,7 @@ final class TaskController extends AbstractController
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
-            $this->assertResponsibilityAllowed($data, $units, $userChoices);
+            $this->assertResponsibilityAllowed($data, $roleChoices, $units, $userChoices);
 
             $this->applyFormData($task, $data);
             $entityManager->flush();
@@ -191,6 +204,9 @@ final class TaskController extends AbstractController
         // Everyone who reaches this point (own people, superiors, admins) is exactly who may see the
         // task's activity history, so the timeline is shown to every viewer.
         $canWork = $this->canWorkOn($task, $user, $hierarchy);
+        // Cancelling is a management action (creator/superior/admin), not "work": it must not be offered
+        // to a plain assignee.
+        $canManage = $this->canManage($task, $user, $hierarchy);
 
         // Delegation hands the task to a subordinate: allowed to the task's own responsible (a head
         // passing their department task to a member) or a superior by rank, and only to people they
@@ -205,10 +221,11 @@ final class TaskController extends AbstractController
             'canWork' => $canWork,
             // Editing/deleting is a management action (creator/superior/admin), a different set than
             // "who works on it" — the template gates the Edit link with this.
-            'canManage' => $this->canManage($task, $user, $hierarchy),
+            'canManage' => $canManage,
             // The lifecycle actions this user may fire now: the workflow's guards already hide the
-            // superior-only ones for non-superiors; here we also hide progress ones from outsiders.
-            'actions' => $this->availableActions($workflows, $task, $canWork),
+            // superior-only ones for non-superiors; here we also hide progress ones from outsiders and
+            // offer "cancel" only to whoever may manage the task.
+            'actions' => $this->availableActions($workflows, $task, $canWork, $canManage),
             'canSeeHistory' => true,
             // Only a superior with subordinates gets the delegate control.
             'canDelegate' => $canDelegate && [] !== $delegatable,
@@ -252,8 +269,9 @@ final class TaskController extends AbstractController
     }
 
     /**
-     * Fires a lifecycle transition (empezar/entregar/validar/devolver…) chosen from the task detail.
-     * Progress transitions require the assignee; validate/reject are gated by the workflow guard.
+     * Fires a lifecycle transition (entregar/validar/devolver/cancelar) chosen from the task detail.
+     * "Entregar" (submit) requires the assignee; "validar"/"devolver" are gated by the workflow guard
+     * (superior only); "cancelar" is a management action (creator/superior/admin).
      */
     #[Route('/tareas/{id}/accion/{transition}', name: 'task_transition', requirements: ['id' => '\d+', 'transition' => '[a-z_]+'], methods: ['POST'])]
     public function transition(Task $task, string $transition, Request $request, #[CurrentUser] User $user, TaskWorkflow $workflows, OrganizationHierarchy $hierarchy, EntityManagerInterface $entityManager): Response
@@ -261,7 +279,13 @@ final class TaskController extends AbstractController
         if (!$this->isCsrfTokenValid('task_transition'.$task->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
-        if (!\in_array($transition, self::SUPERIOR_TRANSITIONS, true) && !$this->canWorkOn($task, $user, $hierarchy)) {
+        // Cancel is a management action; validate/reject are guarded as superior by the workflow; the
+        // rest (submit) require whoever works on the task.
+        if ('cancel' === $transition) {
+            if (!$this->canManage($task, $user, $hierarchy)) {
+                throw $this->createAccessDeniedException('No puedes cancelar esta tarea.');
+            }
+        } elseif (!\in_array($transition, self::SUPERIOR_TRANSITIONS, true) && !$this->canWorkOn($task, $user, $hierarchy)) {
             throw $this->createAccessDeniedException('Esta tarea no es tuya.');
         }
 
@@ -269,6 +293,23 @@ final class TaskController extends AbstractController
         if (!$workflow->can($task, $transition)) {
             // Not enabled from the current state, or blocked by the guard (e.g. non-superior validating).
             throw $this->createAccessDeniedException('Acción no disponible para esta tarea.');
+        }
+
+        // Entregar: si la tarea lleva entregable, la referencia del documento se adjunta en el MISMO
+        // paso (no hay un estado intermedio donde ponerla antes), y es obligatoria.
+        if ('submit' === $transition && $task->requiresDocument()) {
+            $reference = trim((string) $request->request->get('reference'));
+            if ('' === $reference) {
+                $this->addFlash('error', 'Adjunta el enlace del documento para entregar la tarea.');
+
+                return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
+            }
+            if (mb_strlen($reference) > 255) {
+                $this->addFlash('error', 'La referencia es demasiado larga (máximo 255 caracteres).');
+
+                return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
+            }
+            $task->setDeliverableReference($reference);
         }
 
         $workflow->apply($task, $transition);
@@ -294,6 +335,11 @@ final class TaskController extends AbstractController
         if (!$task->requiresDocument()) {
             throw $this->createNotFoundException('Esta tarea no lleva entregable.');
         }
+        // Solo se corrige el enlace mientras está Entregada (a la espera de validación): al entregar ya
+        // se adjunta, y una tarea finalizada/cancelada/pendiente no se toca por aquí.
+        if ('submitted' !== $task->getStatus()) {
+            throw $this->createAccessDeniedException('Solo se puede editar el entregable de una tarea entregada.');
+        }
 
         $reference = trim((string) $request->request->get('reference'));
         if (mb_strlen($reference) > 255) {
@@ -310,12 +356,13 @@ final class TaskController extends AbstractController
     }
 
     /**
-     * The lifecycle transitions to offer as buttons: those enabled now, keeping the superior-only
-     * ones (validate/reject) and, for whoever works on the task, the progress ones too.
+     * The lifecycle transitions to offer as buttons: those enabled now, keeping the superior-only ones
+     * (validate/reject); "submit" (Entregar) for whoever works on the task; and "cancel" only for
+     * whoever may manage it.
      *
      * @return list<string> the transition names to show
      */
-    private function availableActions(TaskWorkflow $workflows, Task $task, bool $canWork): array
+    private function availableActions(TaskWorkflow $workflows, Task $task, bool $canWork, bool $canManage): array
     {
         $names = array_map(
             static fn ($transition): string => $transition->getName(),
@@ -324,7 +371,11 @@ final class TaskController extends AbstractController
 
         return array_values(array_filter(
             $names,
-            fn (string $name): bool => $canWork || \in_array($name, self::SUPERIOR_TRANSITIONS, true),
+            fn (string $name): bool => match (true) {
+                'cancel' === $name => $canManage,
+                \in_array($name, self::SUPERIOR_TRANSITIONS, true) => true,
+                default => $canWork,
+            },
         ));
     }
 
@@ -383,15 +434,20 @@ final class TaskController extends AbstractController
     }
 
     /**
-     * Guards the responsibility server-side on top of the form's own choice lists: a per-department role
-     * must target a department the creator may use, and the chosen person must be within the creator's
-     * assignable scope.
+     * Guards the responsibility server-side on top of the form's own choice lists: the role must be one
+     * the creator commands (or holds), a per-department role must target a department the creator may
+     * use, and the chosen person must be within the creator's assignable scope.
      *
+     * @param list<Role>       $assignableRoles the roles the creator may set as responsibility
      * @param list<Department> $assignableUnits the departments the creator may target
-     * @param list<User> $assignableUsers the people the creator may assign to
+     * @param list<User>       $assignableUsers the people the creator may assign to
      */
-    private function assertResponsibilityAllowed(TaskFormData $data, array $assignableUnits, array $assignableUsers): void
+    private function assertResponsibilityAllowed(TaskFormData $data, array $assignableRoles, array $assignableUnits, array $assignableUsers): void
     {
+        if (null !== $data->responsibilityRole && !\in_array($data->responsibilityRole, $assignableRoles, true)) {
+            throw $this->createAccessDeniedException('No puedes asignar la tarea a ese rol.');
+        }
+
         if (null !== $data->responsibilityRole
             && $data->responsibilityRole->isPerDepartment()
             && !\in_array($data->responsibilityUnit, $assignableUnits, true)) {
@@ -434,6 +490,46 @@ final class TaskController extends AbstractController
         }
 
         return $list;
+    }
+
+    /**
+     * The roles a user may set as a task's responsibility, filtered by the chain of command: their own
+     * roles (a task for their own function) plus any role they outrank in a scope they command. A plain
+     * member (docente/tutor) gets only the roles they hold — so they can only create tasks for
+     * themselves; a jefe de departamento also gets the roles below them in their department; a
+     * whole-school superior gets everything they outrank. The department is guarded separately.
+     *
+     * @param User      $user     the creator
+     * @param list<Role> $allRoles the full role catalog to filter
+     * @param OrganizationHierarchy $hierarchy the chain-of-command service
+     *
+     * @return list<Role> the roles the user may assign
+     */
+    private function assignableRoles(User $user, array $allRoles, OrganizationHierarchy $hierarchy): array
+    {
+        return array_values(array_filter($allRoles, fn (Role $role): bool => $this->mayAssignRole($user, $role, $hierarchy)));
+    }
+
+    /**
+     * Whether the user may set the given role as a task's responsibility: they hold it themselves (a
+     * task for their own function) or they outrank it in scope — the department for a per-department
+     * role, centre-wide otherwise (so a per-department rank can never reach a centre-wide role).
+     *
+     * @param User                  $user      the creator
+     * @param Role                  $role      the candidate responsibility role
+     * @param OrganizationHierarchy $hierarchy the chain-of-command service
+     *
+     * @return bool true if the user may assign the role
+     */
+    private function mayAssignRole(User $user, Role $role, OrganizationHierarchy $hierarchy): bool
+    {
+        if ($user->holdsRole($role)) {
+            return true;
+        }
+
+        $scope = $role->isPerDepartment() ? $user->getUnit() : null;
+
+        return $hierarchy->outranks($user, $role, $scope);
     }
 
     /**

@@ -34,7 +34,7 @@
 
         {% if view != 'dia' %}
             <ul class="calendar-legend" aria-label="Filtrar por estado (pulsa para ocultar/mostrar)">
-                {% for status in ['pending', 'in_progress', 'submitted', 'done', 'validated', 'rejected'] %}
+                {% for status in ['pending', 'submitted', 'validated', 'cancelled'] %}
                     <li><button type="button" class="calendar-legend__toggle" data-filter-status="{{ status }}" aria-pressed="true">{{ taskUi.status_dot(status) }} {{ taskUi.status_label(status) }}</button></li>
                 {% endfor %}
                 {# Los eventos personales no filtran por estado; el marcador es cuadrado (las tareas, círculo)

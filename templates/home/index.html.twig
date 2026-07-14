@@ -1,0 +1,103 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/task.html.twig' as taskUi %}
+
+{% block title %}Panel · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}Panel{% endblock %}
+
+{% block body %}
+    {% set isCentre = overview.byDepartment|length > 1 %}
+
+    <div class="page-head">
+        <div>
+            <h1>{{ isCentre ? 'Panel del centro' : 'Tu panel' }} · {{ schoolYear }}</h1>
+            <p class="lead">Cómo van las tareas del curso, de un vistazo.</p>
+            {% if years|length > 1 %}
+                <nav class="year-nav" aria-label="Curso">
+                    {% for y in years %}
+                        <a href="{{ path('app_homepage', { curso: y }) }}" class="year-nav__item{{ y == schoolYear ? ' is-active' }}"{{ y == schoolYear ? ' aria-current=page' }}>{{ y }}</a>
+                    {% endfor %}
+                </nav>
+            {% endif %}
+        </div>
+        <div><a class="btn btn-secondary" href="{{ path('task_index', { curso: schoolYear }) }}">Ver todas las tareas</a></div>
+    </div>
+
+    {% if overview.total == 0 %}
+        <div class="card">
+            <div class="empty-state">
+                <h2>Aún no hay tareas en {{ schoolYear }}</h2>
+                <p>Cuando se planifiquen las tareas del curso aparecerán aquí.</p>
+            </div>
+        </div>
+    {% else %}
+        <div class="card progress-hero">
+            <div class="progress-hero__head">
+                <span class="progress-hero__pct">{{ overview.pctFinalized }}%</span>
+                <span class="progress-hero__caption">{{ overview.finalized }} de {{ overview.total }} tareas finalizadas</span>
+            </div>
+            <div class="progress"><span class="progress__bar" style="width: {{ overview.pctFinalized }}%"></span></div>
+        </div>
+
+        <div class="worklist-stats worklist-stats--4">
+            <div class="stat stat--danger{{ overview.overdue == 0 ? ' is-zero' }}">
+                <span class="stat-figure">{{ overview.overdue }}</span><span class="stat-label">Vencidas</span>
+            </div>
+            <div class="stat{{ overview.pending == 0 ? ' is-zero' }}">
+                <span class="stat-figure">{{ overview.pending }}</span><span class="stat-label">Pendientes</span>
+            </div>
+            <div class="stat{{ overview.submitted == 0 ? ' is-zero' }}">
+                <span class="stat-figure">{{ overview.submitted }}</span><span class="stat-label">Entregadas</span>
+            </div>
+            <div class="stat stat--success{{ overview.finalized == 0 ? ' is-zero' }}">
+                <span class="stat-figure">{{ overview.finalized }}</span><span class="stat-label">Finalizadas</span>
+            </div>
+        </div>
+
+        {% if overview.attention is not empty %}
+            <div class="card">
+                <div class="page-head"><div><h2>Requieren atención</h2><p class="lead">Tareas abiertas con la fecha límite pasada: lo primero a resolver.</p></div></div>
+                <table>
+                    <thead><tr><th>Tarea</th><th>Unidad</th><th>Responsable</th><th>Fecha límite</th><th>Estado</th></tr></thead>
+                    <tbody>
+                        {% for t in overview.attention|slice(0, 8) %}
+                            <tr>
+                                <td><a class="cell-link" href="{{ path('task_show', { id: t.id }) }}">{{ t.title }}</a></td>
+                                <td>{{ t.unit ? t.unit.name : '—' }}</td>
+                                <td>{{ taskUi.person(t.assignedUser) }}</td>
+                                <td>{{ t.dueDate|date('d/m/Y') }}</td>
+                                <td>{{ taskUi.status_chip(t.status) }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% if overview.attention|length > 8 %}
+                    <p class="help">Y {{ overview.attention|length - 8 }} más. <a href="{{ path('task_index') }}">Ver todas</a>.</p>
+                {% endif %}
+            </div>
+        {% endif %}
+
+        {% if isCentre %}
+            <div class="card">
+                <div class="page-head"><div><h2>Avance por departamento</h2></div></div>
+                <div class="dept-progress">
+                    {% for d in overview.byDepartment %}
+                        <div class="dept-progress__row">
+                            <span class="dept-progress__name">{{ d.name }}</span>
+                            <span class="progress dept-progress__bar"><span class="progress__bar" style="width: {{ d.pct }}%"></span></span>
+                            <span class="dept-progress__meta">{{ d.pct }}%{% if d.overdue > 0 %} · <span style="color: var(--danger-text)">{{ d.overdue }} vencida{{ d.overdue > 1 ? 's' }}</span>{% endif %}</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        {% endif %}
+    {% endif %}
+
+    {% if agendaToday is not empty or agendaWeek is not empty %}
+        <div class="page-head">
+            <div><h2>Tu agenda</h2></div>
+            <div><a class="btn btn-secondary" href="{{ path('personal_event_index') }}">Ver agenda</a></div>
+        </div>
+        {{ taskUi.agenda_section('Hoy', agendaToday) }}
+        {{ taskUi.agenda_section('Próximos 7 días', agendaWeek) }}
+    {% endif %}
+{% endblock %}

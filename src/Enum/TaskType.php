@@ -5,16 +5,17 @@ declare(strict_types=1);
 namespace App\Enum;
 
 /**
- * The kind of task, which selects its state-machine lifecycle. Kept small on purpose (KISS): a
- * task either is a simple "do it and get it validated" item, or it carries a deliverable with an
- * intermediate progress/submission step. New lifecycles are added here and in workflow.yaml.
+ * The kind of task. TODAS las tareas comparten UN único ciclo de vida (Pendiente → Entregada →
+ * Finalizada, con Cancelada aparte; ver config/packages/workflow.yaml). El tipo ya NO elige máquina de
+ * estados: solo indica si al "Entregar" hay que adjuntar la referencia de un documento
+ * ({@see \App\Entity\Task::requiresDocument()}).
  */
 enum TaskType: string
 {
-    /** pending → done → validated. */
+    /** Se entrega y un superior la valida (sin documento). */
     case SIMPLE = 'simple';
 
-    /** pending → in_progress → submitted → validated (or rejected back to in_progress). */
+    /** Igual, pero al entregar se adjunta la referencia de un documento. */
     case WITH_DELIVERABLE = 'with_deliverable';
 
     /**
@@ -31,20 +32,9 @@ enum TaskType: string
     }
 
     /**
-     * Name of the Symfony Workflow that governs tasks of this type (see config/packages/workflow.yaml).
-     *
-     * @return string the workflow name
-     */
-    public function workflowName(): string
-    {
-        return match ($this) {
-            self::SIMPLE => 'task_simple',
-            self::WITH_DELIVERABLE => 'task_with_deliverable',
-        };
-    }
-
-    /**
-     * The initial state (place) a new task of this type starts in.
+     * The initial state (place) a new task starts in. Un único ciclo de vida para todas las tareas
+     * (ver config/packages/workflow.yaml), así que el tipo ya no elige máquina de estados: solo indica
+     * si "Entregar" exige adjuntar un documento ({@see \App\Entity\Task::requiresDocument()}).
      *
      * @return string the initial place
      */
