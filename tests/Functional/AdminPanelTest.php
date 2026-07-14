@@ -9,9 +9,11 @@ use App\Entity\AcademicYear;
 use App\Entity\NonLectiveDay;
 use App\Entity\Role;
 use App\Entity\Task;
+use App\Entity\TaskResponsibility;
 use App\Entity\TaskTemplate;
 use App\Entity\Department;
 use App\Entity\User;
+use App\Util\SchoolYear;
 use App\Enum\Area;
 use App\Enum\DueDateRuleKind;
 use App\Enum\PermissionLevel;
@@ -160,6 +162,38 @@ final class AdminPanelTest extends WebTestCase
         self::assertResponseRedirects('/admin/departamentos/'.$mathsId);
         $this->em->clear();
         self::assertSame('Matemáticas', $this->em->getRepository(User::class)->find($anaId)?->getUnit()?->getName());
+    }
+
+    public function testMakingAMemberHeadMovesTheRoleAndItsOpenTasks(): void
+    {
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($maths);
+        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
+        $this->em->persist($headRole);
+        $oldHead = (new User())->setFullName('María Saliente')->setEmail('maria@centro.test')->setUnit($maths)->addAssignedRole($headRole);
+        $newHead = (new User())->setFullName('José Entrante')->setEmail('jose@centro.test')->setUnit($maths);
+        $this->em->persist($oldHead);
+        $this->em->persist($newHead);
+        // An open, current-course jefatura task assigned to the outgoing head.
+        $task = new Task('Memoria de jefatura', SchoolYear::current(new \DateTimeImmutable()), new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
+        $task->setUnit($maths)->setResponsibility(new TaskResponsibility($headRole, $maths))->setAssignedUser($oldHead);
+        $this->em->persist($task);
+        $this->em->flush();
+        $mathsId = $maths->getId();
+        $newHeadId = $newHead->getId();
+        $taskId = $task->getId();
+
+        $this->client->loginUser($this->admin());
+        $crawler = $this->client->request('GET', '/admin/departamentos/'.$mathsId);
+        // Designate José as head (there are several "Hacer jefatura" rows; point this one at José).
+        $form = $crawler->selectButton('Hacer jefatura')->form();
+        $form['user'] = (string) $newHeadId;
+        $this->client->submit($form);
+
+        self::assertResponseRedirects('/admin/departamentos/'.$mathsId);
+        $this->em->clear();
+        self::assertTrue($this->em->getRepository(User::class)->find($newHeadId)?->holdsRoleCode('head_dept'), 'the new head holds the role');
+        self::assertSame($newHeadId, $this->em->getRepository(Task::class)->find($taskId)?->getAssignedUser()?->getId(), 'the jefatura task followed the new head');
     }
 
     public function testAdminNavAppearsForAdmin(): void

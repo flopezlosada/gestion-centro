@@ -9,9 +9,11 @@ use App\Entity\User;
 use App\Enum\Area;
 use App\Form\DepartmentType;
 use App\Repository\DepartmentRepository;
+use App\Repository\RoleRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
 use App\Service\AuditLogger;
+use App\Service\RankedRoleHandover;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -46,8 +48,8 @@ final class AdminUnitController extends AbstractController
     }
 
     /**
-     * Shows a department: the people who belong to it and its head (derived read-only from whoever
-     * holds the "jefatura de departamento" role, not a separate field).
+     * Shows a department: the people who belong to it and its head (whoever holds the "jefatura de
+     * departamento" role — a derived value, not a separate field).
      */
     #[Route('/{id}', name: 'admin_department_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function show(Department $unit, UserRepository $users): Response
@@ -64,6 +66,51 @@ final class AdminUnitController extends AbstractController
             // People who could be added (anyone not already in this department).
             'candidates' => $users->findNotInUnit($unit),
         ]);
+    }
+
+    /**
+     * Sets (or clears, with an empty value) the department's head by moving the "jefatura de
+     * departamento" role from the current head to the chosen member (single head per department). The
+     * new head takes over the department's open, current-course jefatura tasks (the handover). The head
+     * must belong to the department.
+     */
+    #[Route('/{id}/jefatura', name: 'admin_department_set_head', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function setHead(Department $unit, Request $request, UserRepository $users, RoleRepository $roles, RankedRoleHandover $handover, EntityManagerInterface $em): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
+        if (!$this->isCsrfTokenValid('department_head'.$unit->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+
+        $headRole = $roles->findOneBy(['code' => 'head_dept']);
+        if (null === $headRole) {
+            $this->addFlash('error', 'No existe el rol de jefatura de departamento.');
+
+            return $this->redirectToRoute('admin_department_show', ['id' => $unit->getId()]);
+        }
+
+        // The role is a single head per department: clear it from the current holder(s) here first.
+        foreach ($users->findByUnit($unit) as $member) {
+            if ($member->holdsRoleCode('head_dept')) {
+                $member->removeAssignedRole($headRole);
+            }
+        }
+
+        $userId = (string) $request->request->get('user');
+        $newHead = '' === $userId ? null : $users->find((int) $userId);
+        if (null !== $newHead) {
+            if ($newHead->getUnit() !== $unit) {
+                throw $this->createAccessDeniedException('La jefatura debe pertenecer al departamento.');
+            }
+            $newHead->addAssignedRole($headRole);
+            // The incoming head takes over the department's open, current-course jefatura tasks.
+            $handover->toNewHolder($newHead, $headRole, new \DateTimeImmutable());
+        }
+
+        $em->flush();
+        $this->addFlash('success', null === $newHead ? 'Jefatura sin asignar.' : sprintf('Jefatura asignada a %s.', $newHead->getFullName()));
+
+        return $this->redirectToRoute('admin_department_show', ['id' => $unit->getId()]);
     }
 
     /**

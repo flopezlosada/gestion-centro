@@ -12,7 +12,7 @@
     <div class="page-head">
         <div>
             <h1>{{ unit.name }}</h1>
-            <p class="lead">Jefatura: {{ head ? head.fullName : '— sin asignar —' }} <span class="help">(se asigna dando el rol de jefatura de departamento en la ficha del profesor)</span></p>
+            <p class="lead">Jefatura: {{ head ? head.fullName : '— sin asignar —' }} <span class="help">(al cambiarla, sus tareas de jefatura de este curso pasan al nuevo)</span></p>
         </div>
         <a class="btn secondary" href="{{ path('admin_department_edit', { id: unit.id }) }}">Editar</a>
     </div>
@@ -35,6 +35,19 @@
                             <td>{{ m.fullName }}{% if isHead %} <span class="badge">Jefatura</span>{% endif %}</td>
                             <td class="mono">{{ m.email }}</td>
                             <td class="row-actions">
+                                {% if isHead %}
+                                    <form method="post" action="{{ path('admin_department_set_head', { id: unit.id }) }}">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('department_head' ~ unit.id) }}">
+                                        <input type="hidden" name="user" value="">
+                                        <button type="submit" class="link-action">Quitar jefatura</button>
+                                    </form>
+                                {% else %}
+                                    <form method="post" action="{{ path('admin_department_set_head', { id: unit.id }) }}">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('department_head' ~ unit.id) }}">
+                                        <input type="hidden" name="user" value="{{ m.id }}">
+                                        <button type="submit" class="link-action">Hacer jefatura</button>
+                                    </form>
+                                {% endif %}
                                 <form method="post" action="{{ path('admin_department_remove_member', { id: unit.id, userId: m.id }) }}" data-confirm="¿Quitar a {{ m.fullName }} del departamento?">
                                     <input type="hidden" name="_token" value="{{ csrf_token('unit_remove_member' ~ m.id) }}">
                                     <button type="submit" class="link-danger">Quitar</button>
