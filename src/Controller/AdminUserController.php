@@ -9,10 +9,12 @@ use App\Entity\User;
 use App\Enum\Area;
 use App\Form\UserType;
 use App\Repository\DepartmentRepository;
+use App\Repository\TaskRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
 use App\Service\AuditLogger;
 use App\Service\RankedRoleHandover;
+use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -62,6 +64,24 @@ final class AdminUserController extends AbstractController
         }
 
         return $this->handleForm($user, $request, $em, true);
+    }
+
+    /**
+     * The read-only profile of a user: their department, roles and the tasks assigned to them this
+     * course. The entry point linked from the department detail and the user list.
+     */
+    #[Route('/{id}', name: 'admin_user_show', requirements: ['id' => '\d+'], methods: ['GET'])]
+    public function show(User $user, TaskRepository $tasks): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
+
+        $schoolYear = SchoolYear::current(new \DateTimeImmutable());
+
+        return $this->render('admin/user/show.html.twig', [
+            'user' => $user,
+            'schoolYear' => $schoolYear,
+            'tasks' => $tasks->findAssignedTo($user, $schoolYear),
+        ]);
     }
 
     /**

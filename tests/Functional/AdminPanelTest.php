@@ -84,6 +84,38 @@ final class AdminPanelTest extends WebTestCase
         self::assertSelectorTextContains('table', 'director@centro.test');
     }
 
+    public function testUserShowListsProfileRolesAndAssignedTasks(): void
+    {
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($maths);
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
+        $this->em->persist($teacherRole);
+        $person = (new User())->setFullName('Mercedes Alende')->setEmail('mercedes@centro.test')->setUnit($maths)->addAssignedRole($teacherRole);
+        $this->em->persist($person);
+        $task = new Task('Preparar la evaluación', SchoolYear::current(new \DateTimeImmutable()), new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
+        $task->setUnit($maths)->setResponsibility(new TaskResponsibility($teacherRole, $maths))->setAssignedUser($person);
+        $this->em->persist($task);
+        $this->em->flush();
+
+        $this->client->loginUser($this->admin());
+        $this->client->request('GET', '/admin/usuarios/'.$person->getId());
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('h1', 'Mercedes Alende');
+        self::assertSelectorTextContains('.detail-grid', 'Docente');
+        self::assertSelectorTextContains('table', 'Preparar la evaluación');
+    }
+
+    public function testNonAdminIsForbiddenFromUserShow(): void
+    {
+        $person = $this->teacher();
+        $this->client->loginUser($person);
+
+        $this->client->request('GET', '/admin/usuarios/'.$person->getId());
+
+        self::assertResponseStatusCodeSame(403);
+    }
+
     public function testAdminSeesRoleList(): void
     {
         $this->client->loginUser($this->admin());

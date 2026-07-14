@@ -1,0 +1,64 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/task.html.twig' as taskUi %}
+
+{% block title %}{{ user.fullName }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('admin_user_index') }}">Usuarios</a><span class="sep">/</span>
+    {{ user.fullName }}
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>{{ user.fullName }}
+                {% if user.active %}<span class="badge badge--success">Activo</span>{% else %}<span class="badge badge--draft">Inactivo</span>{% endif %}
+            </h1>
+            <p class="lead mono">{{ user.email }}</p>
+        </div>
+        <a class="btn secondary" href="{{ path('admin_user_edit', { id: user.id }) }}">Editar</a>
+    </div>
+
+    <div class="card">
+        <dl class="detail-grid">
+            <dt>Departamento</dt>
+            <dd>
+                {% if user.unit %}
+                    <a href="{{ path('admin_department_show', { id: user.unit.id }) }}">{{ user.unit.name }}</a>
+                {% else %}— sin departamento —{% endif %}
+            </dd>
+            <dt>Roles</dt>
+            <dd>
+                {%- for role in user.assignedRoles -%}
+                    <span class="badge">{{ role.name }}</span>{{ not loop.last ? ' ' }}
+                {%- else -%}— sin roles —{%- endfor -%}
+            </dd>
+        </dl>
+    </div>
+
+    <div class="card">
+        <div class="page-head"><div><h2>Tareas asignadas · {{ schoolYear }}</h2></div></div>
+        {% if tasks is empty %}
+            <div class="empty-state">
+                <p>No tiene tareas asignadas este curso.</p>
+            </div>
+        {% else %}
+            <table data-list-tools>
+                <thead>
+                    <tr><th>Tarea</th><th data-filter="Rol">Rol</th><th>Fecha límite</th><th data-filter="Estado">Estado</th></tr>
+                </thead>
+                <tbody>
+                    {% for t in tasks %}
+                        <tr>
+                            <td><a class="cell-link" href="{{ path('task_show', { id: t.id }) }}">{{ t.title }}</a></td>
+                            <td>{{ t.responsibility ? t.responsibility.role.name : '—' }}</td>
+                            <td>{{ t.dueDate|date('d/m/Y') }}</td>
+                            <td>{{ taskUi.status_badge(t.status) }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}

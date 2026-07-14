@@ -46,16 +46,32 @@ ddev exec php bin/console doctrine:fixtures:load --group=golden   # solo el esqu
 ddev exec php bin/console doctrine:fixtures:load --group=demo     # golden + datos de ejemplo (personas, plan…)
 ```
 
-Una instancia local **realista** (esqueleto + claustro real, sin duplicados) =
-`--group=golden` + el import del claustro (idempotente, upsert de los roles golden por código):
+Una instancia local **realista** (esqueleto + claustro real + actividad inventada, sin duplicados) =
+`--group=golden` + el import del claustro (idempotente, upsert de los roles golden por código) +
+`app:seed-demo`:
 
 ```bash
 ddev exec php bin/console doctrine:fixtures:load --group=golden --no-interaction
 ddev exec php bin/console app:import-roster fixtures/real/roster.csv   # datos reales (PII), gitignored
+ddev exec php bin/console app:seed-demo                                # actividad inventada sobre lo real
 ```
 
 Los datos reales del centro (PII) **nunca** se siembran en git: viven bajo `fixtures/real/` (ignorado)
-y se cargan con `app:import-roster` (ver `import/README.md`).
+y se cargan con `app:import-roster` (ver `import/README.md`). El origen del claustro es el PDF público
+del centro; para reconstruir `fixtures/real/roster.csv` desde cero:
+
+```bash
+curl -sSL -o fixtures/real/docentes-email.pdf \
+  "https://site.educa.madrid.org/ies.lacabrera//wp-content/uploads/ies.lacabrera/2026/02/docentes-email.pdf"
+pdftotext -layout fixtures/real/docentes-email.pdf fixtures/real/docentes.txt
+python3 import/normalize_roster.py < fixtures/real/docentes.txt > fixtures/real/roster.csv
+```
+
+`app:seed-demo` (solo dev/test) monta encima del claustro real la **capa de actividad inventada** para
+ver la app llena: calendario del curso, **tareas de centro** del catálogo real (`catalogo/`), agenda
+personal y avisos. Es idempotente (limpia solo las tablas de actividad y regenera; nunca toca personas,
+departamentos ni roles) y **promueve un docente por departamento a jefe de departamento** —inventado,
+porque el PDF no trae jefaturas de departamento— para que las tareas de departamento tengan titular.
 
 Login (passwordless): en `/login` introduce un correo de la demo —`director@centro.test` (dirección) o
 `profe@centro.test` (docente)— y abre el **enlace mágico** en Mailpit (`ddev launch -m`).

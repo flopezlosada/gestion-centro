@@ -122,6 +122,127 @@ final class TaskCrudTest extends WebTestCase
         self::assertSame($creatorId, $task->getAssignedUser()?->getId());
     }
 
+    public function testMemberOnlySeesRolesTheyCommandInNewTaskForm(): void
+    {
+        // A plain teacher creating a task may only target their own function: the "Rol responsable"
+        // list shows Docente (their own role) but not Dirección (a role they neither hold nor command).
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
+        $direction = (new Role())->setCode('direction')->setName('Dirección')->setHierarchyLevel(40);
+        $this->em->persist($teacherRole);
+        $this->em->persist($direction);
+        $member = $this->user('profe@centro.test', $unit);
+        $member->addAssignedRole($teacherRole);
+        $this->em->flush();
+        $this->client->loginUser($member);
+
+        $crawler = $this->client->request('GET', '/tareas/nueva');
+
+        self::assertResponseIsSuccessful();
+        $roles = $crawler->filter('[name="task_form[responsibilityRole]"] option')->each(static fn ($node): string => $node->text());
+        self::assertContains('Docente', $roles);
+        self::assertNotContains('Dirección', $roles);
+    }
+
+    public function testMemberCannotCreateTaskForARoleTheyDoNotCommand(): void
+    {
+        // Server-side guard: even if the role is forced past the (filtered) dropdown, a plain teacher
+        // cannot assign a task to Dirección — no task is created.
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
+        $direction = (new Role())->setCode('direction')->setName('Dirección')->setHierarchyLevel(40);
+        $this->em->persist($teacherRole);
+        $this->em->persist($direction);
+        $member = $this->user('profe@centro.test', $unit);
+        $member->addAssignedRole($teacherRole);
+        $this->em->flush();
+        $this->client->loginUser($member);
+
+        $crawler = $this->client->request('GET', '/tareas/nueva');
+        $form = $crawler->selectButton('Crear tarea')->form();
+        // Bypass the DomCrawler's own choice validation to force a role outside the allowed list.
+        $form->disableValidation();
+        $form['task_form[title]'] = 'Tarea prohibida';
+        $form['task_form[dueDate]'] = '2026-09-15';
+        $form['task_form[responsibilityRole]'] = (string) $direction->getId();
+        $form['task_form[responsibilityUnit]'] = (string) $unit->getId();
+        $form['task_form[responsibilityUser]'] = (string) $member->getId();
+        $this->client->submit($form);
+
+        self::assertNull($this->em->getRepository(Task::class)->findOneBy(['title' => 'Tarea prohibida']));
+    }
+
+    public function testCancelIsNotOfferedToAPlainAssignee(): void
+    {
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $member = $this->user('profe@centro.test', $unit);
+        $other = $this->user('otro@centro.test', $unit);
+        // Asignada al miembro pero creada por otra persona: no es creador ni superior → no puede gestionar.
+        $task = new Task('Preparar el acta', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
+        $task->setUnit($unit)->setAssignedUser($member)->setCreatedBy($other);
+        $this->em->persist($task);
+        $this->em->flush();
+
+        $this->client->loginUser($member);
+        $this->client->request('GET', '/tareas/'.$task->getId());
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorNotExists('form[action$="/accion/cancel"]', 'un asignado normal no puede cancelar');
+    }
+
+    public function testSuperiorCanCancelATask(): void
+    {
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $headStudiesRole = (new Role())->setCode('head_of_studies')->setName('Jefatura de estudios')->setHierarchyLevel(30);
+        $this->em->persist($headStudiesRole);
+        // Un superior (jefatura de estudios) ve la tarea y puede gestionarla → cancelar.
+        $boss = $this->user('jefatura@centro.test', $unit);
+        $boss->addAssignedRole($headStudiesRole);
+        $member = $this->user('profe@centro.test', $unit);
+        $task = new Task('Actividad anulada', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
+        $task->setUnit($unit)->setAssignedUser($member)->setCreatedBy($boss);
+        $this->em->persist($task);
+        $this->em->flush();
+        $taskId = $task->getId();
+
+        $this->client->loginUser($boss);
+        $crawler = $this->client->request('GET', '/tareas/'.$taskId);
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('form[action$="/accion/cancel"]', 'un superior puede cancelar');
+        $this->client->submit($crawler->filter('form[action$="/accion/cancel"]')->form());
+
+        self::assertResponseRedirects();
+        $this->em->clear();
+        self::assertSame('cancelled', $this->em->getRepository(Task::class)->find($taskId)?->getStatus());
+    }
+
+    public function testDeliverableCannotBeSubmittedWithoutReference(): void
+    {
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $member = $this->user('profe@centro.test', $unit);
+        $task = new Task('Memoria', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::WITH_DELIVERABLE);
+        $task->setUnit($unit)->setAssignedUser($member)->setRequiresDocument(true);
+        $this->em->persist($task);
+        $this->em->flush();
+        $taskId = $task->getId();
+
+        $this->client->loginUser($member);
+        $crawler = $this->client->request('GET', '/tareas/'.$taskId);
+        // Entregar sin rellenar el enlace (salta la validación de navegador): el estado no debe cambiar.
+        $form = $crawler->filter('form[action$="/accion/submit"]')->form();
+        $form->disableValidation();
+        $this->client->submit($form);
+
+        self::assertResponseRedirects();
+        $this->em->clear();
+        self::assertSame('pending', $this->em->getRepository(Task::class)->find($taskId)?->getStatus(), 'sin enlace no se entrega');
+    }
+
     public function testCannotCreateTaskDueOnAWeekend(): void
     {
         $unit = (new Department())->setCode('maths')->setName('Matemáticas');
@@ -280,14 +401,14 @@ final class TaskCrudTest extends WebTestCase
         $this->client->loginUser($headStudies);
         $crawler = $this->client->request('GET', '/tareas/'.$task->getId());
         self::assertResponseIsSuccessful();
-        // The progress action is offered to the superior, proving they may work on it.
-        self::assertSelectorExists('form[action$="/accion/complete"]');
-        $this->client->submit($crawler->filter('form[action$="/accion/complete"]')->form());
+        // The progress action (Entregar) is offered to the superior, proving they may work on it.
+        self::assertSelectorExists('form[action$="/accion/submit"]');
+        $this->client->submit($crawler->filter('form[action$="/accion/submit"]')->form());
 
         self::assertResponseRedirects();
         $this->em->clear();
         $reloaded = $this->em->getRepository(Task::class)->find($task->getId());
-        self::assertSame('done', $reloaded?->getStatus());
+        self::assertSame('submitted', $reloaded?->getStatus());
     }
 
     public function testLateralUserIsNeitherSuperiorNorCanReachTheTask(): void

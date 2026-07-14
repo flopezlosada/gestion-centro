@@ -9,25 +9,27 @@ use Symfony\Component\Workflow\Registry;
 use Symfony\Component\Workflow\WorkflowInterface;
 
 /**
- * The single place that resolves the state machine for a task. Both task workflows support
- * App\Entity\Task, so calling the Registry without a name is ambiguous and throws; every caller
- * must go through here so the workflow is always selected by the task's own type.
+ * The single place that resolves the state machine for a task. There is ONE workflow ("task") for
+ * every task regardless of type; callers go through here so the workflow name lives in one spot.
  */
 final class TaskWorkflow
 {
+    /** The one and only task workflow (see config/packages/workflow.yaml). */
+    public const string NAME = 'task';
+
     public function __construct(private readonly Registry $registry)
     {
     }
 
     /**
-     * The workflow that governs the given task, chosen by its {@see \App\Enum\TaskType}.
+     * The workflow that governs the given task.
      *
      * @param Task $task the task
      *
-     * @return WorkflowInterface the state machine for that task
+     * @return WorkflowInterface the state machine for the task
      */
     public function for(Task $task): WorkflowInterface
     {
-        return $this->registry->get($task, $task->getType()->workflowName());
+        return $this->registry->get($task, self::NAME);
     }
 }

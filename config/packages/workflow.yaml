@@ -1,8 +1,14 @@
 framework:
     workflows:
-        # Simple task: the assignee completes it, the superior validates it. "complete" is progress
-        # declared by the assignee; "validate" is the superior's sign-off (guarded by hierarchy).
-        task_simple:
+        # Un ÚNICO ciclo de vida para toda tarea (simple o con entregable): el mismo vocabulario de
+        # estados para todas, sin estados que existan solo para algunos tipos.
+        #   Pendiente → (Entregar) → Entregada → (Validar) → Finalizada
+        #                                     ↘ (Devolver) → Pendiente     [queda en el histórico]
+        #   Pendiente/Entregada → (Cancelar) → Cancelada
+        # La única diferencia entre tipos NO es un estado: es si "Entregar" exige adjuntar la referencia
+        # de un documento (Task::requiresDocument), lo controla el controlador. "Devolver" no crea un
+        # estado "rechazada": devuelve a Pendiente (vuelta a empezar) y el evento queda en la auditoría.
+        task:
             type: state_machine
             marking_store:
                 type: method
@@ -12,48 +18,19 @@ framework:
             initial_marking: pending
             places:
                 - pending
-                - done
-                - validated
-            transitions:
-                complete:
-                    from: pending
-                    to: done
-                reopen:
-                    from: done
-                    to: pending
-                validate:
-                    from: done
-                    to: validated
-
-        # Task with a deliverable: adds an in-progress and a submission step, plus rejection back to
-        # in-progress. Same split: progress (start/submit) vs the superior's validate/reject.
-        task_with_deliverable:
-            type: state_machine
-            marking_store:
-                type: method
-                property: status
-            supports:
-                - App\Entity\Task
-            initial_marking: pending
-            places:
-                - pending
-                - in_progress
                 - submitted
                 - validated
-                - rejected
+                - cancelled
             transitions:
-                start:
-                    from: pending
-                    to: in_progress
                 submit:
-                    from: in_progress
+                    from: pending
                     to: submitted
                 validate:
                     from: submitted
                     to: validated
                 reject:
                     from: submitted
-                    to: rejected
-                rework:
-                    from: rejected
-                    to: in_progress
+                    to: pending
+                cancel:
+                    from: [pending, submitted]
+                    to: cancelled

@@ -12,15 +12,11 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\Workflow\Event\GuardEvent;
 
 /**
- * Guards the task state machines. Two things:
- *
- *  1. Integrity: both task workflows support App\Entity\Task and share place names (pending,
- *     validated), so applying the wrong workflow to a task could move it to a place of the other
- *     lifecycle. Any transition whose workflow does not match the task's own type is blocked.
- *  2. Separation of duties: the superior's verdict transitions ("validate" and "reject") may only be
- *     fired by a superior of the task's unit (up the chain of command) or an admin, and never by the
- *     task's own assignee. Progress transitions (start/submit/complete/…) are NOT restricted here —
- *     that is handled where they are triggered (controller/voter), like the rest of the app.
+ * Separation of duties on the single task workflow: the superior's verdict transitions ("validate"
+ * and "reject") may only be fired by a superior of the task's unit (up the chain of command) or an
+ * admin, and never by the task's own assignee. The other transitions (submit = Entregar; cancel) are
+ * NOT restricted here — that is handled where they are triggered (controller/voter), like the rest of
+ * the app.
  */
 #[AsEventListener(event: 'workflow.guard')]
 final class TaskValidationGuardSubscriber
@@ -35,14 +31,6 @@ final class TaskValidationGuardSubscriber
     {
         $task = $event->getSubject();
         if (!$task instanceof Task) {
-            return;
-        }
-
-        // Integrity: never let a workflow drive a task of a different type (shared place names would
-        // otherwise let some transitions through and corrupt the status).
-        if ($event->getWorkflowName() !== $task->getType()->workflowName()) {
-            $event->setBlocked(true, 'El flujo no corresponde al tipo de la tarea.');
-
             return;
         }
 

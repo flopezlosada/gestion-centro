@@ -6,17 +6,15 @@
 
 {% block body %}
     {% set nextStep = {
-        'pending': 'Aún no has empezado esta tarea.',
-        'in_progress': 'En curso. Cuando la termines, entrégala.',
+        'pending': 'Pendiente. Cuando la termines, entrégala.',
         'submitted': 'Entregada. A la espera de que un responsable la valide.',
-        'done': 'Marcada como hecha. A la espera de validación del responsable.',
-        'validated': 'Validada. Tarea cerrada.',
-        'rejected': 'Devuelta para corregir. Retómala cuando puedas.',
+        'validated': 'Finalizada. Tarea cerrada.',
+        'cancelled': 'Cancelada. Esta tarea se anuló.',
     } %}
-    {% set primaryActions = ['start', 'submit', 'complete', 'validate'] %}
+    {% set primaryActions = ['submit', 'validate'] %}
     {% set typeHelp = {
-        'simple': 'Tarea sencilla: la marcas hecha y un responsable la valida.',
-        'with_deliverable': 'Lleva un entregable: se empieza, se entrega y un responsable la valida.',
+        'simple': 'Tarea sencilla: la entregas y un responsable la valida.',
+        'with_deliverable': 'Lleva un entregable: al entregar adjuntas el enlace del documento y un responsable la valida.',
     } %}
 
     <div class="page-head">
@@ -41,13 +39,17 @@
         {% if actions is not empty %}
             <div class="task-actions">
                 {% for name in actions %}
-                    <form method="post" action="{{ path('task_transition', { id: task.id, transition: name }) }}">
+                    <form method="post" action="{{ path('task_transition', { id: task.id, transition: name }) }}"{% if name == 'cancel' %} data-confirm="¿Cancelar esta tarea? Quedará anulada."{% endif %}>
                         <input type="hidden" name="_token" value="{{ csrf_token('task_transition' ~ task.id) }}">
-                        <button type="submit" class="btn{{ name in primaryActions ? '' : ' btn-secondary' }}">{{ taskUi.action_label(name) }}</button>
+                        {# Entregar con entregable: el enlace del documento se adjunta aquí mismo (un solo paso). #}
+                        {% if name == 'submit' and task.requiresDocument %}
+                            <input type="url" name="reference" value="{{ task.deliverableReference }}" placeholder="https://cloud.educa.madrid.org/…" class="deliverable-input" required>
+                        {% endif %}
+                        <button type="submit" class="btn{{ name in primaryActions ? '' : (name == 'cancel' ? ' btn-danger' : ' btn-secondary') }}">{{ taskUi.action_label(name) }}</button>
                     </form>
                 {% endfor %}
             </div>
-        {% elseif task.status == 'validated' %}
+        {% elseif task.status in ['validated', 'cancelled'] %}
             <p class="muted">No hay nada más que hacer aquí.</p>
         {% else %}
             <p class="muted">No tienes acciones disponibles sobre esta tarea.</p>
@@ -67,13 +69,15 @@
                     <p class="muted">Hay un entregable, pero no tienes acceso a su referencia.</p>
                 {% endif %}
             {% else %}
-                <p class="muted">Aún no hay entregable.</p>
+                <p class="muted">Aún no hay entregable. El enlace se adjunta al <strong>entregar</strong> la tarea, en el mismo paso.</p>
             {% endif %}
-            {% if canWork %}
+            {# Corrección del enlace SOLO tras la entrega (estado Entregada) y antes de que se valide: al
+               entregar ya se adjunta, así que no hay un "Guardar" suelto en Pendiente que confunda. #}
+            {% if canWork and task.status == 'submitted' %}
                 <form method="post" action="{{ path('task_set_deliverable', { id: task.id }) }}" class="deliverable-form">
                     <input type="hidden" name="_token" value="{{ csrf_token('task_deliverable' ~ task.id) }}">
                     <input type="url" name="reference" value="{{ task.deliverableReference }}" placeholder="https://cloud.educa.madrid.org/…" class="deliverable-input">
-                    <button type="submit" class="btn btn-secondary">Guardar</button>
+                    <button type="submit" class="btn btn-secondary">Actualizar enlace</button>
                 </form>
             {% endif %}
         </section>
