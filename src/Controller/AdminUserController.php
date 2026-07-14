@@ -92,9 +92,9 @@ final class AdminUserController extends AbstractController
         // accounts. Snapshot the pre-bind state so editing an admin account is blocked too.
         $isSuperuser = $this->isGranted('ROLE_ADMIN');
         $touchedAdminAccount = !$isSuperuser && $this->hasAdminRole($user);
-        // Which ranked (chain-of-command) roles the user held BEFORE this edit, so we can detect the
-        // ones newly gained and hand their tasks over (the "arrastre").
-        $rankedBefore = $this->rankedRoleIds($user);
+        // The ranked (chain-of-command) roles the user held BEFORE this edit, to detect posts taken
+        // over or vacated here and keep their tasks in sync (the "arrastre").
+        $rankedBefore = $this->rankedRolesHeld($user);
 
         $form = $this->createForm(UserType::class, $user);
         $form->handleRequest($request);
@@ -104,10 +104,20 @@ final class AdminUserController extends AbstractController
                 throw $this->createAccessDeniedException('Solo un administrador puede gestionar cuentas con rol de administrador.');
             }
 
-            // Taking over a hierarchy post pulls its open, current-course tasks to the new holder. Done
-            // before the flush so the reassignment and the role change persist together.
-            foreach ($this->newlyGainedRankedRoles($user, $rankedBefore) as $role) {
-                $this->handover->toNewHolder($user, $role, new \DateTimeImmutable());
+            // Done before the flush so role changes and task reassignments persist together.
+            $rankedAfter = $this->rankedRolesHeld($user);
+            $now = new \DateTimeImmutable();
+            // Posts newly taken over: enforce single holder (strip from the previous one) and hand tasks over.
+            foreach ($rankedAfter as $id => $role) {
+                if (!isset($rankedBefore[$id])) {
+                    $this->handover->takeOver($user, $role, $now);
+                }
+            }
+            // Posts vacated here (role removed): leave their open current-course tasks unassigned.
+            foreach ($rankedBefore as $id => $role) {
+                if (!isset($rankedAfter[$id])) {
+                    $this->handover->vacate($role, $role->isPerDepartment() ? $user->getUnit() : null, $now);
+                }
             }
 
             $em->persist($user);
@@ -149,42 +159,22 @@ final class AdminUserController extends AbstractController
     }
 
     /**
-     * The ids of the ranked (chain-of-command) roles the user currently holds.
+     * The ranked (chain-of-command) roles the user currently holds, keyed by id — so before/after
+     * snapshots can be compared to find posts taken over or vacated.
      *
      * @param User $user the user to inspect
      *
-     * @return array<int, true> a lookup set of ranked role ids
+     * @return array<int, Role> the ranked roles held, keyed by id
      */
-    private function rankedRoleIds(User $user): array
+    private function rankedRolesHeld(User $user): array
     {
-        $ids = [];
+        $roles = [];
         foreach ($user->getAssignedRoles() as $role) {
             if ($role->isHierarchical() && null !== $role->getId()) {
-                $ids[$role->getId()] = true;
+                $roles[$role->getId()] = $role;
             }
         }
 
-        return $ids;
-    }
-
-    /**
-     * The ranked roles the user holds now that were not in the given "before" set: the posts they have
-     * just taken over.
-     *
-     * @param User             $user   the user after the edit
-     * @param array<int, true> $before the ranked role ids held before the edit
-     *
-     * @return list<Role> the newly gained ranked roles
-     */
-    private function newlyGainedRankedRoles(User $user, array $before): array
-    {
-        $gained = [];
-        foreach ($user->getAssignedRoles() as $role) {
-            if ($role->isHierarchical() && null !== $role->getId() && !isset($before[$role->getId()])) {
-                $gained[] = $role;
-            }
-        }
-
-        return $gained;
+        return $roles;
     }
 }

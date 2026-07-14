@@ -89,25 +89,22 @@ final class AdminUnitController extends AbstractController
             return $this->redirectToRoute('admin_department_show', ['id' => $unit->getId()]);
         }
 
-        // The role is a single head per department: clear it from the current holder(s) here first.
-        foreach ($users->findByUnit($unit) as $member) {
-            if ($member->holdsRoleCode('head_dept')) {
-                $member->removeAssignedRole($headRole);
-            }
-        }
-
         $userId = (string) $request->request->get('user');
         $newHead = '' === $userId ? null : $users->find((int) $userId);
         if (null !== $newHead) {
             if ($newHead->getUnit() !== $unit) {
                 throw $this->createAccessDeniedException('La jefatura debe pertenecer al departamento.');
             }
-            $newHead->addAssignedRole($headRole);
-            // The incoming head takes over the department's open, current-course jefatura tasks.
-            $handover->toNewHolder($newHead, $headRole, new \DateTimeImmutable());
+            // Sole holder + handover: strips the role from the previous head and moves the tasks.
+            $handover->takeOver($newHead, $headRole, new \DateTimeImmutable());
         } else {
-            // Vacated with no successor: leave those tasks unassigned (out of the ex-head's agenda)
-            // until a new head is named and picks them up.
+            // Vacated with no successor: strip the role from the current head and leave its tasks
+            // unassigned (out of the ex-head's agenda) until a new head is named and picks them up.
+            foreach ($users->findByUnit($unit) as $member) {
+                if ($member->holdsRoleCode('head_dept')) {
+                    $member->removeAssignedRole($headRole);
+                }
+            }
             $handover->vacate($headRole, $unit, new \DateTimeImmutable());
         }
 

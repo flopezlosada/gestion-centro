@@ -30,11 +30,15 @@ class TaskRepository extends ServiceEntityRepository
      */
     public function findBySchoolYear(string $schoolYear): array
     {
-        // Fetch-join the associations shown in the list/plan to avoid an N+1 per row.
+        // Fetch-join the associations shown in the list/plan (and read by the visibility scope) to
+        // avoid an N+1 per row — including the responsibility (role + department).
         return $this->createQueryBuilder('t')
             ->leftJoin('t.unit', 'unit')->addSelect('unit')
             ->leftJoin('t.assignedUser', 'assignedUser')->addSelect('assignedUser')
             ->leftJoin('t.assignedRole', 'assignedRole')->addSelect('assignedRole')
+            ->leftJoin('t.responsibility', 'resp')->addSelect('resp')
+            ->leftJoin('resp.role', 'respRole')->addSelect('respRole')
+            ->leftJoin('resp.unit', 'respUnit')->addSelect('respUnit')
             ->andWhere('t.schoolYear = :year')
             ->setParameter('year', $schoolYear)
             ->orderBy('t.dueDate', 'ASC')
@@ -54,11 +58,15 @@ class TaskRepository extends ServiceEntityRepository
      */
     public function findDueBetween(\DateTimeImmutable $from, \DateTimeImmutable $to): array
     {
-        // Fetch-join the associations shown on each day cell to avoid an N+1 per row.
+        // Fetch-join the associations shown on each day cell (and read by the visibility scope) to
+        // avoid an N+1 per row — including the responsibility (role + department).
         return $this->createQueryBuilder('t')
             ->leftJoin('t.unit', 'unit')->addSelect('unit')
             ->leftJoin('t.assignedUser', 'assignedUser')->addSelect('assignedUser')
             ->leftJoin('t.assignedRole', 'assignedRole')->addSelect('assignedRole')
+            ->leftJoin('t.responsibility', 'resp')->addSelect('resp')
+            ->leftJoin('resp.role', 'respRole')->addSelect('respRole')
+            ->leftJoin('resp.unit', 'respUnit')->addSelect('respUnit')
             ->andWhere('t.dueDate BETWEEN :from AND :to')
             ->setParameter('from', $from->format('Y-m-d'))
             ->setParameter('to', $to->format('Y-m-d'))

@@ -128,6 +128,34 @@ final class RankedRoleHandoverTest extends KernelTestCase
         self::assertSame($newHeadId, $this->em->getRepository(Task::class)->find($taskId)?->getAssignedUser()?->getId(), 'the new head picks up the unassigned task');
     }
 
+    public function testTakeOverMakesTheNewHolderSoleHolderInItsDepartment(): void
+    {
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
+        $lengua = (new Department())->setCode('lengua')->setName('Lengua');
+        $this->em->persist($maths);
+        $this->em->persist($lengua);
+        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
+        $this->em->persist($headRole);
+        $oldMathsHead = (new User())->setFullName('María')->setEmail('maria@centro.test')->setUnit($maths)->addAssignedRole($headRole);
+        $newMathsHead = (new User())->setFullName('José')->setEmail('jose@centro.test')->setUnit($maths);
+        $lenguaHead = (new User())->setFullName('Lola')->setEmail('lola@centro.test')->setUnit($lengua)->addAssignedRole($headRole);
+        foreach ([$oldMathsHead, $newMathsHead, $lenguaHead] as $u) {
+            $this->em->persist($u);
+        }
+        $this->em->flush();
+        $oldId = $oldMathsHead->getId();
+        $newId = $newMathsHead->getId();
+        $lenguaId = $lenguaHead->getId();
+
+        $this->handover->takeOver($newMathsHead, $headRole, $this->today);
+        $this->em->flush();
+        $this->em->clear();
+
+        self::assertTrue($this->em->getRepository(User::class)->find($newId)?->holdsRoleCode('head_dept'), 'the new head holds it');
+        self::assertFalse($this->em->getRepository(User::class)->find($oldId)?->holdsRoleCode('head_dept'), 'the previous head in the same department is stripped');
+        self::assertTrue($this->em->getRepository(User::class)->find($lenguaId)?->holdsRoleCode('head_dept'), 'a head of ANOTHER department is untouched');
+    }
+
     public function testNonRankedRoleDoesNotHandOver(): void
     {
         $tutorRole = (new Role())->setCode('tutor')->setName('Tutor/a')->setPerDepartment(true);

@@ -28,6 +28,9 @@ use App\Repository\UserRepository;
  */
 final class OrganizationHierarchy
 {
+    /** @var list<User>|null the ranked users, resolved once per request (memoised for escalation) */
+    private ?array $rankedUsers = null;
+
     public function __construct(private readonly UserRepository $users)
     {
     }
@@ -96,7 +99,9 @@ final class OrganizationHierarchy
         $target = $responsibility?->getRole()?->getHierarchyLevel() ?? 0;
 
         $ranked = [];
-        foreach ($this->users->findWithHierarchyRank() as $user) {
+        // Resolve the ranked users once per request: escalation may ask for many tasks in a run.
+        $this->rankedUsers ??= $this->users->findWithHierarchyRank();
+        foreach ($this->rankedUsers as $user) {
             $level = $this->applicableRank($user, $dept);
             if (null !== $level && $level > $target) {
                 $ranked[] = ['user' => $user, 'level' => $level];

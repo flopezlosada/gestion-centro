@@ -191,8 +191,10 @@ final class AdminPanelTest extends WebTestCase
         $this->client->submit($form);
 
         self::assertResponseRedirects('/admin/departamentos/'.$mathsId);
+        $oldHeadId = $oldHead->getId();
         $this->em->clear();
         self::assertTrue($this->em->getRepository(User::class)->find($newHeadId)?->holdsRoleCode('head_dept'), 'the new head holds the role');
+        self::assertFalse($this->em->getRepository(User::class)->find($oldHeadId)?->holdsRoleCode('head_dept'), 'the previous head lost the role — no duplicate head');
         self::assertSame($newHeadId, $this->em->getRepository(Task::class)->find($taskId)?->getAssignedUser()?->getId(), 'the jefatura task followed the new head');
     }
 

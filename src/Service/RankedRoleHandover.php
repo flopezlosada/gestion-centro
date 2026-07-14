@@ -8,6 +8,7 @@ use App\Entity\Department;
 use App\Entity\Role;
 use App\Entity\User;
 use App\Repository\TaskRepository;
+use App\Repository\UserRepository;
 use App\Util\SchoolYear;
 
 /**
@@ -22,8 +23,43 @@ use App\Util\SchoolYear;
  */
 final class RankedRoleHandover
 {
-    public function __construct(private readonly TaskRepository $tasks)
+    public function __construct(
+        private readonly TaskRepository $tasks,
+        private readonly UserRepository $users,
+    ) {
+    }
+
+    /**
+     * Makes the given user the SOLE holder of a ranked post: strips the role from any other current
+     * holder in the same scope (its department for a per-department role, the whole school for a
+     * centre-wide one), gives it to the new holder, and hands the post's open current-course tasks over
+     * to them. The single point that guarantees a post cannot be duplicated, whichever screen assigns
+     * it. A no-op for a role with no rank.
+     *
+     * @param User $newHolder the person taking over the post
+     * @param Role $role      the ranked role being taken over
+     * @param \DateTimeImmutable $on the reference date for "current course"
+     *
+     * @return int how many tasks were handed over
+     */
+    public function takeOver(User $newHolder, Role $role, \DateTimeImmutable $on): int
     {
+        if (!$role->isHierarchical()) {
+            return 0;
+        }
+
+        // Single holder per scope: strip the role from any other current holder in scope.
+        $scope = $role->isPerDepartment() ? $newHolder->getUnit() : null;
+        foreach ($this->users->findActiveByRole($role) as $holder) {
+            if ($holder !== $newHolder && (null === $scope || $holder->getUnit() === $scope)) {
+                $holder->removeAssignedRole($role);
+            }
+        }
+        if (!$newHolder->holdsRole($role)) {
+            $newHolder->addAssignedRole($role);
+        }
+
+        return $this->toNewHolder($newHolder, $role, $on);
     }
 
     /**
