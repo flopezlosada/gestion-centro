@@ -7,7 +7,7 @@ namespace App\Controller;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskResponsibility;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
 use App\Form\TaskFormData;
@@ -15,6 +15,7 @@ use App\Form\TaskFormType;
 use App\Repository\AuditLogRepository;
 use App\Repository\RoleRepository;
 use App\Repository\TaskRepository;
+use App\Repository\DepartmentRepository;
 use App\Repository\UserRepository;
 use App\Service\OrganizationHierarchy;
 use App\Service\TaskVisibility;
@@ -24,7 +25,6 @@ use App\Util\CalendarDate;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
-use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
@@ -56,14 +56,15 @@ final class TaskController extends AbstractController
 
     /**
      * Creates a task. Each user may assign it to themselves or to someone below them in the chain of
-     * command (the scope from {@see OrganizationHierarchy::assignableUnits()}); the choices are
+     * command (the departments they command by rank); the choices are
      * limited to that set and re-checked on submit.
      */
     #[Route('/tareas/nueva', name: 'task_new', methods: ['GET', 'POST'])]
-    public function new(Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, EntityManagerInterface $entityManager): Response
+    public function new(Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, UserRepository $users, DepartmentRepository $unitRepository, EntityManagerInterface $entityManager): Response
     {
-        $units = $this->assignableDepartments($user, $hierarchy);
+        $units = $this->assignableDepartments($user, $hierarchy, $unitRepository);
         $roleChoices = $roles->findAllOrdered();
+        $userChoices = $this->assignableUsers($user, $hierarchy, $users, $unitRepository);
 
         $data = new TaskFormData();
         // Prefill the deadline when arriving from the calendar's "+ Nueva tarea" (?fecha=YYYY-MM-DD).
@@ -75,12 +76,13 @@ final class TaskController extends AbstractController
         $form = $this->createForm(TaskFormType::class, $data, [
             'assignable_roles' => $roleChoices,
             'assignable_units' => $units,
+            'assignable_users' => $userChoices,
             'include_deliverable' => true,
         ]);
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
-            $this->assertResponsibilityAllowed($data, $units);
+            $this->assertResponsibilityAllowed($data, $units, $userChoices);
 
             // The deliverable toggle also picks the lifecycle: a deliverable task carries the
             // progress/submission/validation flow; a plain one is the simple do-and-validate lifecycle.
@@ -99,54 +101,42 @@ final class TaskController extends AbstractController
     }
 
     /**
-     * The people a role + (department) currently resolves to, for the live "responsable(s)" preview in
-     * the task form. Returns their names as JSON; a per-department role needs the department, a
-     * centre-wide one ignores it.
-     */
-    #[Route('/tareas/responsables', name: 'task_responsibles', methods: ['GET'])]
-    public function responsibles(Request $request, RoleRepository $roles, EntityManagerInterface $entityManager): JsonResponse
-    {
-        $role = $roles->find($request->query->getInt('role'));
-        if (null === $role) {
-            return $this->json(['holders' => []]);
-        }
-
-        $unit = $role->isPerDepartment() ? $entityManager->getRepository(Unit::class)->find($request->query->getInt('unit')) : null;
-        $holders = (new TaskResponsibility($role, $unit))->holders();
-
-        return $this->json(['holders' => array_map(static fn (User $holder): string => $holder->getFullName(), $holders)]);
-    }
-
-    /**
      * Edits a task. Allowed to its creator, a superior of its unit, or an admin. The task type is
      * not editable (it governs the lifecycle already in progress).
      */
     #[Route('/tareas/{id}/editar', name: 'task_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
-    public function edit(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, EntityManagerInterface $entityManager): Response
+    public function edit(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, UserRepository $users, DepartmentRepository $unitRepository, EntityManagerInterface $entityManager): Response
     {
         if (!$this->canManage($task, $user, $hierarchy)) {
             throw $this->createAccessDeniedException('No puedes editar esta tarea.');
         }
 
-        $units = $this->assignableDepartments($user, $hierarchy);
+        $units = $this->assignableDepartments($user, $hierarchy, $unitRepository);
         // Keep the task's current department as a valid choice even if now outside the scope.
         $currentUnit = $task->getResponsibility()?->getUnit();
         if (null !== $currentUnit && !\in_array($currentUnit, $units, true)) {
             $units[] = $currentUnit;
         }
         $roleChoices = $roles->findAllOrdered();
+        $userChoices = $this->assignableUsers($user, $hierarchy, $users, $unitRepository);
+        // Keep the task's current assignee as a valid choice even if now outside the scope.
+        $currentAssignee = $task->getAssignedUser();
+        if (null !== $currentAssignee && !\in_array($currentAssignee, $userChoices, true)) {
+            $userChoices[] = $currentAssignee;
+        }
 
         $data = TaskFormData::fromTask($task);
         // The deliverable toggle is not shown on edit: the lifecycle is fixed once the task is running.
         $form = $this->createForm(TaskFormType::class, $data, [
             'assignable_roles' => $roleChoices,
             'assignable_units' => $units,
+            'assignable_users' => $userChoices,
             'include_deliverable' => false,
         ]);
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
-            $this->assertResponsibilityAllowed($data, $units);
+            $this->assertResponsibilityAllowed($data, $units, $userChoices);
 
             $this->applyFormData($task, $data);
             $entityManager->flush();
@@ -186,6 +176,7 @@ final class TaskController extends AbstractController
         TaskVisibility $visibility,
         OrganizationHierarchy $hierarchy,
         UserRepository $users,
+        DepartmentRepository $unitRepository,
         TaskWorkflow $workflows,
         TaskActivityPresenter $activity,
     ): Response {
@@ -201,10 +192,12 @@ final class TaskController extends AbstractController
         // task's activity history, so the timeline is shown to every viewer.
         $canWork = $this->canWorkOn($task, $user, $hierarchy);
 
-        // Delegation is a superior's operational call: hand the task to a subordinate they command.
-        $canDelegate = $isAdmin || $hierarchy->isSuperiorOf($user, $task->getUnit());
+        // Delegation hands the task to a subordinate: allowed to the task's own responsible (a head
+        // passing their department task to a member) or a superior by rank, and only to people they
+        // command (so a plain member, who commands nobody, never gets the control).
+        $canDelegate = $isAdmin || $task->isOwnedBy($user) || $hierarchy->isSuperiorOfTask($user, $task);
         $delegatable = $canDelegate
-            ? array_values(array_filter($this->assignableUsers($user, $hierarchy, $users), static fn (User $u): bool => $u !== $user))
+            ? array_values(array_filter($this->assignableUsers($user, $hierarchy, $users, $unitRepository), static fn (User $u): bool => $u !== $user))
             : [];
 
         return $this->render('task/show.html.twig', [
@@ -232,13 +225,13 @@ final class TaskController extends AbstractController
      * admin, and only onto someone they actually command.
      */
     #[Route('/tareas/{id}/delegar', name: 'task_delegate', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function delegate(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, UserRepository $users, EntityManagerInterface $entityManager): Response
+    public function delegate(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, UserRepository $users, DepartmentRepository $unitRepository, EntityManagerInterface $entityManager): Response
     {
         if (!$this->isCsrfTokenValid('task_delegate'.$task->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
-        if (!$this->isGranted('ROLE_ADMIN') && !$hierarchy->isSuperiorOf($user, $task->getUnit())) {
-            throw $this->createAccessDeniedException('Solo un superior de la unidad puede delegar esta tarea.');
+        if (!$this->isGranted('ROLE_ADMIN') && !$task->isOwnedBy($user) && !$hierarchy->isSuperiorOfTask($user, $task)) {
+            throw $this->createAccessDeniedException('No puedes delegar esta tarea.');
         }
 
         $delegateeId = (string) $request->request->get('delegatedTo');
@@ -247,7 +240,7 @@ final class TaskController extends AbstractController
             $task->setDelegatedTo(null);
         } else {
             $delegatee = $users->find((int) $delegateeId);
-            if (null === $delegatee || $delegatee === $user || !\in_array($delegatee, $this->assignableUsers($user, $hierarchy, $users), true)) {
+            if (null === $delegatee || $delegatee === $user || !\in_array($delegatee, $this->assignableUsers($user, $hierarchy, $users, $unitRepository), true)) {
                 throw $this->createAccessDeniedException('No puedes delegar en esa persona.');
             }
             $task->setDelegatedTo($delegatee);
@@ -380,27 +373,33 @@ final class TaskController extends AbstractController
             ->setRequiresCheckbox($data->requiresCheckbox)
             ->setRequiresDocument($data->requiresDocument);
 
-        // Responsibility = role + (department, only for per-department roles). The department is also
-        // the task's unit context for hierarchy/escalation. assignedUser is kept as a mirror of the
-        // current holder for the legacy queries still reading it during the transition.
+        // Responsibility = role + (department, only for per-department roles): the structural backbone,
+        // resolved live. The department is also the task's unit context for hierarchy/escalation. The
+        // concrete responsible person chosen in the cascade is the assignee.
         $role = $data->responsibilityRole;
         $unit = $role->isPerDepartment() ? $data->responsibilityUnit : null;
         $task->setResponsibility(new TaskResponsibility($role, $unit))->setUnit($unit);
-        $task->setAssignedUser($task->resolveResponsible());
+        $task->setAssignedUser($data->responsibilityUser);
     }
 
     /**
-     * Guards that a per-department responsibility targets a department the creator may use, re-checked
-     * server-side on top of the form's own choice list.
+     * Guards the responsibility server-side on top of the form's own choice lists: a per-department role
+     * must target a department the creator may use, and the chosen person must be within the creator's
+     * assignable scope.
      *
-     * @param list<Unit> $assignableUnits the departments the creator may target
+     * @param list<Department> $assignableUnits the departments the creator may target
+     * @param list<User> $assignableUsers the people the creator may assign to
      */
-    private function assertResponsibilityAllowed(TaskFormData $data, array $assignableUnits): void
+    private function assertResponsibilityAllowed(TaskFormData $data, array $assignableUnits, array $assignableUsers): void
     {
         if (null !== $data->responsibilityRole
             && $data->responsibilityRole->isPerDepartment()
             && !\in_array($data->responsibilityUnit, $assignableUnits, true)) {
             throw $this->createAccessDeniedException('No puedes asignar la tarea a ese departamento.');
+        }
+
+        if (null !== $data->responsibilityUser && !\in_array($data->responsibilityUser, $assignableUsers, true)) {
+            throw $this->createAccessDeniedException('No puedes asignar la tarea a esa persona.');
         }
     }
 
@@ -408,28 +407,28 @@ final class TaskController extends AbstractController
      * The departments a user may target as a task's responsibility: those they command (superior of)
      * plus their own, so a member can still set a task for a role within their own department.
      *
-     * @return list<Unit> the assignable departments
+     * @return list<Department> the assignable departments
      */
-    private function assignableDepartments(User $user, OrganizationHierarchy $hierarchy): array
+    private function assignableDepartments(User $user, OrganizationHierarchy $hierarchy, DepartmentRepository $units): array
     {
-        $units = $hierarchy->assignableUnits($user);
+        $departments = $this->commandedDepartments($user, $hierarchy, $units);
+        // Plus the user's own department, so a plain member can still set a task for themselves in it.
         $own = $user->getUnit();
-        if (null !== $own && !\in_array($own, $units, true)) {
-            $units[] = $own;
+        if (null !== $own && !\in_array($own, $departments, true)) {
+            $departments[] = $own;
         }
 
-        // Only departments are valid targets for a per-department role (not leadership boxes).
-        return array_values(array_filter($units, static fn (Unit $unit): bool => $unit->isDepartment()));
+        return $departments;
     }
 
     /**
-     * The people a user may assign tasks to: everyone in their unit's subtree, plus themselves.
+     * The people a user may assign tasks to: everyone in the departments they command, plus themselves.
      *
      * @return list<User> the assignable users
      */
-    private function assignableUsers(User $user, OrganizationHierarchy $hierarchy, UserRepository $users): array
+    private function assignableUsers(User $user, OrganizationHierarchy $hierarchy, UserRepository $users, DepartmentRepository $units): array
     {
-        $list = $users->findActiveInUnits($hierarchy->assignableUnits($user));
+        $list = $users->findActiveInUnits($this->commandedDepartments($user, $hierarchy, $units));
         if (!\in_array($user, $list, true)) {
             $list[] = $user;
         }
@@ -438,11 +437,29 @@ final class TaskController extends AbstractController
     }
 
     /**
+     * The departments a user commands: all of them for a whole-school superior (dirección, jefatura de
+     * estudios), just their own for a jefe de departamento, none for a plain member. Derived from the
+     * user's ranked roles, never from a unit's manager.
+     *
+     * @return list<Department> the commanded departments
+     */
+    private function commandedDepartments(User $user, OrganizationHierarchy $hierarchy, DepartmentRepository $units): array
+    {
+        if ($hierarchy->commandsWholeSchool($user)) {
+            return $units->findActiveDepartments();
+        }
+
+        $department = $hierarchy->commandedDepartment($user);
+
+        return null !== $department ? [$department] : [];
+    }
+
+    /**
      * Whether the user may edit/delete the task: its creator, a superior of its unit, or an admin.
      */
     private function canManage(Task $task, User $user, OrganizationHierarchy $hierarchy): bool
     {
-        return $this->isGranted('ROLE_ADMIN') || $task->getCreatedBy() === $user || $hierarchy->isSuperiorOf($user, $task->getUnit());
+        return $this->isGranted('ROLE_ADMIN') || $task->getCreatedBy() === $user || $hierarchy->isSuperiorOfTask($user, $task);
     }
 
     /**
@@ -453,6 +470,6 @@ final class TaskController extends AbstractController
      */
     private function canWorkOn(Task $task, User $user, OrganizationHierarchy $hierarchy): bool
     {
-        return $this->isGranted('ROLE_ADMIN') || $task->isOwnedBy($user) || $hierarchy->isSuperiorOf($user, $task->getUnit());
+        return $this->isGranted('ROLE_ADMIN') || $task->isOwnedBy($user) || $hierarchy->isSuperiorOfTask($user, $task);
     }
 }

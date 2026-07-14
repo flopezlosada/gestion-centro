@@ -9,9 +9,11 @@ use App\Entity\AcademicYear;
 use App\Entity\NonLectiveDay;
 use App\Entity\Role;
 use App\Entity\Task;
+use App\Entity\TaskResponsibility;
 use App\Entity\TaskTemplate;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
+use App\Util\SchoolYear;
 use App\Enum\Area;
 use App\Enum\DueDateRuleKind;
 use App\Enum\PermissionLevel;
@@ -94,12 +96,12 @@ final class AdminPanelTest extends WebTestCase
 
     public function testAdminSeesDepartmentList(): void
     {
-        $unit = (new Unit())->setCode('management')->setName('Equipo directivo');
+        $unit = (new Department())->setCode('management')->setName('Equipo directivo');
         $this->em->persist($unit);
         $this->em->flush();
 
         $this->client->loginUser($this->admin());
-        $this->client->request('GET', '/admin/unidades');
+        $this->client->request('GET', '/admin/departamentos');
 
         self::assertResponseIsSuccessful();
         self::assertSelectorTextContains('table', 'Equipo directivo');
@@ -107,42 +109,44 @@ final class AdminPanelTest extends WebTestCase
 
     public function testDeletingADepartmentRemovesIt(): void
     {
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
         $this->em->flush();
         $id = $unit->getId();
 
         $this->client->loginUser($this->admin());
-        $crawler = $this->client->request('GET', '/admin/unidades');
+        $crawler = $this->client->request('GET', '/admin/departamentos');
         $this->client->submit($crawler->selectButton('Borrar')->form());
 
-        self::assertResponseRedirects('/admin/unidades');
-        self::assertNull($this->em->getRepository(Unit::class)->find($id));
+        self::assertResponseRedirects('/admin/departamentos');
+        self::assertNull($this->em->getRepository(Department::class)->find($id));
     }
 
     public function testUnitShowListsItsHeadAndPeople(): void
     {
-        $head = (new User())->setFullName('María Matemáticas')->setEmail('mates@centro.test');
-        $this->em->persist($head);
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas')->setManager($head);
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($maths);
-        $head->setUnit($maths);
+        // The head is derived from who holds the "jefatura de departamento" role, not a manager field.
+        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
+        $this->em->persist($headRole);
+        $head = (new User())->setFullName('María Matemáticas')->setEmail('mates@centro.test')->setUnit($maths)->addAssignedRole($headRole);
+        $this->em->persist($head);
         $teacher = (new User())->setFullName('Pedro Docente')->setEmail('pedro@centro.test')->setUnit($maths);
         $this->em->persist($teacher);
         $this->em->flush();
 
         $this->client->loginUser($this->admin());
-        $this->client->request('GET', '/admin/unidades/'.$maths->getId());
+        $this->client->request('GET', '/admin/departamentos/'.$maths->getId());
 
         self::assertResponseIsSuccessful();
         self::assertSelectorTextContains('h1', 'Matemáticas');
-        self::assertSelectorTextContains('.page-head', 'María Matemáticas'); // head shown
+        self::assertSelectorTextContains('.page-head', 'María Matemáticas'); // head shown (derived from the role)
         self::assertSelectorTextContains('table', 'Pedro Docente');
     }
 
-    public function testDepartmentMembershipAndHeadCanBeManagedFromItsPage(): void
+    public function testDepartmentMembershipCanBeManagedFromItsPage(): void
     {
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($maths);
         $ana = (new User())->setFullName('Ana Docente')->setEmail('ana@centro.test');
         $this->em->persist($ana);
@@ -153,17 +157,45 @@ final class AdminPanelTest extends WebTestCase
         $this->client->loginUser($this->admin());
 
         // Add Ana to the department (she sorts first among the candidate rows).
-        $crawler = $this->client->request('GET', '/admin/unidades/'.$mathsId);
+        $crawler = $this->client->request('GET', '/admin/departamentos/'.$mathsId);
         $this->client->submit($crawler->selectButton('Añadir')->form());
-        self::assertResponseRedirects('/admin/unidades/'.$mathsId);
+        self::assertResponseRedirects('/admin/departamentos/'.$mathsId);
         $this->em->clear();
         self::assertSame('Matemáticas', $this->em->getRepository(User::class)->find($anaId)?->getUnit()?->getName());
+    }
 
-        // Designate Ana (the only member) as head.
-        $crawler = $this->client->request('GET', '/admin/unidades/'.$mathsId);
-        $this->client->submit($crawler->selectButton('Hacer jefatura')->form());
+    public function testMakingAMemberHeadMovesTheRoleAndItsOpenTasks(): void
+    {
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($maths);
+        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
+        $this->em->persist($headRole);
+        $oldHead = (new User())->setFullName('María Saliente')->setEmail('maria@centro.test')->setUnit($maths)->addAssignedRole($headRole);
+        $newHead = (new User())->setFullName('José Entrante')->setEmail('jose@centro.test')->setUnit($maths);
+        $this->em->persist($oldHead);
+        $this->em->persist($newHead);
+        // An open, current-course jefatura task assigned to the outgoing head.
+        $task = new Task('Memoria de jefatura', SchoolYear::current(new \DateTimeImmutable()), new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
+        $task->setUnit($maths)->setResponsibility(new TaskResponsibility($headRole, $maths))->setAssignedUser($oldHead);
+        $this->em->persist($task);
+        $this->em->flush();
+        $mathsId = $maths->getId();
+        $newHeadId = $newHead->getId();
+        $taskId = $task->getId();
+
+        $this->client->loginUser($this->admin());
+        $crawler = $this->client->request('GET', '/admin/departamentos/'.$mathsId);
+        // Designate José as head (there are several "Hacer jefatura" rows; point this one at José).
+        $form = $crawler->selectButton('Hacer jefatura')->form();
+        $form['user'] = (string) $newHeadId;
+        $this->client->submit($form);
+
+        self::assertResponseRedirects('/admin/departamentos/'.$mathsId);
+        $oldHeadId = $oldHead->getId();
         $this->em->clear();
-        self::assertSame($anaId, $this->em->getRepository(Unit::class)->find($mathsId)?->getManager()?->getId());
+        self::assertTrue($this->em->getRepository(User::class)->find($newHeadId)?->holdsRoleCode('head_dept'), 'the new head holds the role');
+        self::assertFalse($this->em->getRepository(User::class)->find($oldHeadId)?->holdsRoleCode('head_dept'), 'the previous head lost the role — no duplicate head');
+        self::assertSame($newHeadId, $this->em->getRepository(Task::class)->find($taskId)?->getAssignedUser()?->getId(), 'the jefatura task followed the new head');
     }
 
     public function testAdminNavAppearsForAdmin(): void
@@ -255,7 +287,7 @@ final class AdminPanelTest extends WebTestCase
     {
         $this->client->loginUser($this->teacher());
 
-        $this->client->request('GET', '/admin/unidades');
+        $this->client->request('GET', '/admin/departamentos');
 
         self::assertResponseStatusCodeSame(403);
     }
@@ -348,20 +380,20 @@ final class AdminPanelTest extends WebTestCase
     {
         $this->client->loginUser($this->admin());
 
-        $crawler = $this->client->request('GET', '/admin/unidades/nueva');
+        $crawler = $this->client->request('GET', '/admin/departamentos/nueva');
         self::assertResponseIsSuccessful();
 
         $form = $crawler->selectButton('Guardar')->form([
-            'unit[code]' => 'maths',
-            'unit[name]' => 'Matemáticas',
-            'unit[active]' => true,
+            'department[code]' => 'maths',
+            'department[name]' => 'Matemáticas',
+            'department[active]' => true,
         ]);
         $this->client->submit($form);
 
-        self::assertResponseRedirects('/admin/unidades');
+        self::assertResponseRedirects('/admin/departamentos');
 
-        $created = $this->em->getRepository(Unit::class)->findOneBy(['code' => 'maths']);
-        self::assertInstanceOf(Unit::class, $created);
+        $created = $this->em->getRepository(Department::class)->findOneBy(['code' => 'maths']);
+        self::assertInstanceOf(Department::class, $created);
         self::assertSame('Matemáticas', $created->getName());
     }
 

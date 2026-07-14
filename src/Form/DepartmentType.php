@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Form;
 
-use App\Entity\Unit;
+use App\Entity\Department;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
@@ -13,12 +13,12 @@ use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 
 /**
- * Admin form to create/edit a department ({@see Unit}): its code, name, description and whether it is
+ * Admin form to create/edit a department ({@see Department}): its code, name, description and whether it is
  * active. Its head (jefatura) and its people are managed from the department's own page, not here.
  *
- * @extends AbstractType<Unit>
+ * @extends AbstractType<Department>
  */
-final class UnitType extends AbstractType
+final class DepartmentType extends AbstractType
 {
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
@@ -39,7 +39,7 @@ final class UnitType extends AbstractType
     public function configureOptions(OptionsResolver $resolver): void
     {
         $resolver->setDefaults([
-            'data_class' => Unit::class,
+            'data_class' => Department::class,
         ]);
     }
 }

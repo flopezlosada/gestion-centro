@@ -152,7 +152,7 @@ final class TaskReminderNotifier
      */
     private function escalationRecipients(Task $task, int $days): array
     {
-        $chain = $this->hierarchy->managersAbove($task->getUnit());
+        $chain = $this->hierarchy->managersAbove($task);
         // Escalating a task to its own assignee is pointless (they are the one who is late).
         $chain = array_values(array_filter($chain, static fn (User $m): bool => $m !== $task->getAssignedUser()));
 

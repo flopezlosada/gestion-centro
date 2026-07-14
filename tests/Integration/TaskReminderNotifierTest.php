@@ -6,7 +6,7 @@ namespace App\Tests\Integration;
 
 use App\Entity\Role;
 use App\Entity\Task;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
 use App\Repository\NotificationRepository;
@@ -41,7 +41,7 @@ final class TaskReminderNotifierTest extends KernelTestCase
         return $user;
     }
 
-    private function task(\DateTimeImmutable $due, Unit $unit): Task
+    private function task(\DateTimeImmutable $due, Department $unit): Task
     {
         $task = new Task('Memoria', SchoolYear::current($due), $due, TaskType::WITH_DELIVERABLE);
         $task->setUnit($unit);
@@ -54,7 +54,7 @@ final class TaskReminderNotifierTest extends KernelTestCase
     {
         $today = new \DateTimeImmutable('2026-01-10');
         $teacher = $this->user('profe@centro.test');
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
         $this->task($today->modify('+15 days'), $unit)->setAssignedUser($teacher);
         $this->em->flush();
@@ -70,10 +70,16 @@ final class TaskReminderNotifierTest extends KernelTestCase
     public function testOverdueTaskIsEscalatedToTheManager(): void
     {
         $today = new \DateTimeImmutable('2026-01-10');
-        $head = $this->user('jefa@centro.test');
-        $teacher = $this->user('profe@centro.test');
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas')->setManager($head);
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
+        // The head of the department holds a per-department ranked role, so they command it and are the
+        // nearest superior to escalate an overdue maths task to.
+        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
+        $this->em->persist($headRole);
+        $head = $this->user('jefa@centro.test');
+        $head->setUnit($unit)->addAssignedRole($headRole);
+        $teacher = $this->user('profe@centro.test');
+        $teacher->setUnit($unit);
         // Overdue by exactly one day, still pending.
         $this->task($today->modify('-1 day'), $unit)->setAssignedUser($teacher);
         $this->em->flush();
@@ -88,7 +94,7 @@ final class TaskReminderNotifierTest extends KernelTestCase
     public function testNothingIsSentWhenNoTaskMatches(): void
     {
         $today = new \DateTimeImmutable('2026-01-10');
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
         // Due far away and not overdue → no reminder, no escalation.
         $this->task($today->modify('+40 days'), $unit)->setAssignedUser($this->user('profe@centro.test'));
@@ -100,7 +106,7 @@ final class TaskReminderNotifierTest extends KernelTestCase
     public function testOverdueTaskWithoutUnitDoesNotCrashAndEscalatesToNobody(): void
     {
         $today = new \DateTimeImmutable('2026-01-10');
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
         // Overdue, but the task has no unit → no chain of command to escalate to.
         $task = new Task('Sin unidad', SchoolYear::current($today), $today->modify('-1 day'), TaskType::SIMPLE);
@@ -114,7 +120,7 @@ final class TaskReminderNotifierTest extends KernelTestCase
     public function testUnassignedTaskProducesNoReminder(): void
     {
         $today = new \DateTimeImmutable('2026-01-10');
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
         // Due in 7 days but with neither an assigned user nor role.
         $this->task($today->modify('+7 days'), $unit);
@@ -126,7 +132,7 @@ final class TaskReminderNotifierTest extends KernelTestCase
     public function testRoleWithOnlyInactiveHolderProducesNoReminder(): void
     {
         $today = new \DateTimeImmutable('2026-01-10');
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
 
         $role = (new Role())->setCode('head_dept')->setName('Jefatura de departamento');

@@ -6,7 +6,7 @@ namespace App\Tests\Functional;
 
 use App\Entity\Role;
 use App\Entity\Task;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
 use App\Util\SchoolYear;
@@ -38,21 +38,18 @@ final class TaskScopeTest extends WebTestCase
      */
     private function seed(): array
     {
-        // Direction has no superuser flag: its reach comes purely from managing the top unit.
-        $directionRole = (new Role())->setCode('direction')->setName('Dirección');
+        // Direction has no superuser flag: its reach comes purely from its centre-wide hierarchy rank.
+        $directionRole = (new Role())->setCode('direction')->setName('Dirección')->setHierarchyLevel(40);
         $this->em->persist($directionRole);
 
-        $director = (new User())->setFullName('Ana Directora')->setEmail('director@centro.test')->addAssignedRole($directionRole);
-        $teacher = (new User())->setFullName('Pedro Docente')->setEmail('profe@centro.test');
-        $colleague = (new User())->setFullName('Sara Colega')->setEmail('colega@centro.test');
-        array_map($this->em->persist(...), [$director, $teacher, $colleague]);
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($maths);
 
-        $management = (new Unit())->setCode('mgmt')->setName('Dirección')->setManager($director);
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas')->setParent($management);
-        array_map($this->em->persist(...), [$management, $maths]);
-        $director->setUnit($management);
-        $teacher->setUnit($maths);
-        $colleague->setUnit($maths);
+        // Everyone is a member of a department; the director's reach is the direction role, not the unit.
+        $director = (new User())->setFullName('Ana Directora')->setEmail('director@centro.test')->setUnit($maths)->addAssignedRole($directionRole);
+        $teacher = (new User())->setFullName('Pedro Docente')->setEmail('profe@centro.test')->setUnit($maths);
+        $colleague = (new User())->setFullName('Sara Colega')->setEmail('colega@centro.test')->setUnit($maths);
+        array_map($this->em->persist(...), [$director, $teacher, $colleague]);
 
         $year = SchoolYear::current(new \DateTimeImmutable());
         $mineTitle = 'Preparar el acta del docente';
@@ -120,7 +117,7 @@ final class TaskScopeTest extends WebTestCase
         $this->em->persist($role);
         $teacher = (new User())->setFullName('Pedro Docente')->setEmail('profe@centro.test')->addAssignedRole($role);
         $this->em->persist($teacher);
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
 
         $year = SchoolYear::current(new \DateTimeImmutable());

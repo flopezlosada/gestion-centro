@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Entity\Role;
 use App\Entity\User;
 use App\Enum\Area;
 use App\Form\UserType;
-use App\Repository\UnitRepository;
+use App\Repository\DepartmentRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
 use App\Service\AuditLogger;
+use App\Service\RankedRoleHandover;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -27,8 +29,10 @@ use Symfony\Component\Routing\Attribute\Route;
 #[Route('/admin/usuarios')]
 final class AdminUserController extends AbstractController
 {
-    public function __construct(private readonly AuditLogger $auditLogger)
-    {
+    public function __construct(
+        private readonly AuditLogger $auditLogger,
+        private readonly RankedRoleHandover $handover,
+    ) {
     }
 
     /**
@@ -49,7 +53,7 @@ final class AdminUserController extends AbstractController
      * department, so the "+ Nuevo profesor" link on a department lands with it already filled in.
      */
     #[Route('/nuevo', name: 'admin_user_new', methods: ['GET', 'POST'])]
-    public function new(Request $request, EntityManagerInterface $em, UnitRepository $units): Response
+    public function new(Request $request, EntityManagerInterface $em, DepartmentRepository $units): Response
     {
         $user = (new User())->setActive(true);
         $unitId = $request->query->getInt('unit');
@@ -88,6 +92,9 @@ final class AdminUserController extends AbstractController
         // accounts. Snapshot the pre-bind state so editing an admin account is blocked too.
         $isSuperuser = $this->isGranted('ROLE_ADMIN');
         $touchedAdminAccount = !$isSuperuser && $this->hasAdminRole($user);
+        // The ranked (chain-of-command) roles the user held BEFORE this edit, to detect posts taken
+        // over or vacated here and keep their tasks in sync (the "arrastre").
+        $rankedBefore = $this->rankedRolesHeld($user);
 
         $form = $this->createForm(UserType::class, $user);
         $form->handleRequest($request);
@@ -95,6 +102,22 @@ final class AdminUserController extends AbstractController
         if ($form->isSubmitted() && $form->isValid()) {
             if (!$isSuperuser && ($touchedAdminAccount || $this->hasAdminRole($user))) {
                 throw $this->createAccessDeniedException('Solo un administrador puede gestionar cuentas con rol de administrador.');
+            }
+
+            // Done before the flush so role changes and task reassignments persist together.
+            $rankedAfter = $this->rankedRolesHeld($user);
+            $now = new \DateTimeImmutable();
+            // Posts newly taken over: enforce single holder (strip from the previous one) and hand tasks over.
+            foreach ($rankedAfter as $id => $role) {
+                if (!isset($rankedBefore[$id])) {
+                    $this->handover->takeOver($user, $role, $now);
+                }
+            }
+            // Posts vacated here (role removed): leave their open current-course tasks unassigned.
+            foreach ($rankedBefore as $id => $role) {
+                if (!isset($rankedAfter[$id])) {
+                    $this->handover->vacate($role, $role->isPerDepartment() ? $user->getUnit() : null, $now);
+                }
             }
 
             $em->persist($user);
@@ -133,5 +156,25 @@ final class AdminUserController extends AbstractController
         }
 
         return false;
+    }
+
+    /**
+     * The ranked (chain-of-command) roles the user currently holds, keyed by id — so before/after
+     * snapshots can be compared to find posts taken over or vacated.
+     *
+     * @param User $user the user to inspect
+     *
+     * @return array<int, Role> the ranked roles held, keyed by id
+     */
+    private function rankedRolesHeld(User $user): array
+    {
+        $roles = [];
+        foreach ($user->getAssignedRoles() as $role) {
+            if ($role->isHierarchical() && null !== $role->getId()) {
+                $roles[$role->getId()] = $role;
+            }
+        }
+
+        return $roles;
     }
 }

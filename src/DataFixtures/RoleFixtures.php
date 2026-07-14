@@ -37,16 +37,21 @@ final class RoleFixtures extends AbstractGoldenFixture
         // Direction manages via the permission matrix (write on Administration) WITHOUT the superuser
         // flag: it reaches /admin but is not ROLE_ADMIN. TIC is the actual superuser. The rest are
         // responsibility markers used for assignment, hierarchy and the leadership privilege.
-        $direction = (new Role())->setCode('direction')->setName('Dirección')->setLevel(Area::ADMINISTRATION, PermissionLevel::WRITE);
+        //
+        // hierarchyLevel = rank in the chain of command (higher = more senior); null = no hierarchy
+        // (functional/permission role only). The leadership team is centre-wide; jefatura de departamento
+        // is per-department (commands only its own department). TIC, secretaría, tutor and docente carry
+        // no rank — they grant feature access but command nobody.
+        $direction = (new Role())->setCode('direction')->setName('Dirección')->setLevel(Area::ADMINISTRATION, PermissionLevel::WRITE)->setHierarchyLevel(40);
         $catalog = [
             $direction,
             (new Role())->setCode('tic')->setName('TIC')->setAdmin(true),
-            (new Role())->setCode('head_of_studies')->setName('Jefatura de estudios'),
-            (new Role())->setCode('head_of_studies_deputy')->setName('Jefatura de estudios adjunta'),
+            (new Role())->setCode('head_of_studies')->setName('Jefatura de estudios')->setHierarchyLevel(30),
+            (new Role())->setCode('head_of_studies_deputy')->setName('Jefatura de estudios adjunta')->setHierarchyLevel(20),
             (new Role())->setCode('secretary')->setName('Secretaría'),
             // Per-department roles: a holder is "X of a given department", so a task's responsibility on
             // one of these also needs the department (resolved live to whoever holds it there).
-            (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true),
+            (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10),
             (new Role())->setCode('tutor')->setName('Tutor/a')->setPerDepartment(true),
             (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true),
         ];

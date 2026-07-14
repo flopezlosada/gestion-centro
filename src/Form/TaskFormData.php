@@ -6,15 +6,19 @@ namespace App\Form;
 
 use App\Entity\Role;
 use App\Entity\Task;
-use App\Entity\Unit;
+use App\Entity\TaskResponsibility;
+use App\Entity\Department;
+use App\Entity\User;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /**
  * Form-backing object for creating/editing a {@see Task}. The responsibility is chosen as a cascade:
- * a role, and — only when the role is per-department ({@see Role::isPerDepartment()}) — its department.
- * The controller turns that into a {@see \App\Entity\TaskResponsibility}; the responsible people are
- * derived from it, never picked one by one.
+ * a role, then — only when the role is per-department ({@see Role::isPerDepartment()}) — its
+ * department, and finally the concrete person, picked among those who actually hold that role in that
+ * department (the choice is coupled: someone who does not hold it cannot be selected). The controller
+ * turns the role + department into a {@see TaskResponsibility} (the structural backbone) and stores the
+ * chosen person as the task's assignee.
  */
 final class TaskFormData
 {
@@ -32,7 +36,10 @@ final class TaskFormData
     public ?Role $responsibilityRole = null;
 
     /** The department (second step); required only when the role is per-department. */
-    public ?Unit $responsibilityUnit = null;
+    public ?Department $responsibilityUnit = null;
+
+    /** The concrete responsible person (third step), one of the role + department holders. */
+    public ?User $responsibilityUser = null;
 
     public bool $mandatory = true;
 
@@ -41,8 +48,10 @@ final class TaskFormData
     public bool $requiresDocument = false;
 
     /**
-     * A per-department role needs a department; a centre-wide role must not carry one. The cross-field
-     * rule a single-field constraint cannot express.
+     * Validates the responsibility cascade end to end: a per-department role needs a department (and a
+     * centre-wide one must not carry one — enforced by the controller), and the chosen person must
+     * actually hold that role in that department. These are cross-field rules a single-field constraint
+     * cannot express.
      *
      * @param ExecutionContextInterface $context the validation context to attach violations to
      */
@@ -53,8 +62,23 @@ final class TaskFormData
             return; // the NotNull on the role already reports the empty case
         }
 
-        if ($this->responsibilityRole->isPerDepartment() && null === $this->responsibilityUnit) {
+        $perDepartment = $this->responsibilityRole->isPerDepartment();
+        if ($perDepartment && null === $this->responsibilityUnit) {
             $context->buildViolation('Elige el departamento.')->atPath('responsibilityUnit')->addViolation();
+
+            return; // without the department the holder set is undefined
+        }
+
+        if (null === $this->responsibilityUser) {
+            $context->buildViolation('Elige la persona responsable.')->atPath('responsibilityUser')->addViolation();
+
+            return;
+        }
+
+        // Coupled choice: the person must be one of the current holders of role + (department).
+        $unit = $perDepartment ? $this->responsibilityUnit : null;
+        if (!(new TaskResponsibility($this->responsibilityRole, $unit))->isHeldBy($this->responsibilityUser)) {
+            $context->buildViolation('Esa persona no tiene ese rol en ese departamento.')->atPath('responsibilityUser')->addViolation();
         }
     }
 
@@ -80,6 +104,7 @@ final class TaskFormData
             $data->responsibilityRole = $responsibility->getRole();
             $data->responsibilityUnit = $responsibility->getUnit();
         }
+        $data->responsibilityUser = $task->getAssignedUser();
 
         return $data;
     }

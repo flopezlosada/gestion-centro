@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Repository;
 
 use App\Entity\Role;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
@@ -53,10 +53,29 @@ class UserRepository extends ServiceEntityRepository
     }
 
     /**
+     * Active users who hold at least one role with a chain-of-command rank (dirección, jefatura de
+     * estudios, adjunto, jefe de departamento). The set of potential superiors, from which
+     * {@see \App\Service\OrganizationHierarchy::managersAbove()} picks those above a given task. Small
+     * by nature (only the leadership), so resolving each user's full role set afterwards is cheap.
+     *
+     * @return User[] the active holders of any ranked role
+     */
+    public function findWithHierarchyRank(): array
+    {
+        return $this->createQueryBuilder('u')
+            ->join('u.assignedRoles', 'r')
+            ->where('r.hierarchyLevel IS NOT NULL')
+            ->andWhere('u.active = true')
+            ->distinct()
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * Active users belonging to any of the given units, by full name. Used to build the "assign to"
      * choices, scoped to a creator's own unit and the units below it.
      *
-     * @param list<Unit> $units the units to look in
+     * @param list<Department> $units the units to look in
      *
      * @return User[] the active users in those units
      */
@@ -78,11 +97,11 @@ class UserRepository extends ServiceEntityRepository
     /**
      * Everyone who belongs to a unit, by full name. Used by the department detail.
      *
-     * @param Unit $unit the unit (department)
+     * @param Department $unit the unit (department)
      *
      * @return User[] the people in that unit
      */
-    public function findByUnit(Unit $unit): array
+    public function findByUnit(Department $unit): array
     {
         return $this->findBy(['unit' => $unit], ['fullName' => 'ASC']);
     }
@@ -91,11 +110,11 @@ class UserRepository extends ServiceEntityRepository
      * Everyone NOT already in the given unit (including people with no unit), by full name. Used to
      * offer candidates to add to a department.
      *
-     * @param Unit $unit the unit (department) to exclude
+     * @param Department $unit the unit (department) to exclude
      *
      * @return User[] the people who could be added to it
      */
-    public function findNotInUnit(Unit $unit): array
+    public function findNotInUnit(Department $unit): array
     {
         return $this->createQueryBuilder('u')
             ->andWhere('u.unit IS NULL OR u.unit != :unit')

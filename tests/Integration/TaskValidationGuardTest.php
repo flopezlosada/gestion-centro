@@ -6,7 +6,7 @@ namespace App\Tests\Integration;
 
 use App\Entity\Role;
 use App\Entity\Task;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
 use App\Service\TaskWorkflow;
@@ -25,20 +25,21 @@ final class TaskValidationGuardTest extends WebTestCase
     }
 
     /**
-     * Builds management → head of studies → maths, a submitted deliverable task in maths assigned to
-     * a plain teacher, and returns everything the cases need.
+     * The head of studies (centre-wide ranked role), the head of the Maths department (per-department
+     * ranked role) and a plain teacher, plus a submitted deliverable task in Maths assigned to the
+     * teacher. Superiority is derived from the roles, in memory (no database needed).
      *
      * @return array{task: Task, headStudies: User, headMaths: User, teacher: User}
      */
     private function scenario(): array
     {
-        $headStudies = $this->user('jefatura');
-        $headMaths = $this->user('mates');
-        $teacher = $this->user('docente');
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
 
-        $management = (new Unit())->setCode('mgmt')->setName('Dirección');
-        $studies = (new Unit())->setCode('studies')->setName('Jefatura de estudios')->setManager($headStudies)->setParent($management);
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas')->setManager($headMaths)->setParent($studies);
+        $headStudies = $this->user('jefatura')
+            ->addAssignedRole((new Role())->setCode('head_of_studies')->setName('Jefatura de estudios')->setHierarchyLevel(30));
+        $headMaths = $this->user('mates')->setUnit($maths)
+            ->addAssignedRole((new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10));
+        $teacher = $this->user('docente')->setUnit($maths);
 
         $task = new Task('Memoria', '2025-2026', new \DateTimeImmutable('2026-05-31'), TaskType::WITH_DELIVERABLE);
         $task->setUnit($maths)->setAssignedUser($teacher)->setStatus('submitted');
@@ -109,24 +110,27 @@ final class TaskValidationGuardTest extends WebTestCase
         self::assertFalse($this->canReject($s['task']), 'devolver es acción de superior, no de cualquiera');
     }
 
-    public function testAssigneeCannotValidateOwnTaskEvenIfManager(): void
+    public function testAssigneeCannotValidateOwnTaskEvenIfSuperior(): void
     {
         $client = static::createClient();
         $s = $this->scenario();
-        // headMaths manages the maths unit, but the task is assigned to headMaths here.
+        // headMaths outranks the maths task, but here it is assigned to headMaths: separation of duties
+        // wins over rank — you never validate your own task.
         $s['task']->setAssignedUser($s['headMaths']);
         $client->loginUser($s['headMaths']);
 
-        self::assertFalse($this->canValidate($client, $s['task']), 'no self-validation, even for the unit manager');
+        self::assertFalse($this->canValidate($client, $s['task']), 'no self-validation, even for a superior by rank');
     }
 
-    public function testCannotValidateWhenTaskHasNoUnit(): void
+    public function testCentreWideSuperiorCanValidateEvenWithoutUnit(): void
     {
         $client = static::createClient();
         $s = $this->scenario();
+        // A unit-less task still falls under a centre-wide superior (dirección/jefatura de estudios),
+        // who oversees the whole school.
         $s['task']->setUnit(null);
         $client->loginUser($s['headStudies']);
 
-        self::assertFalse($this->canValidate($client, $s['task']), 'no unit → no determinable superior');
+        self::assertTrue($this->canValidate($client, $s['task']), 'a centre-wide superior oversees even a unit-less task');
     }
 }

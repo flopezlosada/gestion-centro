@@ -54,9 +54,9 @@ class User implements UserInterface, Auditable
      * The unit (department, office…) this person belongs to, used to walk the chain of command for
      * escalation and validation. Nullable while the org chart is incomplete.
      */
-    #[ORM\ManyToOne(targetEntity: Unit::class)]
+    #[ORM\ManyToOne(targetEntity: Department::class)]
     #[ORM\JoinColumn(name: 'unit_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
-    private ?Unit $unit = null;
+    private ?Department $unit = null;
 
     public function __construct()
     {
@@ -93,12 +93,12 @@ class User implements UserInterface, Auditable
         return $this;
     }
 
-    public function getUnit(): ?Unit
+    public function getUnit(): ?Department
     {
         return $this->unit;
     }
 
-    public function setUnit(?Unit $unit): static
+    public function setUnit(?Department $unit): static
     {
         $this->unit = $unit;
 

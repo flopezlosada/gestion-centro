@@ -8,9 +8,9 @@
     <div class="page-head">
         <div>
             <h1>Departamentos</h1>
-            <p class="lead">Los departamentos del centro. Cada uno tiene una jefatura que valida sus tareas y recibe los escalados. Pincha un nombre para gestionar su profesorado.</p>
+            <p class="lead">Los departamentos del centro. La jefatura de cada uno es quien tiene el rol de jefatura de departamento (se asigna en la ficha del profesor). Pincha un nombre para gestionar su profesorado.</p>
         </div>
-        <a class="btn" href="{{ path('admin_unit_new') }}">+ Nuevo departamento</a>
+        <a class="btn" href="{{ path('admin_department_new') }}">+ Nuevo departamento</a>
     </div>
 
     <div class="card">
@@ -18,22 +18,21 @@
             <div class="empty-state">
                 <h2>No hay departamentos todavía</h2>
                 <p>Crea el primer departamento.</p>
-                <a class="btn" href="{{ path('admin_unit_new') }}">Nuevo departamento</a>
+                <a class="btn" href="{{ path('admin_department_new') }}">Nuevo departamento</a>
             </div>
         {% else %}
             <table data-list-tools>
                 <thead>
-                    <tr><th>Nombre</th><th>Jefatura</th><th data-filter>Estado</th><th data-nosort></th></tr>
+                    <tr><th>Nombre</th><th data-filter>Estado</th><th data-nosort></th></tr>
                 </thead>
                 <tbody>
                     {% for unit in departments %}
                         <tr>
-                            <td><a href="{{ path('admin_unit_show', { id: unit.id }) }}">{{ unit.name }}</a></td>
-                            <td>{{ unit.manager ? unit.manager.fullName : '— sin asignar —' }}</td>
+                            <td><a href="{{ path('admin_department_show', { id: unit.id }) }}">{{ unit.name }}</a></td>
                             <td>{{ unit.active ? 'Activo' : 'Inactivo' }}</td>
                             <td class="row-actions">
-                                <a href="{{ path('admin_unit_edit', { id: unit.id }) }}">Editar</a>
-                                <form method="post" action="{{ path('admin_unit_delete', { id: unit.id }) }}" data-confirm="¿Borrar el departamento «{{ unit.name }}»? Su profesorado quedará sin departamento. Para conservarlo, mejor desactívalo.">
+                                <a href="{{ path('admin_department_edit', { id: unit.id }) }}">Editar</a>
+                                <form method="post" action="{{ path('admin_department_delete', { id: unit.id }) }}" data-confirm="¿Borrar el departamento «{{ unit.name }}»? Su profesorado quedará sin departamento. Para conservarlo, mejor desactívalo.">
                                     <input type="hidden" name="_token" value="{{ csrf_token('unit_delete' ~ unit.id) }}">
                                     <button type="submit" class="link-danger">Borrar</button>
                                 </form>

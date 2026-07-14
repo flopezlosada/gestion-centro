@@ -4,70 +4,133 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit;
 
-use App\Entity\Unit;
+use App\Entity\Role;
+use App\Entity\Task;
+use App\Entity\TaskResponsibility;
+use App\Entity\Department;
 use App\Entity\User;
+use App\Enum\TaskType;
+use App\Repository\UserRepository;
 use App\Service\OrganizationHierarchy;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pure tests for the chain of command: the managers above a unit and the "is superior of" check,
- * built on an in-memory entity graph (no database).
+ * Pure tests for the role-derived chain of command: superiority is contextual to a task's (role,
+ * department) and strict by rank, and a per-department rank commands only its own department.
  */
 final class OrganizationHierarchyTest extends TestCase
 {
-    private function user(string $email): User
+    private Role $direction;
+    private Role $headStudies;
+    private Role $deputy;
+    private Role $headDept;
+    private Role $teacher;
+    private Department $maths;
+    private Department $lengua;
+
+    protected function setUp(): void
     {
-        return (new User())->setFullName($email)->setEmail($email.'@example.test');
+        $this->direction = $this->role('direction', 40);
+        $this->headStudies = $this->role('head_of_studies', 30);
+        $this->deputy = $this->role('head_of_studies_deputy', 20);
+        $this->headDept = $this->role('head_dept', 10, perDepartment: true);
+        $this->teacher = $this->role('teacher', null, perDepartment: true);
+        $this->maths = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->lengua = (new Department())->setCode('lengua')->setName('Lengua');
     }
 
-    /**
-     * @return array{OrganizationHierarchy, maths: Unit, director: User, headStudies: User, headMaths: User}
-     */
-    private function tree(): array
+    private function role(string $code, ?int $level, bool $perDepartment = false): Role
     {
-        $director = $this->user('director');
-        $headStudies = $this->user('jefatura');
-        $headMaths = $this->user('mates');
-
-        $management = (new Unit())->setCode('mgmt')->setName('Dirección')->setManager($director);
-        $studies = (new Unit())->setCode('studies')->setName('Jefatura de estudios')->setManager($headStudies)->setParent($management);
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas')->setManager($headMaths)->setParent($studies);
-
-        return [new OrganizationHierarchy(), 'maths' => $maths, 'director' => $director, 'headStudies' => $headStudies, 'headMaths' => $headMaths];
+        return (new Role())->setCode($code)->setName($code)->setHierarchyLevel($level)->setPerDepartment($perDepartment);
     }
 
-    public function testManagersAboveWalksTheChainNearestFirst(): void
+    private function user(string $name, ?Department $unit, Role ...$roles): User
     {
-        ['maths' => $maths, 'director' => $director, 'headStudies' => $headStudies, 'headMaths' => $headMaths, 0 => $h] = $this->tree();
+        $user = (new User())->setFullName($name)->setEmail($name.'@example.test');
+        if (null !== $unit) {
+            $user->setUnit($unit);
+        }
+        foreach ($roles as $role) {
+            $user->addAssignedRole($role);
+        }
 
-        self::assertSame([$headMaths, $headStudies, $director], $h->managersAbove($maths));
+        return $user;
     }
 
-    public function testSuperiorRecognisesUnitManagerAndAncestors(): void
+    private function hierarchy(User ...$rankedUsers): OrganizationHierarchy
     {
-        ['maths' => $maths, 'director' => $director, 'headStudies' => $headStudies, 'headMaths' => $headMaths, 0 => $h] = $this->tree();
+        $users = $this->createMock(UserRepository::class);
+        $users->method('findWithHierarchyRank')->willReturn($rankedUsers);
 
-        self::assertTrue($h->isSuperiorOf($headMaths, $maths), 'the unit manager is a superior of its own unit');
-        self::assertTrue($h->isSuperiorOf($headStudies, $maths), 'an ancestor manager is a superior');
-        self::assertTrue($h->isSuperiorOf($director, $maths), 'the top manager is a superior');
+        return new OrganizationHierarchy($users);
     }
 
-    public function testOutsiderIsNotSuperior(): void
+    public function testDepartmentHeadCommandsOnlyItsOwnDepartment(): void
     {
-        ['maths' => $maths, 0 => $h] = $this->tree();
-        $teacher = $this->user('teacher');
+        $headMaths = $this->user('mates', $this->maths, $this->headDept, $this->teacher);
+        $h = $this->hierarchy();
 
-        self::assertFalse($h->isSuperiorOf($teacher, $maths));
-        self::assertFalse($h->isSuperiorOf($teacher, null), 'with no unit no superior can be determined');
+        self::assertTrue($h->outranks($headMaths, $this->teacher, $this->maths), 'commands teachers of its own department');
+        self::assertFalse($h->outranks($headMaths, $this->teacher, $this->lengua), 'does NOT command another department');
+        self::assertFalse($h->outranks($headMaths, $this->headDept, $this->maths), 'is not above its own rank');
     }
 
-    public function testChainWithCycleTerminates(): void
+    public function testCentreWideRoleCommandsEveryDepartment(): void
     {
-        $a = (new Unit())->setCode('a')->setName('A');
-        $b = (new Unit())->setCode('b')->setName('B');
-        $a->setParent($b);
-        $b->setParent($a);
+        $director = $this->user('dir', $this->maths, $this->direction, $this->teacher);
+        $h = $this->hierarchy();
 
-        self::assertSame([], (new OrganizationHierarchy())->managersAbove($a), 'a cycle must not loop forever');
+        self::assertTrue($h->outranks($director, $this->teacher, $this->lengua), 'direction commands any department');
+        self::assertTrue($h->outranks($director, $this->headStudies, null), 'direction outranks the head of studies');
+    }
+
+    public function testStrictRankAmongLeadership(): void
+    {
+        $deputy = $this->user('adjunto', $this->maths, $this->deputy, $this->teacher);
+        $h = $this->hierarchy();
+
+        // The whole point Paco insisted on: an adjunto may NOT validate a task of dirección.
+        self::assertFalse($h->outranks($deputy, $this->direction, null), 'the adjunto does not outrank direction');
+        self::assertTrue($h->outranks($deputy, $this->teacher, $this->lengua), 'but the adjunto outranks a teacher anywhere');
+    }
+
+    public function testPlainTeacherCommandsNobody(): void
+    {
+        $teacher = $this->user('profe', $this->maths, $this->teacher);
+        $h = $this->hierarchy();
+
+        self::assertFalse($h->outranks($teacher, $this->teacher, $this->maths));
+        self::assertFalse($h->commandsWholeSchool($teacher));
+        self::assertNull($h->commandedDepartment($teacher));
+    }
+
+    public function testCommandHelpers(): void
+    {
+        $director = $this->user('dir', $this->maths, $this->direction, $this->teacher);
+        $headMaths = $this->user('mates', $this->maths, $this->headDept, $this->teacher);
+        $h = $this->hierarchy();
+
+        self::assertTrue($h->commandsWholeSchool($director));
+        self::assertNull($h->commandedDepartment($director), 'a centre-wide role is not a department command');
+        self::assertFalse($h->commandsWholeSchool($headMaths));
+        self::assertSame($this->maths, $h->commandedDepartment($headMaths));
+    }
+
+    public function testManagersAboveIsRankOrderedAndScoped(): void
+    {
+        $director = $this->user('dir', $this->maths, $this->direction, $this->teacher);
+        $deputy = $this->user('adjunto', $this->lengua, $this->deputy, $this->teacher);
+        $headMaths = $this->user('mates', $this->maths, $this->headDept, $this->teacher);
+        $h = $this->hierarchy($director, $deputy, $headMaths);
+
+        // A teaching task in Maths: nearest first = head of Maths (10), adjunto (20, centre-wide), director (40).
+        $mathsTask = (new Task('t', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE))
+            ->setResponsibility(new TaskResponsibility($this->teacher, $this->maths));
+        self::assertSame([$headMaths, $deputy, $director], $h->managersAbove($mathsTask));
+
+        // A teaching task in Lengua: the head of Maths drops out (per-department rank, wrong department).
+        $lenguaTask = (new Task('t', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE))
+            ->setResponsibility(new TaskResponsibility($this->teacher, $this->lengua));
+        self::assertSame([$deputy, $director], $h->managersAbove($lenguaTask));
     }
 }

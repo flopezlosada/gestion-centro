@@ -75,10 +75,10 @@ class Task implements Auditable
     #[ORM\JoinColumn(name: 'assigned_user_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
     private ?User $assignedUser = null;
 
-    /** Unit context, used to walk the chain of command for validation and escalation. */
-    #[ORM\ManyToOne(targetEntity: Unit::class)]
+    /** The department this task belongs to (its context for scope and escalation). */
+    #[ORM\ManyToOne(targetEntity: Department::class)]
     #[ORM\JoinColumn(name: 'unit_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
-    private ?Unit $unit = null;
+    private ?Department $unit = null;
 
     /**
      * What structurally makes this task someone's job: a post (unit's manager), a specific person, or
@@ -290,30 +290,32 @@ class Task implements Auditable
      */
     public function isOwnedBy(User $user): bool
     {
-        // A delegation overrides the structural responsibility: only the delegatee owns it then.
+        // A delegation overrides everything: only the delegatee owns it then.
         if (null !== $this->delegatedTo) {
             return $this->delegatedTo === $user;
         }
 
-        // The structural responsibility, resolved live, is authoritative once set.
-        if (null !== $this->responsibility) {
-            return $this->responsibility->isHeldBy($user);
+        // The concrete assignee is authoritative: the person picked in the responsibility cascade (kept
+        // current by the ranked-role handover). Only ONE person owns a task, not every role holder.
+        if (null !== $this->assignedUser) {
+            return $this->assignedUser === $user;
         }
 
-        // Fallback for rows not yet migrated to a responsibility (transition safety net).
-        if ($this->assignedUser === $user) {
-            return true;
+        // No concrete assignee (e.g. a vacated post): fall back to the structural responsibility's
+        // current holders, then to the legacy role, for rows not driven by an assignee.
+        if (null !== $this->responsibility) {
+            return $this->responsibility->isHeldBy($user);
         }
 
         return null !== $this->assignedRole && $user->holdsRole($this->assignedRole);
     }
 
-    public function getUnit(): ?Unit
+    public function getUnit(): ?Department
     {
         return $this->unit;
     }
 
-    public function setUnit(?Unit $unit): static
+    public function setUnit(?Department $unit): static
     {
         $this->unit = $unit;
 
@@ -410,10 +412,10 @@ class Task implements Auditable
     }
 
     /**
-     * The single person on the hook for this task right now: the delegatee if it has been delegated,
-     * otherwise the assigned person. Resolved live; null when nobody concrete is set (e.g. a
-     * role-only task with no individual). Extended in later phases to resolve a structural
-     * responsibility (a unit's manager); today it reads the stored assignee.
+     * The single person on the hook for this task right now: the delegatee if delegated, otherwise the
+     * concrete assignee (the person picked in the responsibility cascade, kept current by the handover).
+     * Falls back to the first current holder of the structural responsibility only when there is no
+     * concrete assignee (e.g. a vacated post). Null when nobody can be resolved.
      *
      * @return User|null the current responsible person, or null
      */
@@ -423,11 +425,15 @@ class Task implements Auditable
             return $this->delegatedTo;
         }
 
+        if (null !== $this->assignedUser) {
+            return $this->assignedUser;
+        }
+
         if (null !== $this->responsibility) {
             return $this->responsibility->holders()[0] ?? null;
         }
 
-        return $this->assignedUser;
+        return null;
     }
 
     public function getResponsibility(): ?TaskResponsibility
