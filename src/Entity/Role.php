@@ -80,6 +80,18 @@ class Role implements Auditable
     #[ORM\Column(name: 'per_department')]
     private bool $perDepartment = false;
 
+    /**
+     * Rank of this role in the school's chain of command, higher = more senior (dirección > jefatura
+     * de estudios > adjunto > jefe de departamento). Null means the role carries no hierarchy: it may
+     * grant feature permissions, but its holder commands nobody and is commanded by rank alone (docente,
+     * tutor, TIC, secretaría). Combined with {@see $perDepartment} for scope: a per-department ranked
+     * role (jefe de departamento) commands only its own department; a centre-wide ranked role commands
+     * the whole school. This is the single source of truth for "who is above whom" — {@see
+     * \App\Service\OrganizationHierarchy} derives everything from it, never from a unit's manager.
+     */
+    #[ORM\Column(name: 'hierarchy_level', nullable: true)]
+    private ?int $hierarchyLevel = null;
+
     /** @var Collection<int, User> */
     #[ORM\ManyToMany(targetEntity: User::class, mappedBy: 'assignedRoles')]
     private Collection $users;
@@ -152,6 +164,34 @@ class Role implements Auditable
         $this->perDepartment = $perDepartment;
 
         return $this;
+    }
+
+    /**
+     * The chain-of-command rank, or null if the role carries no hierarchy. Higher is more senior.
+     *
+     * @return int|null the rank, or null when the role is not hierarchical
+     */
+    public function getHierarchyLevel(): ?int
+    {
+        return $this->hierarchyLevel;
+    }
+
+    public function setHierarchyLevel(?int $hierarchyLevel): static
+    {
+        $this->hierarchyLevel = $hierarchyLevel;
+
+        return $this;
+    }
+
+    /**
+     * Whether this role grants a position in the chain of command (a rank), as opposed to being a
+     * purely functional/permission role.
+     *
+     * @return bool true if the role has a hierarchy rank
+     */
+    public function isHierarchical(): bool
+    {
+        return null !== $this->hierarchyLevel;
     }
 
     /**

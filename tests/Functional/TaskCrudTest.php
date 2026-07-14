@@ -106,16 +106,20 @@ final class TaskCrudTest extends WebTestCase
         $form['task_form[dueDate]'] = '2026-09-15';
         $form['task_form[responsibilityRole]'] = (string) $roleId;
         $form['task_form[responsibilityUnit]'] = (string) $unitId;
+        $form['task_form[responsibilityUser]'] = (string) $creator->getId();
         $this->client->submit($form);
 
         self::assertResponseRedirects();
+        $creatorId = $creator->getId();
         $this->em->clear();
         $task = $this->em->getRepository(Task::class)->findOneBy(['title' => 'Preparar la evaluación']);
         self::assertNotNull($task);
-        self::assertSame($creator->getId(), $task->getCreatedBy()?->getId());
+        self::assertSame($creatorId, $task->getCreatedBy()?->getId());
         self::assertNotNull($task->getResponsibility());
         self::assertSame($roleId, $task->getResponsibility()->getRole()->getId());
         self::assertSame($unitId, $task->getResponsibility()->getUnit()?->getId());
+        // The chosen person is stored as the assignee.
+        self::assertSame($creatorId, $task->getAssignedUser()?->getId());
     }
 
     public function testCannotCreateTaskDueOnAWeekend(): void
@@ -169,9 +173,12 @@ final class TaskCrudTest extends WebTestCase
         $this->em->persist($direction);
         $this->em->persist($ccp);
         $creator = $this->user('director@centro.test', $unit);
-        // A centre-wide responsibility to start with (no department).
+        // The creator holds both centre-wide roles, so they are a valid responsible person for either.
+        $creator->addAssignedRole($direction);
+        $creator->addAssignedRole($ccp);
+        // A centre-wide responsibility to start with (no department), assigned to the creator.
         $task = new Task('Acta de reunión', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
-        $task->setResponsibility(new TaskResponsibility($direction, null))->setCreatedBy($creator);
+        $task->setResponsibility(new TaskResponsibility($direction, null))->setAssignedUser($creator)->setCreatedBy($creator);
         $this->em->persist($task);
         $this->em->flush();
         $ccpId = (int) $ccp->getId();
@@ -182,6 +189,7 @@ final class TaskCrudTest extends WebTestCase
         self::assertSelectorExists('[name="task_form[responsibilityRole]"]');
         $form = $crawler->selectButton('Guardar')->form();
         $form['task_form[responsibilityRole]'] = (string) $ccpId;
+        $form['task_form[responsibilityUser]'] = (string) $creator->getId();
         $this->client->submit($form);
 
         self::assertResponseRedirects();
@@ -191,34 +199,77 @@ final class TaskCrudTest extends WebTestCase
         self::assertSame($ccpId, $reloaded->getResponsibility()?->getRole()->getId());
     }
 
-    public function testResponsiblesEndpointResolvesRolePlusDepartment(): void
+    public function testTaskAssignsTheChosenPersonAmongSeveralRoleHolders(): void
     {
         $dept = (new Unit())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($dept);
         $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
         $this->em->persist($teacherRole);
-        $ana = $this->user('ana@centro.test', $dept);
-        $ana->addAssignedRole($teacherRole);
-        $viewer = $this->user('dir@centro.test');
+        // Two teachers hold the role in the department; the creator must pick one, not get both.
+        $creator = $this->user('ana@centro.test', $dept);
+        $creator->addAssignedRole($teacherRole);
+        $other = $this->user('otro@centro.test', $dept);
+        $other->addAssignedRole($teacherRole);
         $this->em->flush();
+        $creatorId = $creator->getId();
+        $this->client->loginUser($creator);
 
-        $this->client->loginUser($viewer);
-        $this->client->request('GET', '/tareas/responsables?role='.$teacherRole->getId().'&unit='.$dept->getId());
+        $crawler = $this->client->request('GET', '/tareas/nueva');
+        $form = $crawler->selectButton('Crear tarea')->form();
+        $form['task_form[title]'] = 'Acta del docente';
+        $form['task_form[dueDate]'] = '2026-09-15';
+        $form['task_form[responsibilityRole]'] = (string) $teacherRole->getId();
+        $form['task_form[responsibilityUnit]'] = (string) $dept->getId();
+        $form['task_form[responsibilityUser]'] = (string) $creatorId;
+        $this->client->submit($form);
 
-        self::assertResponseIsSuccessful();
-        $data = json_decode((string) $this->client->getResponse()->getContent(), true);
-        self::assertSame(['Ana Test'], $data['holders']);
+        self::assertResponseRedirects();
+        $this->em->clear();
+        $task = $this->em->getRepository(Task::class)->findOneBy(['title' => 'Acta del docente']);
+        self::assertNotNull($task);
+        // Assigned to the chosen teacher only, even though the role resolves to several holders.
+        self::assertSame($creatorId, $task->getAssignedUser()?->getId());
+    }
+
+    public function testCannotAssignTaskToAPersonWhoDoesNotHoldTheRole(): void
+    {
+        $dept = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($dept);
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
+        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
+        $this->em->persist($teacherRole);
+        $this->em->persist($headRole);
+        // The creator is head of the department (ranked), so they command it and the outsider is within
+        // their assignable scope; the outsider is a member of the same department but holds no role.
+        $creator = $this->user('ana@centro.test', $dept);
+        $creator->addAssignedRole($headRole);
+        $outsider = $this->user('sinrol@centro.test', $dept);
+        $this->em->flush();
+        $this->client->loginUser($creator);
+
+        $crawler = $this->client->request('GET', '/tareas/nueva');
+        $form = $crawler->selectButton('Crear tarea')->form();
+        $form['task_form[title]'] = 'Tarea mal asignada';
+        $form['task_form[dueDate]'] = '2026-09-15';
+        $form['task_form[responsibilityRole]'] = (string) $teacherRole->getId();
+        $form['task_form[responsibilityUnit]'] = (string) $dept->getId();
+        $form['task_form[responsibilityUser]'] = (string) $outsider->getId();
+        $this->client->submit($form);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertNull($this->em->getRepository(Task::class)->findOneBy(['title' => 'Tarea mal asignada']));
     }
 
     public function testSuperiorCanWorkOnASubordinatesTask(): void
     {
-        // studies is the parent of maths, so the head of studies is a superior of a maths teacher.
-        $studies = (new Unit())->setCode('studies')->setName('Jefatura de estudios');
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas')->setParent($studies);
-        $this->em->persist($studies);
+        // The head of studies holds a centre-wide ranked role, so they command every department and
+        // outrank a maths teacher's task.
+        $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($maths);
-        $headStudies = $this->user('jefatura@centro.test', $studies);
-        $studies->setManager($headStudies);
+        $headStudiesRole = (new Role())->setCode('head_of_studies')->setName('Jefatura de estudios')->setHierarchyLevel(30);
+        $this->em->persist($headStudiesRole);
+        $headStudies = $this->user('jefatura@centro.test', $maths);
+        $headStudies->addAssignedRole($headStudiesRole);
         $teacher = $this->user('profe@centro.test', $maths);
         // A task owned by the teacher — the head of studies is neither its assignee nor a role holder.
         $task = new Task('Acta', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
@@ -265,17 +316,18 @@ final class TaskCrudTest extends WebTestCase
 
     public function testSuperiorCanDelegateToASubordinate(): void
     {
-        // A head who manages their own department and a member in it — the head is that member's superior.
+        // A head of department (per-department ranked role) commands their own department, so they may
+        // delegate their own jefatura task to a member of it.
         $dept = (new Unit())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($dept);
-        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true);
+        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
         $this->em->persist($headRole);
         $boss = $this->user('jefa@centro.test', $dept);
-        $dept->setManager($boss);
+        $boss->addAssignedRole($headRole);
         $member = $this->user('profe@centro.test', $dept);
         // A department task ("jefatura de departamento de Matemáticas"), which the head delegates to a member.
         $task = new Task('Memoria', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
-        $task->setUnit($dept)->setResponsibility(new TaskResponsibility($headRole, $dept))->setCreatedBy($boss);
+        $task->setUnit($dept)->setResponsibility(new TaskResponsibility($headRole, $dept))->setAssignedUser($boss)->setCreatedBy($boss);
         $this->em->persist($task);
         $this->em->flush();
         $memberId = (int) $member->getId();

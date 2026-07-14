@@ -118,9 +118,13 @@
             {{ form_errors(form.responsibilityUnit) }}
         </div>
     {% endif %}
-    {#- Vista previa (task-form.js): a quién resuelve el rol + departamento elegido. -#}
-    <div class="form-row" data-responsibles data-responsibles-url="{{ path('task_responsibles') }}">
-        <span class="form-label-lite">Responsable(s)</span>
-        <p class="responsables" data-responsibles-list>—</p>
+    {#- Tercer paso de la cascada: la persona, acotada por task-form.js a quien tiene el rol en el
+       departamento elegido. Sin JS se ven todos los candidatos y la validación del servidor rechaza
+       una elección que no corresponda. -#}
+    <div class="form-row" data-resp-user-step="1">
+        {{ form_label(form.responsibilityUser) }}
+        {{ form_widget(form.responsibilityUser) }}
+        {% if form.responsibilityUser.vars.help %}<p class="help">{{ form.responsibilityUser.vars.help }}</p>{% endif %}
+        {{ form_errors(form.responsibilityUser) }}
     </div>
 {% endmacro %}

@@ -281,18 +281,15 @@ final class CalendarPageTest extends WebTestCase
     {
         // A director on top of maths sees a colleague's task through the hierarchy but does not own it,
         // so the day view must show it without an actionable "done" toggle (which would 403 on submit).
-        $directionRole = (new Role())->setCode('direction')->setName('Dirección');
+        $directionRole = (new Role())->setCode('direction')->setName('Dirección')->setHierarchyLevel(40);
         $this->em->persist($directionRole);
 
-        $director = (new User())->setFullName('Ana Directora')->setEmail('director@centro.test')->addAssignedRole($directionRole);
-        $colleague = (new User())->setFullName('Sara Colega')->setEmail('colega@centro.test');
-        array_map($this->em->persist(...), [$director, $colleague]);
+        $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($maths);
 
-        $management = (new Unit())->setCode('mgmt')->setName('Dirección')->setManager($director);
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas')->setParent($management);
-        array_map($this->em->persist(...), [$management, $maths]);
-        $director->setUnit($management);
-        $colleague->setUnit($maths);
+        $director = (new User())->setFullName('Ana Directora')->setEmail('director@centro.test')->setUnit($maths)->addAssignedRole($directionRole);
+        $colleague = (new User())->setFullName('Sara Colega')->setEmail('colega@centro.test')->setUnit($maths);
+        array_map($this->em->persist(...), [$director, $colleague]);
 
         $due = new \DateTimeImmutable('2026-07-15');
         $task = (new Task('Memoria de la colega', SchoolYear::current($due), $due, TaskType::SIMPLE))->setUnit($maths)->setAssignedUser($colleague);

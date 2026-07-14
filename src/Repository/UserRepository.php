@@ -53,6 +53,25 @@ class UserRepository extends ServiceEntityRepository
     }
 
     /**
+     * Active users who hold at least one role with a chain-of-command rank (dirección, jefatura de
+     * estudios, adjunto, jefe de departamento). The set of potential superiors, from which
+     * {@see \App\Service\OrganizationHierarchy::managersAbove()} picks those above a given task. Small
+     * by nature (only the leadership), so resolving each user's full role set afterwards is cheap.
+     *
+     * @return User[] the active holders of any ranked role
+     */
+    public function findWithHierarchyRank(): array
+    {
+        return $this->createQueryBuilder('u')
+            ->join('u.assignedRoles', 'r')
+            ->where('r.hierarchyLevel IS NOT NULL')
+            ->andWhere('u.active = true')
+            ->distinct()
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * Active users belonging to any of the given units, by full name. Used to build the "assign to"
      * choices, scoped to a creator's own unit and the units below it.
      *

@@ -6,6 +6,7 @@ namespace App\Tests\Functional;
 
 use App\Entity\Role;
 use App\Entity\Task;
+use App\Entity\TaskResponsibility;
 use App\Entity\Unit;
 use App\Entity\User;
 use App\Enum\TaskType;
@@ -147,15 +148,15 @@ final class DesignPagesTest extends WebTestCase
 
     public function testSuperiorNonAdminSeesActivityHistory(): void
     {
-        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento');
-        $this->em->persist($headRole);
-        $head = $this->user('jefa@centro.test', $headRole);
-
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas')->setManager($head);
+        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
+        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
+        $this->em->persist($headRole);
+        $head = $this->user('jefa@centro.test', $headRole)->setUnit($unit);
 
         $task = new Task('Memoria del departamento', SchoolYear::current(new \DateTimeImmutable()), new \DateTimeImmutable('2026-06-30'), TaskType::WITH_DELIVERABLE);
-        $task->setUnit($unit);
+        // A jefatura task in Maths — the head of Maths owns it and may open its detail.
+        $task->setUnit($unit)->setResponsibility(new TaskResponsibility($headRole, $unit));
         $this->em->persist($task);
         $this->em->flush();
 

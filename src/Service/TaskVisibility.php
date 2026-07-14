@@ -60,6 +60,6 @@ final class TaskVisibility
      */
     public function isVisibleTo(Task $task, User $user, bool $isAdmin): bool
     {
-        return $isAdmin || $task->isOwnedBy($user) || $this->hierarchy->isSuperiorOf($user, $task->getUnit());
+        return $isAdmin || $task->isOwnedBy($user) || $this->hierarchy->isSuperiorOfTask($user, $task);
     }
 }

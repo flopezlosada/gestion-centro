@@ -48,22 +48,33 @@ final class DemoFixtures extends AbstractDemoFixture implements DependentFixture
             ->setTerm3End(new \DateTimeImmutable(($startYear + 1).'-06-22'));
         $manager->persist($academicYear);
 
-        $director = (new User())->setFullName('Ana Directora')->setEmail('director@centro.test')->addAssignedRole($this->role('direction'));
+        // The leadership people also teach in a department: they carry their leadership role AND the
+        // Docente role, so they show up as valid responsibles for a teaching task in their department.
+        $director = (new User())->setFullName('Ana Directora')->setEmail('director@centro.test')->addAssignedRole($this->role('direction'))->addAssignedRole($this->role('teacher'));
         $ticUser = (new User())->setFullName('Tomás TIC')->setEmail('tic@centro.test')->addAssignedRole($this->role('tic'));
-        $headStudies = (new User())->setFullName('Luis Jefatura')->setEmail('jefatura@centro.test')->addAssignedRole($this->role('head_of_studies'));
-        $mathsHead = (new User())->setFullName('María Matemáticas')->setEmail('mates@centro.test')->addAssignedRole($this->role('head_dept'));
+        $headStudies = (new User())->setFullName('Luis Jefatura')->setEmail('jefatura@centro.test')->addAssignedRole($this->role('head_of_studies'))->addAssignedRole($this->role('teacher'));
+        $mathsHead = (new User())->setFullName('María Matemáticas')->setEmail('mates@centro.test')->addAssignedRole($this->role('head_dept'))->addAssignedRole($this->role('teacher'));
         $teacher = (new User())->setFullName('Pedro Docente')->setEmail('profe@centro.test')->addAssignedRole($this->role('teacher'));
-        array_map($manager->persist(...), [$director, $ticUser, $headStudies, $mathsHead, $teacher]);
+        // A few more maths teachers so the per-department "Docente" role resolves to several people
+        // and the responsibility preview can be seen with more than one holder.
+        $mathsTeachers = array_map(
+            fn (array $person): User => (new User())->setFullName($person[0])->setEmail($person[1])->addAssignedRole($this->role('teacher')),
+            [['Lucía Álgebra', 'lucia@centro.test'], ['Carlos Geometría', 'carlos@centro.test'], ['Nuria Cálculo', 'nuria@centro.test']],
+        );
+        array_map($manager->persist(...), [$director, $ticUser, $headStudies, $mathsHead, $teacher, ...$mathsTeachers]);
 
         $management = (new Unit())->setCode('management')->setName('Dirección')->setManager($director)->setIsDepartment(false);
         $studies = (new Unit())->setCode('head_of_studies')->setName('Jefatura de estudios')->setManager($headStudies)->setParent($management)->setIsDepartment(false);
         $maths = (new Unit())->setCode('maths')->setName('Departamento de Matemáticas')->setManager($mathsHead)->setParent($studies);
         array_map($manager->persist(...), [$management, $studies, $maths]);
 
-        $director->setUnit($management);
-        $headStudies->setUnit($studies);
+        // Everyone's home department is Maths in the demo (where they teach); the management/studies
+        // boxes are the leadership scope they command, not where they belong.
+        $director->setUnit($maths);
+        $headStudies->setUnit($maths);
         $mathsHead->setUnit($maths);
         $teacher->setUnit($maths);
+        array_map(static fn (User $t): User => $t->setUnit($maths), $mathsTeachers);
 
         $reportTpl = $this->getReference(TaskTemplateFixtures::REPORT, TaskTemplate::class);
         $meetingTpl = $this->getReference(TaskTemplateFixtures::MEETING, TaskTemplate::class);

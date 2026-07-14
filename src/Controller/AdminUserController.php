@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Entity\Role;
 use App\Entity\User;
 use App\Enum\Area;
 use App\Form\UserType;
@@ -11,6 +12,7 @@ use App\Repository\UnitRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
 use App\Service\AuditLogger;
+use App\Service\RankedRoleHandover;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -27,8 +29,10 @@ use Symfony\Component\Routing\Attribute\Route;
 #[Route('/admin/usuarios')]
 final class AdminUserController extends AbstractController
 {
-    public function __construct(private readonly AuditLogger $auditLogger)
-    {
+    public function __construct(
+        private readonly AuditLogger $auditLogger,
+        private readonly RankedRoleHandover $handover,
+    ) {
     }
 
     /**
@@ -88,6 +92,9 @@ final class AdminUserController extends AbstractController
         // accounts. Snapshot the pre-bind state so editing an admin account is blocked too.
         $isSuperuser = $this->isGranted('ROLE_ADMIN');
         $touchedAdminAccount = !$isSuperuser && $this->hasAdminRole($user);
+        // Which ranked (chain-of-command) roles the user held BEFORE this edit, so we can detect the
+        // ones newly gained and hand their tasks over (the "arrastre").
+        $rankedBefore = $this->rankedRoleIds($user);
 
         $form = $this->createForm(UserType::class, $user);
         $form->handleRequest($request);
@@ -95,6 +102,12 @@ final class AdminUserController extends AbstractController
         if ($form->isSubmitted() && $form->isValid()) {
             if (!$isSuperuser && ($touchedAdminAccount || $this->hasAdminRole($user))) {
                 throw $this->createAccessDeniedException('Solo un administrador puede gestionar cuentas con rol de administrador.');
+            }
+
+            // Taking over a hierarchy post pulls its open, current-course tasks to the new holder. Done
+            // before the flush so the reassignment and the role change persist together.
+            foreach ($this->newlyGainedRankedRoles($user, $rankedBefore) as $role) {
+                $this->handover->toNewHolder($user, $role, new \DateTimeImmutable());
             }
 
             $em->persist($user);
@@ -133,5 +146,45 @@ final class AdminUserController extends AbstractController
         }
 
         return false;
+    }
+
+    /**
+     * The ids of the ranked (chain-of-command) roles the user currently holds.
+     *
+     * @param User $user the user to inspect
+     *
+     * @return array<int, true> a lookup set of ranked role ids
+     */
+    private function rankedRoleIds(User $user): array
+    {
+        $ids = [];
+        foreach ($user->getAssignedRoles() as $role) {
+            if ($role->isHierarchical() && null !== $role->getId()) {
+                $ids[$role->getId()] = true;
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
+     * The ranked roles the user holds now that were not in the given "before" set: the posts they have
+     * just taken over.
+     *
+     * @param User             $user   the user after the edit
+     * @param array<int, true> $before the ranked role ids held before the edit
+     *
+     * @return list<Role> the newly gained ranked roles
+     */
+    private function newlyGainedRankedRoles(User $user, array $before): array
+    {
+        $gained = [];
+        foreach ($user->getAssignedRoles() as $role) {
+            if ($role->isHierarchical() && null !== $role->getId() && !isset($before[$role->getId()])) {
+                $gained[] = $role;
+            }
+        }
+
+        return $gained;
     }
 }

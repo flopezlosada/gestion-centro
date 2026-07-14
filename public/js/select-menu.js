@@ -80,23 +80,34 @@
         }
 
         var optionEls = [];
-        Array.prototype.forEach.call(select.options, function (opt, index) {
-            var li = document.createElement('li');
-            li.className = 'cselect__option';
-            li.id = id + '-opt-' + index;
-            li.setAttribute('role', 'option');
-            li.dataset.value = opt.value;
-            li.textContent = opt.textContent;
-            li.setAttribute('aria-selected', opt.selected ? 'true' : 'false');
-            list.appendChild(li);
-            optionEls.push(li);
-        });
 
         function syncButtonText() {
             var selected = select.options[select.selectedIndex];
             valueSpan.textContent = selected ? selected.textContent : '';
         }
-        syncButtonText();
+
+        // (Re)builds the listbox from the native <select>'s current options. Exposed as
+        // select.cselectRefresh so callers that add/remove options at runtime (e.g. task-form.js
+        // narrowing the person list) can keep this enhanced menu in sync — otherwise it would keep
+        // showing the snapshot taken when it was first enhanced.
+        function rebuild() {
+            list.textContent = '';
+            optionEls.length = 0;
+            Array.prototype.forEach.call(select.options, function (opt, index) {
+                var li = document.createElement('li');
+                li.className = 'cselect__option';
+                li.id = id + '-opt-' + index;
+                li.setAttribute('role', 'option');
+                li.dataset.value = opt.value;
+                li.textContent = opt.textContent;
+                li.setAttribute('aria-selected', opt.selected ? 'true' : 'false');
+                list.appendChild(li);
+                optionEls.push(li);
+            });
+            syncButtonText();
+        }
+        rebuild();
+        select.cselectRefresh = rebuild;
 
         var activeIndex = select.selectedIndex < 0 ? 0 : select.selectedIndex;
 

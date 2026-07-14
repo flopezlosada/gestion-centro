@@ -70,10 +70,16 @@ final class TaskReminderNotifierTest extends KernelTestCase
     public function testOverdueTaskIsEscalatedToTheManager(): void
     {
         $today = new \DateTimeImmutable('2026-01-10');
-        $head = $this->user('jefa@centro.test');
-        $teacher = $this->user('profe@centro.test');
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas')->setManager($head);
+        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
+        // The head of the department holds a per-department ranked role, so they command it and are the
+        // nearest superior to escalate an overdue maths task to.
+        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
+        $this->em->persist($headRole);
+        $head = $this->user('jefa@centro.test');
+        $head->setUnit($unit)->addAssignedRole($headRole);
+        $teacher = $this->user('profe@centro.test');
+        $teacher->setUnit($unit);
         // Overdue by exactly one day, still pending.
         $this->task($today->modify('-1 day'), $unit)->setAssignedUser($teacher);
         $this->em->flush();

@@ -6,6 +6,7 @@ namespace App\Form;
 
 use App\Entity\Role;
 use App\Entity\Unit;
+use App\Entity\User;
 use App\Service\SchoolCalendar;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
@@ -20,8 +21,10 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /**
  * Create/edit form for a task. The responsibility is a cascade: pick a role, then — only if the role
- * is per-department — the department. Each role option carries data-per-department so task-form.js can
- * show the department step only when it applies. The lifecycle is derived by the controller from the
+ * is per-department — the department, and finally the concrete person. Each role option carries
+ * data-per-department so task-form.js can show the department step only when it applies; each person
+ * option carries data-roles/data-unit so the JS narrows the person list to those who hold the chosen
+ * role in the chosen department (a coupled choice). The lifecycle is derived by the controller from the
  * single deliverable toggle, shown only on creation ({@see $options['include_deliverable']}).
  *
  * @extends AbstractType<TaskFormData>
@@ -60,8 +63,22 @@ final class TaskFormType extends AbstractType
                 'choice_label' => 'name',
                 'required' => false,
                 'placeholder' => '— Elige departamento —',
-                'help' => 'Responsable = quien tenga ese rol en ese departamento en cada momento.',
+                'help' => 'Solo los departamentos: acota a quién tiene el rol dentro de él.',
                 'row_attr' => ['data-dept-step' => '1'],
+            ])
+            ->add('responsibilityUser', EntityType::class, [
+                'label' => 'Persona responsable',
+                'class' => User::class,
+                'choices' => $options['assignable_users'],
+                'choice_label' => 'fullName',
+                'placeholder' => '— Elige la persona —',
+                'help' => 'Solo quienes tienen ese rol en ese departamento. Luego un superior puede reasignarla.',
+                // task-form.js filters this list by the chosen role + department using these attributes.
+                'choice_attr' => static fn (User $candidate): array => [
+                    'data-roles' => implode(' ', $candidate->getAssignedRoles()->map(static fn (Role $role): int => (int) $role->getId())->toArray()),
+                    'data-unit' => (string) ($candidate->getUnit()?->getId() ?? ''),
+                ],
+                'row_attr' => ['data-resp-user-step' => '1'],
             ])
             ->add('mandatory', CheckboxType::class, [
                 'label' => 'Obligatoria',
@@ -102,10 +119,12 @@ final class TaskFormType extends AbstractType
             'data_class' => TaskFormData::class,
             'assignable_roles' => [],
             'assignable_units' => [],
+            'assignable_users' => [],
             'include_deliverable' => true,
         ]);
         $resolver->setAllowedTypes('assignable_roles', 'array');
         $resolver->setAllowedTypes('assignable_units', 'array');
+        $resolver->setAllowedTypes('assignable_users', 'array');
         $resolver->setAllowedTypes('include_deliverable', 'bool');
     }
 }

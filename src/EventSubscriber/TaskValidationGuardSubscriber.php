@@ -70,8 +70,8 @@ final class TaskValidationGuardSubscriber
             return;
         }
 
-        if (!$this->hierarchy->isSuperiorOf($actor, $task->getUnit())) {
-            $event->setBlocked(true, 'Solo un superior de la unidad puede validar o devolver esta tarea.');
+        if (!$this->hierarchy->isSuperiorOfTask($actor, $task)) {
+            $event->setBlocked(true, 'Solo un superior por rango puede validar o devolver esta tarea.');
         }
     }
 }

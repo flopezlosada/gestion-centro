@@ -6,6 +6,7 @@ namespace App\Repository;
 
 use App\Entity\Role;
 use App\Entity\Task;
+use App\Entity\Unit;
 use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
@@ -122,6 +123,38 @@ class TaskRepository extends ServiceEntityRepository
             ->orderBy('t.dueDate', 'ASC')
             ->getQuery()
             ->getResult();
+    }
+
+    /**
+     * Open (not yet validated) tasks of a course whose structural responsibility is a given role in a
+     * given scope. Used to hand over a ranked role's current tasks to a new holder when the post
+     * changes (jefe de departamento, jefatura de estudios, dirección…). A null unit matches centre-wide
+     * responsibilities (which store no department).
+     *
+     * @param Role      $role       the responsibility role
+     * @param Unit|null $unit       the department the responsibility is scoped to, or null for centre-wide
+     * @param string    $schoolYear the course in "YYYY-YYYY" form
+     *
+     * @return Task[] the matching open tasks
+     */
+    public function findOpenByResponsibility(Role $role, ?Unit $unit, string $schoolYear): array
+    {
+        $qb = $this->createQueryBuilder('t')
+            ->join('t.responsibility', 'resp')
+            ->andWhere('resp.role = :role')
+            ->andWhere('t.schoolYear = :year')
+            ->andWhere('t.status != :closed')
+            ->setParameter('role', $role)
+            ->setParameter('year', $schoolYear)
+            ->setParameter('closed', 'validated');
+
+        if (null === $unit) {
+            $qb->andWhere('resp.unit IS NULL');
+        } else {
+            $qb->andWhere('resp.unit = :unit')->setParameter('unit', $unit);
+        }
+
+        return $qb->getQuery()->getResult();
     }
 
     /**

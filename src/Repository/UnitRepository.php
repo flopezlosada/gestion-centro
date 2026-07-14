@@ -17,4 +17,20 @@ class UnitRepository extends ServiceEntityRepository
     {
         parent::__construct($registry, Unit::class);
     }
+
+    /**
+     * Active departments, by name. The set a whole-school superior (dirección, jefatura de estudios)
+     * may target when creating a task.
+     *
+     * @return Unit[] the active departments
+     */
+    public function findActiveDepartments(): array
+    {
+        return $this->createQueryBuilder('u')
+            ->andWhere('u.active = true')
+            ->andWhere('u.isDepartment = true')
+            ->orderBy('u.name', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
 }
