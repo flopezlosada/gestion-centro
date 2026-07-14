@@ -348,9 +348,9 @@ final class AdminPanelTest extends WebTestCase
         self::assertResponseIsSuccessful();
 
         $form = $crawler->selectButton('Guardar')->form([
-            'unit[code]' => 'maths',
-            'unit[name]' => 'Matemáticas',
-            'unit[active]' => true,
+            'department[code]' => 'maths',
+            'department[name]' => 'Matemáticas',
+            'department[active]' => true,
         ]);
         $this->client->submit($form);
 
