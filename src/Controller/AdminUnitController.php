@@ -25,7 +25,7 @@ use Symfony\Component\Routing\Attribute\Route;
  * context and the database-level ON DELETE SET NULL on referencing rows never fires unaudited. Gated
  * per action by write permission on the {@see Area::ADMINISTRATION} area.
  */
-#[Route('/admin/unidades')]
+#[Route('/admin/departamentos')]
 final class AdminUnitController extends AbstractController
 {
     public function __construct(private readonly AuditLogger $auditLogger)
@@ -35,12 +35,12 @@ final class AdminUnitController extends AbstractController
     /**
      * Lists the departments (flat, by name) so they can be searched, sorted and filtered.
      */
-    #[Route('', name: 'admin_unit_index', methods: ['GET'])]
+    #[Route('', name: 'admin_department_index', methods: ['GET'])]
     public function index(DepartmentRepository $units): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
 
-        return $this->render('admin/unit/index.html.twig', [
+        return $this->render('admin/department/index.html.twig', [
             'departments' => $units->findBy([], ['name' => 'ASC']),
         ]);
     }
@@ -49,7 +49,7 @@ final class AdminUnitController extends AbstractController
      * Shows a department: the people who belong to it and its head (derived read-only from whoever
      * holds the "jefatura de departamento" role, not a separate field).
      */
-    #[Route('/{id}', name: 'admin_unit_show', requirements: ['id' => '\d+'], methods: ['GET'])]
+    #[Route('/{id}', name: 'admin_department_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function show(Department $unit, UserRepository $users): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
@@ -57,7 +57,7 @@ final class AdminUnitController extends AbstractController
         $members = $users->findByUnit($unit);
         $head = array_values(array_filter($members, static fn (User $m): bool => $m->holdsRoleCode('head_dept')))[0] ?? null;
 
-        return $this->render('admin/unit/show.html.twig', [
+        return $this->render('admin/department/show.html.twig', [
             'unit' => $unit,
             'members' => $members,
             'head' => $head,
@@ -69,7 +69,7 @@ final class AdminUnitController extends AbstractController
     /**
      * Adds a person to the department (moving them from any previous one).
      */
-    #[Route('/{id}/profesorado', name: 'admin_unit_add_member', requirements: ['id' => '\d+'], methods: ['POST'])]
+    #[Route('/{id}/profesorado', name: 'admin_department_add_member', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function addMember(Department $unit, Request $request, UserRepository $users, EntityManagerInterface $em): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
@@ -84,7 +84,7 @@ final class AdminUnitController extends AbstractController
             $this->addFlash('success', sprintf('%s añadido/a al departamento.', $user->getFullName()));
         }
 
-        return $this->redirectToRoute('admin_unit_show', ['id' => $unit->getId()]);
+        return $this->redirectToRoute('admin_department_show', ['id' => $unit->getId()]);
     }
 
     /**
@@ -92,7 +92,7 @@ final class AdminUnitController extends AbstractController
      * role, if any, is handled in the user editor — belonging to a department is separate from holding
      * a role.
      */
-    #[Route('/{id}/profesorado/{userId}/quitar', name: 'admin_unit_remove_member', requirements: ['id' => '\d+', 'userId' => '\d+'], methods: ['POST'])]
+    #[Route('/{id}/profesorado/{userId}/quitar', name: 'admin_department_remove_member', requirements: ['id' => '\d+', 'userId' => '\d+'], methods: ['POST'])]
     public function removeMember(Department $unit, int $userId, Request $request, UserRepository $users, EntityManagerInterface $em): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
@@ -107,13 +107,13 @@ final class AdminUnitController extends AbstractController
             $this->addFlash('success', sprintf('%s quitado/a del departamento.', $user->getFullName()));
         }
 
-        return $this->redirectToRoute('admin_unit_show', ['id' => $unit->getId()]);
+        return $this->redirectToRoute('admin_department_show', ['id' => $unit->getId()]);
     }
 
     /**
      * Creates a new unit (active by default).
      */
-    #[Route('/nueva', name: 'admin_unit_new', methods: ['GET', 'POST'])]
+    #[Route('/nueva', name: 'admin_department_new', methods: ['GET', 'POST'])]
     public function new(Request $request, EntityManagerInterface $em): Response
     {
         return $this->handleForm((new Department())->setActive(true), $request, $em, true);
@@ -122,7 +122,7 @@ final class AdminUnitController extends AbstractController
     /**
      * Edits an existing department.
      */
-    #[Route('/{id}/editar', name: 'admin_unit_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
+    #[Route('/{id}/editar', name: 'admin_department_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
     public function edit(Department $unit, Request $request, EntityManagerInterface $em): Response
     {
         return $this->handleForm($unit, $request, $em, false);
@@ -132,7 +132,7 @@ final class AdminUnitController extends AbstractController
      * Permanently deletes a department. Its people are left without one and referencing rows are set
      * null at the database level; use "desactivar" (edit) instead to keep it for the record.
      */
-    #[Route('/{id}/borrar', name: 'admin_unit_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
+    #[Route('/{id}/borrar', name: 'admin_department_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function delete(Department $unit, Request $request, EntityManagerInterface $em): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
@@ -147,7 +147,7 @@ final class AdminUnitController extends AbstractController
         $this->auditLogger->log('unit.deleted', 'Unit', $id, $summary);
         $this->addFlash('success', 'Departamento eliminado.');
 
-        return $this->redirectToRoute('admin_unit_index');
+        return $this->redirectToRoute('admin_department_index');
     }
 
     /**
@@ -179,10 +179,10 @@ final class AdminUnitController extends AbstractController
             );
             $this->addFlash('success', 'Departamento guardado.');
 
-            return $this->redirectToRoute('admin_unit_index');
+            return $this->redirectToRoute('admin_department_index');
         }
 
-        return $this->render('admin/unit/form.html.twig', [
+        return $this->render('admin/department/form.html.twig', [
             'form' => $form,
             'unit' => $unit,
         ]);

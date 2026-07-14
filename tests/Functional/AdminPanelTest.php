@@ -99,7 +99,7 @@ final class AdminPanelTest extends WebTestCase
         $this->em->flush();
 
         $this->client->loginUser($this->admin());
-        $this->client->request('GET', '/admin/unidades');
+        $this->client->request('GET', '/admin/departamentos');
 
         self::assertResponseIsSuccessful();
         self::assertSelectorTextContains('table', 'Equipo directivo');
@@ -113,10 +113,10 @@ final class AdminPanelTest extends WebTestCase
         $id = $unit->getId();
 
         $this->client->loginUser($this->admin());
-        $crawler = $this->client->request('GET', '/admin/unidades');
+        $crawler = $this->client->request('GET', '/admin/departamentos');
         $this->client->submit($crawler->selectButton('Borrar')->form());
 
-        self::assertResponseRedirects('/admin/unidades');
+        self::assertResponseRedirects('/admin/departamentos');
         self::assertNull($this->em->getRepository(Department::class)->find($id));
     }
 
@@ -134,7 +134,7 @@ final class AdminPanelTest extends WebTestCase
         $this->em->flush();
 
         $this->client->loginUser($this->admin());
-        $this->client->request('GET', '/admin/unidades/'.$maths->getId());
+        $this->client->request('GET', '/admin/departamentos/'.$maths->getId());
 
         self::assertResponseIsSuccessful();
         self::assertSelectorTextContains('h1', 'Matemáticas');
@@ -155,9 +155,9 @@ final class AdminPanelTest extends WebTestCase
         $this->client->loginUser($this->admin());
 
         // Add Ana to the department (she sorts first among the candidate rows).
-        $crawler = $this->client->request('GET', '/admin/unidades/'.$mathsId);
+        $crawler = $this->client->request('GET', '/admin/departamentos/'.$mathsId);
         $this->client->submit($crawler->selectButton('Añadir')->form());
-        self::assertResponseRedirects('/admin/unidades/'.$mathsId);
+        self::assertResponseRedirects('/admin/departamentos/'.$mathsId);
         $this->em->clear();
         self::assertSame('Matemáticas', $this->em->getRepository(User::class)->find($anaId)?->getUnit()?->getName());
     }
@@ -251,7 +251,7 @@ final class AdminPanelTest extends WebTestCase
     {
         $this->client->loginUser($this->teacher());
 
-        $this->client->request('GET', '/admin/unidades');
+        $this->client->request('GET', '/admin/departamentos');
 
         self::assertResponseStatusCodeSame(403);
     }
@@ -344,7 +344,7 @@ final class AdminPanelTest extends WebTestCase
     {
         $this->client->loginUser($this->admin());
 
-        $crawler = $this->client->request('GET', '/admin/unidades/nueva');
+        $crawler = $this->client->request('GET', '/admin/departamentos/nueva');
         self::assertResponseIsSuccessful();
 
         $form = $crawler->selectButton('Guardar')->form([
@@ -354,7 +354,7 @@ final class AdminPanelTest extends WebTestCase
         ]);
         $this->client->submit($form);
 
-        self::assertResponseRedirects('/admin/unidades');
+        self::assertResponseRedirects('/admin/departamentos');
 
         $created = $this->em->getRepository(Department::class)->findOneBy(['code' => 'maths']);
         self::assertInstanceOf(Department::class, $created);

@@ -4,7 +4,7 @@
 
 {% block breadcrumb %}
     <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
-    <a href="{{ path('admin_unit_index') }}">Departamentos</a><span class="sep">/</span>
+    <a href="{{ path('admin_department_index') }}">Departamentos</a><span class="sep">/</span>
     {{ unit.name }}
 {% endblock %}
 
@@ -14,7 +14,7 @@
             <h1>{{ unit.name }}</h1>
             <p class="lead">Jefatura: {{ head ? head.fullName : '— sin asignar —' }} <span class="help">(se asigna dando el rol de jefatura de departamento en la ficha del profesor)</span></p>
         </div>
-        <a class="btn secondary" href="{{ path('admin_unit_edit', { id: unit.id }) }}">Editar</a>
+        <a class="btn secondary" href="{{ path('admin_department_edit', { id: unit.id }) }}">Editar</a>
     </div>
 
     <div class="card">
@@ -35,7 +35,7 @@
                             <td>{{ m.fullName }}{% if isHead %} <span class="badge">Jefatura</span>{% endif %}</td>
                             <td class="mono">{{ m.email }}</td>
                             <td class="row-actions">
-                                <form method="post" action="{{ path('admin_unit_remove_member', { id: unit.id, userId: m.id }) }}" data-confirm="¿Quitar a {{ m.fullName }} del departamento?">
+                                <form method="post" action="{{ path('admin_department_remove_member', { id: unit.id, userId: m.id }) }}" data-confirm="¿Quitar a {{ m.fullName }} del departamento?">
                                     <input type="hidden" name="_token" value="{{ csrf_token('unit_remove_member' ~ m.id) }}">
                                     <button type="submit" class="link-danger">Quitar</button>
                                 </form>
@@ -68,7 +68,7 @@
                             <td>{{ c.fullName }}</td>
                             <td>{{ c.unit ? c.unit.name : '— sin departamento —' }}</td>
                             <td class="row-actions">
-                                <form method="post" action="{{ path('admin_unit_add_member', { id: unit.id }) }}">
+                                <form method="post" action="{{ path('admin_department_add_member', { id: unit.id }) }}">
                                     <input type="hidden" name="_token" value="{{ csrf_token('unit_add_member' ~ unit.id) }}">
                                     <input type="hidden" name="user" value="{{ c.id }}">
                                     <button type="submit" class="link-action">Añadir</button>
