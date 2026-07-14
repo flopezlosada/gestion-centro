@@ -214,4 +214,28 @@ class Role implements Auditable
     {
         return $this->users;
     }
+
+    /**
+     * Keeps the inverse side of the user↔role relation in sync in memory, so code reading
+     * {@see getUsers()} within the same unit of work (e.g. the live "responsables" preview) sees the
+     * holder at once. Call only from {@see User::addAssignedRole()}, the owning side.
+     *
+     * @param User $user the holder to link
+     */
+    public function linkHolder(User $user): void
+    {
+        if (!$this->users->contains($user)) {
+            $this->users->add($user);
+        }
+    }
+
+    /**
+     * Undoes {@see linkHolder()}. Call only from {@see User::removeAssignedRole()}.
+     *
+     * @param User $user the holder to unlink
+     */
+    public function unlinkHolder(User $user): void
+    {
+        $this->users->removeElement($user);
+    }
 }

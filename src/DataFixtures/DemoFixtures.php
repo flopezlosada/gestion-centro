@@ -55,8 +55,8 @@ final class DemoFixtures extends AbstractDemoFixture implements DependentFixture
         $teacher = (new User())->setFullName('Pedro Docente')->setEmail('profe@centro.test')->addAssignedRole($this->role('teacher'));
         array_map($manager->persist(...), [$director, $ticUser, $headStudies, $mathsHead, $teacher]);
 
-        $management = (new Unit())->setCode('management')->setName('Dirección')->setManager($director);
-        $studies = (new Unit())->setCode('head_of_studies')->setName('Jefatura de estudios')->setManager($headStudies)->setParent($management);
+        $management = (new Unit())->setCode('management')->setName('Dirección')->setManager($director)->setIsDepartment(false);
+        $studies = (new Unit())->setCode('head_of_studies')->setName('Jefatura de estudios')->setManager($headStudies)->setParent($management)->setIsDepartment(false);
         $maths = (new Unit())->setCode('maths')->setName('Departamento de Matemáticas')->setManager($mathsHead)->setParent($studies);
         array_map($manager->persist(...), [$management, $studies, $maths]);
 

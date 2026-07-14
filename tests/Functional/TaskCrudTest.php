@@ -191,6 +191,25 @@ final class TaskCrudTest extends WebTestCase
         self::assertSame($ccpId, $reloaded->getResponsibility()?->getRole()->getId());
     }
 
+    public function testResponsiblesEndpointResolvesRolePlusDepartment(): void
+    {
+        $dept = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($dept);
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
+        $this->em->persist($teacherRole);
+        $ana = $this->user('ana@centro.test', $dept);
+        $ana->addAssignedRole($teacherRole);
+        $viewer = $this->user('dir@centro.test');
+        $this->em->flush();
+
+        $this->client->loginUser($viewer);
+        $this->client->request('GET', '/tareas/responsables?role='.$teacherRole->getId().'&unit='.$dept->getId());
+
+        self::assertResponseIsSuccessful();
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true);
+        self::assertSame(['Ana Test'], $data['holders']);
+    }
+
     public function testSuperiorCanWorkOnASubordinatesTask(): void
     {
         // studies is the parent of maths, so the head of studies is a superior of a maths teacher.

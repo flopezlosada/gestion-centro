@@ -132,6 +132,7 @@ class User implements UserInterface, Auditable
     {
         if (!$this->assignedRoles->contains($role)) {
             $this->assignedRoles->add($role);
+            $role->linkHolder($this);
         }
 
         return $this;
@@ -139,7 +140,9 @@ class User implements UserInterface, Auditable
 
     public function removeAssignedRole(Role $role): static
     {
-        $this->assignedRoles->removeElement($role);
+        if ($this->assignedRoles->removeElement($role)) {
+            $role->unlinkHolder($this);
+        }
 
         return $this;
     }
