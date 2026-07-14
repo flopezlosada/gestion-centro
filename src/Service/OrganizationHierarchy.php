@@ -6,7 +6,7 @@ namespace App\Service;
 
 use App\Entity\Role;
 use App\Entity\Task;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Repository\UserRepository;
 
@@ -40,11 +40,11 @@ final class OrganizationHierarchy
      *
      * @param User      $actor      the potential superior
      * @param Role|null $targetRole the responsibility role to command (null → rank 0)
-     * @param Unit|null $dept       the department the responsibility is scoped to (null for centre-wide)
+     * @param Department|null $dept       the department the responsibility is scoped to (null for centre-wide)
      *
      * @return bool true if the actor's rank is strictly above the target, in scope
      */
-    public function outranks(User $actor, ?Role $targetRole, ?Unit $dept): bool
+    public function outranks(User $actor, ?Role $targetRole, ?Department $dept): bool
     {
         $target = $targetRole?->getHierarchyLevel() ?? 0;
 
@@ -132,9 +132,9 @@ final class OrganizationHierarchy
      *
      * @param User $actor the user
      *
-     * @return Unit|null the commanded department, or null
+     * @return Department|null the commanded department, or null
      */
-    public function commandedDepartment(User $actor): ?Unit
+    public function commandedDepartment(User $actor): ?Department
     {
         foreach ($actor->getAssignedRoles() as $role) {
             if (null !== $role->getHierarchyLevel() && $role->isPerDepartment()) {
@@ -150,7 +150,7 @@ final class OrganizationHierarchy
      * there (centre-wide roles always apply; per-department roles only in the actor's own department).
      * Null when the actor has no applicable rank.
      */
-    private function applicableRank(User $actor, ?Unit $dept): ?int
+    private function applicableRank(User $actor, ?Department $dept): ?int
     {
         $best = null;
         foreach ($actor->getAssignedRoles() as $role) {

@@ -7,7 +7,7 @@ namespace App\Form;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskResponsibility;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
@@ -36,7 +36,7 @@ final class TaskFormData
     public ?Role $responsibilityRole = null;
 
     /** The department (second step); required only when the role is per-department. */
-    public ?Unit $responsibilityUnit = null;
+    public ?Department $responsibilityUnit = null;
 
     /** The concrete responsible person (third step), one of the role + department holders. */
     public ?User $responsibilityUser = null;

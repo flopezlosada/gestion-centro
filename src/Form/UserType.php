@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Form;
 
 use App\Entity\Role;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
-use App\Repository\UnitRepository;
+use App\Repository\DepartmentRepository;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
@@ -40,13 +40,13 @@ final class UserType extends AbstractType
                 'required' => false,
             ])
             ->add('unit', EntityType::class, [
-                'class' => Unit::class,
+                'class' => Department::class,
                 'choice_label' => 'name',
                 'label' => 'Unidad',
                 'required' => false,
                 'placeholder' => '— Sin unidad —',
                 'help' => 'El departamento al que pertenece. Marca su sitio en el organigrama: de quién depende y a quién dirige. Es dónde está, no qué hace (eso son los roles).',
-                'query_builder' => static fn (UnitRepository $repo) => $repo->createQueryBuilder('u')->orderBy('u.name', 'ASC'),
+                'query_builder' => static fn (DepartmentRepository $repo) => $repo->createQueryBuilder('u')->orderBy('u.name', 'ASC'),
             ])
             ->add('assignedRoles', EntityType::class, [
                 'class' => Role::class,

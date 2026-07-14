@@ -6,7 +6,7 @@ namespace App\Tests\Integration;
 
 use App\Entity\Role;
 use App\Entity\Task;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
 use App\Service\TaskWorkflow;
@@ -33,7 +33,7 @@ final class TaskValidationGuardTest extends WebTestCase
      */
     private function scenario(): array
     {
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
 
         $headStudies = $this->user('jefatura')
             ->addAssignedRole((new Role())->setCode('head_of_studies')->setName('Jefatura de estudios')->setHierarchyLevel(30));

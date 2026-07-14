@@ -7,7 +7,7 @@ namespace App\Tests\Functional;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskResponsibility;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
 use App\Util\SchoolYear;
@@ -56,7 +56,7 @@ final class DesignPagesTest extends WebTestCase
         $admin = $this->user('director@centro.test', $adminRole);
         $teacher = $this->user('profe@centro.test', $teacherRole);
 
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($maths);
 
         $task = new Task('Memoria del departamento', SchoolYear::current(new \DateTimeImmutable()), new \DateTimeImmutable('2026-06-30'), TaskType::WITH_DELIVERABLE);
@@ -148,7 +148,7 @@ final class DesignPagesTest extends WebTestCase
 
     public function testSuperiorNonAdminSeesActivityHistory(): void
     {
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
         $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
         $this->em->persist($headRole);

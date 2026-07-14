@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Contract\Auditable;
-use App\Repository\UnitRepository;
+use App\Repository\DepartmentRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
@@ -19,10 +19,10 @@ use Symfony\Component\Validator\Constraints as Assert;
  *
  * The table keeps its legacy name org_unit.
  */
-#[ORM\Entity(repositoryClass: UnitRepository::class)]
+#[ORM\Entity(repositoryClass: DepartmentRepository::class)]
 #[ORM\Table(name: 'org_unit')]
 #[UniqueEntity(fields: ['code'], message: 'Ya existe un departamento con ese código.')]
-class Unit implements Auditable
+class Department implements Auditable
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]

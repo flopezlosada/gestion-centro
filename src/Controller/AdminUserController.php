@@ -8,7 +8,7 @@ use App\Entity\Role;
 use App\Entity\User;
 use App\Enum\Area;
 use App\Form\UserType;
-use App\Repository\UnitRepository;
+use App\Repository\DepartmentRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
 use App\Service\AuditLogger;
@@ -53,7 +53,7 @@ final class AdminUserController extends AbstractController
      * department, so the "+ Nuevo profesor" link on a department lands with it already filled in.
      */
     #[Route('/nuevo', name: 'admin_user_new', methods: ['GET', 'POST'])]
-    public function new(Request $request, EntityManagerInterface $em, UnitRepository $units): Response
+    public function new(Request $request, EntityManagerInterface $em, DepartmentRepository $units): Response
     {
         $user = (new User())->setActive(true);
         $unitId = $request->query->getInt('unit');

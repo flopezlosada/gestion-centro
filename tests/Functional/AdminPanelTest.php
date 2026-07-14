@@ -10,7 +10,7 @@ use App\Entity\NonLectiveDay;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskTemplate;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\Area;
 use App\Enum\DueDateRuleKind;
@@ -94,7 +94,7 @@ final class AdminPanelTest extends WebTestCase
 
     public function testAdminSeesDepartmentList(): void
     {
-        $unit = (new Unit())->setCode('management')->setName('Equipo directivo');
+        $unit = (new Department())->setCode('management')->setName('Equipo directivo');
         $this->em->persist($unit);
         $this->em->flush();
 
@@ -107,7 +107,7 @@ final class AdminPanelTest extends WebTestCase
 
     public function testDeletingADepartmentRemovesIt(): void
     {
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
         $this->em->flush();
         $id = $unit->getId();
@@ -117,12 +117,12 @@ final class AdminPanelTest extends WebTestCase
         $this->client->submit($crawler->selectButton('Borrar')->form());
 
         self::assertResponseRedirects('/admin/unidades');
-        self::assertNull($this->em->getRepository(Unit::class)->find($id));
+        self::assertNull($this->em->getRepository(Department::class)->find($id));
     }
 
     public function testUnitShowListsItsHeadAndPeople(): void
     {
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($maths);
         // The head is derived from who holds the "jefatura de departamento" role, not a manager field.
         $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
@@ -144,7 +144,7 @@ final class AdminPanelTest extends WebTestCase
 
     public function testDepartmentMembershipCanBeManagedFromItsPage(): void
     {
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($maths);
         $ana = (new User())->setFullName('Ana Docente')->setEmail('ana@centro.test');
         $this->em->persist($ana);
@@ -356,8 +356,8 @@ final class AdminPanelTest extends WebTestCase
 
         self::assertResponseRedirects('/admin/unidades');
 
-        $created = $this->em->getRepository(Unit::class)->findOneBy(['code' => 'maths']);
-        self::assertInstanceOf(Unit::class, $created);
+        $created = $this->em->getRepository(Department::class)->findOneBy(['code' => 'maths']);
+        self::assertInstanceOf(Department::class, $created);
         self::assertSame('Matemáticas', $created->getName());
     }
 

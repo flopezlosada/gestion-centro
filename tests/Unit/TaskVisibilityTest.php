@@ -7,7 +7,7 @@ namespace App\Tests\Unit;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskResponsibility;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
 use App\Repository\UserRepository;
@@ -26,7 +26,7 @@ final class TaskVisibilityTest extends TestCase
         return (new Role())->setCode($code)->setName($code)->setHierarchyLevel($level)->setPerDepartment($perDepartment);
     }
 
-    private function user(string $name, ?Unit $unit, Role ...$roles): User
+    private function user(string $name, ?Department $unit, Role ...$roles): User
     {
         $user = (new User())->setFullName($name)->setEmail($name.'@example.test');
         if (null !== $unit) {
@@ -39,7 +39,7 @@ final class TaskVisibilityTest extends TestCase
         return $user;
     }
 
-    private function task(?Unit $unit, ?User $assignee, ?TaskResponsibility $responsibility = null): Task
+    private function task(?Department $unit, ?User $assignee, ?TaskResponsibility $responsibility = null): Task
     {
         $task = new Task('Tarea', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
         $task->setUnit($unit);
@@ -64,7 +64,7 @@ final class TaskVisibilityTest extends TestCase
         $direction = $this->role('direction', 40);
         $headDept = $this->role('head_dept', 10, perDepartment: true);
         $teacherRole = $this->role('teacher', null, perDepartment: true);
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
 
         $director = $this->user('director', $maths, $direction);
         $head = $this->user('head', $maths, $headDept);

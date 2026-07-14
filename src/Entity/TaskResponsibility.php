@@ -29,11 +29,11 @@ class TaskResponsibility
     private Role $role;
 
     /** The department, when the role is per-department; null for centre-wide roles. */
-    #[ORM\ManyToOne(targetEntity: Unit::class)]
+    #[ORM\ManyToOne(targetEntity: Department::class)]
     #[ORM\JoinColumn(name: 'unit_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
-    private ?Unit $unit;
+    private ?Department $unit;
 
-    public function __construct(Role $role, ?Unit $unit = null)
+    public function __construct(Role $role, ?Department $unit = null)
     {
         $this->role = $role;
         $this->unit = $unit;
@@ -49,7 +49,7 @@ class TaskResponsibility
         return $this->role;
     }
 
-    public function getUnit(): ?Unit
+    public function getUnit(): ?Department
     {
         return $this->unit;
     }

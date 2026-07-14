@@ -8,7 +8,7 @@ use App\Entity\AcademicYear;
 use App\Entity\NonLectiveDay;
 use App\Entity\Role;
 use App\Entity\Task;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
 use App\Util\SchoolYear;
@@ -157,7 +157,7 @@ final class CalendarPageTest extends WebTestCase
         $teacher = (new User())->setFullName('Profe Test')->setEmail('profe@centro.test')->addAssignedRole($teacherRole);
         $this->em->persist($teacher);
 
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($maths);
 
         $task = new Task($title, SchoolYear::current($due), $due, TaskType::WITH_DELIVERABLE);
@@ -244,7 +244,7 @@ final class CalendarPageTest extends WebTestCase
         $colleague = (new User())->setFullName('Colega Test')->setEmail('colega@centro.test');
         array_map($this->em->persist(...), [$teacher, $colleague]);
 
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($maths);
         $teacher->setUnit($maths);
         $colleague->setUnit($maths);
@@ -284,7 +284,7 @@ final class CalendarPageTest extends WebTestCase
         $directionRole = (new Role())->setCode('direction')->setName('Dirección')->setHierarchyLevel(40);
         $this->em->persist($directionRole);
 
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($maths);
 
         $director = (new User())->setFullName('Ana Directora')->setEmail('director@centro.test')->setUnit($maths)->addAssignedRole($directionRole);

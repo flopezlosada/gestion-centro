@@ -7,7 +7,7 @@ namespace App\Support;
 use App\Entity\AuditLog;
 use App\Entity\Role;
 use App\Entity\TaskTemplate;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
 use Doctrine\ORM\EntityManagerInterface;
@@ -40,7 +40,7 @@ final class TaskActivityPresenter
         'status' => ['label' => 'Estado', 'kind' => 'status'],
         'assignedRole' => ['label' => 'Rol responsable', 'kind' => 'ref', 'class' => Role::class],
         'assignedUser' => ['label' => 'Responsable', 'kind' => 'ref', 'class' => User::class],
-        'unit' => ['label' => 'Unidad', 'kind' => 'ref', 'class' => Unit::class],
+        'unit' => ['label' => 'Unidad', 'kind' => 'ref', 'class' => Department::class],
         'requiresDocument' => ['label' => 'Requiere documento', 'kind' => 'bool'],
         'requiresCheckbox' => ['label' => 'Requiere confirmación', 'kind' => 'bool'],
         'checkboxDone' => ['label' => 'Confirmada por el responsable', 'kind' => 'bool'],
@@ -232,7 +232,7 @@ final class TaskActivityPresenter
         return array_filter([
             Role::class => $this->mapNames(array_values($idsByClass[Role::class] ?? []), Role::class, static fn (Role $r): array => [(int) $r->getId(), $r->getName()]),
             User::class => $this->mapNames(array_values($idsByClass[User::class] ?? []), User::class, static fn (User $u): array => [(int) $u->getId(), $u->getFullName()]),
-            Unit::class => $this->mapNames(array_values($idsByClass[Unit::class] ?? []), Unit::class, static fn (Unit $u): array => [(int) $u->getId(), $u->getName()]),
+            Department::class => $this->mapNames(array_values($idsByClass[Department::class] ?? []), Department::class, static fn (Department $u): array => [(int) $u->getId(), $u->getName()]),
             TaskTemplate::class => $this->mapNames(array_values($idsByClass[TaskTemplate::class] ?? []), TaskTemplate::class, static fn (TaskTemplate $t): array => [(int) $t->getId(), $t->getTitle()]),
         ]);
     }

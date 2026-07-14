@@ -7,7 +7,7 @@ namespace App\Tests\Unit;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskResponsibility;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
 use App\Repository\UserRepository;
@@ -25,8 +25,8 @@ final class OrganizationHierarchyTest extends TestCase
     private Role $deputy;
     private Role $headDept;
     private Role $teacher;
-    private Unit $maths;
-    private Unit $lengua;
+    private Department $maths;
+    private Department $lengua;
 
     protected function setUp(): void
     {
@@ -35,8 +35,8 @@ final class OrganizationHierarchyTest extends TestCase
         $this->deputy = $this->role('head_of_studies_deputy', 20);
         $this->headDept = $this->role('head_dept', 10, perDepartment: true);
         $this->teacher = $this->role('teacher', null, perDepartment: true);
-        $this->maths = (new Unit())->setCode('maths')->setName('Matemáticas');
-        $this->lengua = (new Unit())->setCode('lengua')->setName('Lengua');
+        $this->maths = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->lengua = (new Department())->setCode('lengua')->setName('Lengua');
     }
 
     private function role(string $code, ?int $level, bool $perDepartment = false): Role
@@ -44,7 +44,7 @@ final class OrganizationHierarchyTest extends TestCase
         return (new Role())->setCode($code)->setName($code)->setHierarchyLevel($level)->setPerDepartment($perDepartment);
     }
 
-    private function user(string $name, ?Unit $unit, Role ...$roles): User
+    private function user(string $name, ?Department $unit, Role ...$roles): User
     {
         $user = (new User())->setFullName($name)->setEmail($name.'@example.test');
         if (null !== $unit) {

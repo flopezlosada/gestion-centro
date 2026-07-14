@@ -7,7 +7,7 @@ namespace App\Controller;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskResponsibility;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
 use App\Form\TaskFormData;
@@ -15,7 +15,7 @@ use App\Form\TaskFormType;
 use App\Repository\AuditLogRepository;
 use App\Repository\RoleRepository;
 use App\Repository\TaskRepository;
-use App\Repository\UnitRepository;
+use App\Repository\DepartmentRepository;
 use App\Repository\UserRepository;
 use App\Service\OrganizationHierarchy;
 use App\Service\TaskVisibility;
@@ -60,7 +60,7 @@ final class TaskController extends AbstractController
      * limited to that set and re-checked on submit.
      */
     #[Route('/tareas/nueva', name: 'task_new', methods: ['GET', 'POST'])]
-    public function new(Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, UserRepository $users, UnitRepository $unitRepository, EntityManagerInterface $entityManager): Response
+    public function new(Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, UserRepository $users, DepartmentRepository $unitRepository, EntityManagerInterface $entityManager): Response
     {
         $units = $this->assignableDepartments($user, $hierarchy, $unitRepository);
         $roleChoices = $roles->findAllOrdered();
@@ -105,7 +105,7 @@ final class TaskController extends AbstractController
      * not editable (it governs the lifecycle already in progress).
      */
     #[Route('/tareas/{id}/editar', name: 'task_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
-    public function edit(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, UserRepository $users, UnitRepository $unitRepository, EntityManagerInterface $entityManager): Response
+    public function edit(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, UserRepository $users, DepartmentRepository $unitRepository, EntityManagerInterface $entityManager): Response
     {
         if (!$this->canManage($task, $user, $hierarchy)) {
             throw $this->createAccessDeniedException('No puedes editar esta tarea.');
@@ -176,7 +176,7 @@ final class TaskController extends AbstractController
         TaskVisibility $visibility,
         OrganizationHierarchy $hierarchy,
         UserRepository $users,
-        UnitRepository $unitRepository,
+        DepartmentRepository $unitRepository,
         TaskWorkflow $workflows,
         TaskActivityPresenter $activity,
     ): Response {
@@ -225,7 +225,7 @@ final class TaskController extends AbstractController
      * admin, and only onto someone they actually command.
      */
     #[Route('/tareas/{id}/delegar', name: 'task_delegate', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function delegate(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, UserRepository $users, UnitRepository $unitRepository, EntityManagerInterface $entityManager): Response
+    public function delegate(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, UserRepository $users, DepartmentRepository $unitRepository, EntityManagerInterface $entityManager): Response
     {
         if (!$this->isCsrfTokenValid('task_delegate'.$task->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
@@ -387,7 +387,7 @@ final class TaskController extends AbstractController
      * must target a department the creator may use, and the chosen person must be within the creator's
      * assignable scope.
      *
-     * @param list<Unit> $assignableUnits the departments the creator may target
+     * @param list<Department> $assignableUnits the departments the creator may target
      * @param list<User> $assignableUsers the people the creator may assign to
      */
     private function assertResponsibilityAllowed(TaskFormData $data, array $assignableUnits, array $assignableUsers): void
@@ -407,9 +407,9 @@ final class TaskController extends AbstractController
      * The departments a user may target as a task's responsibility: those they command (superior of)
      * plus their own, so a member can still set a task for a role within their own department.
      *
-     * @return list<Unit> the assignable departments
+     * @return list<Department> the assignable departments
      */
-    private function assignableDepartments(User $user, OrganizationHierarchy $hierarchy, UnitRepository $units): array
+    private function assignableDepartments(User $user, OrganizationHierarchy $hierarchy, DepartmentRepository $units): array
     {
         $departments = $this->commandedDepartments($user, $hierarchy, $units);
         // Plus the user's own department, so a plain member can still set a task for themselves in it.
@@ -426,7 +426,7 @@ final class TaskController extends AbstractController
      *
      * @return list<User> the assignable users
      */
-    private function assignableUsers(User $user, OrganizationHierarchy $hierarchy, UserRepository $users, UnitRepository $units): array
+    private function assignableUsers(User $user, OrganizationHierarchy $hierarchy, UserRepository $users, DepartmentRepository $units): array
     {
         $list = $users->findActiveInUnits($this->commandedDepartments($user, $hierarchy, $units));
         if (!\in_array($user, $list, true)) {
@@ -441,9 +441,9 @@ final class TaskController extends AbstractController
      * estudios), just their own for a jefe de departamento, none for a plain member. Derived from the
      * user's ranked roles, never from a unit's manager.
      *
-     * @return list<Unit> the commanded departments
+     * @return list<Department> the commanded departments
      */
-    private function commandedDepartments(User $user, OrganizationHierarchy $hierarchy, UnitRepository $units): array
+    private function commandedDepartments(User $user, OrganizationHierarchy $hierarchy, DepartmentRepository $units): array
     {
         if ($hierarchy->commandsWholeSchool($user)) {
             return $units->findActiveDepartments();

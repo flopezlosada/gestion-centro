@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\Area;
-use App\Form\UnitType;
-use App\Repository\UnitRepository;
+use App\Form\DepartmentType;
+use App\Repository\DepartmentRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
 use App\Service\AuditLogger;
@@ -36,7 +36,7 @@ final class AdminUnitController extends AbstractController
      * Lists the departments (flat, by name) so they can be searched, sorted and filtered.
      */
     #[Route('', name: 'admin_unit_index', methods: ['GET'])]
-    public function index(UnitRepository $units): Response
+    public function index(DepartmentRepository $units): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
 
@@ -50,7 +50,7 @@ final class AdminUnitController extends AbstractController
      * holds the "jefatura de departamento" role, not a separate field).
      */
     #[Route('/{id}', name: 'admin_unit_show', requirements: ['id' => '\d+'], methods: ['GET'])]
-    public function show(Unit $unit, UserRepository $users): Response
+    public function show(Department $unit, UserRepository $users): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
 
@@ -70,7 +70,7 @@ final class AdminUnitController extends AbstractController
      * Adds a person to the department (moving them from any previous one).
      */
     #[Route('/{id}/profesorado', name: 'admin_unit_add_member', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function addMember(Unit $unit, Request $request, UserRepository $users, EntityManagerInterface $em): Response
+    public function addMember(Department $unit, Request $request, UserRepository $users, EntityManagerInterface $em): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
         if (!$this->isCsrfTokenValid('unit_add_member'.$unit->getId(), (string) $request->request->get('_token'))) {
@@ -93,7 +93,7 @@ final class AdminUnitController extends AbstractController
      * a role.
      */
     #[Route('/{id}/profesorado/{userId}/quitar', name: 'admin_unit_remove_member', requirements: ['id' => '\d+', 'userId' => '\d+'], methods: ['POST'])]
-    public function removeMember(Unit $unit, int $userId, Request $request, UserRepository $users, EntityManagerInterface $em): Response
+    public function removeMember(Department $unit, int $userId, Request $request, UserRepository $users, EntityManagerInterface $em): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
         if (!$this->isCsrfTokenValid('unit_remove_member'.$userId, (string) $request->request->get('_token'))) {
@@ -116,14 +116,14 @@ final class AdminUnitController extends AbstractController
     #[Route('/nueva', name: 'admin_unit_new', methods: ['GET', 'POST'])]
     public function new(Request $request, EntityManagerInterface $em): Response
     {
-        return $this->handleForm((new Unit())->setActive(true), $request, $em, true);
+        return $this->handleForm((new Department())->setActive(true), $request, $em, true);
     }
 
     /**
      * Edits an existing department.
      */
     #[Route('/{id}/editar', name: 'admin_unit_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
-    public function edit(Unit $unit, Request $request, EntityManagerInterface $em): Response
+    public function edit(Department $unit, Request $request, EntityManagerInterface $em): Response
     {
         return $this->handleForm($unit, $request, $em, false);
     }
@@ -133,7 +133,7 @@ final class AdminUnitController extends AbstractController
      * null at the database level; use "desactivar" (edit) instead to keep it for the record.
      */
     #[Route('/{id}/borrar', name: 'admin_unit_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function delete(Unit $unit, Request $request, EntityManagerInterface $em): Response
+    public function delete(Department $unit, Request $request, EntityManagerInterface $em): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
         if (!$this->isCsrfTokenValid('unit_delete'.$unit->getId(), (string) $request->request->get('_token'))) {
@@ -153,18 +153,18 @@ final class AdminUnitController extends AbstractController
     /**
      * Renders and processes the create/edit form, persisting and auditing on a valid submit.
      *
-     * @param Unit                   $unit    the unit being created or edited
+     * @param Department                   $unit    the unit being created or edited
      * @param Request                $request the current request
      * @param EntityManagerInterface $em      the entity manager
      * @param bool                   $isNew   whether this is a creation (affects the audit action)
      *
      * @return Response the form page, or a redirect to the list on success
      */
-    private function handleForm(Unit $unit, Request $request, EntityManagerInterface $em, bool $isNew): Response
+    private function handleForm(Department $unit, Request $request, EntityManagerInterface $em, bool $isNew): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
 
-        $form = $this->createForm(UnitType::class, $unit);
+        $form = $this->createForm(DepartmentType::class, $unit);
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {

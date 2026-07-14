@@ -28,7 +28,7 @@ final class TaskTemplateFixtures extends AbstractGoldenFixture implements Depend
     {
         // These are department posts' tasks (the head of each department). The per-department cargo
         // wiring lives with task generation (a separate ticket); the templates themselves no longer
-        // carry a role — "head of department" is a post (Unit::manager), not a role.
+        // carry a role — "head of department" is whoever holds the head_dept role, resolved live.
         // The department report is due at the end of the course; the meeting minutes recur at the end
         // of every term.
         $report = (new TaskTemplate())->setTitle('Memoria del departamento')->setType(TaskType::WITH_DELIVERABLE)->setRequiresDocument(true)

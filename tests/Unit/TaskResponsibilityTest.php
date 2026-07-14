@@ -7,7 +7,7 @@ namespace App\Tests\Unit;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskResponsibility;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -20,12 +20,12 @@ use PHPUnit\Framework\TestCase;
  */
 final class TaskResponsibilityTest extends TestCase
 {
-    private function unit(string $name): Unit
+    private function unit(string $name): Department
     {
-        return (new Unit())->setCode(strtolower($name))->setName($name);
+        return (new Department())->setCode(strtolower($name))->setName($name);
     }
 
-    private function user(string $name, ?Unit $unit = null, bool $active = true): User
+    private function user(string $name, ?Department $unit = null, bool $active = true): User
     {
         $user = (new User())->setFullName($name)->setEmail(strtolower($name).'@centro.test')->setActive($active);
 

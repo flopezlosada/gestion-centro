@@ -6,7 +6,7 @@ namespace App\Tests\Integration;
 
 use App\Command\ImportRosterCommand;
 use App\Entity\Role;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\Area;
 use App\Enum\PermissionLevel;
@@ -59,8 +59,8 @@ final class ImportRosterCommandTest extends KernelTestCase
 
         // Three people, two departments.
         self::assertCount(3, $this->em->getRepository(User::class)->findAll());
-        self::assertNotNull($this->em->getRepository(Unit::class)->findOneBy(['code' => 'dept_matematicas']));
-        self::assertNotNull($this->em->getRepository(Unit::class)->findOneBy(['code' => 'dept_tecnologia']));
+        self::assertNotNull($this->em->getRepository(Department::class)->findOneBy(['code' => 'dept_matematicas']));
+        self::assertNotNull($this->em->getRepository(Department::class)->findOneBy(['code' => 'dept_tecnologia']));
 
         $director = $this->em->getRepository(User::class)->findOneBy(['email' => 'ana.dir@educa.madrid.org']);
         self::assertInstanceOf(User::class, $director);
@@ -82,6 +82,6 @@ final class ImportRosterCommandTest extends KernelTestCase
         $this->runImport();
 
         self::assertCount(3, $this->em->getRepository(User::class)->findAll(), 'no duplicates on re-run');
-        self::assertCount(1, $this->em->getRepository(Unit::class)->findBy(['code' => 'dept_matematicas']));
+        self::assertCount(1, $this->em->getRepository(Department::class)->findBy(['code' => 'dept_matematicas']));
     }
 }

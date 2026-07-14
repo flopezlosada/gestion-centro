@@ -7,7 +7,7 @@ namespace App\Tests\Integration;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskResponsibility;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
 use App\Service\RankedRoleHandover;
@@ -49,7 +49,7 @@ final class RankedRoleHandoverTest extends KernelTestCase
 
     public function testDepartmentHeadHandoverMovesOnlyOpenCurrentYearTasksOfThatPost(): void
     {
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($maths);
         $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
         $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
@@ -102,7 +102,7 @@ final class RankedRoleHandoverTest extends KernelTestCase
     {
         $tutorRole = (new Role())->setCode('tutor')->setName('Tutor/a')->setPerDepartment(true);
         $this->em->persist($tutorRole);
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($maths);
         $holder = (new User())->setFullName('Nuevo Tutor')->setEmail('tutor@centro.test')->setUnit($maths);
         $this->em->persist($holder);

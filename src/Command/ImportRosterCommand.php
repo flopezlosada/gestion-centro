@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Command;
 
 use App\Entity\Role;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\Area;
 use App\Enum\PermissionLevel;
@@ -34,7 +34,7 @@ use Symfony\Component\String\Slugger\AsciiSlugger;
 #[AsCommand(name: 'app:import-roster', description: 'Importa el claustro (personas, departamentos y cargo) desde un CSV normalizado')]
 final class ImportRosterCommand extends Command
 {
-    /** @var array<string, Unit> units by code, built during the run */
+    /** @var array<string, Department> units by code, built during the run */
     private array $units = [];
 
     /** @var array<string, Role> roles by code, built during the run */
@@ -160,17 +160,17 @@ final class ImportRosterCommand extends Command
      *
      * @param string $name the department name
      *
-     * @return Unit the (new or existing) unit
+     * @return Department the (new or existing) unit
      */
-    private function unit(string $name): Unit
+    private function unit(string $name): Department
     {
         $code = 'dept_'.$this->slugger->slug($name, '_')->lower()->toString();
         if (isset($this->units[$code])) {
             return $this->units[$code];
         }
 
-        $unit = $this->em->getRepository(Unit::class)->findOneBy(['code' => $code])
-            ?? (new Unit())->setCode($code);
+        $unit = $this->em->getRepository(Department::class)->findOneBy(['code' => $code])
+            ?? (new Department())->setCode($code);
         $unit->setName($name);
         $this->em->persist($unit);
 

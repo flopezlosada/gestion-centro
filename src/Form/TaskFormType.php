@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Form;
 
 use App\Entity\Role;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Service\SchoolCalendar;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
@@ -58,7 +58,7 @@ final class TaskFormType extends AbstractType
             ])
             ->add('responsibilityUnit', EntityType::class, [
                 'label' => 'Departamento',
-                'class' => Unit::class,
+                'class' => Department::class,
                 'choices' => $options['assignable_units'],
                 'choice_label' => 'name',
                 'required' => false,

@@ -8,7 +8,7 @@ use App\Entity\NonLectiveDay;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskResponsibility;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
 use Doctrine\ORM\EntityManagerInterface;
@@ -30,7 +30,7 @@ final class TaskCrudTest extends WebTestCase
         $this->em = self::getContainer()->get(EntityManagerInterface::class);
     }
 
-    private function user(string $email, ?Unit $unit = null): User
+    private function user(string $email, ?Department $unit = null): User
     {
         $user = (new User())->setFullName(ucfirst(explode('@', $email)[0]).' Test')->setEmail($email);
         if (null !== $unit) {
@@ -43,7 +43,7 @@ final class TaskCrudTest extends WebTestCase
 
     public function testNewTaskFormRenders(): void
     {
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
         $user = $this->user('jefa@centro.test', $unit);
         $this->em->flush();
@@ -59,7 +59,7 @@ final class TaskCrudTest extends WebTestCase
     {
         // Arriving from the calendar's "+ Nueva tarea" carries the clicked day as ?fecha=; the
         // deadline field must render already filled with it.
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
         $user = $this->user('jefa@centro.test', $unit);
         $this->em->flush();
@@ -73,7 +73,7 @@ final class TaskCrudTest extends WebTestCase
 
     public function testNewTaskIgnoresAnInvalidFechaQuery(): void
     {
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
         $user = $this->user('jefa@centro.test', $unit);
         $this->em->flush();
@@ -88,7 +88,7 @@ final class TaskCrudTest extends WebTestCase
 
     public function testCreateTaskRecordsCreatorAndResponsibility(): void
     {
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
         $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
         $this->em->persist($teacherRole);
@@ -124,7 +124,7 @@ final class TaskCrudTest extends WebTestCase
 
     public function testCannotCreateTaskDueOnAWeekend(): void
     {
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
         $creator = $this->user('jefa@centro.test', $unit);
         $this->em->flush();
@@ -145,7 +145,7 @@ final class TaskCrudTest extends WebTestCase
 
     public function testCannotCreateTaskDueOnARegisteredHoliday(): void
     {
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
         $creator = $this->user('jefa@centro.test', $unit);
         // A Monday marked as a non-teaching day.
@@ -166,7 +166,7 @@ final class TaskCrudTest extends WebTestCase
 
     public function testCanChangeATasksResponsibilityRole(): void
     {
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
         $direction = (new Role())->setCode('direction')->setName('Dirección');
         $ccp = (new Role())->setCode('ccp')->setName('Coordinación pedagógica');
@@ -201,7 +201,7 @@ final class TaskCrudTest extends WebTestCase
 
     public function testTaskAssignsTheChosenPersonAmongSeveralRoleHolders(): void
     {
-        $dept = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $dept = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($dept);
         $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
         $this->em->persist($teacherRole);
@@ -233,7 +233,7 @@ final class TaskCrudTest extends WebTestCase
 
     public function testCannotAssignTaskToAPersonWhoDoesNotHoldTheRole(): void
     {
-        $dept = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $dept = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($dept);
         $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
         $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
@@ -264,7 +264,7 @@ final class TaskCrudTest extends WebTestCase
     {
         // The head of studies holds a centre-wide ranked role, so they command every department and
         // outrank a maths teacher's task.
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($maths);
         $headStudiesRole = (new Role())->setCode('head_of_studies')->setName('Jefatura de estudios')->setHierarchyLevel(30);
         $this->em->persist($headStudiesRole);
@@ -294,8 +294,8 @@ final class TaskCrudTest extends WebTestCase
     {
         // Two departments: a teacher in one is not a superior of a task in the other, so widening
         // canWorkOn to superiors must not leak a lateral colleague's task to them.
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
-        $language = (new Unit())->setCode('language')->setName('Lengua');
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
+        $language = (new Department())->setCode('language')->setName('Lengua');
         $this->em->persist($maths);
         $this->em->persist($language);
         $mathsTeacher = $this->user('mates@centro.test', $maths);
@@ -316,7 +316,7 @@ final class TaskCrudTest extends WebTestCase
     {
         // A head of department (per-department ranked role) commands their own department, so they may
         // delegate their own jefatura task to a member of it.
-        $dept = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $dept = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($dept);
         $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
         $this->em->persist($headRole);
@@ -347,7 +347,7 @@ final class TaskCrudTest extends WebTestCase
 
     public function testUnrelatedUserCannotEditTask(): void
     {
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
         $creator = $this->user('jefa@centro.test', $unit);
         $task = new Task('Memoria', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);

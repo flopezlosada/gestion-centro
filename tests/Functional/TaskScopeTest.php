@@ -6,7 +6,7 @@ namespace App\Tests\Functional;
 
 use App\Entity\Role;
 use App\Entity\Task;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
 use App\Util\SchoolYear;
@@ -42,7 +42,7 @@ final class TaskScopeTest extends WebTestCase
         $directionRole = (new Role())->setCode('direction')->setName('Dirección')->setHierarchyLevel(40);
         $this->em->persist($directionRole);
 
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($maths);
 
         // Everyone is a member of a department; the director's reach is the direction role, not the unit.
@@ -117,7 +117,7 @@ final class TaskScopeTest extends WebTestCase
         $this->em->persist($role);
         $teacher = (new User())->setFullName('Pedro Docente')->setEmail('profe@centro.test')->addAssignedRole($role);
         $this->em->persist($teacher);
-        $unit = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
 
         $year = SchoolYear::current(new \DateTimeImmutable());

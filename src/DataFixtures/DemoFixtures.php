@@ -11,7 +11,7 @@ use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskResponsibility;
 use App\Entity\TaskTemplate;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
 use App\Service\SchoolCalendar;
@@ -65,7 +65,7 @@ final class DemoFixtures extends AbstractDemoFixture implements DependentFixture
 
         // Departments only — there are no leadership "boxes": the chain of command comes from the
         // ranked roles people hold. Everyone teaches in Maths in this demo.
-        $maths = (new Unit())->setCode('maths')->setName('Departamento de Matemáticas');
+        $maths = (new Department())->setCode('maths')->setName('Departamento de Matemáticas');
         $manager->persist($maths);
 
         $director->setUnit($maths);

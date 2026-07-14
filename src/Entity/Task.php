@@ -75,10 +75,10 @@ class Task implements Auditable
     #[ORM\JoinColumn(name: 'assigned_user_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
     private ?User $assignedUser = null;
 
-    /** Unit context, used to walk the chain of command for validation and escalation. */
-    #[ORM\ManyToOne(targetEntity: Unit::class)]
+    /** The department this task belongs to (its context for scope and escalation). */
+    #[ORM\ManyToOne(targetEntity: Department::class)]
     #[ORM\JoinColumn(name: 'unit_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
-    private ?Unit $unit = null;
+    private ?Department $unit = null;
 
     /**
      * What structurally makes this task someone's job: a post (unit's manager), a specific person, or
@@ -308,12 +308,12 @@ class Task implements Auditable
         return null !== $this->assignedRole && $user->holdsRole($this->assignedRole);
     }
 
-    public function getUnit(): ?Unit
+    public function getUnit(): ?Department
     {
         return $this->unit;
     }
 
-    public function setUnit(?Unit $unit): static
+    public function setUnit(?Department $unit): static
     {
         $this->unit = $unit;
 

@@ -6,7 +6,7 @@ namespace App\Repository;
 
 use App\Entity\Role;
 use App\Entity\Task;
-use App\Entity\Unit;
+use App\Entity\Department;
 use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
@@ -132,12 +132,12 @@ class TaskRepository extends ServiceEntityRepository
      * responsibilities (which store no department).
      *
      * @param Role      $role       the responsibility role
-     * @param Unit|null $unit       the department the responsibility is scoped to, or null for centre-wide
+     * @param Department|null $unit       the department the responsibility is scoped to, or null for centre-wide
      * @param string    $schoolYear the course in "YYYY-YYYY" form
      *
      * @return Task[] the matching open tasks
      */
-    public function findOpenByResponsibility(Role $role, ?Unit $unit, string $schoolYear): array
+    public function findOpenByResponsibility(Role $role, ?Department $unit, string $schoolYear): array
     {
         $qb = $this->createQueryBuilder('t')
             ->join('t.responsibility', 'resp')
