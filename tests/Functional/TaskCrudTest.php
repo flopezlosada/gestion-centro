@@ -193,21 +193,26 @@ final class TaskCrudTest extends WebTestCase
         self::assertSelectorNotExists('form[action$="/accion/cancel"]', 'un asignado normal no puede cancelar');
     }
 
-    public function testCreatorCanCancelATask(): void
+    public function testSuperiorCanCancelATask(): void
     {
         $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
-        $creator = $this->user('jefa@centro.test', $unit);
+        $headStudiesRole = (new Role())->setCode('head_of_studies')->setName('Jefatura de estudios')->setHierarchyLevel(30);
+        $this->em->persist($headStudiesRole);
+        // Un superior (jefatura de estudios) ve la tarea y puede gestionarla → cancelar.
+        $boss = $this->user('jefatura@centro.test', $unit);
+        $boss->addAssignedRole($headStudiesRole);
         $member = $this->user('profe@centro.test', $unit);
         $task = new Task('Actividad anulada', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
-        $task->setUnit($unit)->setAssignedUser($member)->setCreatedBy($creator);
+        $task->setUnit($unit)->setAssignedUser($member)->setCreatedBy($boss);
         $this->em->persist($task);
         $this->em->flush();
         $taskId = $task->getId();
 
-        $this->client->loginUser($creator);
+        $this->client->loginUser($boss);
         $crawler = $this->client->request('GET', '/tareas/'.$taskId);
-        self::assertSelectorExists('form[action$="/accion/cancel"]', 'el creador sí puede cancelar');
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('form[action$="/accion/cancel"]', 'un superior puede cancelar');
         $this->client->submit($crawler->filter('form[action$="/accion/cancel"]')->form());
 
         self::assertResponseRedirects();
