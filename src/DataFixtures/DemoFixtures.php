@@ -63,13 +63,11 @@ final class DemoFixtures extends AbstractDemoFixture implements DependentFixture
         );
         array_map($manager->persist(...), [$director, $ticUser, $headStudies, $mathsHead, $teacher, ...$mathsTeachers]);
 
-        $management = (new Unit())->setCode('management')->setName('Dirección')->setManager($director)->setIsDepartment(false);
-        $studies = (new Unit())->setCode('head_of_studies')->setName('Jefatura de estudios')->setManager($headStudies)->setParent($management)->setIsDepartment(false);
-        $maths = (new Unit())->setCode('maths')->setName('Departamento de Matemáticas')->setManager($mathsHead)->setParent($studies);
-        array_map($manager->persist(...), [$management, $studies, $maths]);
+        // Departments only — there are no leadership "boxes": the chain of command comes from the
+        // ranked roles people hold. Everyone teaches in Maths in this demo.
+        $maths = (new Unit())->setCode('maths')->setName('Departamento de Matemáticas');
+        $manager->persist($maths);
 
-        // Everyone's home department is Maths in the demo (where they teach); the management/studies
-        // boxes are the leadership scope they command, not where they belong.
         $director->setUnit($maths);
         $headStudies->setUnit($maths);
         $mathsHead->setUnit($maths);
@@ -97,22 +95,23 @@ final class DemoFixtures extends AbstractDemoFixture implements DependentFixture
 
         // A plan for the course with a spread of deadlines, assignees and statuses. Nudged onto a
         // teaching day so no demo task lands on a weekend or holiday.
+        // A plan spread over deadlines/statuses. Department tasks live in Maths; the centre ones
+        // (head of studies' responsibility) carry no department (unit null).
         $plan = [
             [$reportTpl, sprintf('%d-06-30', $startYear + 1), $maths, $mathsHead, 'in_progress'],
             [$meetingTpl, sprintf('%d-10-15', $startYear), $maths, $mathsHead, 'validated'],
-            [$reportTpl, sprintf('%d-01-31', $startYear + 1), $studies, $headStudies, 'submitted'],
-            [$meetingTpl, sprintf('%d-11-20', $startYear), $studies, $headStudies, 'done'],
+            [$reportTpl, sprintf('%d-01-31', $startYear + 1), null, $headStudies, 'submitted'],
+            [$meetingTpl, sprintf('%d-11-20', $startYear), null, $headStudies, 'done'],
         ];
         $headDeptRole = $this->role('head_dept');
         $headStudiesRole = $this->role('head_of_studies');
         foreach ($plan as [$tpl, $due, $unit, $assignee, $status]) {
             $dueDate = $this->toLectiveDay(new \DateTimeImmutable($due), $blockedKeys, false);
             $task = Task::fromTemplate($tpl, $year, $dueDate);
-            // Responsibility = role + (department for per-department roles): the maths tasks are the
-            // department head's (head_dept in Matemáticas); the studies ones are the head of studies'
-            // (centre-wide). Resolved live → they follow whoever holds that role. assignedUser mirrors
-            // the current holder for the legacy queries during the transition.
-            $responsibility = $unit === $maths
+            // Responsibility = role + (department for per-department roles): the Maths tasks are the
+            // department head's (head_dept in Matemáticas); the centre ones are the head of studies'
+            // (centre-wide, no department). Resolved live → they follow whoever holds that role.
+            $responsibility = null !== $unit
                 ? new TaskResponsibility($headDeptRole, $maths)
                 : new TaskResponsibility($headStudiesRole, null);
             $task->setUnit($unit)->setResponsibility($responsibility)->setAssignedUser($assignee)->setStatus($status);

@@ -292,12 +292,10 @@ final class TaskCrudTest extends WebTestCase
 
     public function testLateralUserIsNeitherSuperiorNorCanReachTheTask(): void
     {
-        // Two sibling departments: a teacher in one is not a superior of a task in the other, so
-        // widening canWorkOn to superiors must not leak a lateral colleague's task to them.
-        $studies = (new Unit())->setCode('studies')->setName('Jefatura de estudios');
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas')->setParent($studies);
-        $language = (new Unit())->setCode('language')->setName('Lengua')->setParent($studies);
-        $this->em->persist($studies);
+        // Two departments: a teacher in one is not a superior of a task in the other, so widening
+        // canWorkOn to superiors must not leak a lateral colleague's task to them.
+        $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
+        $language = (new Unit())->setCode('language')->setName('Lengua');
         $this->em->persist($maths);
         $this->em->persist($language);
         $mathsTeacher = $this->user('mates@centro.test', $maths);

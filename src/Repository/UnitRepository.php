@@ -20,7 +20,8 @@ class UnitRepository extends ServiceEntityRepository
 
     /**
      * Active departments, by name. The set a whole-school superior (dirección, jefatura de estudios)
-     * may target when creating a task.
+     * may target when creating a task. Every unit is a department now, so this is simply the active
+     * ones.
      *
      * @return Unit[] the active departments
      */
@@ -28,7 +29,6 @@ class UnitRepository extends ServiceEntityRepository
     {
         return $this->createQueryBuilder('u')
             ->andWhere('u.active = true')
-            ->andWhere('u.isDepartment = true')
             ->orderBy('u.name', 'ASC')
             ->getQuery()
             ->getResult();

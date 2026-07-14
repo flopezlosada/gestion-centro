@@ -414,7 +414,7 @@ final class TaskController extends AbstractController
         $departments = $this->commandedDepartments($user, $hierarchy, $units);
         // Plus the user's own department, so a plain member can still set a task for themselves in it.
         $own = $user->getUnit();
-        if (null !== $own && $own->isDepartment() && !\in_array($own, $departments, true)) {
+        if (null !== $own && !\in_array($own, $departments, true)) {
             $departments[] = $own;
         }
 

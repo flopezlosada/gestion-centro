@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\Unit;
+use App\Entity\User;
 use App\Enum\Area;
 use App\Form\UnitType;
 use App\Repository\UnitRepository;
@@ -18,11 +19,11 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 
 /**
- * Admin management of the org chart: the {@see Unit}s that form the chain of command and their
- * managers. This is what escalation and validation walk over. Units are soft-deleted (deactivated)
- * rather than removed, so past tasks keep their context and the database-level ON DELETE SET NULL
- * on referencing rows never fires unaudited. Gated per action by write permission on the
- * {@see Area::ADMINISTRATION} area.
+ * Admin management of the departments and who belongs to each. The chain of command is NOT set here:
+ * the head of a department is whoever holds the "jefatura de departamento" role, assigned in the user
+ * editor. Departments are soft-deleted (deactivated) rather than removed, so past tasks keep their
+ * context and the database-level ON DELETE SET NULL on referencing rows never fires unaudited. Gated
+ * per action by write permission on the {@see Area::ADMINISTRATION} area.
  */
 #[Route('/admin/unidades')]
 final class AdminUnitController extends AbstractController
@@ -45,44 +46,24 @@ final class AdminUnitController extends AbstractController
     }
 
     /**
-     * Shows a department: its head (manager) and the people who belong to it.
+     * Shows a department: the people who belong to it and its head (derived read-only from whoever
+     * holds the "jefatura de departamento" role, not a separate field).
      */
     #[Route('/{id}', name: 'admin_unit_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function show(Unit $unit, UserRepository $users): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
 
+        $members = $users->findByUnit($unit);
+        $head = array_values(array_filter($members, static fn (User $m): bool => $m->holdsRoleCode('head_dept')))[0] ?? null;
+
         return $this->render('admin/unit/show.html.twig', [
             'unit' => $unit,
-            'members' => $users->findByUnit($unit),
+            'members' => $members,
+            'head' => $head,
             // People who could be added (anyone not already in this department).
             'candidates' => $users->findNotInUnit($unit),
         ]);
-    }
-
-    /**
-     * Sets (or clears, with an empty value) the department's head, which must be one of its members.
-     * The head is who validates the department's tasks and receives its escalations.
-     */
-    #[Route('/{id}/jefatura', name: 'admin_unit_set_manager', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function setManager(Unit $unit, Request $request, UserRepository $users, EntityManagerInterface $em): Response
-    {
-        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
-        if (!$this->isCsrfTokenValid('unit_manager'.$unit->getId(), (string) $request->request->get('_token'))) {
-            throw $this->createAccessDeniedException('Token CSRF inválido.');
-        }
-
-        $userId = (string) $request->request->get('user');
-        $manager = '' === $userId ? null : $users->find((int) $userId);
-        if (null !== $manager && $manager->getUnit() !== $unit) {
-            throw $this->createAccessDeniedException('La jefatura debe pertenecer al departamento.');
-        }
-
-        $unit->setManager($manager);
-        $em->flush();
-        $this->addFlash('success', null === $manager ? 'Jefatura sin asignar.' : sprintf('Jefatura asignada a %s.', $manager->getFullName()));
-
-        return $this->redirectToRoute('admin_unit_show', ['id' => $unit->getId()]);
     }
 
     /**
@@ -107,8 +88,9 @@ final class AdminUnitController extends AbstractController
     }
 
     /**
-     * Removes a person from the department (leaves them without one). If they were the head, the
-     * headship is cleared too — one cannot lead a department one no longer belongs to.
+     * Removes a person from the department (leaves them without one). Their "jefatura de departamento"
+     * role, if any, is handled in the user editor — belonging to a department is separate from holding
+     * a role.
      */
     #[Route('/{id}/profesorado/{userId}/quitar', name: 'admin_unit_remove_member', requirements: ['id' => '\d+', 'userId' => '\d+'], methods: ['POST'])]
     public function removeMember(Unit $unit, int $userId, Request $request, UserRepository $users, EntityManagerInterface $em): Response
@@ -120,9 +102,6 @@ final class AdminUnitController extends AbstractController
 
         $user = $users->find($userId);
         if (null !== $user && $user->getUnit() === $unit) {
-            if ($unit->getManager() === $user) {
-                $unit->setManager(null);
-            }
             $user->setUnit(null);
             $em->flush();
             $this->addFlash('success', sprintf('%s quitado/a del departamento.', $user->getFullName()));

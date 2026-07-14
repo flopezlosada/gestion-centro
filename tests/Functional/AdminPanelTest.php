@@ -122,11 +122,13 @@ final class AdminPanelTest extends WebTestCase
 
     public function testUnitShowListsItsHeadAndPeople(): void
     {
-        $head = (new User())->setFullName('María Matemáticas')->setEmail('mates@centro.test');
-        $this->em->persist($head);
-        $maths = (new Unit())->setCode('maths')->setName('Matemáticas')->setManager($head);
+        $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($maths);
-        $head->setUnit($maths);
+        // The head is derived from who holds the "jefatura de departamento" role, not a manager field.
+        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
+        $this->em->persist($headRole);
+        $head = (new User())->setFullName('María Matemáticas')->setEmail('mates@centro.test')->setUnit($maths)->addAssignedRole($headRole);
+        $this->em->persist($head);
         $teacher = (new User())->setFullName('Pedro Docente')->setEmail('pedro@centro.test')->setUnit($maths);
         $this->em->persist($teacher);
         $this->em->flush();
@@ -136,11 +138,11 @@ final class AdminPanelTest extends WebTestCase
 
         self::assertResponseIsSuccessful();
         self::assertSelectorTextContains('h1', 'Matemáticas');
-        self::assertSelectorTextContains('.page-head', 'María Matemáticas'); // head shown
+        self::assertSelectorTextContains('.page-head', 'María Matemáticas'); // head shown (derived from the role)
         self::assertSelectorTextContains('table', 'Pedro Docente');
     }
 
-    public function testDepartmentMembershipAndHeadCanBeManagedFromItsPage(): void
+    public function testDepartmentMembershipCanBeManagedFromItsPage(): void
     {
         $maths = (new Unit())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($maths);
@@ -158,12 +160,6 @@ final class AdminPanelTest extends WebTestCase
         self::assertResponseRedirects('/admin/unidades/'.$mathsId);
         $this->em->clear();
         self::assertSame('Matemáticas', $this->em->getRepository(User::class)->find($anaId)?->getUnit()?->getName());
-
-        // Designate Ana (the only member) as head.
-        $crawler = $this->client->request('GET', '/admin/unidades/'.$mathsId);
-        $this->client->submit($crawler->selectButton('Hacer jefatura')->form());
-        $this->em->clear();
-        self::assertSame($anaId, $this->em->getRepository(Unit::class)->find($mathsId)?->getManager()?->getId());
     }
 
     public function testAdminNavAppearsForAdmin(): void
