@@ -105,6 +105,10 @@ final class AdminUnitController extends AbstractController
             $newHead->addAssignedRole($headRole);
             // The incoming head takes over the department's open, current-course jefatura tasks.
             $handover->toNewHolder($newHead, $headRole, new \DateTimeImmutable());
+        } else {
+            // Vacated with no successor: leave those tasks unassigned (out of the ex-head's agenda)
+            // until a new head is named and picks them up.
+            $handover->vacate($headRole, $unit, new \DateTimeImmutable());
         }
 
         $em->flush();

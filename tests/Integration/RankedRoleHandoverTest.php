@@ -98,6 +98,36 @@ final class RankedRoleHandoverTest extends KernelTestCase
         self::assertSame($newDirector->getId(), $this->em->getRepository(Task::class)->find($centreTask->getId())?->getAssignedUser()?->getId());
     }
 
+    public function testVacateLeavesTasksUnassignedAndANewHeadPicksThemUp(): void
+    {
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($maths);
+        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
+        $this->em->persist($headRole);
+        $oldHead = (new User())->setFullName('María Saliente')->setEmail('maria@centro.test')->setUnit($maths);
+        $newHead = (new User())->setFullName('José Entrante')->setEmail('jose@centro.test')->setUnit($maths);
+        $this->em->persist($oldHead);
+        $this->em->persist($newHead);
+        $task = $this->task('Memoria de jefatura', $this->year, new TaskResponsibility($headRole, $maths), $oldHead);
+        $this->em->flush();
+        $taskId = $task->getId();
+        $newHeadId = $newHead->getId();
+
+        // Vacated with no successor → the task is left unassigned.
+        self::assertSame(1, $this->handover->vacate($headRole, $maths, $this->today));
+        $this->em->flush();
+        $this->em->clear();
+        self::assertNull($this->em->getRepository(Task::class)->find($taskId)?->getAssignedUser(), 'no head → task unassigned');
+
+        // A new head later picks it up even though nobody is assigned now.
+        $reloadedRole = $this->em->getRepository(Role::class)->find($headRole->getId());
+        $reloadedNewHead = $this->em->getRepository(User::class)->find($newHeadId);
+        self::assertSame(1, $this->handover->toNewHolder($reloadedNewHead, $reloadedRole, $this->today));
+        $this->em->flush();
+        $this->em->clear();
+        self::assertSame($newHeadId, $this->em->getRepository(Task::class)->find($taskId)?->getAssignedUser()?->getId(), 'the new head picks up the unassigned task');
+    }
+
     public function testNonRankedRoleDoesNotHandOver(): void
     {
         $tutorRole = (new Role())->setCode('tutor')->setName('Tutor/a')->setPerDepartment(true);

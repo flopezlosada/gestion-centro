@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Service;
 
+use App\Entity\Department;
 use App\Entity\Role;
 use App\Entity\User;
 use App\Repository\TaskRepository;
@@ -47,6 +48,33 @@ final class RankedRoleHandover
 
         foreach ($tasks as $task) {
             $task->setAssignedUser($newHolder);
+        }
+
+        return \count($tasks);
+    }
+
+    /**
+     * Leaves the open, current-course tasks of a ranked post unassigned when it is vacated with no
+     * successor: they drop out of the outgoing holder's agenda and wait for the next holder, who will
+     * pick them up via {@see toNewHolder()}. Structural responsibility (role + department) is untouched.
+     *
+     * @param Role            $role the ranked role being vacated
+     * @param Department|null $unit the department the post is scoped to (null for a centre-wide post)
+     * @param \DateTimeImmutable $on the reference date for "current course"
+     *
+     * @return int how many tasks were left unassigned
+     */
+    public function vacate(Role $role, ?Department $unit, \DateTimeImmutable $on): int
+    {
+        if (!$role->isHierarchical()) {
+            return 0;
+        }
+
+        $scope = $role->isPerDepartment() ? $unit : null;
+        $tasks = $this->tasks->findOpenByResponsibility($role, $scope, SchoolYear::current($on));
+
+        foreach ($tasks as $task) {
+            $task->setAssignedUser(null);
         }
 
         return \count($tasks);
