@@ -1,0 +1,51 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Estadísticas de guardias{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_index') }}">Guardias</a><span class="sep">/</span>Estadísticas{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Estadísticas de guardias</h1>
+            <p class="lead">Guardias cubiertas por profesor este curso. No cuentan las marcadas como incidencia.</p>
+        </div>
+    </div>
+
+    {{ include('guardia/_nav.html.twig', { active: 'estadisticas' }) }}
+
+    <div class="worklist-stats worklist-stats--2">
+        <div class="stat stat--success{{ coveredTotal == 0 ? ' is-zero' }}">
+            <span class="stat-figure">{{ coveredTotal }}</span><span class="stat-label">Guardias cubiertas</span>
+        </div>
+        <div class="stat{{ teacherCount == 0 ? ' is-zero' }}">
+            <span class="stat-figure">{{ teacherCount }}</span><span class="stat-label">Profesores implicados</span>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="page-head"><div><h2>Reparto por profesor</h2></div></div>
+        {% if ranking is empty %}
+            <p class="muted">Aún no hay guardias cubiertas este curso.</p>
+        {% else %}
+            <table>
+                <thead>
+                    <tr><th>Profesor</th><th style="width: 55%">Guardias cubiertas</th><th class="mono">Total</th></tr>
+                </thead>
+                <tbody>
+                    {% for row in ranking %}
+                        <tr>
+                            <td>{{ row.teacher.fullName }}</td>
+                            <td>
+                                <div class="load-bar" title="{{ row.total }} guardias cubiertas">
+                                    <span class="load-bar-fill" style="width: {{ max > 0 ? (row.total * 100 // max) : 0 }}%"></span>
+                                </div>
+                            </td>
+                            <td class="mono">{{ row.total }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}

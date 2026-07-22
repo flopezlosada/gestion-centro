@@ -21,6 +21,8 @@
         </form>
     </div>
 
+    {{ include('guardia/_nav.html.twig', { active: 'parte' }) }}
+
     {% if slots is empty %}
         <div class="card">
             <div class="empty-state">

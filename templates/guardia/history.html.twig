@@ -1,0 +1,81 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Histórico de guardias{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_index') }}">Guardias</a><span class="sep">/</span>Histórico{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Histórico de guardias</h1>
+            <p class="lead">Qué profesor cubrió cada grupo y cuándo. Filtra por fechas, grupo o profesor.</p>
+        </div>
+    </div>
+
+    {{ include('guardia/_nav.html.twig', { active: 'historico' }) }}
+
+    {# Filtros #}
+    <div class="card">
+        <form method="get" action="{{ path('guardia_history') }}" class="inline-form inline-form--wrap">
+            <label>Desde <input type="date" name="from" value="{{ filters.from }}"></label>
+            <label>Hasta <input type="date" name="to" value="{{ filters.to }}"></label>
+            <label>Grupo
+                <select name="group">
+                    <option value="">Todos</option>
+                    {% for grp in groups %}
+                        <option value="{{ grp }}" {{ filters.group == grp ? 'selected' }}>{{ grp }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Guardia
+                <select name="assigned">
+                    <option value="">Cualquiera</option>
+                    {% for teacher in allTeachers %}
+                        <option value="{{ teacher.id }}" {{ filters.assigned == teacher.id ? 'selected' }}>{{ teacher.fullName }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Ausente
+                <select name="absent">
+                    <option value="">Cualquiera</option>
+                    {% for teacher in allTeachers %}
+                        <option value="{{ teacher.id }}" {{ filters.absent == teacher.id ? 'selected' }}>{{ teacher.fullName }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <button type="submit" class="btn">Filtrar</button>
+            <a class="btn btn--ghost" href="{{ path('guardia_history') }}">Limpiar</a>
+        </form>
+    </div>
+
+    {# Resultados #}
+    <div class="card">
+        <div class="page-head"><div><h2>{{ covers|length }} línea(s)</h2></div></div>
+        {% if covers is empty %}
+            <p class="muted">No hay guardias que coincidan con el filtro.</p>
+        {% else %}
+            <table>
+                <thead>
+                    <tr><th>Fecha</th><th>Tramo</th><th>Grupo</th><th>Aula</th><th>Profesor ausente</th><th>Guardia</th><th>Estado</th></tr>
+                </thead>
+                <tbody>
+                    {% for cover in covers %}
+                        <tr class="{{ cover.notCovered ? 'is-not-covered' }}">
+                            <td>{{ cover.date|date('d/m/Y', false) }}</td>
+                            <td>{{ cover.slotIndex + 1 }}ª</td>
+                            <td>{{ cover.groupName ?? '—' }}</td>
+                            <td class="mono">{{ cover.roomName ?? '—' }}</td>
+                            <td>{{ cover.absentTeacher.fullName }}</td>
+                            <td>{{ cover.assignedGuardia ? cover.assignedGuardia.fullName : '—' }}</td>
+                            <td>
+                                {% if cover.notCovered %}<span class="badge badge--danger">Incidencia</span>
+                                {% elseif cover.assignedGuardia %}<span class="badge badge--ok">Cubierta</span>
+                                {% else %}<span class="muted">Sin asignar</span>{% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}

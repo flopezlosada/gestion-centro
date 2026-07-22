@@ -49,6 +49,10 @@ final class RoleFixtures extends AbstractGoldenFixture
             (new Role())->setCode('head_of_studies')->setName('Jefatura de estudios')->setHierarchyLevel(30),
             (new Role())->setCode('head_of_studies_deputy')->setName('Jefatura de estudios adjunta')->setHierarchyLevel(20),
             (new Role())->setCode('secretary')->setName('Secretaría'),
+            // Guardia coordinator: manages the daily parte (register absences, assign covers, mark
+            // incidents, history and stats). A functional permission role, not a rank — it commands
+            // nobody. Any role can be granted this same access from the roles matrix (Guardias = escritura).
+            (new Role())->setCode('guardias')->setName('Coordinación de guardias')->setLevel(Area::GUARDIAS, PermissionLevel::WRITE),
             // Per-department roles: a holder is "X of a given department", so a task's responsibility on
             // one of these also needs the department (resolved live to whoever holds it there).
             (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10),
