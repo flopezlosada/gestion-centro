@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Integration;
 
 use App\Command\ImportTimetableCommand;
+use App\Entity\AcademicYear;
 use App\Entity\ScheduleEntry;
 use App\Entity\User;
 use App\Enum\ScheduleActivityKind;
@@ -78,6 +79,17 @@ final class ImportTimetableCommandTest extends KernelTestCase
         self::bootKernel();
         $this->em = self::getContainer()->get(EntityManagerInterface::class);
 
+        // The target course must exist before its timetable can be imported.
+        $year = (new AcademicYear())
+            ->setSchoolYear('2026-2027')
+            ->setTerm1Start(new \DateTimeImmutable('2026-09-01'))
+            ->setTerm1End(new \DateTimeImmutable('2026-12-19'))
+            ->setTerm2Start(new \DateTimeImmutable('2027-01-08'))
+            ->setTerm2End(new \DateTimeImmutable('2027-03-27'))
+            ->setTerm3Start(new \DateTimeImmutable('2027-04-07'))
+            ->setTerm3End(new \DateTimeImmutable('2027-06-30'));
+        $this->em->persist($year);
+
         // Jane exists with her name in a different order than Peñalara's "Apellidos, Nombre", and no
         // Peñalara code yet: the import must still match her by name and record the code.
         $jane = (new User())->setFullName('Jane Doe Smith')->setEmail('jane@educa.madrid.org');
@@ -100,7 +112,7 @@ final class ImportTimetableCommandTest extends KernelTestCase
     private function runImport(): CommandTester
     {
         $tester = new CommandTester(self::getContainer()->get(ImportTimetableCommand::class));
-        $tester->execute(['planificador' => $this->planificador, 'horario' => $this->horario]);
+        $tester->execute(['curso' => '2026-2027', 'planificador' => $this->planificador, 'horario' => $this->horario]);
         $tester->assertCommandIsSuccessful();
 
         return $tester;
@@ -139,5 +151,58 @@ final class ImportTimetableCommandTest extends KernelTestCase
         $this->runImport();
 
         self::assertCount(2, $this->em->getRepository(ScheduleEntry::class)->findAll(), 'a re-run replaces, never duplicates');
+    }
+
+    public function testImportingIntoAnUnknownCourseFailsAndWritesNothing(): void
+    {
+        $tester = new CommandTester(self::getContainer()->get(ImportTimetableCommand::class));
+        $exit = $tester->execute(['curso' => '2099-2100', 'planificador' => $this->planificador, 'horario' => $this->horario]);
+
+        self::assertSame(1, $exit, 'a missing course structure fails the command');
+        self::assertStringContainsString('No existe la estructura del curso', $tester->getDisplay());
+        self::assertCount(0, $this->em->getRepository(ScheduleEntry::class)->findAll());
+    }
+
+    public function testEntriesAreTiedToTheTargetCourse(): void
+    {
+        $this->runImport();
+        $this->em->clear();
+
+        $entries = $this->em->getRepository(ScheduleEntry::class)->findAll();
+        self::assertNotEmpty($entries);
+        foreach ($entries as $entry) {
+            self::assertSame('2026-2027', $entry->getAcademicYear()->getSchoolYear(), 'every imported cell belongs to the course it was imported for');
+        }
+    }
+
+    public function testImportingAnotherCourseLeavesTheFirstUntouched(): void
+    {
+        // Import 2026-2027, then the same teachers into a second course: the first course's entries
+        // must survive, since a re-import only replaces its own course's rows.
+        $this->runImport();
+
+        $next = (new AcademicYear())
+            ->setSchoolYear('2027-2028')
+            ->setTerm1Start(new \DateTimeImmutable('2027-09-01'))
+            ->setTerm1End(new \DateTimeImmutable('2027-12-19'))
+            ->setTerm2Start(new \DateTimeImmutable('2028-01-08'))
+            ->setTerm2End(new \DateTimeImmutable('2028-03-27'))
+            ->setTerm3Start(new \DateTimeImmutable('2028-04-07'))
+            ->setTerm3End(new \DateTimeImmutable('2028-06-30'));
+        $this->em->persist($next);
+        $this->em->flush();
+
+        $tester = new CommandTester(self::getContainer()->get(ImportTimetableCommand::class));
+        $tester->execute(['curso' => '2027-2028', 'planificador' => $this->planificador, 'horario' => $this->horario]);
+        $tester->assertCommandIsSuccessful();
+        $this->em->clear();
+
+        $repo = $this->em->getRepository(ScheduleEntry::class);
+        $bySchoolYear = [];
+        foreach ($repo->findAll() as $entry) {
+            $bySchoolYear[$entry->getAcademicYear()->getSchoolYear()][] = $entry;
+        }
+        self::assertCount(2, $bySchoolYear['2026-2027'] ?? [], 'the first course keeps its entries');
+        self::assertCount(2, $bySchoolYear['2027-2028'] ?? [], 'the second course gets its own entries');
     }
 }
