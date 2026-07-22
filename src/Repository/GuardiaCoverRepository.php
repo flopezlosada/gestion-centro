@@ -119,6 +119,96 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
+     * Guardias covered per teacher across the whole course, teacher eager-loaded and ordered by count
+     * (busiest first). An assigned cover with no incident counts as done; teachers with none do not
+     * appear. Powers the coordinator's stats screen.
+     *
+     * Queried from {@see User} as root: DQL forbids selecting a *joined* entity alias alongside scalars,
+     * so the teacher must be the root and the covers are joined onto it.
+     *
+     * @return list<array{teacher: User, total: int}> the ranking, busiest first
+     */
+    public function coveredTotalsByTeacher(): array
+    {
+        /** @var list<array{0: User, total: int}> $rows */
+        $rows = $this->getEntityManager()->createQueryBuilder()
+            ->select('g', 'COUNT(c.id) AS total')
+            ->from(User::class, 'g')
+            ->join(GuardiaCover::class, 'c', 'WITH', 'c.assignedGuardia = g')
+            ->andWhere('c.notCovered = false')
+            ->groupBy('g.id')
+            ->orderBy('total', 'DESC')
+            ->addOrderBy('g.fullName', 'ASC')
+            ->getQuery()
+            ->getResult();
+
+        return array_map(
+            static fn (array $r): array => ['teacher' => $r[0], 'total' => (int) $r['total']],
+            $rows,
+        );
+    }
+
+    /**
+     * The parte lines matching the coordinator's history filters, absent teacher and assigned guardia
+     * eager-loaded, most recent first. Every filter is optional; passing none returns the full log.
+     *
+     * @param \DateTimeImmutable|null $from            lower date bound (inclusive)
+     * @param \DateTimeImmutable|null $to              upper date bound (inclusive)
+     * @param string|null             $group           exact group name to match
+     * @param User|null               $assignedTeacher the guardia teacher who covered
+     * @param User|null               $absentTeacher   the teacher who was absent
+     *
+     * @return GuardiaCover[] the matching covers, most recent first
+     */
+    public function history(?\DateTimeImmutable $from, ?\DateTimeImmutable $to, ?string $group, ?User $assignedTeacher, ?User $absentTeacher): array
+    {
+        $qb = $this->createQueryBuilder('c')
+            ->addSelect('absent', 'guardia')
+            ->join('c.absentTeacher', 'absent')
+            ->leftJoin('c.assignedGuardia', 'guardia')
+            ->orderBy('c.date', 'DESC')
+            ->addOrderBy('c.slotIndex', 'ASC')
+            ->addOrderBy('absent.fullName', 'ASC');
+
+        if (null !== $from) {
+            $qb->andWhere('c.date >= :from')->setParameter('from', $from, 'date_immutable');
+        }
+        if (null !== $to) {
+            $qb->andWhere('c.date <= :to')->setParameter('to', $to, 'date_immutable');
+        }
+        if (null !== $group && '' !== $group) {
+            $qb->andWhere('c.groupName = :group')->setParameter('group', $group);
+        }
+        if (null !== $assignedTeacher) {
+            $qb->andWhere('c.assignedGuardia = :assigned')->setParameter('assigned', $assignedTeacher);
+        }
+        if (null !== $absentTeacher) {
+            $qb->andWhere('c.absentTeacher = :absent')->setParameter('absent', $absentTeacher);
+        }
+
+        return $qb->getQuery()->getResult();
+    }
+
+    /**
+     * The distinct group names present in the parte, alphabetically — the options for the history
+     * screen's group filter.
+     *
+     * @return list<string> the group names present in any cover
+     */
+    public function distinctGroups(): array
+    {
+        /** @var list<array{name: string}> $rows */
+        $rows = $this->createQueryBuilder('c')
+            ->select('DISTINCT c.groupName AS name')
+            ->andWhere('c.groupName IS NOT NULL')
+            ->orderBy('c.groupName', 'ASC')
+            ->getQuery()
+            ->getResult();
+
+        return array_map(static fn (array $r): string => $r['name'], $rows);
+    }
+
+    /**
      * Runs an incident-free, grouped-by-guardia count and returns it keyed by teacher id.
      *
      * @param \Doctrine\ORM\QueryBuilder $qb a builder already scoped (e.g. by slot), alias {@code c}
