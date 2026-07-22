@@ -55,6 +55,17 @@ final class GuardiaController extends AbstractController
         $slots = null !== $year ? $schedule->distinctSlots($year) : [];
         $slotIndex = $this->slotFromRequest($request, $slots);
         $pool = null !== $year ? $schedule->dutyPoolAt($year, $weekday, $slotIndex) : [];
+        $parte = $covers->findForParte($date, $slotIndex);
+
+        // The group each on-call teacher is already covering this period, so the pool panel can tell
+        // who is busy from who is still free at a glance.
+        $assignedHere = [];
+        foreach ($parte as $cover) {
+            $guardia = $cover->getAssignedGuardia();
+            if (null !== $guardia && null !== $guardia->getId()) {
+                $assignedHere[$guardia->getId()] = $cover->getGroupName() ?? 'un grupo';
+            }
+        }
 
         return $this->render('guardia/index.html.twig', [
             'date' => $date,
@@ -62,10 +73,11 @@ final class GuardiaController extends AbstractController
             'schoolYear' => $schoolYear,
             'slots' => $slots,
             'slotIndex' => $slotIndex,
-            'covers' => $covers->findForParte($date, $slotIndex),
+            'covers' => $parte,
             'pool' => $pool,
             'slotLoad' => $covers->loadBySlot($slotIndex),
             'absentIds' => $covers->absentTeacherIdsAt($date, $slotIndex),
+            'assignedHere' => $assignedHere,
         ]);
     }
 
