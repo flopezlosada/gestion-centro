@@ -309,6 +309,57 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
+     * Lightweight rows for the analytics dashboard — one per cover, with just the fields the time and
+     * heatmap aggregations need. Aggregating in PHP (small volume: hundreds of covers per course) keeps
+     * the queries portable and avoids per-driver date functions.
+     *
+     * @return list<array{date: \DateTimeImmutable, slot: int, assigned: bool, incident: bool}> the rows
+     */
+    public function analyticsRows(): array
+    {
+        /** @var list<array{date: \DateTimeImmutable, slot: int, assigned: int|null, incident: bool}> $rows */
+        $rows = $this->createQueryBuilder('c')
+            ->select('c.date AS date', 'c.slotIndex AS slot', 'IDENTITY(c.assignedGuardia) AS assigned', 'c.notCovered AS incident')
+            ->getQuery()
+            ->getResult();
+
+        return array_map(
+            static fn (array $r): array => [
+                'date' => $r['date'],
+                'slot' => (int) $r['slot'],
+                'assigned' => null !== $r['assigned'],
+                'incident' => (bool) $r['incident'],
+            ],
+            $rows,
+        );
+    }
+
+    /**
+     * How many absences each department generated this course (by the absent teacher's department),
+     * busiest first. Teachers with no department fall under "Sin departamento".
+     *
+     * @return list<array{name: string, total: int}> the ranking, most absences first
+     */
+    public function absencesByDepartment(): array
+    {
+        /** @var list<array{name: string|null, total: int}> $rows */
+        $rows = $this->createQueryBuilder('c')
+            ->select('d.name AS name', 'COUNT(c.id) AS total')
+            ->join('c.absentTeacher', 't')
+            ->leftJoin('t.unit', 'd')
+            ->groupBy('d.id')
+            ->orderBy('total', 'DESC')
+            ->addOrderBy('d.name', 'ASC')
+            ->getQuery()
+            ->getResult();
+
+        return array_map(
+            static fn (array $r): array => ['name' => $r['name'] ?? 'Sin departamento', 'total' => (int) $r['total']],
+            $rows,
+        );
+    }
+
+    /**
      * Runs an incident-free, grouped-by-guardia count and returns it keyed by teacher id.
      *
      * @param \Doctrine\ORM\QueryBuilder $qb a builder already scoped (e.g. by slot), alias {@code c}

@@ -11,6 +11,7 @@ use App\Enum\Area;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use App\Guardia\GuardiaScheduler;
+use App\Guardia\GuardiaStatistics;
 use App\Repository\AcademicYearRepository;
 use App\Repository\GuardiaCoverRepository;
 use App\Repository\ScheduleEntryRepository;
@@ -131,22 +132,20 @@ final class GuardiaController extends AbstractController
     }
 
     /**
-     * Guardia statistics for the coordinator. Four lenses: coverage health (registered vs covered vs
-     * incidents vs still unassigned), fairness of the split per teacher (with the staff average so
-     * imbalance is visible), absences by period (where cover is needed most) and who is absent most.
-     * Read access to the area is enough.
+     * The coordinator's analytics dashboard. Several lenses over the course's covers: coverage health
+     * (registered vs covered vs incident vs unassigned), fairness of the split (descriptive measures +
+     * a Gini-based balance reading), monthly evolution, a weekday × period heatmap of where cover is
+     * needed, absences by department and the busiest teachers on both sides. Read access is enough.
      */
     #[Route('/estadisticas', name: 'guardia_stats', methods: ['GET'])]
-    public function stats(GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
+    public function stats(GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years, GuardiaStatistics $statistics): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
         $ranking = $covers->coveredTotalsByTeacher();
-        $teacherCount = \count($ranking);
-        $coveredTotal = array_sum(array_map(static fn (array $r): int => $r['total'], $ranking));
-
         $summary = $covers->coverageSummary();
         $coverageRate = $summary['absences'] > 0 ? (int) round($summary['covered'] * 100 / $summary['absences']) : 0;
+        $rows = $covers->analyticsRows();
 
         // Period labels from the current course's marco horario (a stat may span the course, but the
         // period grid is stable within a year); fall back to the ordinal when a slot has no label.
@@ -154,15 +153,49 @@ final class GuardiaController extends AbstractController
 
         return $this->render('guardia/stats.html.twig', [
             'ranking' => $ranking,
-            'coveredTotal' => $coveredTotal,
-            'teacherCount' => $teacherCount,
             'max' => $ranking[0]['total'] ?? 0,
-            'average' => $teacherCount > 0 ? round($coveredTotal / $teacherCount, 1) : 0.0,
+            'equity' => $statistics->equity(array_map(static fn (array $r): int => $r['total'], $ranking)),
             'summary' => $summary,
             'coverageRate' => $coverageRate,
+            'monthly' => $statistics->byMonth($rows),
+            'heatmap' => $statistics->heatmap($rows),
             'absencesBySlot' => $covers->absencesBySlot(),
             'slotTimes' => $this->slotTimes($schedule, $year),
             'absentRanking' => $covers->absencesByTeacher(10),
+            'byDepartment' => $covers->absencesByDepartment(),
+        ]);
+    }
+
+    /**
+     * The per-teacher guardia figures as a CSV (Excel-friendly, UTF-8 BOM): every teacher who covered
+     * or was absent, with guardias covered and absences. Read access to the guardia area is enough.
+     */
+    #[Route('/estadisticas.csv', name: 'guardia_stats_csv', methods: ['GET'])]
+    public function statsCsv(GuardiaCoverRepository $covers): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
+
+        // Union of both rankings keyed by teacher, so a teacher shows up whether they covered, were
+        // absent, or both.
+        $byTeacher = [];
+        foreach ($covers->coveredTotalsByTeacher() as $row) {
+            $byTeacher[$row['teacher']->getId()] = ['name' => $row['teacher']->getFullName(), 'covered' => $row['total'], 'absences' => 0];
+        }
+        foreach ($covers->absencesByTeacher(100000) as $row) {
+            $id = $row['teacher']->getId();
+            $byTeacher[$id] ??= ['name' => $row['teacher']->getFullName(), 'covered' => 0, 'absences' => 0];
+            $byTeacher[$id]['absences'] = $row['total'];
+        }
+        usort($byTeacher, static fn (array $a, array $b): int => $b['covered'] <=> $a['covered'] ?: strcasecmp($a['name'], $b['name']));
+
+        $lines = ["\u{FEFF}Profesor;Guardias cubiertas;Ausencias"];
+        foreach ($byTeacher as $r) {
+            $lines[] = sprintf('"%s";%d;%d', str_replace('"', '""', $r['name']), $r['covered'], $r['absences']);
+        }
+
+        return new Response(implode("\r\n", $lines)."\r\n", Response::HTTP_OK, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="guardias-por-profesor.csv"',
         ]);
     }
 
