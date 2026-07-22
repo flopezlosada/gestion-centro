@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Guardia;
 
+use App\Entity\AcademicYear;
 use App\Entity\GuardiaCover;
 use App\Entity\ScheduleEntry;
 use App\Enum\ScheduleActivityKind;
@@ -32,14 +33,16 @@ final class GuardiaScheduler
 
     /**
      * Assigns a guardia teacher to every unassigned cover on a date and period, balancing the load.
-     * Leaves a cover unassigned when the pool runs out.
+     * Leaves a cover unassigned when the pool runs out. The pool is read from the given course's
+     * timetable (the course the date falls into).
      *
+     * @param AcademicYear       $year      the course whose timetable supplies the guardia pool
      * @param \DateTimeImmutable $date      the day
      * @param int                $slotIndex the period index within the day
      *
      * @return int how many covers were newly assigned
      */
-    public function autoAssign(\DateTimeImmutable $date, int $slotIndex): int
+    public function autoAssign(AcademicYear $year, \DateTimeImmutable $date, int $slotIndex): int
     {
         $parte = $this->covers->findForParte($date, $slotIndex);
         $unassigned = array_values(array_filter($parte, static fn (GuardiaCover $c): bool => null === $c->getAssignedGuardia()));
@@ -48,7 +51,7 @@ final class GuardiaScheduler
         }
 
         $takenTeacherIds = $this->assignedTeacherIds($parte);
-        $candidates = $this->candidates($date, $slotIndex, $takenTeacherIds);
+        $candidates = $this->candidates($year, $date, $slotIndex, $takenTeacherIds);
 
         $ordered = $this->assigner->prioritise(\count($unassigned), $candidates);
 
@@ -66,16 +69,18 @@ final class GuardiaScheduler
     }
 
     /**
-     * Builds the pool of candidates for a period: guardia and collaborator duty holders, minus anyone
-     * absent that period and anyone already covering a group then, each with their confirmed balance.
+     * Builds the pool of candidates for a period: guardia and collaborator duty holders in the given
+     * course, minus anyone absent that period and anyone already covering a group then, each with
+     * their confirmed balance.
      *
+     * @param AcademicYear       $year            the course whose timetable supplies the pool
      * @param \DateTimeImmutable $date            the day
      * @param int                $slotIndex       the period index within the day
      * @param list<int>          $takenTeacherIds ids already covering a group this period
      *
      * @return list<GuardiaCandidate> the available candidates
      */
-    private function candidates(\DateTimeImmutable $date, int $slotIndex, array $takenTeacherIds): array
+    private function candidates(AcademicYear $year, \DateTimeImmutable $date, int $slotIndex, array $takenTeacherIds): array
     {
         $weekday = Weekday::from((int) $date->format('N'));
         $absentIds = $this->covers->absentTeacherIdsAt($date, $slotIndex);
@@ -85,7 +90,7 @@ final class GuardiaScheduler
 
         $candidates = [];
         $seen = [];
-        foreach ($this->schedule->dutyPoolAt($weekday, $slotIndex) as $entry) {
+        foreach ($this->schedule->dutyPoolAt($year, $weekday, $slotIndex) as $entry) {
             $teacherId = $entry->getTeacher()->getId();
             if (null === $teacherId || \in_array($teacherId, $excluded, true) || isset($seen[$teacherId])) {
                 continue;

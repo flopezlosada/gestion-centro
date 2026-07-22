@@ -38,7 +38,7 @@
                                     <input type="hidden" name="_token" value="{{ csrf_token('academic_year_generate' ~ year.id) }}">
                                     <button type="submit" class="link-action">Generar año escolar</button>
                                 </form>
-                                <form method="post" action="{{ path('admin_academic_year_delete', { id: year.id }) }}" data-confirm="¿Seguro que quieres borrar la estructura del curso {{ year.schoolYear }}?">
+                                <form method="post" action="{{ path('admin_academic_year_delete', { id: year.id }) }}" data-confirm="¿Seguro que quieres borrar la estructura del curso {{ year.schoolYear }}? También se borrará el horario importado de ese curso (el parte de guardias se queda sin horario hasta reimportarlo).">
                                     <input type="hidden" name="_token" value="{{ csrf_token('academic_year_delete' ~ year.id) }}">
                                     <button type="submit" class="link-danger">Borrar</button>
                                 </form>

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Repository;
 
+use App\Entity\AcademicYear;
 use App\Entity\ScheduleEntry;
 use App\Entity\User;
 use App\Enum\ScheduleActivityKind;
@@ -22,23 +23,26 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
-     * The non-teaching duty slots (guardia and collaborator) on a weekday at a given period — the pool
-     * the assignment engine picks from. Teachers are eager-loaded so the panel can read their name and
-     * department without extra queries.
+     * The non-teaching duty slots (guardia and collaborator) on a weekday at a given period of a
+     * course — the pool the assignment engine picks from. Teachers are eager-loaded so the panel can
+     * read their name and department without extra queries.
      *
-     * @param Weekday $weekday   the weekday
-     * @param int     $slotIndex the period index within the day
+     * @param AcademicYear $year      the course whose timetable to read
+     * @param Weekday      $weekday   the weekday
+     * @param int          $slotIndex the period index within the day
      *
      * @return ScheduleEntry[] the guardia and collaborator entries at that period, teachers joined
      */
-    public function dutyPoolAt(Weekday $weekday, int $slotIndex): array
+    public function dutyPoolAt(AcademicYear $year, Weekday $weekday, int $slotIndex): array
     {
         return $this->createQueryBuilder('s')
             ->addSelect('t')
             ->join('s.teacher', 't')
+            ->andWhere('s.academicYear = :year')
             ->andWhere('s.weekday = :weekday')
             ->andWhere('s.slotIndex = :slot')
             ->andWhere('s.kind IN (:kinds)')
+            ->setParameter('year', $year)
             ->setParameter('weekday', $weekday)
             ->setParameter('slot', $slotIndex)
             ->setParameter('kinds', [ScheduleActivityKind::GUARDIA, ScheduleActivityKind::COLLABORATOR])
@@ -48,22 +52,25 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
-     * The teaching cell a teacher has on a weekday at a given period, or null if they are free then.
-     * Used to snapshot the group and room an absence leaves uncovered.
+     * The teaching cell a teacher has on a weekday at a given period of a course, or null if they are
+     * free then. Used to snapshot the group and room an absence leaves uncovered.
      *
-     * @param User    $teacher   the (absent) teacher
-     * @param Weekday $weekday   the weekday
-     * @param int     $slotIndex the period index within the day
+     * @param AcademicYear $year      the course whose timetable to read
+     * @param User         $teacher   the (absent) teacher
+     * @param Weekday      $weekday   the weekday
+     * @param int          $slotIndex the period index within the day
      *
      * @return ScheduleEntry|null the lective entry, or null when the teacher has no class then
      */
-    public function lectiveAt(User $teacher, Weekday $weekday, int $slotIndex): ?ScheduleEntry
+    public function lectiveAt(AcademicYear $year, User $teacher, Weekday $weekday, int $slotIndex): ?ScheduleEntry
     {
         return $this->createQueryBuilder('s')
+            ->andWhere('s.academicYear = :year')
             ->andWhere('s.teacher = :teacher')
             ->andWhere('s.weekday = :weekday')
             ->andWhere('s.slotIndex = :slot')
             ->andWhere('s.kind = :lective')
+            ->setParameter('year', $year)
             ->setParameter('teacher', $teacher)
             ->setParameter('weekday', $weekday)
             ->setParameter('slot', $slotIndex)
@@ -74,16 +81,20 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
-     * The distinct time slots present in the imported timetable, ordered by start time — the periods
-     * the "Parte de guardias" screen offers as tabs. Each row is {@code [index, startsAt, endsAt]}.
+     * The distinct time slots present in a course's imported timetable, ordered by start time — the
+     * periods the "Parte de guardias" screen offers as tabs. Each row is {@code [index, startsAt, endsAt]}.
+     *
+     * @param AcademicYear $year the course whose timetable to read
      *
      * @return list<array{index: int, startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}> the periods, earliest first
      */
-    public function distinctSlots(): array
+    public function distinctSlots(AcademicYear $year): array
     {
         /** @var list<array{slotIndex: int, startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}> $rows */
         $rows = $this->createQueryBuilder('s')
             ->select('s.slotIndex AS slotIndex', 'MIN(s.startsAt) AS startsAt', 'MIN(s.endsAt) AS endsAt')
+            ->andWhere('s.academicYear = :year')
+            ->setParameter('year', $year)
             ->groupBy('s.slotIndex')
             ->orderBy('startsAt', 'ASC')
             ->getQuery()
@@ -100,27 +111,35 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
-     * Replaces the whole timetable of the given teachers with the supplied entries, in one flush.
-     * Used by the importer: it wipes only the reconciled teachers' rows (so unmatched teachers keep
-     * whatever they had) and inserts the fresh ones, making a re-import idempotent.
+     * Replaces the given teachers' timetable for one course with the supplied entries. Used by the
+     * importer: it wipes only the reconciled teachers' rows in that course (so unmatched teachers, and
+     * every other course, keep whatever they had) and inserts the fresh ones, making a re-import of the
+     * same course idempotent. The delete and the inserts run in one transaction, so a concurrent parte
+     * read (now reachable any time through the self-service import screen) never sees a half-replaced
+     * timetable — either the old rows or the new ones, never neither.
      *
-     * @param list<User>          $teachers the teachers whose old entries are cleared
+     * @param AcademicYear        $year     the course whose entries are replaced
+     * @param list<User>          $teachers the teachers whose old entries in that course are cleared
      * @param list<ScheduleEntry> $entries  the fresh entries to persist
      */
-    public function replaceForTeachers(array $teachers, array $entries): void
+    public function replaceForTeachers(AcademicYear $year, array $teachers, array $entries): void
     {
         $em = $this->getEntityManager();
-        if ([] !== $teachers) {
-            $this->createQueryBuilder('s')
-                ->delete()
-                ->where('s.teacher IN (:teachers)')
-                ->setParameter('teachers', $teachers)
-                ->getQuery()
-                ->execute();
-        }
-        foreach ($entries as $entry) {
-            $em->persist($entry);
-        }
-        $em->flush();
+        $em->wrapInTransaction(function () use ($em, $year, $teachers, $entries): void {
+            if ([] !== $teachers) {
+                $this->createQueryBuilder('s')
+                    ->delete()
+                    ->where('s.academicYear = :year')
+                    ->andWhere('s.teacher IN (:teachers)')
+                    ->setParameter('year', $year)
+                    ->setParameter('teachers', $teachers)
+                    ->getQuery()
+                    ->execute();
+            }
+            foreach ($entries as $entry) {
+                $em->persist($entry);
+            }
+            $em->flush();
+        });
     }
 }

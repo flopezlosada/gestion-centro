@@ -78,8 +78,10 @@ final class AdminAcademicYearController extends AbstractController
 
     /**
      * Deletes a course structure. Tasks reference their course by its "YYYY-YYYY" code, not by a
-     * foreign key to this row, so removing it leaves existing tasks untouched; it only drops the term
-     * skeleton, which can be re-created.
+     * foreign key to this row, so removing it leaves existing tasks untouched. It does, however,
+     * cascade-delete that course's imported timetable ({@see \App\Entity\ScheduleEntry} has an
+     * {@code ON DELETE CASCADE} foreign key to this row), so the parte de guardias for its dates is
+     * left without a timetable until it is re-imported; the term skeleton itself can be re-created.
      */
     #[Route('/{id}/borrar', name: 'admin_academic_year_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function delete(AcademicYear $year, Request $request, EntityManagerInterface $em): Response

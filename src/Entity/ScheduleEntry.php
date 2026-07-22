@@ -20,10 +20,14 @@ use Doctrine\ORM\Mapping as ORM;
  * the audit trail tracks hand edits, not the bulk timetable load. Two reads drive the whole guardias
  * module off this table: "which group/room does teacher T have at weekday W, slot S" (to know what an
  * absence leaves uncovered) and "who is on guardia at weekday W, slot S" (the pool to assign from).
+ *
+ * Every cell belongs to one {@see AcademicYear}: timetables change each course, so an import targets a
+ * concrete course and replaces only that course's entries, and the parte reads the timetable of the
+ * course the queried date falls into. Absences ({@see GuardiaCover}) key off the date alone.
  */
 #[ORM\Entity(repositoryClass: ScheduleEntryRepository::class)]
 #[ORM\Table(name: 'schedule_entry')]
-#[ORM\Index(name: 'IDX_sched_slot_kind', columns: ['weekday', 'slot_index', 'kind'])]
+#[ORM\Index(name: 'IDX_sched_year_slot_kind', columns: ['academic_year_id', 'weekday', 'slot_index', 'kind'])]
 #[ORM\Index(name: 'IDX_sched_teacher', columns: ['teacher_id'])]
 class ScheduleEntry
 {
@@ -31,6 +35,11 @@ class ScheduleEntry
     #[ORM\GeneratedValue]
     #[ORM\Column]
     private ?int $id = null;
+
+    /** The course this timetable cell belongs to; an import replaces only its own course's entries. */
+    #[ORM\ManyToOne(targetEntity: AcademicYear::class)]
+    #[ORM\JoinColumn(name: 'academic_year_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
+    private AcademicYear $academicYear;
 
     /** The teacher this timetable cell belongs to. */
     #[ORM\ManyToOne(targetEntity: User::class)]
@@ -76,6 +85,18 @@ class ScheduleEntry
     public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function getAcademicYear(): AcademicYear
+    {
+        return $this->academicYear;
+    }
+
+    public function setAcademicYear(AcademicYear $academicYear): static
+    {
+        $this->academicYear = $academicYear;
+
+        return $this;
     }
 
     public function getTeacher(): User
