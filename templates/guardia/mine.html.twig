@@ -13,6 +13,16 @@
         <a class="btn" href="{{ path('guardia_absence_new', { teacher: app.user.id }) }}">Voy a faltar…</a>
     </div>
 
+    {# Contador personal del curso, con la media del claustro como referencia de reparto justo. #}
+    <div class="worklist-stats worklist-stats--2">
+        <div class="stat stat--success{{ myCovered == 0 ? ' is-zero' }}">
+            <span class="stat-figure">{{ myCovered }}</span><span class="stat-label">Mis guardias este curso</span>
+        </div>
+        <div class="stat{{ staffAverage == 0 ? ' is-zero' }}">
+            <span class="stat-figure">{{ staffAverage }}</span><span class="stat-label">Media del claustro</span>
+        </div>
+    </div>
+
     <div class="card">
         {% if covers is empty %}
             <div class="empty-state">
