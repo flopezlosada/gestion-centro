@@ -16,7 +16,8 @@
     </div>
 
     <div class="card">
-        {{ form_start(form) }}
+        {{ form_start(form, { attr: { novalidate: 'novalidate' } }) }}
+        {{ f.submit_error(form) }}
         {{ form_errors(form) }}
         <div class="stackform">
             <div class="form-row">

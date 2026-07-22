@@ -137,6 +137,8 @@ final class PersonalEventCrudTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(422);
         self::assertStringContainsString('hora de inicio', (string) $this->client->getResponse()->getContent());
+        // Aviso destacado arriba: sin él, el usuario no percibe que ha fallado (solo ve la cabecera).
+        self::assertSelectorExists('[data-form-error]');
         self::assertNull($this->em->getRepository(PersonalEvent::class)->findOneBy(['title' => 'Fin sin inicio']));
     }
 

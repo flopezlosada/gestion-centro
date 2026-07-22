@@ -12,16 +12,29 @@ namespace App\Support;
  */
 final class TaskStatus
 {
+    /** Workflow places (Symfony Workflow markings), matching config/packages/workflow.yaml. */
+    public const string PENDING = 'pending';
+    public const string SUBMITTED = 'submitted';
+    public const string VALIDATED = 'validated';
+    public const string CANCELLED = 'cancelled';
+
+    /**
+     * Terminal places: the task is closed and needs no further work — finalizada (validated) o
+     * cancelada (cancelled). Fuente única para "ni abierta": la usan las queries de tareas abiertas
+     * y el reparto de la agenda personal.
+     */
+    public const array CLOSED = [self::VALIDATED, self::CANCELLED];
+
     /**
      * Workflow place → human label (Spanish). Un único ciclo para todas las tareas: Pendiente →
      * Entregada → Finalizada, con Cancelada como cierre alternativo. "Devolver" no es un estado:
      * vuelve a Pendiente (el rechazo queda en el histórico), por eso no aparece aquí.
      */
     public const array LABELS = [
-        'pending' => 'Pendiente',
-        'submitted' => 'Entregada',
-        'validated' => 'Finalizada',
-        'cancelled' => 'Cancelada',
+        self::PENDING => 'Pendiente',
+        self::SUBMITTED => 'Entregada',
+        self::VALIDATED => 'Finalizada',
+        self::CANCELLED => 'Cancelada',
     ];
 
     /**

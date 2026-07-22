@@ -8,6 +8,7 @@ use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\Department;
 use App\Entity\User;
+use App\Support\TaskStatus;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
@@ -132,9 +133,13 @@ class TaskRepository extends ServiceEntityRepository
             $user->getAssignedRoles()->map(static fn (Role $role): ?int => $role->getId())->toArray(),
         ));
 
+        // Las canceladas se quedan fuera: no son ni pendientes ni un logro, así que no ocupan la agenda.
+        // Las finalizadas sí se traen: caen en el bucket "Hechas" (ver AgendaEntry::fromTask).
         $qb = $this->createQueryBuilder('t')
             ->andWhere('t.schoolYear = :year')
+            ->andWhere('t.status != :cancelled')
             ->setParameter('year', $schoolYear)
+            ->setParameter('cancelled', TaskStatus::CANCELLED)
             ->orderBy('t.dueDate', 'ASC')
             ->addOrderBy('t.id', 'ASC');
 
@@ -197,7 +202,7 @@ class TaskRepository extends ServiceEntityRepository
             ->andWhere('t.status NOT IN (:closed)')
             ->setParameter('role', $role)
             ->setParameter('year', $schoolYear)
-            ->setParameter('closed', ['validated', 'cancelled']);
+            ->setParameter('closed', TaskStatus::CLOSED);
 
         if (null === $unit) {
             $qb->andWhere('resp.unit IS NULL');
