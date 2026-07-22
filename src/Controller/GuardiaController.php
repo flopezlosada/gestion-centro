@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Entity\AcademicYear;
 use App\Entity\GuardiaCover;
 use App\Entity\User;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use App\Guardia\GuardiaScheduler;
+use App\Repository\AcademicYearRepository;
 use App\Repository\GuardiaCoverRepository;
 use App\Repository\ScheduleEntryRepository;
 use App\Repository\UserRepository;
+use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -36,26 +39,29 @@ final class GuardiaController extends AbstractController
      * query string (today and the first period of the day by default).
      */
     #[Route('', name: 'guardia_index', methods: ['GET'])]
-    public function index(Request $request, ScheduleEntryRepository $schedule, GuardiaCoverRepository $covers, UserRepository $users): Response
+    public function index(Request $request, ScheduleEntryRepository $schedule, GuardiaCoverRepository $covers, UserRepository $users, AcademicYearRepository $years): Response
     {
         $date = $this->dateFromRequest($request);
-        $slots = $schedule->distinctSlots();
-        $slotIndex = $this->slotFromRequest($request, $slots);
+        $schoolYear = SchoolYear::current($date);
+        $year = $years->findBySchoolYear($schoolYear);
         $weekday = Weekday::from((int) $date->format('N'));
 
-        $pool = $schedule->dutyPoolAt($weekday, $slotIndex);
-        $slotLoad = $covers->confirmedLoadBySlot($slotIndex);
-        $absentIds = $covers->absentTeacherIdsAt($date, $slotIndex);
+        // Slots and the guardia pool come from the timetable of the course this date falls into; with
+        // no course imported for it there is nothing to show but the empty state.
+        $slots = null !== $year ? $schedule->distinctSlots($year) : [];
+        $slotIndex = $this->slotFromRequest($request, $slots);
+        $pool = null !== $year ? $schedule->dutyPoolAt($year, $weekday, $slotIndex) : [];
 
         return $this->render('guardia/index.html.twig', [
             'date' => $date,
             'weekday' => $weekday,
+            'schoolYear' => $schoolYear,
             'slots' => $slots,
             'slotIndex' => $slotIndex,
             'covers' => $covers->findForParte($date, $slotIndex),
             'pool' => $pool,
-            'slotLoad' => $slotLoad,
-            'absentIds' => $absentIds,
+            'slotLoad' => $covers->confirmedLoadBySlot($slotIndex),
+            'absentIds' => $covers->absentTeacherIdsAt($date, $slotIndex),
             'allTeachers' => $users->findBy([], ['fullName' => 'ASC']),
         ]);
     }
@@ -65,12 +71,19 @@ final class GuardiaController extends AbstractController
      * period. The uncovered group and room are snapshotted from the absent teacher's timetable.
      */
     #[Route('/ausencia', name: 'guardia_add_absence', methods: ['POST'])]
-    public function addAbsence(Request $request, UserRepository $users, ScheduleEntryRepository $schedule, GuardiaCoverRepository $covers, GuardiaScheduler $scheduler, EntityManagerInterface $em): Response
+    public function addAbsence(Request $request, UserRepository $users, ScheduleEntryRepository $schedule, GuardiaCoverRepository $covers, GuardiaScheduler $scheduler, AcademicYearRepository $years, EntityManagerInterface $em): Response
     {
         $this->assertCsrf($request, 'guardia_add_absence');
 
         $date = $this->dateFromRequest($request);
         $slotIndex = (int) $request->request->get('slot');
+        $year = $years->findBySchoolYear(SchoolYear::current($date));
+        if (!$year instanceof AcademicYear) {
+            $this->addFlash('error', sprintf('No hay horario importado para el curso %s. Impórtalo antes de registrar ausencias.', SchoolYear::current($date)));
+
+            return $this->backToParte($date, $slotIndex);
+        }
+
         $teacher = $users->find((int) $request->request->get('absent_teacher'));
         if (!$teacher instanceof User) {
             $this->addFlash('error', 'Profesor no encontrado.');
@@ -84,7 +97,7 @@ final class GuardiaController extends AbstractController
             return $this->backToParte($date, $slotIndex);
         }
 
-        $lective = $schedule->lectiveAt($teacher, Weekday::from((int) $date->format('N')), $slotIndex);
+        $lective = $schedule->lectiveAt($year, $teacher, Weekday::from((int) $date->format('N')), $slotIndex);
         $cover = (new GuardiaCover())
             ->setDate($date)
             ->setSlotIndex($slotIndex)
@@ -95,7 +108,7 @@ final class GuardiaController extends AbstractController
         $em->persist($cover);
         $em->flush();
 
-        $scheduler->autoAssign($date, $slotIndex);
+        $scheduler->autoAssign($year, $date, $slotIndex);
         $this->addFlash('success', sprintf('Ausencia de %s registrada.', $teacher->getFullName()));
 
         return $this->backToParte($date, $slotIndex);
@@ -105,13 +118,20 @@ final class GuardiaController extends AbstractController
      * Re-runs the equitable assignment for a period, filling any still-unassigned covers.
      */
     #[Route('/asignar', name: 'guardia_auto_assign', methods: ['POST'])]
-    public function autoAssign(Request $request, GuardiaScheduler $scheduler): Response
+    public function autoAssign(Request $request, GuardiaScheduler $scheduler, AcademicYearRepository $years): Response
     {
         $this->assertCsrf($request, 'guardia_auto_assign');
         $date = $this->dateFromRequest($request);
         $slotIndex = (int) $request->request->get('slot');
 
-        $assigned = $scheduler->autoAssign($date, $slotIndex);
+        $year = $years->findBySchoolYear(SchoolYear::current($date));
+        if (!$year instanceof AcademicYear) {
+            $this->addFlash('error', sprintf('No hay horario importado para el curso %s.', SchoolYear::current($date)));
+
+            return $this->backToParte($date, $slotIndex);
+        }
+
+        $assigned = $scheduler->autoAssign($year, $date, $slotIndex);
         $this->addFlash('success', 0 === $assigned ? 'No había guardias pendientes de asignar.' : sprintf('%d guardia(s) asignada(s).', $assigned));
 
         return $this->backToParte($date, $slotIndex);

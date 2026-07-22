@@ -1,0 +1,47 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}Importar horario (Peñalara){% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    Horario (Peñalara)
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Importar horario (Peñalara)</h1>
+            <p class="lead">Sube los dos ficheros de Peñalara del curso para actualizar el horario que alimenta el parte de guardias.</p>
+        </div>
+    </div>
+
+    {% if result %}
+        <div class="card">
+            <div class="page-head"><div><h2>Resultado de la importación</h2></div></div>
+            <p><strong>{{ result.entryCount }}</strong> celdas de horario ({{ result.guardiaCount }} de guardia/colaboración) para <strong>{{ result.matchedCount }}</strong> profesores emparejados.</p>
+
+            {% if result.unmatched is empty %}
+                <p class="badge badge--ok">Todos los profesores del horario se emparejaron con un usuario.</p>
+            {% else %}
+                <div class="form-error" role="alert">
+                    {{ result.unmatched|length }} profesor(es) del horario sin emparejar con un usuario: su horario <strong>no</strong> se ha importado.
+                </div>
+                <ul>
+                    {% for code, name in result.unmatched %}
+                        <li>{{ name }} <span class="muted mono">(código {{ code }})</span></li>
+                    {% endfor %}
+                </ul>
+                <p class="help">Da de alta a esas personas en <a href="{{ path('admin_user_index') }}">Usuarios</a> (o corrige su nombre) y vuelve a importar: se emparejarán por nombre y quedará guardado su código de Peñalara.</p>
+            {% endif %}
+        </div>
+    {% endif %}
+
+    <div class="card form-card">
+        {{ form_start(form, { 'attr': { 'novalidate': 'novalidate' } }) }}
+            {{ form_errors(form) }}
+            {{ f.fields([form.academicYear, form.planificador, form.horario]) }}
+            {{ f.actions(path('guardia_index'), 'Importar') }}
+        {{ form_end(form) }}
+    </div>
+{% endblock %}

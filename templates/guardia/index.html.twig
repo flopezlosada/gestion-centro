@@ -24,8 +24,11 @@
     {% if slots is empty %}
         <div class="card">
             <div class="empty-state">
-                <h2>No hay horario importado</h2>
-                <p>Importa el horario de Peñalara con <code>app:import-timetable</code> para poder registrar ausencias y repartir guardias.</p>
+                <h2>No hay horario importado para el curso {{ schoolYear }}</h2>
+                <p>Importa el horario de Peñalara de este curso para poder registrar ausencias y repartir guardias.</p>
+                {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ADMINISTRATION')) %}
+                    <p><a class="btn" href="{{ path('admin_timetable_import') }}">Importar horario</a></p>
+                {% endif %}
             </div>
         </div>
     {% else %}
