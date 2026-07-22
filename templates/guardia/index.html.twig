@@ -45,12 +45,15 @@
         {# Tabla del parte #}
         <div class="card">
             <div class="page-head"><div><h2>Ausencias de esta hora</h2></div>
-                <form method="post" action="{{ path('guardia_auto_assign') }}">
-                    <input type="hidden" name="_token" value="{{ csrf_token('guardia_auto_assign') }}">
-                    <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
-                    <input type="hidden" name="slot" value="{{ slotIndex }}">
-                    <button type="submit" class="btn">Repartir guardias</button>
-                </form>
+                <div class="inline-form">
+                    <a class="btn" href="{{ path('guardia_absence_new', { date: date|date('Y-m-d', false) }) }}">+ Apuntar ausencia</a>
+                    <form method="post" action="{{ path('guardia_auto_assign') }}">
+                        <input type="hidden" name="_token" value="{{ csrf_token('guardia_auto_assign') }}">
+                        <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
+                        <input type="hidden" name="slot" value="{{ slotIndex }}">
+                        <button type="submit" class="btn btn--ghost">Repartir guardias</button>
+                    </form>
+                </div>
             </div>
 
             {% if covers is empty %}
@@ -104,21 +107,6 @@
                     </tbody>
                 </table>
             {% endif %}
-
-            {# Alta de ausencia #}
-            <form method="post" action="{{ path('guardia_add_absence') }}" class="inline-form inline-form--wrap">
-                <input type="hidden" name="_token" value="{{ csrf_token('guardia_add_absence') }}">
-                <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
-                <input type="hidden" name="slot" value="{{ slotIndex }}">
-                <select name="absent_teacher" required>
-                    <option value="">Profesor ausente…</option>
-                    {% for teacher in allTeachers %}
-                        <option value="{{ teacher.id }}">{{ teacher.fullName }}</option>
-                    {% endfor %}
-                </select>
-                <input type="text" name="task_note" placeholder="Tarea / observaciones (opcional)" maxlength="500">
-                <button type="submit" class="btn">Apuntar en el parte</button>
-            </form>
         </div>
 
         {# Panel de profesores de guardia a esta hora #}

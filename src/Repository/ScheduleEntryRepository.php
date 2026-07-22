@@ -81,6 +81,36 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
+     * The period indices a teacher teaches on a weekday of a course — the slots an all-day absence
+     * turns into covers (a free period or a duty slot needs no cover, so only lective ones count).
+     *
+     * @param AcademicYear $year    the course whose timetable to read
+     * @param User         $teacher the (absent) teacher
+     * @param Weekday      $weekday the weekday
+     *
+     * @return list<int> the lective period indices, earliest first
+     */
+    public function lectiveSlotsFor(AcademicYear $year, User $teacher, Weekday $weekday): array
+    {
+        /** @var list<array{slotIndex: int}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('DISTINCT s.slotIndex AS slotIndex')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.teacher = :teacher')
+            ->andWhere('s.weekday = :weekday')
+            ->andWhere('s.kind = :lective')
+            ->setParameter('year', $year)
+            ->setParameter('teacher', $teacher)
+            ->setParameter('weekday', $weekday)
+            ->setParameter('lective', ScheduleActivityKind::LECTIVE)
+            ->orderBy('s.slotIndex', 'ASC')
+            ->getQuery()
+            ->getResult();
+
+        return array_map(static fn (array $r): int => (int) $r['slotIndex'], $rows);
+    }
+
+    /**
      * The distinct time slots present in a course's imported timetable, ordered by start time — the
      * periods the "Parte de guardias" screen offers as tabs. Each row is {@code [index, startsAt, endsAt]}.
      *
