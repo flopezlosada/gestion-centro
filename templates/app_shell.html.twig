@@ -23,15 +23,21 @@
                 <a href="{{ path('personal_event_index') }}" class="{{ route starts with 'personal_event_' ? 'is-active' }}">Agenda personal</a>
                 <a href="{{ path('task_index') }}" class="{{ route starts with 'task_' ? 'is-active' }}">Tareas del centro</a>
                 <a href="{{ path('guardia_mine') }}" class="{{ route == 'guardia_mine' ? 'is-active' }}">Mis guardias</a>
+                <a href="{{ path('calendar_index') }}" class="{{ route starts with 'calendar_' ? 'is-active' }}">Calendario</a>
+                {% set unread = unread_notifications() %}
+                <a href="{{ path('notification_index') }}" class="{{ route starts with 'notification_' ? 'is-active' }}">Avisos{% if unread > 0 %} <span class="badge badge--danger">{{ unread }}</span>{% endif %}</a>
+
                 {# Gestión de guardias: solo para quien coordina (lectura en el área Guardias; el flag de
                    administrador la concede por bypass). Las acciones del parte exigen escritura, verificada
                    en el GuardiaController con el mismo AreaVoter. #}
                 {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::READ'), constant('App\\Enum\\Area::GUARDIAS')) %}
-                    <a href="{{ path('guardia_index') }}" class="{{ route starts with 'guardia_' and route != 'guardia_mine' ? 'is-active' }}">Guardias</a>
+                    <span class="nav-section-title">Guardias</span>
+                    <div class="nav-group">
+                        <a href="{{ path('guardia_index') }}" class="{{ (route == 'guardia_index' or route starts with 'guardia_absence') ? 'is-active' }}">Parte del día</a>
+                        <a href="{{ path('guardia_history') }}" class="{{ route == 'guardia_history' ? 'is-active' }}">Histórico</a>
+                        <a href="{{ path('guardia_stats') }}" class="{{ route == 'guardia_stats' ? 'is-active' }}">Estadísticas</a>
+                    </div>
                 {% endif %}
-                <a href="{{ path('calendar_index') }}" class="{{ route starts with 'calendar_' ? 'is-active' }}">Calendario</a>
-                {% set unread = unread_notifications() %}
-                <a href="{{ path('notification_index') }}" class="{{ route starts with 'notification_' ? 'is-active' }}">Avisos{% if unread > 0 %} <span class="badge badge--danger">{{ unread }}</span>{% endif %}</a>
 
                 {# Administración: alta de personas, roles/permisos y organigrama. Visible para quien
                    tenga escritura en el área Administración (el flag de administrador la concede por
