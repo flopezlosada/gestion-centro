@@ -7,6 +7,7 @@ namespace App\Controller;
 use App\Entity\AcademicYear;
 use App\Entity\GuardiaCover;
 use App\Entity\User;
+use App\Enum\Area;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use App\Guardia\AbsenceRegistrar;
@@ -16,6 +17,7 @@ use App\Repository\AcademicYearRepository;
 use App\Repository\GuardiaCoverRepository;
 use App\Repository\ScheduleEntryRepository;
 use App\Repository\UserRepository;
+use App\Security\Voter\AreaVoter;
 use App\Service\GuardiaAssignmentNotifier;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
@@ -32,8 +34,13 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
  *
  * Assignment is automatic (the equitable {@see GuardiaScheduler}) with manual override, per the
  * centre's decision. The covers are {@see \App\Contract\Auditable}, so every change is trailed
- * automatically. Open to any authenticated user for now; restricting it to a guardia-coordinator
- * role is a follow-up once that role exists.
+ * automatically.
+ *
+ * This is the guardia-coordinator surface, gated by the {@see Area::GUARDIAS} matrix: viewing (parte,
+ * history, stats) needs READ, every mutation needs WRITE (ROLE_ADMIN bypasses). Two self-service
+ * exceptions are open to any authenticated user and scoped to themselves: {@see mine()} (a teacher's
+ * own "mis guardias") and registering an absence ({@see newAbsence()}/{@see createAbsence()}), where a
+ * non-coordinator may only report their OWN absence — a coordinator may register anyone.
  */
 #[Route('/guardias')]
 final class GuardiaController extends AbstractController
@@ -45,6 +52,8 @@ final class GuardiaController extends AbstractController
     #[Route('', name: 'guardia_index', methods: ['GET'])]
     public function index(Request $request, ScheduleEntryRepository $schedule, GuardiaCoverRepository $covers, AcademicYearRepository $years): Response
     {
+        $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
+
         $date = $this->dateFromRequest($request);
         $schoolYear = SchoolYear::current($date);
         $year = $years->findBySchoolYear($schoolYear);
@@ -99,12 +108,64 @@ final class GuardiaController extends AbstractController
     }
 
     /**
+     * The guardia log with optional filters (date range, group, guardia teacher, absent teacher) — the
+     * trace of "who covered which group when". Read access to the guardia area is enough to view it.
+     */
+    #[Route('/historico', name: 'guardia_history', methods: ['GET'])]
+    public function history(Request $request, GuardiaCoverRepository $covers, UserRepository $users): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
+
+        $from = $this->optionalDate((string) $request->query->get('from'));
+        $to = $this->optionalDate((string) $request->query->get('to'));
+        $group = trim((string) $request->query->get('group'));
+        $assigned = $this->optionalUser($users, $request->query->get('assigned'));
+        $absent = $this->optionalUser($users, $request->query->get('absent'));
+
+        return $this->render('guardia/history.html.twig', [
+            'covers' => $covers->history($from, $to, '' !== $group ? $group : null, $assigned, $absent),
+            'groups' => $covers->distinctGroups(),
+            'allTeachers' => $users->findBy([], ['fullName' => 'ASC']),
+            'filters' => [
+                'from' => $from?->format('Y-m-d') ?? '',
+                'to' => $to?->format('Y-m-d') ?? '',
+                'group' => $group,
+                'assigned' => $assigned?->getId(),
+                'absent' => $absent?->getId(),
+            ],
+        ]);
+    }
+
+    /**
+     * Guardia statistics for the coordinator: guardias covered per teacher across the course (assigned
+     * covers with no incident), ranked, plus headline totals. Read access to the area is enough.
+     */
+    #[Route('/estadisticas', name: 'guardia_stats', methods: ['GET'])]
+    public function stats(GuardiaCoverRepository $covers): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
+
+        $ranking = $covers->coveredTotalsByTeacher();
+        $coveredTotal = array_sum(array_map(static fn (array $r): int => $r['total'], $ranking));
+
+        return $this->render('guardia/stats.html.twig', [
+            'ranking' => $ranking,
+            'coveredTotal' => $coveredTotal,
+            'teacherCount' => \count($ranking),
+            'max' => $ranking[0]['total'] ?? 0,
+        ]);
+    }
+
+    /**
      * The "apuntar ausencia" form: pick the absent teacher, the day, and either the whole teaching day
-     * or specific periods. Reachable prefilled with {@code ?teacher=<id>} (a teacher self-reporting).
+     * or specific periods. A coordinator (guardias WRITE) can register any teacher; any other teacher
+     * may only report their own absence, so the picker is limited to themselves. Reachable prefilled
+     * with {@code ?teacher=<id>} for a coordinator.
      */
     #[Route('/ausencia/nueva', name: 'guardia_absence_new', methods: ['GET'])]
-    public function newAbsence(Request $request, UserRepository $users, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
+    public function newAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
     {
+        $canManage = $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $date = $this->dateFromRequest($request);
         $year = $years->findBySchoolYear(SchoolYear::current($date));
 
@@ -112,8 +173,9 @@ final class GuardiaController extends AbstractController
             'date' => $date,
             'schoolYear' => SchoolYear::current($date),
             'slots' => null !== $year ? $schedule->distinctSlots($year) : [],
-            'allTeachers' => $users->findBy([], ['fullName' => 'ASC']),
-            'selectedTeacher' => (int) $request->query->get('teacher'),
+            // A coordinator picks from everyone; anyone else can only be themselves.
+            'allTeachers' => $canManage ? $users->findBy([], ['fullName' => 'ASC']) : [$user],
+            'selectedTeacher' => $canManage ? (int) $request->query->get('teacher') : (int) $user->getId(),
         ]);
     }
 
@@ -121,9 +183,10 @@ final class GuardiaController extends AbstractController
      * Registers the absence (whole day or selected periods) and lets {@see AbsenceRegistrar} generate
      * a cover per taught period and run the equitable assignment. Only the periods the teacher
      * actually teaches become covers; free periods and already-registered ones are reported as skipped.
+     * A non-coordinator may only register their own absence (the posted teacher is ignored for them).
      */
     #[Route('/ausencia', name: 'guardia_absence_create', methods: ['POST'])]
-    public function createAbsence(Request $request, UserRepository $users, AcademicYearRepository $years, AbsenceRegistrar $registrar): Response
+    public function createAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, AcademicYearRepository $years, AbsenceRegistrar $registrar): Response
     {
         $this->assertCsrf($request, 'guardia_absence_create');
 
@@ -135,14 +198,17 @@ final class GuardiaController extends AbstractController
             return $this->redirectToRoute('guardia_index', ['date' => $date->format('Y-m-d')]);
         }
 
-        $teacher = $users->find((int) $request->request->get('absent_teacher'));
+        // A coordinator registers any teacher; anyone else may only report their own absence.
+        $teacher = $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS)
+            ? $users->find((int) $request->request->get('absent_teacher'))
+            : $user;
         if (!$teacher instanceof User) {
             $this->addFlash('error', 'Elige el profesor ausente.');
 
             return $this->redirectToRoute('guardia_absence_new', ['date' => $date->format('Y-m-d')]);
         }
 
-        // Whole teaching day (null) or the specific periods the coordinator ticked.
+        // Whole teaching day (null) or the specific periods ticked.
         $slotIndexes = null;
         if ('day' !== $request->request->get('mode')) {
             $slotIndexes = array_map(intval(...), $request->request->all('slots'));
@@ -165,8 +231,8 @@ final class GuardiaController extends AbstractController
      * Flashes a summary of the registration: created covers plus any periods skipped (free or already
      * registered).
      *
-     * @param User                       $teacher the absent teacher
-     * @param AbsenceRegistrationResult  $result  the registration outcome
+     * @param User                      $teacher the absent teacher
+     * @param AbsenceRegistrationResult $result  the registration outcome
      */
     private function flashRegistration(User $teacher, AbsenceRegistrationResult $result): void
     {
@@ -192,6 +258,7 @@ final class GuardiaController extends AbstractController
     #[Route('/asignar', name: 'guardia_auto_assign', methods: ['POST'])]
     public function autoAssign(Request $request, GuardiaScheduler $scheduler, AcademicYearRepository $years): Response
     {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $this->assertCsrf($request, 'guardia_auto_assign');
         $date = $this->dateFromRequest($request);
         $slotIndex = (int) $request->request->get('slot');
@@ -216,6 +283,7 @@ final class GuardiaController extends AbstractController
     #[Route('/{id}/reasignar', name: 'guardia_reassign', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function reassign(GuardiaCover $cover, Request $request, UserRepository $users, EntityManagerInterface $em, GuardiaAssignmentNotifier $notifier): Response
     {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $this->assertCsrf($request, 'guardia_reassign'.$cover->getId());
 
         $teacherId = $request->request->get('guardia');
@@ -239,6 +307,7 @@ final class GuardiaController extends AbstractController
     #[Route('/{id}/incidencia', name: 'guardia_incident', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function markIncident(GuardiaCover $cover, Request $request, EntityManagerInterface $em): Response
     {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $this->assertCsrf($request, 'guardia_incident'.$cover->getId());
 
         $cover->setNotCovered(!$cover->isNotCovered());
@@ -253,6 +322,7 @@ final class GuardiaController extends AbstractController
     #[Route('/{id}/borrar', name: 'guardia_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function delete(GuardiaCover $cover, Request $request, EntityManagerInterface $em): Response
     {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $this->assertCsrf($request, 'guardia_delete'.$cover->getId());
 
         $date = $cover->getDate();
@@ -319,6 +389,38 @@ final class GuardiaController extends AbstractController
         }
 
         return $times;
+    }
+
+    /**
+     * Parses an optional "Y-m-d" date from a filter field, returning null when empty or malformed.
+     *
+     * @param string $raw the raw field value
+     *
+     * @return \DateTimeImmutable|null the parsed date, or null
+     */
+    private function optionalDate(string $raw): ?\DateTimeImmutable
+    {
+        if ('' === $raw) {
+            return null;
+        }
+        $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $raw);
+
+        return false !== $date ? $date : null;
+    }
+
+    /**
+     * Resolves an optional user id from a filter field, returning null when empty or not found.
+     *
+     * @param UserRepository $users the user repository
+     * @param mixed          $raw   the raw field value (id or empty)
+     *
+     * @return User|null the user, or null
+     */
+    private function optionalUser(UserRepository $users, mixed $raw): ?User
+    {
+        $id = (int) $raw;
+
+        return $id > 0 ? $users->find($id) : null;
     }
 
     /**

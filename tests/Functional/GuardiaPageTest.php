@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Tests\Functional;
 
 use App\Entity\AcademicYear;
+use App\Entity\Role;
 use App\Entity\ScheduleEntry;
 use App\Entity\User;
+use App\Enum\Area;
+use App\Enum\PermissionLevel;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use Doctrine\ORM\EntityManagerInterface;
@@ -17,6 +20,9 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  * The parte de guardias reads the timetable of the course the queried date falls into: for a date with
  * no imported course it shows the empty state naming that course, and for one with an imported
  * timetable it shows the period tabs.
+ *
+ * Access is gated by the {@see Area::GUARDIAS} matrix: the management screens (parte, history, stats)
+ * need read access to the area — a plain teacher without it is denied.
  */
 final class GuardiaPageTest extends WebTestCase
 {
@@ -29,12 +35,24 @@ final class GuardiaPageTest extends WebTestCase
         $this->em = self::getContainer()->get(EntityManagerInterface::class);
     }
 
-    private function login(): void
+    /**
+     * Logs in a user, optionally as a guardia coordinator (a role granting write on the Guardias area).
+     *
+     * @param bool $coordinator whether to grant the guardia-coordinator role
+     */
+    private function login(bool $coordinator = true): User
     {
         $user = (new User())->setFullName('Docente Test')->setEmail('profe@centro.test');
+        if ($coordinator) {
+            $role = (new Role())->setCode('guardias')->setName('Coordinación de guardias')->setLevel(Area::GUARDIAS, PermissionLevel::WRITE);
+            $this->em->persist($role);
+            $user->addAssignedRole($role);
+        }
         $this->em->persist($user);
         $this->em->flush();
         $this->client->loginUser($user);
+
+        return $user;
     }
 
     private function academicYear(string $schoolYear): AcademicYear
@@ -87,7 +105,37 @@ final class GuardiaPageTest extends WebTestCase
         $this->client->request('GET', '/guardias?date='.$date->format('Y-m-d'));
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('.tabs', '08:25');
+        // Target the period tabs specifically: the page also has a management sub-nav using .tabs.
+        self::assertSelectorTextContains('nav[aria-label="Tramo horario"]', '08:25');
         self::assertSelectorNotExists('.empty-state');
+    }
+
+    public function testPlainTeacherCannotAccessManagementScreens(): void
+    {
+        $this->login(coordinator: false);
+
+        foreach (['/guardias', '/guardias/historico', '/guardias/estadisticas'] as $path) {
+            $this->client->request('GET', $path);
+            self::assertResponseStatusCodeSame(403, sprintf('%s must be denied to a non-coordinator', $path));
+        }
+    }
+
+    public function testCoordinatorReachesHistoryAndStats(): void
+    {
+        $this->login();
+
+        $this->client->request('GET', '/guardias/historico');
+        self::assertResponseIsSuccessful();
+
+        $this->client->request('GET', '/guardias/estadisticas');
+        self::assertResponseIsSuccessful();
+    }
+
+    public function testMisGuardiasIsOpenToAnyTeacher(): void
+    {
+        $this->login(coordinator: false);
+
+        $this->client->request('GET', '/guardias/mias');
+        self::assertResponseIsSuccessful();
     }
 }

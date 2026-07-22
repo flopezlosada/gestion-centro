@@ -1125,6 +1125,10 @@ input[type="email"], input[type="text"], select, textarea {
 /* Panel: cuatro cifras que particionan las tareas (vencidas / pendientes / en curso / cerradas). */
 .worklist-stats--4 { grid-template-columns: repeat(4, 1fr); }
 @media (max-width: 720px) { .worklist-stats--4 { grid-template-columns: repeat(2, 1fr); } }
+/* Variantes con menos cifras (p. ej. estadísticas de guardias: total / profesores). */
+.worklist-stats--2 { grid-template-columns: repeat(2, 1fr); }
+.worklist-stats--3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 720px) { .worklist-stats--3 { grid-template-columns: repeat(2, 1fr); } }
 
 /* ---- Barra de progreso (panel: % cerradas) ------------------------------- */
 .progress {

@@ -1,0 +1,6 @@
+{# Sub-navegación de la gestión de guardias (coordinador). `active` = parte | historico | estadisticas #}
+<nav class="tabs" aria-label="Gestión de guardias">
+    <a class="tab {{ active == 'parte' ? 'is-active' }}" href="{{ path('guardia_index') }}">Parte diario</a>
+    <a class="tab {{ active == 'historico' ? 'is-active' }}" href="{{ path('guardia_history') }}">Histórico</a>
+    <a class="tab {{ active == 'estadisticas' ? 'is-active' }}" href="{{ path('guardia_stats') }}">Estadísticas</a>
+</nav>
