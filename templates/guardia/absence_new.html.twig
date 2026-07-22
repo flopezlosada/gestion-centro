@@ -1,0 +1,69 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Apuntar ausencia{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_index') }}">Guardias</a><span class="sep">/</span>Apuntar ausencia{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Apuntar ausencia</h1>
+            <p class="lead">Registra que un profesor falta un día —entero o a ciertas horas— y el sistema genera y reparte las guardias necesarias.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        {% if slots is empty %}
+            <div class="empty-state">
+                <h2>No hay horario importado para el curso {{ schoolYear }}</h2>
+                <p>Sin el horario del curso no se pueden generar guardias. Impórtalo y vuelve a intentarlo.</p>
+                {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ADMINISTRATION')) %}
+                    <p><a class="btn" href="{{ path('admin_timetable_import') }}">Importar horario</a></p>
+                {% endif %}
+            </div>
+        {% else %}
+            <form method="post" action="{{ path('guardia_absence_create') }}" class="stack-form">
+                <input type="hidden" name="_token" value="{{ csrf_token('guardia_absence_create') }}">
+
+                <div class="field">
+                    <label for="absent_teacher">Profesor ausente</label>
+                    <select id="absent_teacher" name="absent_teacher" required>
+                        <option value="">Elige un profesor…</option>
+                        {% for teacher in allTeachers %}
+                            <option value="{{ teacher.id }}" {{ teacher.id == selectedTeacher ? 'selected' }}>{{ teacher.fullName }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="absence_date">Día</label>
+                    <input type="date" id="absence_date" name="date" value="{{ date|date('Y-m-d', false) }}" required>
+                </div>
+
+                <div class="field">
+                    <span class="field-label">Alcance</span>
+                    <label class="choice"><input type="radio" name="mode" value="day" checked> Día entero (todas sus clases de ese día)</label>
+                    <label class="choice"><input type="radio" name="mode" value="slots"> Solo estas horas:</label>
+                    <div class="slot-checks">
+                        {% for slot in slots %}
+                            <label class="choice choice--inline">
+                                <input type="checkbox" name="slots[]" value="{{ slot.index }}">
+                                {{ slot.startsAt|date('H:i', false) }}–{{ slot.endsAt|date('H:i', false) }}
+                            </label>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label for="task_note">Tarea / observaciones (opcional)</label>
+                    <textarea id="task_note" name="task_note" rows="3" maxlength="500" placeholder="Se aplica a todas las horas de esta ausencia."></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn">Apuntar ausencia</button>
+                    <a class="btn btn--ghost" href="{{ path('guardia_index', { date: date|date('Y-m-d', false) }) }}">Cancelar</a>
+                </div>
+            </form>
+        {% endif %}
+    </div>
+{% endblock %}

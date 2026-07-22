@@ -10,6 +10,7 @@
             <h1>Mis guardias de hoy</h1>
             <p class="lead">Las guardias que te toca cubrir hoy {{ date|date('d/m/Y', false) }}: grupo, aula y la tarea que dejó el profesor ausente.</p>
         </div>
+        <a class="btn" href="{{ path('guardia_absence_new', { teacher: app.user.id }) }}">Voy a faltar…</a>
     </div>
 
     {# Contador personal del curso, con la media del claustro como referencia de reparto justo. #}
