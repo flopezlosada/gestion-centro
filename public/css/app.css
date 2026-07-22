@@ -1858,3 +1858,21 @@ tr.is-not-covered { background: var(--danger-weak); }
 .load-bar-fill { display: block; height: 100%; background: var(--accent); }
 
 .inline-form--wrap { flex-wrap: wrap; gap: 8px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+
+/* ── Guardias · formulario de alta de ausencia ─────────────────────────────── */
+.stack-form { display: flex; flex-direction: column; gap: 18px; max-width: 560px; }
+.stack-form .field { display: flex; flex-direction: column; gap: 6px; }
+.field-label { font-weight: 600; }
+.choice { display: flex; align-items: center; gap: 8px; font-weight: 400; cursor: pointer; }
+.choice--inline { display: inline-flex; }
+.slot-checks { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 4px 0 0 24px; }
+
+/* ── Guardias · panel de profes (estado de reparto) ────────────────────────── */
+.mini-card.is-free { border-color: var(--success); }
+.mini-card.is-busy { opacity: .6; }
+.mini-card-status { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
+.load-count {
+    font-family: var(--font-mono); font-weight: 600; min-width: 1.6em; height: 1.6em;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 999px; background: var(--surface-sunken); color: var(--text-muted);
+}

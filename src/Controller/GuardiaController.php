@@ -10,6 +10,8 @@ use App\Entity\User;
 use App\Enum\Area;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
+use App\Guardia\AbsenceRegistrar;
+use App\Guardia\AbsenceRegistrationResult;
 use App\Guardia\GuardiaScheduler;
 use App\Repository\AcademicYearRepository;
 use App\Repository\GuardiaCoverRepository;
@@ -35,9 +37,10 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
  * automatically.
  *
  * This is the guardia-coordinator surface, gated by the {@see Area::GUARDIAS} matrix: viewing (parte,
- * history, stats) needs READ, every mutation needs WRITE (ROLE_ADMIN bypasses). The one exception is
- * {@see mine()}: a teacher's own "mis guardias" is open to any authenticated user and shows only their
- * own covers.
+ * history, stats) needs READ, every mutation needs WRITE (ROLE_ADMIN bypasses). Two self-service
+ * exceptions are open to any authenticated user and scoped to themselves: {@see mine()} (a teacher's
+ * own "mis guardias") and registering an absence ({@see newAbsence()}/{@see createAbsence()}), where a
+ * non-coordinator may only report their OWN absence — a coordinator may register anyone.
  */
 #[Route('/guardias')]
 final class GuardiaController extends AbstractController
@@ -47,7 +50,7 @@ final class GuardiaController extends AbstractController
      * query string (today and the first period of the day by default).
      */
     #[Route('', name: 'guardia_index', methods: ['GET'])]
-    public function index(Request $request, ScheduleEntryRepository $schedule, GuardiaCoverRepository $covers, UserRepository $users, AcademicYearRepository $years): Response
+    public function index(Request $request, ScheduleEntryRepository $schedule, GuardiaCoverRepository $covers, AcademicYearRepository $years): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
@@ -61,6 +64,17 @@ final class GuardiaController extends AbstractController
         $slots = null !== $year ? $schedule->distinctSlots($year) : [];
         $slotIndex = $this->slotFromRequest($request, $slots);
         $pool = null !== $year ? $schedule->dutyPoolAt($year, $weekday, $slotIndex) : [];
+        $parte = $covers->findForParte($date, $slotIndex);
+
+        // The group each on-call teacher is already covering this period, so the pool panel can tell
+        // who is busy from who is still free at a glance.
+        $assignedHere = [];
+        foreach ($parte as $cover) {
+            $guardia = $cover->getAssignedGuardia();
+            if (null !== $guardia && null !== $guardia->getId()) {
+                $assignedHere[$guardia->getId()] = $cover->getGroupName() ?? 'un grupo';
+            }
+        }
 
         return $this->render('guardia/index.html.twig', [
             'date' => $date,
@@ -68,11 +82,11 @@ final class GuardiaController extends AbstractController
             'schoolYear' => $schoolYear,
             'slots' => $slots,
             'slotIndex' => $slotIndex,
-            'covers' => $covers->findForParte($date, $slotIndex),
+            'covers' => $parte,
             'pool' => $pool,
             'slotLoad' => $covers->loadBySlot($slotIndex),
             'absentIds' => $covers->absentTeacherIdsAt($date, $slotIndex),
-            'allTeachers' => $users->findBy([], ['fullName' => 'ASC']),
+            'assignedHere' => $assignedHere,
         ]);
     }
 
@@ -143,52 +157,99 @@ final class GuardiaController extends AbstractController
     }
 
     /**
-     * Registers an absence (a new parte line) and immediately runs the equitable assignment for its
-     * period. The uncovered group and room are snapshotted from the absent teacher's timetable.
+     * The "apuntar ausencia" form: pick the absent teacher, the day, and either the whole teaching day
+     * or specific periods. A coordinator (guardias WRITE) can register any teacher; any other teacher
+     * may only report their own absence, so the picker is limited to themselves. Reachable prefilled
+     * with {@code ?teacher=<id>} for a coordinator.
      */
-    #[Route('/ausencia', name: 'guardia_add_absence', methods: ['POST'])]
-    public function addAbsence(Request $request, UserRepository $users, ScheduleEntryRepository $schedule, GuardiaCoverRepository $covers, GuardiaScheduler $scheduler, AcademicYearRepository $years, EntityManagerInterface $em): Response
+    #[Route('/ausencia/nueva', name: 'guardia_absence_new', methods: ['GET'])]
+    public function newAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
     {
-        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
-        $this->assertCsrf($request, 'guardia_add_absence');
+        $canManage = $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS);
+        $date = $this->dateFromRequest($request);
+        $year = $years->findBySchoolYear(SchoolYear::current($date));
+
+        return $this->render('guardia/absence_new.html.twig', [
+            'date' => $date,
+            'schoolYear' => SchoolYear::current($date),
+            'slots' => null !== $year ? $schedule->distinctSlots($year) : [],
+            // A coordinator picks from everyone; anyone else can only be themselves.
+            'allTeachers' => $canManage ? $users->findBy([], ['fullName' => 'ASC']) : [$user],
+            'selectedTeacher' => $canManage ? (int) $request->query->get('teacher') : (int) $user->getId(),
+        ]);
+    }
+
+    /**
+     * Registers the absence (whole day or selected periods) and lets {@see AbsenceRegistrar} generate
+     * a cover per taught period and run the equitable assignment. Only the periods the teacher
+     * actually teaches become covers; free periods and already-registered ones are reported as skipped.
+     * A non-coordinator may only register their own absence (the posted teacher is ignored for them).
+     */
+    #[Route('/ausencia', name: 'guardia_absence_create', methods: ['POST'])]
+    public function createAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, AcademicYearRepository $years, AbsenceRegistrar $registrar): Response
+    {
+        $this->assertCsrf($request, 'guardia_absence_create');
 
         $date = $this->dateFromRequest($request);
-        $slotIndex = (int) $request->request->get('slot');
         $year = $years->findBySchoolYear(SchoolYear::current($date));
         if (!$year instanceof AcademicYear) {
             $this->addFlash('error', sprintf('No hay horario importado para el curso %s. Impórtalo antes de registrar ausencias.', SchoolYear::current($date)));
 
-            return $this->backToParte($date, $slotIndex);
+            return $this->redirectToRoute('guardia_index', ['date' => $date->format('Y-m-d')]);
         }
 
-        $teacher = $users->find((int) $request->request->get('absent_teacher'));
+        // A coordinator registers any teacher; anyone else may only report their own absence.
+        $teacher = $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS)
+            ? $users->find((int) $request->request->get('absent_teacher'))
+            : $user;
         if (!$teacher instanceof User) {
-            $this->addFlash('error', 'Profesor no encontrado.');
+            $this->addFlash('error', 'Elige el profesor ausente.');
 
-            return $this->backToParte($date, $slotIndex);
+            return $this->redirectToRoute('guardia_absence_new', ['date' => $date->format('Y-m-d')]);
         }
 
-        if (null !== $covers->findOneBy(['absentTeacher' => $teacher, 'date' => $date, 'slotIndex' => $slotIndex])) {
-            $this->addFlash('error', sprintf('%s ya está en el parte de esa hora.', $teacher->getFullName()));
+        // Whole teaching day (null) or the specific periods ticked.
+        $slotIndexes = null;
+        if ('day' !== $request->request->get('mode')) {
+            $slotIndexes = array_map(intval(...), $request->request->all('slots'));
+            if ([] === $slotIndexes) {
+                $this->addFlash('error', 'Elige "día entero" o marca al menos una hora.');
 
-            return $this->backToParte($date, $slotIndex);
+                return $this->redirectToRoute('guardia_absence_new', ['date' => $date->format('Y-m-d'), 'teacher' => $teacher->getId()]);
+            }
         }
 
-        $lective = $schedule->lectiveAt($year, $teacher, Weekday::from((int) $date->format('N')), $slotIndex);
-        $cover = (new GuardiaCover())
-            ->setDate($date)
-            ->setSlotIndex($slotIndex)
-            ->setAbsentTeacher($teacher)
-            ->setGroupName($lective?->getGroupName())
-            ->setRoomName($lective?->getRoomName())
-            ->setTaskNote((string) $request->request->get('task_note'));
-        $em->persist($cover);
-        $em->flush();
+        $taskNote = trim((string) $request->request->get('task_note'));
+        $result = $registrar->register($year, $teacher, $date, $slotIndexes, '' !== $taskNote ? $taskNote : null);
 
-        $scheduler->autoAssign($year, $date, $slotIndex);
-        $this->addFlash('success', sprintf('Ausencia de %s registrada.', $teacher->getFullName()));
+        $this->flashRegistration($teacher, $result);
 
-        return $this->backToParte($date, $slotIndex);
+        return $this->backToParte($date, $result->createdSlots[0] ?? ($slotIndexes[0] ?? 0));
+    }
+
+    /**
+     * Flashes a summary of the registration: created covers plus any periods skipped (free or already
+     * registered).
+     *
+     * @param User                      $teacher the absent teacher
+     * @param AbsenceRegistrationResult $result  the registration outcome
+     */
+    private function flashRegistration(User $teacher, AbsenceRegistrationResult $result): void
+    {
+        if (0 === $result->createdCount()) {
+            $this->addFlash('error', sprintf('No se generó ninguna guardia para %s: no da clase esas horas o ya estaban en el parte.', $teacher->getFullName()));
+
+            return;
+        }
+
+        $msg = sprintf('%d guardia(s) generada(s) para %s.', $result->createdCount(), $teacher->getFullName());
+        if ($result->skippedFree > 0) {
+            $msg .= sprintf(' %d hora(s) libre(s) omitida(s).', $result->skippedFree);
+        }
+        if ($result->skippedExisting > 0) {
+            $msg .= sprintf(' %d ya estaba(n) en el parte.', $result->skippedExisting);
+        }
+        $this->addFlash('success', $msg);
     }
 
     /**
