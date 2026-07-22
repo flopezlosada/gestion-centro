@@ -58,11 +58,11 @@
             {% else %}
                 <table>
                     <thead>
-                        <tr><th>Grupo</th><th>Aula</th><th>Profesor ausente</th><th>Tarea</th><th>Guardia asignada</th><th>Confirmada</th><th></th></tr>
+                        <tr><th>Grupo</th><th>Aula</th><th>Profesor ausente</th><th>Tarea</th><th>Guardia asignada</th><th>Incidencia</th><th></th></tr>
                     </thead>
                     <tbody>
                         {% for cover in covers %}
-                            <tr class="{{ cover.confirmed ? 'is-confirmed' }}">
+                            <tr class="{{ cover.notCovered ? 'is-not-covered' }}">
                                 <td>{{ cover.groupName ?? '—' }}</td>
                                 <td class="mono">{{ cover.roomName ?? '—' }}</td>
                                 <td>{{ cover.absentTeacher.fullName }}</td>
@@ -86,10 +86,10 @@
                                     </form>
                                 </td>
                                 <td>
-                                    <form method="post" action="{{ path('guardia_confirm', { id: cover.id }) }}">
-                                        <input type="hidden" name="_token" value="{{ csrf_token('guardia_confirm' ~ cover.id) }}">
-                                        <button type="submit" class="{{ cover.confirmed ? 'badge badge--ok' : 'link' }}">
-                                            {{ cover.confirmed ? '✓ Confirmada' : 'Confirmar' }}
+                                    <form method="post" action="{{ path('guardia_incident', { id: cover.id }) }}">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('guardia_incident' ~ cover.id) }}">
+                                        <button type="submit" class="{{ cover.notCovered ? 'badge badge--danger' : 'link' }}">
+                                            {{ cover.notCovered ? '⚠ No se cubrió' : 'Marcar incidencia' }}
                                         </button>
                                     </form>
                                 </td>

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repository;
 
 use App\Entity\GuardiaCover;
+use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
@@ -42,16 +43,17 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
-     * How many confirmed guardias each teacher has done at a given period — the per-slot balance the
-     * equitable engine minimises. Derived live (never stored), so it cannot drift out of sync.
+     * How many guardias each teacher has covered at a given period — the per-slot balance the
+     * equitable engine minimises. Counts every assigned cover with no incident (an assigned cover is
+     * done by default). Derived live (never stored), so it cannot drift out of sync.
      *
      * @param int $slotIndex the period index within the day
      *
-     * @return array<int, int> map of teacher id → confirmed cover count at that period
+     * @return array<int, int> map of teacher id → cover count at that period
      */
-    public function confirmedLoadBySlot(int $slotIndex): array
+    public function loadBySlot(int $slotIndex): array
     {
-        return $this->confirmedCountsKeyedByGuardia(
+        return $this->countsKeyedByGuardia(
             $this->createQueryBuilder('c')
                 ->andWhere('c.slotIndex = :slot')
                 ->setParameter('slot', $slotIndex),
@@ -59,14 +61,37 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
-     * How many confirmed guardias each teacher has done in total, across every period — the tiebreaker
+     * How many guardias each teacher has covered in total, across every period — the tiebreaker
      * when two candidates are level on the per-slot balance.
      *
-     * @return array<int, int> map of teacher id → total confirmed cover count
+     * @return array<int, int> map of teacher id → total cover count
      */
-    public function confirmedTotalLoad(): array
+    public function totalLoad(): array
     {
-        return $this->confirmedCountsKeyedByGuardia($this->createQueryBuilder('c'));
+        return $this->countsKeyedByGuardia($this->createQueryBuilder('c'));
+    }
+
+    /**
+     * The guardias assigned to a teacher on a date, absent teacher eager-loaded — the teacher's own
+     * "mis guardias de hoy" view. Ordered by period so it reads top-to-bottom through the day.
+     *
+     * @param User               $guardia the assigned guardia teacher
+     * @param \DateTimeImmutable $date    the day
+     *
+     * @return GuardiaCover[] the covers assigned to that teacher that day, earliest period first
+     */
+    public function findAssignedTo(User $guardia, \DateTimeImmutable $date): array
+    {
+        return $this->createQueryBuilder('c')
+            ->addSelect('absent')
+            ->join('c.absentTeacher', 'absent')
+            ->andWhere('c.assignedGuardia = :guardia')
+            ->andWhere('c.date = :date')
+            ->setParameter('guardia', $guardia)
+            ->setParameter('date', $date, 'date_immutable')
+            ->orderBy('c.slotIndex', 'ASC')
+            ->getQuery()
+            ->getResult();
     }
 
     /**
@@ -94,18 +119,18 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
-     * Runs a confirmed-only, grouped-by-guardia count and returns it keyed by teacher id.
+     * Runs an incident-free, grouped-by-guardia count and returns it keyed by teacher id.
      *
      * @param \Doctrine\ORM\QueryBuilder $qb a builder already scoped (e.g. by slot), alias {@code c}
      *
-     * @return array<int, int> map of teacher id → confirmed cover count
+     * @return array<int, int> map of teacher id → cover count
      */
-    private function confirmedCountsKeyedByGuardia(\Doctrine\ORM\QueryBuilder $qb): array
+    private function countsKeyedByGuardia(\Doctrine\ORM\QueryBuilder $qb): array
     {
         /** @var list<array{id: int, total: int}> $rows */
         $rows = $qb
             ->select('IDENTITY(c.assignedGuardia) AS id', 'COUNT(c.id) AS total')
-            ->andWhere('c.confirmed = true')
+            ->andWhere('c.notCovered = false')
             ->andWhere('c.assignedGuardia IS NOT NULL')
             ->groupBy('c.assignedGuardia')
             ->getQuery()

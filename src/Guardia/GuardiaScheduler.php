@@ -11,6 +11,7 @@ use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use App\Repository\GuardiaCoverRepository;
 use App\Repository\ScheduleEntryRepository;
+use App\Service\GuardiaAssignmentNotifier;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
@@ -28,6 +29,7 @@ final class GuardiaScheduler
         private readonly GuardiaCoverRepository $covers,
         private readonly GuardiaAssigner $assigner,
         private readonly EntityManagerInterface $em,
+        private readonly GuardiaAssignmentNotifier $notifier,
     ) {
     }
 
@@ -55,17 +57,21 @@ final class GuardiaScheduler
 
         $ordered = $this->assigner->prioritise(\count($unassigned), $candidates);
 
-        $assigned = 0;
+        $newlyAssigned = [];
         foreach ($unassigned as $i => $cover) {
             if (!isset($ordered[$i])) {
                 break;
             }
             $cover->setAssignedGuardia($ordered[$i]->teacher);
-            ++$assigned;
+            $newlyAssigned[] = $cover;
         }
         $this->em->flush();
 
-        return $assigned;
+        foreach ($newlyAssigned as $cover) {
+            $this->notifier->notifyAssigned($cover);
+        }
+
+        return \count($newlyAssigned);
     }
 
     /**
@@ -84,8 +90,8 @@ final class GuardiaScheduler
     {
         $weekday = Weekday::from((int) $date->format('N'));
         $absentIds = $this->covers->absentTeacherIdsAt($date, $slotIndex);
-        $slotLoad = $this->covers->confirmedLoadBySlot($slotIndex);
-        $totalLoad = $this->covers->confirmedTotalLoad();
+        $slotLoad = $this->covers->loadBySlot($slotIndex);
+        $totalLoad = $this->covers->totalLoad();
         $excluded = array_merge($absentIds, $takenTeacherIds);
 
         $candidates = [];
