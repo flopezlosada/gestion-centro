@@ -14,6 +14,7 @@ use App\Enum\TaskType;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\Mime\Email;
 
 /**
  * Creating/editing tasks: a user can create tasks for themselves (and their subordinates), the
@@ -120,6 +121,45 @@ final class TaskCrudTest extends WebTestCase
         self::assertSame($unitId, $task->getResponsibility()->getUnit()?->getId());
         // The chosen person is stored as the assignee.
         self::assertSame($creatorId, $task->getAssignedUser()?->getId());
+        // Crearte una tarea a ti mismo no dispara un correo de asignación.
+        self::assertEmailCount(0);
+    }
+
+    public function testCreatingATaskForASubordinateEmailsThem(): void
+    {
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        // A head of department commands their department, so they may create a task for a member of it.
+        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
+        $this->em->persist($headRole);
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
+        $this->em->persist($teacherRole);
+        $boss = $this->user('jefa@centro.test', $unit);
+        $boss->addAssignedRole($headRole);
+        $member = $this->user('subordinado@centro.test', $unit);
+        $member->addAssignedRole($teacherRole);
+        $this->em->flush();
+        $roleId = (int) $teacherRole->getId();
+        $unitId = (int) $unit->getId();
+        $memberId = (int) $member->getId();
+        $this->client->loginUser($boss);
+
+        $crawler = $this->client->request('GET', '/tareas/nueva');
+        $form = $crawler->selectButton('Crear tarea')->form();
+        $form['task_form[title]'] = 'Rellenar actas';
+        $form['task_form[dueDate]'] = '2026-09-15';
+        $form['task_form[responsibilityRole]'] = (string) $roleId;
+        $form['task_form[responsibilityUnit]'] = (string) $unitId;
+        $form['task_form[responsibilityUser]'] = (string) $memberId;
+        $this->client->submit($form);
+
+        self::assertResponseRedirects();
+        // El subordinado recibe un correo de la tarea que le han asignado.
+        self::assertEmailCount(1);
+        $email = self::getMailerMessage();
+        self::assertInstanceOf(Email::class, $email);
+        self::assertSame('subordinado@centro.test', $email->getTo()[0]->getAddress());
+        self::assertStringContainsString('Rellenar actas', (string) $email->getSubject());
     }
 
     public function testMemberOnlySeesRolesTheyCommandInNewTaskForm(): void
@@ -261,6 +301,8 @@ final class TaskCrudTest extends WebTestCase
         // The phrase is unique to the validation error (not the field's help text).
         self::assertResponseStatusCodeSame(422);
         self::assertStringContainsString('no puede caer en fin de semana', (string) $this->client->getResponse()->getContent());
+        // Aviso destacado arriba: sin él, el usuario no percibe que ha fallado (solo ve la cabecera).
+        self::assertSelectorExists('[data-form-error]');
         self::assertNull($this->em->getRepository(Task::class)->findOneBy(['title' => 'Tarea en sábado']));
     }
 
@@ -381,10 +423,11 @@ final class TaskCrudTest extends WebTestCase
         self::assertNull($this->em->getRepository(Task::class)->findOneBy(['title' => 'Tarea mal asignada']));
     }
 
-    public function testSuperiorCanWorkOnASubordinatesTask(): void
+    public function testSuperiorDoesNotSeeExecutionActionsOnASubordinatesTask(): void
     {
         // The head of studies holds a centre-wide ranked role, so they command every department and
-        // outrank a maths teacher's task.
+        // outrank a maths teacher's task — pero su papel es supervisar, no ejecutar: no debe ver
+        // Entregar, ni el entregable, ni marcar hecho, ni delegar la tarea de otro.
         $maths = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($maths);
         $headStudiesRole = (new Role())->setCode('head_of_studies')->setName('Jefatura de estudios')->setHierarchyLevel(30);
@@ -399,22 +442,48 @@ final class TaskCrudTest extends WebTestCase
         $this->em->flush();
 
         $this->client->loginUser($headStudies);
+        $this->client->request('GET', '/tareas/'.$task->getId());
+        self::assertResponseIsSuccessful();
+        // Ejecutar es del asignado, no del superior por rango.
+        self::assertSelectorNotExists('form[action$="/accion/submit"]', 'el superior no ejecuta (Entregar) la tarea del subordinado');
+        self::assertSelectorNotExists('form[action$="/hecho"]', 'el superior no marca hecho por el subordinado');
+        self::assertSelectorNotExists('form[action$="/entregable"]', 'el superior no adjunta el entregable del subordinado');
+        // Delegar es del titular (jefe de departamento), no de un superior de rango superior.
+        self::assertSelectorNotExists('select[name="delegatedTo"]', 'un superior de rango superior no delega la tarea de otro');
+    }
+
+    public function testSuperiorCanValidateASubordinatesSubmittedTask(): void
+    {
+        // La acción que SÍ le corresponde al superior: validar cuando la tarea está Entregada.
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($maths);
+        $headStudiesRole = (new Role())->setCode('head_of_studies')->setName('Jefatura de estudios')->setHierarchyLevel(30);
+        $this->em->persist($headStudiesRole);
+        $headStudies = $this->user('jefatura@centro.test', $maths);
+        $headStudies->addAssignedRole($headStudiesRole);
+        $teacher = $this->user('profe@centro.test', $maths);
+        // Ya entregada por el docente, a la espera de validación del superior.
+        $task = (new Task('Acta', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE))
+            ->setUnit($maths)->setAssignedUser($teacher)->setCreatedBy($teacher)->setStatus('submitted');
+        $this->em->persist($task);
+        $this->em->flush();
+
+        $this->client->loginUser($headStudies);
         $crawler = $this->client->request('GET', '/tareas/'.$task->getId());
         self::assertResponseIsSuccessful();
-        // The progress action (Entregar) is offered to the superior, proving they may work on it.
-        self::assertSelectorExists('form[action$="/accion/submit"]');
-        $this->client->submit($crawler->filter('form[action$="/accion/submit"]')->form());
+        self::assertSelectorExists('form[action$="/accion/validate"]', 'el superior sí valida una tarea entregada');
+        $this->client->submit($crawler->filter('form[action$="/accion/validate"]')->form());
 
         self::assertResponseRedirects();
         $this->em->clear();
         $reloaded = $this->em->getRepository(Task::class)->find($task->getId());
-        self::assertSame('submitted', $reloaded?->getStatus());
+        self::assertSame('validated', $reloaded?->getStatus());
     }
 
     public function testLateralUserIsNeitherSuperiorNorCanReachTheTask(): void
     {
-        // Two departments: a teacher in one is not a superior of a task in the other, so widening
-        // canWorkOn to superiors must not leak a lateral colleague's task to them.
+        // Two departments: a teacher in one is neither owner nor superior of a task in the other, so a
+        // lateral colleague must not reach it at all (visibility 403).
         $maths = (new Department())->setCode('maths')->setName('Matemáticas');
         $language = (new Department())->setCode('language')->setName('Lengua');
         $this->em->persist($maths);

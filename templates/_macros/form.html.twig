@@ -16,6 +16,21 @@
 #}
 
 {#
+   Aviso destacado arriba del formulario cuando el envío ha fallado la validación. Los errores por
+   campo pueden quedar más abajo (o en la cascada de responsabilidad, que el JS oculta), así que sin
+   este banner el usuario no ve que ha fallado: solo aparece la cabecera de la vista. `form.vars.valid`
+   en el nodo raíz es `true` salvo que el form se haya enviado y algún campo sea inválido. role="alert"
+   lo anuncia a lectores de pantalla; tabindex="-1" permite que el JS lo enfoque/desplace si hace falta.
+#}
+{% macro submit_error(form) %}
+    {% if not form.vars.valid %}
+        <div class="form-error" role="alert" tabindex="-1" data-form-error>
+            No se ha podido guardar: revisa los campos marcados en rojo.
+        </div>
+    {% endif %}
+{% endmacro %}
+
+{#
    Renderiza una lista de campos, cada uno en su .form-row (etiqueta + widget + ayuda + errores).
    Se pasa la lista explícita para preservar el orden y la selección exactos de cada formulario.
 #}

@@ -18,6 +18,7 @@ use App\Repository\TaskRepository;
 use App\Repository\DepartmentRepository;
 use App\Repository\UserRepository;
 use App\Service\OrganizationHierarchy;
+use App\Service\TaskAssignmentNotifier;
 use App\Service\TaskVisibility;
 use App\Service\TaskWorkflow;
 use App\Support\TaskActivityPresenter;
@@ -68,7 +69,7 @@ final class TaskController extends AbstractController
      * limited to that set and re-checked on submit.
      */
     #[Route('/tareas/nueva', name: 'task_new', methods: ['GET', 'POST'])]
-    public function new(Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, UserRepository $users, DepartmentRepository $unitRepository, EntityManagerInterface $entityManager): Response
+    public function new(Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, UserRepository $users, DepartmentRepository $unitRepository, EntityManagerInterface $entityManager, TaskAssignmentNotifier $assignmentNotifier): Response
     {
         $units = $this->assignableDepartments($user, $hierarchy, $unitRepository);
         $roleChoices = $this->assignableRoles($user, $roles->findAllOrdered(), $hierarchy);
@@ -100,6 +101,9 @@ final class TaskController extends AbstractController
             $task->setCreatedBy($user);
             $entityManager->persist($task);
             $entityManager->flush();
+            // Avisa al responsable (típicamente un subordinado) de que tiene una tarea nueva. No se
+            // auto-notifica si te la creas a ti mismo (ver TaskAssignmentNotifier).
+            $assignmentNotifier->notifyCreated($task, $user);
             $this->addFlash('success', 'Tarea creada.');
 
             return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
@@ -203,15 +207,16 @@ final class TaskController extends AbstractController
 
         // Everyone who reaches this point (own people, superiors, admins) is exactly who may see the
         // task's activity history, so the timeline is shown to every viewer.
-        $canWork = $this->canWorkOn($task, $user, $hierarchy);
+        $canWork = $this->canWorkOn($task, $user);
         // Cancelling is a management action (creator/superior/admin), not "work": it must not be offered
         // to a plain assignee.
         $canManage = $this->canManage($task, $user, $hierarchy);
 
-        // Delegation hands the task to a subordinate: allowed to the task's own responsible (a head
-        // passing their department task to a member) or a superior by rank, and only to people they
-        // command (so a plain member, who commands nobody, never gets the control).
-        $canDelegate = $isAdmin || $task->isOwnedBy($user) || $hierarchy->isSuperiorOfTask($user, $task);
+        // Delegation hands the task DOWN to a subordinate, so solo la ofrece quien es titular de la
+        // tarea (isOwnedBy: un jefe de departamento pasando su tarea a un miembro) o un admin — NO un
+        // superior de rango superior (un director no delega la tarea de un jefe de departamento). Y solo
+        // hacia gente a la que manda, por lo que un miembro raso (que no manda a nadie) nunca la ve.
+        $canDelegate = $isAdmin || $task->isOwnedBy($user);
         $delegatable = $canDelegate
             ? array_values(array_filter($this->assignableUsers($user, $hierarchy, $users, $unitRepository), static fn (User $u): bool => $u !== $user))
             : [];
@@ -238,8 +243,9 @@ final class TaskController extends AbstractController
 
     /**
      * Delegates the task to a subordinate (or clears the delegation, restoring the structural
-     * responsibility). A superior's operational action: allowed to a superior of the task's unit or an
-     * admin, and only onto someone they actually command.
+     * responsibility). Es la acción del TITULAR de la tarea (o un admin): un jefe de departamento pasa
+     * su tarea a un miembro suyo. Un superior de rango superior NO delega la tarea de un subordinado
+     * (supervisa, no reasigna); y solo se delega en alguien a quien se manda.
      */
     #[Route('/tareas/{id}/delegar', name: 'task_delegate', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function delegate(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, UserRepository $users, DepartmentRepository $unitRepository, EntityManagerInterface $entityManager): Response
@@ -247,7 +253,7 @@ final class TaskController extends AbstractController
         if (!$this->isCsrfTokenValid('task_delegate'.$task->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
-        if (!$this->isGranted('ROLE_ADMIN') && !$task->isOwnedBy($user) && !$hierarchy->isSuperiorOfTask($user, $task)) {
+        if (!$this->isGranted('ROLE_ADMIN') && !$task->isOwnedBy($user)) {
             throw $this->createAccessDeniedException('No puedes delegar esta tarea.');
         }
 
@@ -285,7 +291,7 @@ final class TaskController extends AbstractController
             if (!$this->canManage($task, $user, $hierarchy)) {
                 throw $this->createAccessDeniedException('No puedes cancelar esta tarea.');
             }
-        } elseif (!\in_array($transition, self::SUPERIOR_TRANSITIONS, true) && !$this->canWorkOn($task, $user, $hierarchy)) {
+        } elseif (!\in_array($transition, self::SUPERIOR_TRANSITIONS, true) && !$this->canWorkOn($task, $user)) {
             throw $this->createAccessDeniedException('Esta tarea no es tuya.');
         }
 
@@ -324,12 +330,12 @@ final class TaskController extends AbstractController
      * cloud — never the content). Only whoever works on the task, and only if it expects a document.
      */
     #[Route('/tareas/{id}/entregable', name: 'task_set_deliverable', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function setDeliverable(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, EntityManagerInterface $entityManager): Response
+    public function setDeliverable(Task $task, Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager): Response
     {
         if (!$this->isCsrfTokenValid('task_deliverable'.$task->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
-        if (!$this->canWorkOn($task, $user, $hierarchy)) {
+        if (!$this->canWorkOn($task, $user)) {
             throw $this->createAccessDeniedException('Esta tarea no es tuya.');
         }
         if (!$task->requiresDocument()) {
@@ -385,12 +391,12 @@ final class TaskController extends AbstractController
      * task's role, or an admin may do it.
      */
     #[Route('/tareas/{id}/hecho', name: 'task_toggle_done', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function toggleDone(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, EntityManagerInterface $entityManager): Response
+    public function toggleDone(Task $task, Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager): Response
     {
         if (!$this->isCsrfTokenValid('toggle_done'.$task->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
-        if (!$this->canWorkOn($task, $user, $hierarchy)) {
+        if (!$this->canWorkOn($task, $user)) {
             throw $this->createAccessDeniedException('Esta tarea no es tuya.');
         }
         if (!$task->requiresCheckbox()) {
@@ -559,13 +565,14 @@ final class TaskController extends AbstractController
     }
 
     /**
-     * Whether the user may act on the task: it is theirs (their person or one of their roles'), they
-     * are a superior of its unit in the chain of command, or they are an admin. Superiors can step in
-     * and do a subordinate's task (e.g. a task on a "teacher" role that the head of department ends
-     * up doing), which the org chart already lets them see and validate.
+     * Whether the user may DO the task (entregar, adjuntar entregable, marcar hecho): it is theirs
+     * (their person, one of their roles', or delegated to them) or they are an admin. A superior by
+     * rank is deliberately NOT included: su papel sobre la tarea de un subordinado es supervisar
+     * (validar/devolver, vía el guard del workflow), no ejecutar — si además ejecutara, se cargaría la
+     * separación de funciones. Un superior que quiera hacerla él se la delega o se la reasigna.
      */
-    private function canWorkOn(Task $task, User $user, OrganizationHierarchy $hierarchy): bool
+    private function canWorkOn(Task $task, User $user): bool
     {
-        return $this->isGranted('ROLE_ADMIN') || $task->isOwnedBy($user) || $hierarchy->isSuperiorOfTask($user, $task);
+        return $this->isGranted('ROLE_ADMIN') || $task->isOwnedBy($user);
     }
 }
