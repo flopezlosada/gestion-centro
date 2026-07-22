@@ -14,12 +14,14 @@ use App\Repository\AcademicYearRepository;
 use App\Repository\GuardiaCoverRepository;
 use App\Repository\ScheduleEntryRepository;
 use App\Repository\UserRepository;
+use App\Service\GuardiaAssignmentNotifier;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\CurrentUser;
 
 /**
  * The daily "Parte de guardias": for a chosen day and period it shows the absences to cover, the
@@ -60,9 +62,26 @@ final class GuardiaController extends AbstractController
             'slotIndex' => $slotIndex,
             'covers' => $covers->findForParte($date, $slotIndex),
             'pool' => $pool,
-            'slotLoad' => $covers->confirmedLoadBySlot($slotIndex),
+            'slotLoad' => $covers->loadBySlot($slotIndex),
             'absentIds' => $covers->absentTeacherIdsAt($date, $slotIndex),
             'allTeachers' => $users->findBy([], ['fullName' => 'ASC']),
+        ]);
+    }
+
+    /**
+     * The teacher's own "mis guardias de hoy": the guardias assigned to them today, with the period
+     * time, group, room, absent teacher and the task the absent teacher left. Shows only their own.
+     */
+    #[Route('/mias', name: 'guardia_mine', methods: ['GET'])]
+    public function mine(#[CurrentUser] User $user, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
+    {
+        $today = new \DateTimeImmutable('today');
+        $year = $years->findBySchoolYear(SchoolYear::current($today));
+
+        return $this->render('guardia/mine.html.twig', [
+            'date' => $today,
+            'covers' => $covers->findAssignedTo($user, $today),
+            'slotTimes' => $this->slotTimes($schedule, $year),
         ]);
     }
 
@@ -142,27 +161,34 @@ final class GuardiaController extends AbstractController
      * clears the assignment.
      */
     #[Route('/{id}/reasignar', name: 'guardia_reassign', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function reassign(GuardiaCover $cover, Request $request, UserRepository $users, EntityManagerInterface $em): Response
+    public function reassign(GuardiaCover $cover, Request $request, UserRepository $users, EntityManagerInterface $em, GuardiaAssignmentNotifier $notifier): Response
     {
         $this->assertCsrf($request, 'guardia_reassign'.$cover->getId());
 
         $teacherId = $request->request->get('guardia');
+        $previous = $cover->getAssignedGuardia();
         $cover->setAssignedGuardia('' !== (string) $teacherId ? $users->find((int) $teacherId) : null);
         $em->flush();
+
+        // Avisa solo cuando el titular de la guardia cambia (reseleccionar al mismo no genera aviso).
+        if ($cover->getAssignedGuardia() !== $previous) {
+            $notifier->notifyAssigned($cover);
+        }
         $this->addFlash('success', 'Guardia reasignada.');
 
         return $this->backToParte($cover->getDate(), $cover->getSlotIndex());
     }
 
     /**
-     * Toggles a cover's confirmation. A confirmed cover is what counts towards the equitable balance.
+     * Toggles a cover's incident flag. An assigned cover counts as done by default; flagging an
+     * incident ("no se cubrió / el profe tampoco vino") takes it out of the equitable balance.
      */
-    #[Route('/{id}/confirmar', name: 'guardia_confirm', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function confirm(GuardiaCover $cover, Request $request, EntityManagerInterface $em): Response
+    #[Route('/{id}/incidencia', name: 'guardia_incident', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function markIncident(GuardiaCover $cover, Request $request, EntityManagerInterface $em): Response
     {
-        $this->assertCsrf($request, 'guardia_confirm'.$cover->getId());
+        $this->assertCsrf($request, 'guardia_incident'.$cover->getId());
 
-        $cover->setConfirmed(!$cover->isConfirmed());
+        $cover->setNotCovered(!$cover->isNotCovered());
         $em->flush();
 
         return $this->backToParte($cover->getDate(), $cover->getSlotIndex());
@@ -216,6 +242,30 @@ final class GuardiaController extends AbstractController
         }
 
         return $slots[0]['index'] ?? 0;
+    }
+
+    /**
+     * The given course's periods keyed by their index, so a view holding only a {@code slotIndex}
+     * (e.g. a cover) can print the period's start/end time without another query per row. Empty when
+     * no course (hence no timetable) applies.
+     *
+     * @param ScheduleEntryRepository $schedule the timetable repository
+     * @param AcademicYear|null       $year     the course whose periods to read, or null
+     *
+     * @return array<int, array{startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}> times by slot index
+     */
+    private function slotTimes(ScheduleEntryRepository $schedule, ?AcademicYear $year): array
+    {
+        if (null === $year) {
+            return [];
+        }
+
+        $times = [];
+        foreach ($schedule->distinctSlots($year) as $slot) {
+            $times[$slot['index']] = ['startsAt' => $slot['startsAt'], 'endsAt' => $slot['endsAt']];
+        }
+
+        return $times;
     }
 
     /**

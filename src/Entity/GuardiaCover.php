@@ -15,10 +15,14 @@ use Doctrine\ORM\Mapping as ORM;
  *
  * The group/room are snapshotted here from the absent teacher's {@see ScheduleEntry} at creation, so
  * the parte still reads correctly if the timetable is later re-imported. {@see $assignedGuardia} is
- * filled automatically by the equitable engine and may be overridden by the guardia coordinator;
- * {@see $confirmed} marks the cover as actually done. The per-teacher, per-slot "hours done" counter
- * the engine balances on is NOT stored — it is derived by counting confirmed covers (see
- * {@see GuardiaCoverRepository::confirmedLoadBySlot()}), so it can never drift out of sync.
+ * filled automatically by the equitable engine and may be overridden by the guardia coordinator.
+ *
+ * An assigned cover counts as done by default — the centre's rule is "the less they have to touch,
+ * the better". The only human gesture is flagging an incident after the fact ({@see $notCovered}):
+ * the guardia teacher did not show, or the absent teacher turned up after all. The per-teacher,
+ * per-slot "hours done" counter the engine balances on is NOT stored — it is derived by counting
+ * assigned covers with no incident (see {@see GuardiaCoverRepository::loadBySlot()}), so it can never
+ * drift out of sync.
  *
  * Change tracking is automatic: the entity is {@see Auditable}.
  */
@@ -68,9 +72,13 @@ class GuardiaCover implements Auditable
     #[ORM\JoinColumn(name: 'assigned_guardia_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
     private ?User $assignedGuardia = null;
 
-    /** Whether the cover has been confirmed as done (only confirmed covers count towards the balance). */
-    #[ORM\Column(name: 'confirmed', type: Types::BOOLEAN)]
-    private bool $confirmed = false;
+    /**
+     * Incident flag: the cover did not actually happen (the guardia teacher did not show, or the
+     * absent teacher turned up). False by default — an assigned cover is assumed done — and only a
+     * cover WITHOUT an incident counts towards the equitable balance.
+     */
+    #[ORM\Column(name: 'not_covered', type: Types::BOOLEAN)]
+    private bool $notCovered = false;
 
     public function getId(): ?int
     {
@@ -161,14 +169,14 @@ class GuardiaCover implements Auditable
         return $this;
     }
 
-    public function isConfirmed(): bool
+    public function isNotCovered(): bool
     {
-        return $this->confirmed;
+        return $this->notCovered;
     }
 
-    public function setConfirmed(bool $confirmed): static
+    public function setNotCovered(bool $notCovered): static
     {
-        $this->confirmed = $confirmed;
+        $this->notCovered = $notCovered;
 
         return $this;
     }

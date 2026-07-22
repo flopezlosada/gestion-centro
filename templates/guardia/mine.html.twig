@@ -1,0 +1,41 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Mis guardias{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Mis guardias{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Mis guardias de hoy</h1>
+            <p class="lead">Las guardias que te toca cubrir hoy {{ date|date('d/m/Y', false) }}: grupo, aula y la tarea que dejó el profesor ausente.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        {% if covers is empty %}
+            <div class="empty-state">
+                <h2>No tienes guardias hoy</h2>
+                <p>Cuando se te asigne una guardia para cubrir una ausencia, aparecerá aquí.</p>
+            </div>
+        {% else %}
+            <table>
+                <thead>
+                    <tr><th>Hora</th><th>Grupo</th><th>Aula</th><th>Profesor ausente</th><th>Tarea</th></tr>
+                </thead>
+                <tbody>
+                    {% for cover in covers %}
+                        {% set times = slotTimes[cover.slotIndex] %}
+                        <tr class="{{ cover.notCovered ? 'is-not-covered' }}">
+                            <td class="mono">{% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}—{% endif %}</td>
+                            <td>{{ cover.groupName ?? '—' }}</td>
+                            <td class="mono">{{ cover.roomName ?? '—' }}</td>
+                            <td>{{ cover.absentTeacher.fullName }}</td>
+                            <td>{% if cover.taskNote %}{{ cover.taskNote }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}

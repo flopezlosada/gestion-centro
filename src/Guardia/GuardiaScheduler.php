@@ -11,11 +11,13 @@ use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use App\Repository\GuardiaCoverRepository;
 use App\Repository\ScheduleEntryRepository;
+use App\Service\GuardiaAssignmentNotifier;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
  * Ties the equitable {@see GuardiaAssigner} to the database: it reads the guardia pool and the
- * confirmed-cover balance for a date and period, and fills the still-unassigned parte lines.
+ * cover balance (assigned covers with no incident) for a date and period, and fills the
+ * still-unassigned parte lines.
  *
  * Two rules it enforces on top of the pure ordering: a teacher who is themselves absent that period
  * is dropped from the pool, and a teacher already covering another group that period is not offered
@@ -28,6 +30,7 @@ final class GuardiaScheduler
         private readonly GuardiaCoverRepository $covers,
         private readonly GuardiaAssigner $assigner,
         private readonly EntityManagerInterface $em,
+        private readonly GuardiaAssignmentNotifier $notifier,
     ) {
     }
 
@@ -55,23 +58,27 @@ final class GuardiaScheduler
 
         $ordered = $this->assigner->prioritise(\count($unassigned), $candidates);
 
-        $assigned = 0;
+        $newlyAssigned = [];
         foreach ($unassigned as $i => $cover) {
             if (!isset($ordered[$i])) {
                 break;
             }
             $cover->setAssignedGuardia($ordered[$i]->teacher);
-            ++$assigned;
+            $newlyAssigned[] = $cover;
         }
         $this->em->flush();
 
-        return $assigned;
+        foreach ($newlyAssigned as $cover) {
+            $this->notifier->notifyAssigned($cover);
+        }
+
+        return \count($newlyAssigned);
     }
 
     /**
      * Builds the pool of candidates for a period: guardia and collaborator duty holders in the given
      * course, minus anyone absent that period and anyone already covering a group then, each with
-     * their confirmed balance.
+     * their cover balance.
      *
      * @param AcademicYear       $year            the course whose timetable supplies the pool
      * @param \DateTimeImmutable $date            the day
@@ -84,8 +91,8 @@ final class GuardiaScheduler
     {
         $weekday = Weekday::from((int) $date->format('N'));
         $absentIds = $this->covers->absentTeacherIdsAt($date, $slotIndex);
-        $slotLoad = $this->covers->confirmedLoadBySlot($slotIndex);
-        $totalLoad = $this->covers->confirmedTotalLoad();
+        $slotLoad = $this->covers->loadBySlot($slotIndex);
+        $totalLoad = $this->covers->totalLoad();
         $excluded = array_merge($absentIds, $takenTeacherIds);
 
         $candidates = [];

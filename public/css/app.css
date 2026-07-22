@@ -1843,7 +1843,7 @@ input[type="email"], input[type="text"], select, textarea {
 .tabs .tab:hover { border-color: var(--border-strong); color: var(--text); }
 .tabs .tab.is-active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 
-tr.is-confirmed { background: var(--success-weak); }
+tr.is-not-covered { background: var(--danger-weak); }
 .task-note { cursor: help; }
 
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
