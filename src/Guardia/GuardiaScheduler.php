@@ -16,7 +16,8 @@ use Doctrine\ORM\EntityManagerInterface;
 
 /**
  * Ties the equitable {@see GuardiaAssigner} to the database: it reads the guardia pool and the
- * confirmed-cover balance for a date and period, and fills the still-unassigned parte lines.
+ * cover balance (assigned covers with no incident) for a date and period, and fills the
+ * still-unassigned parte lines.
  *
  * Two rules it enforces on top of the pure ordering: a teacher who is themselves absent that period
  * is dropped from the pool, and a teacher already covering another group that period is not offered
@@ -77,7 +78,7 @@ final class GuardiaScheduler
     /**
      * Builds the pool of candidates for a period: guardia and collaborator duty holders in the given
      * course, minus anyone absent that period and anyone already covering a group then, each with
-     * their confirmed balance.
+     * their cover balance.
      *
      * @param AcademicYear       $year            the course whose timetable supplies the pool
      * @param \DateTimeImmutable $date            the day
