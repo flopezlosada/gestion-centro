@@ -1825,3 +1825,32 @@ input[type="email"], input[type="text"], select, textarea {
     font-size: 11px; font-weight: 600; letter-spacing: .04em;
     text-transform: uppercase; color: var(--text-faint);
 }
+
+/* ── Módulo de guardias ─────────────────────────────────────────────────────
+   Parte de guardias: pestañas de tramo, tabla del parte y panel de profes de
+   guardia con barra de carga. Reutiliza los tokens de color del tema. */
+.badge--ok { background: var(--success-weak); color: var(--success-text); border-color: var(--success); }
+
+.btn--ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+.btn--ghost:hover { border-color: var(--border-strong); color: var(--text); }
+
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 16px 0; }
+.tabs .tab {
+    padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    font-family: var(--font-mono); font-size: 13px; text-decoration: none;
+    color: var(--text-muted); background: var(--surface);
+}
+.tabs .tab:hover { border-color: var(--border-strong); color: var(--text); }
+.tabs .tab.is-active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
+tr.is-confirmed { background: var(--success-weak); }
+.task-note { cursor: help; }
+
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.mini-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; background: var(--surface); }
+.mini-card.is-absent { background: var(--danger-weak); border-color: var(--danger); }
+.mini-card-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.load-bar { height: 6px; border-radius: 3px; background: var(--surface-sunken); overflow: hidden; margin: 8px 0 4px; }
+.load-bar-fill { display: block; height: 100%; background: var(--accent); }
+
+.inline-form--wrap { flex-wrap: wrap; gap: 8px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }

@@ -45,6 +45,16 @@ class User implements UserInterface, Auditable
     #[ORM\Column]
     private bool $active = true;
 
+    /**
+     * The teacher's stable code in Peñalara GHC (the resolved timetable's {@code X_EMPLEADO}). Set
+     * once during timetable reconciliation and then used to re-link the imported schedule on every
+     * later import without re-matching by name. Nullable because non-teaching users (or teachers not
+     * yet reconciled) have none; unique so a Peñalara teacher maps to exactly one person.
+     */
+    #[ORM\Column(name: 'penalara_code', length: 32, unique: true, nullable: true)]
+    #[Assert\Length(max: 32)]
+    private ?string $penalaraCode = null;
+
     /** @var Collection<int, Role> */
     #[ORM\ManyToMany(targetEntity: Role::class, inversedBy: 'users')]
     #[ORM\JoinTable(name: 'user_role')]
@@ -101,6 +111,18 @@ class User implements UserInterface, Auditable
     public function setUnit(?Department $unit): static
     {
         $this->unit = $unit;
+
+        return $this;
+    }
+
+    public function getPenalaraCode(): ?string
+    {
+        return $this->penalaraCode;
+    }
+
+    public function setPenalaraCode(?string $penalaraCode): static
+    {
+        $this->penalaraCode = null !== $penalaraCode ? trim($penalaraCode) : null;
 
         return $this;
     }

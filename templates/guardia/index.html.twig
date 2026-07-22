@@ -1,0 +1,148 @@
+{% extends 'app_shell.html.twig' %}
+
+{% set ck = constant('App\\Enum\\ScheduleActivityKind::COLLABORATOR') %}
+
+{% block title %}Parte de guardias{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Parte de guardias{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Parte de guardias</h1>
+            <p class="lead">Ausencias de {{ weekday.label|lower }} {{ date|date('d/m/Y', false) }} y reparto de las guardias que las cubren.</p>
+        </div>
+        <form method="get" action="{{ path('guardia_index') }}" class="inline-form">
+            <a class="btn btn--ghost" href="{{ path('guardia_index', { date: date|date_modify('-1 day')|date('Y-m-d', false), slot: slotIndex }) }}">‹ Día anterior</a>
+            <input type="date" name="date" value="{{ date|date('Y-m-d', false) }}">
+            <input type="hidden" name="slot" value="{{ slotIndex }}">
+            <button type="submit" class="btn">Ir</button>
+            <a class="btn btn--ghost" href="{{ path('guardia_index', { date: date|date_modify('+1 day')|date('Y-m-d', false), slot: slotIndex }) }}">Día siguiente ›</a>
+        </form>
+    </div>
+
+    {% if slots is empty %}
+        <div class="card">
+            <div class="empty-state">
+                <h2>No hay horario importado</h2>
+                <p>Importa el horario de Peñalara con <code>app:import-timetable</code> para poder registrar ausencias y repartir guardias.</p>
+            </div>
+        </div>
+    {% else %}
+        {# Pestañas de tramo horario #}
+        <nav class="tabs" aria-label="Tramo horario">
+            {% for slot in slots %}
+                <a class="tab {{ slot.index == slotIndex ? 'is-active' }}"
+                   href="{{ path('guardia_index', { date: date|date('Y-m-d', false), slot: slot.index }) }}">
+                    {{ slot.startsAt|date('H:i', false) }}–{{ slot.endsAt|date('H:i', false) }}
+                </a>
+            {% endfor %}
+        </nav>
+
+        {# Tabla del parte #}
+        <div class="card">
+            <div class="page-head"><div><h2>Ausencias de esta hora</h2></div>
+                <form method="post" action="{{ path('guardia_auto_assign') }}">
+                    <input type="hidden" name="_token" value="{{ csrf_token('guardia_auto_assign') }}">
+                    <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
+                    <input type="hidden" name="slot" value="{{ slotIndex }}">
+                    <button type="submit" class="btn">Repartir guardias</button>
+                </form>
+            </div>
+
+            {% if covers is empty %}
+                <p class="muted">No hay ausencias registradas en esta hora.</p>
+            {% else %}
+                <table>
+                    <thead>
+                        <tr><th>Grupo</th><th>Aula</th><th>Profesor ausente</th><th>Tarea</th><th>Guardia asignada</th><th>Confirmada</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        {% for cover in covers %}
+                            <tr class="{{ cover.confirmed ? 'is-confirmed' }}">
+                                <td>{{ cover.groupName ?? '—' }}</td>
+                                <td class="mono">{{ cover.roomName ?? '—' }}</td>
+                                <td>{{ cover.absentTeacher.fullName }}</td>
+                                <td>
+                                    {% if cover.taskNote %}
+                                        <span class="task-note" title="{{ cover.taskNote }}">✉ {{ cover.taskNote|length > 40 ? cover.taskNote|slice(0, 40) ~ '…' : cover.taskNote }}</span>
+                                    {% else %}<span class="muted">—</span>{% endif %}
+                                </td>
+                                <td>
+                                    <form method="post" action="{{ path('guardia_reassign', { id: cover.id }) }}">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('guardia_reassign' ~ cover.id) }}">
+                                        <select name="guardia" onchange="this.form.submit()">
+                                            <option value="">— sin asignar —</option>
+                                            {% for entry in pool %}
+                                                <option value="{{ entry.teacher.id }}" {{ cover.assignedGuardia and cover.assignedGuardia.id == entry.teacher.id ? 'selected' }}>
+                                                    {{ entry.teacher.fullName }}
+                                                </option>
+                                            {% endfor %}
+                                        </select>
+                                        <noscript><button type="submit">Guardar</button></noscript>
+                                    </form>
+                                </td>
+                                <td>
+                                    <form method="post" action="{{ path('guardia_confirm', { id: cover.id }) }}">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('guardia_confirm' ~ cover.id) }}">
+                                        <button type="submit" class="{{ cover.confirmed ? 'badge badge--ok' : 'link' }}">
+                                            {{ cover.confirmed ? '✓ Confirmada' : 'Confirmar' }}
+                                        </button>
+                                    </form>
+                                </td>
+                                <td class="row-actions">
+                                    <form method="post" action="{{ path('guardia_delete', { id: cover.id }) }}" data-confirm="¿Borrar la ausencia de {{ cover.absentTeacher.fullName }}?">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('guardia_delete' ~ cover.id) }}">
+                                        <button type="submit" class="link-danger">Borrar</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% endif %}
+
+            {# Alta de ausencia #}
+            <form method="post" action="{{ path('guardia_add_absence') }}" class="inline-form inline-form--wrap">
+                <input type="hidden" name="_token" value="{{ csrf_token('guardia_add_absence') }}">
+                <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
+                <input type="hidden" name="slot" value="{{ slotIndex }}">
+                <select name="absent_teacher" required>
+                    <option value="">Profesor ausente…</option>
+                    {% for teacher in allTeachers %}
+                        <option value="{{ teacher.id }}">{{ teacher.fullName }}</option>
+                    {% endfor %}
+                </select>
+                <input type="text" name="task_note" placeholder="Tarea / observaciones (opcional)" maxlength="500">
+                <button type="submit" class="btn">Apuntar en el parte</button>
+            </form>
+        </div>
+
+        {# Panel de profesores de guardia a esta hora #}
+        <div class="card">
+            <div class="page-head"><div><h2>Profesores de guardia a esta hora</h2></div></div>
+            {% if pool is empty %}
+                <p class="muted">Nadie tiene guardia asignada en el horario para este tramo.</p>
+            {% else %}
+                <div class="card-grid">
+                    {% for entry in pool %}
+                        {% set absent = entry.teacher.id in absentIds %}
+                        {% set load = slotLoad[entry.teacher.id] ?? 0 %}
+                        <div class="mini-card {{ absent ? 'is-absent' }}">
+                            <div class="mini-card-head">
+                                <strong>{{ entry.teacher.fullName }}</strong>
+                                {% if entry.kind == ck %}<span class="badge badge--ok">C</span>{% endif %}
+                                {% if absent %}<span class="badge badge--danger">Ausente</span>{% endif %}
+                            </div>
+                            {% if entry.teacher.unit %}<div class="muted">{{ entry.teacher.unit.name }}</div>{% endif %}
+                            <div class="load-bar" title="{{ load }} guardias confirmadas en este tramo">
+                                <span class="load-bar-fill" style="width: {{ (load * 20) < 100 ? (load * 20) : 100 }}%"></span>
+                            </div>
+                            <div class="muted">{{ load }} h</div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+    {% endif %}
+{% endblock %}
