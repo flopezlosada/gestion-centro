@@ -1856,5 +1856,10 @@ tr.is-not-covered { background: var(--danger-weak); }
 .mini-card-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
 .load-bar { height: 6px; border-radius: 3px; background: var(--surface-sunken); overflow: hidden; margin: 8px 0 4px; }
 .load-bar-fill { display: block; height: 100%; background: var(--accent); }
+.load-bar-fill--warning { background: var(--warning); }
+
+/* Coloreado de cifras en línea (p. ej. desviación vs la media en estadísticas de guardias). */
+.text-success { color: var(--success); }
+.text-danger { color: var(--danger); }
 
 .inline-form--wrap { flex-wrap: wrap; gap: 8px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }

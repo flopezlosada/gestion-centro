@@ -149,6 +149,106 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
+     * How many guardias a single teacher has covered this course (assigned, no incident) — the counter
+     * the teacher sees on their own screen. Derived live, like every other guardia count.
+     *
+     * @param User $teacher the guardia teacher
+     *
+     * @return int the teacher's covered-guardia count
+     */
+    public function countCoveredForTeacher(User $teacher): int
+    {
+        return (int) $this->createQueryBuilder('c')
+            ->select('COUNT(c.id)')
+            ->andWhere('c.assignedGuardia = :teacher')
+            ->andWhere('c.notCovered = false')
+            ->setParameter('teacher', $teacher)
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    /**
+     * Headline coverage figures for the whole course: how many absences were registered, how many got
+     * covered (assigned, no incident), how many ended as an incident (nobody covered), and how many are
+     * still unassigned. The health check of the guardia service in one row.
+     *
+     * @return array{absences: int, covered: int, incidents: int, unassigned: int} the counts
+     */
+    public function coverageSummary(): array
+    {
+        /** @var array{absences: int|string, covered: int|string, incidents: int|string, unassigned: int|string} $row */
+        $row = $this->createQueryBuilder('c')
+            ->select(
+                'COUNT(c.id) AS absences',
+                'SUM(CASE WHEN c.assignedGuardia IS NOT NULL AND c.notCovered = false THEN 1 ELSE 0 END) AS covered',
+                'SUM(CASE WHEN c.notCovered = true THEN 1 ELSE 0 END) AS incidents',
+                'SUM(CASE WHEN c.assignedGuardia IS NULL AND c.notCovered = false THEN 1 ELSE 0 END) AS unassigned',
+            )
+            ->getQuery()
+            ->getSingleResult();
+
+        return [
+            'absences' => (int) $row['absences'],
+            'covered' => (int) $row['covered'],
+            'incidents' => (int) $row['incidents'],
+            'unassigned' => (int) $row['unassigned'],
+        ];
+    }
+
+    /**
+     * How many absences fell on each period this course, keyed by slot index — shows where cover is
+     * needed most across the day.
+     *
+     * @return array<int, int> map of slot index → absence count
+     */
+    public function absencesBySlot(): array
+    {
+        /** @var list<array{slot: int, total: int}> $rows */
+        $rows = $this->createQueryBuilder('c')
+            ->select('c.slotIndex AS slot', 'COUNT(c.id) AS total')
+            ->groupBy('c.slotIndex')
+            ->orderBy('c.slotIndex', 'ASC')
+            ->getQuery()
+            ->getResult();
+
+        $bySlot = [];
+        foreach ($rows as $row) {
+            $bySlot[(int) $row['slot']] = (int) $row['total'];
+        }
+
+        return $bySlot;
+    }
+
+    /**
+     * The teachers absent most this course, teacher eager-loaded, busiest first — a different lens for
+     * leadership (who is away, not who covers). Queried from {@see User} as root, like
+     * {@see coveredTotalsByTeacher()} (DQL cannot select a joined entity alongside scalars).
+     *
+     * @param int $limit how many to return
+     *
+     * @return list<array{teacher: User, total: int}> the ranking, most absences first
+     */
+    public function absencesByTeacher(int $limit = 10): array
+    {
+        /** @var list<array{0: User, total: int}> $rows */
+        $rows = $this->getEntityManager()->createQueryBuilder()
+            ->select('g', 'COUNT(c.id) AS total')
+            ->from(User::class, 'g')
+            ->join(GuardiaCover::class, 'c', 'WITH', 'c.absentTeacher = g')
+            ->groupBy('g.id')
+            ->orderBy('total', 'DESC')
+            ->addOrderBy('g.fullName', 'ASC')
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getResult();
+
+        return array_map(
+            static fn (array $r): array => ['teacher' => $r[0], 'total' => (int) $r['total']],
+            $rows,
+        );
+    }
+
+    /**
      * The parte lines matching the coordinator's history filters, absent teacher and assigned guardia
      * eager-loaded, most recent first. Every filter is optional; passing none returns the full log.
      *

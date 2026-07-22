@@ -86,10 +86,18 @@ final class GuardiaController extends AbstractController
         $today = new \DateTimeImmutable('today');
         $year = $years->findBySchoolYear(SchoolYear::current($today));
 
+        // Personal counter + the staff average as context ("have I done my share?").
+        $ranking = $covers->coveredTotalsByTeacher();
+        $staffAverage = [] !== $ranking
+            ? array_sum(array_map(static fn (array $r): int => $r['total'], $ranking)) / \count($ranking)
+            : 0.0;
+
         return $this->render('guardia/mine.html.twig', [
             'date' => $today,
             'covers' => $covers->findAssignedTo($user, $today),
             'slotTimes' => $this->slotTimes($schedule, $year),
+            'myCovered' => $covers->countCoveredForTeacher($user),
+            'staffAverage' => round($staffAverage, 1),
         ]);
     }
 
@@ -123,22 +131,38 @@ final class GuardiaController extends AbstractController
     }
 
     /**
-     * Guardia statistics for the coordinator: guardias covered per teacher across the course (assigned
-     * covers with no incident), ranked, plus headline totals. Read access to the area is enough.
+     * Guardia statistics for the coordinator. Four lenses: coverage health (registered vs covered vs
+     * incidents vs still unassigned), fairness of the split per teacher (with the staff average so
+     * imbalance is visible), absences by period (where cover is needed most) and who is absent most.
+     * Read access to the area is enough.
      */
     #[Route('/estadisticas', name: 'guardia_stats', methods: ['GET'])]
-    public function stats(GuardiaCoverRepository $covers): Response
+    public function stats(GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
         $ranking = $covers->coveredTotalsByTeacher();
+        $teacherCount = \count($ranking);
         $coveredTotal = array_sum(array_map(static fn (array $r): int => $r['total'], $ranking));
+
+        $summary = $covers->coverageSummary();
+        $coverageRate = $summary['absences'] > 0 ? (int) round($summary['covered'] * 100 / $summary['absences']) : 0;
+
+        // Period labels from the current course's marco horario (a stat may span the course, but the
+        // period grid is stable within a year); fall back to the ordinal when a slot has no label.
+        $year = $years->findBySchoolYear(SchoolYear::current(new \DateTimeImmutable('today')));
 
         return $this->render('guardia/stats.html.twig', [
             'ranking' => $ranking,
             'coveredTotal' => $coveredTotal,
-            'teacherCount' => \count($ranking),
+            'teacherCount' => $teacherCount,
             'max' => $ranking[0]['total'] ?? 0,
+            'average' => $teacherCount > 0 ? round($coveredTotal / $teacherCount, 1) : 0.0,
+            'summary' => $summary,
+            'coverageRate' => $coverageRate,
+            'absencesBySlot' => $covers->absencesBySlot(),
+            'slotTimes' => $this->slotTimes($schedule, $year),
+            'absentRanking' => $covers->absencesByTeacher(10),
         ]);
     }
 

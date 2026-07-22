@@ -4,36 +4,52 @@
 
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_index') }}">Guardias</a><span class="sep">/</span>Estadísticas{% endblock %}
 
+{% macro period_label(slotTimes, slot) %}{% set t = slotTimes[slot] %}{% if t %}{{ t.startsAt|date('H:i', false) }}–{{ t.endsAt|date('H:i', false) }}{% else %}Tramo {{ slot + 1 }}{% endif %}{% endmacro %}
+
 {% block body %}
+    {% import _self as s %}
     <div class="page-head">
         <div>
             <h1>Estadísticas de guardias</h1>
-            <p class="lead">Guardias cubiertas por profesor este curso. No cuentan las marcadas como incidencia.</p>
+            <p class="lead">Cobertura del servicio, equidad del reparto y dónde se concentran las ausencias este curso.</p>
         </div>
     </div>
 
     {{ include('guardia/_nav.html.twig', { active: 'estadisticas' }) }}
 
-    <div class="worklist-stats worklist-stats--2">
-        <div class="stat stat--success{{ coveredTotal == 0 ? ' is-zero' }}">
-            <span class="stat-figure">{{ coveredTotal }}</span><span class="stat-label">Guardias cubiertas</span>
+    {% if summary.absences == 0 %}
+        <div class="card"><div class="empty-state">
+            <h2>Aún no hay datos</h2>
+            <p>Cuando se registren ausencias y se repartan guardias, aquí verás la cobertura y el reparto.</p>
+        </div></div>
+    {% else %}
+        {# 1 · Salud de la cobertura #}
+        <div class="card progress-hero">
+            <div class="progress-hero__head">
+                <span class="progress-hero__pct">{{ coverageRate }}%</span>
+                <span class="progress-hero__caption">{{ summary.covered }} de {{ summary.absences }} ausencias cubiertas</span>
+            </div>
+            <div class="progress"><span class="progress__bar" style="width: {{ coverageRate }}%"></span></div>
         </div>
-        <div class="stat{{ teacherCount == 0 ? ' is-zero' }}">
-            <span class="stat-figure">{{ teacherCount }}</span><span class="stat-label">Profesores implicados</span>
-        </div>
-    </div>
 
-    <div class="card">
-        <div class="page-head"><div><h2>Reparto por profesor</h2></div></div>
-        {% if ranking is empty %}
-            <p class="muted">Aún no hay guardias cubiertas este curso.</p>
-        {% else %}
+        <div class="worklist-stats worklist-stats--4">
+            <div class="stat"><span class="stat-figure">{{ summary.absences }}</span><span class="stat-label">Ausencias</span></div>
+            <div class="stat stat--success{{ summary.covered == 0 ? ' is-zero' }}"><span class="stat-figure">{{ summary.covered }}</span><span class="stat-label">Cubiertas</span></div>
+            <div class="stat stat--danger{{ summary.incidents == 0 ? ' is-zero' }}"><span class="stat-figure">{{ summary.incidents }}</span><span class="stat-label">Incidencias</span></div>
+            <div class="stat stat--warning{{ summary.unassigned == 0 ? ' is-zero' }}"><span class="stat-figure">{{ summary.unassigned }}</span><span class="stat-label">Sin asignar</span></div>
+        </div>
+
+        {# 2 · Equidad del reparto #}
+        <div class="card">
+            <div class="page-head"><div>
+                <h2>Reparto por profesor</h2>
+                <p class="lead">{{ teacherCount }} profesores · media {{ average }} · máximo {{ max }} guardias.</p>
+            </div></div>
             <table>
-                <thead>
-                    <tr><th>Profesor</th><th style="width: 55%">Guardias cubiertas</th><th class="mono">Total</th></tr>
-                </thead>
+                <thead><tr><th>Profesor</th><th style="width: 55%">Guardias cubiertas</th><th class="mono">Total</th><th class="mono">vs media</th></tr></thead>
                 <tbody>
                     {% for row in ranking %}
+                        {% set diff = (row.total - average)|round(1) %}
                         <tr>
                             <td>{{ row.teacher.fullName }}</td>
                             <td>
@@ -42,10 +58,51 @@
                                 </div>
                             </td>
                             <td class="mono">{{ row.total }}</td>
+                            <td class="mono {{ diff > 0 ? 'text-success' : (diff < 0 ? 'text-danger' : 'muted') }}">{{ diff > 0 ? '+' }}{{ diff }}</td>
                         </tr>
                     {% endfor %}
                 </tbody>
             </table>
+        </div>
+
+        {# 3 · Ausencias por tramo #}
+        {% if absencesBySlot is not empty %}
+            {% set slotMax = max(absencesBySlot) %}
+            <div class="card">
+                <div class="page-head"><div><h2>Ausencias por tramo</h2><p class="lead">Dónde se necesita más cobertura a lo largo del día.</p></div></div>
+                <table>
+                    <thead><tr><th style="width: 20%">Tramo</th><th>Ausencias</th><th class="mono">Total</th></tr></thead>
+                    <tbody>
+                        {% for slot, total in absencesBySlot %}
+                            <tr>
+                                <td class="mono">{{ s.period_label(slotTimes, slot) }}</td>
+                                <td><div class="load-bar"><span class="load-bar-fill" style="width: {{ slotMax > 0 ? (total * 100 // slotMax) : 0 }}%"></span></div></td>
+                                <td class="mono">{{ total }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         {% endif %}
-    </div>
+
+        {# 4 · Quién falta más #}
+        {% if absentRanking is not empty %}
+            {% set absentMax = absentRanking|first.total %}
+            <div class="card">
+                <div class="page-head"><div><h2>Profesores con más ausencias</h2><p class="lead">Top {{ absentRanking|length }} por ausencias registradas.</p></div></div>
+                <table>
+                    <thead><tr><th>Profesor</th><th style="width: 55%">Ausencias</th><th class="mono">Total</th></tr></thead>
+                    <tbody>
+                        {% for row in absentRanking %}
+                            <tr>
+                                <td>{{ row.teacher.fullName }}</td>
+                                <td><div class="load-bar"><span class="load-bar-fill load-bar-fill--warning" style="width: {{ absentMax > 0 ? (row.total * 100 // absentMax) : 0 }}%"></span></div></td>
+                                <td class="mono">{{ row.total }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+    {% endif %}
 {% endblock %}
