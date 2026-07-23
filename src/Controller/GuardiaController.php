@@ -111,8 +111,8 @@ final class GuardiaController extends AbstractController
             : 0.0;
 
         return $this->render('guardia/mine.html.twig', [
-            'date' => $today,
-            'covers' => $covers->findAssignedTo($user, $today),
+            'today' => $today,
+            'covers' => $covers->findUpcomingAssignedTo($user, $today),
             'slotTimes' => $this->slotTimes($schedule, $year),
             'myCovered' => $covers->countCoveredForTeacher($user),
             'staffAverage' => round($staffAverage, 1),
@@ -606,6 +606,30 @@ final class GuardiaController extends AbstractController
         $this->addFlash('success', 0 === $assigned ? 'No había guardias pendientes de asignar.' : sprintf('%d guardia(s) asignada(s).', $assigned));
 
         return $this->backToParte($date, $slotIndex);
+    }
+
+    /**
+     * The read-only detail of a single guardia: its group/room, day and time, the absent teacher, the
+     * task left and how it ended (covered / incident / unassigned). Open to the assigned guardia teacher
+     * for THEIR own cover (self-service, no WRITE needed) and to the coordinator (READ). This is where
+     * "mis guardias" links each row; coordinators additionally get a link to modify it.
+     */
+    #[Route('/{id}/ver', name: 'guardia_cover_show', requirements: ['id' => '\d+'], methods: ['GET'])]
+    public function showCover(GuardiaCover $cover, #[CurrentUser] User $user, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
+    {
+        // A teacher may see the guardia assigned to them; anyone else needs read access to the area.
+        $isOwner = $cover->getAssignedGuardia()?->getId() === $user->getId();
+        if (!$isOwner && !$this->isGranted(AreaVoter::READ, Area::GUARDIAS)) {
+            throw $this->createAccessDeniedException();
+        }
+
+        $year = $years->findBySchoolYear(SchoolYear::current($cover->getDate()));
+
+        return $this->render('guardia/cover_show.html.twig', [
+            'cover' => $cover,
+            'slotTimes' => $this->slotTimes($schedule, $year),
+            'canEdit' => $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS),
+        ]);
     }
 
     /**

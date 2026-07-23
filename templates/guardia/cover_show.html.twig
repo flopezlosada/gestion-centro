@@ -1,0 +1,35 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Guardia{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_mine') }}">Mis guardias</a><span class="sep">/</span>Guardia{% endblock %}
+
+{% block body %}
+    {% set times = slotTimes[cover.slotIndex] ?? null %}
+    <div class="page-head">
+        <div>
+            <h1>Guardia del {{ cover.date|date('d/m/Y', false) }}</h1>
+            <p class="lead">Grupo, hora y la tarea que dejó el profesor ausente.</p>
+        </div>
+        {% if canEdit %}<a class="btn secondary" href="{{ path('guardia_cover_edit', { id: cover.id }) }}">Modificar</a>{% endif %}
+    </div>
+
+    <div class="card">
+        <dl class="cover-summary">
+            <div><dt>Grupo</dt><dd><strong>{{ cover.groupName ?? '—' }}</strong>{% if cover.roomName %} <span class="muted mono">· {{ cover.roomName }}</span>{% endif %}</dd></div>
+            <div><dt>Día y hora</dt><dd>{{ cover.date|date('d/m/Y', false) }}{% if times %} · <span class="mono">{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}</span>{% else %} · {{ cover.slotIndex + 1 }}ª hora{% endif %}</dd></div>
+            <div><dt>Profesor ausente</dt><dd>{{ cover.absentTeacher.fullName }}</dd></div>
+            <div><dt>Profesor de guardia</dt><dd>{{ cover.assignedGuardia ? cover.assignedGuardia.fullName : '—' }}</dd></div>
+            <div><dt>Estado</dt><dd>
+                {% if cover.notCovered %}<span class="badge badge--danger" data-tone="danger">Incidencia</span>
+                {% elseif cover.assignedGuardia %}<span class="badge badge--ok" data-tone="success">Cubierta</span>
+                {% else %}<span class="badge badge--muted" data-tone="muted">Sin asignar</span>{% endif %}
+            </dd></div>
+        </dl>
+    </div>
+
+    <div class="card">
+        <div class="page-head"><div><h2>Tarea para el grupo</h2></div></div>
+        {% if cover.taskNote %}<p>{{ cover.taskNote|nl2br }}</p>{% else %}<p class="muted">El profesor ausente no dejó tarea para este grupo.</p>{% endif %}
+    </div>
+{% endblock %}

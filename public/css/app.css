@@ -1868,6 +1868,10 @@ input[type="email"], input[type="text"], select, textarea {
 /* Selector de "qué dato comparar" encima de la evolución: compacto, alineado a la izquierda. */
 .field--metric { max-width: 260px; margin-bottom: 8px; }
 
+/* Cabecera de grupo por día en "Mis guardias": separa visualmente cada jornada. */
+.daygroup th { background: var(--surface-sunken); color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; letter-spacing: .03em; padding: 12px 12px 8px; }
+.daygroup--today th { color: var(--accent); }
+
 tr.is-not-covered { background: var(--danger-weak); }
 .task-note { cursor: help; }
 
