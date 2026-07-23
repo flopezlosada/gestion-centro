@@ -23,6 +23,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -76,14 +77,30 @@ final class SeedDemoCommand extends Command
         parent::__construct();
     }
 
+    protected function configure(): void
+    {
+        $this->addOption(
+            'force',
+            null,
+            InputOption::VALUE_NONE,
+            'Permite ejecutarlo aunque el entorno sea prod. Pensado para un staging que corre como prod: '
+            .'siembra datos inventados a propósito. NO usar en un prod real con datos de verdad.',
+        );
+    }
+
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
 
-        if ('prod' === $this->env) {
-            $io->error('app:seed-demo genera datos inventados y no puede ejecutarse en producción.');
+        // El seed genera datos inventados: se niega en prod para no arruinar datos reales por accidente.
+        // En un staging que corre con APP_ENV=prod, --force lo habilita de forma deliberada (y ruidosa).
+        if ('prod' === $this->env && !$input->getOption('force')) {
+            $io->error('app:seed-demo genera datos inventados y no puede ejecutarse en producción. Usa --force solo si este entorno es un staging.');
 
             return Command::FAILURE;
+        }
+        if ('prod' === $this->env) {
+            $io->warning('Ejecutando en entorno PROD por --force: se regenerará la actividad inventada. Asegúrate de que es un staging, no un prod real.');
         }
 
         /** @var list<User> $users */
