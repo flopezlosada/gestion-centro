@@ -33,6 +33,24 @@ final class SchoolYear
     }
 
     /**
+     * The calendar span of a school year: from 1 September of its start year to 31 August of its end
+     * year (the day before the next course begins). Used to scope data to a whole course by date,
+     * consistently with {@see current()} — wider than the teaching terms, so it also catches early
+     * September and the summer.
+     *
+     * @param string $schoolYear the school year in "YYYY-YYYY" form (only the first four digits are read)
+     *
+     * @return array{0: \DateTimeImmutable, 1: \DateTimeImmutable} the [from, to] inclusive bounds
+     */
+    public static function bounds(string $schoolYear): array
+    {
+        $start = (int) substr($schoolYear, 0, 4);
+        $from = new \DateTimeImmutable(sprintf('%d-%02d-01', $start, self::FIRST_MONTH));
+
+        return [$from, $from->modify('+1 year -1 day')];
+    }
+
+    /**
      * The school year that follows the given one, shifting the window by one year
      * (e.g. "2025-2026" → "2026-2027"). Parsing is tolerant of the start year only, so it also
      * normalises slash-separated values ("2025/2026" → "2026-2027").

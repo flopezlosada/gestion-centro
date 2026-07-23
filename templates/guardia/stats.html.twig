@@ -10,18 +10,43 @@
     {% import _self as s %}
     {% set weekdayNames = {1: 'Lun', 2: 'Mar', 3: 'Mié', 4: 'Jue', 5: 'Vie'} %}
 
+    {% set termNames = {0: 'Todo el curso', 1: '1er trimestre', 2: '2º trimestre', 3: '3er trimestre'} %}
+
     <div class="page-head">
         <div>
             <h1>Estadísticas de guardias</h1>
-            <p class="lead">Cobertura del servicio, equidad del reparto y patrones de ausencia del curso.</p>
+            <p class="lead">{{ curso }} · {{ termNames[term] }} — cobertura, equidad del reparto y patrones de ausencia.</p>
         </div>
         <div><a class="btn btn-secondary" href="{{ path('guardia_stats_csv') }}">Descargar CSV</a></div>
     </div>
 
+    {# Filtro temporal: curso + trimestre. Reescala todo el panel de abajo. #}
+    <div class="card">
+        <form method="get" action="{{ path('guardia_stats') }}" class="inline-form inline-form--wrap">
+            <label>Curso
+                <select name="curso" onchange="this.form.submit()">
+                    {% for ay in courses %}
+                        <option value="{{ ay.schoolYear }}" {{ ay.schoolYear == curso ? 'selected' }}>{{ ay.schoolYear }}</option>
+                    {% else %}
+                        <option value="{{ curso }}" selected>{{ curso }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Trimestre
+                <select name="trimestre" onchange="this.form.submit()">
+                    {% for t, name in termNames %}
+                        <option value="{{ t }}" {{ t == term ? 'selected' }}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <noscript><button type="submit" class="btn">Aplicar</button></noscript>
+        </form>
+    </div>
+
     {% if summary.absences == 0 %}
         <div class="card"><div class="empty-state">
-            <h2>Aún no hay datos</h2>
-            <p>Cuando se registren ausencias y se repartan guardias, aquí verás la cobertura, la equidad del reparto y los patrones del curso.</p>
+            <h2>Sin datos en este periodo</h2>
+            <p>No hay ausencias registradas en {{ curso }} · {{ termNames[term]|lower }}. Prueba otro curso o trimestre{% if byCourse is not empty %}, o mira la comparativa entre cursos más abajo{% endif %}.</p>
         </div></div>
     {% else %}
         {# ============ A · Cobertura ============ #}
@@ -184,4 +209,42 @@
             </div>
         {% endif %}
     {% endif %}
+
+    {# ============ G · Comparativa por trimestre (curso seleccionado) ============ #}
+    {% if byTerm is not empty %}
+        <div class="card">
+            <div class="page-head"><div><h2>Comparativa por trimestre</h2><p class="lead">Curso {{ curso }}: cómo evoluciona a lo largo del año.</p></div></div>
+            {{ s.compare_table(byTerm, 'Trimestre') }}
+        </div>
+    {% endif %}
+
+    {# ============ H · Comparativa entre cursos ============ #}
+    {% if byCourse|length > 1 %}
+        <div class="card">
+            <div class="page-head"><div><h2>Comparativa entre cursos</h2><p class="lead">Evolución curso a curso.</p></div></div>
+            {{ s.compare_table(byCourse, 'Curso') }}
+        </div>
+    {% endif %}
 {% endblock %}
+
+{% macro compare_table(rows, firstHeader) %}
+    <table>
+        <thead><tr><th>{{ firstHeader }}</th><th class="mono">Ausencias</th><th class="mono">Cubiertas</th><th style="width: 24%">Cobertura</th><th class="mono">Incidencias</th><th class="mono">Media/profe</th><th>Equidad</th></tr></thead>
+        <tbody>
+            {% for r in rows %}
+                <tr>
+                    <td>{{ r.label }}</td>
+                    <td class="mono">{{ r.absences }}</td>
+                    <td class="mono">{{ r.covered }}</td>
+                    <td>
+                        <div class="load-bar" title="{{ r.coverageRate }}% cubiertas"><span class="load-bar-fill load-bar-fill--success" style="width: {{ r.coverageRate }}%"></span></div>
+                        <span class="muted mono">{{ r.coverageRate }}%</span>
+                    </td>
+                    <td class="mono {{ r.incidents > 0 ? 'text-danger' }}">{{ r.incidents }}</td>
+                    <td class="mono">{{ r.mean }}</td>
+                    <td>{{ r.balance }}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% endmacro %}

@@ -1857,6 +1857,7 @@ tr.is-not-covered { background: var(--danger-weak); }
 .load-bar { height: 6px; border-radius: 3px; background: var(--surface-sunken); overflow: hidden; margin: 8px 0 4px; }
 .load-bar-fill { display: block; height: 100%; background: var(--accent); }
 .load-bar-fill--warning { background: var(--warning); }
+.load-bar-fill--success { background: var(--success); }
 
 /* Coloreado de cifras en línea (p. ej. desviación vs la media en estadísticas de guardias). */
 .text-success { color: var(--success); }
