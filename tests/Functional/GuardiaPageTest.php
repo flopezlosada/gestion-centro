@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Functional;
 
 use App\Entity\AcademicYear;
+use App\Entity\GuardiaCover;
 use App\Entity\Role;
 use App\Entity\ScheduleEntry;
 use App\Entity\User;
@@ -15,6 +16,7 @@ use App\Enum\Weekday;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\DomCrawler\Crawler;
 
 /**
  * The parte de guardias reads the timetable of the course the queried date falls into: for a date with
@@ -67,6 +69,69 @@ final class GuardiaPageTest extends WebTestCase
             ->setTerm2End(new \DateTimeImmutable(($start + 1).'-03-27'))
             ->setTerm3Start(new \DateTimeImmutable(($start + 1).'-04-07'))
             ->setTerm3End(new \DateTimeImmutable(($start + 1).'-06-22'));
+    }
+
+    private function user(string $name, string $email): User
+    {
+        $user = (new User())->setFullName($name)->setEmail($email);
+        $this->em->persist($user);
+
+        return $user;
+    }
+
+    /**
+     * A guardia slot in the timetable, so the parte page has a period to show and a pool to draw from
+     * (the on-call teacher for that weekday/period).
+     */
+    private function guardiaEntry(AcademicYear $year, User $teacher, \DateTimeImmutable $date, int $slot = 0): ScheduleEntry
+    {
+        $entry = (new ScheduleEntry())
+            ->setAcademicYear($year)
+            ->setTeacher($teacher)
+            ->setWeekday(Weekday::from((int) $date->format('N')))
+            ->setSlotIndex($slot)
+            ->setStartsAt(new \DateTimeImmutable('08:25'))
+            ->setEndsAt(new \DateTimeImmutable('09:20'))
+            ->setKind(ScheduleActivityKind::GUARDIA);
+        $this->em->persist($entry);
+
+        return $entry;
+    }
+
+    private function cover(\DateTimeImmutable $date, int $slot, User $absent, ?User $assigned = null, bool $notCovered = false, string $group = '1ºA'): GuardiaCover
+    {
+        $cover = (new GuardiaCover())
+            ->setDate($date)
+            ->setSlotIndex($slot)
+            ->setAbsentTeacher($absent)
+            ->setAssignedGuardia($assigned)
+            ->setNotCovered($notCovered)
+            ->setGroupName($group);
+        $this->em->persist($cover);
+
+        return $cover;
+    }
+
+    /**
+     * Reads the CSRF token a rendered parte carries for a given mutation form, so a follow-up POST is
+     * valid in the same session (mirrors what the browser submits from that form).
+     */
+    private function tokenFrom(Crawler $crawler, string $action): string
+    {
+        return (string) $crawler->filter('form[action="'.$action.'"] input[name="_token"]')->attr('value');
+    }
+
+    /**
+     * Reloads a cover from the database after clearing the identity map, so assertions see the persisted
+     * state and not a stale in-memory object.
+     */
+    private function reload(int $id): GuardiaCover
+    {
+        $this->em->clear();
+        $cover = $this->em->getRepository(GuardiaCover::class)->find($id);
+        self::assertInstanceOf(GuardiaCover::class, $cover);
+
+        return $cover;
     }
 
     public function testEmptyStateNamesTheCourseWhenNoTimetableImported(): void
@@ -137,5 +202,109 @@ final class GuardiaPageTest extends WebTestCase
 
         $this->client->request('GET', '/guardias/mias');
         self::assertResponseIsSuccessful();
+    }
+
+    /**
+     * The teacher's own screen shows their guardia counter as the assigned covers with no incident (an
+     * assigned cover counts as done by default), and lists only the guardias assigned to them — never
+     * another teacher's.
+     */
+    public function testMisGuardiasCountsCoversWithoutIncidentAndScopesToSelf(): void
+    {
+        $me = $this->login(coordinator: false);
+        $other = $this->user('Otro Guardia', 'otro@centro.test');
+        $absent = $this->user('Profe Ausente', 'ausente@centro.test');
+        $today = new \DateTimeImmutable('today');
+
+        // Two covers I actually covered plus one flagged as an incident: the counter must read 2, but
+        // the incident row still shows in the list (it is a guardia assigned to me today).
+        $this->cover($today, 0, $absent, $me, false, '1ºA');
+        $this->cover($today, 1, $absent, $me, false, '2ºB');
+        $this->cover($today, 2, $absent, $me, true, '3ºC');
+        // A cover assigned to someone else the same day must not leak into my list.
+        $this->cover($today, 3, $absent, $other, false, '4ºD-AJENA');
+        $this->em->flush();
+
+        $this->client->request('GET', '/guardias/mias');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextSame('.stat--success .stat-figure', '2');
+        self::assertSelectorTextContains('table', '1ºA');
+        self::assertSelectorTextContains('table', '3ºC');
+        self::assertSelectorTextNotContains('table', '4ºD-AJENA');
+    }
+
+    /**
+     * Flagging an incident toggles the cover's not-covered flag (and toggling again clears it), taking
+     * it out of the equitable balance without deleting the parte line.
+     */
+    public function testMarkIncidentTogglesTheCoverFlag(): void
+    {
+        $this->login();
+        $year = $this->academicYear('2025-2026');
+        $this->em->persist($year);
+        $guardia = $this->user('Guardia Uno', 'g1@centro.test');
+        $absent = $this->user('Ausente Uno', 'a1@centro.test');
+        $date = new \DateTimeImmutable('2025-11-10'); // Monday
+        $this->guardiaEntry($year, $guardia, $date);
+        $cover = $this->cover($date, 0, $absent, $guardia);
+        $this->em->flush();
+        $id = (int) $cover->getId();
+        $action = '/guardias/'.$id.'/incidencia';
+
+        $crawler = $this->client->request('GET', '/guardias?date=2025-11-10&slot=0');
+        self::assertResponseIsSuccessful();
+        $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action)]);
+        self::assertResponseRedirects();
+        self::assertTrue($this->reload($id)->isNotCovered());
+
+        // Toggling again clears the flag.
+        $crawler = $this->client->request('GET', '/guardias?date=2025-11-10&slot=0');
+        $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action)]);
+        self::assertFalse($this->reload($id)->isNotCovered());
+    }
+
+    /**
+     * The coordinator overrides the assigned guardia from the parte, and an empty choice clears it.
+     */
+    public function testReassignAssignsAndClearsTheGuardia(): void
+    {
+        $this->login();
+        $year = $this->academicYear('2025-2026');
+        $this->em->persist($year);
+        $guardia = $this->user('Guardia Pool', 'gp@centro.test');
+        $absent = $this->user('Ausente Dos', 'a2@centro.test');
+        $date = new \DateTimeImmutable('2025-11-10');
+        $this->guardiaEntry($year, $guardia, $date);
+        $cover = $this->cover($date, 0, $absent, null);
+        $this->em->flush();
+        $id = (int) $cover->getId();
+        $action = '/guardias/'.$id.'/reasignar';
+
+        $crawler = $this->client->request('GET', '/guardias?date=2025-11-10&slot=0');
+        $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action), 'guardia' => (string) $guardia->getId()]);
+        self::assertResponseRedirects();
+        self::assertSame($guardia->getId(), $this->reload($id)->getAssignedGuardia()?->getId());
+
+        $crawler = $this->client->request('GET', '/guardias?date=2025-11-10&slot=0');
+        $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action), 'guardia' => '']);
+        self::assertNull($this->reload($id)->getAssignedGuardia());
+    }
+
+    /**
+     * A mutation with a bad CSRF token is refused and leaves the cover untouched.
+     */
+    public function testInvalidCsrfTokenIsRejected(): void
+    {
+        $this->login();
+        $absent = $this->user('Ausente Tres', 'a3@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('2025-11-10'), 0, $absent, null);
+        $this->em->flush();
+        $id = (int) $cover->getId();
+
+        $this->client->request('POST', '/guardias/'.$id.'/incidencia', ['_token' => 'wrong']);
+
+        self::assertResponseStatusCodeSame(403);
+        self::assertFalse($this->reload($id)->isNotCovered());
     }
 }
