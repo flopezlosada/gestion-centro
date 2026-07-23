@@ -301,25 +301,6 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
-     * The distinct group names present in the parte, alphabetically — the options for the history
-     * screen's group filter.
-     *
-     * @return list<string> the group names present in any cover
-     */
-    public function distinctGroups(): array
-    {
-        /** @var list<array{name: string}> $rows */
-        $rows = $this->createQueryBuilder('c')
-            ->select('DISTINCT c.groupName AS name')
-            ->andWhere('c.groupName IS NOT NULL')
-            ->orderBy('c.groupName', 'ASC')
-            ->getQuery()
-            ->getResult();
-
-        return array_map(static fn (array $r): string => $r['name'], $rows);
-    }
-
-    /**
      * Lightweight rows for the analytics dashboard — one per cover, with just the fields the time and
      * heatmap aggregations need. Aggregating in PHP (small volume: hundreds of covers per course) keeps
      * the queries portable and avoids per-driver date functions.

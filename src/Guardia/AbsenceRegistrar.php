@@ -40,11 +40,13 @@ final class AbsenceRegistrar
      * @param User               $teacher     the absent teacher
      * @param \DateTimeImmutable $date        the day of the absence
      * @param list<int>|null     $slotIndexes the periods to register, or null for the whole teaching day
-     * @param string|null        $taskNote    task/observations left for the groups (applied to every cover)
+     * @param string|null        $taskNote    task left for every cover (fallback when no per-slot task)
+     * @param array<int, string> $taskBySlot  per-period task (slot index → task), overriding $taskNote for
+     *                                         that period; each period/group can carry its own instructions
      *
      * @return AbsenceRegistrationResult what was created and what was skipped
      */
-    public function register(AcademicYear $year, User $teacher, \DateTimeImmutable $date, ?array $slotIndexes, ?string $taskNote): AbsenceRegistrationResult
+    public function register(AcademicYear $year, User $teacher, \DateTimeImmutable $date, ?array $slotIndexes, ?string $taskNote, array $taskBySlot = []): AbsenceRegistrationResult
     {
         $weekday = Weekday::from((int) $date->format('N'));
         $slots = $slotIndexes ?? $this->schedule->lectiveSlotsFor($year, $teacher, $weekday);
@@ -69,7 +71,7 @@ final class AbsenceRegistrar
                 ->setAbsentTeacher($teacher)
                 ->setGroupName($lective->getGroupName())
                 ->setRoomName($lective->getRoomName())
-                ->setTaskNote($taskNote));
+                ->setTaskNote($taskBySlot[$slotIndex] ?? $taskNote));
             $createdSlots[] = $slotIndex;
         }
         $this->em->flush();

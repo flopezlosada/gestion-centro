@@ -235,10 +235,11 @@ final class GuardiaPageTest extends WebTestCase
     }
 
     /**
-     * Flagging an incident toggles the cover's not-covered flag (and toggling again clears it), taking
-     * it out of the equitable balance without deleting the parte line.
+     * The "modificar guardia" screen flags the cover as not covered when the box is ticked and clears
+     * it when it is not, taking it out of the equitable balance without deleting the parte line. A
+     * change is only accepted with a reason, which is recorded in the cover's event log.
      */
-    public function testMarkIncidentTogglesTheCoverFlag(): void
+    public function testModifyFlagsNotCoveredWithAReason(): void
     {
         $this->login();
         $year = $this->academicYear('2025-2026');
@@ -250,24 +251,25 @@ final class GuardiaPageTest extends WebTestCase
         $cover = $this->cover($date, 0, $absent, $guardia);
         $this->em->flush();
         $id = (int) $cover->getId();
-        $action = '/guardias/'.$id.'/incidencia';
+        $action = '/guardias/'.$id.'/modificar';
 
-        $crawler = $this->client->request('GET', '/guardias?date=2025-11-10&slot=0');
+        $crawler = $this->client->request('GET', $action);
         self::assertResponseIsSuccessful();
-        $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action)]);
+        $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action), 'guardia' => (string) $guardia->getId(), 'not_covered' => '1', 'motivo' => 'El sustituto tampoco vino.']);
         self::assertResponseRedirects();
         self::assertTrue($this->reload($id)->isNotCovered());
 
-        // Toggling again clears the flag.
-        $crawler = $this->client->request('GET', '/guardias?date=2025-11-10&slot=0');
-        $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action)]);
+        // Submitting again without the box clears the flag.
+        $crawler = $this->client->request('GET', $action);
+        $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action), 'guardia' => (string) $guardia->getId(), 'motivo' => 'Al final sí se cubrió.']);
         self::assertFalse($this->reload($id)->isNotCovered());
     }
 
     /**
-     * The coordinator overrides the assigned guardia from the parte, and an empty choice clears it.
+     * The coordinator overrides the assigned guardia from the modify screen, and an empty choice clears
+     * it. Every change carries a mandatory reason.
      */
-    public function testReassignAssignsAndClearsTheGuardia(): void
+    public function testModifyReassignsAndClearsTheGuardia(): void
     {
         $this->login();
         $year = $this->academicYear('2025-2026');
@@ -279,15 +281,36 @@ final class GuardiaPageTest extends WebTestCase
         $cover = $this->cover($date, 0, $absent, null);
         $this->em->flush();
         $id = (int) $cover->getId();
-        $action = '/guardias/'.$id.'/reasignar';
+        $action = '/guardias/'.$id.'/modificar';
 
-        $crawler = $this->client->request('GET', '/guardias?date=2025-11-10&slot=0');
-        $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action), 'guardia' => (string) $guardia->getId()]);
+        $crawler = $this->client->request('GET', $action);
+        $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action), 'guardia' => (string) $guardia->getId(), 'motivo' => 'Lo cubre este compañero.']);
         self::assertResponseRedirects();
         self::assertSame($guardia->getId(), $this->reload($id)->getAssignedGuardia()?->getId());
 
-        $crawler = $this->client->request('GET', '/guardias?date=2025-11-10&slot=0');
-        $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action), 'guardia' => '']);
+        $crawler = $this->client->request('GET', $action);
+        $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action), 'guardia' => '', 'motivo' => 'Se retira la asignación.']);
+        self::assertNull($this->reload($id)->getAssignedGuardia());
+    }
+
+    /**
+     * A change without a reason is refused and leaves the cover untouched: the motivo is the record of
+     * why a manual change was made.
+     */
+    public function testModifyRequiresAReason(): void
+    {
+        $this->login();
+        $guardia = $this->user('Guardia Cuatro', 'g4@centro.test');
+        $absent = $this->user('Ausente Cuatro', 'a4@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('2025-11-10'), 0, $absent, null);
+        $this->em->flush();
+        $id = (int) $cover->getId();
+        $action = '/guardias/'.$id.'/modificar';
+
+        $crawler = $this->client->request('GET', $action);
+        $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action), 'guardia' => (string) $guardia->getId(), 'motivo' => '']);
+
+        self::assertResponseRedirects($action);
         self::assertNull($this->reload($id)->getAssignedGuardia());
     }
 
@@ -302,7 +325,7 @@ final class GuardiaPageTest extends WebTestCase
         $this->em->flush();
         $id = (int) $cover->getId();
 
-        $this->client->request('POST', '/guardias/'.$id.'/incidencia', ['_token' => 'wrong']);
+        $this->client->request('POST', '/guardias/'.$id.'/modificar', ['_token' => 'wrong', 'motivo' => 'x']);
 
         self::assertResponseStatusCodeSame(403);
         self::assertFalse($this->reload($id)->isNotCovered());

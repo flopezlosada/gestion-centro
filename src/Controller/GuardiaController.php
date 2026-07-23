@@ -15,11 +15,14 @@ use App\Guardia\AbsenceRegistrationResult;
 use App\Guardia\GuardiaScheduler;
 use App\Guardia\GuardiaStatistics;
 use App\Repository\AcademicYearRepository;
+use App\Repository\AuditLogRepository;
 use App\Repository\GuardiaCoverRepository;
 use App\Repository\ScheduleEntryRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
 use App\Service\GuardiaAssignmentNotifier;
+use App\Support\AuditContext;
+use App\Support\GuardiaActivityPresenter;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -121,27 +124,22 @@ final class GuardiaController extends AbstractController
      * trace of "who covered which group when". Read access to the guardia area is enough to view it.
      */
     #[Route('/historico', name: 'guardia_history', methods: ['GET'])]
-    public function history(Request $request, GuardiaCoverRepository $covers, UserRepository $users): Response
+    public function history(Request $request, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
-        $from = $this->optionalDate((string) $request->query->get('from'));
-        $to = $this->optionalDate((string) $request->query->get('to'));
-        $group = trim((string) $request->query->get('group'));
-        $assigned = $this->optionalUser($users, $request->query->get('assigned'));
-        $absent = $this->optionalUser($users, $request->query->get('absent'));
+        // Scoped to one course (like "tareas del centro"), so the client-side table tools work over a
+        // bounded set instead of the whole multi-year history. Filtering/sorting/search all happen in
+        // the browser (see templates/guardia/history.html.twig).
+        $curso = (string) ($request->query->get('curso') ?: SchoolYear::current(new \DateTimeImmutable('today')));
+        [$from, $to] = SchoolYear::bounds($curso);
+        $year = $years->findBySchoolYear($curso);
 
         return $this->render('guardia/history.html.twig', [
-            'covers' => $covers->history($from, $to, '' !== $group ? $group : null, $assigned, $absent),
-            'groups' => $covers->distinctGroups(),
-            'allTeachers' => $users->findBy([], ['fullName' => 'ASC']),
-            'filters' => [
-                'from' => $from?->format('Y-m-d') ?? '',
-                'to' => $to?->format('Y-m-d') ?? '',
-                'group' => $group,
-                'assigned' => $assigned?->getId(),
-                'absent' => $absent?->getId(),
-            ],
+            'covers' => $covers->history($from, $to, null, null, null),
+            'slotTimes' => $this->slotTimes($schedule, $year),
+            'curso' => $curso,
+            'years' => array_map(static fn (AcademicYear $ay): string => $ay->getSchoolYear(), $years->findAllOrdered()),
         ]);
     }
 
@@ -157,70 +155,71 @@ final class GuardiaController extends AbstractController
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
         $courses = $years->findAllOrdered();
-        $curso = (string) ($request->query->get('curso') ?: SchoolYear::current(new \DateTimeImmutable('today')));
-        $term = (int) $request->query->get('trimestre'); // 0 = whole course
-        $selectedYear = $years->findBySchoolYear($curso);
 
-        // The window the whole dashboard is scoped to: a term of the course (needs its AcademicYear for
-        // the term dates) or, by default, the whole school-year span (Sep–Aug, catches out-of-term days).
-        if ($term >= 1 && $term <= 3 && $selectedYear instanceof AcademicYear) {
-            $from = $selectedYear->getTermStart($term);
-            $to = $selectedYear->getTermEnd($term);
-        } else {
-            $term = 0;
+        // The periods to look at: any mix of whole courses and single terms, chosen with checkboxes.
+        // With none chosen we default to the current course, so the screen is never empty. Every figure
+        // is recomputed for each selected window, and with two or more periods they sit side by side.
+        // Tolerate both ?p[]=… (normal) and a stray scalar ?p=…, without InputBag throwing on the latter.
+        $requestedTokens = array_map(strval(...), (array) ($request->query->all()['p'] ?? []));
+        $periods = $this->resolvePeriods($requestedTokens, $courses);
+        if ([] === $periods) {
+            $curso = SchoolYear::current(new \DateTimeImmutable('today'));
             [$from, $to] = SchoolYear::bounds($curso);
+            $periods = [['token' => $curso, 'label' => $curso, 'from' => $from, 'to' => $to]];
         }
+        $single = 1 === \count($periods);
 
-        $ranking = $covers->coveredTotalsByTeacher($from, $to);
-        $summary = $covers->coverageSummary($from, $to);
-        $coverageRate = $summary['absences'] > 0 ? (int) round($summary['covered'] * 100 / $summary['absences']) : 0;
-        $rows = $covers->analyticsRows($from, $to);
+        // One comparable KPI row per period (absences, coverage, fairness).
+        $kpis = array_map(
+            fn (array $p): array => ['token' => $p['token']] + $this->windowKpis($covers, $statistics, $p['label'], $p['from'], $p['to']),
+            $periods,
+        );
 
-        // Period labels from the selected course's marco horario; fall back to the ordinal otherwise.
-        $year = $selectedYear ?? $years->findBySchoolYear(SchoolYear::current(new \DateTimeImmutable('today')));
+        // Absences by department and by teacher as matrices: a row per department/teacher, a cell per
+        // period, sorted by the total across the selected periods (busiest first).
+        $byDepartment = $this->comparisonMatrix($periods, static fn (array $p): array => array_map(
+            static fn (array $r): array => ['key' => $r['name'], 'name' => $r['name'], 'total' => $r['total']],
+            $covers->absencesByDepartment($p['from'], $p['to']),
+        ));
+        $absentRanking = \array_slice($this->comparisonMatrix($periods, static fn (array $p): array => array_map(
+            static fn (array $r): array => ['key' => (string) $r['teacher']->getId(), 'name' => $r['teacher']->getFullName(), 'total' => $r['total']],
+            $covers->absencesByTeacher(1000, $p['from'], $p['to']),
+        )), 0, 15);
 
-        // Comparativa por trimestre (del curso elegido) — necesita el AcademicYear para las fechas.
-        $byTerm = [];
-        if ($selectedYear instanceof AcademicYear) {
-            foreach ([1, 2, 3] as $t) {
-                $byTerm[] = $this->windowKpis($covers, $statistics, sprintf('%dº trimestre', $t), $selectedYear->getTermStart($t), $selectedYear->getTermEnd($t));
-            }
-        }
-
-        // Comparativa entre cursos — los cursos definidos que tengan alguna ausencia.
-        $byCourse = [];
-        foreach ($courses as $ay) {
-            [$cFrom, $cTo] = SchoolYear::bounds($ay->getSchoolYear());
-            $kpi = $this->windowKpis($covers, $statistics, $ay->getSchoolYear(), $cFrom, $cTo);
-            if ($kpi['absences'] > 0) {
-                $byCourse[] = $kpi;
-            }
+        // The rich single-period lenses (equity ranking, monthly evolution, heatmap) only make sense for
+        // one window; a comparison of several drops them for the side-by-side tables.
+        $singleExtras = [];
+        if ($single) {
+            $p = $periods[0];
+            $ranking = $covers->coveredTotalsByTeacher($p['from'], $p['to']);
+            $rows = $covers->analyticsRows($p['from'], $p['to']);
+            $year = $years->findBySchoolYear(explode(':', $p['token'])[0]) ?? $years->findBySchoolYear(SchoolYear::current(new \DateTimeImmutable('today')));
+            $singleExtras = [
+                'ranking' => $ranking,
+                'max' => $ranking[0]['total'] ?? 0,
+                'equity' => $statistics->equity(array_map(static fn (array $r): int => $r['total'], $ranking)),
+                'monthly' => $statistics->byMonth($rows),
+                'heatmap' => $statistics->heatmap($rows),
+                'slotTimes' => $this->slotTimes($schedule, $year),
+            ];
         }
 
         return $this->render('guardia/stats.html.twig', [
             'courses' => $courses,
-            'curso' => $curso,
-            'term' => $term,
-            'ranking' => $ranking,
-            'max' => $ranking[0]['total'] ?? 0,
-            'equity' => $statistics->equity(array_map(static fn (array $r): int => $r['total'], $ranking)),
-            'summary' => $summary,
-            'coverageRate' => $coverageRate,
-            'monthly' => $statistics->byMonth($rows),
-            'heatmap' => $statistics->heatmap($rows),
-            'slotTimes' => $this->slotTimes($schedule, $year),
-            'absentRanking' => $covers->absencesByTeacher(10, $from, $to),
-            'byDepartment' => $covers->absencesByDepartment($from, $to),
-            'byTerm' => $byTerm,
-            'byCourse' => $byCourse,
-        ]);
+            'periods' => $periods,
+            'selectedTokens' => array_map(static fn (array $p): string => $p['token'], $periods),
+            'single' => $single,
+            'kpis' => $kpis,
+            'byDepartment' => $byDepartment,
+            'absentRanking' => $absentRanking,
+        ] + $singleExtras);
     }
 
     /**
      * The comparable KPI set for one date window (a term, a whole course): absences, coverage and the
      * fairness of the split, so several periods can be laid side by side.
      *
-     * @return array{label: string, absences: int, covered: int, incidents: int, coverageRate: int, teachers: int, mean: float, balance: string}
+     * @return array{label: string, absences: int, covered: int, incidents: int, unassigned: int, coverageRate: int, teachers: int, mean: float, balance: string}
      */
     private function windowKpis(GuardiaCoverRepository $covers, GuardiaStatistics $statistics, string $label, \DateTimeImmutable $from, \DateTimeImmutable $to): array
     {
@@ -232,11 +231,97 @@ final class GuardiaController extends AbstractController
             'absences' => $summary['absences'],
             'covered' => $summary['covered'],
             'incidents' => $summary['incidents'],
+            'unassigned' => $summary['unassigned'],
             'coverageRate' => $summary['absences'] > 0 ? (int) round($summary['covered'] * 100 / $summary['absences']) : 0,
             'teachers' => $equity['count'],
             'mean' => $equity['mean'],
             'balance' => $equity['label'],
         ];
+    }
+
+    /**
+     * Resolves period tokens into comparable date windows, in the order given and de-duplicated. A token
+     * is a school year ("2025-2026") for the whole course, or "2025-2026:2" for a single term (needs the
+     * course's {@see AcademicYear} for the term dates; unknown or malformed tokens are dropped).
+     *
+     * @param list<string>      $tokens  the requested period tokens
+     * @param list<AcademicYear> $courses the defined courses, to resolve term dates
+     *
+     * @return list<array{token: string, label: string, from: \DateTimeImmutable, to: \DateTimeImmutable}> the windows
+     */
+    private function resolvePeriods(array $tokens, array $courses): array
+    {
+        $byYear = [];
+        foreach ($courses as $ay) {
+            $byYear[$ay->getSchoolYear()] = $ay;
+        }
+        $termLabels = [1 => '1er trim.', 2 => '2º trim.', 3 => '3er trim.'];
+
+        $periods = [];
+        $seen = [];
+        foreach ($tokens as $token) {
+            $parts = explode(':', $token);
+            $schoolYear = $parts[0];
+            if (1 !== preg_match('/^\d{4}-\d{4}$/', $schoolYear)) {
+                continue;
+            }
+            $term = isset($parts[1]) ? (int) $parts[1] : 0;
+            $ay = $byYear[$schoolYear] ?? null;
+
+            if ($term >= 1 && $term <= 3 && $ay instanceof AcademicYear) {
+                $canonical = $schoolYear.':'.$term;
+                $from = $ay->getTermStart($term);
+                $to = $ay->getTermEnd($term);
+                $label = sprintf('%s · %s', $schoolYear, $termLabels[$term]);
+            } else {
+                $canonical = $schoolYear;
+                [$from, $to] = SchoolYear::bounds($schoolYear);
+                $label = $schoolYear;
+            }
+            if (isset($seen[$canonical])) {
+                continue;
+            }
+            $seen[$canonical] = true;
+            $periods[] = ['token' => $canonical, 'label' => $label, 'from' => $from, 'to' => $to];
+        }
+
+        return $periods;
+    }
+
+    /**
+     * Builds a comparison matrix: one row per distinct entity (department, teacher…), a cell per period
+     * with its count, ordered by the total across all periods (busiest first). The per-period fetcher
+     * returns rows of {@code {key, name, total}} for one window.
+     *
+     * @param list<array{token: string, label: string, from: \DateTimeImmutable, to: \DateTimeImmutable}> $periods the windows
+     * @param callable(array{token: string, label: string, from: \DateTimeImmutable, to: \DateTimeImmutable}): list<array{key: string, name: string, total: int}> $fetch per-period fetcher
+     *
+     * @return list<array{name: string, cells: list<int>, total: int}> the matrix rows, busiest first
+     */
+    private function comparisonMatrix(array $periods, callable $fetch): array
+    {
+        $names = [];
+        $byPeriod = [];
+        $totals = [];
+        foreach ($periods as $p) {
+            foreach ($fetch($p) as $row) {
+                $names[$row['key']] = $row['name'];
+                $byPeriod[$row['key']][$p['token']] = $row['total'];
+                $totals[$row['key']] = ($totals[$row['key']] ?? 0) + $row['total'];
+            }
+        }
+        arsort($totals);
+
+        $rows = [];
+        foreach ($totals as $key => $total) {
+            $cells = [];
+            foreach ($periods as $p) {
+                $cells[] = $byPeriod[$key][$p['token']] ?? 0;
+            }
+            $rows[] = ['name' => $names[$key], 'cells' => $cells, 'total' => $total];
+        }
+
+        return $rows;
     }
 
     /**
@@ -273,33 +358,48 @@ final class GuardiaController extends AbstractController
     }
 
     /**
-     * The "apuntar ausencia" form: pick the absent teacher, the day, and either the whole teaching day
-     * or specific periods. A coordinator (guardias WRITE) can register any teacher; any other teacher
-     * may only report their own absence, so the picker is limited to themselves. Reachable prefilled
-     * with {@code ?teacher=<id>} for a coordinator.
+     * The "apuntar ausencia" form: pick the absent teacher and the day, then tick the periods missed
+     * straight from that teacher's real timetable for that weekday, leaving a task per class. Choosing
+     * the teacher or the day reloads the screen (GET) so the class list matches. A coordinator (guardias
+     * WRITE) can register any teacher; any other teacher may only report their own absence, so the
+     * picker is limited to themselves. Reachable prefilled with {@code ?teacher=<id>} for a coordinator.
      */
     #[Route('/ausencia/nueva', name: 'guardia_absence_new', methods: ['GET'])]
     public function newAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
     {
         $canManage = $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $date = $this->dateFromRequest($request);
-        $year = $years->findBySchoolYear(SchoolYear::current($date));
+        $schoolYear = SchoolYear::current($date);
+        $year = $years->findBySchoolYear($schoolYear);
+        $weekday = Weekday::from((int) $date->format('N'));
+
+        // A coordinator picks from everyone; anyone else can only be themselves.
+        $selected = $canManage
+            ? (($id = (int) $request->query->get('teacher')) > 0 ? $users->find($id) : null)
+            : $user;
+
+        // The selected teacher's classes that weekday: the rows to tick and leave a task for. Empty
+        // until a teacher is chosen, when there is no timetable, or they teach nothing that day.
+        $dayClasses = ($selected instanceof User && $year instanceof AcademicYear)
+            ? $schedule->lectiveDayFor($year, $selected, $weekday)
+            : [];
 
         return $this->render('guardia/absence_new.html.twig', [
             'date' => $date,
-            'schoolYear' => SchoolYear::current($date),
-            'slots' => null !== $year ? $schedule->distinctSlots($year) : [],
-            // A coordinator picks from everyone; anyone else can only be themselves.
+            'weekday' => $weekday,
+            'schoolYear' => $schoolYear,
+            'hasTimetable' => $year instanceof AcademicYear,
             'allTeachers' => $canManage ? $users->findBy([], ['fullName' => 'ASC']) : [$user],
-            'selectedTeacher' => $canManage ? (int) $request->query->get('teacher') : (int) $user->getId(),
+            'selectedTeacher' => $selected?->getId(),
+            'dayClasses' => $dayClasses,
         ]);
     }
 
     /**
-     * Registers the absence (whole day or selected periods) and lets {@see AbsenceRegistrar} generate
-     * a cover per taught period and run the equitable assignment. Only the periods the teacher
-     * actually teaches become covers; free periods and already-registered ones are reported as skipped.
-     * A non-coordinator may only register their own absence (the posted teacher is ignored for them).
+     * Registers the absence for the periods ticked and lets {@see AbsenceRegistrar} generate a cover per
+     * taught period (with its own task) and run the equitable assignment. Free periods and
+     * already-registered ones are reported as skipped. A non-coordinator may only register their own
+     * absence (the posted teacher is ignored for them).
      */
     #[Route('/ausencia', name: 'guardia_absence_create', methods: ['POST'])]
     public function createAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, AcademicYearRepository $years, AbsenceRegistrar $registrar): Response
@@ -324,19 +424,25 @@ final class GuardiaController extends AbstractController
             return $this->redirectToRoute('guardia_absence_new', ['date' => $date->format('Y-m-d')]);
         }
 
-        // Whole teaching day (null) or the specific periods ticked.
-        $slotIndexes = null;
-        if ('day' !== $request->request->get('mode')) {
-            $slotIndexes = array_map(intval(...), $request->request->all('slots'));
-            if ([] === $slotIndexes) {
-                $this->addFlash('error', 'Elige "día entero" o marca al menos una hora.');
+        // The periods ticked on the class list, each with its own optional task.
+        $slotIndexes = array_map(intval(...), $request->request->all('slots'));
+        if ([] === $slotIndexes) {
+            $this->addFlash('error', 'Marca al menos una hora en la que falta el profesor.');
 
-                return $this->redirectToRoute('guardia_absence_new', ['date' => $date->format('Y-m-d'), 'teacher' => $teacher->getId()]);
+            return $this->redirectToRoute('guardia_absence_new', ['date' => $date->format('Y-m-d'), 'teacher' => $teacher->getId()]);
+        }
+
+        /** @var array<int|string, mixed> $rawTasks */
+        $rawTasks = $request->request->all('task');
+        $taskBySlot = [];
+        foreach ($slotIndexes as $slotIndex) {
+            $note = trim((string) ($rawTasks[$slotIndex] ?? ''));
+            if ('' !== $note) {
+                $taskBySlot[$slotIndex] = $note;
             }
         }
 
-        $taskNote = trim((string) $request->request->get('task_note'));
-        $result = $registrar->register($year, $teacher, $date, $slotIndexes, '' !== $taskNote ? $taskNote : null);
+        $result = $registrar->register($year, $teacher, $date, $slotIndexes, null, $taskBySlot);
 
         $this->flashRegistration($teacher, $result);
 
@@ -393,41 +499,60 @@ final class GuardiaController extends AbstractController
     }
 
     /**
-     * Overrides the guardia assigned to a cover (the coordinator's manual choice). An empty value
-     * clears the assignment.
+     * The single "modificar guardia" screen: change the assigned substitute and/or flag that the cover
+     * did not happen, always stating a reason. It is the only way to touch a cover by hand — the centre
+     * wants the system as automatic as possible, so every manual change is deliberate and traceable.
+     * Shows the cover's context and its event log (the audit trail of what changed and why).
      */
-    #[Route('/{id}/reasignar', name: 'guardia_reassign', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function reassign(GuardiaCover $cover, Request $request, UserRepository $users, EntityManagerInterface $em, GuardiaAssignmentNotifier $notifier): Response
+    #[Route('/{id}/modificar', name: 'guardia_cover_edit', requirements: ['id' => '\d+'], methods: ['GET'])]
+    public function editCover(GuardiaCover $cover, ScheduleEntryRepository $schedule, AcademicYearRepository $years, AuditLogRepository $audit, GuardiaActivityPresenter $activity): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
-        $this->assertCsrf($request, 'guardia_reassign'.$cover->getId());
+
+        $year = $years->findBySchoolYear(SchoolYear::current($cover->getDate()));
+        $weekday = Weekday::from((int) $cover->getDate()->format('N'));
+        $pool = $year instanceof AcademicYear ? $schedule->dutyPoolAt($year, $weekday, $cover->getSlotIndex()) : [];
+
+        return $this->render('guardia/cover_edit.html.twig', [
+            'cover' => $cover,
+            'pool' => $pool,
+            'slotTimes' => $this->slotTimes($schedule, $year),
+            'events' => $activity->present($audit->findForSubject('GuardiaCover', (string) $cover->getId())),
+        ]);
+    }
+
+    /**
+     * Applies a manual change to a cover: reassigns the substitute (empty clears it) and/or toggles the
+     * "did not happen" flag, with a mandatory reason recorded in the event log ({@see AuditContext}).
+     * Notifies the substitute when it actually changes.
+     */
+    #[Route('/{id}/modificar', name: 'guardia_cover_update', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function updateCover(GuardiaCover $cover, Request $request, UserRepository $users, EntityManagerInterface $em, GuardiaAssignmentNotifier $notifier, AuditContext $audit): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
+        $this->assertCsrf($request, 'guardia_cover_update'.$cover->getId());
+
+        $reason = trim((string) $request->request->get('motivo'));
+        if ('' === $reason) {
+            $this->addFlash('error', 'Indica el motivo del cambio: queda registrado en el histórico de la guardia.');
+
+            return $this->redirectToRoute('guardia_cover_edit', ['id' => $cover->getId()]);
+        }
 
         $teacherId = $request->request->get('guardia');
         $previous = $cover->getAssignedGuardia();
         $cover->setAssignedGuardia('' !== (string) $teacherId ? $users->find((int) $teacherId) : null);
+        $cover->setNotCovered($request->request->getBoolean('not_covered'));
+
+        // The reason rides along into the audit entry this flush produces (see EntityAuditSubscriber).
+        $audit->setReason($reason);
         $em->flush();
 
-        // Avisa solo cuando el titular de la guardia cambia (reseleccionar al mismo no genera aviso).
+        // Notify only when the substitute actually changes (reselecting the same one does not notify).
         if ($cover->getAssignedGuardia() !== $previous) {
             $notifier->notifyAssigned($cover);
         }
-        $this->addFlash('success', 'Guardia reasignada.');
-
-        return $this->backToParte($cover->getDate(), $cover->getSlotIndex());
-    }
-
-    /**
-     * Toggles a cover's incident flag. An assigned cover counts as done by default; flagging an
-     * incident ("no se cubrió / el profe tampoco vino") takes it out of the equitable balance.
-     */
-    #[Route('/{id}/incidencia', name: 'guardia_incident', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function markIncident(GuardiaCover $cover, Request $request, EntityManagerInterface $em): Response
-    {
-        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
-        $this->assertCsrf($request, 'guardia_incident'.$cover->getId());
-
-        $cover->setNotCovered(!$cover->isNotCovered());
-        $em->flush();
+        $this->addFlash('success', 'Guardia modificada y registrada en el histórico.');
 
         return $this->backToParte($cover->getDate(), $cover->getSlotIndex());
     }
@@ -443,9 +568,13 @@ final class GuardiaController extends AbstractController
 
         $date = $cover->getDate();
         $slotIndex = $cover->getSlotIndex();
-        $em->remove($cover);
-        $em->flush();
-        $this->addFlash('success', 'Línea del parte eliminada.');
+        try {
+            $em->remove($cover);
+            $em->flush();
+            $this->addFlash('success', 'Línea del parte eliminada.');
+        } catch (\Throwable) {
+            $this->addFlash('error', 'No se pudo borrar la línea del parte. Inténtalo de nuevo.');
+        }
 
         return $this->backToParte($date, $slotIndex);
     }
@@ -505,38 +634,6 @@ final class GuardiaController extends AbstractController
         }
 
         return $times;
-    }
-
-    /**
-     * Parses an optional "Y-m-d" date from a filter field, returning null when empty or malformed.
-     *
-     * @param string $raw the raw field value
-     *
-     * @return \DateTimeImmutable|null the parsed date, or null
-     */
-    private function optionalDate(string $raw): ?\DateTimeImmutable
-    {
-        if ('' === $raw) {
-            return null;
-        }
-        $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $raw);
-
-        return false !== $date ? $date : null;
-    }
-
-    /**
-     * Resolves an optional user id from a filter field, returning null when empty or not found.
-     *
-     * @param UserRepository $users the user repository
-     * @param mixed          $raw   the raw field value (id or empty)
-     *
-     * @return User|null the user, or null
-     */
-    private function optionalUser(UserRepository $users, mixed $raw): ?User
-    {
-        $id = (int) $raw;
-
-        return $id > 0 ? $users->find($id) : null;
     }
 
     /**

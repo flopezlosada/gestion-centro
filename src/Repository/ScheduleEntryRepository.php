@@ -111,6 +111,33 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
+     * The teacher's lective classes on a weekday of a course, earliest period first — the rows the
+     * "apuntar ausencia" screen lists so the coordinator ticks the periods missed and leaves a task per
+     * class (each carries its group, room, subject and time to read without another query).
+     *
+     * @param AcademicYear $year    the course whose timetable to read
+     * @param User         $teacher the (absent) teacher
+     * @param Weekday      $weekday the weekday
+     *
+     * @return ScheduleEntry[] the lective entries that day, earliest period first
+     */
+    public function lectiveDayFor(AcademicYear $year, User $teacher, Weekday $weekday): array
+    {
+        return $this->createQueryBuilder('s')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.teacher = :teacher')
+            ->andWhere('s.weekday = :weekday')
+            ->andWhere('s.kind = :lective')
+            ->setParameter('year', $year)
+            ->setParameter('teacher', $teacher)
+            ->setParameter('weekday', $weekday)
+            ->setParameter('lective', ScheduleActivityKind::LECTIVE)
+            ->orderBy('s.slotIndex', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * The distinct time slots present in a course's imported timetable, ordered by start time — the
      * periods the "Parte de guardias" screen offers as tabs. Each row is {@code [index, startsAt, endsAt]}.
      *

@@ -807,13 +807,22 @@ input[type="email"], input[type="text"], select, textarea {
 .cselect__value { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cselect__chevron { flex: none; color: var(--text-muted); transition: transform .14s ease; }
 .cselect.is-open .cselect__chevron { transform: rotate(180deg); }
-.cselect__list {
+.cselect__panel {
     position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + 4px);
-    margin: 0; padding: 4px; list-style: none; max-height: 260px; overflow-y: auto;
     background: var(--surface); border: 1px solid var(--border-strong);
-    border-radius: var(--radius); box-shadow: var(--shadow-card);
+    border-radius: var(--radius); box-shadow: var(--shadow-card); overflow: hidden;
+}
+.cselect__search {
+    display: block; width: 100%; box-sizing: border-box; border: 0;
+    border-bottom: 1px solid var(--border); padding: 10px 12px;
+    background: var(--surface); color: var(--text); font: 400 14px var(--font-body);
+}
+.cselect__search:focus { outline: none; border-bottom-color: var(--accent); }
+.cselect__list {
+    margin: 0; padding: 4px; list-style: none; max-height: 260px; overflow-y: auto;
 }
 .cselect__list:focus { outline: none; }
+.cselect__option[hidden] { display: none; }
 .cselect__option {
     display: flex; align-items: center; gap: 8px; padding: 8px 10px;
     border-radius: var(--radius-sm); color: var(--text); cursor: pointer;
@@ -1896,6 +1905,16 @@ tr.is-not-covered { background: var(--danger-weak); }
 
 .inline-form--wrap { flex-wrap: wrap; gap: 8px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
 
+/* ── Guardias · selector de periodos a comparar (estadísticas) ─────────────── */
+.period-picker { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justify-content: space-between; }
+.period-picker__groups { display: flex; flex-wrap: wrap; gap: 12px; }
+.period-group {
+    border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px 12px;
+    display: flex; flex-direction: column; gap: 6px; min-width: 150px;
+}
+.period-group legend { font-weight: 600; font-family: var(--font-mono); font-size: 13px; padding: 0 4px; }
+.period-picker__actions { flex: none; }
+
 /* ── Guardias · formulario de alta de ausencia ─────────────────────────────── */
 .stack-form { display: flex; flex-direction: column; gap: 18px; max-width: 560px; }
 .stack-form .field { display: flex; flex-direction: column; gap: 6px; }
@@ -1904,7 +1923,42 @@ tr.is-not-covered { background: var(--danger-weak); }
 .choice--inline { display: inline-flex; }
 .slot-checks { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 4px 0 0 24px; }
 
+/* Paso 1: profesor + día (recarga la lista de clases al cambiar). */
+.absence-picker { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; margin-bottom: 8px; }
+.absence-picker .field { display: flex; flex-direction: column; gap: 6px; min-width: 240px; flex: 1 1 240px; }
+.absence-picker label { font-weight: 600; }
+.pill-value { margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-sunken); font-weight: 500; }
+.step-hint { margin: 18px 0 0; padding-top: 18px; border-top: 1px solid var(--border); }
+.step-head { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+
+/* Paso 2: clases reales del día, una fila por clase (marcar + tarea). */
+.class-list { list-style: none; margin: 8px 0 20px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.class-row {
+    display: grid; grid-template-columns: minmax(220px, 1fr) minmax(220px, 2fr); gap: 12px 16px;
+    align-items: start; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+}
+.class-row:has(input[type="checkbox"]:not(:checked)) { opacity: .55; }
+.class-row__pick { display: flex; align-items: baseline; gap: 8px; cursor: pointer; font-weight: 400; }
+.class-row__time { flex: none; color: var(--text-muted); }
+.class-row__group { line-height: 1.4; }
+.class-row__task { width: 100%; box-sizing: border-box; resize: vertical; }
+@media (max-width: 640px) { .class-row { grid-template-columns: 1fr; } }
+
+/* ── Guardias · celda de tarea del parte y pantalla de modificar ───────────── */
+.task-cell { max-width: 320px; color: var(--text-muted); }
+.cover-summary { display: flex; flex-wrap: wrap; gap: 10px 32px; margin: 0 0 20px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+.cover-summary dt { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint); margin-bottom: 2px; }
+.cover-summary dd { margin: 0; }
+.req { color: var(--danger-text); }
+
 /* ── Guardias · panel de profes (estado de reparto) ────────────────────────── */
+.pool-legend {
+    list-style: none; margin: 0 0 14px; padding: 0;
+    display: flex; flex-wrap: wrap; gap: 8px 20px;
+    font-size: 13px; color: var(--text-muted);
+}
+.pool-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.pool-legend .load-count { min-width: 1.6em; }
 .mini-card.is-free { border-color: var(--success); }
 .mini-card.is-busy { opacity: .6; }
 .mini-card-status { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
