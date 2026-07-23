@@ -4,7 +4,7 @@
 
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_index') }}">Guardias</a><span class="sep">/</span>Estadísticas{% endblock %}
 
-{% macro period_label(slotTimes, slot) %}{% set t = slotTimes[slot] %}{% if t %}{{ t.startsAt|date('H:i', false) }}–{{ t.endsAt|date('H:i', false) }}{% else %}Tramo {{ slot + 1 }}{% endif %}{% endmacro %}
+{% macro period_label(slotTimes, slot) %}{% set t = slotTimes[slot] ?? null %}{% if t %}{{ t.startsAt|date('H:i', false) }}–{{ t.endsAt|date('H:i', false) }}{% else %}Tramo {{ slot + 1 }}{% endif %}{% endmacro %}
 
 {% block body %}
     {% import _self as s %}
