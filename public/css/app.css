@@ -1868,9 +1868,27 @@ input[type="email"], input[type="text"], select, textarea {
 /* Selector de "qué dato comparar" encima de la evolución: compacto, alineado a la izquierda. */
 .field--metric { max-width: 260px; margin-bottom: 8px; }
 
-/* Cabecera de grupo por día en "Mis guardias": separa visualmente cada jornada. */
-.daygroup th { background: var(--surface-sunken); color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; letter-spacing: .03em; padding: 12px 12px 8px; }
-.daygroup--today th { color: var(--accent); }
+/* "Mis guardias": una tarjeta por día con una lista de guardias clicables. */
+.guardia-day { margin-bottom: 16px; }
+.guardia-day--today { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.guardia-day__head { display: flex; align-items: baseline; gap: 10px; padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+.guardia-day__weekday { font-weight: 600; color: var(--text); }
+.guardia-day__date { color: var(--text-muted); font-size: 13px; }
+.guardia-day__count { margin-left: auto; color: var(--text-muted); font-size: 13px; }
+
+.guardia-list { list-style: none; margin: 0; padding: 0; }
+.guardia-list > li + li { border-top: 1px solid var(--border); }
+.guardia-item { display: flex; align-items: center; gap: 16px; padding: 12px 8px; text-decoration: none; color: var(--text); border-radius: var(--radius-sm); }
+.guardia-item:hover, .guardia-item:focus-visible { background: var(--accent-weak); }
+.guardia-item__time { flex: 0 0 56px; display: flex; flex-direction: column; line-height: 1.2; }
+.guardia-item__time strong { font-size: 16px; color: var(--accent); }
+.guardia-item__end { font-size: 12px; color: var(--text-muted); }
+.guardia-item__body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.guardia-item__group { font-weight: 500; }
+.guardia-item__meta { font-size: 13px; color: var(--text-muted); }
+.guardia-item__task { color: var(--warning-text); }
+.guardia-item__go { flex: 0 0 auto; color: var(--text-faint); font-size: 22px; line-height: 1; }
+.guardia-item--incident .guardia-item__time strong { color: var(--danger); }
 
 tr.is-not-covered { background: var(--danger-weak); }
 .task-note { cursor: help; }
