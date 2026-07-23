@@ -12,16 +12,17 @@
             <h1>Parte de guardias</h1>
             <p class="lead">Ausencias de {{ weekday.label|lower }} {{ date|date('d/m/Y', false) }} y reparto de las guardias que las cubren.</p>
         </div>
-        <form method="get" action="{{ path('guardia_index') }}" class="inline-form">
-            <a class="btn btn--ghost" href="{{ path('guardia_index', { date: date|date_modify('-1 day')|date('Y-m-d', false), slot: slotIndex }) }}">‹ Día anterior</a>
-            <input type="date" name="date" value="{{ date|date('Y-m-d', false) }}">
-            <input type="hidden" name="slot" value="{{ slotIndex }}">
-            <button type="submit" class="btn">Ir</button>
-            <a class="btn btn--ghost" href="{{ path('guardia_index', { date: date|date_modify('+1 day')|date('Y-m-d', false), slot: slotIndex }) }}">Día siguiente ›</a>
-        </form>
+        <div class="day-nav">
+            <a class="day-nav-arrow" href="{{ path('guardia_index', { date: date|date_modify('-1 day')|date('Y-m-d', false), slot: slotIndex }) }}" aria-label="Día anterior">‹</a>
+            <form method="get" action="{{ path('guardia_index') }}" class="day-nav-date">
+                <input type="date" name="date" value="{{ date|date('Y-m-d', false) }}" onchange="this.form.submit()" aria-label="Fecha del parte">
+                <input type="hidden" name="slot" value="{{ slotIndex }}">
+                <noscript><button type="submit" class="btn">Ir</button></noscript>
+            </form>
+            <a class="day-nav-arrow" href="{{ path('guardia_index', { date: date|date_modify('+1 day')|date('Y-m-d', false), slot: slotIndex }) }}" aria-label="Día siguiente">›</a>
+            <a class="btn btn--ghost" href="{{ path('guardia_index', { slot: slotIndex }) }}">Hoy</a>
+        </div>
     </div>
-
-    {{ include('guardia/_nav.html.twig', { active: 'parte' }) }}
 
     {% if slots is empty %}
         <div class="card">
@@ -79,18 +80,22 @@
                                     {% else %}<span class="muted">—</span>{% endif %}
                                 </td>
                                 <td>
-                                    <form method="post" action="{{ path('guardia_reassign', { id: cover.id }) }}">
-                                        <input type="hidden" name="_token" value="{{ csrf_token('guardia_reassign' ~ cover.id) }}">
-                                        <select name="guardia" onchange="this.form.submit()">
-                                            <option value="">— sin asignar —</option>
-                                            {% for entry in pool %}
-                                                <option value="{{ entry.teacher.id }}" {{ cover.assignedGuardia and cover.assignedGuardia.id == entry.teacher.id ? 'selected' }}>
-                                                    {{ entry.teacher.fullName }}
-                                                </option>
-                                            {% endfor %}
-                                        </select>
-                                        <noscript><button type="submit">Guardar</button></noscript>
-                                    </form>
+                                    {% if pool is empty %}
+                                        <span class="muted" title="No hay ningún profesor de guardia en el horario para este tramo">— sin guardia disponible —</span>
+                                    {% else %}
+                                        <form method="post" action="{{ path('guardia_reassign', { id: cover.id }) }}">
+                                            <input type="hidden" name="_token" value="{{ csrf_token('guardia_reassign' ~ cover.id) }}">
+                                            <select name="guardia" onchange="this.form.submit()">
+                                                <option value="">— sin asignar —</option>
+                                                {% for entry in pool %}
+                                                    <option value="{{ entry.teacher.id }}" {{ cover.assignedGuardia and cover.assignedGuardia.id == entry.teacher.id ? 'selected' }}>
+                                                        {{ entry.teacher.fullName }}
+                                                    </option>
+                                                {% endfor %}
+                                            </select>
+                                            <noscript><button type="submit">Guardar</button></noscript>
+                                        </form>
+                                    {% endif %}
                                 </td>
                                 <td class="row-actions">
                                     <form method="post" action="{{ path('guardia_incident', { id: cover.id }) }}">
@@ -117,7 +122,6 @@
             {% if pool is empty %}
                 <p class="muted">Nadie tiene guardia en el horario para este tramo.</p>
             {% else %}
-                <p class="muted">El número es cuántas guardias lleva cada uno en este tramo (el reparto elige primero al que menos tiene).</p>
                 <div class="card-grid">
                     {% for entry in pool %}
                         {% set tid = entry.teacher.id %}
@@ -137,7 +141,7 @@
                                 {% else %}
                                     <span class="badge badge--ok">Disponible</span>
                                 {% endif %}
-                                <span class="load-count">{{ slotLoad[tid] ?? 0 }}</span>
+                                <span class="load-count" title="Guardias que lleva en este tramo (el reparto elige primero al que menos tiene)">{{ slotLoad[tid] ?? 0 }}</span>
                             </div>
                         </div>
                     {% endfor %}

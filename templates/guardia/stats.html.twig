@@ -20,8 +20,6 @@
         <div><a class="btn btn-secondary" href="{{ path('guardia_stats_csv') }}">Descargar CSV</a></div>
     </div>
 
-    {{ include('guardia/_nav.html.twig', { active: 'estadisticas' }) }}
-
     {# Filtro temporal: curso + trimestre. Reescala todo el panel de abajo. #}
     <div class="card">
         <form method="get" action="{{ path('guardia_stats') }}" class="inline-form inline-form--wrap">
