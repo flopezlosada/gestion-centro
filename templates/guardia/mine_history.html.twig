@@ -1,0 +1,52 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Mi histórico de guardias{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_mine') }}">Mis guardias</a><span class="sep">/</span>Histórico{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Mi histórico de guardias</h1>
+            <p class="lead">Las guardias que has cubierto hasta hoy.</p>
+        </div>
+        <a class="btn secondary" href="{{ path('guardia_mine') }}">← Mis guardias</a>
+    </div>
+
+    <div class="card">
+        {% if covers is empty %}
+            <div class="empty-state">
+                <h2>Todavía sin guardias</h2>
+                <p>Aquí verás el historial de guardias que hayas cubierto.</p>
+            </div>
+        {% else %}
+            <table data-list-tools>
+                <thead>
+                    <tr>
+                        <th data-filter-range="Fecha">Fecha</th>
+                        <th data-filter="Hora">Hora</th>
+                        <th data-filter="Grupo">Grupo</th>
+                        <th>Aula</th>
+                        <th data-filter="Ausente">Profesor ausente</th>
+                        <th data-filter="Estado">Estado</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cover in covers %}
+                        {% set times = slotTimes[cover.slotIndex] ?? null %}
+                        <tr class="{{ cover.notCovered ? 'is-not-covered' }}">
+                            <td>{{ cover.date|date('d/m/Y', false) }}</td>
+                            <td class="mono" data-sort="{{ cover.slotIndex }}">{% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}{{ cover.slotIndex + 1 }}ª{% endif %}</td>
+                            <td>{{ cover.groupName ?? '—' }}</td>
+                            <td class="mono">{{ cover.roomName ?? '—' }}</td>
+                            <td>{{ cover.absentTeacher.fullName }}</td>
+                            <td>{% if cover.notCovered %}<span class="badge badge--danger" data-tone="danger">Incidencia</span>{% else %}<span class="badge badge--ok" data-tone="success">Cubierta</span>{% endif %}</td>
+                            <td><a class="link-action" href="{{ path('guardia_cover_show', { id: cover.id }) }}">Ver</a></td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}

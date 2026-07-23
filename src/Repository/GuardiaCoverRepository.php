@@ -120,6 +120,30 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
+     * The guardias a teacher covered BEFORE a date (their history), most recent first — the "mi
+     * histórico" table. The absent teacher is eager-loaded so the list reads without extra queries.
+     *
+     * @param User               $guardia the guardia teacher
+     * @param \DateTimeImmutable $before  the exclusive upper bound (typically today)
+     *
+     * @return GuardiaCover[] the past covers assigned to them, most recent first
+     */
+    public function findPastAssignedTo(User $guardia, \DateTimeImmutable $before): array
+    {
+        return $this->createQueryBuilder('c')
+            ->addSelect('absent')
+            ->join('c.absentTeacher', 'absent')
+            ->andWhere('c.assignedGuardia = :guardia')
+            ->andWhere('c.date < :before')
+            ->setParameter('guardia', $guardia)
+            ->setParameter('before', $before, 'date_immutable')
+            ->orderBy('c.date', 'DESC')
+            ->addOrderBy('c.slotIndex', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * Ids of the teachers who are themselves absent on a date and period — they must be dropped from
      * the guardia pool (a teacher on call cannot cover while they are away).
      *

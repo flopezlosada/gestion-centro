@@ -1868,9 +1868,47 @@ input[type="email"], input[type="text"], select, textarea {
 /* Selector de "qué dato comparar" encima de la evolución: compacto, alineado a la izquierda. */
 .field--metric { max-width: 260px; margin-bottom: 8px; }
 
-/* Cabecera de grupo por día en "Mis guardias": separa visualmente cada jornada. */
-.daygroup th { background: var(--surface-sunken); color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; letter-spacing: .03em; padding: 12px 12px 8px; }
-.daygroup--today th { color: var(--accent); }
+/* "Mis guardias": dos acciones en la cabecera (histórico + voy a faltar). */
+.page-head__actions { display: flex; gap: 8px; flex-shrink: 0; }
+.section-head { margin-top: 20px; }
+
+/* HOY: la tarjeta protagonista, con un filo de acento que la distingue del resto. */
+.card--today { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+
+/* Guardias de hoy en cajitas horizontales, con la hora grande y centrada. */
+.today-guardias { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.today-box { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 2px; padding: 18px 14px; text-decoration: none; color: var(--text); background: var(--accent-weak); border: 1px solid var(--accent); border-radius: var(--radius); }
+.today-box:hover, .today-box:focus-visible { border-color: var(--accent-hover); background: color-mix(in srgb, var(--accent-weak) 70%, var(--surface)); }
+.today-box__time { font-size: 30px; font-weight: 700; color: var(--accent); line-height: 1; }
+.today-box__range { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+.today-box__group { font-size: 16px; font-weight: 600; }
+.today-box__room { font-size: 13px; color: var(--text-muted); }
+.today-box__meta { font-size: 13px; color: var(--text-muted); margin-top: 6px; }
+.today-box .badge { margin-top: 10px; }
+.today-box--incident { border-color: var(--danger); background: var(--danger-weak); }
+.today-box--incident .today-box__time { color: var(--danger); }
+
+/* "Mis guardias": lista compacta de próximas guardias por día. */
+.guardia-day { margin-bottom: 16px; }
+.guardia-day--today { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.guardia-day__head { display: flex; align-items: baseline; gap: 10px; padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+.guardia-day__weekday { font-weight: 600; color: var(--text); }
+.guardia-day__date { color: var(--text-muted); font-size: 13px; }
+.guardia-day__count { margin-left: auto; color: var(--text-muted); font-size: 13px; }
+
+.guardia-list { list-style: none; margin: 0; padding: 0; }
+.guardia-list > li + li { border-top: 1px solid var(--border); }
+.guardia-item { display: flex; align-items: center; gap: 16px; padding: 12px 8px; text-decoration: none; color: var(--text); border-radius: var(--radius-sm); }
+.guardia-item:hover, .guardia-item:focus-visible { background: var(--accent-weak); }
+.guardia-item__time { flex: 0 0 56px; display: flex; flex-direction: column; line-height: 1.2; }
+.guardia-item__time strong { font-size: 16px; color: var(--accent); }
+.guardia-item__end { font-size: 12px; color: var(--text-muted); }
+.guardia-item__body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.guardia-item__group { font-weight: 500; }
+.guardia-item__meta { font-size: 13px; color: var(--text-muted); }
+.guardia-item__task { color: var(--warning-text); }
+.guardia-item__go { flex: 0 0 auto; color: var(--text-faint); font-size: 22px; line-height: 1; }
+.guardia-item--incident .guardia-item__time strong { color: var(--danger); }
 
 /* Invitación a activar avisos push tras el login. */
 .push-cta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; background: var(--accent-weak); border: 1px solid var(--accent); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 16px; }
