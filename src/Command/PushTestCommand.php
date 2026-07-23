@@ -7,27 +7,35 @@ namespace App\Command;
 use App\Entity\User;
 use App\Repository\PushSubscriptionRepository;
 use App\Repository\UserRepository;
-use App\Service\WebPushSender;
+use Minishlink\WebPush\Subscription;
+use Minishlink\WebPush\WebPush;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
- * Sends a single test Web Push to a user's subscribed devices, to verify that the server can actually
- * sign and deliver a push (VAPID keys configured, crypto working, endpoint reachable). Only the push
- * leg is exercised — it does NOT create an in-app notice nor send e-mail — so a failure points squarely
- * at the push pipeline. Read-only side effects (one notification); no prod guard needed.
+ * Sends a test Web Push to a user's devices and PRINTS the push service's response per device
+ * (success / HTTP status / reason). Unlike {@see \App\Service\WebPushSender} (best-effort, swallows
+ * failures), this surfaces exactly what FCM/APNs answered, so a "delivered but never arrived" can be
+ * diagnosed: 201 = accepted by the push service, 4xx = rejected (bad VAPID, expired, payload…). Builds
+ * its own WebPush with the same options as the real sender (high urgency).
  */
-#[AsCommand(name: 'app:push:test', description: 'Envía un push de prueba a un usuario (para verificar el envío de notificaciones push)')]
+#[AsCommand(name: 'app:push:test', description: 'Envía un push de prueba a un usuario y muestra la respuesta del servicio de push')]
 final class PushTestCommand extends Command
 {
     public function __construct(
         private readonly UserRepository $users,
         private readonly PushSubscriptionRepository $subscriptions,
-        private readonly WebPushSender $webPush,
+        #[Autowire('%env(VAPID_PUBLIC_KEY)%')]
+        private readonly string $vapidPublicKey,
+        #[Autowire('%env(VAPID_PRIVATE_KEY)%')]
+        private readonly string $vapidPrivateKey,
+        #[Autowire('%env(VAPID_SUBJECT)%')]
+        private readonly string $vapidSubject,
     ) {
         parent::__construct();
     }
@@ -35,14 +43,20 @@ final class PushTestCommand extends Command
     protected function configure(): void
     {
         $this->addArgument('email', InputArgument::REQUIRED, 'Email del usuario al que enviar el push de prueba');
-        $this->addArgument('mensaje', InputArgument::OPTIONAL, 'Texto del aviso (por defecto "Aviso de prueba"); útil para distinguir un envío nuevo de los que llegaban en cola');
+        $this->addArgument('mensaje', InputArgument::OPTIONAL, 'Texto del aviso (por defecto "Aviso de prueba")');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
-        $email = (string) $input->getArgument('email');
 
+        if ('' === $this->vapidPublicKey || '' === $this->vapidPrivateKey) {
+            $io->error('VAPID no configurado (VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY vacíos). Genera y pon las claves primero.');
+
+            return Command::FAILURE;
+        }
+
+        $email = (string) $input->getArgument('email');
         $user = $this->users->findOneBy(['email' => $email]);
         if (!$user instanceof User) {
             $io->error(sprintf('No hay ningún usuario con el email "%s".', $email));
@@ -52,19 +66,43 @@ final class PushTestCommand extends Command
 
         $subscriptions = $this->subscriptions->findByUser($user);
         if ([] === $subscriptions) {
-            $io->warning(sprintf('%s no tiene ninguna suscripción push. Que active los avisos en /avisos (navegador normal, permiso permanente) y reintenta.', $email));
+            $io->warning(sprintf('%s no tiene ninguna suscripción push.', $email));
 
             return Command::FAILURE;
         }
 
-        $title = trim((string) $input->getArgument('mensaje'));
-        if ('' === $title) {
-            $title = 'Aviso de prueba';
-        }
-        $io->text(sprintf('Enviando push "%s" a %s (%d dispositivo(s))…', $title, $email, \count($subscriptions)));
-        $this->webPush->sendToUser($user, $title, 'Notificación de prueba del sistema de guardias.', '/avisos');
+        $title = trim((string) $input->getArgument('mensaje')) ?: 'Aviso de prueba';
+        $payload = json_encode([
+            'title' => $title,
+            'body' => 'Notificación de prueba del sistema de guardias.',
+            'url' => '/guardias/mias',
+        ], \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE);
 
-        $io->success('Push enviado. Si no llega, revisa el log (var/log) por si el servicio de push o la firma fallaron.');
+        $webPush = new WebPush(
+            ['VAPID' => ['subject' => $this->vapidSubject, 'publicKey' => $this->vapidPublicKey, 'privateKey' => $this->vapidPrivateKey]],
+            ['urgency' => 'high', 'TTL' => 43200],
+            10,
+            ['allow_redirects' => false],
+        );
+        foreach ($subscriptions as $subscription) {
+            $webPush->queueNotification(
+                new Subscription($subscription->getEndpoint(), $subscription->getP256dh(), $subscription->getAuth(), 'aes128gcm'),
+                $payload,
+            );
+        }
+
+        $io->text(sprintf('Enviando "%s" a %s (%d dispositivo(s))…', $title, $email, \count($subscriptions)));
+        $rows = [];
+        foreach ($webPush->flush() as $report) {
+            $response = $report->getResponse();
+            $rows[] = [
+                $report->isSuccess() ? 'OK' : 'FALLO',
+                null !== $response ? (string) $response->getStatusCode() : '—',
+                mb_substr($report->getReason(), 0, 60),
+                mb_substr($report->getEndpoint(), 0, 40),
+            ];
+        }
+        $io->table(['Resultado', 'HTTP', 'Motivo', 'Endpoint'], $rows);
 
         return Command::SUCCESS;
     }
