@@ -205,22 +205,19 @@ final class GuardiaPageTest extends WebTestCase
     }
 
     /**
-     * The teacher's own screen shows their guardia counter as the assigned covers with no incident (an
-     * assigned cover counts as done by default), and lists only the guardias assigned to them — never
-     * another teacher's.
+     * The teacher's own "hoy" section lists only the guardias assigned to THEM today — including one
+     * flagged as an incident (it is still their guardia today) — and never another teacher's.
      */
-    public function testMisGuardiasCountsCoversWithoutIncidentAndScopesToSelf(): void
+    public function testMisGuardiasShowsOnlyMyTodayCovers(): void
     {
         $me = $this->login(coordinator: false);
         $other = $this->user('Otro Guardia', 'otro@centro.test');
         $absent = $this->user('Profe Ausente', 'ausente@centro.test');
         $today = new \DateTimeImmutable('today');
 
-        // Two covers I actually covered plus one flagged as an incident: the counter must read 2, but
-        // the incident row still shows in the list (it is a guardia assigned to me today).
         $this->cover($today, 0, $absent, $me, false, '1ºA');
         $this->cover($today, 1, $absent, $me, false, '2ºB');
-        $this->cover($today, 2, $absent, $me, true, '3ºC');
+        $this->cover($today, 2, $absent, $me, true, '3ºC'); // incidencia, pero es mía y de hoy: se muestra
         // A cover assigned to someone else the same day must not leak into my list.
         $this->cover($today, 3, $absent, $other, false, '4ºD-AJENA');
         $this->em->flush();
@@ -228,10 +225,9 @@ final class GuardiaPageTest extends WebTestCase
         $this->client->request('GET', '/guardias/mias');
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextSame('.stat--success .stat-figure', '2');
-        self::assertSelectorTextContains('table', '1ºA');
-        self::assertSelectorTextContains('table', '3ºC');
-        self::assertSelectorTextNotContains('table', '4ºD-AJENA');
+        self::assertSelectorTextContains('.today-guardias', '1ºA');
+        self::assertSelectorTextContains('.today-guardias', '3ºC');
+        self::assertSelectorTextNotContains('.today-guardias', '4ºD-AJENA');
     }
 
     /**

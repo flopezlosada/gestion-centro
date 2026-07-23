@@ -1868,7 +1868,27 @@ input[type="email"], input[type="text"], select, textarea {
 /* Selector de "qué dato comparar" encima de la evolución: compacto, alineado a la izquierda. */
 .field--metric { max-width: 260px; margin-bottom: 8px; }
 
-/* "Mis guardias": una tarjeta por día con una lista de guardias clicables. */
+/* "Mis guardias": dos acciones en la cabecera (histórico + voy a faltar). */
+.page-head__actions { display: flex; gap: 8px; flex-shrink: 0; }
+.section-head { margin-top: 20px; }
+
+/* HOY: la tarjeta protagonista, con un filo de acento que la distingue del resto. */
+.card--today { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+
+/* Guardias de hoy en cajitas horizontales, con la hora grande y centrada. */
+.today-guardias { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.today-box { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 2px; padding: 18px 14px; text-decoration: none; color: var(--text); background: var(--accent-weak); border: 1px solid var(--accent); border-radius: var(--radius); }
+.today-box:hover, .today-box:focus-visible { border-color: var(--accent-hover); background: color-mix(in srgb, var(--accent-weak) 70%, var(--surface)); }
+.today-box__time { font-size: 30px; font-weight: 700; color: var(--accent); line-height: 1; }
+.today-box__range { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+.today-box__group { font-size: 16px; font-weight: 600; }
+.today-box__room { font-size: 13px; color: var(--text-muted); }
+.today-box__meta { font-size: 13px; color: var(--text-muted); margin-top: 6px; }
+.today-box .badge { margin-top: 10px; }
+.today-box--incident { border-color: var(--danger); background: var(--danger-weak); }
+.today-box--incident .today-box__time { color: var(--danger); }
+
+/* "Mis guardias": lista compacta de próximas guardias por día. */
 .guardia-day { margin-bottom: 16px; }
 .guardia-day--today { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
 .guardia-day__head { display: flex; align-items: baseline; gap: 10px; padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }

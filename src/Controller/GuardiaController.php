@@ -95,8 +95,8 @@ final class GuardiaController extends AbstractController
     }
 
     /**
-     * The teacher's own "mis guardias de hoy": the guardias assigned to them today, with the period
-     * time, group, room, absent teacher and the task the absent teacher left. Shows only their own.
+     * The teacher's own "mis guardias": today's guardias front and centre (period time, group, room,
+     * absent teacher and any task left), plus the ones coming up on later days. Shows only their own.
      */
     #[Route('/mias', name: 'guardia_mine', methods: ['GET'])]
     public function mine(#[CurrentUser] User $user, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
@@ -104,17 +104,26 @@ final class GuardiaController extends AbstractController
         $today = new \DateTimeImmutable('today');
         $year = $years->findBySchoolYear(SchoolYear::current($today));
 
-        // Personal counter + the staff average as context ("have I done my share?").
-        $ranking = $covers->coveredTotalsByTeacher();
-        $staffAverage = [] !== $ranking
-            ? array_sum(array_map(static fn (array $r): int => $r['total'], $ranking)) / \count($ranking)
-            : 0.0;
-
         return $this->render('guardia/mine.html.twig', [
-            'days' => $this->groupByDay($covers->findUpcomingAssignedTo($user, $today), $today),
+            'todayCovers' => $covers->findAssignedTo($user, $today),
+            'upcoming' => $this->groupByDay($covers->findUpcomingAssignedTo($user, $today->modify('+1 day')), $today),
             'slotTimes' => $this->slotTimes($schedule, $year),
-            'myCovered' => $covers->countCoveredForTeacher($user),
-            'staffAverage' => round($staffAverage, 1),
+        ]);
+    }
+
+    /**
+     * The teacher's own guardia history: the guardias they were assigned before today, most recent
+     * first — a plain table to look back at what they covered. Self-service, scoped to themselves.
+     */
+    #[Route('/mias/historico', name: 'guardia_mine_history', methods: ['GET'])]
+    public function mineHistory(#[CurrentUser] User $user, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
+    {
+        $today = new \DateTimeImmutable('today');
+        $year = $years->findBySchoolYear(SchoolYear::current($today));
+
+        return $this->render('guardia/mine_history.html.twig', [
+            'covers' => $covers->findPastAssignedTo($user, $today),
+            'slotTimes' => $this->slotTimes($schedule, $year),
         ]);
     }
 
