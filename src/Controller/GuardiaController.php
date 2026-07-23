@@ -186,20 +186,27 @@ final class GuardiaController extends AbstractController
             $covers->absencesByTeacher(1000, $p['from'], $p['to']),
         )), 0, 15);
 
-        // The rich single-period lenses (equity ranking, monthly evolution, heatmap) only make sense for
-        // one window; a comparison of several drops them for the side-by-side tables.
+        // For one period the analytics rows feed BOTH the monthly evolution and the heatmap, so fetch
+        // them once and share (avoids a duplicate full-window query on the default, unfiltered view).
+        $singleRows = $single ? $covers->analyticsRows($periods[0]['from'], $periods[0]['to']) : null;
+
+        // Evolution chart: for one period, the coverage breakdown over its calendar months; for several,
+        // one series per period aligned on the month of the school year, so the same term of different
+        // years (or two whole years) overlay and can be compared. Carries a matching data table.
+        $evolution = $this->evolutionSpec($covers, $statistics, $periods, $single, $singleRows);
+
+        // The per-teacher lenses (equity ranking, weekday × period heatmap) only make sense for one
+        // window; a comparison of several drops them for the side-by-side tables and comparison charts.
         $singleExtras = [];
         if ($single) {
             $p = $periods[0];
             $ranking = $covers->coveredTotalsByTeacher($p['from'], $p['to']);
-            $rows = $covers->analyticsRows($p['from'], $p['to']);
             $year = $years->findBySchoolYear(explode(':', $p['token'])[0]) ?? $years->findBySchoolYear(SchoolYear::current(new \DateTimeImmutable('today')));
             $singleExtras = [
                 'ranking' => $ranking,
                 'max' => $ranking[0]['total'] ?? 0,
                 'equity' => $statistics->equity(array_map(static fn (array $r): int => $r['total'], $ranking)),
-                'monthly' => $statistics->byMonth($rows),
-                'heatmap' => $statistics->heatmap($rows),
+                'heatmap' => $statistics->heatmap($singleRows),
                 'slotTimes' => $this->slotTimes($schedule, $year),
             ];
         }
@@ -210,6 +217,7 @@ final class GuardiaController extends AbstractController
             'selectedTokens' => array_map(static fn (array $p): string => $p['token'], $periods),
             'single' => $single,
             'kpis' => $kpis,
+            'evolution' => $evolution,
             'byDepartment' => $byDepartment,
             'absentRanking' => $absentRanking,
         ] + $singleExtras);
@@ -322,6 +330,108 @@ final class GuardiaController extends AbstractController
         }
 
         return $rows;
+    }
+
+    /**
+     * The evolution-chart spec for the selected periods, plus a matching data table.
+     *
+     * For a single period it is the coverage breakdown (covered / unassigned / incidents) over that
+     * period's calendar months. For several it is one series per period, aligned on the month of the
+     * school year (Sep…Aug), so the same term of different years — or two whole years — overlay and can
+     * actually be compared, instead of being concatenated into one misleading trend.
+     *
+     * @param list<array{token: string, label: string, from: \DateTimeImmutable, to: \DateTimeImmutable}> $periods    the windows
+     * @param list<array{date: \DateTimeImmutable, slot: int, assigned: bool, incident: bool}>|null       $singleRows the single period's analytics rows, already fetched to share with the heatmap (single only)
+     *
+     * @return array<string, mixed> a spec consumed by guardia-charts.js: for 'status' it carries ready
+     *                              series + a data table; for 'periods' it carries every metric per
+     *                              period so the client can switch which one to compare, plus a
+     *                              server-rendered default-metric table (fallback without JS)
+     */
+    private function evolutionSpec(GuardiaCoverRepository $covers, GuardiaStatistics $statistics, array $periods, bool $single, ?array $singleRows = null): array
+    {
+        if ($single) {
+            $months = $statistics->byMonth($singleRows ?? $covers->analyticsRows($periods[0]['from'], $periods[0]['to']));
+
+            return [
+                'kind' => 'status',
+                'categories' => array_map(static fn (array $m): string => $m['label'], $months),
+                'series' => [
+                    ['name' => 'Cubiertas', 'data' => array_map(static fn (array $m): int => $m['covered'], $months)],
+                    ['name' => 'Sin asignar', 'data' => array_map(static fn (array $m): int => $m['unassigned'], $months)],
+                    ['name' => 'Incidencias', 'data' => array_map(static fn (array $m): int => $m['incidents'], $months)],
+                ],
+                'table' => [
+                    'header' => 'Mes',
+                    'columns' => ['Cubiertas', 'Sin asignar', 'Incidencias', 'Total'],
+                    'rows' => array_map(static fn (array $m): array => ['label' => $m['label'], 'cells' => [$m['covered'], $m['unassigned'], $m['incidents'], $m['absences']]], $months),
+                ],
+            ];
+        }
+
+        // Compare: absences per period keyed by school-year month rank (Sep = 1 … Aug = 12), so the
+        // periods line up on the same x regardless of their calendar year. A month a period does NOT
+        // span stays null (a gap in the line / "—" in the table), never 0 — that would falsely read as
+        // "zero absences" for months that simply are not part of that period (e.g. a term vs a course).
+        // Keyed by the canonical token (not the display label), consistent with comparisonMatrix().
+        $rankOf = [9 => 1, 10 => 2, 11 => 3, 12 => 4, 1 => 5, 2 => 6, 3 => 7, 4 => 8, 5 => 9, 6 => 10, 7 => 11, 8 => 12];
+        $labelByRank = [];
+        $byPeriod = [];
+        $labelByToken = [];
+        foreach ($periods as $p) {
+            $labelByToken[$p['token']] = $p['label'];
+            $months = [];
+            foreach ($statistics->byMonth($covers->analyticsRows($p['from'], $p['to'])) as $m) {
+                $months[$rankOf[(int) substr($m['key'], 5, 2)]] = $m; // el bucket lleva los 4 valores
+            }
+            // Meses que el periodo abarca (para distinguir "mes sin ausencias" → 0 de "mes fuera" → null).
+            $inRange = [];
+            for ($cursor = $p['from']->modify('first day of this month'); $cursor <= $p['to']; $cursor = $cursor->modify('+1 month')) {
+                $month = (int) $cursor->format('n');
+                $inRange[$rankOf[$month]] = true;
+                $labelByRank[$rankOf[$month]] = $statistics->monthAbbrev($month);
+            }
+            $byPeriod[$p['token']] = ['months' => $months, 'inRange' => $inRange];
+        }
+        ksort($labelByRank);
+        $ranks = array_keys($labelByRank);
+        $tokens = array_keys($byPeriod);
+        $metrics = ['absences' => 'Ausencias', 'covered' => 'Cubiertas', 'unassigned' => 'Sin asignar', 'incidents' => 'Incidencias'];
+        $default = 'absences';
+
+        // One metric of one period at a month rank: its value (0 if no absences) when the period spans
+        // that month, or null when it does not (a gap in the line, never a misleading 0).
+        $cell = static fn (string $token, int $rank, string $key): ?int => isset($byPeriod[$token]['inRange'][$rank]) ? ($byPeriod[$token]['months'][$rank][$key] ?? 0) : null;
+
+        return [
+            'kind' => 'periods',
+            'categories' => array_values($labelByRank),
+            // The user picks which metric to compare (the chart shows one at a time — several periods ×
+            // several metrics on one line chart would be unreadable). All are shipped so switching is
+            // instant, no round-trip.
+            'metrics' => $metrics,
+            'defaultMetric' => $default,
+            'periods' => array_map(
+                static fn (string $token): array => [
+                    'name' => $labelByToken[$token],
+                    'values' => array_combine(
+                        array_keys($metrics),
+                        array_map(static fn (string $key): array => array_map(static fn (int $rank): ?int => $cell($token, $rank, $key), $ranks), array_keys($metrics)),
+                    ),
+                ],
+                $tokens,
+            ),
+            // Default-metric table rendered server-side so the data survives without JS (the selector
+            // then rewrites it client-side); mirrors the single-period table shape.
+            'table' => [
+                'header' => 'Mes',
+                'columns' => array_map(static fn (string $token): string => $labelByToken[$token], $tokens),
+                'rows' => array_map(
+                    static fn (int $rank): array => ['label' => $labelByRank[$rank], 'cells' => array_map(static fn (string $token): ?int => $cell($token, $rank, $default), $tokens)],
+                    $ranks,
+                ),
+            ],
+        ];
     }
 
     /**

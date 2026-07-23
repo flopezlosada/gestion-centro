@@ -56,5 +56,9 @@
                 <script src="{{ asset_ver('/js/push.js') }}" defer></script>
             {% endif %}
         {% endblock %}
+
+        {# Scripts propios de una página (p. ej. la librería de gráficos de estadísticas): así no se
+           cargan en todas las páginas. Se colocan tras los globales para poder depender de ellos. #}
+        {% block page_scripts %}{% endblock %}
     </body>
 </html>

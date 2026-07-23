@@ -1855,6 +1855,18 @@ input[type="email"], input[type="text"], select, textarea {
 }
 .tabs .tab:hover { border-color: var(--border-strong); color: var(--text); }
 .tabs .tab.is-active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+/* Variante en <button> (pestañas realzadas por tabs.js): mismo aspecto que la de <a>. */
+.tabs button.tab { cursor: pointer; line-height: inherit; }
+
+/* Paneles de pestañas: sin JS se ven todos (fallback); tabs.js oculta los inactivos con [hidden]. */
+.tabpanel[hidden] { display: none; }
+[data-tabs].is-enhanced .tabpanel { margin-top: 4px; }
+
+/* Contenedor de un gráfico ApexCharts: ocupa el ancho de la tarjeta y reserva alto para evitar salto. */
+.gchart { width: 100%; min-height: 320px; }
+
+/* Selector de "qué dato comparar" encima de la evolución: compacto, alineado a la izquierda. */
+.field--metric { max-width: 260px; margin-bottom: 8px; }
 
 tr.is-not-covered { background: var(--danger-weak); }
 .task-note { cursor: help; }
