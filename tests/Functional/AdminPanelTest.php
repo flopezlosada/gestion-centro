@@ -237,7 +237,9 @@ final class AdminPanelTest extends WebTestCase
         $this->client->request('GET', '/agenda');
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('.nav-section-title', 'Administración');
+        // An admin now sees more than one nav section (Guardias, Administración), so assert Administración
+        // is present among them rather than assuming it is the first.
+        self::assertAnySelectorTextContains('.nav-section-title', 'Administración');
     }
 
     public function testAdminNavHiddenForNonAdmin(): void

@@ -1912,3 +1912,13 @@ tr.is-not-covered { background: var(--danger-weak); }
     display: inline-flex; align-items: center; justify-content: center;
     border-radius: 999px; background: var(--surface-sunken); color: var(--text-muted);
 }
+
+/* ── Guardias · navegador de días (parte) ──────────────────────────────────── */
+.day-nav { display: flex; align-items: center; gap: 8px; }
+.day-nav-date { display: inline-flex; margin: 0; }
+.day-nav-arrow {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    text-decoration: none; color: var(--text-muted); font-size: 18px; line-height: 1; background: var(--surface);
+}
+.day-nav-arrow:hover { border-color: var(--border-strong); color: var(--text); }

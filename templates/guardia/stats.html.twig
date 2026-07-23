@@ -18,8 +18,6 @@
         <div><a class="btn btn-secondary" href="{{ path('guardia_stats_csv') }}">Descargar CSV</a></div>
     </div>
 
-    {{ include('guardia/_nav.html.twig', { active: 'estadisticas' }) }}
-
     {% if summary.absences == 0 %}
         <div class="card"><div class="empty-state">
             <h2>Aún no hay datos</h2>
