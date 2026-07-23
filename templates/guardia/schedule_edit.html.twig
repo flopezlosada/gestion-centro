@@ -1,0 +1,104 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Horario de guardias{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Horario de guardias{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Horario de guardias</h1>
+            <p class="lead">Marca a mano en qué día y hora hace guardia cada profesor. Úsalo solo si Peñalara importó el horario pero <strong>no</strong> las guardias: el horario lectivo y los tramos vienen de Peñalara y aquí no se tocan.</p>
+        </div>
+    </div>
+
+    {# Selector de curso + profesor (GET, auto-envío) #}
+    <div class="card">
+        <form method="get" action="{{ path('guardia_schedule_edit') }}" class="inline-form">
+            <label class="field-label" for="curso">Curso</label>
+            <select id="curso" name="curso" onchange="this.form.submit()">
+                {% for c in courses %}
+                    <option value="{{ c.schoolYear }}" {{ c.schoolYear == curso ? 'selected' }}>{{ c.schoolYear }}</option>
+                {% endfor %}
+            </select>
+
+            <label class="field-label" for="teacher">Profesor</label>
+            <select id="teacher" name="teacher" onchange="this.form.submit()">
+                <option value="">— elige un profesor —</option>
+                {% for t in teachers %}
+                    <option value="{{ t.id }}" {{ selectedTeacher and selectedTeacher.id == t.id ? 'selected' }}>{{ t.fullName }}</option>
+                {% endfor %}
+            </select>
+            <noscript><button type="submit" class="btn">Ver</button></noscript>
+        </form>
+    </div>
+
+    {% if not hasYear or grid is null or grid.slots is empty %}
+        {% if not hasYear or (selectedTeacher and grid is not null and grid.slots is empty) %}
+            <div class="card">
+                <div class="empty-state">
+                    <h2>No hay horario importado para el curso {{ curso }}</h2>
+                    <p>Importa el horario de Peñalara de este curso: los tramos y el horario lectivo salen de ahí, y aquí solo se marcan las guardias que falten.</p>
+                    {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ADMINISTRATION')) %}
+                        <p><a class="btn" href="{{ path('admin_timetable_import') }}">Importar horario</a></p>
+                    {% endif %}
+                </div>
+            </div>
+        {% elseif not selectedTeacher %}
+            <div class="card"><p class="muted">Elige un profesor para ver y editar su horario de guardias.</p></div>
+        {% endif %}
+    {% else %}
+        <form method="post" action="{{ path('guardia_schedule_save') }}">
+            <input type="hidden" name="_token" value="{{ csrf_token('guardia_schedule_save') }}">
+            <input type="hidden" name="curso" value="{{ curso }}">
+            <input type="hidden" name="teacher" value="{{ selectedTeacher.id }}">
+
+            <div class="card">
+                <div class="page-head">
+                    <div><h2>{{ selectedTeacher.fullName }} · {{ curso }}</h2></div>
+                    <div class="inline-form"><button type="submit" class="btn">Guardar horario de guardias</button></div>
+                </div>
+
+                <p class="help">Las horas en las que da clase se muestran atenuadas y no se pueden cambiar. En las horas libres elige <strong>Guardia</strong> o <strong>Colaborador</strong>. Al guardar se reemplazan solo las guardias de este profesor en este curso; volver a importar Peñalara las sobrescribe.</p>
+
+                <div class="tt-scroll">
+                    <table class="tt-grid">
+                        <thead>
+                            <tr>
+                                <th scope="col"></th>
+                                {% for slot in grid.slots %}
+                                    <th scope="col">{{ slot.startsAt|date('H:i', false) }}<br>{{ slot.endsAt|date('H:i', false) }}</th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for wd in weekdays %}
+                                <tr>
+                                    <th scope="row">{{ wd.label }}</th>
+                                    {% for slot in grid.slots %}
+                                        {% set cell = grid.cells[wd.value][slot.index] %}
+                                        {% if cell.lective %}
+                                            <td class="tt-cell tt-lective" title="Da clase: {{ cell.label }}{% if cell.room %} · {{ cell.room }}{% endif %}">
+                                                <span class="tt-lective-label">{{ cell.label }}</span>
+                                            </td>
+                                        {% else %}
+                                            <td class="tt-cell {{ cell.value ? 'tt-duty' }}">
+                                                <select name="cell[{{ wd.value }}][{{ slot.index }}]" aria-label="{{ wd.label }} {{ slot.startsAt|date('H:i', false) }}">
+                                                    <option value="">—</option>
+                                                    <option value="guardia" {{ cell.value == 'guardia' ? 'selected' }}>Guardia</option>
+                                                    <option value="collaborator" {{ cell.value == 'collaborator' ? 'selected' }}>Colab.</option>
+                                                </select>
+                                            </td>
+                                        {% endif %}
+                                    {% endfor %}
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="inline-form"><button type="submit" class="btn">Guardar horario de guardias</button></div>
+        </form>
+    {% endif %}
+{% endblock %}

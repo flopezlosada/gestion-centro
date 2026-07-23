@@ -36,6 +36,9 @@
                         <a href="{{ path('guardia_index') }}" class="{{ (route == 'guardia_index' or route starts with 'guardia_absence') ? 'is-active' }}">Parte del día</a>
                         <a href="{{ path('guardia_history') }}" class="{{ route == 'guardia_history' ? 'is-active' }}">Histórico</a>
                         <a href="{{ path('guardia_stats') }}" class="{{ route == 'guardia_stats' ? 'is-active' }}">Estadísticas</a>
+                        {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::GUARDIAS')) %}
+                            <a href="{{ path('guardia_schedule_edit') }}" class="{{ route starts with 'guardia_schedule_' ? 'is-active' }}">Horario de guardias</a>
+                        {% endif %}
                     </div>
                 {% endif %}
 

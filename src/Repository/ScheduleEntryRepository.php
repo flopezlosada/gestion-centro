@@ -141,6 +141,61 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
+     * Every timetable cell a teacher has in a course, of any kind, ordered by weekday then period —
+     * the data behind the manual "horario de guardias" grid, which shows the imported lective cells as
+     * read-only context and lets the duty cells be edited.
+     *
+     * @param AcademicYear $year    the course whose timetable to read
+     * @param User         $teacher the teacher
+     *
+     * @return ScheduleEntry[] the teacher's cells in that course
+     */
+    public function findByTeacherAndYear(AcademicYear $year, User $teacher): array
+    {
+        return $this->createQueryBuilder('s')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.teacher = :teacher')
+            ->setParameter('year', $year)
+            ->setParameter('teacher', $teacher)
+            ->orderBy('s.weekday', 'ASC')
+            ->addOrderBy('s.slotIndex', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Replaces only a teacher's guardia and collaborator cells in one course, leaving every lective
+     * cell untouched. This backs the manual fallback for when Peñalara imports the timetable but not
+     * the guardias: the equipo directivo marks the duty slots by hand, and re-saving wipes just the
+     * previously-marked duty cells (never the imported lessons) before inserting the fresh ones — the
+     * delete and inserts run in one transaction so a concurrent parte read never sees neither set.
+     *
+     * @param AcademicYear        $year     the course whose duty cells are replaced
+     * @param User                $teacher  the teacher whose duty cells are replaced
+     * @param list<ScheduleEntry> $entries  the fresh guardia/collaborator cells to persist
+     */
+    public function replaceDutySlotsForTeacher(AcademicYear $year, User $teacher, array $entries): void
+    {
+        $em = $this->getEntityManager();
+        $em->wrapInTransaction(function () use ($em, $year, $teacher, $entries): void {
+            $this->createQueryBuilder('s')
+                ->delete()
+                ->where('s.academicYear = :year')
+                ->andWhere('s.teacher = :teacher')
+                ->andWhere('s.kind IN (:kinds)')
+                ->setParameter('year', $year)
+                ->setParameter('teacher', $teacher)
+                ->setParameter('kinds', [ScheduleActivityKind::GUARDIA, ScheduleActivityKind::COLLABORATOR])
+                ->getQuery()
+                ->execute();
+            foreach ($entries as $entry) {
+                $em->persist($entry);
+            }
+            $em->flush();
+        });
+    }
+
+    /**
      * Replaces the given teachers' timetable for one course with the supplied entries. Used by the
      * importer: it wipes only the reconciled teachers' rows in that course (so unmatched teachers, and
      * every other course, keep whatever they had) and inserts the fresh ones, making a re-import of the
