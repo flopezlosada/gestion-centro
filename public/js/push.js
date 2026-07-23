@@ -50,10 +50,81 @@
             if (panel) {
                 setupPanel(panel, registration);
             }
+            initBanner(registration);
         }).catch(function () {
             showPanelUnsupported();
         });
     });
+
+    /* Recuerda si el usuario ya descartó la invitación, para no insistir en cada página. */
+    function ctaDismissed() {
+        try {
+            return window.localStorage.getItem('gc-push-cta') === 'off';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function dismissCta() {
+        try {
+            window.localStorage.setItem('gc-push-cta', 'off');
+        } catch (e) { /* almacenamiento no disponible */ }
+    }
+
+    /* Muestra la invitación a activar avisos (banner del layout) solo si tiene sentido ofrecerla: el
+     * navegador puede, no está bloqueado, no hay suscripción y no se ha descartado. En iOS-en-pestaña no,
+     * porque ahí primero hay que instalar la app. Reutiliza la misma suscripción que el panel de /avisos. */
+    function initBanner(registration) {
+        var banner = document.querySelector('[data-push-banner]');
+        if (!banner || ctaDismissed() || Notification.permission === 'denied' || (isIos() && !isStandalone())) {
+            return;
+        }
+
+        registration.pushManager.getSubscription().then(function (subscription) {
+            if (subscription) {
+                return; // ya suscrito en este dispositivo: nada que ofrecer
+            }
+            banner.hidden = false;
+
+            var activate = banner.querySelector('[data-push-banner-activate]');
+            var dismiss = banner.querySelector('[data-push-banner-dismiss]');
+            if (activate) {
+                activate.addEventListener('click', function () {
+                    activate.disabled = true;
+                    bannerSubscribe(registration, banner, activate);
+                });
+            }
+            if (dismiss) {
+                dismiss.addEventListener('click', function () {
+                    dismissCta();
+                    banner.hidden = true;
+                });
+            }
+        });
+    }
+
+    function bannerSubscribe(registration, banner, activate) {
+        Notification.requestPermission().then(function (permission) {
+            if (permission !== 'granted') {
+                banner.hidden = true; // si deniegan, no seguimos insistiendo
+                return;
+            }
+            registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(meta('vapid-public-key'))
+            }).then(function (subscription) {
+                return post(meta('push-subscribe-url'), subscription.toJSON());
+            }).then(function () {
+                banner.hidden = true; // suscrito: fuera invitación
+            }).catch(function () {
+                // Revierte la suscripción del navegador si el registro en servidor falló, y reactiva el botón.
+                registration.pushManager.getSubscription().then(function (sub) {
+                    return sub ? sub.unsubscribe() : Promise.resolve();
+                });
+                activate.disabled = false;
+            });
+        });
+    }
 
     function showPanelUnsupported() {
         var panel = document.querySelector('[data-push-panel]');

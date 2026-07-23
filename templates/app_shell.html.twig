@@ -90,6 +90,19 @@
             </header>
 
             <main class="page">
+                {# Invitación a activar los avisos push en este dispositivo. Oculta por defecto; push.js la
+                   muestra solo si el navegador lo soporta, no está bloqueado ni ya suscrito, y no se ha
+                   descartado. El permiso del navegador exige un click, así que es un botón, no un prompt. #}
+                {% if app.user and app_vapid_public_key is not empty %}
+                    <div class="push-cta" data-push-banner hidden>
+                        <span class="push-cta__text">Activa los avisos en este dispositivo para enterarte al momento cuando te asignen una guardia.</span>
+                        <span class="push-cta__actions">
+                            <button type="button" class="btn" data-push-banner-activate>Activar avisos</button>
+                            <button type="button" class="btn secondary" data-push-banner-dismiss>Ahora no</button>
+                        </span>
+                    </div>
+                {% endif %}
+
                 {% for message in app.flashes('success') %}
                     <div class="flash success">{{ message }}</div>
                 {% endfor %}
