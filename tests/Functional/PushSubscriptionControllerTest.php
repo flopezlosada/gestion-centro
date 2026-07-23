@@ -60,6 +60,9 @@ final class PushSubscriptionControllerTest extends WebTestCase
         return self::getContainer()->get(PushSubscriptionRepository::class);
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     private function samplePayload(string $endpoint = 'https://fcm.googleapis.com/fcm/send/abc123'): array
     {
         return [
