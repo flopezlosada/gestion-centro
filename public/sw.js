@@ -18,13 +18,16 @@ self.addEventListener('push', function (event) {
     var title = data.title || 'Aviso';
     var options = {
         body: data.body || '',
+        // Icono grande a color (centro de notificaciones).
         icon: '/icons/icon-192.png',
-        badge: '/icons/icon-192.png',
+        // Badge = icono pequeño de la barra de estado (Android): usa SOLO el alfa como máscara y lo pinta
+        // blanco, así que tiene que ser monocromo sobre transparente (no el cuadrado a color, que saldría
+        // como un cuadrado blanco).
+        badge: '/icons/badge-96.png',
         // La URL a abrir viaja en data para leerla en notificationclick.
         data: { url: data.url || '/avisos' },
-        // Un tag por URL: si llega otro aviso del mismo destino, se reemplaza en vez de apilarse.
-        tag: data.url || '/avisos',
-        renotify: true,
+        // SIN tag: cada aviso es independiente (varias guardias no deben pisarse entre sí; con un tag por
+        // URL, como todas las de guardia apuntan a /guardias/mias, se reemplazaban y solo se veía la última).
         // Se queda en pantalla hasta que el profesor la atienda (un aviso de guardia no debe pasar
         // desapercibido), en vez de auto-descartarse a los pocos segundos.
         requireInteraction: true,
