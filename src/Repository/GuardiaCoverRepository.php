@@ -95,6 +95,31 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
+     * The guardias assigned to a teacher from a date onwards (today included), earliest day and period
+     * first — everything they still have to cover, for their own "mis guardias" screen. The absent
+     * teacher is eager-loaded so the list reads without extra queries.
+     *
+     * @param User               $guardia the guardia teacher
+     * @param \DateTimeImmutable $from    the first day to include (typically today)
+     *
+     * @return GuardiaCover[] the upcoming covers assigned to them, chronological
+     */
+    public function findUpcomingAssignedTo(User $guardia, \DateTimeImmutable $from): array
+    {
+        return $this->createQueryBuilder('c')
+            ->addSelect('absent')
+            ->join('c.absentTeacher', 'absent')
+            ->andWhere('c.assignedGuardia = :guardia')
+            ->andWhere('c.date >= :from')
+            ->setParameter('guardia', $guardia)
+            ->setParameter('from', $from, 'date_immutable')
+            ->orderBy('c.date', 'ASC')
+            ->addOrderBy('c.slotIndex', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * Ids of the teachers who are themselves absent on a date and period — they must be dropped from
      * the guardia pool (a teacher on call cannot cover while they are away).
      *

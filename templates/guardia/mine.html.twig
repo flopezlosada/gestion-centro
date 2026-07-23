@@ -7,8 +7,8 @@
 {% block body %}
     <div class="page-head">
         <div>
-            <h1>Mis guardias de hoy</h1>
-            <p class="lead">Las guardias que te toca cubrir hoy {{ date|date('d/m/Y', false) }}: grupo, aula y la tarea que dejó el profesor ausente.</p>
+            <h1>Mis guardias</h1>
+            <p class="lead">Las guardias que tienes asignadas de hoy en adelante. Pulsa una para ver el detalle y la tarea del grupo.</p>
         </div>
         <a class="btn" href="{{ path('guardia_absence_new', { teacher: app.user.id }) }}">Voy a faltar…</a>
     </div>
@@ -26,23 +26,36 @@
     <div class="card">
         {% if covers is empty %}
             <div class="empty-state">
-                <h2>No tienes guardias hoy</h2>
-                <p>Cuando se te asigne una guardia para cubrir una ausencia, aparecerá aquí.</p>
+                <h2>No tienes guardias asignadas</h2>
+                <p>Cuando se te asigne una guardia para cubrir una ausencia, aparecerá aquí (hoy y días siguientes).</p>
             </div>
         {% else %}
+            {% set todayStr = today|date('Y-m-d', false) %}
+            {% set tomorrowStr = today|date_modify('+1 day')|date('Y-m-d', false) %}
             <table>
                 <thead>
-                    <tr><th>Hora</th><th>Grupo</th><th>Aula</th><th>Profesor ausente</th><th>Tarea</th></tr>
+                    <tr><th>Hora</th><th>Grupo</th><th>Aula</th><th>Profesor ausente</th><th></th></tr>
                 </thead>
                 <tbody>
+                    {% set lastDay = null %}
                     {% for cover in covers %}
-                        {% set times = slotTimes[cover.slotIndex] ?? null %}
+                        {% set dayStr = cover.date|date('Y-m-d', false) %}
+                        {% if dayStr != lastDay %}
+                            {% set lastDay = dayStr %}
+                            <tr class="daygroup{{ dayStr == todayStr ? ' daygroup--today' }}">
+                                <th colspan="5">
+                                    {% if dayStr == todayStr %}<span class="badge badge--ok" data-tone="success">Hoy</span>
+                                    {% elseif dayStr == tomorrowStr %}<span class="badge" data-tone="muted">Mañana</span>{% endif %}
+                                    <span class="mono {{ dayStr == todayStr ? '' : 'muted' }}">{{ cover.date|date('d/m/Y', false) }}</span>
+                                </th>
+                            </tr>
+                        {% endif %}
                         <tr class="{{ cover.notCovered ? 'is-not-covered' }}">
-                            <td class="mono">{% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}—{% endif %}</td>
-                            <td>{{ cover.groupName ?? '—' }}</td>
+                            <td class="mono">{% set times = slotTimes[cover.slotIndex] ?? null %}{% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}{{ cover.slotIndex + 1 }}ª{% endif %}</td>
+                            <td><a href="{{ path('guardia_cover_show', { id: cover.id }) }}">{{ cover.groupName ?? '—' }}</a></td>
                             <td class="mono">{{ cover.roomName ?? '—' }}</td>
                             <td>{{ cover.absentTeacher.fullName }}</td>
-                            <td>{% if cover.taskNote %}{{ cover.taskNote }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                            <td><a class="link-action" href="{{ path('guardia_cover_show', { id: cover.id }) }}">Ver</a></td>
                         </tr>
                     {% endfor %}
                 </tbody>
