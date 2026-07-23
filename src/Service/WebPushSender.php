@@ -74,7 +74,12 @@ final class WebPushSender
                         'privateKey' => $this->vapidPrivateKey,
                     ],
                 ],
-                [],
+                // Default options for every push: HIGH urgency so the push service (FCM/APNs) delivers it
+                // immediately instead of batching it in the phone's low-power/Doze window — a guardia
+                // alert is time-critical. TTL bounds how long it is kept if the device is offline (12h:
+                // long enough to reach a phone that was briefly off, short enough not to pop a stale
+                // alert the next day).
+                ['urgency' => 'high', 'TTL' => 43200],
                 // A short timeout so one slow/hung push service cannot stall the whole reminder batch;
                 // no redirects so a stored endpoint can never bounce the request to another host (SSRF).
                 10,
