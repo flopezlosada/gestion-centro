@@ -66,13 +66,20 @@ final class WebPushSender
         ], \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES);
 
         try {
-            $webPush = new WebPush([
-                'VAPID' => [
-                    'subject' => $this->vapidSubject,
-                    'publicKey' => $this->vapidPublicKey,
-                    'privateKey' => $this->vapidPrivateKey,
+            $webPush = new WebPush(
+                [
+                    'VAPID' => [
+                        'subject' => $this->vapidSubject,
+                        'publicKey' => $this->vapidPublicKey,
+                        'privateKey' => $this->vapidPrivateKey,
+                    ],
                 ],
-            ]);
+                [],
+                // A short timeout so one slow/hung push service cannot stall the whole reminder batch;
+                // no redirects so a stored endpoint can never bounce the request to another host (SSRF).
+                10,
+                ['allow_redirects' => false],
+            );
 
             // Endpoint is unique, so it maps a delivery report back to the row that must be pruned.
             $byEndpoint = [];

@@ -100,7 +100,9 @@
     }
 
     function isIos() {
-        return /iphone|ipad|ipod/i.test(navigator.userAgent);
+        // iPadOS 13+ se anuncia como "Macintosh" por defecto; detéctalo por plataforma + táctil.
+        return /iphone|ipad|ipod/i.test(navigator.userAgent)
+            || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     }
 
     function isStandalone() {
@@ -149,10 +151,9 @@
     function enable(panel, registration) {
         Notification.requestPermission().then(function (permission) {
             if (permission !== 'granted') {
+                // renderState primero (fija el botón "Activar"), luego el mensaje, o lo pisaría.
+                renderState(panel, registration, null);
                 setStatus(panel, 'No se concedió permiso para los avisos.');
-                registration.pushManager.getSubscription().then(function (sub) {
-                    renderState(panel, registration, sub);
-                });
                 return;
             }
 
@@ -163,13 +164,17 @@
             }).then(function (subscription) {
                 return post(meta('push-subscribe-url'), subscription.toJSON());
             }).then(function () {
-                registration.pushManager.getSubscription().then(function (sub) {
-                    renderState(panel, registration, sub);
-                });
+                return registration.pushManager.getSubscription();
+            }).then(function (sub) {
+                renderState(panel, registration, sub);
             }).catch(function () {
-                setStatus(panel, 'No se pudieron activar los avisos. Inténtalo de nuevo.');
+                // El navegador puede haber quedado suscrito aunque el registro en el servidor fallara:
+                // se revierte para no mostrar "activado" cuando el servidor no tiene el registro.
                 registration.pushManager.getSubscription().then(function (sub) {
-                    renderState(panel, registration, sub);
+                    return sub ? sub.unsubscribe() : Promise.resolve();
+                }).then(function () {
+                    renderState(panel, registration, null);
+                    setStatus(panel, 'No se pudieron activar los avisos. Inténtalo de nuevo.');
                 });
             });
         });

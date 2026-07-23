@@ -7,6 +7,7 @@ namespace App\Controller;
 use App\Entity\PushSubscription;
 use App\Entity\User;
 use App\Repository\PushSubscriptionRepository;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -41,6 +42,18 @@ final class PushSubscriptionController extends AbstractController
             return new JsonResponse(['error' => 'Suscripción incompleta.'], Response::HTTP_BAD_REQUEST);
         }
 
+        // SSRF guard: the endpoint is later POSTed to by the server (WebPushSender), so only accept the
+        // known push services over HTTPS. Without this, any authenticated user could point it at an
+        // internal address and have the server call it when a routine notice reaches them.
+        if (!$this->isTrustedPushEndpoint($endpoint)) {
+            return new JsonResponse(['error' => 'Endpoint de push no reconocido.'], Response::HTTP_BAD_REQUEST);
+        }
+
+        // Keep values within the column widths so an over-long field is a clean 400, not a 500 at flush.
+        if (mb_strlen($endpoint) > 512 || mb_strlen($p256dh) > 255 || mb_strlen($auth) > 255) {
+            return new JsonResponse(['error' => 'Datos de suscripción demasiado largos.'], Response::HTTP_BAD_REQUEST);
+        }
+
         // Upsert by endpoint (the browser's stable identity): a re-subscribe, or the same browser now
         // used by a different logged-in user, replaces the row rather than duplicating it. Two flushes
         // because delete-then-insert of the same unique endpoint cannot share one transaction.
@@ -50,10 +63,38 @@ final class PushSubscriptionController extends AbstractController
             $entityManager->flush();
         }
 
-        $entityManager->persist(new PushSubscription($user, $endpoint, $p256dh, $auth));
-        $entityManager->flush();
+        try {
+            $entityManager->persist(new PushSubscription($user, $endpoint, $p256dh, $auth));
+            $entityManager->flush();
+        } catch (UniqueConstraintViolationException) {
+            // A concurrent subscribe (two tabs, a retry) inserted the same endpoint first. The row
+            // exists either way, so treat it as success rather than surfacing a 500.
+        }
 
         return new JsonResponse(['ok' => true], Response::HTTP_CREATED);
+    }
+
+    /**
+     * Whether an endpoint belongs to a known browser push service over HTTPS. Closed allowlist: the
+     * server will POST to this URL, so anything outside these hosts is refused (SSRF defence).
+     *
+     * @param string $endpoint the push-service endpoint sent by the browser
+     *
+     * @return bool true if it is a trusted push endpoint
+     */
+    private function isTrustedPushEndpoint(string $endpoint): bool
+    {
+        $parts = parse_url($endpoint);
+        if (false === $parts || !isset($parts['scheme'], $parts['host']) || 'https' !== $parts['scheme']) {
+            return false;
+        }
+
+        $host = strtolower($parts['host']);
+
+        return 'fcm.googleapis.com' === $host                       // Chrome / Android (FCM)
+            || 'updates.push.services.mozilla.com' === $host        // Firefox (Mozilla autopush)
+            || 'web.push.apple.com' === $host                       // Safari / iOS (Apple)
+            || str_ends_with($host, '.notify.windows.com');         // Edge (Windows WNS)
     }
 
     #[Route('/push/unsubscribe', name: 'push_unsubscribe', methods: ['POST'])]

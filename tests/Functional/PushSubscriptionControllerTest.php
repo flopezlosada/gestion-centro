@@ -60,7 +60,7 @@ final class PushSubscriptionControllerTest extends WebTestCase
         return self::getContainer()->get(PushSubscriptionRepository::class);
     }
 
-    private function samplePayload(string $endpoint = 'https://push.example/endpoint/abc'): array
+    private function samplePayload(string $endpoint = 'https://fcm.googleapis.com/fcm/send/abc123'): array
     {
         return [
             'endpoint' => $endpoint,
@@ -77,7 +77,7 @@ final class PushSubscriptionControllerTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(201);
         $this->em->clear();
-        $stored = $this->repository()->findOneByEndpoint('https://push.example/endpoint/abc');
+        $stored = $this->repository()->findOneByEndpoint('https://fcm.googleapis.com/fcm/send/abc123');
         self::assertNotNull($stored);
         self::assertSame('BPublicKeyBase64Url', $stored->getP256dh());
         self::assertSame('AuthSecretBase64Url', $stored->getAuth());
@@ -98,7 +98,18 @@ final class PushSubscriptionControllerTest extends WebTestCase
     {
         $this->client->loginUser($this->user());
 
-        $this->postJson('/push/subscribe', ['endpoint' => 'https://push.example/x'], $this->pushToken());
+        $this->postJson('/push/subscribe', ['endpoint' => 'https://fcm.googleapis.com/fcm/send/x'], $this->pushToken());
+
+        self::assertResponseStatusCodeSame(400);
+        self::assertCount(0, $this->repository()->findAll());
+    }
+
+    public function testSubscribeRejectsAnUntrustedEndpoint(): void
+    {
+        $this->client->loginUser($this->user());
+
+        // A full, valid-looking payload but pointing at an arbitrary host (SSRF attempt) must be refused.
+        $this->postJson('/push/subscribe', $this->samplePayload('https://169.254.169.254/latest/meta-data'), $this->pushToken());
 
         self::assertResponseStatusCodeSame(400);
         self::assertCount(0, $this->repository()->findAll());
@@ -119,12 +130,12 @@ final class PushSubscriptionControllerTest extends WebTestCase
     public function testUnsubscribeRemovesTheSubscription(): void
     {
         $user = $this->user();
-        $subscription = new PushSubscription($user, 'https://push.example/endpoint/xyz', 'pk', 'auth');
+        $subscription = new PushSubscription($user, 'https://fcm.googleapis.com/fcm/send/xyz', 'pk', 'auth');
         $this->em->persist($subscription);
         $this->em->flush();
 
         $this->client->loginUser($user);
-        $this->postJson('/push/unsubscribe', ['endpoint' => 'https://push.example/endpoint/xyz'], $this->pushToken());
+        $this->postJson('/push/unsubscribe', ['endpoint' => 'https://fcm.googleapis.com/fcm/send/xyz'], $this->pushToken());
 
         self::assertResponseIsSuccessful();
         self::assertCount(0, $this->repository()->findAll());
@@ -133,13 +144,13 @@ final class PushSubscriptionControllerTest extends WebTestCase
     public function testUnsubscribeDoesNotTouchAnotherUsersSubscription(): void
     {
         $owner = $this->user('owner@centro.test');
-        $subscription = new PushSubscription($owner, 'https://push.example/endpoint/owned', 'pk', 'auth');
+        $subscription = new PushSubscription($owner, 'https://fcm.googleapis.com/fcm/send/owned', 'pk', 'auth');
         $this->em->persist($subscription);
         $this->em->flush();
 
         // A different logged-in user must not be able to remove someone else's subscription.
         $this->client->loginUser($this->user('intruder@centro.test'));
-        $this->postJson('/push/unsubscribe', ['endpoint' => 'https://push.example/endpoint/owned'], $this->pushToken());
+        $this->postJson('/push/unsubscribe', ['endpoint' => 'https://fcm.googleapis.com/fcm/send/owned'], $this->pushToken());
 
         self::assertResponseIsSuccessful();
         self::assertCount(1, $this->repository()->findAll());
