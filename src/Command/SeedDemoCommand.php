@@ -7,6 +7,7 @@ namespace App\Command;
 use App\Entity\AcademicYear;
 use App\Entity\Department;
 use App\Entity\EventCategory;
+use App\Entity\GuardiaCover;
 use App\Entity\NonLectiveDay;
 use App\Entity\Notification;
 use App\Entity\PersonalEvent;
@@ -51,10 +52,17 @@ final class SeedDemoCommand extends Command
         'task',
         'task_responsibility',
         'personal_event',
+        'guardia_cover',
         'non_lective_day',
         'academic_year',
         'event_category',
     ];
+
+    /** Fixed RNG seed so the invented guardia rota is the same on every run (reproducible demo). */
+    private const int GUARDIA_SEED = 20260701;
+
+    /** Invented absences to generate per term, spread across weekdays, slots and teachers. */
+    private const int GUARDIAS_PER_TERM = 45;
 
     /** Words in a catalog title that mark it as a deliverable task (produces a document). */
     private const string DELIVERABLE_PATTERN = '/memoria|programaci|informe|calendario|publicar|presupuesto|\bpga\b|horario|\bacta|protocolo|proyecto|plan\b|documento|listado|cuadrante/iu';
@@ -103,7 +111,8 @@ final class SeedDemoCommand extends Command
 
         $this->clearActivity();
 
-        $academicYear = $this->seedCalendar();
+        $courses = $this->seedCalendar();
+        $academicYear = $courses[array_key_last($courses)]; // el curso actual: sobre él van tareas y agenda
         $heads = $this->inventDepartmentHeads($departments, $roles['head_dept']);
         $categories = $this->seedCategories();
         $director = $this->firstHolder($roles['direction']);
@@ -111,6 +120,8 @@ final class SeedDemoCommand extends Command
         $centre = $this->seedCentreTasks($academicYear, $roles, $departments, $director);
         $agenda = $this->seedPersonalAgenda($users, $categories, $academicYear->getSchoolYear(), $director);
         $notifications = $this->seedNotifications($agenda);
+        // Guardias en TODOS los cursos sembrados, para poder comparar un año con otro en las estadísticas.
+        $guardias = array_sum(array_map(fn (AcademicYear $ay): int => $this->seedGuardias($users, $ay), $courses));
 
         $this->em->flush();
 
@@ -122,6 +133,7 @@ final class SeedDemoCommand extends Command
             ['Eventos de agenda personal', (string) $agenda['events']],
             ['Tareas personales', (string) \count($agenda['tasks'])],
             ['Notificaciones', (string) $notifications],
+            ['Guardias (ausencias, todos los cursos)', (string) $guardias],
         ]);
         $io->note('Los jefes de departamento son INVENTADOS (un docente por departamento) para que las tareas de departamento tengan titular. Reimporta el roster y vuelve a sembrar para regenerar.');
 
@@ -156,26 +168,20 @@ final class SeedDemoCommand extends Command
     }
 
     /**
-     * Seeds the current course structure (three terms) and a handful of real Comunidad de Madrid
-     * non-teaching days that fall on a teaching weekday (weekends are non-teaching on their own).
+     * Seeds the course structure (three terms each) for the current school year AND the previous one —
+     * two courses so the statistics can compare a year against another — plus a handful of real Comunidad
+     * de Madrid non-teaching days of the current course that fall on a teaching weekday (weekends are
+     * non-teaching on their own).
      *
-     * @return AcademicYear the persisted course structure
+     * @return list<AcademicYear> the persisted courses, oldest first (last one is the current course)
      */
-    private function seedCalendar(): AcademicYear
+    private function seedCalendar(): array
     {
-        $year = SchoolYear::current(new \DateTimeImmutable());
-        $start = (int) substr($year, 0, 4);
+        $current = SchoolYear::current(new \DateTimeImmutable());
+        $previous = SchoolYear::previous($current);
+        $courses = [$this->buildAcademicYear($previous), $this->buildAcademicYear($current)];
 
-        $academicYear = (new AcademicYear())
-            ->setSchoolYear($year)
-            ->setTerm1Start(new \DateTimeImmutable($start.'-09-08'))
-            ->setTerm1End(new \DateTimeImmutable($start.'-12-19'))
-            ->setTerm2Start(new \DateTimeImmutable(($start + 1).'-01-08'))
-            ->setTerm2End(new \DateTimeImmutable(($start + 1).'-03-27'))
-            ->setTerm3Start(new \DateTimeImmutable(($start + 1).'-04-07'))
-            ->setTerm3End(new \DateTimeImmutable(($start + 1).'-06-19'));
-        $this->em->persist($academicYear);
-
+        $start = (int) substr($current, 0, 4);
         $holidays = [
             [sprintf('%d-10-31', $start), 'Día no lectivo (libre disposición)'],
             [sprintf('%d-12-08', $start), 'Inmaculada Concepción'],
@@ -187,6 +193,30 @@ final class SeedDemoCommand extends Command
         foreach ($holidays as [$date, $description]) {
             $this->em->persist((new NonLectiveDay())->setDate(new \DateTimeImmutable($date))->setDescription($description));
         }
+
+        return $courses;
+    }
+
+    /**
+     * Builds and persists one course structure (three terms) for a school year, with the centre's usual
+     * term dates anchored on its start year.
+     *
+     * @param string $schoolYear the school year in "YYYY-YYYY" form
+     *
+     * @return AcademicYear the persisted course
+     */
+    private function buildAcademicYear(string $schoolYear): AcademicYear
+    {
+        $start = (int) substr($schoolYear, 0, 4);
+        $academicYear = (new AcademicYear())
+            ->setSchoolYear($schoolYear)
+            ->setTerm1Start(new \DateTimeImmutable($start.'-09-08'))
+            ->setTerm1End(new \DateTimeImmutable($start.'-12-19'))
+            ->setTerm2Start(new \DateTimeImmutable(($start + 1).'-01-08'))
+            ->setTerm2End(new \DateTimeImmutable(($start + 1).'-03-27'))
+            ->setTerm3Start(new \DateTimeImmutable(($start + 1).'-04-07'))
+            ->setTerm3End(new \DateTimeImmutable(($start + 1).'-06-19'));
+        $this->em->persist($academicYear);
 
         return $academicYear;
     }
@@ -645,6 +675,151 @@ final class SeedDemoCommand extends Command
         }
 
         return $count;
+    }
+
+    /**
+     * Seeds an invented guardia rota for the whole course so the coordinator's analytics dashboard has
+     * something to show: {@see GuardiaCover} rows spread across the three terms, weekdays (Mon–Fri) and
+     * period slots, with a realistic mix of states (mostly covered, a few incidents, some left
+     * unassigned) and a deliberately uneven split of covering teachers so the equity/Gini reading is
+     * meaningful. Written directly (not via {@see \App\Guardia\AbsenceRegistrar}) because the demo needs
+     * a controlled distribution and does not depend on a real imported timetable — the stats read only
+     * from {@see GuardiaCover}, whose group/room are self-contained snapshots.
+     *
+     * The RNG is seeded ({@see self::GUARDIA_SEED}) so the same rota comes out on every run, and the
+     * per-teacher/day/slot UNIQUE constraint is respected by skipping collisions.
+     *
+     * @param list<User>   $users        all real people (only active ones take part in the rota)
+     * @param AcademicYear $academicYear the course whose term windows anchor the dates
+     *
+     * @return int the number of covers created
+     */
+    private function seedGuardias(array $users, AcademicYear $academicYear): int
+    {
+        $teachers = array_values(array_filter($users, static fn (User $u): bool => $u->isActive()));
+        if (\count($teachers) < 4) {
+            return 0; // sin claustro suficiente no hay reparto que enseñar
+        }
+
+        // Semilla desplazada por año: reproducible, pero cada curso con su propio patrón (no dos iguales).
+        mt_srand(self::GUARDIA_SEED + (int) substr($academicYear->getSchoolYear(), 0, 4));
+
+        // Pool de profesores de guardia con carga desigual: el primer cuarto cubre el triple y el
+        // siguiente cuarto el doble que el resto, para que la equidad/Gini tenga contraste que mostrar.
+        $coverPool = $this->weightedPool($teachers, [3, 2, 1, 1]);
+        // Ausentes con otra desigualdad independiente: unos pocos faltan bastante más (ranking de ausencias).
+        $absentPool = $this->weightedPool($teachers, [3, 1, 1, 1, 1]);
+
+        $groups = ['1º ESO A', '1º ESO B', '2º ESO A', '3º ESO B', '4º ESO A', '1º BACH A', '2º BACH B', 'FPB I'];
+        $rooms = ['A-12', 'A-14', 'B-03', 'B-21', 'Lab 2', 'Gimnasio', 'Taller', 'Aula TIC'];
+        $notes = [null, null, 'Ejercicios 3–7 de la página 84.', 'Examen: vigilar y recoger las hojas.', 'Ver el vídeo indicado y resumen en el cuaderno.', 'Terminar la ficha de la sesión anterior.'];
+
+        $seen = [];
+        $created = 0;
+        for ($term = 1; $term <= 3; ++$term) {
+            $from = $academicYear->getTermStart($term);
+            $span = max(1, (int) $from->diff($academicYear->getTermEnd($term))->days);
+
+            for ($n = 0; $n < self::GUARDIAS_PER_TERM; ++$n) {
+                $date = $this->randomWeekday($from, $span);
+                $slot = mt_rand(0, 5);
+                $absent = $absentPool[array_rand($absentPool)];
+
+                $key = $absent->getId().'|'.$date->format('Y-m-d').'|'.$slot;
+                if (isset($seen[$key])) {
+                    continue; // respeta el UNIQUE (profesor ausente, día, tramo)
+                }
+                $seen[$key] = true;
+
+                $cover = (new GuardiaCover())
+                    ->setDate($date)
+                    ->setSlotIndex($slot)
+                    ->setAbsentTeacher($absent)
+                    ->setGroupName($groups[array_rand($groups)])
+                    ->setRoomName($rooms[array_rand($rooms)])
+                    ->setTaskNote($notes[array_rand($notes)]);
+
+                // Estado: ~78% cubiertas, ~10% incidencias (había guardia asignado pero no se cubrió),
+                // ~12% sin asignar (no quedaba nadie libre en el pool).
+                $roll = mt_rand(1, 100);
+                if ($roll <= 12) {
+                    // sin asignar: assignedGuardia null, notCovered false (por defecto)
+                } elseif ($roll <= 22) {
+                    $cover->setAssignedGuardia($this->pickOther($coverPool, $absent))->setNotCovered(true);
+                } else {
+                    $cover->setAssignedGuardia($this->pickOther($coverPool, $absent));
+                }
+
+                $this->em->persist($cover);
+                ++$created;
+            }
+        }
+
+        return $created;
+    }
+
+    /**
+     * Builds a weighted pick pool: the shuffled teachers are cut into bands and each band is repeated as
+     * many times as its weight, so {@see array_rand()} over the pool favours the heavier bands. Shuffling
+     * (seeded) keeps the unevenness from always landing on the same people across runs of different sizes.
+     *
+     * @param list<User> $teachers the teachers to spread
+     * @param list<int>  $weights  the repetition weight per band, in order (last one covers the tail)
+     *
+     * @return list<User> the pick pool (a teacher appears once per weight unit)
+     */
+    private function weightedPool(array $teachers, array $weights): array
+    {
+        $shuffled = $teachers;
+        shuffle($shuffled);
+        $bands = \count($weights);
+        $bandSize = (int) ceil(\count($shuffled) / $bands);
+
+        $pool = [];
+        foreach ($shuffled as $i => $teacher) {
+            $weight = $weights[min((int) ($i / max(1, $bandSize)), $bands - 1)];
+            for ($w = 0; $w < $weight; ++$w) {
+                $pool[] = $teacher;
+            }
+        }
+
+        return $pool;
+    }
+
+    /**
+     * A random teaching-week date (Mon–Fri) within {@code $span} days of {@code $from}; weekends are
+     * re-rolled so the heatmap only ever shows teaching days.
+     *
+     * @param \DateTimeImmutable $from the window start
+     * @param int                $span the window length in days
+     *
+     * @return \DateTimeImmutable a weekday inside the window
+     */
+    private function randomWeekday(\DateTimeImmutable $from, int $span): \DateTimeImmutable
+    {
+        do {
+            $date = $from->modify('+'.mt_rand(0, $span).' days');
+        } while ((int) $date->format('N') > 5);
+
+        return $date;
+    }
+
+    /**
+     * Picks a teacher from the pool other than the given one (an absent teacher cannot cover their own
+     * guardia). Falls back to any pick when the pool has no alternative.
+     *
+     * @param list<User> $pool    the weighted pick pool
+     * @param User       $exclude the teacher to avoid
+     *
+     * @return User the chosen teacher
+     */
+    private function pickOther(array $pool, User $exclude): User
+    {
+        do {
+            $pick = $pool[array_rand($pool)];
+        } while ($pick === $exclude && \count($pool) > 1);
+
+        return $pick;
     }
 
     /**

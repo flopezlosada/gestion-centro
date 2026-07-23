@@ -5,6 +5,9 @@
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_index') }}">Guardias</a><span class="sep">/</span>Histórico{% endblock %}
 
 {% block body %}
+    {# La pantalla "modificar" (detalle completo + registro de auditoría) exige permiso de escritura; el
+       histórico solo lectura. Solo enlazamos si el usuario puede editar, para no llevar a un 403. #}
+    {% set canEdit = is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::GUARDIAS')) %}
     <div class="page-head">
         <div>
             <h1>Histórico de guardias</h1>
@@ -36,6 +39,7 @@
                         <th data-filter="Ausente">Profesor ausente</th>
                         <th data-filter="Guardia">Guardia</th>
                         <th data-filter="Estado">Estado</th>
+                        {% if canEdit %}<th></th>{% endif %}
                     </tr>
                 </thead>
                 <tbody>
@@ -53,6 +57,7 @@
                                 {% elseif cover.assignedGuardia %}<span class="badge badge--ok" data-tone="success">Cubierta</span>
                                 {% else %}<span class="badge badge--muted" data-tone="muted">Sin asignar</span>{% endif %}
                             </td>
+                            {% if canEdit %}<td><a href="{{ path('guardia_cover_edit', { id: cover.id }) }}">Ver / editar</a></td>{% endif %}
                         </tr>
                     {% endfor %}
                 </tbody>
