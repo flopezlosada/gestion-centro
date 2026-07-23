@@ -120,7 +120,10 @@ class ScheduleEntryRepository extends ServiceEntityRepository
      */
     public function distinctSlots(AcademicYear $year): array
     {
-        /** @var list<array{slotIndex: int, startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}> $rows */
+        // DQL aggregate functions (MIN) are hydrated as raw scalars, not through the field's type, so
+        // the times come back as strings ("08:25:00") — convert them so callers get the DateTimeImmutable
+        // the signature promises (a raw string reaching ScheduleEntry::setStartsAt() would fatal).
+        /** @var list<array{slotIndex: int, startsAt: string, endsAt: string}> $rows */
         $rows = $this->createQueryBuilder('s')
             ->select('s.slotIndex AS slotIndex', 'MIN(s.startsAt) AS startsAt', 'MIN(s.endsAt) AS endsAt')
             ->andWhere('s.academicYear = :year')
@@ -133,8 +136,8 @@ class ScheduleEntryRepository extends ServiceEntityRepository
         return array_map(
             static fn (array $r): array => [
                 'index' => (int) $r['slotIndex'],
-                'startsAt' => $r['startsAt'],
-                'endsAt' => $r['endsAt'],
+                'startsAt' => new \DateTimeImmutable($r['startsAt']),
+                'endsAt' => new \DateTimeImmutable($r['endsAt']),
             ],
             $rows,
         );
