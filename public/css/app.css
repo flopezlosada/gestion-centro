@@ -1872,6 +1872,11 @@ input[type="email"], input[type="text"], select, textarea {
 .daygroup th { background: var(--surface-sunken); color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; letter-spacing: .03em; padding: 12px 12px 8px; }
 .daygroup--today th { color: var(--accent); }
 
+/* Invitación a activar avisos push tras el login. */
+.push-cta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; background: var(--accent-weak); border: 1px solid var(--accent); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 16px; }
+.push-cta__text { color: var(--text); }
+.push-cta__actions { display: flex; gap: 8px; flex-shrink: 0; }
+
 tr.is-not-covered { background: var(--danger-weak); }
 .task-note { cursor: help; }
 
