@@ -9,17 +9,11 @@ use App\Entity\Task;
 use App\Entity\User;
 use App\Repository\TaskRepository;
 use App\Repository\UserRepository;
-use Doctrine\ORM\EntityManagerInterface;
-use Psr\Log\LoggerInterface;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
-use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
-use Symfony\Component\Mailer\MailerInterface;
-use Symfony\Component\Mime\Email;
 
 /**
  * The reminder engine. Run daily (see {@see \App\Command\SendTaskRemindersCommand}), it:
  *
- *  - reminds the assignee of tasks due in 15 and 7 days (in-app notice + e-mail);
+ *  - reminds the assignee of tasks due in 15 and 7 days (in-app notice + e-mail + push);
  *  - escalates tasks that are overdue and still open up the chain of command (the immediate
  *    superior after 1 day, the whole chain after 7).
  *
@@ -46,17 +40,14 @@ final class TaskReminderNotifier
         private readonly TaskRepository $tasks,
         private readonly UserRepository $users,
         private readonly OrganizationHierarchy $hierarchy,
-        private readonly EntityManagerInterface $entityManager,
-        private readonly MailerInterface $mailer,
-        private readonly LoggerInterface $logger,
-        #[Autowire('%app.mailer_from%')]
-        private readonly string $mailerFrom,
+        private readonly NotificationDispatcher $dispatcher,
     ) {
     }
 
     /**
      * Creates and sends every reminder/escalation due on the given day. In-app notices are persisted
-     * first (a single flush), then e-mails are sent, so a mail failure never loses the in-app notice.
+     * first (a single flush), then e-mails and push are sent, so a delivery failure never loses the
+     * in-app notice.
      *
      * @param \DateTimeImmutable $today the reference day (time is ignored)
      *
@@ -72,7 +63,7 @@ final class TaskReminderNotifier
             $due = $today->modify(sprintf('+%d days', $days));
             foreach ($this->tasks->findOpenDueOn($due, self::ASSIGNEE_OPEN) as $task) {
                 foreach ($this->assigneeRecipients($task) as $recipient) {
-                    $notifications[] = new Notification(
+                    $notifications[] = $this->dispatcher->record(
                         $recipient,
                         'task.reminder',
                         sprintf('Tarea próxima: %s', $task->getTitle()),
@@ -87,7 +78,7 @@ final class TaskReminderNotifier
             $due = $today->modify(sprintf('-%d days', $days));
             foreach ($this->tasks->findOpenDueOn($due, self::NOT_CLOSED) as $task) {
                 foreach ($this->escalationRecipients($task, $days) as $recipient) {
-                    $notifications[] = new Notification(
+                    $notifications[] = $this->dispatcher->record(
                         $recipient,
                         'task.escalation',
                         sprintf('Tarea vencida sin cerrar: %s', $task->getTitle()),
@@ -98,27 +89,8 @@ final class TaskReminderNotifier
             }
         }
 
-        foreach ($notifications as $notification) {
-            $this->entityManager->persist($notification);
-        }
-        $this->entityManager->flush();
-
-        // A single bad recipient must not abort the whole nightly batch: the in-app notice is already
-        // saved, so we log the failed e-mail and carry on with the rest.
-        foreach ($notifications as $notification) {
-            try {
-                $this->mailer->send((new Email())
-                    ->from($this->mailerFrom)
-                    ->to($notification->getRecipient()->getEmail())
-                    ->subject($notification->getTitle())
-                    ->text((string) $notification->getBody()));
-            } catch (TransportExceptionInterface $e) {
-                $this->logger->error('No se pudo enviar el aviso por email', [
-                    'recipient' => $notification->getRecipient()->getEmail(),
-                    'exception' => $e,
-                ]);
-            }
-        }
+        // One flush for the whole batch, then deliver each over e-mail + push (best-effort per notice).
+        $this->dispatcher->flushAndSend($notifications);
 
         return \count($notifications);
     }

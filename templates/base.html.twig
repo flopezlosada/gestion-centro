@@ -6,6 +6,18 @@
         <title>{% block title %}{{ app_organization_name }}{% endblock %}</title>
         <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 
+        {# PWA: instalable (necesario para que el push funcione en iOS ≥16.4, que exige la web añadida a
+           la pantalla de inicio) y notificaciones push por web. #}
+        <link rel="manifest" href="/manifest.webmanifest">
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+        <meta name="theme-color" content="#1f6feb">
+        {% if app.user and app_vapid_public_key is not empty %}
+            <meta name="vapid-public-key" content="{{ app_vapid_public_key }}">
+            <meta name="push-csrf" content="{{ csrf_token('push') }}">
+            <meta name="push-subscribe-url" content="{{ path('push_subscribe') }}">
+            <meta name="push-unsubscribe-url" content="{{ path('push_unsubscribe') }}">
+        {% endif %}
+
         {# Anti-FOUC: fija el tema antes de pintar, según la elección guardada o la preferencia del sistema. #}
         <script>
             (function () {
@@ -40,6 +52,9 @@
             <script src="{{ asset_ver('/js/confirm-dialog.js') }}"></script>
             <script src="{{ asset_ver('/js/calendar-filter.js') }}"></script>
             <script src="{{ asset_ver('/js/day-add.js') }}"></script>
+            {% if app.user and app_vapid_public_key is not empty %}
+                <script src="{{ asset_ver('/js/push.js') }}" defer></script>
+            {% endif %}
         {% endblock %}
     </body>
 </html>

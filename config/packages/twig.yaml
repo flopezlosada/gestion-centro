@@ -4,6 +4,9 @@ twig:
         # Centre name shown across the UI/e-mails; single source of truth is the app.organization_name
         # parameter (generic by default, real value set per environment via APP_ORG_NAME).
         app_organization_name: '%app.organization_name%'
+        # VAPID public key exposed to the browser so it can subscribe to Web Push. Empty = push
+        # disabled: the "Activar avisos" button stays hidden (see base.html.twig / public/js/push.js).
+        app_vapid_public_key: '%env(VAPID_PUBLIC_KEY)%'
 
 when@test:
     twig:

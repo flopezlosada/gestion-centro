@@ -17,6 +17,21 @@
         {% endif %}
     </div>
 
+    {% if app_vapid_public_key is not empty %}
+        {# Panel oculto por defecto: push.js lo muestra y rellena según soporte del navegador y estado
+           de la suscripción. Sin JS o sin soporte, no aparece un control roto. #}
+        <div class="card" data-push-panel hidden>
+            <div class="page-head" style="margin:0">
+                <div>
+                    <h2>Avisos en este dispositivo</h2>
+                    <p class="muted" data-push-status>Comprobando…</p>
+                </div>
+                <button type="button" class="btn btn-secondary" data-push-toggle hidden></button>
+            </div>
+            <p class="muted" data-push-ios-hint hidden>En iPhone o iPad, primero añade esta web a la pantalla de inicio (botón Compartir → «Añadir a pantalla de inicio») y ábrela desde ahí; solo entonces iOS permite activar los avisos.</p>
+        </div>
+    {% endif %}
+
     <div class="card">
         {% if notifications is empty %}
             <div class="empty-state">
