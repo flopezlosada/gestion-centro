@@ -1923,3 +1923,15 @@ tr.is-not-covered { background: var(--danger-weak); }
     text-decoration: none; color: var(--text-muted); font-size: 18px; line-height: 1; background: var(--surface);
 }
 .day-nav-arrow:hover { border-color: var(--border-strong); color: var(--text); }
+
+/* ── Guardias · rejilla del horario manual ─────────────────────────────────── */
+.tt-scroll { overflow-x: auto; margin-top: 12px; }
+.tt-grid { border-collapse: collapse; width: 100%; }
+.tt-grid th, .tt-grid td { border: 1px solid var(--border); padding: 6px; text-align: center; }
+.tt-grid thead th { font-family: var(--font-mono); font-size: .8rem; color: var(--text-muted); white-space: nowrap; font-weight: 600; }
+.tt-grid tbody th { text-align: left; white-space: nowrap; font-weight: 600; }
+.tt-cell { min-width: 96px; }
+.tt-cell select { width: 100%; }
+.tt-lective { background: var(--surface-sunken); color: var(--text-muted); }
+.tt-lective-label { font-size: .8rem; }
+.tt-duty { background: var(--accent-weak, color-mix(in srgb, var(--accent) 14%, transparent)); }
