@@ -6,6 +6,7 @@ namespace App\EventSubscriber;
 
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
+use Symfony\Component\HttpFoundation\Session\FlashBagAwareSessionInterface;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
@@ -72,7 +73,11 @@ class SessionIdleTimeoutSubscriber implements EventSubscriberInterface
         }
 
         $session->invalidate();
-        $session->getFlashBag()->add('warning', 'Tu sesión se ha cerrado por inactividad.');
+        // getSession() is typed as SessionInterface, which has no flash bag; the concrete session
+        // (FlashBagAwareSessionInterface) does. Guard the cast so the warning is best-effort.
+        if ($session instanceof FlashBagAwareSessionInterface) {
+            $session->getFlashBag()->add('warning', 'Tu sesión se ha cerrado por inactividad.');
+        }
         $event->setResponse(new RedirectResponse($this->urlGenerator->generate('login')));
     }
 }
