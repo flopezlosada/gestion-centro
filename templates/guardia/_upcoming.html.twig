@@ -1,0 +1,31 @@
+{# Lista de "Próximas" guardias agrupadas por día. Se incluye tanto dentro de la columna de "Hoy"
+   (para que herede su ancho) como en el estado vacío. Recibe del contexto: upcoming, slotTimes,
+   weekdayNames. #}
+{% if upcoming is not empty %}
+    <div class="section-head" id="proximas"><h2>Próximas</h2></div>
+    <div class="card upcoming">
+        {% for day in upcoming %}
+            <div class="upcoming__day">
+                {% if day.isTomorrow %}Mañana{% else %}{{ weekdayNames[day.date|date('N', false)] }}{% endif %}
+                <span class="upcoming__date mono">· {{ day.date|date('d/m', false) }}</span>
+                <span class="upcoming__count">{{ day.covers|length }} guardia{{ day.covers|length != 1 ? 's' }}</span>
+            </div>
+            {% for cover in day.covers %}
+                {% set times = slotTimes[cover.slotIndex] ?? null %}
+                <a class="upcoming__row" href="{{ path('guardia_cover_show', { id: cover.id }) }}">
+                    <span class="upcoming__time mono">
+                        <strong>{% if times %}{{ times.startsAt|date('H:i', false) }}{% else %}{{ cover.slotIndex + 1 }}ª{% endif %}</strong>
+                        <span>{% if times %}{{ times.endsAt|date('H:i', false) }}{% endif %}</span>
+                    </span>
+                    <span class="upcoming__body">
+                        <span class="upcoming__where">{{ [cover.groupName, cover.roomName]|filter(v => v)|join(' · ') ?: 'Sin especificar' }}</span>
+                        <span class="upcoming__teacher">Cubres a {{ cover.absentTeacher.fullName }}</span>
+                    </span>
+                    {% if cover.notCovered %}<span class="badge badge--danger" data-tone="danger">Incidencia</span>
+                    {% elseif cover.taskNote %}<span class="badge badge--warning" data-tone="warning">Tarea</span>{% endif %}
+                    <span class="upcoming__go" aria-hidden="true">›</span>
+                </a>
+            {% endfor %}
+        {% endfor %}
+    </div>
+{% endif %}

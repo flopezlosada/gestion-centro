@@ -4,13 +4,21 @@
 
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Mis guardias{% endblock %}
 
-{% block body %}
-    {% set weekdayNames = {1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves', 5: 'Viernes', 6: 'Sábado', 7: 'Domingo'} %}
+{# Cuenta atrás legible ("en 40 min" / "en 2 h 10 min") reutilizada por el protagonista y la fila
+   destacada, para no repetir el formateo. #}
+{% macro countdown(min) %}{% if min < 60 %}en {{ min }} min{% else %}en {{ min // 60 }} h{% if min % 60 %} {{ min % 60 }} min{% endif %}{% endif %}{% endmacro %}
 
-    <div class="page-head">
+{% block body %}
+    {% import _self as fmt %}
+    {% set weekdayNames = {1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves', 5: 'Viernes', 6: 'Sábado', 7: 'Domingo'} %}
+    {% set nextItem = today.next is not null ? today.items[today.next] : null %}
+    {% set todayLabel = weekdayNames['now'|date('N', false)] ~ ' ' ~ 'now'|date('d/m', false) %}
+
+    <div class="page-head page-head--ruled">
         <div>
+            {% if today.items is not empty %}<div class="page-eyebrow mono g-narrow">{{ todayLabel }}</div>{% endif %}
             <h1>Mis guardias</h1>
-            <p class="lead">Tus guardias de hoy y las que vienen. Pulsa una para ver el detalle y la tarea del grupo.</p>
+            <p class="lead g-wide">Tus guardias de hoy y las que vienen. Pulsa una para ver el detalle y la tarea del grupo.</p>
         </div>
         <div class="page-head__actions">
             <a class="btn secondary" href="{{ path('guardia_mine_history') }}">Ver histórico</a>
@@ -18,61 +26,105 @@
         </div>
     </div>
 
-    {# HOY — lo primero y lo que más destaca. #}
-    <section class="card card--today">
-        <div class="page-head"><div><h2>Hoy</h2></div></div>
-        {% if todayCovers is empty %}
-            <div class="empty-state">
-                <h2>No tienes guardias hoy</h2>
-                <p>Nada que cubrir por hoy. Si se te asigna una guardia, aparecerá aquí y te llegará un aviso.</p>
-            </div>
-        {% else %}
-            <div class="today-guardias">
-                {% for cover in todayCovers %}
-                    {% set times = slotTimes[cover.slotIndex] ?? null %}
-                    <a class="today-box{{ cover.notCovered ? ' today-box--incident' }}" href="{{ path('guardia_cover_show', { id: cover.id }) }}">
-                        <span class="today-box__time mono">{% if times %}{{ times.startsAt|date('H:i', false) }}{% else %}{{ cover.slotIndex + 1 }}ª{% endif %}</span>
-                        <span class="today-box__range mono">{% if times %}hasta {{ times.endsAt|date('H:i', false) }}{% else %}hora{% endif %}</span>
-                        <span class="today-box__group">{{ cover.groupName ?? 'Grupo sin especificar' }}</span>
-                        {% if cover.roomName %}<span class="today-box__room mono">{{ cover.roomName }}</span>{% endif %}
-                        <span class="today-box__meta">Cubres a {{ cover.absentTeacher.fullName }}</span>
-                        {% if cover.notCovered %}<span class="badge badge--danger" data-tone="danger">Incidencia</span>
-                        {% elseif cover.taskNote %}<span class="badge badge--warning" data-tone="warning">Tiene tarea</span>{% endif %}
-                    </a>
-                {% endfor %}
-            </div>
-        {% endif %}
-    </section>
+    {% if today.items is empty %}
+        {# ESTADO VACÍO — mensaje positivo + la siguiente guardia prevista (si la hay). #}
+        <section class="card guardia-empty">
+            <div class="guardia-empty__badge" aria-hidden="true">✓</div>
+            <h2>Hoy no te toca guardia</h2>
+            <p>Estás libre de guardias. Te avisaremos en cuanto se te asigne una nueva.</p>
 
-    {# PRÓXIMAS — días siguientes, en segundo plano. #}
-    {% if upcoming is not empty %}
-        <div class="page-head section-head"><div><h2>Próximas</h2></div></div>
-        {% for day in upcoming %}
-            <section class="card guardia-day">
-                <header class="guardia-day__head">
-                    {% if day.isTomorrow %}<span class="badge" data-tone="muted">Mañana</span>
-                    {% else %}<span class="guardia-day__weekday">{{ weekdayNames[day.date|date('N', false)] }}</span>{% endif %}
-                    <span class="guardia-day__date mono">{{ day.date|date('d/m/Y', false) }}</span>
-                    <span class="guardia-day__count">{{ day.covers|length }} guardia{{ day.covers|length != 1 ? 's' }}</span>
-                </header>
-                <ul class="guardia-list">
-                    {% for cover in day.covers %}
-                        {% set times = slotTimes[cover.slotIndex] ?? null %}
-                        <li>
-                            <a class="guardia-item" href="{{ path('guardia_cover_show', { id: cover.id }) }}">
-                                <span class="guardia-item__time mono">
-                                    <strong>{% if times %}{{ times.startsAt|date('H:i', false) }}{% else %}{{ cover.slotIndex + 1 }}ª{% endif %}</strong><span class="guardia-item__end">{% if times %}{{ times.endsAt|date('H:i', false) }}{% endif %}</span>
-                                </span>
-                                <span class="guardia-item__body">
-                                    <span class="guardia-item__group">{{ cover.groupName ?? 'Grupo sin especificar' }}{% if cover.roomName %} <span class="muted mono">· {{ cover.roomName }}</span>{% endif %}</span>
-                                    <span class="guardia-item__meta">Cubres a {{ cover.absentTeacher.fullName }}{% if cover.taskNote %} · <span class="guardia-item__task">tiene tarea</span>{% endif %}</span>
-                                </span>
-                                <span class="guardia-item__go" aria-hidden="true">›</span>
-                            </a>
-                        </li>
+            {% set nextDay = upcoming|first %}
+            {% if nextDay %}
+                {% set sc = nextDay.covers|first %}
+                {% set st = slotTimes[sc.slotIndex] ?? null %}
+                <div class="next-preview">
+                    <div class="next-preview__title mono">Siguiente prevista</div>
+                    <div class="next-preview__row">
+                        <span class="next-preview__time mono">
+                            <strong>{% if st %}{{ st.startsAt|date('H:i', false) }}{% else %}{{ sc.slotIndex + 1 }}ª{% endif %}</strong>
+                            <span>{% if nextDay.isTomorrow %}mañana{% else %}{{ nextDay.date|date('d/m', false) }}{% endif %}</span>
+                        </span>
+                        <span class="next-preview__place">
+                            <span class="next-preview__where">{{ [sc.groupName, sc.roomName]|filter(v => v)|join(' · ') ?: 'Sin especificar' }}</span>
+                            <span class="next-preview__teacher">Cubres a {{ sc.absentTeacher.fullName }}</span>
+                        </span>
+                        {% if sc.taskNote %}<span class="badge badge--warning" data-tone="warning">Tarea</span>{% endif %}
+                    </div>
+                </div>
+                <a class="btn" href="#proximas">Ver próximas guardias</a>
+            {% endif %}
+        </section>
+
+        {# Sin guardias hoy: no hay rejilla, así que Próximas va a ancho completo. #}
+        {{ include('guardia/_upcoming.html.twig') }}
+    {% else %}
+        {# HOY — protagonista a la derecha (arriba en móvil), el resto del día a la izquierda. #}
+        {# restCount = guardias del día que NO son la próxima; si es 0, en móvil (donde la próxima
+           solo vive en el protagonista) la columna del "resto" se queda vacía y se oculta. #}
+        {% set restCount = today.counts.assigned - (nextItem ? 1 : 0) %}
+        <div class="today-guardias">
+            <div class="today-guardias__main{{ restCount == 0 ? ' is-only-next' }}">
+                <div class="today__head">
+                    <h2 class="today__title"><span class="g-wide">Hoy</span><span class="g-narrow">Resto de hoy</span></h2>
+                    <span class="today__date mono g-wide">{{ todayLabel }}</span>
+                    {% if today.counts.pending > 0 %}
+                        <span class="count-chip">{{ today.counts.pending }} pendiente{{ today.counts.pending != 1 ? 's' }}</span>
+                    {% endif %}
+                </div>
+
+                <div class="today-list">
+                    {% for i, item in today.items %}
+                        {% set cover = item.cover %}
+                        {% set isNext = i == today.next %}
+                        <a class="today-row{{ isNext ? ' is-next' }}{{ item.done ? ' is-done' }}{{ cover.notCovered ? ' is-incident' }}" href="{{ path('guardia_cover_show', { id: cover.id }) }}">
+                            <span class="today-row__slot mono">
+                                <strong>{% if item.startsAt %}{{ item.startsAt|date('H:i', false) }}{% else %}{{ cover.slotIndex + 1 }}ª{% endif %}</strong>
+                                <span>{% if item.endsAt %}{{ item.endsAt|date('H:i', false) }}{% else %}hora{% endif %}</span>
+                            </span>
+                            <span class="today-row__place">
+                                {% if isNext %}<span class="today-row__eyebrow mono">Próxima{% if item.minutesUntil is not null %} · {{ fmt.countdown(item.minutesUntil) }}{% endif %}</span>{% endif %}
+                                <span class="today-row__where">{{ [cover.roomName, cover.groupName]|filter(v => v)|join(' · ') ?: 'Sin especificar' }}</span>
+                                <span class="today-row__teacher">{% if item.done %}Cubriste{% else %}Cubres{% endif %} a {% if isNext %}<strong>{{ cover.absentTeacher.fullName }}</strong>{% else %}{{ cover.absentTeacher.fullName }}{% endif %}</span>
+                            </span>
+                            {% if cover.notCovered %}<span class="badge badge--danger" data-tone="danger">Incidencia</span>
+                            {% elseif item.done %}<span class="today-row__done mono">✓ Hecha</span>
+                            {% elseif cover.taskNote %}<span class="badge badge--warning" data-tone="warning">Tiene tarea</span>
+                            {% else %}<span class="today-row__notask mono">Sin tarea</span>{% endif %}
+                            {% if item.done %}<span></span>{% else %}<span class="today-row__go" aria-hidden="true">›</span>{% endif %}
+                        </a>
                     {% endfor %}
-                </ul>
-            </section>
-        {% endfor %}
+                </div>
+
+                {# Próximas dentro de la columna de "Hoy": mismo ancho que las filas del día. #}
+                {{ include('guardia/_upcoming.html.twig') }}
+            </div>
+
+            <aside class="today-guardias__aside">
+                {% if nextItem %}
+                    {% set cover = nextItem.cover %}
+                    <a class="hero-guardia{{ cover.notCovered ? ' is-incident' }}" href="{{ path('guardia_cover_show', { id: cover.id }) }}">
+                        <span class="hero-guardia__eyebrow"><span class="pulse-dot" aria-hidden="true"></span>Tu próxima guardia</span>
+                        <span class="hero-guardia__timerow">
+                            <span class="hero-guardia__time mono">{% if nextItem.startsAt %}{{ nextItem.startsAt|date('H:i', false) }}{% else %}{{ cover.slotIndex + 1 }}ª{% endif %}</span>
+                            {% if nextItem.minutesUntil is not null %}<span class="hero-guardia__countdown mono">{{ fmt.countdown(nextItem.minutesUntil) }}</span>{% endif %}
+                        </span>
+                        {% if nextItem.endsAt %}<span class="hero-guardia__ends mono">termina {{ nextItem.endsAt|date('H:i', false) }}</span>{% endif %}
+                        <span class="hero-guardia__sep" aria-hidden="true"></span>
+                        <span class="hero-guardia__place">{{ [cover.roomName, cover.groupName]|filter(v => v)|join(' · ') ?: 'Sin especificar' }}</span>
+                        <span class="hero-guardia__teacher">Cubres a <strong>{{ cover.absentTeacher.fullName }}</strong></span>
+                        {% if cover.notCovered %}<span class="hero-guardia__badge hero-guardia__badge--danger">Incidencia</span>
+                        {% elseif cover.taskNote %}<span class="hero-guardia__badge hero-guardia__badge--task">Tiene tarea</span>{% endif %}
+                        <span class="hero-guardia__cta">Ver detalle y tarea del grupo →</span>
+                    </a>
+                {% endif %}
+
+                <div class="today-summary">
+                    <div class="today-summary__title mono">Resumen de hoy</div>
+                    <div class="today-summary__row"><span>Guardias asignadas</span><span class="mono">{{ today.counts.assigned }}</span></div>
+                    <div class="today-summary__row"><span>Pendientes</span><span class="mono today-summary__pending">{{ today.counts.pending }}</span></div>
+                    <div class="today-summary__row"><span>Con tarea</span><span class="mono today-summary__task">{{ today.counts.withTask }}</span></div>
+                </div>
+            </aside>
+        </div>
     {% endif %}
 {% endblock %}

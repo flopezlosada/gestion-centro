@@ -102,13 +102,66 @@ final class GuardiaController extends AbstractController
     public function mine(#[CurrentUser] User $user, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
     {
         $today = new \DateTimeImmutable('today');
+        $now = new \DateTimeImmutable('now');
         $year = $years->findBySchoolYear(SchoolYear::current($today));
+        $slotTimes = $this->slotTimes($schedule, $year);
 
         return $this->render('guardia/mine.html.twig', [
-            'todayCovers' => $covers->findAssignedTo($user, $today),
+            'today' => $this->buildTodayView($covers->findAssignedTo($user, $today), $slotTimes, $now),
             'upcoming' => $this->groupByDay($covers->findUpcomingAssignedTo($user, $today->modify('+1 day')), $today),
-            'slotTimes' => $this->slotTimes($schedule, $year),
+            'slotTimes' => $slotTimes,
         ]);
+    }
+
+    /**
+     * Turns a teacher's covers for today into the "mis guardias de hoy" view model the redesign needs:
+     * each cover flagged done/pending against the current time, the countdown to the next one still to
+     * cover (the screen's protagonist) and the day's tallies for the summary panel.
+     *
+     * A cover counts as done only when its period end time is known AND already past; with no imported
+     * timetable (unknown times) nothing can be called done, so every cover stays pending.
+     *
+     * @param GuardiaCover[]                                                   $covers    today's covers, earliest period first
+     * @param array<int, array{startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}> $slotTimes times by slot index
+     * @param \DateTimeImmutable                                               $now       the current instant
+     *
+     * @return array{items: list<array{cover: GuardiaCover, done: bool, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable, minutesUntil: ?int}>, next: ?int, counts: array{assigned: int, pending: int, withTask: int}}
+     */
+    private function buildTodayView(array $covers, array $slotTimes, \DateTimeImmutable $now): array
+    {
+        $items = [];
+        $next = null;
+        $pending = 0;
+        $withTask = 0;
+
+        foreach ($covers as $i => $cover) {
+            $times = $slotTimes[$cover->getSlotIndex()] ?? null;
+            $startsAt = $times['startsAt'] ?? null;
+            $endsAt = $times['endsAt'] ?? null;
+            $done = null !== $endsAt && $endsAt < $now;
+
+            if (!$done) {
+                ++$pending;
+                $next ??= $i; // the first cover not yet done is the protagonist ("tu próxima guardia")
+            }
+            if (null !== $cover->getTaskNote()) {
+                ++$withTask;
+            }
+
+            $items[] = [
+                'cover' => $cover,
+                'done' => $done,
+                'startsAt' => $startsAt,
+                'endsAt' => $endsAt,
+                'minutesUntil' => null !== $startsAt && $startsAt > $now ? intdiv($startsAt->getTimestamp() - $now->getTimestamp(), 60) : null,
+            ];
+        }
+
+        return [
+            'items' => $items,
+            'next' => $next,
+            'counts' => ['assigned' => \count($covers), 'pending' => $pending, 'withTask' => $withTask],
+        ];
     }
 
     /**
@@ -709,6 +762,8 @@ final class GuardiaController extends AbstractController
         $previous = $cover->getAssignedGuardia();
         $cover->setAssignedGuardia('' !== (string) $teacherId ? $users->find((int) $teacherId) : null);
         $cover->setNotCovered($request->request->getBoolean('not_covered'));
+        // setTaskNote normaliza cadena vacía a null, así que "borrar la tarea" también queda soportado.
+        $cover->setTaskNote((string) $request->request->get('task_note'));
 
         // The reason rides along into the audit entry this flush produces (see EntityAuditSubscriber).
         $audit->setReason($reason);
