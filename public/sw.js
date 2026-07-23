@@ -24,7 +24,12 @@ self.addEventListener('push', function (event) {
         data: { url: data.url || '/avisos' },
         // Un tag por URL: si llega otro aviso del mismo destino, se reemplaza en vez de apilarse.
         tag: data.url || '/avisos',
-        renotify: true
+        renotify: true,
+        // Se queda en pantalla hasta que el profesor la atienda (un aviso de guardia no debe pasar
+        // desapercibido), en vez de auto-descartarse a los pocos segundos.
+        requireInteraction: true,
+        // Vibración en móvil para que se note aunque esté en el bolsillo.
+        vibrate: [200, 100, 200]
     };
 
     event.waitUntil(self.registration.showNotification(title, options));
