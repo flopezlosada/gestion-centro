@@ -35,6 +35,7 @@ final class PushTestCommand extends Command
     protected function configure(): void
     {
         $this->addArgument('email', InputArgument::REQUIRED, 'Email del usuario al que enviar el push de prueba');
+        $this->addArgument('mensaje', InputArgument::OPTIONAL, 'Texto del aviso (por defecto "Aviso de prueba"); útil para distinguir un envío nuevo de los que llegaban en cola');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -56,8 +57,12 @@ final class PushTestCommand extends Command
             return Command::FAILURE;
         }
 
-        $io->text(sprintf('Enviando push de prueba a %s (%d dispositivo(s))…', $email, \count($subscriptions)));
-        $this->webPush->sendToUser($user, 'Aviso de prueba', 'Si ves esto, las notificaciones push funcionan.', '/avisos');
+        $title = trim((string) $input->getArgument('mensaje'));
+        if ('' === $title) {
+            $title = 'Aviso de prueba';
+        }
+        $io->text(sprintf('Enviando push "%s" a %s (%d dispositivo(s))…', $title, $email, \count($subscriptions)));
+        $this->webPush->sendToUser($user, $title, 'Notificación de prueba del sistema de guardias.', '/avisos');
 
         $io->success('Push enviado. Si no llega, revisa el log (var/log) por si el servicio de push o la firma fallaron.');
 
