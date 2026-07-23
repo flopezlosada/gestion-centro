@@ -80,7 +80,7 @@ final class PushTestCommand extends Command
 
         $webPush = new WebPush(
             ['VAPID' => ['subject' => $this->vapidSubject, 'publicKey' => $this->vapidPublicKey, 'privateKey' => $this->vapidPrivateKey]],
-            ['urgency' => 'high', 'TTL' => 43200],
+            ['urgency' => 'high', 'TTL' => 259200],
             10,
             ['allow_redirects' => false],
         );
