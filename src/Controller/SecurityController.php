@@ -29,6 +29,14 @@ class SecurityController extends AbstractController
      */
     private readonly bool $googleSsoEnabled;
 
+    /**
+     * The magic-link e-mail form is only offered when SSO is NOT configured. In production SSO is
+     * the sole entry point (so staff don't mistakenly type their e-mail instead of using SSO);
+     * in dev, where SSO is off, the magic link remains the way in. This coupling makes the
+     * "both entry points visible in production" state unrepresentable rather than config-dependent.
+     */
+    private readonly bool $magicLinkEnabled;
+
     public function __construct(
         #[Autowire('%env(GOOGLE_CLIENT_ID)%')]
         string $googleClientId,
@@ -38,6 +46,7 @@ class SecurityController extends AbstractController
         private readonly string $mailerFrom,
     ) {
         $this->googleSsoEnabled = '' !== $googleClientId;
+        $this->magicLinkEnabled = !$this->googleSsoEnabled;
     }
 
     /**
@@ -57,6 +66,12 @@ class SecurityController extends AbstractController
                 'google_sso_enabled' => $this->googleSsoEnabled,
                 'error' => $error?->getMessageKey(),
             ]);
+        }
+
+        // When SSO is the sole entry point the e-mail form is not rendered; reject any stray POST
+        // (e.g. a stale/bookmarked form or a script) instead of quietly sending a link.
+        if (!$this->magicLinkEnabled) {
+            return $this->redirectToRoute('login');
         }
 
         // Throttle per IP to prevent abuse / mail-bombing a user with link requests.

@@ -15,21 +15,19 @@
                 <p class="form-error">{{ error }}</p>
             {% endif %}
 
-            <form id="login-form" method="post" action="{{ path('login') }}" novalidate>
-                <div class="form-row">
-                    <label for="email">Correo electrónico</label>
-                    <input type="email" id="email" name="email" required autofocus inputmode="email" autocomplete="email">
-                </div>
-                <button class="btn" type="submit">Enviar enlace de acceso</button>
-            </form>
-
-            <hr>
-
+            {# Exactly one entry point is ever shown: SSO when it is configured (production),
+               otherwise the magic-link e-mail form (dev). They are mutually exclusive by design
+               so staff can't confuse one for the other. #}
             {% if google_sso_enabled %}
-                <a class="btn secondary" href="{{ path('connect_google') }}">Entrar con cuenta institucional</a>
+                <a class="btn" href="{{ path('connect_google') }}">Entrar con cuenta institucional</a>
             {% else %}
-                <button class="btn secondary" type="button" disabled title="Disponible cuando se configuren las credenciales de acceso">Entrar con cuenta institucional</button>
-                <p class="help">El acceso con cuenta institucional estará disponible próximamente.</p>
+                <form id="login-form" method="post" action="{{ path('login') }}" novalidate>
+                    <div class="form-row">
+                        <label for="email">Correo electrónico</label>
+                        <input type="email" id="email" name="email" required autofocus inputmode="email" autocomplete="email">
+                    </div>
+                    <button class="btn" type="submit">Enviar enlace de acceso</button>
+                </form>
             {% endif %}
 
             <p class="auth-foot">Gestión del día a día del centro</p>
