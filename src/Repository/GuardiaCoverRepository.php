@@ -126,21 +126,25 @@ class GuardiaCoverRepository extends ServiceEntityRepository
      * Queried from {@see User} as root: DQL forbids selecting a *joined* entity alias alongside scalars,
      * so the teacher must be the root and the covers are joined onto it.
      *
+     * @param \DateTimeImmutable|null $from lower date bound (inclusive), or null for the whole history
+     * @param \DateTimeImmutable|null $to   upper date bound (inclusive), or null
+     *
      * @return list<array{teacher: User, total: int}> the ranking, busiest first
      */
-    public function coveredTotalsByTeacher(): array
+    public function coveredTotalsByTeacher(?\DateTimeImmutable $from = null, ?\DateTimeImmutable $to = null): array
     {
-        /** @var list<array{0: User, total: int}> $rows */
-        $rows = $this->getEntityManager()->createQueryBuilder()
+        $qb = $this->getEntityManager()->createQueryBuilder()
             ->select('g', 'COUNT(c.id) AS total')
             ->from(User::class, 'g')
             ->join(GuardiaCover::class, 'c', 'WITH', 'c.assignedGuardia = g')
             ->andWhere('c.notCovered = false')
             ->groupBy('g.id')
             ->orderBy('total', 'DESC')
-            ->addOrderBy('g.fullName', 'ASC')
-            ->getQuery()
-            ->getResult();
+            ->addOrderBy('g.fullName', 'ASC');
+        $this->applyWindow($qb, $from, $to);
+
+        /** @var list<array{0: User, total: int}> $rows */
+        $rows = $qb->getQuery()->getResult();
 
         return array_map(
             static fn (array $r): array => ['teacher' => $r[0], 'total' => (int) $r['total']],
@@ -172,20 +176,24 @@ class GuardiaCoverRepository extends ServiceEntityRepository
      * covered (assigned, no incident), how many ended as an incident (nobody covered), and how many are
      * still unassigned. The health check of the guardia service in one row.
      *
+     * @param \DateTimeImmutable|null $from lower date bound (inclusive), or null for the whole history
+     * @param \DateTimeImmutable|null $to   upper date bound (inclusive), or null
+     *
      * @return array{absences: int, covered: int, incidents: int, unassigned: int} the counts
      */
-    public function coverageSummary(): array
+    public function coverageSummary(?\DateTimeImmutable $from = null, ?\DateTimeImmutable $to = null): array
     {
-        /** @var array{absences: int|string, covered: int|string, incidents: int|string, unassigned: int|string} $row */
-        $row = $this->createQueryBuilder('c')
+        $qb = $this->createQueryBuilder('c')
             ->select(
                 'COUNT(c.id) AS absences',
                 'SUM(CASE WHEN c.assignedGuardia IS NOT NULL AND c.notCovered = false THEN 1 ELSE 0 END) AS covered',
                 'SUM(CASE WHEN c.notCovered = true THEN 1 ELSE 0 END) AS incidents',
                 'SUM(CASE WHEN c.assignedGuardia IS NULL AND c.notCovered = false THEN 1 ELSE 0 END) AS unassigned',
-            )
-            ->getQuery()
-            ->getSingleResult();
+            );
+        $this->applyWindow($qb, $from, $to);
+
+        /** @var array{absences: int|string, covered: int|string, incidents: int|string, unassigned: int|string} $row */
+        $row = $qb->getQuery()->getSingleResult();
 
         return [
             'absences' => (int) $row['absences'],
@@ -224,23 +232,26 @@ class GuardiaCoverRepository extends ServiceEntityRepository
      * leadership (who is away, not who covers). Queried from {@see User} as root, like
      * {@see coveredTotalsByTeacher()} (DQL cannot select a joined entity alongside scalars).
      *
-     * @param int $limit how many to return
+     * @param int                     $limit how many to return
+     * @param \DateTimeImmutable|null  $from  lower date bound (inclusive), or null for the whole history
+     * @param \DateTimeImmutable|null  $to    upper date bound (inclusive), or null
      *
      * @return list<array{teacher: User, total: int}> the ranking, most absences first
      */
-    public function absencesByTeacher(int $limit = 10): array
+    public function absencesByTeacher(int $limit = 10, ?\DateTimeImmutable $from = null, ?\DateTimeImmutable $to = null): array
     {
-        /** @var list<array{0: User, total: int}> $rows */
-        $rows = $this->getEntityManager()->createQueryBuilder()
+        $qb = $this->getEntityManager()->createQueryBuilder()
             ->select('g', 'COUNT(c.id) AS total')
             ->from(User::class, 'g')
             ->join(GuardiaCover::class, 'c', 'WITH', 'c.absentTeacher = g')
             ->groupBy('g.id')
             ->orderBy('total', 'DESC')
             ->addOrderBy('g.fullName', 'ASC')
-            ->setMaxResults($limit)
-            ->getQuery()
-            ->getResult();
+            ->setMaxResults($limit);
+        $this->applyWindow($qb, $from, $to);
+
+        /** @var list<array{0: User, total: int}> $rows */
+        $rows = $qb->getQuery()->getResult();
 
         return array_map(
             static fn (array $r): array => ['teacher' => $r[0], 'total' => (int) $r['total']],
@@ -313,15 +324,19 @@ class GuardiaCoverRepository extends ServiceEntityRepository
      * heatmap aggregations need. Aggregating in PHP (small volume: hundreds of covers per course) keeps
      * the queries portable and avoids per-driver date functions.
      *
+     * @param \DateTimeImmutable|null $from lower date bound (inclusive), or null for the whole history
+     * @param \DateTimeImmutable|null $to   upper date bound (inclusive), or null
+     *
      * @return list<array{date: \DateTimeImmutable, slot: int, assigned: bool, incident: bool}> the rows
      */
-    public function analyticsRows(): array
+    public function analyticsRows(?\DateTimeImmutable $from = null, ?\DateTimeImmutable $to = null): array
     {
+        $qb = $this->createQueryBuilder('c')
+            ->select('c.date AS date', 'c.slotIndex AS slot', 'IDENTITY(c.assignedGuardia) AS assigned', 'c.notCovered AS incident');
+        $this->applyWindow($qb, $from, $to);
+
         /** @var list<array{date: \DateTimeImmutable, slot: int, assigned: int|null, incident: bool}> $rows */
-        $rows = $this->createQueryBuilder('c')
-            ->select('c.date AS date', 'c.slotIndex AS slot', 'IDENTITY(c.assignedGuardia) AS assigned', 'c.notCovered AS incident')
-            ->getQuery()
-            ->getResult();
+        $rows = $qb->getQuery()->getResult();
 
         return array_map(
             static fn (array $r): array => [
@@ -338,25 +353,47 @@ class GuardiaCoverRepository extends ServiceEntityRepository
      * How many absences each department generated this course (by the absent teacher's department),
      * busiest first. Teachers with no department fall under "Sin departamento".
      *
+     * @param \DateTimeImmutable|null $from lower date bound (inclusive), or null for the whole history
+     * @param \DateTimeImmutable|null $to   upper date bound (inclusive), or null
+     *
      * @return list<array{name: string, total: int}> the ranking, most absences first
      */
-    public function absencesByDepartment(): array
+    public function absencesByDepartment(?\DateTimeImmutable $from = null, ?\DateTimeImmutable $to = null): array
     {
-        /** @var list<array{name: string|null, total: int}> $rows */
-        $rows = $this->createQueryBuilder('c')
+        $qb = $this->createQueryBuilder('c')
             ->select('d.name AS name', 'COUNT(c.id) AS total')
             ->join('c.absentTeacher', 't')
             ->leftJoin('t.unit', 'd')
             ->groupBy('d.id')
             ->orderBy('total', 'DESC')
-            ->addOrderBy('d.name', 'ASC')
-            ->getQuery()
-            ->getResult();
+            ->addOrderBy('d.name', 'ASC');
+        $this->applyWindow($qb, $from, $to);
+
+        /** @var list<array{name: string|null, total: int}> $rows */
+        $rows = $qb->getQuery()->getResult();
 
         return array_map(
             static fn (array $r): array => ['name' => $r['name'] ?? 'Sin departamento', 'total' => (int) $r['total']],
             $rows,
         );
+    }
+
+    /**
+     * Constrains a query to an inclusive date window over the {@code c.date} column, skipping any bound
+     * that is null. The alias {@code c} must be the cover in the given builder (root or joined).
+     *
+     * @param \Doctrine\ORM\QueryBuilder $qb   the builder to constrain
+     * @param \DateTimeImmutable|null    $from lower bound (inclusive), or null
+     * @param \DateTimeImmutable|null    $to   upper bound (inclusive), or null
+     */
+    private function applyWindow(\Doctrine\ORM\QueryBuilder $qb, ?\DateTimeImmutable $from, ?\DateTimeImmutable $to): void
+    {
+        if (null !== $from) {
+            $qb->andWhere('c.date >= :winFrom')->setParameter('winFrom', $from, 'date_immutable');
+        }
+        if (null !== $to) {
+            $qb->andWhere('c.date <= :winTo')->setParameter('winTo', $to, 'date_immutable');
+        }
     }
 
     /**
