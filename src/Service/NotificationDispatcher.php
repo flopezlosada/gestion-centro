@@ -129,6 +129,12 @@ final class NotificationDispatcher
             return $this->urlGenerator->generate('task_show', ['id' => $task->getId()]);
         }
 
+        // A guardia notice (assigned/reassigned) opens the teacher's own "mis guardias", where they see
+        // the guardia they were just assigned; anything else falls back to the inbox.
+        if (str_starts_with($notification->getKind(), 'guardia.')) {
+            return $this->urlGenerator->generate('guardia_mine');
+        }
+
         return $this->urlGenerator->generate('notification_index');
     }
 }
