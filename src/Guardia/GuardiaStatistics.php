@@ -16,6 +16,19 @@ final class GuardiaStatistics
     private const MONTHS = [1 => 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
     /**
+     * The Spanish three-letter abbreviation of a month number (1–12), the single source of truth for
+     * month names shared with callers that label their own axes (e.g. the comparison evolution).
+     *
+     * @param int $month the month number
+     *
+     * @return string the abbreviation (e.g. 9 → "sep")
+     */
+    public function monthAbbrev(int $month): string
+    {
+        return self::MONTHS[$month];
+    }
+
+    /**
      * Fairness of the guardia split across the teachers who did at least one. Reports the classic
      * descriptive measures plus a Gini coefficient (0 = everyone did the same, 1 = one person did all)
      * turned into a plain-language label, so a reader sees at a glance whether the rota is balanced.

@@ -271,7 +271,8 @@
                             </select>
                         </div>
                         <div id="chart-evolution" class="gchart"></div>
-                        <div id="evolution-table"></div>
+                        {# Tabla del dato por defecto renderizada en servidor (fallback sin JS); el selector la reescribe. #}
+                        <div id="evolution-table">{{ s.data_table(evolution.table) }}</div>
                     {% else %}
                         <p class="muted">La evolución necesita al menos dos meses con datos en los periodos elegidos.</p>
                     {% endif %}
