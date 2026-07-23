@@ -152,20 +152,55 @@ final class GuardiaController extends AbstractController
      * needed, absences by department and the busiest teachers on both sides. Read access is enough.
      */
     #[Route('/estadisticas', name: 'guardia_stats', methods: ['GET'])]
-    public function stats(GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years, GuardiaStatistics $statistics): Response
+    public function stats(Request $request, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years, GuardiaStatistics $statistics): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
-        $ranking = $covers->coveredTotalsByTeacher();
-        $summary = $covers->coverageSummary();
-        $coverageRate = $summary['absences'] > 0 ? (int) round($summary['covered'] * 100 / $summary['absences']) : 0;
-        $rows = $covers->analyticsRows();
+        $courses = $years->findAllOrdered();
+        $curso = (string) ($request->query->get('curso') ?: SchoolYear::current(new \DateTimeImmutable('today')));
+        $term = (int) $request->query->get('trimestre'); // 0 = whole course
+        $selectedYear = $years->findBySchoolYear($curso);
 
-        // Period labels from the current course's marco horario (a stat may span the course, but the
-        // period grid is stable within a year); fall back to the ordinal when a slot has no label.
-        $year = $years->findBySchoolYear(SchoolYear::current(new \DateTimeImmutable('today')));
+        // The window the whole dashboard is scoped to: a term of the course (needs its AcademicYear for
+        // the term dates) or, by default, the whole school-year span (Sep–Aug, catches out-of-term days).
+        if ($term >= 1 && $term <= 3 && $selectedYear instanceof AcademicYear) {
+            $from = $selectedYear->getTermStart($term);
+            $to = $selectedYear->getTermEnd($term);
+        } else {
+            $term = 0;
+            [$from, $to] = SchoolYear::bounds($curso);
+        }
+
+        $ranking = $covers->coveredTotalsByTeacher($from, $to);
+        $summary = $covers->coverageSummary($from, $to);
+        $coverageRate = $summary['absences'] > 0 ? (int) round($summary['covered'] * 100 / $summary['absences']) : 0;
+        $rows = $covers->analyticsRows($from, $to);
+
+        // Period labels from the selected course's marco horario; fall back to the ordinal otherwise.
+        $year = $selectedYear ?? $years->findBySchoolYear(SchoolYear::current(new \DateTimeImmutable('today')));
+
+        // Comparativa por trimestre (del curso elegido) — necesita el AcademicYear para las fechas.
+        $byTerm = [];
+        if ($selectedYear instanceof AcademicYear) {
+            foreach ([1, 2, 3] as $t) {
+                $byTerm[] = $this->windowKpis($covers, $statistics, sprintf('%dº trimestre', $t), $selectedYear->getTermStart($t), $selectedYear->getTermEnd($t));
+            }
+        }
+
+        // Comparativa entre cursos — los cursos definidos que tengan alguna ausencia.
+        $byCourse = [];
+        foreach ($courses as $ay) {
+            [$cFrom, $cTo] = SchoolYear::bounds($ay->getSchoolYear());
+            $kpi = $this->windowKpis($covers, $statistics, $ay->getSchoolYear(), $cFrom, $cTo);
+            if ($kpi['absences'] > 0) {
+                $byCourse[] = $kpi;
+            }
+        }
 
         return $this->render('guardia/stats.html.twig', [
+            'courses' => $courses,
+            'curso' => $curso,
+            'term' => $term,
             'ranking' => $ranking,
             'max' => $ranking[0]['total'] ?? 0,
             'equity' => $statistics->equity(array_map(static fn (array $r): int => $r['total'], $ranking)),
@@ -173,11 +208,35 @@ final class GuardiaController extends AbstractController
             'coverageRate' => $coverageRate,
             'monthly' => $statistics->byMonth($rows),
             'heatmap' => $statistics->heatmap($rows),
-            'absencesBySlot' => $covers->absencesBySlot(),
             'slotTimes' => $this->slotTimes($schedule, $year),
-            'absentRanking' => $covers->absencesByTeacher(10),
-            'byDepartment' => $covers->absencesByDepartment(),
+            'absentRanking' => $covers->absencesByTeacher(10, $from, $to),
+            'byDepartment' => $covers->absencesByDepartment($from, $to),
+            'byTerm' => $byTerm,
+            'byCourse' => $byCourse,
         ]);
+    }
+
+    /**
+     * The comparable KPI set for one date window (a term, a whole course): absences, coverage and the
+     * fairness of the split, so several periods can be laid side by side.
+     *
+     * @return array{label: string, absences: int, covered: int, incidents: int, coverageRate: int, teachers: int, mean: float, balance: string}
+     */
+    private function windowKpis(GuardiaCoverRepository $covers, GuardiaStatistics $statistics, string $label, \DateTimeImmutable $from, \DateTimeImmutable $to): array
+    {
+        $summary = $covers->coverageSummary($from, $to);
+        $equity = $statistics->equity(array_map(static fn (array $r): int => $r['total'], $covers->coveredTotalsByTeacher($from, $to)));
+
+        return [
+            'label' => $label,
+            'absences' => $summary['absences'],
+            'covered' => $summary['covered'],
+            'incidents' => $summary['incidents'],
+            'coverageRate' => $summary['absences'] > 0 ? (int) round($summary['covered'] * 100 / $summary['absences']) : 0,
+            'teachers' => $equity['count'],
+            'mean' => $equity['mean'],
+            'balance' => $equity['label'],
+        ];
     }
 
     /**
