@@ -36,7 +36,7 @@
                 </thead>
                 <tbody>
                     {% for cover in covers %}
-                        {% set times = slotTimes[cover.slotIndex] %}
+                        {% set times = slotTimes[cover.slotIndex] ?? null %}
                         <tr class="{{ cover.notCovered ? 'is-not-covered' }}">
                             <td class="mono">{% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}—{% endif %}</td>
                             <td>{{ cover.groupName ?? '—' }}</td>
