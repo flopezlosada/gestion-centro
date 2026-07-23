@@ -1872,43 +1872,127 @@ input[type="email"], input[type="text"], select, textarea {
 .page-head__actions { display: flex; gap: 8px; flex-shrink: 0; }
 .section-head { margin-top: 20px; }
 
-/* HOY: la tarjeta protagonista, con un filo de acento que la distingue del resto. */
-.card--today { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+/* Cabecera de la pantalla con filete inferior + eyebrow de fecha (solo móvil). */
+.page-head--ruled { border-bottom: 1px solid var(--border); padding-bottom: 24px; margin-bottom: 24px; }
+.page-eyebrow { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 4px; }
 
-/* Guardias de hoy en cajitas horizontales, con la hora grande y centrada. */
-.today-guardias { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
-.today-box { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 2px; padding: 18px 14px; text-decoration: none; color: var(--text); background: var(--accent-weak); border: 1px solid var(--accent); border-radius: var(--radius); }
-.today-box:hover, .today-box:focus-visible { border-color: var(--accent-hover); background: color-mix(in srgb, var(--accent-weak) 70%, var(--surface)); }
-.today-box__time { font-size: 30px; font-weight: 700; color: var(--accent); line-height: 1; }
-.today-box__range { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
-.today-box__group { font-size: 16px; font-weight: 600; }
-.today-box__room { font-size: 13px; color: var(--text-muted); }
-.today-box__meta { font-size: 13px; color: var(--text-muted); margin-top: 6px; }
-.today-box .badge { margin-top: 10px; }
-.today-box--incident { border-color: var(--danger); background: var(--danger-weak); }
-.today-box--incident .today-box__time { color: var(--danger); }
+/* Utilidades de visibilidad por ancho para servir móvil y escritorio con un solo marcado. */
+.g-narrow { display: none; }
 
-/* "Mis guardias": lista compacta de próximas guardias por día. */
-.guardia-day { margin-bottom: 16px; }
-.guardia-day--today { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
-.guardia-day__head { display: flex; align-items: baseline; gap: 10px; padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
-.guardia-day__weekday { font-weight: 600; color: var(--text); }
-.guardia-day__date { color: var(--text-muted); font-size: 13px; }
-.guardia-day__count { margin-left: auto; color: var(--text-muted); font-size: 13px; }
+/* Cabecera de HOY: título, fecha y chip con lo que queda pendiente. */
+.today__head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+.today__title { margin: 0; font-size: 22px; }
+.today__date { color: var(--text-muted); font-size: 14px; text-transform: capitalize; }
+.count-chip { margin-left: auto; font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-weak); border: 1px solid var(--accent); border-radius: 999px; padding: 3px 11px; white-space: nowrap; }
 
-.guardia-list { list-style: none; margin: 0; padding: 0; }
-.guardia-list > li + li { border-top: 1px solid var(--border); }
-.guardia-item { display: flex; align-items: center; gap: 16px; padding: 12px 8px; text-decoration: none; color: var(--text); border-radius: var(--radius-sm); }
-.guardia-item:hover, .guardia-item:focus-visible { background: var(--accent-weak); }
-.guardia-item__time { flex: 0 0 56px; display: flex; flex-direction: column; line-height: 1.2; }
-.guardia-item__time strong { font-size: 16px; color: var(--accent); }
-.guardia-item__end { font-size: 12px; color: var(--text-muted); }
-.guardia-item__body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.guardia-item__group { font-weight: 500; }
-.guardia-item__meta { font-size: 13px; color: var(--text-muted); }
-.guardia-item__task { color: var(--warning-text); }
-.guardia-item__go { flex: 0 0 auto; color: var(--text-faint); font-size: 22px; line-height: 1; }
-.guardia-item--incident .guardia-item__time strong { color: var(--danger); }
+/* Rejilla de dos columnas: el resto del día a la izquierda; la próxima guardia (protagonista)
+   y el resumen a la derecha, fijos al hacer scroll. En móvil se apila y el protagonista sube. */
+.today-guardias { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 28px; align-items: start; margin-bottom: 18px; }
+.today-guardias__aside { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 20px; }
+
+/* Filas del día: cuándo → (eyebrow) dónde/a quién → estado → ir. */
+.today-list { display: flex; flex-direction: column; gap: 10px; }
+.today-row { display: grid; grid-template-columns: 66px minmax(0, 1fr) auto 18px; align-items: center; gap: 16px; padding: 14px 18px; text-decoration: none; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 18px; }
+.today-row:hover, .today-row:focus-visible { border-color: var(--border-strong); }
+.today-row__slot { display: flex; flex-direction: column; line-height: 1.15; }
+.today-row__slot strong { font-size: 17px; font-weight: 700; color: var(--accent); }
+.today-row__slot span { font-size: 12px; color: var(--text-faint); }
+.today-row__place { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.today-row__eyebrow { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+.today-row__where { font-family: var(--font-display); font-size: 18px; }
+.today-row__teacher { font-size: 13px; color: var(--text-muted); }
+.today-row__teacher strong { color: var(--text); font-weight: 600; }
+.today-row__done { color: var(--success); font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.today-row__notask { color: var(--text-faint); font-family: var(--font-mono); font-size: 11px; }
+.today-row__go { color: var(--text-faint); font-size: 22px; line-height: 1; text-align: center; }
+.today-row.is-done { opacity: .7; }
+.today-row.is-done .today-row__slot strong { color: var(--success); text-decoration: line-through; }
+.today-row.is-incident { border-color: var(--danger); background: var(--danger-weak); }
+.today-row.is-incident .today-row__slot strong { color: var(--danger); }
+/* Fila destacada = tu próxima guardia: borde de acento + barra izquierda + relieve. */
+.today-row.is-next { border: 1.5px solid var(--accent); box-shadow: inset 4px 0 0 var(--accent), var(--shadow-card); padding: 16px 16px 16px 18px; }
+.today-row.is-next:hover, .today-row.is-next:focus-visible { border-color: var(--accent); }
+
+/* Protagonista: tu próxima guardia, en tarjeta de acento. */
+.hero-guardia { display: flex; flex-direction: column; background: var(--accent); color: var(--on-accent); border-radius: 22px; padding: 22px; text-decoration: none; box-shadow: var(--shadow-card); }
+.hero-guardia:hover { background: var(--accent-hover); }
+.hero-guardia__eyebrow { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: color-mix(in srgb, var(--on-accent) 75%, var(--accent)); }
+.pulse-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--on-accent); animation: pulse-dot 2.4s ease-in-out infinite; }
+@keyframes pulse-dot { 0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--on-accent) 22%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--on-accent) 8%, transparent); } }
+.hero-guardia__timerow { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 12px; }
+.hero-guardia__time { font-size: 32px; font-weight: 600; }
+.hero-guardia__countdown { font-size: 12px; color: color-mix(in srgb, var(--on-accent) 75%, var(--accent)); }
+.hero-guardia__ends { font-size: 12px; color: color-mix(in srgb, var(--on-accent) 65%, var(--accent)); margin-top: 2px; }
+.hero-guardia__sep { height: 1px; background: color-mix(in srgb, var(--on-accent) 16%, transparent); margin: 16px 0; }
+.hero-guardia__place { font-family: var(--font-display); font-size: 22px; font-weight: 500; }
+.hero-guardia__teacher { font-size: 14px; color: color-mix(in srgb, var(--on-accent) 80%, var(--accent)); margin-top: 6px; }
+.hero-guardia__teacher strong { color: var(--on-accent); font-weight: 600; }
+.hero-guardia__badge { align-self: flex-start; font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; padding: 5px 10px; border-radius: 999px; margin-top: 14px; }
+.hero-guardia__badge--task { background: var(--warning-weak); color: var(--warning-text); }
+.hero-guardia__badge--danger { background: var(--danger-weak); color: var(--danger-text); }
+.hero-guardia__cta { margin-top: 18px; text-align: center; background: var(--on-accent); color: var(--accent); border-radius: 14px; padding: 13px; font: 600 14px var(--font-body); }
+.hero-guardia.is-incident, .hero-guardia.is-incident:hover { background: var(--danger); }
+.hero-guardia.is-incident .hero-guardia__cta { color: var(--danger); }
+
+/* Resumen del día. */
+.today-summary { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 6px 20px; }
+.today-summary__title { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint); padding: 14px 0 6px; }
+.today-summary__row { display: flex; align-items: center; justify-content: space-between; padding: 11px 0; font-size: 14px; color: var(--text-muted); }
+.today-summary__row + .today-summary__row { border-top: 1px solid var(--border); }
+.today-summary__row .mono { font-size: 16px; font-weight: 600; color: var(--text); }
+.today-summary__pending { color: var(--accent) !important; }
+.today-summary__task { color: var(--warning-text) !important; }
+
+/* PRÓXIMAS: deliberadamente en segundo plano; no debe competir con "Hoy". */
+.section-head h2 { color: var(--text-muted); font-size: 16px; }
+.upcoming { padding: 0; overflow: hidden; border-radius: 18px; }
+.upcoming__day { display: flex; align-items: center; gap: 8px; padding: 11px 18px; background: var(--surface-sunken); border-bottom: 1px solid var(--border); font-weight: 600; font-size: 13px; }
+.upcoming__day:not(:first-child) { border-top: 1px solid var(--border); }
+.upcoming__date { color: var(--text-muted); font-weight: 500; }
+.upcoming__count { margin-left: auto; color: var(--text-faint); font-size: 12px; font-weight: 400; }
+.upcoming__row { display: grid; grid-template-columns: 66px minmax(0, 1fr) auto 18px; align-items: center; gap: 16px; padding: 13px 18px; text-decoration: none; color: var(--text); }
+.upcoming__row + .upcoming__row { border-top: 1px solid var(--border); }
+.upcoming__row:hover, .upcoming__row:focus-visible { background: var(--surface-sunken); }
+.upcoming__time { display: flex; flex-direction: column; line-height: 1.15; }
+.upcoming__time strong { font-size: 15px; font-weight: 700; color: var(--accent); }
+.upcoming__time span { font-size: 11px; color: var(--text-faint); }
+.upcoming__body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.upcoming__where { font-weight: 500; }
+.upcoming__teacher { font-size: 12.5px; color: var(--text-muted); }
+.upcoming__go { color: var(--text-faint); font-size: 20px; line-height: 1; text-align: center; }
+
+/* Estado vacío positivo + la siguiente guardia prevista. */
+.guardia-empty { text-align: center; padding: 48px 24px; }
+.guardia-empty__badge { width: 96px; height: 96px; margin: 0 auto 20px; border-radius: 999px; background: var(--accent-weak); color: var(--accent); font-size: 42px; display: flex; align-items: center; justify-content: center; }
+.guardia-empty h2 { font-size: 24px; margin: 0 0 8px; }
+.guardia-empty > p { color: var(--text-muted); margin: 0 auto; max-width: 42ch; }
+.next-preview { text-align: left; max-width: 520px; margin: 28px auto 0; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 18px 20px; }
+.next-preview__title { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 12px; }
+.next-preview__row { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; align-items: center; gap: 16px; }
+.next-preview__time { display: flex; flex-direction: column; line-height: 1.15; }
+.next-preview__time strong { font-size: 17px; font-weight: 700; color: var(--accent); }
+.next-preview__time span { font-size: 11px; color: var(--text-faint); }
+.next-preview__place { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.next-preview__where { font-family: var(--font-display); font-size: 17px; }
+.next-preview__teacher { font-size: 13px; color: var(--text-muted); }
+.guardia-empty .btn { margin-top: 24px; }
+
+@media (max-width: 900px) {
+    /* Móvil: una columna, el protagonista arriba y el resumen fuera. La próxima guardia ya vive
+       en el protagonista, así que se quita de la lista, que pasa a ser solo "el resto de hoy". */
+    .g-wide { display: none; }
+    .g-narrow { display: revert; }
+    .today-guardias { grid-template-columns: 1fr; gap: 18px; }
+    .today-guardias__aside { position: static; order: -1; }
+    .today-guardias__main.is-only-next { display: none; }
+    .today-summary { display: none; }
+    .today-row.is-next { display: none; }
+    .today__title { font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--text-faint); }
+}
+@media (max-width: 560px) {
+    .today-row, .upcoming__row { grid-template-columns: 56px minmax(0, 1fr) auto; }
+    .today-row__go, .upcoming__go { display: none; }
+}
 
 tr.is-not-covered { background: var(--danger-weak); }
 .task-note { cursor: help; }

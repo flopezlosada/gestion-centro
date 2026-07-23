@@ -39,6 +39,12 @@
             </div>
 
             <div class="field">
+                <label for="task_note">Tarea para el grupo</label>
+                <textarea id="task_note" name="task_note" rows="3" maxlength="1000" placeholder="Ej.: página 84, ejercicios 1 a 5; lo dejan hecho en el cuaderno.">{{ cover.taskNote }}</textarea>
+                <p class="field-help">Lo que el profesor de guardia debe hacer trabajar al grupo. Déjalo vacío si no hay tarea.</p>
+            </div>
+
+            <div class="field">
                 <label class="choice"><input type="checkbox" name="not_covered" value="1" {{ cover.notCovered ? 'checked' }}> No se cubrió</label>
                 <p class="field-help">Márcalo si al final nadie cubrió la guardia (el sustituto no vino, o el profesor ausente sí apareció). No cuenta para el reparto equitativo.</p>
             </div>
