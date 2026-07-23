@@ -6,245 +6,228 @@
 
 {% macro period_label(slotTimes, slot) %}{% set t = slotTimes[slot] ?? null %}{% if t %}{{ t.startsAt|date('H:i', false) }}–{{ t.endsAt|date('H:i', false) }}{% else %}Tramo {{ slot + 1 }}{% endif %}{% endmacro %}
 
-{% block body %}
-    {% import _self as s %}
-    {% set weekdayNames = {1: 'Lun', 2: 'Mar', 3: 'Mié', 4: 'Jue', 5: 'Vie'} %}
-
-    {% set termNames = {0: 'Todo el curso', 1: '1er trimestre', 2: '2º trimestre', 3: '3er trimestre'} %}
-
-    <div class="page-head">
-        <div>
-            <h1>Estadísticas de guardias</h1>
-            <p class="lead">{{ curso }} · {{ termNames[term] }} — cobertura, equidad del reparto y patrones de ausencia.</p>
-        </div>
-        <div><a class="btn btn-secondary" href="{{ path('guardia_stats_csv') }}">Descargar CSV</a></div>
-    </div>
-
-    {# Filtro temporal: curso + trimestre. Reescala todo el panel de abajo. #}
-    <div class="card">
-        <form method="get" action="{{ path('guardia_stats') }}" class="inline-form inline-form--wrap">
-            <label>Curso
-                <select name="curso" onchange="this.form.submit()">
-                    {% for ay in courses %}
-                        <option value="{{ ay.schoolYear }}" {{ ay.schoolYear == curso ? 'selected' }}>{{ ay.schoolYear }}</option>
-                    {% else %}
-                        <option value="{{ curso }}" selected>{{ curso }}</option>
-                    {% endfor %}
-                </select>
-            </label>
-            <label>Trimestre
-                <select name="trimestre" onchange="this.form.submit()">
-                    {% for t, name in termNames %}
-                        <option value="{{ t }}" {{ t == term ? 'selected' }}>{{ name }}</option>
-                    {% endfor %}
-                </select>
-            </label>
-            <noscript><button type="submit" class="btn">Aplicar</button></noscript>
-        </form>
-    </div>
-
-    {% if summary.absences == 0 %}
-        <div class="card"><div class="empty-state">
-            <h2>Sin datos en este periodo</h2>
-            <p>No hay ausencias registradas en {{ curso }} · {{ termNames[term]|lower }}. Prueba otro curso o trimestre{% if byCourse is not empty %}, o mira la comparativa entre cursos más abajo{% endif %}.</p>
-        </div></div>
-    {% else %}
-        {# ============ A · Cobertura ============ #}
-        <div class="card progress-hero">
-            <div class="progress-hero__head">
-                <span class="progress-hero__pct">{{ coverageRate }}%</span>
-                <span class="progress-hero__caption">{{ summary.covered }} de {{ summary.absences }} ausencias cubiertas este curso</span>
-            </div>
-            <div class="progress"><span class="progress__bar" style="width: {{ coverageRate }}%"></span></div>
-        </div>
-
-        <div class="worklist-stats worklist-stats--4">
-            <div class="stat"><span class="stat-figure">{{ summary.absences }}</span><span class="stat-label">Ausencias</span></div>
-            <div class="stat stat--success{{ summary.covered == 0 ? ' is-zero' }}"><span class="stat-figure">{{ summary.covered }}</span><span class="stat-label">Cubiertas</span></div>
-            <div class="stat stat--danger{{ summary.incidents == 0 ? ' is-zero' }}"><span class="stat-figure">{{ summary.incidents }}</span><span class="stat-label">Incidencias</span></div>
-            <div class="stat stat--warning{{ summary.unassigned == 0 ? ' is-zero' }}"><span class="stat-figure">{{ summary.unassigned }}</span><span class="stat-label">Sin asignar</span></div>
-        </div>
-
-        {# ============ B · Equidad del reparto ============ #}
-        <div class="card">
-            <div class="page-head"><div>
-                <h2>Equidad del reparto</h2>
-                <p class="lead">Entre los {{ equity.count }} profesores que han hecho alguna guardia.</p>
-            </div></div>
-
-            <div class="worklist-stats worklist-stats--4">
-                <div class="stat"><span class="stat-figure">{{ equity.mean }}</span><span class="stat-label">Media</span></div>
-                <div class="stat"><span class="stat-figure">{{ equity.median }}</span><span class="stat-label">Mediana</span></div>
-                <div class="stat"><span class="stat-figure">{{ equity.min }}–{{ equity.max }}</span><span class="stat-label">Mín.–Máx.</span></div>
-                <div class="stat{{ equity.gini < 0.3 ? ' stat--success' : (equity.gini >= 0.45 ? ' stat--danger' : ' stat--warning') }}">
-                    <span class="stat-figure" style="font-size: 1.6rem">{{ equity.label }}</span>
-                    <span class="stat-label">Índice de equidad (Gini {{ equity.gini }})</span>
-                </div>
-            </div>
-
-            <table>
-                <thead><tr><th>Profesor</th><th style="width: 55%">Guardias cubiertas</th><th class="mono">Total</th><th class="mono">vs media</th></tr></thead>
-                <tbody>
-                    {% for row in ranking %}
-                        {% set diff = (row.total - equity.mean)|round(1) %}
-                        <tr>
-                            <td>{{ row.teacher.fullName }}</td>
-                            <td>
-                                <div class="load-bar" title="{{ row.total }} guardias cubiertas">
-                                    <span class="load-bar-fill" style="width: {{ max > 0 ? (row.total * 100 // max) : 0 }}%"></span>
-                                </div>
-                            </td>
-                            <td class="mono">{{ row.total }}</td>
-                            <td class="mono {{ diff > 0 ? 'text-success' : (diff < 0 ? 'text-danger' : 'muted') }}">{{ diff > 0 ? '+' }}{{ diff }}</td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-
-        {# ============ C · Evolución mensual ============ #}
-        {% if monthly|length > 1 %}
-            {% set monthMax = 1 %}
-            {% for m in monthly %}{% set monthMax = max(monthMax, m.absences) %}{% endfor %}
-            <div class="card">
-                <div class="page-head"><div><h2>Evolución por mes</h2><p class="lead">Ausencias del curso, según cómo se resolvieron.</p></div></div>
-                <div class="chart-legend">
-                    <span class="chart-legend__item"><span class="swatch swatch--success"></span>Cubiertas</span>
-                    <span class="chart-legend__item"><span class="swatch swatch--warning"></span>Sin asignar</span>
-                    <span class="chart-legend__item"><span class="swatch swatch--danger"></span>Incidencias</span>
-                </div>
-                <div class="mbar-chart">
-                    {% for m in monthly %}
-                        <div class="mbar-col">
-                            <span class="mbar-total">{{ m.absences }}</span>
-                            <div class="mbar-stack" title="{{ m.label }}: {{ m.covered }} cubiertas, {{ m.unassigned }} sin asignar, {{ m.incidents }} incidencias">
-                                {% if m.covered %}<span class="mbar-seg mbar-seg--success" style="height: {{ m.covered / monthMax * 100 }}%"></span>{% endif %}
-                                {% if m.unassigned %}<span class="mbar-seg mbar-seg--warning" style="height: {{ m.unassigned / monthMax * 100 }}%"></span>{% endif %}
-                                {% if m.incidents %}<span class="mbar-seg mbar-seg--danger" style="height: {{ m.incidents / monthMax * 100 }}%"></span>{% endif %}
-                            </div>
-                            <span class="mbar-label">{{ m.label }}</span>
-                        </div>
-                    {% endfor %}
-                </div>
-            </div>
-        {% endif %}
-
-        {# ============ D · Mapa de calor día × tramo ============ #}
-        {% if heatmap.slots is not empty %}
-            <div class="card">
-                <div class="page-head"><div><h2>Ausencias por día y tramo</h2><p class="lead">Dónde se concentra la necesidad de cobertura. Más intenso = más ausencias.</p></div></div>
-                <div class="heatmap-wrap">
-                    <table class="heatmap">
-                        <thead>
-                            <tr>
-                                <th></th>
-                                {% for slot in heatmap.slots %}<th class="mono">{{ s.period_label(slotTimes, slot) }}</th>{% endfor %}
-                                <th class="mono heatmap-total">Total</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for wd in heatmap.weekdays %}
-                                <tr>
-                                    <th>{{ weekdayNames[wd] }}</th>
-                                    {% for slot in heatmap.slots %}
-                                        {% set n = heatmap.grid[wd][slot] ?? 0 %}
-                                        {% set intensity = heatmap.max > 0 ? (n / heatmap.max) : 0 %}
-                                        <td class="heat-cell"
-                                            title="{{ weekdayNames[wd] }} · {{ s.period_label(slotTimes, slot) }} · {{ n }} ausencia(s)"
-                                            style="{% if n > 0 %}background: color-mix(in srgb, var(--accent) {{ (20 + intensity * 80)|round }}%, var(--surface)); color: {{ intensity > 0.55 ? 'var(--on-accent)' : 'var(--text)' }}{% endif %}">
-                                            {{ n > 0 ? n : '' }}
-                                        </td>
-                                    {% endfor %}
-                                    <td class="mono heatmap-total">{{ heatmap.weekdayTotals[wd] ?? 0 }}</td>
-                                </tr>
-                            {% endfor %}
-                            <tr class="heatmap-foot">
-                                <th>Total</th>
-                                {% for slot in heatmap.slots %}<td class="mono">{{ heatmap.slotTotals[slot] ?? 0 }}</td>{% endfor %}
-                                <td class="mono heatmap-total">{{ summary.absences }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        {% endif %}
-
-        {# ============ E · Por departamento ============ #}
-        {% if byDepartment is not empty %}
-            {% set deptMax = byDepartment|first.total %}
-            <div class="card">
-                <div class="page-head"><div><h2>Ausencias por departamento</h2><p class="lead">Según el departamento del profesor ausente.</p></div></div>
-                <table>
-                    <thead><tr><th>Departamento</th><th style="width: 55%">Ausencias</th><th class="mono">Total</th></tr></thead>
-                    <tbody>
-                        {% for row in byDepartment %}
-                            <tr>
-                                <td>{{ row.name }}</td>
-                                <td><div class="load-bar"><span class="load-bar-fill" style="width: {{ deptMax > 0 ? (row.total * 100 // deptMax) : 0 }}%"></span></div></td>
-                                <td class="mono">{{ row.total }}</td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% endif %}
-
-        {# ============ F · Quién falta más ============ #}
-        {% if absentRanking is not empty %}
-            {% set absentMax = absentRanking|first.total %}
-            <div class="card">
-                <div class="page-head"><div><h2>Profesores con más ausencias</h2><p class="lead">Top {{ absentRanking|length }} por ausencias registradas.</p></div></div>
-                <table>
-                    <thead><tr><th>Profesor</th><th style="width: 55%">Ausencias</th><th class="mono">Total</th></tr></thead>
-                    <tbody>
-                        {% for row in absentRanking %}
-                            <tr>
-                                <td>{{ row.teacher.fullName }}</td>
-                                <td><div class="load-bar"><span class="load-bar-fill load-bar-fill--warning" style="width: {{ absentMax > 0 ? (row.total * 100 // absentMax) : 0 }}%"></span></div></td>
-                                <td class="mono">{{ row.total }}</td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% endif %}
-    {% endif %}
-
-    {# ============ G · Comparativa por trimestre (curso seleccionado) ============ #}
-    {% if byTerm is not empty %}
-        <div class="card">
-            <div class="page-head"><div><h2>Comparativa por trimestre</h2><p class="lead">Curso {{ curso }}: cómo evoluciona a lo largo del año.</p></div></div>
-            {{ s.compare_table(byTerm, 'Trimestre') }}
-        </div>
-    {% endif %}
-
-    {# ============ H · Comparativa entre cursos ============ #}
-    {% if byCourse|length > 1 %}
-        <div class="card">
-            <div class="page-head"><div><h2>Comparativa entre cursos</h2><p class="lead">Evolución curso a curso.</p></div></div>
-            {{ s.compare_table(byCourse, 'Curso') }}
-        </div>
-    {% endif %}
-{% endblock %}
-
-{% macro compare_table(rows, firstHeader) %}
+{# Matriz comparativa: una fila por entidad, una columna por periodo (+ total si hay varios). #}
+{% macro matrix(rows, periods, firstHeader) %}
     <table>
-        <thead><tr><th>{{ firstHeader }}</th><th class="mono">Ausencias</th><th class="mono">Cubiertas</th><th style="width: 24%">Cobertura</th><th class="mono">Incidencias</th><th class="mono">Media/profe</th><th>Equidad</th></tr></thead>
+        <thead><tr>
+            <th>{{ firstHeader }}</th>
+            {% for p in periods %}<th class="mono">{{ p.label }}</th>{% endfor %}
+            {% if periods|length > 1 %}<th class="mono">Total</th>{% endif %}
+        </tr></thead>
         <tbody>
-            {% for r in rows %}
+            {% for row in rows %}
                 <tr>
-                    <td>{{ r.label }}</td>
-                    <td class="mono">{{ r.absences }}</td>
-                    <td class="mono">{{ r.covered }}</td>
-                    <td>
-                        <div class="load-bar" title="{{ r.coverageRate }}% cubiertas"><span class="load-bar-fill load-bar-fill--success" style="width: {{ r.coverageRate }}%"></span></div>
-                        <span class="muted mono">{{ r.coverageRate }}%</span>
-                    </td>
-                    <td class="mono {{ r.incidents > 0 ? 'text-danger' }}">{{ r.incidents }}</td>
-                    <td class="mono">{{ r.mean }}</td>
-                    <td>{{ r.balance }}</td>
+                    <td>{{ row.name }}</td>
+                    {% for c in row.cells %}<td class="mono">{{ c }}</td>{% endfor %}
+                    {% if periods|length > 1 %}<td class="mono"><strong>{{ row.total }}</strong></td>{% endif %}
                 </tr>
             {% endfor %}
         </tbody>
     </table>
 {% endmacro %}
+
+{% block body %}
+    {% import _self as s %}
+    {% set weekdayNames = {1: 'Lun', 2: 'Mar', 3: 'Mié', 4: 'Jue', 5: 'Vie'} %}
+    {% set termOrdinals = {1: '1er', 2: '2º', 3: '3er'} %}
+
+    <div class="page-head">
+        <div>
+            <h1>Estadísticas de guardias</h1>
+            <p class="lead">Elige uno o varios periodos (cursos o trimestres). Con varios, cada dato se compara lado a lado.</p>
+        </div>
+        <div><a class="btn secondary" href="{{ path('guardia_stats_csv') }}">Descargar CSV</a></div>
+    </div>
+
+    {# Selector de periodos a analizar / comparar. #}
+    <div class="card">
+        <form method="get" action="{{ path('guardia_stats') }}" class="period-picker">
+            <div class="period-picker__groups">
+                {% for ay in courses %}
+                    <fieldset class="period-group">
+                        <legend>{{ ay.schoolYear }}</legend>
+                        <label class="choice choice--inline"><input type="checkbox" name="p[]" value="{{ ay.schoolYear }}" {{ ay.schoolYear in selectedTokens ? 'checked' }}> Curso entero</label>
+                        {% for t in 1..3 %}
+                            {% set tok = ay.schoolYear ~ ':' ~ t %}
+                            <label class="choice choice--inline"><input type="checkbox" name="p[]" value="{{ tok }}" {{ tok in selectedTokens ? 'checked' }}> {{ termOrdinals[t] }} trim.</label>
+                        {% endfor %}
+                    </fieldset>
+                {% else %}
+                    <p class="muted">No hay cursos definidos todavía.</p>
+                {% endfor %}
+            </div>
+            <div class="period-picker__actions">
+                <button type="submit" class="btn">Ver / comparar</button>
+            </div>
+        </form>
+    </div>
+
+    {% set headline = kpis|first %}
+
+    {% if single %}
+        {# ===================== Vista de un solo periodo (completa) ===================== #}
+        {% if headline.absences == 0 %}
+            <div class="card"><div class="empty-state">
+                <h2>Sin ausencias en {{ headline.label }}</h2>
+                <p>No hay ausencias registradas en este periodo. Prueba con otro curso o trimestre, o marca varios para comparar.</p>
+            </div></div>
+        {% else %}
+            <div class="card progress-hero">
+                <div class="progress-hero__head">
+                    <span class="progress-hero__pct">{{ headline.coverageRate }}%</span>
+                    <span class="progress-hero__caption">{{ headline.covered }} de {{ headline.absences }} ausencias cubiertas · {{ headline.label }}</span>
+                </div>
+                <div class="progress"><span class="progress__bar" style="width: {{ headline.coverageRate }}%"></span></div>
+            </div>
+
+            <div class="worklist-stats worklist-stats--4">
+                <div class="stat"><span class="stat-figure">{{ headline.absences }}</span><span class="stat-label">Ausencias</span></div>
+                <div class="stat stat--success{{ headline.covered == 0 ? ' is-zero' }}"><span class="stat-figure">{{ headline.covered }}</span><span class="stat-label">Cubiertas</span></div>
+                <div class="stat stat--danger{{ headline.incidents == 0 ? ' is-zero' }}"><span class="stat-figure">{{ headline.incidents }}</span><span class="stat-label">Incidencias</span></div>
+                <div class="stat stat--warning{{ headline.unassigned == 0 ? ' is-zero' }}"><span class="stat-figure">{{ headline.unassigned }}</span><span class="stat-label">Sin asignar</span></div>
+            </div>
+
+            {# Equidad del reparto #}
+            <div class="card">
+                <div class="page-head"><div>
+                    <h2>Equidad del reparto</h2>
+                    <p class="lead">Entre los {{ equity.count }} profesores que han hecho alguna guardia.</p>
+                </div></div>
+                <div class="worklist-stats worklist-stats--4">
+                    <div class="stat"><span class="stat-figure">{{ equity.mean }}</span><span class="stat-label">Media</span></div>
+                    <div class="stat"><span class="stat-figure">{{ equity.median }}</span><span class="stat-label">Mediana</span></div>
+                    <div class="stat"><span class="stat-figure">{{ equity.min }}–{{ equity.max }}</span><span class="stat-label">Mín.–Máx.</span></div>
+                    <div class="stat{{ equity.gini < 0.3 ? ' stat--success' : (equity.gini >= 0.45 ? ' stat--danger' : ' stat--warning') }}">
+                        <span class="stat-figure" style="font-size: 1.6rem">{{ equity.label }}</span>
+                        <span class="stat-label">Índice de equidad (Gini {{ equity.gini }})</span>
+                    </div>
+                </div>
+                {% if ranking is not empty %}
+                    <table>
+                        <thead><tr><th>Profesor</th><th style="width: 55%">Guardias cubiertas</th><th class="mono">Total</th><th class="mono">vs media</th></tr></thead>
+                        <tbody>
+                            {% for row in ranking %}
+                                {% set diff = (row.total - equity.mean)|round(1) %}
+                                <tr>
+                                    <td>{{ row.teacher.fullName }}</td>
+                                    <td><div class="load-bar" title="{{ row.total }} guardias cubiertas"><span class="load-bar-fill" style="width: {{ max > 0 ? (row.total * 100 // max) : 0 }}%"></span></div></td>
+                                    <td class="mono">{{ row.total }}</td>
+                                    <td class="mono {{ diff > 0 ? 'text-success' : (diff < 0 ? 'text-danger' : 'muted') }}">{{ diff > 0 ? '+' }}{{ diff }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% endif %}
+            </div>
+
+            {# Evolución por mes #}
+            {% if monthly|length > 1 %}
+                {% set monthMax = 1 %}
+                {% for m in monthly %}{% set monthMax = max(monthMax, m.absences) %}{% endfor %}
+                <div class="card">
+                    <div class="page-head"><div><h2>Evolución por mes</h2><p class="lead">Ausencias del periodo, según cómo se resolvieron.</p></div></div>
+                    <div class="chart-legend">
+                        <span class="chart-legend__item"><span class="swatch swatch--success"></span>Cubiertas</span>
+                        <span class="chart-legend__item"><span class="swatch swatch--warning"></span>Sin asignar</span>
+                        <span class="chart-legend__item"><span class="swatch swatch--danger"></span>Incidencias</span>
+                    </div>
+                    <div class="mbar-chart">
+                        {% for m in monthly %}
+                            <div class="mbar-col">
+                                <span class="mbar-total">{{ m.absences }}</span>
+                                <div class="mbar-stack" title="{{ m.label }}: {{ m.covered }} cubiertas, {{ m.unassigned }} sin asignar, {{ m.incidents }} incidencias">
+                                    {% if m.covered %}<span class="mbar-seg mbar-seg--success" style="height: {{ m.covered / monthMax * 100 }}%"></span>{% endif %}
+                                    {% if m.unassigned %}<span class="mbar-seg mbar-seg--warning" style="height: {{ m.unassigned / monthMax * 100 }}%"></span>{% endif %}
+                                    {% if m.incidents %}<span class="mbar-seg mbar-seg--danger" style="height: {{ m.incidents / monthMax * 100 }}%"></span>{% endif %}
+                                </div>
+                                <span class="mbar-label">{{ m.label }}</span>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+
+            {# Mapa de calor día × tramo #}
+            {% if heatmap.slots is not empty %}
+                <div class="card">
+                    <div class="page-head"><div><h2>Ausencias por día y tramo</h2><p class="lead">Dónde se concentra la necesidad de cobertura. Más intenso = más ausencias.</p></div></div>
+                    <div class="heatmap-wrap">
+                        <table class="heatmap">
+                            <thead><tr>
+                                <th></th>
+                                {% for slot in heatmap.slots %}<th class="mono">{{ s.period_label(slotTimes, slot) }}</th>{% endfor %}
+                                <th class="mono heatmap-total">Total</th>
+                            </tr></thead>
+                            <tbody>
+                                {% for wd in heatmap.weekdays %}
+                                    <tr>
+                                        <th>{{ weekdayNames[wd] }}</th>
+                                        {% for slot in heatmap.slots %}
+                                            {% set n = heatmap.grid[wd][slot] ?? 0 %}
+                                            {% set intensity = heatmap.max > 0 ? (n / heatmap.max) : 0 %}
+                                            <td class="heat-cell" title="{{ weekdayNames[wd] }} · {{ s.period_label(slotTimes, slot) }} · {{ n }} ausencia(s)"
+                                                style="{% if n > 0 %}background: color-mix(in srgb, var(--accent) {{ (20 + intensity * 80)|round }}%, var(--surface)); color: {{ intensity > 0.55 ? 'var(--on-accent)' : 'var(--text)' }}{% endif %}">
+                                                {{ n > 0 ? n : '' }}
+                                            </td>
+                                        {% endfor %}
+                                        <td class="mono heatmap-total">{{ heatmap.weekdayTotals[wd] ?? 0 }}</td>
+                                    </tr>
+                                {% endfor %}
+                                <tr class="heatmap-foot">
+                                    <th>Total</th>
+                                    {% for slot in heatmap.slots %}<td class="mono">{{ heatmap.slotTotals[slot] ?? 0 }}</td>{% endfor %}
+                                    <td class="mono heatmap-total">{{ headline.absences }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            {% endif %}
+        {% endif %}
+    {% else %}
+        {# ===================== Comparativa de varios periodos ===================== #}
+        <div class="card">
+            <div class="page-head"><div><h2>Cobertura y equidad por periodo</h2><p class="lead">Cada fila es uno de los periodos elegidos.</p></div></div>
+            <table>
+                <thead><tr>
+                    <th>Periodo</th><th class="mono">Ausencias</th><th class="mono">Cubiertas</th>
+                    <th style="width: 20%">Cobertura</th><th class="mono">Incidencias</th><th class="mono">Sin asignar</th>
+                    <th class="mono">Media/profe</th><th>Equidad</th>
+                </tr></thead>
+                <tbody>
+                    {% for r in kpis %}
+                        <tr>
+                            <td>{{ r.label }}</td>
+                            <td class="mono">{{ r.absences }}</td>
+                            <td class="mono">{{ r.covered }}</td>
+                            <td>
+                                <div class="load-bar" title="{{ r.coverageRate }}% cubiertas"><span class="load-bar-fill load-bar-fill--success" style="width: {{ r.coverageRate }}%"></span></div>
+                                <span class="muted mono">{{ r.coverageRate }}%</span>
+                            </td>
+                            <td class="mono {{ r.incidents > 0 ? 'text-danger' }}">{{ r.incidents }}</td>
+                            <td class="mono">{{ r.unassigned }}</td>
+                            <td class="mono">{{ r.mean }}</td>
+                            <td>{{ r.balance }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+
+    {# Ausencias por departamento — matriz por periodo. #}
+    {% if byDepartment is not empty %}
+        <div class="card">
+            <div class="page-head"><div><h2>Ausencias por departamento</h2><p class="lead">Según el departamento del profesor ausente.</p></div></div>
+            {{ s.matrix(byDepartment, periods, 'Departamento') }}
+        </div>
+    {% endif %}
+
+    {# Profesores con más ausencias — matriz por periodo. #}
+    {% if absentRanking is not empty %}
+        <div class="card">
+            <div class="page-head"><div><h2>Profesores con más ausencias</h2><p class="lead">Top {{ absentRanking|length }} por ausencias registradas en los periodos elegidos.</p></div></div>
+            {{ s.matrix(absentRanking, periods, 'Profesor') }}
+        </div>
+    {% endif %}
+{% endblock %}

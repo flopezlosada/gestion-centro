@@ -69,12 +69,17 @@
             'aria-hidden="true"><polyline points="1 1.5 6 6.5 11 1.5" stroke="currentColor" ' +
             'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>');
 
+        // The dropdown panel holds the (optional) search box and the option list, and is what opens and
+        // closes as a whole — so positioning lives on the panel and the list just scrolls inside it.
+        var panel = document.createElement('div');
+        panel.className = 'cselect__panel';
+        panel.hidden = true;
+
         var list = document.createElement('ul');
         list.className = 'cselect__list';
         list.id = id + '-list';
         list.setAttribute('role', 'listbox');
         list.tabIndex = -1;
-        list.hidden = true;
         if (labelledby) {
             list.setAttribute('aria-labelledby', labelledby);
         }
@@ -121,17 +126,59 @@
             optionEls[index].scrollIntoView({ block: 'nearest' });
         }
 
+        // Long lists (80 teachers…) get a search box: a native <select> is unusable at that size. The
+        // box filters the options in place; keyboard nav then walks only the visible ones.
+        var SEARCH_MIN = 8;
+        var searchInput = null;
+        if (select.options.length > SEARCH_MIN) {
+            searchInput = document.createElement('input');
+            searchInput.type = 'search';
+            searchInput.className = 'cselect__search';
+            searchInput.placeholder = 'Buscar…';
+            searchInput.autocomplete = 'off';
+            searchInput.setAttribute('aria-label', 'Buscar opción');
+            searchInput.setAttribute('aria-controls', list.id);
+        }
+
+        function filterOptions() {
+            if (!searchInput) { return; }
+            var q = searchInput.value.trim().toLowerCase();
+            var firstVisible = -1;
+            optionEls.forEach(function (li, i) {
+                var match = q === '' || li.textContent.toLowerCase().indexOf(q) !== -1;
+                li.hidden = !match;
+                if (match && firstVisible === -1) { firstVisible = i; }
+            });
+            if (firstVisible !== -1) { setActive(firstVisible); }
+        }
+
+        // The next visible option from an index in a direction (+1/-1), or -1 if none — so arrow keys
+        // skip options hidden by the search filter.
+        function nextVisible(from, dir) {
+            for (var i = from + dir; i >= 0 && i < optionEls.length; i += dir) {
+                if (!optionEls[i].hidden) { return i; }
+            }
+            return -1;
+        }
+
         function open() {
             closeOthers(wrap);
-            list.hidden = false;
+            panel.hidden = false;
             wrap.classList.add('is-open');
             button.setAttribute('aria-expanded', 'true');
-            setActive(select.selectedIndex < 0 ? 0 : select.selectedIndex);
-            list.focus();
+            if (searchInput) {
+                searchInput.value = '';
+                filterOptions();
+                setActive(select.selectedIndex < 0 ? 0 : select.selectedIndex);
+                searchInput.focus();
+            } else {
+                setActive(select.selectedIndex < 0 ? 0 : select.selectedIndex);
+                list.focus();
+            }
         }
 
         function close() {
-            list.hidden = true;
+            panel.hidden = true;
             wrap.classList.remove('is-open');
             button.setAttribute('aria-expanded', 'false');
         }
@@ -165,17 +212,20 @@
 
         var typeahead = '';
         var typeaheadTimer = null;
-        list.addEventListener('keydown', function (e) {
+        function onNavKey(e) {
             switch (e.key) {
-                case 'ArrowDown': e.preventDefault(); setActive(Math.min(activeIndex + 1, optionEls.length - 1)); break;
-                case 'ArrowUp': e.preventDefault(); setActive(Math.max(activeIndex - 1, 0)); break;
-                case 'Home': e.preventDefault(); setActive(0); break;
-                case 'End': e.preventDefault(); setActive(optionEls.length - 1); break;
-                case 'Enter': case ' ': e.preventDefault(); choose(activeIndex); break;
+                case 'ArrowDown': e.preventDefault(); var d = nextVisible(activeIndex, 1); if (d !== -1) { setActive(d); } break;
+                case 'ArrowUp': e.preventDefault(); var u = nextVisible(activeIndex, -1); if (u !== -1) { setActive(u); } break;
+                case 'Home': e.preventDefault(); var h = nextVisible(-1, 1); if (h !== -1) { setActive(h); } break;
+                case 'End': e.preventDefault(); var t = nextVisible(optionEls.length, -1); if (t !== -1) { setActive(t); } break;
+                case 'Enter': e.preventDefault(); if (!optionEls[activeIndex] || !optionEls[activeIndex].hidden) { choose(activeIndex); } break;
+                // Space chooses only in the option list; in the search box it must type a space.
+                case ' ': if (!searchInput) { e.preventDefault(); choose(activeIndex); } break;
                 case 'Escape': e.preventDefault(); close(); button.focus(); break;
                 case 'Tab': close(); break;
                 default:
-                    if (e.key.length === 1) {
+                    // Typeahead only when there is no search box (the box handles text itself).
+                    if (!searchInput && e.key.length === 1) {
                         typeahead += e.key.toLowerCase();
                         clearTimeout(typeaheadTimer);
                         typeaheadTimer = setTimeout(function () { typeahead = ''; }, 600);
@@ -187,14 +237,23 @@
                         }
                     }
             }
-        });
+        }
+        list.addEventListener('keydown', onNavKey);
+        if (searchInput) {
+            searchInput.addEventListener('input', filterOptions);
+            searchInput.addEventListener('keydown', onNavKey);
+        }
 
         // Monta el UI y oculta el nativo SOLO ahora que todo se ha construido bien. El <select> se
         // saca del orden de tabulación y del árbol de accesibilidad: sin esto, al ir con Tab, el foco
         // caería en el select fantasma de 1px (opacity:0 NO lo excluye del foco) sin indicador visible.
         select.parentNode.insertBefore(wrap, select);
         wrap.appendChild(button);
-        wrap.appendChild(list);
+        if (searchInput) {
+            panel.appendChild(searchInput);
+        }
+        panel.appendChild(list);
+        wrap.appendChild(panel);
         wrap.appendChild(select);
         select.classList.add('cselect__native');
         select.tabIndex = -1;

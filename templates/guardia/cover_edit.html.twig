@@ -1,0 +1,89 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Modificar guardia{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_index', { date: cover.date|date('Y-m-d', false), slot: cover.slotIndex }) }}">Parte de guardias</a><span class="sep">/</span>Modificar{% endblock %}
+
+{% block body %}
+    {% set times = slotTimes[cover.slotIndex] ?? null %}
+    <div class="page-head">
+        <div>
+            <h1>Modificar guardia</h1>
+            <p class="lead">Todo cambio manual queda registrado con su motivo en el histórico de esta guardia. El reparto es automático: usa esto solo cuando algo se sale de lo normal.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        <dl class="cover-summary">
+            <div><dt>Grupo</dt><dd><strong>{{ cover.groupName ?? '—' }}</strong>{% if cover.roomName %} <span class="muted mono">· {{ cover.roomName }}</span>{% endif %}</dd></div>
+            <div><dt>Profesor ausente</dt><dd>{{ cover.absentTeacher.fullName }}</dd></div>
+            <div><dt>Día y hora</dt><dd>{{ cover.date|date('d/m/Y', false) }}{% if times %} · <span class="mono">{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}</span>{% else %} · {{ cover.slotIndex + 1 }}ª hora{% endif %}</dd></div>
+        </dl>
+
+        <form method="post" action="{{ path('guardia_cover_update', { id: cover.id }) }}" class="stack-form">
+            <input type="hidden" name="_token" value="{{ csrf_token('guardia_cover_update' ~ cover.id) }}">
+
+            <div class="field">
+                <label for="guardia">Profesor de guardia asignado</label>
+                {% if pool is empty %}
+                    <p class="pill-value muted">No hay ningún profesor de guardia en el horario para este tramo.</p>
+                    <input type="hidden" name="guardia" value="{{ cover.assignedGuardia ? cover.assignedGuardia.id }}">
+                {% else %}
+                    <select id="guardia" name="guardia">
+                        <option value="">— sin asignar —</option>
+                        {% for entry in pool %}
+                            <option value="{{ entry.teacher.id }}" {{ cover.assignedGuardia and cover.assignedGuardia.id == entry.teacher.id ? 'selected' }}>{{ entry.teacher.fullName }}</option>
+                        {% endfor %}
+                    </select>
+                {% endif %}
+            </div>
+
+            <div class="field">
+                <label class="choice"><input type="checkbox" name="not_covered" value="1" {{ cover.notCovered ? 'checked' }}> No se cubrió</label>
+                <p class="field-help">Márcalo si al final nadie cubrió la guardia (el sustituto no vino, o el profesor ausente sí apareció). No cuenta para el reparto equitativo.</p>
+            </div>
+
+            <div class="field">
+                <label for="motivo">Motivo del cambio <span class="req">*</span></label>
+                <textarea id="motivo" name="motivo" rows="3" maxlength="500" required placeholder="Ej.: el sustituto asignado también falta hoy; lo cubre otro compañero."></textarea>
+                <p class="field-help">Obligatorio. Queda en el histórico de esta guardia para dejar constancia de qué cambió y por qué.</p>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn">Guardar cambios</button>
+                <a class="btn secondary" href="{{ path('guardia_index', { date: cover.date|date('Y-m-d', false), slot: cover.slotIndex }) }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+
+    <div class="card">
+        <div class="page-head"><div><h2>Histórico de esta guardia</h2></div></div>
+        {% if events is empty %}
+            <p class="muted">Sin movimientos registrados todavía.</p>
+        {% else %}
+            <ol class="obj-timeline">
+                {% for row in events %}
+                    <li class="obj-timeline__item">
+                        <div class="obj-timeline__head">
+                            <span class="obj-timeline__verb">{{ row.verbLabel }}</span>
+                            <span class="obj-timeline__meta muted">{{ row.actor|default('Sistema') }} · <time datetime="{{ row.occurredAt|date('c') }}">{{ row.occurredAt|date('d/m/Y H:i') }}</time></span>
+                        </div>
+                        {% if row.motivo %}<p class="obj-timeline__summary">{{ row.motivo }}</p>{% endif %}
+                        {% if row.changes is not empty %}
+                            <ul class="obj-timeline__changes">
+                                {% for change in row.changes %}
+                                    <li>
+                                        <span class="obj-timeline__label">{{ change.label }}:</span>
+                                        <span class="obj-timeline__del">{{ change.old }}</span>
+                                        <span aria-hidden="true">→</span>
+                                        <span class="obj-timeline__add">{{ change.new }}</span>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ol>
+        {% endif %}
+    </div>
+{% endblock %}

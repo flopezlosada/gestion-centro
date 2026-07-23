@@ -48,13 +48,13 @@
         {# Tabla del parte #}
         <div class="card">
             <div class="page-head"><div><h2>Ausencias de esta hora</h2></div>
-                <div class="inline-form">
+                <div class="page-head-actions">
                     <a class="btn" href="{{ path('guardia_absence_new', { date: date|date('Y-m-d', false) }) }}">+ Apuntar ausencia</a>
-                    <form method="post" action="{{ path('guardia_auto_assign') }}">
+                    <form method="post" action="{{ path('guardia_auto_assign') }}" class="inline-form">
                         <input type="hidden" name="_token" value="{{ csrf_token('guardia_auto_assign') }}">
                         <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
                         <input type="hidden" name="slot" value="{{ slotIndex }}">
-                        <button type="submit" class="btn btn--ghost">Repartir guardias</button>
+                        <button type="submit" class="btn secondary" title="Vuelve a repartir las guardias pendientes de asignar de este tramo">↻ Repartir guardias</button>
                     </form>
                 </div>
             </div>
@@ -64,7 +64,7 @@
             {% else %}
                 <table>
                     <thead>
-                        <tr><th>Grupo · Aula</th><th>Profesor ausente</th><th>Tarea</th><th>Guardia asignada</th><th></th></tr>
+                        <tr><th>Grupo · Aula</th><th>Profesor ausente</th><th>Tarea para el grupo</th><th>Guardia asignada</th><th></th></tr>
                     </thead>
                     <tbody>
                         {% for cover in covers %}
@@ -74,37 +74,24 @@
                                     {% if cover.roomName %}<span class="muted mono"> · {{ cover.roomName }}</span>{% endif %}
                                 </td>
                                 <td>{{ cover.absentTeacher.fullName }}</td>
-                                <td>
+                                <td class="task-cell">
                                     {% if cover.taskNote %}
-                                        <span class="task-note" title="{{ cover.taskNote }}" aria-label="Tarea: {{ cover.taskNote }}">✉</span>
-                                    {% else %}<span class="muted">—</span>{% endif %}
+                                        <span title="{{ cover.taskNote }}">{{ cover.taskNote|length > 60 ? cover.taskNote|slice(0, 60) ~ '…' : cover.taskNote }}</span>
+                                    {% else %}<span class="muted">Sin tarea</span>{% endif %}
                                 </td>
                                 <td>
-                                    {% if pool is empty %}
-                                        <span class="muted" title="No hay ningún profesor de guardia en el horario para este tramo">— sin guardia disponible —</span>
+                                    {% if cover.notCovered %}
+                                        <span class="badge badge--danger">No se cubrió</span>
+                                        {% if cover.assignedGuardia %}<span class="muted"> · {{ cover.assignedGuardia.fullName }}</span>{% endif %}
+                                    {% elseif cover.assignedGuardia %}
+                                        {{ cover.assignedGuardia.fullName }}
                                     {% else %}
-                                        <form method="post" action="{{ path('guardia_reassign', { id: cover.id }) }}">
-                                            <input type="hidden" name="_token" value="{{ csrf_token('guardia_reassign' ~ cover.id) }}">
-                                            <select name="guardia" onchange="this.form.submit()">
-                                                <option value="">— sin asignar —</option>
-                                                {% for entry in pool %}
-                                                    <option value="{{ entry.teacher.id }}" {{ cover.assignedGuardia and cover.assignedGuardia.id == entry.teacher.id ? 'selected' }}>
-                                                        {{ entry.teacher.fullName }}
-                                                    </option>
-                                                {% endfor %}
-                                            </select>
-                                            <noscript><button type="submit">Guardar</button></noscript>
-                                        </form>
+                                        <span class="badge badge--muted">Sin asignar</span>
                                     {% endif %}
                                 </td>
                                 <td class="row-actions">
-                                    <form method="post" action="{{ path('guardia_incident', { id: cover.id }) }}">
-                                        <input type="hidden" name="_token" value="{{ csrf_token('guardia_incident' ~ cover.id) }}">
-                                        <button type="submit" class="{{ cover.notCovered ? 'badge badge--danger' : 'link' }}" title="Marca que la guardia no se cubrió (no cuenta para el reparto)">
-                                            {{ cover.notCovered ? '⚠ No se cubrió' : 'Incidencia' }}
-                                        </button>
-                                    </form>
-                                    <form method="post" action="{{ path('guardia_delete', { id: cover.id }) }}" data-confirm="¿Borrar la ausencia de {{ cover.absentTeacher.fullName }}?">
+                                    <a class="link-action" href="{{ path('guardia_cover_edit', { id: cover.id }) }}">Modificar</a>
+                                    <form method="post" action="{{ path('guardia_delete', { id: cover.id }) }}" data-confirm="¿Borrar la ausencia de {{ cover.absentTeacher.fullName }} en {{ cover.groupName ?? 'este grupo' }}? Esta línea del parte desaparecerá.">
                                         <input type="hidden" name="_token" value="{{ csrf_token('guardia_delete' ~ cover.id) }}">
                                         <button type="submit" class="link-danger">Borrar</button>
                                     </form>
@@ -118,10 +105,19 @@
 
         {# Panel de profesores de guardia a esta hora: quién puede cubrir y cómo va el reparto #}
         <div class="card">
-            <div class="page-head"><div><h2>Profesores de guardia a esta hora</h2></div></div>
+            <div class="page-head"><div>
+                <h2>Profesores de guardia a esta hora</h2>
+                <p class="lead">Quién tiene guardia en este tramo según el horario, para poder cubrir las ausencias de arriba.</p>
+            </div></div>
             {% if pool is empty %}
                 <p class="muted">Nadie tiene guardia en el horario para este tramo.</p>
             {% else %}
+                <ul class="pool-legend" aria-label="Leyenda">
+                    <li><span class="badge badge--ok">Disponible</span> libre para cubrir</li>
+                    <li><span class="badge badge--muted">→ grupo</span> ya está cubriendo ese grupo</li>
+                    <li><span class="badge badge--danger">Ausente</span> hoy también falta, no puede cubrir</li>
+                    <li><span class="load-count">n</span> guardias que ya lleva en este tramo (se asigna primero al que menos tiene)</li>
+                </ul>
                 <div class="card-grid">
                     {% for entry in pool %}
                         {% set tid = entry.teacher.id %}
@@ -131,7 +127,7 @@
                         <div class="mini-card {{ state }}">
                             <div class="mini-card-head">
                                 <strong>{{ entry.teacher.fullName }}</strong>
-                                {% if entry.kind == ck %}<span class="badge badge--ok" title="Colaborador (solo si faltan guardias)">C</span>{% endif %}
+                                {% if entry.kind == ck %}<span class="badge badge--ok" title="Colaborador: solo entra si no llegan los profesores de guardia">Colaborador</span>{% endif %}
                             </div>
                             <div class="mini-card-status">
                                 {% if absent %}
@@ -141,7 +137,7 @@
                                 {% else %}
                                     <span class="badge badge--ok">Disponible</span>
                                 {% endif %}
-                                <span class="load-count" title="Guardias que lleva en este tramo (el reparto elige primero al que menos tiene)">{{ slotLoad[tid] ?? 0 }}</span>
+                                <span class="load-count" title="{{ slotLoad[tid] ?? 0 }} guardia(s) en este tramo. El reparto elige primero al que menos tiene.">{{ slotLoad[tid] ?? 0 }}</span>
                             </div>
                         </div>
                     {% endfor %}

@@ -6,6 +6,7 @@ namespace App\EventSubscriber;
 
 use App\Contract\Auditable;
 use App\Entity\AuditLog;
+use App\Support\AuditContext;
 use App\Support\ChangeNormalizer;
 use Doctrine\Bundle\DoctrineBundle\Attribute\AsDoctrineListener;
 use Doctrine\ORM\EntityManagerInterface;
@@ -40,8 +41,10 @@ final class EntityAuditSubscriber
     /** True while writing log rows, so the resulting flush does not recurse into this listener. */
     private bool $persisting = false;
 
-    public function __construct(private readonly Security $security)
-    {
+    public function __construct(
+        private readonly Security $security,
+        private readonly AuditContext $auditContext,
+    ) {
     }
 
     public function onFlush(OnFlushEventArgs $args): void
@@ -120,6 +123,9 @@ final class EntityAuditSubscriber
         $this->pending = [];
         $em = $args->getObjectManager();
         $actor = $this->security->getUser()?->getUserIdentifier();
+        // A deliberate change may carry a human reason set by the controller (e.g. why a guardia was
+        // reassigned). Consumed once, so it tags only this flush's entries and never leaks onward.
+        $reason = $this->auditContext->consumeReason();
 
         $this->persisting = true;
         try {
@@ -134,7 +140,7 @@ final class EntityAuditSubscriber
                     actor: $actor,
                     subjectType: $shortName,
                     subjectId: $subjectId,
-                    summary: null,
+                    summary: $reason,
                     changes: $record['changes'],
                 ));
             }
