@@ -44,13 +44,13 @@ final class GuardiaScheduleEditorTest extends KernelTestCase
         // A filler teacher establishes the marco horario: periods 0, 1 and 2 with their times, exactly
         // as an import would (distinctSlots derives the periods from the existing cells).
         $filler = $this->user('Marco Horario', 'marco@educa.madrid.org');
-        $this->lective($filler, Weekday::MONDAY, 0, '08:00', '09:00');
-        $this->lective($filler, Weekday::MONDAY, 1, '09:00', '10:00');
-        $this->lective($filler, Weekday::MONDAY, 2, '10:00', '11:00');
+        $this->lective($filler, $this->year, Weekday::MONDAY, 0, '08:00', '09:00');
+        $this->lective($filler, $this->year, Weekday::MONDAY, 1, '09:00', '10:00');
+        $this->lective($filler, $this->year, Weekday::MONDAY, 2, '10:00', '11:00');
 
         // The teacher we edit teaches Monday period 0, so that cell can never be a guardia.
         $this->teacher = $this->user('Elena Edita Ríos', 'elena@educa.madrid.org');
-        $this->lective($this->teacher, Weekday::MONDAY, 0, '08:00', '09:00');
+        $this->lective($this->teacher, $this->year, Weekday::MONDAY, 0, '08:00', '09:00');
 
         $this->em->flush();
     }
@@ -95,6 +95,43 @@ final class GuardiaScheduleEditorTest extends KernelTestCase
         self::assertNull($this->pick($entries, Weekday::TUESDAY, 2, ScheduleActivityKind::COLLABORATOR), 'old duty cell gone');
         self::assertNotNull($this->pick($entries, Weekday::WEDNESDAY, 1, ScheduleActivityKind::GUARDIA), 'new duty cell present');
         self::assertNotNull($this->pick($entries, Weekday::MONDAY, 0, ScheduleActivityKind::LECTIVE), 'lesson untouched by re-save');
+    }
+
+    public function testSavingOneTeacherLeavesOtherTeachersAndCoursesUntouched(): void
+    {
+        // Another teacher with their own guardia, and the same teacher's guardia in a different course.
+        $other = $this->user('Otro Profe Sáez', 'otro@educa.madrid.org');
+        $this->duty($other, $this->year, Weekday::MONDAY, 1, ScheduleActivityKind::GUARDIA);
+
+        $otherYear = (new AcademicYear())
+            ->setSchoolYear('2024-2025')
+            ->setTerm1Start(new \DateTimeImmutable('2024-09-15'))->setTerm1End(new \DateTimeImmutable('2024-12-20'))
+            ->setTerm2Start(new \DateTimeImmutable('2025-01-08'))->setTerm2End(new \DateTimeImmutable('2025-03-28'))
+            ->setTerm3Start(new \DateTimeImmutable('2025-04-07'))->setTerm3End(new \DateTimeImmutable('2025-06-23'));
+        $this->em->persist($otherYear);
+        $this->lective($this->teacher, $otherYear, Weekday::MONDAY, 0, '08:00', '09:00');
+        $this->duty($this->teacher, $otherYear, Weekday::MONDAY, 1, ScheduleActivityKind::GUARDIA);
+        $this->em->flush();
+
+        // Rewrite the target teacher's duties in the 2025-2026 course only.
+        $this->editor->save($this->year, $this->teacher, [
+            (string) Weekday::WEDNESDAY->value => [2 => 'guardia'],
+        ]);
+
+        // The other teacher's guardia in this course survives.
+        self::assertNotNull(
+            $this->pick($this->entriesFor($other), Weekday::MONDAY, 1, ScheduleActivityKind::GUARDIA),
+            'another teacher\'s guardia in the same course must survive',
+        );
+        // The same teacher's guardia in the OTHER course survives.
+        $otherCourse = $this->em->getRepository(ScheduleEntry::class)->findBy([
+            'academicYear' => $this->em->find(AcademicYear::class, $otherYear->getId()),
+            'teacher' => $this->em->find(User::class, $this->teacher->getId()),
+        ]);
+        self::assertNotNull(
+            $this->pick($otherCourse, Weekday::MONDAY, 1, ScheduleActivityKind::GUARDIA),
+            'the teacher\'s guardia in a different course must survive',
+        );
     }
 
     public function testIgnoresCellsOutsideTheMarcoHorario(): void
@@ -178,19 +215,37 @@ final class GuardiaScheduleEditorTest extends KernelTestCase
     }
 
     /**
-     * Persists a lective cell for a teacher at a weekday and period.
+     * Persists a lective cell for a teacher at a weekday and period of a course.
      *
-     * @param User    $teacher   the teacher
-     * @param Weekday $weekday   the weekday
-     * @param int     $slotIndex the period index
-     * @param string  $startsAt  the period start time ("H:i")
-     * @param string  $endsAt    the period end time ("H:i")
+     * @param User         $teacher   the teacher
+     * @param AcademicYear $year      the course the cell belongs to
+     * @param Weekday      $weekday   the weekday
+     * @param int          $slotIndex the period index
+     * @param string       $startsAt  the period start time ("H:i")
+     * @param string       $endsAt    the period end time ("H:i")
      */
-    private function lective(User $teacher, Weekday $weekday, int $slotIndex, string $startsAt, string $endsAt): void
+    private function lective(User $teacher, AcademicYear $year, Weekday $weekday, int $slotIndex, string $startsAt, string $endsAt): void
     {
         $this->em->persist((new ScheduleEntry())
-            ->setAcademicYear($this->year)->setTeacher($teacher)->setWeekday($weekday)->setSlotIndex($slotIndex)
+            ->setAcademicYear($year)->setTeacher($teacher)->setWeekday($weekday)->setSlotIndex($slotIndex)
             ->setStartsAt(new \DateTimeImmutable($startsAt))->setEndsAt(new \DateTimeImmutable($endsAt))
             ->setKind(ScheduleActivityKind::LECTIVE)->setGroupName('1ºA')->setRoomName('A10')->setSubjectName('Materia'));
+    }
+
+    /**
+     * Persists a duty (guardia/collaborator) cell for a teacher at a weekday and period of a course.
+     *
+     * @param User                 $teacher   the teacher
+     * @param AcademicYear         $year      the course the cell belongs to
+     * @param Weekday              $weekday   the weekday
+     * @param int                  $slotIndex the period index
+     * @param ScheduleActivityKind $kind      guardia or collaborator
+     */
+    private function duty(User $teacher, AcademicYear $year, Weekday $weekday, int $slotIndex, ScheduleActivityKind $kind): void
+    {
+        $this->em->persist((new ScheduleEntry())
+            ->setAcademicYear($year)->setTeacher($teacher)->setWeekday($weekday)->setSlotIndex($slotIndex)
+            ->setStartsAt(new \DateTimeImmutable('08:00'))->setEndsAt(new \DateTimeImmutable('09:00'))
+            ->setKind($kind));
     }
 }
