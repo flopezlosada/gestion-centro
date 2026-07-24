@@ -34,6 +34,27 @@
     </a>
 {% endmacro %}
 
+{# Una FILA de tabla (escritorio): las mismas columnas que el handoff 13a. #}
+{% macro task_row(t, todayStr) %}
+    {% set overdue = t.status not in ['validated', 'cancelled'] and t.dueDate|date('Y-m-d', false) < todayStr %}
+    {% set pill = {
+        'pending':   {'cls': 'is-pending',  'label': 'Pendiente'},
+        'submitted': {'cls': 'is-amber',    'label': 'Entregada'},
+        'validated': {'cls': 'is-success',  'label': '✓ Finalizada'},
+        'cancelled': {'cls': 'is-muted',    'label': 'Cancelada'},
+    }[t.status]|default({'cls': 'is-pending', 'label': t.status}) %}
+    {% set who = t.assignedUser %}
+    <a class="trow{{ overdue ? ' is-overdue' }}{{ t.status == 'cancelled' ? ' is-cancelled' }}" href="{{ path('task_show', { id: t.id }) }}">
+        <span class="trow__title">{{ t.title }}</span>
+        <span class="trow__unit">{{ t.unit ? t.unit.name : '—' }}</span>
+        <span class="trow__who">
+            {% if who %}<span class="trow__avatar" aria-hidden="true">{{ who.fullName|split(' ')|map(w => w|first)|join|slice(0, 2)|upper }}</span><span class="trow__name">{{ who.fullName }}</span>{% else %}<span class="cell-muted">—</span>{% endif %}
+        </span>
+        <span class="trow__date{{ overdue ? ' is-overdue' }}">{{ t.dueDate|date('d/m/Y') }}</span>
+        <span class="task-pill task-pill--{{ pill.cls }}">{{ pill.label }}</span>
+    </a>
+{% endmacro %}
+
 {% block body %}
     {% import _self as ui %}
     {% set chips = [
@@ -84,26 +105,39 @@
                 <p>No hay tareas que coincidan{{ q ? ' con «' ~ q ~ '»' }}.</p>
                 {% if estado != 'all' or q %}<a href="{{ path('task_index', { curso: schoolYear }) }}">Ver todas</a>{% endif %}
             </div>
-        {% elseif grouped %}
-            {% if overdueTasks is not empty %}
-                <div class="tasks-group">
-                    <div class="tasks-group__head is-danger"><span class="tasks-group__dot"></span>Vencidas · {{ overdueTasks|length }}</div>
-                    <div class="tasks-cards">
-                        {% for t in overdueTasks %}{{ ui.task_card(t, todayStr) }}{% endfor %}
-                    </div>
-                </div>
-            {% endif %}
-            {% if upcomingTasks is not empty %}
-                <div class="tasks-group">
-                    <div class="tasks-group__head"><span class="tasks-group__dot"></span>Próximas</div>
-                    <div class="tasks-cards">
-                        {% for t in upcomingTasks %}{{ ui.task_card(t, todayStr) }}{% endfor %}
-                    </div>
-                </div>
-            {% endif %}
         {% else %}
-            <div class="tasks-cards">
-                {% for t in tasks %}{{ ui.task_card(t, todayStr) }}{% endfor %}
+            {# MÓVIL: tarjetas agrupadas por urgencia. #}
+            <div class="tasks-mobile">
+                {% if grouped %}
+                    {% if overdueTasks is not empty %}
+                        <div class="tasks-group">
+                            <div class="tasks-group__head is-danger"><span class="tasks-group__dot"></span>Vencidas · {{ overdueTasks|length }}</div>
+                            <div class="tasks-cards">
+                                {% for t in overdueTasks %}{{ ui.task_card(t, todayStr) }}{% endfor %}
+                            </div>
+                        </div>
+                    {% endif %}
+                    {% if upcomingTasks is not empty %}
+                        <div class="tasks-group">
+                            <div class="tasks-group__head"><span class="tasks-group__dot"></span>Próximas</div>
+                            <div class="tasks-cards">
+                                {% for t in upcomingTasks %}{{ ui.task_card(t, todayStr) }}{% endfor %}
+                            </div>
+                        </div>
+                    {% endif %}
+                {% else %}
+                    <div class="tasks-cards">
+                        {% for t in tasks %}{{ ui.task_card(t, todayStr) }}{% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+
+            {# ESCRITORIO: tabla legible (handoff 13a), filas ordenadas por urgencia. #}
+            <div class="tasks-table">
+                <div class="trow trow--head">
+                    <span>Tarea</span><span>Unidad</span><span>Responsable</span><span>Fecha límite</span><span>Estado</span>
+                </div>
+                {% for t in tasks %}{{ ui.task_row(t, todayStr) }}{% endfor %}
             </div>
         {% endif %}
     </div>

@@ -17,6 +17,7 @@
                 <h1 class="home-greeting">Buenos días, {{ nombre }}</h1>
                 {% if roleSubtitle %}<p class="home-role">{{ roleSubtitle }}</p>{% endif %}
             </div>
+            <a class="home-newtask" href="{{ path('task_new') }}">+ Nueva tarea</a>
             <span class="home-avatar" aria-hidden="true">{{ iniciales }}</span>
         </header>
 
@@ -47,6 +48,9 @@
             </a>
         {% endif %}
 
+        {# En escritorio, todo lo de debajo del hero se reparte en dos columnas (rejilla responsive);
+           en móvil es una sola columna apilada. #}
+        <div class="home-cols">
         {# ---- Mis tareas (lista abierta; vencidas resaltadas) ---- #}
         <section class="home-section">
             <div class="home-section__head">
@@ -230,5 +234,6 @@
                 <a class="module__foot" href="{{ path('task_index') }}">Ver panel del centro</a>
             </section>
         {% endif %}
+        </div>{# /.home-cols #}
     </div>
 {% endblock %}

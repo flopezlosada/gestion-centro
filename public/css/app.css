@@ -2416,6 +2416,26 @@ tr.is-not-covered { background: var(--danger-weak); }
 /* Subtítulo de rol bajo el saludo */
 .home-role { font-size: 12px; color: var(--text-faint); margin: 2px 0 0; }
 
+/* "+ Nueva tarea" en la cabecera: solo escritorio (en móvil se crea desde Tareas). */
+.home-newtask { display: none; }
+
+/* Debajo del hero: columna única en móvil; en escritorio, dos columnas que aprovechan el ancho. */
+.home-cols { display: flex; flex-direction: column; gap: 24px; }
+@media (min-width: 900px) {
+    .home { max-width: 1000px; }
+    .home-head { align-items: center; }
+    .home-newtask {
+        display: inline-flex; align-items: center; margin-left: auto; margin-right: 14px; order: 2;
+        background: var(--accent); color: var(--on-accent); border-radius: 11px; padding: 11px 18px;
+        font: 600 14px var(--font-body); text-decoration: none;
+    }
+    .home-newtask:hover { background: var(--accent-hover); color: var(--on-accent); }
+    .home-avatar { order: 3; }
+    .home-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+    /* Las secciones dentro de la rejilla no arrastran su margen inferior (lo da el gap). */
+    .home-cols > .home-section, .home-cols > .module { margin: 0; }
+}
+
 /* ---- Contenido de los módulos de gestión (mi departamento / el centro) ---- */
 .module__tiles { display: flex; gap: 10px; padding: 14px 18px 12px; }
 .module-tile { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; }
@@ -2561,6 +2581,35 @@ tr.is-not-covered { background: var(--danger-weak); }
 .tasks-empty { padding: 30px 8px; text-align: center; color: var(--text-muted); }
 .tasks-empty a { font-weight: 600; }
 
+/* Tabla de escritorio (handoff 13a): oculta en móvil, donde mandan las tarjetas. */
+.tasks-table { display: none; }
+@media (min-width: 900px) {
+    .tasks-page { max-width: 1080px; }
+    .tasks-mobile { display: none; }
+    .tasks-table { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+    .trow {
+        display: grid; grid-template-columns: 2.4fr 1.1fr 1.1fr 1fr 130px; gap: 16px; align-items: center;
+        padding: 14px 20px; border-bottom: 1px solid var(--separator); position: relative;
+        text-decoration: none; color: inherit;
+    }
+    .trow:last-child { border-bottom: 0; }
+    .trow:not(.trow--head):hover { background: color-mix(in srgb, var(--surface-sunken) 60%, var(--surface)); }
+    .trow--head { background: var(--surface-sunken); font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); }
+    .trow--head:hover { background: var(--surface-sunken); }
+    .trow.is-overdue { padding-left: 23px; }
+    .trow.is-overdue::before { content: ""; position: absolute; left: 0; top: 11px; bottom: 11px; width: 3px; border-radius: 999px; background: var(--danger); }
+    .trow.is-cancelled { opacity: .6; }
+    .trow__title { font-size: 14px; color: var(--text); }
+    .trow.is-cancelled .trow__title { text-decoration: line-through; text-decoration-color: var(--text-tenue); }
+    .trow__unit { font-size: 13px; color: var(--text-muted); }
+    .trow__who { display: flex; align-items: center; gap: 7px; min-width: 0; }
+    .trow__avatar { flex: none; width: 22px; height: 22px; border-radius: 999px; background: var(--accent-weak); color: var(--accent); display: grid; place-items: center; font-size: 9px; font-weight: 700; }
+    .trow__name { font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .trow__date { font-family: var(--font-mono); font-size: 13px; color: var(--text-muted); }
+    .trow__date.is-overdue { color: var(--danger-text); font-weight: 600; }
+    .trow .task-pill { justify-self: start; }
+}
+
 /* =============================================================================
    Detalle de tarea — pantalla empujada: barra de volver, ficha, barra de acciones
    ============================================================================= */
@@ -2613,6 +2662,16 @@ tr.is-not-covered { background: var(--danger-weak); }
     font: 400 14px var(--font-body); background: var(--surface); color: var(--text);
 }
 
+/* Detalle a 2 columnas (handoff 13b): en móvil se apila; en escritorio contenido + aside. */
+.detail-cols { max-width: 600px; }
+.detail-aside { display: flex; flex-direction: column; gap: 16px; }
+@media (min-width: 900px) {
+    .detail-cols { max-width: 1080px; display: grid; grid-template-columns: 1.6fr 1fr; gap: 28px; align-items: start; }
+    .detail-main { min-width: 0; }
+    .detail-aside { position: sticky; top: 32px; }
+    .detail-aside .meta-grid { margin-top: 0; }
+}
+
 /* Barra de acciones */
 .actionbar { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 24px; max-width: 600px; }
 .actionbar__form { flex: 1; display: flex; margin: 0; }
@@ -2632,8 +2691,9 @@ tr.is-not-covered { background: var(--danger-weak); }
 .btn-lg--muted:hover { background: var(--surface-sunken); color: var(--text); }
 
 @media (max-width: 760px) {
-    /* En móvil no hay breadcrumb (topbar oculta): la barra de volver es la salida. */
-    .task-detail { padding-bottom: 40px; }
+    /* En móvil no hay breadcrumb (topbar oculta): la barra de volver es la salida. Deja hueco para
+       la barra de acciones fija. */
+    .task-detail, .detail-cols { padding-bottom: 40px; }
     .actionbar {
         position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; margin: 0; max-width: none;
         background: var(--surface); border-top: 1px solid var(--border);
