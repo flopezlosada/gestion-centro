@@ -1996,6 +1996,8 @@ input[type="email"], input[type="text"], select, textarea {
 
 /* Invitación a activar avisos push tras el login. */
 .push-cta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; background: var(--accent-weak); border: 1px solid var(--accent); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 16px; }
+/* display:flex anula el [hidden] del UA; sin esta guarda el banner se ve siempre (como el resto de componentes con display + hidden). */
+.push-cta[hidden] { display: none; }
 .push-cta__text { color: var(--text); }
 .push-cta__actions { display: flex; gap: 8px; flex-shrink: 0; }
 
