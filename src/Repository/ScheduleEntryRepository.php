@@ -171,6 +171,27 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
+     * The year's distinct slots reshaped by index for O(1) lookup of a slot's times:
+     * [slotIndex => ['startsAt' => ..., 'endsAt' => ...]]. Shared by the parte, "mis guardias" and the
+     * home hero, which all resolve a cover's times from its slot index. Empty if the year has no schedule.
+     *
+     * @return array<int, array{startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}>
+     */
+    public function slotTimes(?AcademicYear $year): array
+    {
+        if (null === $year) {
+            return [];
+        }
+
+        $times = [];
+        foreach ($this->distinctSlots($year) as $slot) {
+            $times[$slot['index']] = ['startsAt' => $slot['startsAt'], 'endsAt' => $slot['endsAt']];
+        }
+
+        return $times;
+    }
+
+    /**
      * Every timetable cell a teacher has in a course, of any kind, ordered by weekday then period —
      * the data behind the manual "horario de guardias" grid, which shows the imported lective cells as
      * read-only context and lets the duty cells be edited.

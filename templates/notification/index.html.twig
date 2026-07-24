@@ -3,56 +3,66 @@
 {% block title %}Avisos · {{ app_organization_name }}{% endblock %}
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Avisos{% endblock %}
 
+{# Una tarjeta de aviso: barra verde a la izquierda si no leído, icono por tipo, título + NUEVO, cuerpo y hora. #}
+{% macro notice(n, today) %}
+    {% set link = n.task ? path('task_show', { id: n.task.id }) : null %}
+    <{{ link ? 'a' : 'div' }} class="notice{{ n.read ? '' : ' is-unread' }}"{% if link %} href="{{ link }}"{% endif %}>
+        <span class="notice__icon notice__icon--{{ n.task ? 'task' : 'bell' }}" aria-hidden="true">
+            {% if n.task %}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 1.5-1.5M4 12l1 1 1.5-1.5M4 18l1 1 1.5-1.5"/></svg>
+            {% else %}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+            {% endif %}
+        </span>
+        <div class="notice__body">
+            <div class="notice__head">
+                <span class="notice__title">{{ n.title }}</span>
+                {% if not n.read %}<span class="notice__new">Nuevo</span>{% endif %}
+            </div>
+            {% if n.body %}<p class="notice__text">{{ n.body }}</p>{% endif %}
+            <div class="notice__time">{% if n.createdAt|date('Y-m-d') == today %}{{ n.createdAt|date('H:i') }}{% else %}{{ n.createdAt|date('d/m · H:i') }}{% endif %}</div>
+        </div>
+    </{{ link ? 'a' : 'div' }}>
+{% endmacro %}
+
 {% block body %}
-    <div class="page-head">
-        <div>
-            <h1>Avisos</h1>
-            <p class="lead">Tus recordatorios de tareas y avisos de vencimiento.</p>
-        </div>
-        {% if notifications is not empty %}
-            <form method="post" action="{{ path('notification_mark_read') }}">
-                <input type="hidden" name="_token" value="{{ csrf_token('mark_notifications_read') }}">
-                <button type="submit" class="btn btn-secondary">Marcar todo como leído</button>
-            </form>
-        {% endif %}
-    </div>
+    {% import _self as ui %}
+    {% set today = 'now'|date('Y-m-d') %}
+    {% set hoy = notifications|filter(n => n.createdAt|date('Y-m-d') == today) %}
+    {% set antes = notifications|filter(n => n.createdAt|date('Y-m-d') != today) %}
 
-    {% if app_vapid_public_key is not empty %}
-        {# Panel oculto por defecto: push.js lo muestra y rellena según soporte del navegador y estado
-           de la suscripción. Sin JS o sin soporte, no aparece un control roto. #}
-        <div class="card" data-push-panel hidden>
-            <div class="page-head" style="margin:0">
-                <div>
-                    <h2>Avisos en este dispositivo</h2>
-                    <p class="muted" data-push-status>Comprobando…</p>
+    <div class="avisos-page">
+        <header class="avisos-head">
+            <h1 class="avisos-title">Avisos</h1>
+            {% if notifications is not empty %}
+                <form method="post" action="{{ path('notification_mark_read') }}">
+                    <input type="hidden" name="_token" value="{{ csrf_token('mark_notifications_read') }}">
+                    <button type="submit" class="avisos-markread">Marcar leídos</button>
+                </form>
+            {% endif %}
+        </header>
+
+        {% if app_vapid_public_key is not empty %}
+            <div class="module" data-push-panel hidden>
+                <div class="module__head" style="border-bottom:0">
+                    <div><div class="module__title" style="font-size:16px">Avisos en este dispositivo</div><div class="module__sub" data-push-status>Comprobando…</div></div>
+                    <button type="button" class="btn btn-secondary" data-push-toggle hidden></button>
                 </div>
-                <button type="button" class="btn btn-secondary" data-push-toggle hidden></button>
+                <p class="module__empty" data-push-ios-hint hidden>En iPhone o iPad, añade esta web a la pantalla de inicio (Compartir → «Añadir a pantalla de inicio») y ábrela desde ahí; solo entonces iOS permite activar los avisos.</p>
             </div>
-            <p class="muted" data-push-ios-hint hidden>En iPhone o iPad, primero añade esta web a la pantalla de inicio (botón Compartir → «Añadir a pantalla de inicio») y ábrela desde ahí; solo entonces iOS permite activar los avisos.</p>
-        </div>
-    {% endif %}
+        {% endif %}
 
-    <div class="card">
         {% if notifications is empty %}
-            <div class="empty-state">
-                <h2>No tienes avisos</h2>
-                <p>Aquí aparecerán los recordatorios de tus tareas y los avisos de vencimiento.</p>
-            </div>
+            <div class="tasks-empty"><p>No tienes avisos. Aquí aparecerán los recordatorios de tus tareas y guardias.</p></div>
         {% else %}
-            <ol class="obj-timeline">
-                {% for n in notifications %}
-                    <li class="obj-timeline__item">
-                        <div class="obj-timeline__head">
-                            <span class="obj-timeline__verb">
-                                {% if not n.read %}<span class="badge badge--danger">Nuevo</span> {% endif %}
-                                {% if n.task %}<a href="{{ path('task_show', { id: n.task.id }) }}">{{ n.title }}</a>{% else %}{{ n.title }}{% endif %}
-                            </span>
-                            <span class="obj-timeline__meta muted"><time datetime="{{ n.createdAt|date('c') }}">{{ n.createdAt|date('d/m/Y H:i') }}</time></span>
-                        </div>
-                        {% if n.body %}<p class="muted">{{ n.body }}</p>{% endif %}
-                    </li>
-                {% endfor %}
-            </ol>
+            {% if hoy is not empty %}
+                <div class="avisos-group__label">Hoy</div>
+                <div class="avisos-list">{% for n in hoy %}{{ ui.notice(n, today) }}{% endfor %}</div>
+            {% endif %}
+            {% if antes is not empty %}
+                <div class="avisos-group__label avisos-group__label--sep">Antes</div>
+                <div class="avisos-list">{% for n in antes %}{{ ui.notice(n, today) }}{% endfor %}</div>
+            {% endif %}
         {% endif %}
     </div>
 {% endblock %}

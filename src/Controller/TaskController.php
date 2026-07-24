@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Dashboard\CentreDashboard;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskResponsibility;
@@ -22,6 +23,7 @@ use App\Service\TaskAssignmentNotifier;
 use App\Service\TaskVisibility;
 use App\Service\TaskWorkflow;
 use App\Support\TaskActivityPresenter;
+use App\Support\TaskStatus;
 use App\Util\CalendarDate;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
@@ -45,9 +47,10 @@ final class TaskController extends AbstractController
      * any authenticated user; the organisation chart decides what shows up, not the permission matrix.
      */
     #[Route('/tareas', name: 'task_index', methods: ['GET'])]
-    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility): Response
+    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility, CentreDashboard $dashboard): Response
     {
-        $schoolYear = $request->query->getString('curso') ?: SchoolYear::current(new \DateTimeImmutable());
+        $today = new \DateTimeImmutable('today');
+        $schoolYear = $request->query->getString('curso') ?: SchoolYear::current($today);
         // Cursos entre los que se puede navegar (histórico): los que tienen tareas + el actual, por si
         // aún no tiene ninguna. Se ofrece el selector solo cuando hay más de uno.
         $years = $tasks->schoolYearsWithTasks();
@@ -56,11 +59,81 @@ final class TaskController extends AbstractController
             rsort($years);
         }
 
+        $visible = $visibility->visibleTo($tasks->findBySchoolYear($schoolYear), $user, $this->isGranted('ROLE_ADMIN'));
+
+        // Conteos para los chips de estado (sobre TODO lo visible, antes de filtrar). Reusa el mismo
+        // recuento del panel para no divergir.
+        $ov = $dashboard->overview($visible, $today);
+        $counts = [
+            'all' => \count($visible),
+            'overdue' => $ov['overdue'],
+            'pending' => $ov['pending'],
+            'submitted' => $ov['submitted'],
+            'validated' => $ov['finalized'],
+        ];
+
+        // Filtro por estado (chip) + búsqueda por texto. Server-side: robusto, sin JS, compartible por URL.
+        $estado = $request->query->getString('estado') ?: 'all';
+        $q = mb_strtolower(trim($request->query->getString('q')));
+
+        $matches = static function (Task $t) use ($estado, $q, $today): bool {
+            $overdue = self::isOverdue($t, $today);
+            $byStatus = match ($estado) {
+                'overdue' => $overdue,
+                'pending' => TaskStatus::PENDING === $t->getStatus(),
+                'submitted' => TaskStatus::SUBMITTED === $t->getStatus(),
+                'validated' => TaskStatus::VALIDATED === $t->getStatus(),
+                default => true,
+            };
+            if (!$byStatus) {
+                return false;
+            }
+            if ('' === $q) {
+                return true;
+            }
+            $hay = mb_strtolower($t->getTitle().' '.($t->getAssignedUser()?->getFullName() ?? '').' '.($t->getUnit()?->getName() ?? ''));
+
+            return str_contains($hay, $q);
+        };
+
+        $filtered = array_values(array_filter($visible, $matches));
+        usort($filtered, static fn (Task $a, Task $b): int => $a->getDueDate() <=> $b->getDueDate());
+
+        // Agrupación por urgencia solo en la vista "Todas" sin búsqueda: vencidas primero, luego el resto.
+        $grouped = 'all' === $estado && '' === $q;
+        $overdue = $upcoming = [];
+        if ($grouped) {
+            foreach ($filtered as $t) {
+                if (self::isOverdue($t, $today)) {
+                    $overdue[] = $t;
+                } else {
+                    $upcoming[] = $t;
+                }
+            }
+        }
+
         return $this->render('task/index.html.twig', [
             'schoolYear' => $schoolYear,
             'years' => $years,
-            'tasks' => $visibility->visibleTo($tasks->findBySchoolYear($schoolYear), $user, $this->isGranted('ROLE_ADMIN')),
+            'todayStr' => $today->format('Y-m-d'),
+            'counts' => $counts,
+            'estado' => $estado,
+            'q' => $request->query->getString('q'),
+            'grouped' => $grouped,
+            'tasks' => $filtered,
+            'overdueTasks' => $overdue,
+            'upcomingTasks' => $upcoming,
         ]);
+    }
+
+    /**
+     * A task is overdue when it is still open (neither finalized nor cancelled) and its deadline has
+     * passed. |date-free comparison as strings to avoid timezone drift (see CI-UTC memory).
+     */
+    private static function isOverdue(Task $task, \DateTimeImmutable $today): bool
+    {
+        return !\in_array($task->getStatus(), TaskStatus::CLOSED, true)
+            && $task->getDueDate()->format('Y-m-d') < $today->format('Y-m-d');
     }
 
     /**

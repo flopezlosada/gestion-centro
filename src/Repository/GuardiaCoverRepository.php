@@ -27,6 +27,22 @@ class GuardiaCoverRepository extends ServiceEntityRepository
      *
      * @return GuardiaCover[] the covers, absent teacher first by name
      */
+    /**
+     * How many covers on a given day are still without an assigned guardia — the "ausencias sin cubrir"
+     * that the coordinator's home module surfaces. Counts covers, not teachers (one absent teacher may
+     * have several uncovered slots).
+     */
+    public function countUnassignedOn(\DateTimeImmutable $date): int
+    {
+        return (int) $this->createQueryBuilder('c')
+            ->select('COUNT(c.id)')
+            ->andWhere('c.date = :date')
+            ->andWhere('c.assignedGuardia IS NULL')
+            ->setParameter('date', $date, 'date_immutable')
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
     public function findForParte(\DateTimeImmutable $date, int $slotIndex): array
     {
         return $this->createQueryBuilder('c')

@@ -1,56 +1,110 @@
 {% extends 'app_shell.html.twig' %}
-{% import '_macros/task.html.twig' as taskUi %}
 
 {% block title %}Tareas {{ schoolYear }} · {{ app_organization_name }}{% endblock %}
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Tareas{% endblock %}
 
-{% block body %}
-    <div class="page-head">
-        <div>
-            <h1>Tareas del centro {{ schoolYear }}</h1>
-            <p class="lead">El plan de tareas del curso, por fecha límite.</p>
-            {% if years|length > 1 %}
-                <nav class="year-nav" aria-label="Curso">
-                    {% for y in years %}
-                        <a href="{{ path('task_index', { curso: y }) }}" class="year-nav__item{{ y == schoolYear ? ' is-active' }}"{{ y == schoolYear ? ' aria-current=page' }}>{{ y }}</a>
-                    {% endfor %}
-                </nav>
-            {% endif %}
+{# Una tarjeta de tarea: título + píldora de estado, y pie con responsable y fecha. Vencida = barra
+   roja a la izquierda y fecha en rojo; cancelada = atenuada y tachada. Compartida por los tres bloques. #}
+{% macro task_card(t, todayStr) %}
+    {% set overdue = t.status not in ['validated', 'cancelled'] and t.dueDate|date('Y-m-d', false) < todayStr %}
+    {% set pill = {
+        'pending':   {'cls': 'is-pending',  'label': 'Pendiente'},
+        'submitted': {'cls': 'is-amber',    'label': 'Entregada'},
+        'validated': {'cls': 'is-success',  'label': '✓ Finalizada'},
+        'cancelled': {'cls': 'is-muted',    'label': 'Cancelada'},
+    }[t.status]|default({'cls': 'is-pending', 'label': t.status}) %}
+    {% set who = t.assignedUser %}
+    <a class="task-card{{ overdue ? ' is-overdue' }}{{ t.status == 'cancelled' ? ' is-cancelled' }}" href="{{ path('task_show', { id: t.id }) }}">
+        <div class="task-card__top">
+            <span class="task-card__title">{{ t.title }}</span>
+            <span class="task-pill task-pill--{{ pill.cls }}">{{ pill.label }}</span>
         </div>
-        <div><a class="btn" href="{{ path('task_new') }}">+ Nueva tarea</a></div>
-    </div>
+        <div class="task-card__foot">
+            <span class="task-card__who">
+                {% if who %}
+                    <span class="task-card__avatar" aria-hidden="true">{{ who.fullName|split(' ')|map(w => w|first)|join|slice(0, 2)|upper }}</span>
+                    <span class="task-card__name">{{ who.fullName }}{% if t.unit %} · {{ t.unit.name }}{% endif %}</span>
+                {% else %}
+                    <span class="task-card__avatar task-card__avatar--empty" aria-hidden="true">·</span>
+                    <span class="task-card__name">{{ t.unit ? t.unit.name : 'Sin asignar' }}</span>
+                {% endif %}
+            </span>
+            <span class="task-card__date{{ overdue ? ' is-overdue' }}">{{ t.dueDate|date('d/m') }}</span>
+        </div>
+    </a>
+{% endmacro %}
 
-    <div class="card">
-        {% if tasks is empty %}
-            <div class="empty-state">
-                <h2>Aún no hay tareas en {{ schoolYear }}</h2>
-                <p>Cuando se planifiquen las tareas del curso aparecerán aquí.</p>
+{% block body %}
+    {% import _self as ui %}
+    {% set chips = [
+        {'key': 'all',       'label': 'Todas',       'n': counts.all},
+        {'key': 'overdue',   'label': 'Vencidas',    'n': counts.overdue,   'tone': 'danger'},
+        {'key': 'pending',   'label': 'Pendientes',  'n': counts.pending},
+        {'key': 'submitted', 'label': 'Entregadas',  'n': counts.submitted},
+        {'key': 'validated', 'label': 'Finalizadas', 'n': counts.validated},
+    ] %}
+
+    <div class="tasks-page">
+        <header class="tasks-head">
+            <div>
+                <p class="eyebrow">Curso {{ schoolYear }}</p>
+                <h1 class="tasks-title">Tareas del centro</h1>
             </div>
+            <a class="tasks-add" href="{{ path('task_new') }}" aria-label="Nueva tarea">+</a>
+        </header>
+
+        {% if years|length > 1 %}
+            <nav class="year-nav" aria-label="Curso">
+                {% for y in years %}
+                    <a href="{{ path('task_index', { curso: y }) }}" class="year-nav__item{{ y == schoolYear ? ' is-active' }}"{{ y == schoolYear ? ' aria-current=page' }}>{{ y }}</a>
+                {% endfor %}
+            </nav>
+        {% endif %}
+
+        {# Buscador (GET): recarga con ?q=. Conserva estado y curso. #}
+        <form class="tasks-search" method="get" action="{{ path('task_index') }}" role="search">
+            <input type="hidden" name="curso" value="{{ schoolYear }}">
+            {% if estado != 'all' %}<input type="hidden" name="estado" value="{{ estado }}">{% endif %}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+            <input type="search" name="q" value="{{ q }}" placeholder="Buscar tarea…" autocomplete="off">
+        </form>
+
+        {# Chips de estado con conteo (GET). El activo, en verde. #}
+        <div class="tasks-chips">
+            {% for c in chips %}
+                <a class="task-chip{{ estado == c.key ? ' is-active' }}{{ (c.tone ?? '') == 'danger' ? ' is-danger' }}"
+                   href="{{ path('task_index', { curso: schoolYear, estado: c.key, q: q ?: null }) }}">
+                    {% if (c.tone ?? '') == 'danger' %}<span class="task-chip__dot" aria-hidden="true"></span>{% endif %}{{ c.label }} <span class="task-chip__n">{{ c.n }}</span>
+                </a>
+            {% endfor %}
+        </div>
+
+        {% if tasks is empty %}
+            <div class="tasks-empty">
+                <p>No hay tareas que coincidan{{ q ? ' con «' ~ q ~ '»' }}.</p>
+                {% if estado != 'all' or q %}<a href="{{ path('task_index', { curso: schoolYear }) }}">Ver todas</a>{% endif %}
+            </div>
+        {% elseif grouped %}
+            {% if overdueTasks is not empty %}
+                <div class="tasks-group">
+                    <div class="tasks-group__head is-danger"><span class="tasks-group__dot"></span>Vencidas · {{ overdueTasks|length }}</div>
+                    <div class="tasks-cards">
+                        {% for t in overdueTasks %}{{ ui.task_card(t, todayStr) }}{% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+            {% if upcomingTasks is not empty %}
+                <div class="tasks-group">
+                    <div class="tasks-group__head"><span class="tasks-group__dot"></span>Próximas</div>
+                    <div class="tasks-cards">
+                        {% for t in upcomingTasks %}{{ ui.task_card(t, todayStr) }}{% endfor %}
+                    </div>
+                </div>
+            {% endif %}
         {% else %}
-            <table data-list-tools>
-                <thead>
-                    <tr><th>Tarea</th><th data-filter="Unidad">Unidad</th><th data-filter="Rol">Rol</th><th>Responsable</th><th data-filter-range="Fecha límite">Fecha límite</th><th data-filter="Estado">Estado</th></tr>
-                </thead>
-                <tbody>
-                    {% for t in tasks %}
-                        {% set responsibleRole = t.responsibility ? t.responsibility.role.name : (t.assignedRole ? t.assignedRole.name : null) %}
-                        {# Vencida = abierta (no validada) y con fecha límite pasada. |date(...,false) para no
-                           desplazar la fecha almacenada por zona horaria (ver memoria CI UTC vs Madrid). #}
-                        {% set overdue = t.status not in ['validated', 'cancelled'] and t.dueDate|date('Y-m-d', false) < 'now'|date('Y-m-d') %}
-                        <tr>
-                            <td>
-                                <a class="cell-link" href="{{ path('task_show', { id: t.id }) }}">{{ t.title }}</a>
-                                {% if not t.mandatory %} <span class="badge badge--muted">Voluntaria</span>{% endif %}
-                            </td>
-                            <td>{{ t.unit ? t.unit.name : '—' }}</td>
-                            <td>{{ responsibleRole ?? '—' }}</td>
-                            <td>{{ taskUi.person(t.assignedUser) }}</td>
-                            <td class="{{ overdue ? 'due-overdue' }}">{{ t.dueDate|date('d/m/Y') }}</td>
-                            <td>{{ taskUi.status_chip(t.status) }}</td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+            <div class="tasks-cards">
+                {% for t in tasks %}{{ ui.task_card(t, todayStr) }}{% endfor %}
+            </div>
         {% endif %}
     </div>
 {% endblock %}
