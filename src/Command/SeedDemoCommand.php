@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Command;
 
+use App\Entity\Absence;
 use App\Entity\AcademicYear;
 use App\Entity\Department;
 use App\Entity\EventCategory;
@@ -729,9 +730,12 @@ final class SeedDemoCommand extends Command
 
         $groups = ['1º ESO A', '1º ESO B', '2º ESO A', '3º ESO B', '4º ESO A', '1º BACH A', '2º BACH B', 'FPB I'];
         $rooms = ['A-12', 'A-14', 'B-03', 'B-21', 'Lab 2', 'Gimnasio', 'Taller', 'Aula TIC'];
-        $notes = [null, null, 'Ejercicios 3–7 de la página 84.', 'Examen: vigilar y recoger las hojas.', 'Ver el vídeo indicado y resumen en el cuaderno.', 'Terminar la ficha de la sesión anterior.'];
+        $descriptions = [null, null, 'Ejercicios 3–7 de la página 84.', 'Examen: vigilar y recoger las hojas.', 'Ver el vídeo indicado y resumen en el cuaderno.', 'Terminar la ficha de la sesión anterior.'];
+        // Motivo de la ausencia (privado): la mayoría en blanco, unos pocos con un motivo de ejemplo.
+        $reasons = [null, null, null, 'Cita médica.', 'Asuntos propios.', 'Formación externa.'];
 
         $seen = [];
+        $absences = []; // una Absence por (profesor ausente, día); las horas del mismo día la comparten
         $created = 0;
         for ($term = 1; $term <= 3; ++$term) {
             $from = $academicYear->getTermStart($term);
@@ -748,13 +752,26 @@ final class SeedDemoCommand extends Command
                 }
                 $seen[$key] = true;
 
+                // Absence compartida por todas las horas del mismo profesor y día (donde vive el motivo).
+                $absenceKey = $absent->getId().'|'.$date->format('Y-m-d');
+                $absence = $absences[$absenceKey] ?? null;
+                if (null === $absence) {
+                    $absence = (new Absence())
+                        ->setAbsentTeacher($absent)
+                        ->setDate($date)
+                        ->setReason($reasons[array_rand($reasons)]);
+                    $this->em->persist($absence);
+                    $absences[$absenceKey] = $absence;
+                }
+
                 $cover = (new GuardiaCover())
+                    ->setAbsence($absence)
                     ->setDate($date)
                     ->setSlotIndex($slot)
                     ->setAbsentTeacher($absent)
                     ->setGroupName($groups[array_rand($groups)])
                     ->setRoomName($rooms[array_rand($rooms)])
-                    ->setTaskNote($notes[array_rand($notes)]);
+                    ->setTaskDescription($descriptions[array_rand($descriptions)]);
 
                 // Estado: ~78% cubiertas, ~10% incidencias (había guardia asignado pero no se cubrió),
                 // ~12% sin asignar (no quedaba nadie libre en el pool).

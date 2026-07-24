@@ -20,7 +20,7 @@
             <div><dt>Día y hora</dt><dd>{{ cover.date|date('d/m/Y', false) }}{% if times %} · <span class="mono">{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}</span>{% else %} · {{ cover.slotIndex + 1 }}ª hora{% endif %}</dd></div>
         </dl>
 
-        <form method="post" action="{{ path('guardia_cover_update', { id: cover.id }) }}" class="stack-form">
+        <form method="post" action="{{ path('guardia_cover_update', { id: cover.id }) }}" class="stack-form" enctype="multipart/form-data">
             <input type="hidden" name="_token" value="{{ csrf_token('guardia_cover_update' ~ cover.id) }}">
 
             <div class="field">
@@ -39,9 +39,27 @@
             </div>
 
             <div class="field">
-                <label for="task_note">Tarea para el grupo</label>
-                <textarea id="task_note" name="task_note" rows="3" maxlength="1000" placeholder="Ej.: página 84, ejercicios 1 a 5; lo dejan hecho en el cuaderno.">{{ cover.taskNote }}</textarea>
-                <p class="field-help">Lo que el profesor de guardia debe hacer trabajar al grupo. Déjalo vacío si no hay tarea.</p>
+                <label>Documento de tarea</label>
+                {% if cover.taskDocumentPath %}
+                    <p class="doc-current">
+                        <a class="task-doc" href="{{ path('guardia_task_download', { id: cover.id }) }}">📎 {{ cover.taskDocumentName ?? 'Documento actual' }}</a>
+                        <label class="choice"><input type="checkbox" name="remove_document" value="1"> Quitar el documento</label>
+                    </p>
+                {% endif %}
+                <input type="file" name="document">
+                <p class="field-help">{% if cover.taskDocumentPath %}Sube uno nuevo para reemplazarlo, o marca «Quitar».{% else %}Adjunta el documento con la tarea del grupo (opcional).{% endif %}</p>
+            </div>
+
+            <div class="field">
+                <label for="task_description">Descripción de la guardia</label>
+                <textarea id="task_description" name="task_description" rows="3" maxlength="1000" placeholder="Lo que no venga en el documento: página, ejercicios, dónde está el examen…">{{ cover.taskDescription }}</textarea>
+                <p class="field-help">La ve el profesor de guardia. Déjalo vacío si no hace falta.</p>
+            </div>
+
+            <div class="field">
+                <label for="absence_reason">Motivo de la ausencia <span class="muted">(privado)</span></label>
+                <textarea id="absence_reason" name="absence_reason" rows="2" maxlength="500" placeholder="Solo lo ve la coordinación y el profesor ausente.">{{ cover.absence.reason }}</textarea>
+                <p class="field-help">No se muestra al profesor de guardia. Es común a todas las horas de esta ausencia.</p>
             </div>
 
             <div class="field">

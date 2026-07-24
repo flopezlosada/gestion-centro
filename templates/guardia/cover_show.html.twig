@@ -30,6 +30,19 @@
 
     <div class="card">
         <div class="page-head"><div><h2>Tarea para el grupo</h2></div></div>
-        {% if cover.taskNote %}<p>{{ cover.taskNote|nl2br }}</p>{% else %}<p class="muted">El profesor ausente no dejó tarea para este grupo.</p>{% endif %}
+        {% if cover.taskDocumentPath %}
+            <p><a class="btn secondary" href="{{ path('guardia_task_download', { id: cover.id }) }}">📎 Descargar documento{% if cover.taskDocumentName %} · {{ cover.taskDocumentName }}{% endif %}</a></p>
+        {% endif %}
+        {% if cover.taskDescription %}<p>{{ cover.taskDescription|nl2br }}</p>{% endif %}
+        {% if not cover.hasTask %}<p class="muted">El profesor ausente no dejó tarea para este grupo.</p>{% endif %}
     </div>
+
+    {# El motivo de la ausencia es privado: se muestra a la coordinación, nunca al profesor que cubre. #}
+    {% if canSeeReason and cover.absence.reason %}
+        <div class="card">
+            <div class="page-head"><div><h2>Motivo de la ausencia <span class="muted">(privado)</span></h2></div></div>
+            <p>{{ cover.absence.reason|nl2br }}</p>
+            <p class="field-help">Solo visible para la coordinación de guardias y el profesor ausente.</p>
+        </div>
+    {% endif %}
 {% endblock %}

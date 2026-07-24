@@ -22,7 +22,7 @@
                         <span class="upcoming__teacher">Cubres a {{ cover.absentTeacher.fullName }}</span>
                     </span>
                     {% if cover.notCovered %}<span class="badge badge--danger" data-tone="danger">Incidencia</span>
-                    {% elseif cover.taskNote %}<span class="badge badge--warning" data-tone="warning">Tarea</span>{% endif %}
+                    {% elseif cover.hasTask %}<span class="badge badge--warning" data-tone="warning">Tarea</span>{% endif %}
                     <span class="upcoming__go" aria-hidden="true">›</span>
                 </a>
             {% endfor %}

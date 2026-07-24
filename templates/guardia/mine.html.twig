@@ -48,7 +48,7 @@
                             <span class="next-preview__where">{{ [sc.groupName, sc.roomName]|filter(v => v)|join(' · ') ?: 'Sin especificar' }}</span>
                             <span class="next-preview__teacher">Cubres a {{ sc.absentTeacher.fullName }}</span>
                         </span>
-                        {% if sc.taskNote %}<span class="badge badge--warning" data-tone="warning">Tarea</span>{% endif %}
+                        {% if sc.hasTask %}<span class="badge badge--warning" data-tone="warning">Tarea</span>{% endif %}
                     </div>
                 </div>
                 <a class="btn" href="#proximas">Ver próximas guardias</a>
@@ -88,7 +88,7 @@
                             </span>
                             {% if cover.notCovered %}<span class="badge badge--danger" data-tone="danger">Incidencia</span>
                             {% elseif item.done %}<span class="today-row__done mono">✓ Hecha</span>
-                            {% elseif cover.taskNote %}<span class="badge badge--warning" data-tone="warning">Tiene tarea</span>
+                            {% elseif cover.hasTask %}<span class="badge badge--warning" data-tone="warning">Tiene tarea</span>
                             {% else %}<span class="today-row__notask mono">Sin tarea</span>{% endif %}
                             {% if item.done %}<span></span>{% else %}<span class="today-row__go" aria-hidden="true">›</span>{% endif %}
                         </a>
@@ -113,7 +113,7 @@
                         <span class="hero-guardia__place">{{ [cover.roomName, cover.groupName]|filter(v => v)|join(' · ') ?: 'Sin especificar' }}</span>
                         <span class="hero-guardia__teacher">Cubres a <strong>{{ cover.absentTeacher.fullName }}</strong></span>
                         {% if cover.notCovered %}<span class="hero-guardia__badge hero-guardia__badge--danger">Incidencia</span>
-                        {% elseif cover.taskNote %}<span class="hero-guardia__badge hero-guardia__badge--task">Tiene tarea</span>{% endif %}
+                        {% elseif cover.hasTask %}<span class="hero-guardia__badge hero-guardia__badge--task">Tiene tarea</span>{% endif %}
                         <span class="hero-guardia__cta">Ver detalle y tarea del grupo →</span>
                     </a>
                 {% endif %}
