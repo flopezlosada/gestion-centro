@@ -5,23 +5,30 @@
     'use strict';
 
     document.addEventListener('DOMContentLoaded', function () {
-        var btn = document.querySelector('.nav-toggle');
+        // Disparadores del cajón: la hamburguesa del topbar y el botón "Más" de la barra inferior.
+        var triggers = document.querySelectorAll('.nav-toggle, [data-nav-toggle]');
         var sidebar = document.querySelector('.sidebar');
-        if (!btn || !sidebar) {
+        if (!triggers.length || !sidebar) {
             return;
         }
         var backdrop = sidebar.querySelector('.nav-backdrop');
 
         function setOpen(open) {
             sidebar.classList.toggle('is-open', open);
-            btn.setAttribute('aria-expanded', String(open));
-            btn.setAttribute('aria-label', open ? 'Cerrar menú' : 'Abrir menú');
+            triggers.forEach(function (btn) {
+                btn.setAttribute('aria-expanded', String(open));
+                if (btn.classList.contains('nav-toggle')) {
+                    btn.setAttribute('aria-label', open ? 'Cerrar menú' : 'Abrir menú');
+                }
+            });
             // Evita que el fondo haga scroll mientras el cajón está abierto.
             document.body.style.overflow = open ? 'hidden' : '';
         }
 
-        btn.addEventListener('click', function () {
-            setOpen(!sidebar.classList.contains('is-open'));
+        triggers.forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                setOpen(!sidebar.classList.contains('is-open'));
+            });
         });
 
         if (backdrop) {
@@ -31,7 +38,7 @@
         document.addEventListener('keydown', function (e) {
             if (e.key === 'Escape' && sidebar.classList.contains('is-open')) {
                 setOpen(false);
-                btn.focus();
+                triggers[0].focus();
             }
         });
 

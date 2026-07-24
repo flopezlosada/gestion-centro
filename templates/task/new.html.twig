@@ -4,19 +4,21 @@
 {% block title %}Nueva tarea · {{ app_organization_name }}{% endblock %}
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('task_index') }}">Tareas</a><span class="sep">/</span>Nueva{% endblock %}
 
+{# Pantalla empujada: sin barra de pestañas. #}
+{% block bottomnav %}{% endblock %}
+
 {% block body %}
-    <div class="page-head">
-        <div>
-            <h1>Nueva tarea</h1>
-            <p class="lead">Créala para ti o para alguien de tu equipo.</p>
-        </div>
+    <div class="formtop">
+        <a class="formtop__cancel" href="{{ path('task_index') }}">Cancelar</a>
+        <span class="formtop__title">Nueva tarea</span>
+        <span class="formtop__spacer"></span>
     </div>
 
-    <div class="card">
+    <div class="formscreen">
         {{ form_start(form, { attr: { novalidate: 'novalidate' } }) }}
         {{ f.submit_error(form) }}
         {{ form_errors(form) }}
-        <div class="stackform">
+        <div class="stackform stackform--screen">
             <div class="form-row">
                 {{ form_label(form.title) }}
                 {{ form_widget(form.title, { attr: { class: 'field-title', placeholder: 'Ej. Preparar la evaluación', autofocus: true } }) }}
@@ -27,8 +29,7 @@
             {{ f.responsibility(form) }}
             {{ f.toggles([form.mandatory]|merge(form.requiresDocument is defined ? [form.requiresDocument] : [])) }}
             <div class="stackform__foot">
-                <a class="btn secondary" href="{{ path('app_homepage') }}">Cancelar</a>
-                <button class="btn" type="submit">Crear tarea</button>
+                <button class="btn-lg btn-lg--primary" type="submit">Crear tarea</button>
             </div>
         </div>
         {{ form_end(form) }}

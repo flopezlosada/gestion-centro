@@ -1,131 +1,145 @@
 {% extends 'app_shell.html.twig' %}
-{% import '_macros/task.html.twig' as taskUi %}
 
 {% block title %}{{ task.title }} · {{ app_organization_name }}{% endblock %}
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('task_index') }}">Tareas</a><span class="sep">/</span>{{ task.title }}{% endblock %}
 
-{% block body %}
-    {% set nextStep = {
-        'pending': 'Pendiente. Cuando la termines, entrégala.',
-        'submitted': 'Entregada. A la espera de que un responsable la valide.',
-        'validated': 'Finalizada. Tarea cerrada.',
-        'cancelled': 'Cancelada. Esta tarea se anuló.',
-    } %}
-    {% set primaryActions = ['submit', 'validate'] %}
-    {% set typeHelp = {
-        'simple': 'Tarea sencilla: la entregas y un responsable la valida.',
-        'with_deliverable': 'Lleva un entregable: al entregar adjuntas el enlace del documento y un responsable la valida.',
-    } %}
+{# Pantalla empujada: sin barra de pestañas; barra de volver arriba y barra de acciones abajo. #}
+{% block bottomnav %}{% endblock %}
 
-    <div class="page-head">
-        <div>
-            <h1>{{ task.title }}</h1>
-            <p class="lead">{{ taskUi.status_badge(task.status) }} · {{ task.type.label }}{% if not task.mandatory %} · Voluntaria{% endif %}</p>
-            <p class="muted">{{ typeHelp[task.type.value]|default('') }}</p>
-        </div>
-        {% if canManage %}
-            <div><a class="btn btn-secondary" href="{{ path('task_edit', { id: task.id }) }}">Editar</a></div>
-        {% endif %}
+{% block body %}
+    {% set overdue = task.status not in ['validated', 'cancelled'] and task.dueDate|date('Y-m-d', false) < 'now'|date('Y-m-d') %}
+    {% set responsibleRole = task.responsibility ? task.responsibility.role.name : (task.assignedRole ? task.assignedRole.name : null) %}
+    {% set who = task.responsibleForDisplay %}
+    {% set canValidate = 'validate' in actions %}
+    {% set pill = {
+        'pending':   {'cls': 'is-pending', 'label': 'Pendiente'},
+        'submitted': {'cls': 'is-amber',   'label': canValidate ? 'Entregada · espera tu OK' : 'Entregada'},
+        'validated': {'cls': 'is-success', 'label': '✓ Finalizada'},
+        'cancelled': {'cls': 'is-muted',   'label': 'Cancelada'},
+    }[task.status]|default({'cls': 'is-pending', 'label': task.status}) %}
+
+    {# Barra de volver (solo móvil; en escritorio manda el breadcrumb de la topbar). #}
+    <div class="backbar">
+        <a class="backbar__back" href="{{ path('task_index') }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>Tareas
+        </a>
+        {% if canManage %}<a class="backbar__edit" href="{{ path('task_edit', { id: task.id }) }}">Editar</a>{% endif %}
     </div>
 
-    <section class="card">
-        <div class="page-head"><div><h2>Descripción</h2></div></div>
-        {% if task.description %}<p>{{ task.description|nl2br }}</p>{% else %}<p class="muted">Esta tarea no tiene descripción.</p>{% endif %}
-    </section>
+    <div class="detail-cols">
+      <div class="detail-main">
+        <span class="status-pill task-pill--{{ pill.cls }}">{{ pill.label }}</span>
+        {% if not task.mandatory %}<span class="status-pill task-pill--is-muted">Voluntaria</span>{% endif %}
+        <h1 class="task-detail__title">{{ task.title }}</h1>
 
-    {# Puesto de trabajo: el estado en palabras + las acciones que este usuario puede hacer ahora. #}
-    <section class="card task-workbench">
-        <p class="task-nextstep">{{ nextStep[task.status]|default('') }}</p>
-        {% if actions is not empty %}
-            <div class="task-actions">
-                {% for name in actions %}
-                    <form method="post" action="{{ path('task_transition', { id: task.id, transition: name }) }}"{% if name == 'cancel' %} data-confirm="¿Cancelar esta tarea? Quedará anulada."{% endif %}>
-                        <input type="hidden" name="_token" value="{{ csrf_token('task_transition' ~ task.id) }}">
-                        {# Entregar con entregable: el enlace del documento se adjunta aquí mismo (un solo paso). #}
-                        {% if name == 'submit' and task.requiresDocument %}
-                            <input type="url" name="reference" value="{{ task.deliverableReference }}" placeholder="https://cloud.educa.madrid.org/…" class="deliverable-input" required>
-                        {% endif %}
-                        <button type="submit" class="btn{{ name in primaryActions ? '' : (name == 'cancel' ? ' btn-danger' : ' btn-secondary') }}">{{ taskUi.action_label(name) }}</button>
-                    </form>
-                {% endfor %}
+        {# Ficha 2×2 con lo esencial #}
+        <dl class="meta-grid">
+            <div class="meta-grid__cell">
+                <dt>Fecha límite</dt>
+                <dd class="mono{{ overdue ? ' is-overdue' }}">{{ task.dueDate|date('d/m/Y') }}</dd>
             </div>
-        {% elseif task.status in ['validated', 'cancelled'] %}
-            <p class="muted">No hay nada más que hacer aquí.</p>
-        {% else %}
-            <p class="muted">No tienes acciones disponibles sobre esta tarea.</p>
-        {% endif %}
-    </section>
-
-    {% if task.requiresDocument %}
-        <section class="card">
-            <div class="page-head"><div><h2>Entregable</h2><p class="lead">Enlace o referencia al documento (vive en la nube del centro; aquí solo guardamos la referencia).</p></div></div>
-            {% if task.deliverableReference %}
-                {# La referencia apunta a un documento real en la nube del centro: se muestra solo a las
-                   personas implicadas y a sus superiores/admin (canSeeHistory), no a cualquiera que abra
-                   el detalle (el acceso al detalle es universal). #}
-                {% if canSeeHistory %}
-                    <p><strong>Referencia:</strong> {% if task.deliverableReference starts with 'http' %}<a href="{{ task.deliverableReference }}" target="_blank" rel="noopener">{{ task.deliverableReference }}</a>{% else %}{{ task.deliverableReference }}{% endif %}</p>
-                {% else %}
-                    <p class="muted">Hay un entregable, pero no tienes acceso a su referencia.</p>
-                {% endif %}
-            {% else %}
-                <p class="muted">Aún no hay entregable. El enlace se adjunta al <strong>entregar</strong> la tarea, en el mismo paso.</p>
-            {% endif %}
-            {# Corrección del enlace SOLO tras la entrega (estado Entregada) y antes de que se valide: al
-               entregar ya se adjunta, así que no hay un "Guardar" suelto en Pendiente que confunda. #}
-            {% if canWork and task.status == 'submitted' %}
-                <form method="post" action="{{ path('task_set_deliverable', { id: task.id }) }}" class="deliverable-form">
-                    <input type="hidden" name="_token" value="{{ csrf_token('task_deliverable' ~ task.id) }}">
-                    <input type="url" name="reference" value="{{ task.deliverableReference }}" placeholder="https://cloud.educa.madrid.org/…" class="deliverable-input">
-                    <button type="submit" class="btn btn-secondary">Actualizar enlace</button>
-                </form>
-            {% endif %}
-        </section>
-    {% endif %}
-
-    <section class="card">
-        <div class="page-head"><div><h2>Detalles</h2></div></div>
-        <dl class="detail-grid">
-            <dt>Curso</dt><dd>{{ task.schoolYear }}</dd>
-            <dt>Fecha límite</dt><dd>{{ task.dueDate|date('d/m/Y') }}</dd>
-            <dt>Unidad</dt><dd>{{ task.unit ? task.unit.name : '—' }}</dd>
-            <dt>Responsable</dt>
-            <dd>
-                {%- set who = task.responsibleForDisplay -%}
-                {{ who ? who.fullName : '—' }}
-                {%- if task.responsibility %} ({{ task.responsibility.label }}){% endif -%}
-                {%- if task.delegatedTo %} · delegada{% endif -%}
-            </dd>
-            {% if task.requiresCheckbox %}<dt>Hecha por el responsable</dt><dd>{{ task.checkboxDone ? 'Sí' : 'No' }}</dd>{% endif %}
-            <dt>Creada</dt><dd>{{ task.createdAt|date('d/m/Y') }}{% if task.createdBy %} · por {{ task.createdBy.fullName }}{% endif %}</dd>
+            <div class="meta-grid__cell">
+                <dt>Unidad</dt>
+                <dd>{{ task.unit ? task.unit.name : '—' }}</dd>
+            </div>
+            <div class="meta-grid__cell">
+                <dt>Rol</dt>
+                <dd>{{ responsibleRole ?? '—' }}</dd>
+            </div>
+            <div class="meta-grid__cell">
+                <dt>Responsable</dt>
+                <dd>{{ who ? who.fullName : '—' }}{% if task.delegatedTo %} · delegada{% endif %}</dd>
+            </div>
         </dl>
-    </section>
 
-    {% if canDelegate %}
-        <section class="card">
-            <div class="page-head"><div><h2>Delegar</h2><p class="lead">Pásala a alguien de tu equipo. Estructuralmente sigue siendo {{ task.responsibility ? task.responsibility.label : 'de su responsable' }}.</p></div></div>
-            <form method="post" action="{{ path('task_delegate', { id: task.id }) }}" class="stackform">
-                <input type="hidden" name="_token" value="{{ csrf_token('task_delegate' ~ task.id) }}">
-                <div class="form-row">
-                    <label for="delegatedTo">Delegar en</label>
+        {# Instrucciones #}
+        <div class="detail-block">
+            <div class="detail-block__label">Instrucciones</div>
+            {% if task.description %}<p class="detail-prose">{{ task.description|nl2br }}</p>{% else %}<p class="muted">Esta tarea no tiene descripción.</p>{% endif %}
+        </div>
+
+        {# Aviso: requiere documento (solo mientras está pendiente de entrega) #}
+        {% if task.requiresDocument and task.status == 'pending' %}
+            <div class="doc-notice">
+                <span class="doc-notice__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg>
+                </span>
+                <div>
+                    <div class="doc-notice__title">Requiere adjuntar un documento</div>
+                    <div class="doc-notice__sub">Podrás pegar el enlace al entregar la tarea.</div>
+                </div>
+            </div>
+        {% endif %}
+
+        {# Entregable ya aportado (referencia/enlace, nunca el archivo) #}
+        {% if task.requiresDocument and task.deliverableReference and task.status in ['submitted', 'validated'] %}
+            <div class="detail-block">
+                <div class="detail-block__label">Documento entregado</div>
+                {% if task.deliverableReference starts with 'http' %}
+                    <a class="doc-card" href="{{ task.deliverableReference }}" target="_blank" rel="noopener">
+                        <span class="doc-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span>
+                        <span class="doc-card__body"><span class="doc-card__name">{{ task.deliverableReference }}</span><span class="doc-card__meta">Enlace al documento</span></span>
+                        <span class="doc-card__open">Abrir</span>
+                    </a>
+                {% else %}
+                    <p class="detail-prose">{{ task.deliverableReference }}</p>
+                {% endif %}
+                {% if canWork %}
+                    <form method="post" action="{{ path('task_set_deliverable', { id: task.id }) }}" class="deliverable-form">
+                        <input type="hidden" name="_token" value="{{ csrf_token('task_deliverable' ~ task.id) }}">
+                        <input type="url" name="reference" value="{{ task.deliverableReference }}" placeholder="https://cloud.educa.madrid.org/…" class="deliverable-input">
+                        <button type="submit" class="btn btn-secondary">Actualizar enlace</button>
+                    </form>
+                {% endif %}
+            </div>
+        {% endif %}
+
+      </div>{# /detail-main #}
+
+      <aside class="detail-aside">
+        {# Delegar (solo titular con equipo o admin) #}
+        {% if canDelegate %}
+            <div class="detail-block">
+                <div class="detail-block__label">Delegar</div>
+                <p class="muted" style="margin-top:0">Pásala a alguien de tu equipo; sigue siendo {{ task.responsibility ? task.responsibility.label : 'de su responsable' }}.</p>
+                <form method="post" action="{{ path('task_delegate', { id: task.id }) }}" class="delegate-form">
+                    <input type="hidden" name="_token" value="{{ csrf_token('task_delegate' ~ task.id) }}">
                     <select name="delegatedTo" id="delegatedTo">
                         <option value="">— Sin delegar —</option>
                         {% for u in delegatable %}
                             <option value="{{ u.id }}"{{ task.delegatedTo and task.delegatedTo.id == u.id ? ' selected' : '' }}>{{ u.fullName }}</option>
                         {% endfor %}
                     </select>
-                </div>
-                <div class="stackform__foot">
-                    <button class="btn" type="submit">Guardar delegación</button>
-                </div>
-            </form>
-        </section>
-    {% endif %}
+                    <button class="btn btn-secondary" type="submit">Guardar</button>
+                </form>
+            </div>
+        {% endif %}
 
-    {% if canSeeHistory %}
-        <section class="card">
-            <div class="page-head"><div><h2>Histórico de actividad</h2><p class="lead">Quién ha hecho qué con esta tarea.</p></div></div>
-            {{ include('_partials/_activity_log.html.twig', { rows: activityRows, isAdmin: isAdmin }) }}
-        </section>
-    {% endif %}
+        {# Actividad real (histórico ya humanizado) — la "línea de estado" del diseño #}
+        {% if canSeeHistory %}
+            <div class="detail-block">
+                <div class="detail-block__label">Actividad</div>
+                {{ include('_partials/_activity_log.html.twig', { rows: activityRows, isAdmin: isAdmin }) }}
+            </div>
+        {% endif %}
+
+        {# Barra de acciones (fija abajo en móvil, en el aside en escritorio). Conserva formularios y guards. #}
+        {% if actions is not empty %}
+        {% set labels = { 'submit': 'Entregar tarea', 'validate': 'Validar', 'reject': 'Devolver', 'cancel': 'Cancelar' } %}
+        <div class="actionbar">
+            {% for name in actions %}
+                <form method="post" action="{{ path('task_transition', { id: task.id, transition: name }) }}" class="actionbar__form actionbar__form--{{ name }}"{% if name == 'cancel' %} data-confirm="¿Cancelar esta tarea? Quedará anulada."{% endif %}>
+                    <input type="hidden" name="_token" value="{{ csrf_token('task_transition' ~ task.id) }}">
+                    {% if name == 'submit' and task.requiresDocument %}
+                        <input type="url" name="reference" value="{{ task.deliverableReference }}" placeholder="Enlace al documento (https://…)" class="actionbar__input" required>
+                    {% endif %}
+                    <button type="submit" class="btn-lg btn-lg--{{ name in ['submit', 'validate'] ? 'primary' : (name == 'reject' ? 'danger' : 'muted') }}">
+                        {% if name == 'validate' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-11"/></svg>{% endif %}{{ labels[name]|default(name) }}
+                    </button>
+                </form>
+            {% endfor %}
+        </div>
+        {% endif %}
+      </aside>{# /detail-aside #}
+    </div>{# /detail-cols #}
 {% endblock %}

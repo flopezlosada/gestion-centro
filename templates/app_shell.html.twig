@@ -4,6 +4,7 @@
    ESTE archivo y rellenan {% block body %}; el login extiende 'base.html.twig' directamente. #}
 
 {% set route = app.request.attributes.get('_route') %}
+{% set unread = unread_notifications() %}
 
 {% block shell %}
     <div class="layout">
@@ -24,7 +25,6 @@
                 <a href="{{ path('task_index') }}" class="{{ route starts with 'task_' ? 'is-active' }}">Tareas del centro</a>
                 <a href="{{ path('guardia_mine') }}" class="{{ route == 'guardia_mine' ? 'is-active' }}">Mis guardias</a>
                 <a href="{{ path('calendar_index') }}" class="{{ route starts with 'calendar_' ? 'is-active' }}">Calendario</a>
-                {% set unread = unread_notifications() %}
                 <a href="{{ path('notification_index') }}" class="{{ route starts with 'notification_' ? 'is-active' }}">Avisos{% if unread > 0 %} <span class="badge badge--danger">{{ unread }}</span>{% endif %}</a>
 
                 {# Gestión de guardias: solo para quien coordina (lectura en el área Guardias; el flag de
@@ -58,6 +58,20 @@
                         <a href="{{ path('admin_event_category_index') }}" class="{{ route starts with 'admin_event_category_' ? 'is-active' }}">Categorías de evento</a>
                     </div>
                 {% endif %}
+
+                {# Cuenta (tema + usuario + salir): en móvil la topbar se oculta, así que estos controles
+                   viven aquí, en el cajón "Más". En escritorio este bloque se oculta (manda la topbar). #}
+                <div class="nav-account">
+                    <span class="nav-account__user">
+                        <span class="avatar">{{ app.user.fullName|split(' ')|map(w => w|first)|join|slice(0, 2)|upper }}</span>
+                        <span class="nav-account__name">{{ app.user.fullName }}</span>
+                    </span>
+                    <div class="theme-toggle" role="group" aria-label="Tema de color">
+                        <button type="button" data-theme-value="light" aria-pressed="true">Claro</button>
+                        <button type="button" data-theme-value="dark" aria-pressed="false">Oscuro</button>
+                    </div>
+                    <a href="{{ path('app_logout') }}" class="nav-account__logout">Cerrar sesión</a>
+                </div>
             </nav>
 
             <div class="nav-backdrop"></div>
@@ -113,5 +127,35 @@
                 {% block body %}{% endblock %}
             </main>
         </div>
+
+        {# Barra inferior móvil: 5 destinos para el pulgar. Oculta en escritorio (el sidebar manda).
+           Fuera de .main (hija de .layout) para que su posicionamiento fijo no dependa de esa columna.
+           "Más" abre el mismo cajón de navegación que la hamburguesa (data-nav-toggle → nav.js).
+           Es un bloque para que las pantallas "empujadas" (detalle, formularios) la oculten y usen su
+           propia barra de acciones. #}
+        {% block bottomnav %}
+        <nav class="bottomnav" aria-label="Navegación">
+                <a href="{{ path('app_homepage') }}" class="bottomnav__item{{ route == 'app_homepage' ? ' is-active' }}"{{ route == 'app_homepage' ? ' aria-current=page' }}>
+                    <span class="bottomnav__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/></svg></span>
+                    <span>Inicio</span>
+                </a>
+                <a href="{{ path('task_index') }}" class="bottomnav__item{{ route starts with 'task_' ? ' is-active' }}"{{ route starts with 'task_' ? ' aria-current=page' }}>
+                    <span class="bottomnav__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 1.5-1.5M4 12l1 1 1.5-1.5M4 18l1 1 1.5-1.5"/></svg></span>
+                    <span>Tareas</span>
+                </a>
+                <a href="{{ path('guardia_mine') }}" class="bottomnav__item{{ route starts with 'guardia_' ? ' is-active' }}"{{ route starts with 'guardia_' ? ' aria-current=page' }}>
+                    <span class="bottomnav__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+                    <span>Guardias</span>
+                </a>
+                <a href="{{ path('notification_index') }}" class="bottomnav__item{{ route starts with 'notification_' ? ' is-active' }}"{{ route starts with 'notification_' ? ' aria-current=page' }}>
+                    <span class="bottomnav__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>{% if unread > 0 %}<span class="bottomnav__dot" aria-hidden="true"></span>{% endif %}</span>
+                    <span>Avisos{% if unread > 0 %} <span class="visually-hidden">({{ unread }} sin leer)</span>{% endif %}</span>
+                </a>
+                <button type="button" class="bottomnav__item" data-nav-toggle aria-expanded="false" aria-controls="main-nav">
+                    <span class="bottomnav__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></span>
+                    <span>Más</span>
+                </button>
+            </nav>
+        {% endblock %}
     </div>
 {% endblock %}

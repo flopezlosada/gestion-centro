@@ -1032,16 +1032,7 @@ final class GuardiaController extends AbstractController
      */
     private function slotTimes(ScheduleEntryRepository $schedule, ?AcademicYear $year): array
     {
-        if (null === $year) {
-            return [];
-        }
-
-        $times = [];
-        foreach ($schedule->distinctSlots($year) as $slot) {
-            $times[$slot['index']] = ['startsAt' => $slot['startsAt'], 'endsAt' => $slot['endsAt']];
-        }
-
-        return $times;
+        return $schedule->slotTimes($year);
     }
 
     /**
