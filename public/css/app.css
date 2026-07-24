@@ -2542,6 +2542,27 @@ tr.is-not-covered { background: var(--danger-weak); }
 .task-chip__dot { width: 7px; height: 7px; border-radius: 999px; background: var(--danger); flex: none; }
 .task-chip__n { font-family: var(--font-mono); font-size: 12px; opacity: .85; }
 
+/* Hoja de filtros (rol/unidad/fecha): <details> desplegable, panel en tarjeta. */
+.filtersheet { margin-bottom: 4px; }
+.filtersheet__toggle { cursor: pointer; list-style: none; user-select: none; }
+.filtersheet__toggle::-webkit-details-marker { display: none; }
+.filtersheet__toggle svg { width: 14px; height: 14px; }
+.filtersheet[open] .filtersheet__toggle { border-color: var(--accent); color: var(--accent); }
+.filtersheet__panel {
+    margin-top: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px;
+    display: flex; flex-direction: column; gap: 16px; max-width: 460px;
+}
+.filtersheet__group { display: flex; flex-direction: column; gap: 8px; }
+.filtersheet__label { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint); }
+.filtersheet__group select { border-radius: 12px; }
+.segmented { display: flex; gap: 8px; }
+.segmented__opt { flex: 1; text-align: center; border: 1px solid var(--border); border-radius: 11px; padding: 9px; font-size: 13px; color: var(--text-muted); cursor: pointer; }
+.segmented__opt input { position: absolute; opacity: 0; width: 0; height: 0; }
+.segmented__opt.is-on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+.filtersheet__foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.filtersheet__foot .btn-lg { flex: 0 0 auto; padding: 12px 22px; }
+.filtersheet__clear { color: var(--danger-text); font-size: 13px; font-weight: 600; text-decoration: none; }
+
 .tasks-group__head {
     display: flex; align-items: center; gap: 8px; margin: 0 2px 10px;
     font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint);

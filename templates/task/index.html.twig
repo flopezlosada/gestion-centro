@@ -90,11 +90,56 @@
             <input type="search" name="q" value="{{ q }}" placeholder="Buscar tarea…" autocomplete="off">
         </form>
 
+        {# Hoja de filtros (handoff 5b): rol, unidad y fecha. <details> = despliegue sin JS; envío GET. #}
+        {% if unitOptions is not empty or roleOptions is not empty %}
+            <details class="filtersheet"{{ activeFilters > 0 ? ' open' }}>
+                <summary class="task-chip filtersheet__toggle">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 5h18M6 12h12M10 19h4"/></svg>
+                    Filtros{% if activeFilters > 0 %} <span class="task-chip__n">{{ activeFilters }}</span>{% endif %}
+                </summary>
+                <form class="filtersheet__panel" method="get" action="{{ path('task_index') }}">
+                    <input type="hidden" name="curso" value="{{ schoolYear }}">
+                    {% if estado != 'all' %}<input type="hidden" name="estado" value="{{ estado }}">{% endif %}
+                    {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+                    {% if roleOptions is not empty %}
+                        <div class="filtersheet__group">
+                            <span class="filtersheet__label">Rol</span>
+                            <select name="rol">
+                                <option value="">Todos los roles</option>
+                                {% for r in roleOptions %}<option value="{{ r }}"{{ r == rol ? ' selected' }}>{{ r }}</option>{% endfor %}
+                            </select>
+                        </div>
+                    {% endif %}
+                    {% if unitOptions is not empty %}
+                        <div class="filtersheet__group">
+                            <span class="filtersheet__label">Unidad / departamento</span>
+                            <select name="unidad">
+                                <option value="">Todas las unidades</option>
+                                {% for u in unitOptions %}<option value="{{ u }}"{{ u == unidad ? ' selected' }}>{{ u }}</option>{% endfor %}
+                            </select>
+                        </div>
+                    {% endif %}
+                    <div class="filtersheet__group">
+                        <span class="filtersheet__label">Fecha límite</span>
+                        <div class="segmented">
+                            <label class="segmented__opt{{ fecha == '' ? ' is-on' }}"><input type="radio" name="fecha" value=""{{ fecha == '' ? ' checked' }}>Todo el curso</label>
+                            <label class="segmented__opt{{ fecha == 'vencidas' ? ' is-on' }}"><input type="radio" name="fecha" value="vencidas"{{ fecha == 'vencidas' ? ' checked' }}>Vencidas</label>
+                            <label class="segmented__opt{{ fecha == 'mes' ? ' is-on' }}"><input type="radio" name="fecha" value="mes"{{ fecha == 'mes' ? ' checked' }}>Este mes</label>
+                        </div>
+                    </div>
+                    <div class="filtersheet__foot">
+                        <a class="filtersheet__clear" href="{{ path('task_index', { curso: schoolYear, estado: estado != 'all' ? estado : null }) }}">Limpiar</a>
+                        <button class="btn-lg btn-lg--primary" type="submit">Aplicar filtros</button>
+                    </div>
+                </form>
+            </details>
+        {% endif %}
+
         {# Chips de estado con conteo (GET). El activo, en verde. #}
         <div class="tasks-chips">
             {% for c in chips %}
                 <a class="task-chip{{ estado == c.key ? ' is-active' }}{{ (c.tone ?? '') == 'danger' ? ' is-danger' }}"
-                   href="{{ path('task_index', { curso: schoolYear, estado: c.key, q: q ?: null }) }}">
+                   href="{{ path('task_index', { curso: schoolYear, estado: c.key, q: q ?: null, unidad: unidad ?: null, rol: rol ?: null, fecha: fecha ?: null }) }}">
                     {% if (c.tone ?? '') == 'danger' %}<span class="task-chip__dot" aria-hidden="true"></span>{% endif %}{{ c.label }} <span class="task-chip__n">{{ c.n }}</span>
                 </a>
             {% endfor %}
