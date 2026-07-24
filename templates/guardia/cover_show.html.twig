@@ -15,7 +15,8 @@
         {% if canEdit %}<a class="backbar__edit" href="{{ path('guardia_cover_edit', { id: cover.id }) }}">Modificar</a>{% endif %}
     </div>
 
-    <div class="task-detail">
+    <div class="detail-cols">
+      <div class="detail-main">
         {% if done %}
             {# Incidencia registrada: cabecera clara, sin hero verde. #}
             <div class="guardia-detail-head is-incident">
@@ -59,6 +60,9 @@
             {% endif %}
         </div>
 
+      </div>{# /detail-main #}
+
+      <aside class="detail-aside">
         <div class="detail-block">
             <div class="detail-block__label">La clase</div>
             <dl class="meta-grid">
@@ -75,5 +79,6 @@
                 <p class="help">Solo visible para la coordinación de guardias y el profesor ausente.</p>
             </div>
         {% endif %}
-    </div>
+      </aside>{# /detail-aside #}
+    </div>{# /detail-cols #}
 {% endblock %}
