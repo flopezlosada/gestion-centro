@@ -2233,11 +2233,19 @@ tr.is-not-covered { background: var(--danger-weak); }
 .class-row__pick { display: flex; align-items: baseline; gap: 8px; cursor: pointer; font-weight: 400; }
 .class-row__time { flex: none; color: var(--text-muted); }
 .class-row__group { line-height: 1.4; }
-.class-row__task { width: 100%; box-sizing: border-box; resize: vertical; }
+.class-row__task { display: flex; flex-direction: column; gap: 8px; }
+.class-row__task textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+.class-row__file { display: flex; flex-direction: column; gap: 4px; font-weight: 400; }
+.class-row__file .field-label { font-size: 12px; color: var(--text-muted); }
+.field--reason { border-left: 3px solid var(--border); padding-left: 12px; }
 @media (max-width: 640px) { .class-row { grid-template-columns: 1fr; } }
 
 /* ── Guardias · celda de tarea del parte y pantalla de modificar ───────────── */
-.task-cell { max-width: 320px; color: var(--text-muted); }
+.task-cell { max-width: 320px; color: var(--text-muted); display: flex; flex-direction: column; gap: 2px; }
+.task-doc { display: inline-block; }
+.task-desc { display: block; }
+.reason-note { font-size: 12px; cursor: help; white-space: nowrap; }
+.doc-current { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0 0 8px; }
 .cover-summary { display: flex; flex-wrap: wrap; gap: 10px 32px; margin: 0 0 20px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
 .cover-summary dt { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint); margin-bottom: 2px; }
 .cover-summary dd { margin: 0; }
@@ -2685,6 +2693,7 @@ tr.is-not-covered { background: var(--danger-weak); }
 
 .task-note-flag { font-family: var(--font-mono); font-size: 9px; font-weight: 600; color: var(--amber-text); background: var(--amber-weak); border: 1px solid var(--amber-border); padding: 2px 7px; border-radius: 999px; text-transform: uppercase; margin-left: 6px; }
 .guardia-tasknote { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px 17px; }
+.doc-card--spaced { margin-top: 14px; }
 .guardia-empty { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 26px 20px; text-align: center; }
 .guardia-empty__icon { display: inline-grid; place-items: center; width: 56px; height: 56px; border-radius: 16px; background: var(--surface-sunken); color: var(--text-faint); margin-bottom: 12px; }
 .guardia-empty__icon svg { width: 26px; height: 26px; }

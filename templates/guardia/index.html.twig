@@ -65,6 +65,7 @@
                 <table>
                     <thead>
                         <tr><th>Grupo · Aula</th><th>Profesor ausente</th><th>Tarea para el grupo</th><th>Guardia asignada</th><th></th></tr>
+                        {# El "motivo" junto al ausente es el motivo de la ausencia (privado): solo aquí y en el detalle del coordinador. #}
                     </thead>
                     <tbody>
                         {% for cover in covers %}
@@ -73,11 +74,18 @@
                                     <strong>{{ cover.groupName ?? '—' }}</strong>
                                     {% if cover.roomName %}<span class="muted mono"> · {{ cover.roomName }}</span>{% endif %}
                                 </td>
-                                <td>{{ cover.absentTeacher.fullName }}</td>
+                                <td>
+                                    {{ cover.absentTeacher.fullName }}
+                                    {% if cover.absence.reason %}<span class="reason-note muted" title="Motivo (privado): {{ cover.absence.reason }}">· motivo ▾</span>{% endif %}
+                                </td>
                                 <td class="task-cell">
-                                    {% if cover.taskNote %}
-                                        <span title="{{ cover.taskNote }}">{{ cover.taskNote|length > 60 ? cover.taskNote|slice(0, 60) ~ '…' : cover.taskNote }}</span>
-                                    {% else %}<span class="muted">Sin tarea</span>{% endif %}
+                                    {% if cover.taskDocumentPath %}
+                                        <a class="task-doc" href="{{ path('guardia_task_download', { id: cover.id }) }}">📎 {{ cover.taskDocumentName ?? 'Documento' }}</a>
+                                    {% endif %}
+                                    {% if cover.taskDescription %}
+                                        <span class="task-desc" title="{{ cover.taskDescription }}">{{ cover.taskDescription|length > 60 ? cover.taskDescription|slice(0, 60) ~ '…' : cover.taskDescription }}</span>
+                                    {% endif %}
+                                    {% if not cover.hasTask %}<span class="muted">Sin tarea</span>{% endif %}
                                 </td>
                                 <td>
                                     {% if cover.notCovered %}

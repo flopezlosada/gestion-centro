@@ -6,6 +6,7 @@ namespace App\Controller;
 
 use App\Entity\AcademicYear;
 use App\Entity\GuardiaCover;
+use App\Entity\ScheduleEntry;
 use App\Entity\User;
 use App\Enum\Area;
 use App\Enum\ScheduleActivityKind;
@@ -20,12 +21,14 @@ use App\Repository\GuardiaCoverRepository;
 use App\Repository\ScheduleEntryRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
+use App\Service\FileUploader;
 use App\Service\GuardiaAssignmentNotifier;
 use App\Support\AuditContext;
 use App\Support\GuardiaActivityPresenter;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
@@ -49,6 +52,19 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
 #[Route('/guardias')]
 final class GuardiaController extends AbstractController
 {
+    /** Size ceiling for an uploaded task document; larger ones are rejected with a warning. */
+    private const int MAX_TASK_DOCUMENT_BYTES = 10 * 1024 * 1024;
+
+    /** Private storage subdirectory for the task documents left with an absence. */
+    private const string TASK_DOCUMENT_SUBDIR = 'guardia-tasks';
+
+    /** Accepted task-document extensions (defence in depth on top of private storage + forced download). */
+    private const array ALLOWED_TASK_DOCUMENT_EXTENSIONS = [
+        'pdf', 'doc', 'docx', 'odt', 'rtf', 'txt',
+        'ppt', 'pptx', 'xls', 'xlsx', 'ods',
+        'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic',
+    ];
+
     /**
      * Shows the parte for a date and period, plus the on-call pool. Date and period come from the
      * query string (today and the first period of the day by default).
@@ -144,7 +160,7 @@ final class GuardiaController extends AbstractController
                 ++$pending;
                 $next ??= $i; // the first cover not yet done is the protagonist ("tu próxima guardia")
             }
-            if (null !== $cover->getTaskNote()) {
+            if ($cover->hasTask()) {
                 ++$withTask;
             }
 
@@ -573,10 +589,11 @@ final class GuardiaController extends AbstractController
             ? (($id = (int) $request->query->get('teacher')) > 0 ? $users->find($id) : null)
             : $user;
 
-        // The selected teacher's classes that weekday: the rows to tick and leave a task for. Empty
-        // until a teacher is chosen, when there is no timetable, or they teach nothing that day.
+        // The selected teacher's classes that weekday, one row PER PERIOD (a multi-group activity folds
+        // its several classes into one row, since it is one guardia to cover). Empty until a teacher is
+        // chosen, when there is no timetable, or they teach nothing that day.
         $dayClasses = ($selected instanceof User && $year instanceof AcademicYear)
-            ? $schedule->lectiveDayFor($year, $selected, $weekday)
+            ? $this->groupClassesBySlot($schedule->lectiveDayFor($year, $selected, $weekday))
             : [];
 
         return $this->render('guardia/absence_new.html.twig', [
@@ -591,13 +608,56 @@ final class GuardiaController extends AbstractController
     }
 
     /**
+     * Groups a teacher's day of classes by period for the "apuntar ausencia" list: one row per period,
+     * folding the several classes a multi-group activity holds at the same time (e.g. a whole-level
+     * session in the assembly hall) into a single row that lists every group and its room. One period
+     * is one guardia to cover, so the form offers one row per period — not one per group, which would
+     * repeat the same hour and make the per-class task inputs collide.
+     *
+     * @param ScheduleEntry[] $entries the teacher's lective classes that weekday, any order
+     *
+     * @return list<array{slotIndex: int, startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable, subjectName: ?string, groups: list<string>, room: ?string, groupCount: int}> one row per period, earliest first
+     */
+    private function groupClassesBySlot(array $entries): array
+    {
+        $bySlot = [];
+        foreach ($entries as $entry) {
+            $i = $entry->getSlotIndex();
+            $bySlot[$i] ??= ['slotIndex' => $i, 'startsAt' => $entry->getStartsAt(), 'endsAt' => $entry->getEndsAt(), 'subjectName' => $entry->getSubjectName(), 'groups' => [], 'rooms' => []];
+            if (null !== $entry->getGroupName()) {
+                $bySlot[$i]['groups'][] = $entry->getGroupName();
+            }
+            if (null !== $entry->getRoomName()) {
+                $bySlot[$i]['rooms'][] = $entry->getRoomName();
+            }
+        }
+        ksort($bySlot);
+
+        return array_values(array_map(static function (array $r): array {
+            $groups = array_values(array_unique($r['groups']));
+            $rooms = array_values(array_unique($r['rooms']));
+
+            return [
+                'slotIndex' => $r['slotIndex'],
+                'startsAt' => $r['startsAt'],
+                'endsAt' => $r['endsAt'],
+                'subjectName' => $r['subjectName'],
+                'groups' => $groups,
+                'room' => [] !== $rooms ? implode(', ', $rooms) : null,
+                'groupCount' => \count($groups),
+            ];
+        }, $bySlot));
+    }
+
+    /**
      * Registers the absence for the periods ticked and lets {@see AbsenceRegistrar} generate a cover per
-     * taught period (with its own task) and run the equitable assignment. Free periods and
-     * already-registered ones are reported as skipped. A non-coordinator may only register their own
+     * taught period (with its own task document and/or description) and run the equitable assignment.
+     * The private reason for the absence is stored once on the {@see \App\Entity\Absence}. Free periods
+     * and already-registered ones are reported as skipped. A non-coordinator may only register their own
      * absence (the posted teacher is ignored for them).
      */
     #[Route('/ausencia', name: 'guardia_absence_create', methods: ['POST'])]
-    public function createAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, AcademicYearRepository $years, AbsenceRegistrar $registrar): Response
+    public function createAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, AcademicYearRepository $years, AbsenceRegistrar $registrar, FileUploader $uploader): Response
     {
         $this->assertCsrf($request, 'guardia_absence_create');
 
@@ -627,17 +687,35 @@ final class GuardiaController extends AbstractController
             return $this->redirectToRoute('guardia_absence_new', ['date' => $date->format('Y-m-d'), 'teacher' => $teacher->getId()]);
         }
 
-        /** @var array<int|string, mixed> $rawTasks */
-        $rawTasks = $request->request->all('task');
+        // One reason for the whole absence (private); a document and/or a description per class.
+        $reason = trim((string) $request->request->get('reason'));
+        /** @var array<int|string, mixed> $descriptions */
+        $descriptions = $request->request->all('description');
+        /** @var array<int|string, UploadedFile|null> $files */
+        $files = $request->files->all('documents');
+
         $taskBySlot = [];
         foreach ($slotIndexes as $slotIndex) {
-            $note = trim((string) ($rawTasks[$slotIndex] ?? ''));
-            if ('' !== $note) {
-                $taskBySlot[$slotIndex] = $note;
-            }
+            $description = trim((string) ($descriptions[$slotIndex] ?? ''));
+            $document = $files[$slotIndex] ?? null;
+            $stored = $document instanceof UploadedFile ? $this->storeTaskDocument($document, $uploader) : null;
+
+            $taskBySlot[$slotIndex] = [
+                'documentPath' => $stored['path'] ?? null,
+                'documentName' => $stored['name'] ?? null,
+                'description' => '' !== $description ? $description : null,
+            ];
         }
 
-        $result = $registrar->register($year, $teacher, $date, $slotIndexes, null, $taskBySlot);
+        $result = $registrar->register($year, $teacher, $date, $slotIndexes, '' !== $reason ? $reason : null, $taskBySlot);
+
+        // A document uploaded for a period that ended up skipped (free / already registered) is now
+        // referenced by no cover: delete it so it does not linger in storage forever.
+        foreach ($taskBySlot as $slotIndex => $task) {
+            if (null !== $task['documentPath'] && !\in_array($slotIndex, $result->createdSlots, true)) {
+                $uploader->remove($task['documentPath']);
+            }
+        }
 
         $this->flashRegistration($teacher, $result);
 
@@ -670,6 +748,42 @@ final class GuardiaController extends AbstractController
     }
 
     /**
+     * Validates and stores one uploaded task document. Empty file fields (no file chosen) yield null
+     * silently; a failed upload or one over {@see MAX_TASK_DOCUMENT_BYTES} flashes a warning and yields
+     * null, so the rest of the absence still registers without that document.
+     *
+     * @param UploadedFile $file     the uploaded file
+     * @param FileUploader $uploader the private-storage uploader
+     *
+     * @return array{path: string, name: string}|null the stored path and original filename, or null
+     */
+    private function storeTaskDocument(UploadedFile $file, FileUploader $uploader): ?array
+    {
+        if (\UPLOAD_ERR_NO_FILE === $file->getError()) {
+            return null;
+        }
+        if (!$file->isValid()) {
+            $this->addFlash('warning', sprintf('No se pudo subir «%s»; se registró sin ese documento.', $file->getClientOriginalName()));
+
+            return null;
+        }
+        if ($file->getSize() > self::MAX_TASK_DOCUMENT_BYTES) {
+            $this->addFlash('warning', sprintf('«%s» supera los %d MB; se registró sin ese documento.', $file->getClientOriginalName(), intdiv(self::MAX_TASK_DOCUMENT_BYTES, 1024 * 1024)));
+
+            return null;
+        }
+        if (!\in_array(strtolower($file->getClientOriginalExtension()), self::ALLOWED_TASK_DOCUMENT_EXTENSIONS, true)) {
+            $this->addFlash('warning', sprintf('«%s» tiene un tipo de archivo no admitido (usa PDF, Office, texto o imagen); se registró sin ese documento.', $file->getClientOriginalName()));
+
+            return null;
+        }
+
+        $name = $file->getClientOriginalName();
+
+        return ['path' => $uploader->upload($file, self::TASK_DOCUMENT_SUBDIR), 'name' => '' !== $name ? $name : 'documento'];
+    }
+
+    /**
      * Re-runs the equitable assignment for a period, filling any still-unassigned covers.
      */
     #[Route('/asignar', name: 'guardia_auto_assign', methods: ['POST'])]
@@ -694,17 +808,47 @@ final class GuardiaController extends AbstractController
     }
 
     /**
+     * Serves the task document left for a cover's group, as an attachment named after the original
+     * upload. Reachable by the guardia teacher assigned to the cover and by the absent teacher (they
+     * need / left the work), or by anyone with read access to the guardia area; everyone else is denied.
+     * The private reason for the absence is never in this file.
+     */
+    #[Route('/{id}/tarea', name: 'guardia_task_download', requirements: ['id' => '\d+'], methods: ['GET'])]
+    public function downloadTask(GuardiaCover $cover, #[CurrentUser] User $user, FileUploader $uploader): Response
+    {
+        $path = $cover->getTaskDocumentPath();
+        if (null === $path) {
+            throw $this->createNotFoundException('Esta guardia no tiene documento de tarea.');
+        }
+
+        $isGuardia = $cover->getAssignedGuardia()?->getId() === $user->getId();
+        $isAbsent = $cover->getAbsentTeacher()->getId() === $user->getId();
+        if (!$isGuardia && !$isAbsent && !$this->isGranted(AreaVoter::READ, Area::GUARDIAS)) {
+            throw $this->createAccessDeniedException();
+        }
+
+        $absolute = $uploader->absolutePath($path);
+        if (!is_file($absolute)) {
+            throw $this->createNotFoundException('El documento de tarea ya no está disponible.');
+        }
+
+        return $this->file($absolute, $cover->getTaskDocumentName() ?? 'tarea');
+    }
+
+    /**
      * The read-only detail of a single guardia: its group/room, day and time, the absent teacher, the
      * task left and how it ended (covered / incident / unassigned). Open to the assigned guardia teacher
      * for THEIR own cover (self-service, no WRITE needed) and to the coordinator (READ). This is where
-     * "mis guardias" links each row; coordinators additionally get a link to modify it.
+     * "mis guardias" links each row; coordinators additionally get a link to modify it. The private
+     * reason for the absence is shown only to the coordinator, never to the covering guardia.
      */
     #[Route('/{id}/ver', name: 'guardia_cover_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function showCover(GuardiaCover $cover, #[CurrentUser] User $user, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
     {
         // A teacher may see the guardia assigned to them; anyone else needs read access to the area.
         $isOwner = $cover->getAssignedGuardia()?->getId() === $user->getId();
-        if (!$isOwner && !$this->isGranted(AreaVoter::READ, Area::GUARDIAS)) {
+        $canManage = $this->isGranted(AreaVoter::READ, Area::GUARDIAS);
+        if (!$isOwner && !$canManage) {
             throw $this->createAccessDeniedException();
         }
 
@@ -714,6 +858,7 @@ final class GuardiaController extends AbstractController
             'cover' => $cover,
             'slotTimes' => $this->slotTimes($schedule, $year),
             'canEdit' => $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS),
+            'canSeeReason' => $canManage,
         ]);
     }
 
@@ -746,7 +891,7 @@ final class GuardiaController extends AbstractController
      * Notifies the substitute when it actually changes.
      */
     #[Route('/{id}/modificar', name: 'guardia_cover_update', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function updateCover(GuardiaCover $cover, Request $request, UserRepository $users, EntityManagerInterface $em, GuardiaAssignmentNotifier $notifier, AuditContext $audit): Response
+    public function updateCover(GuardiaCover $cover, Request $request, UserRepository $users, EntityManagerInterface $em, GuardiaAssignmentNotifier $notifier, AuditContext $audit, FileUploader $uploader): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $this->assertCsrf($request, 'guardia_cover_update'.$cover->getId());
@@ -762,12 +907,37 @@ final class GuardiaController extends AbstractController
         $previous = $cover->getAssignedGuardia();
         $cover->setAssignedGuardia('' !== (string) $teacherId ? $users->find((int) $teacherId) : null);
         $cover->setNotCovered($request->request->getBoolean('not_covered'));
-        // setTaskNote normaliza cadena vacía a null, así que "borrar la tarea" también queda soportado.
-        $cover->setTaskNote((string) $request->request->get('task_note'));
+        // setTaskDescription normaliza cadena vacía a null, así que "borrar la descripción" queda soportado.
+        $cover->setTaskDescription((string) $request->request->get('task_description'));
+
+        // Task document: replace it with a freshly uploaded one, or drop it if "quitar" was ticked. The
+        // old file is deleted only AFTER the change is committed (below), so a failed flush never leaves
+        // the cover pointing at a file already gone from disk.
+        $oldDocumentPath = null;
+        $document = $request->files->get('document');
+        if ($document instanceof UploadedFile && \UPLOAD_ERR_NO_FILE !== $document->getError()) {
+            $stored = $this->storeTaskDocument($document, $uploader);
+            if (null !== $stored) {
+                $oldDocumentPath = $cover->getTaskDocumentPath();
+                $cover->setTaskDocumentPath($stored['path'])->setTaskDocumentName($stored['name']);
+            }
+        } elseif ($request->request->getBoolean('remove_document') && null !== $cover->getTaskDocumentPath()) {
+            $oldDocumentPath = $cover->getTaskDocumentPath();
+            $cover->setTaskDocumentPath(null)->setTaskDocumentName(null);
+        }
+
+        // Private reason for the absence (optional): lives on the shared Absence, so editing it here
+        // updates it for every period of that day at once — no per-cover copy to drift.
+        $cover->getAbsence()->setReason((string) $request->request->get('absence_reason'));
 
         // The reason rides along into the audit entry this flush produces (see EntityAuditSubscriber).
         $audit->setReason($reason);
         $em->flush();
+
+        // Committed: now it is safe to drop the file the cover no longer references.
+        if (null !== $oldDocumentPath) {
+            $uploader->remove($oldDocumentPath);
+        }
 
         // Notify only when the substitute actually changes (reselecting the same one does not notify).
         if ($cover->getAssignedGuardia() !== $previous) {
@@ -782,20 +952,37 @@ final class GuardiaController extends AbstractController
      * Deletes a parte line.
      */
     #[Route('/{id}/borrar', name: 'guardia_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function delete(GuardiaCover $cover, Request $request, EntityManagerInterface $em): Response
+    public function delete(GuardiaCover $cover, Request $request, EntityManagerInterface $em, GuardiaCoverRepository $covers, FileUploader $uploader): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $this->assertCsrf($request, 'guardia_delete'.$cover->getId());
 
         $date = $cover->getDate();
         $slotIndex = $cover->getSlotIndex();
+        $absence = $cover->getAbsence();
+        $documentPath = $cover->getTaskDocumentPath();
+
+        // The delete proper: if THIS fails the line is untouched, so the error message is honest.
         try {
             $em->remove($cover);
             $em->flush();
-            $this->addFlash('success', 'Línea del parte eliminada.');
         } catch (\Throwable) {
             $this->addFlash('error', 'No se pudo borrar la línea del parte. Inténtalo de nuevo.');
+
+            return $this->backToParte($date, $slotIndex);
         }
+
+        // The line is gone and committed. Best-effort cleanup — a hiccup here does not undo the delete,
+        // so it must not report failure: drop the uploaded document, and the absence too if this was its
+        // last period, so neither an orphan file nor an orphan (private) reason lingers.
+        if (null !== $documentPath) {
+            $uploader->remove($documentPath);
+        }
+        if (0 === $covers->count(['absence' => $absence])) {
+            $em->remove($absence);
+            $em->flush();
+        }
+        $this->addFlash('success', 'Línea del parte eliminada.');
 
         return $this->backToParte($date, $slotIndex);
     }

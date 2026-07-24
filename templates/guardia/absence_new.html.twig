@@ -54,33 +54,55 @@
                     <p>Ese día no tiene ninguna clase lectiva, así que no hay guardias que generar. Prueba con otro día.</p>
                 </div>
             {% else %}
-                <form method="post" action="{{ path('guardia_absence_create') }}" class="absence-form">
+                <form method="post" action="{{ path('guardia_absence_create') }}" class="absence-form" enctype="multipart/form-data">
                     <input type="hidden" name="_token" value="{{ csrf_token('guardia_absence_create') }}">
                     <input type="hidden" name="absent_teacher" value="{{ selectedTeacher }}">
                     <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
 
                     <div class="page-head step-head"><div>
                         <h2>Clases del {{ weekday.label|lower }} {{ date|date('d/m/Y', false) }}</h2>
-                        <p class="lead">Todas marcadas = día entero. Desmarca las horas en las que sí estará. La tarea la verá el profesor de guardia.</p>
+                        <p class="lead">Todas marcadas = día entero. Desmarca las horas en las que sí estará. Para cada grupo puedes adjuntar el documento con la tarea y añadir una descripción; los verá el profesor de guardia.</p>
                     </div></div>
 
                     <ul class="class-list">
                         {% for c in dayClasses %}
+                            {% set label = c.groupCount > 1 ? (c.room ?? 'la actividad') : (c.groups|first|default('el grupo')) %}
                             <li class="class-row">
                                 <label class="class-row__pick">
                                     <input type="checkbox" name="slots[]" value="{{ c.slotIndex }}" checked>
                                     <span class="class-row__time mono">{{ c.startsAt|date('H:i', false) }}–{{ c.endsAt|date('H:i', false) }}</span>
                                     <span class="class-row__group">
-                                        <strong>{{ c.groupName ?? '—' }}</strong>
-                                        {% if c.subjectName %}<span class="muted"> · {{ c.subjectName }}</span>{% endif %}
-                                        {% if c.roomName %}<span class="muted mono"> · {{ c.roomName }}</span>{% endif %}
+                                        {% if c.groupCount > 1 %}
+                                            {# Actividad multigrupo (p.ej. Salón de Actos): el aula es la referencia, los grupos van listados. #}
+                                            <strong>{{ c.room ?? 'Actividad de nivel' }}</strong>
+                                            <span class="badge badge--muted">{{ c.groupCount }} grupos</span>
+                                            <span class="muted"> · {{ c.groups|join(', ') }}</span>
+                                            {% if c.subjectName %}<span class="muted"> · {{ c.subjectName }}</span>{% endif %}
+                                        {% else %}
+                                            <strong>{{ c.groups|first|default('—') }}</strong>
+                                            {% if c.subjectName %}<span class="muted"> · {{ c.subjectName }}</span>{% endif %}
+                                            {% if c.room %}<span class="muted mono"> · {{ c.room }}</span>{% endif %}
+                                        {% endif %}
                                     </span>
                                 </label>
-                                <textarea name="task[{{ c.slotIndex }}]" rows="2" maxlength="500" class="class-row__task"
-                                          placeholder="Tarea para {{ c.groupName ?? 'el grupo' }}: página, ejercicios, examen… (opcional)"></textarea>
+                                <div class="class-row__task">
+                                    <label class="class-row__file">
+                                        <span class="field-label">Documento de tarea</span>
+                                        <input type="file" name="documents[{{ c.slotIndex }}]">
+                                    </label>
+                                    <textarea name="description[{{ c.slotIndex }}]" rows="2" maxlength="1000"
+                                              placeholder="Descripción para {{ label }} (opcional): lo que no venga en el documento — página, ejercicios, dónde está el examen…"></textarea>
+                                </div>
                             </li>
                         {% endfor %}
                     </ul>
+
+                    <div class="field field--reason">
+                        <label for="absence_reason">Motivo de la ausencia <span class="muted">(privado)</span></label>
+                        <textarea id="absence_reason" name="reason" rows="2" maxlength="500"
+                                  placeholder="Solo lo veréis el profesor ausente y la coordinación de guardias. El profesor de guardia no lo ve."></textarea>
+                        <p class="field-help">Opcional. Queda guardado con la ausencia y no se muestra a quien cubre la clase.</p>
+                    </div>
 
                     <div class="form-actions">
                         <button type="submit" class="btn">Apuntar ausencia</button>

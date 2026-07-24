@@ -52,17 +52,19 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
-     * The teaching cell a teacher has on a weekday at a given period of a course, or null if they are
-     * free then. Used to snapshot the group and room an absence leaves uncovered.
+     * The teaching cells a teacher has on a weekday at a given period of a course — usually one, but
+     * several when the period is a multi-group activity (Peñalara lists the teacher against every
+     * group at once, e.g. a whole-level session in the assembly hall). Empty when they are free then.
+     * Used to snapshot the group(s) and room an absence leaves uncovered.
      *
      * @param AcademicYear $year      the course whose timetable to read
      * @param User         $teacher   the (absent) teacher
      * @param Weekday      $weekday   the weekday
      * @param int          $slotIndex the period index within the day
      *
-     * @return ScheduleEntry|null the lective entry, or null when the teacher has no class then
+     * @return ScheduleEntry[] the lective entries at that period (empty if free), group name ascending
      */
-    public function lectiveAt(AcademicYear $year, User $teacher, Weekday $weekday, int $slotIndex): ?ScheduleEntry
+    public function lectiveEntriesAt(AcademicYear $year, User $teacher, Weekday $weekday, int $slotIndex): array
     {
         return $this->createQueryBuilder('s')
             ->andWhere('s.academicYear = :year')
@@ -75,9 +77,9 @@ class ScheduleEntryRepository extends ServiceEntityRepository
             ->setParameter('weekday', $weekday)
             ->setParameter('slot', $slotIndex)
             ->setParameter('lective', ScheduleActivityKind::LECTIVE)
-            ->setMaxResults(1)
+            ->orderBy('s.groupName', 'ASC')
             ->getQuery()
-            ->getOneOrNullResult();
+            ->getResult();
     }
 
     /**

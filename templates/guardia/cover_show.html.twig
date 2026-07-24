@@ -38,9 +38,18 @@
         {% endif %}
 
         <div class="detail-block">
-            <div class="detail-block__label">Tarea para el grupo{% if cover.taskNote %} <span class="task-note-flag">tiene tarea</span>{% endif %}</div>
-            {% if cover.taskNote %}
-                <div class="guardia-tasknote"><p class="detail-prose">{{ cover.taskNote|nl2br }}</p></div>
+            <div class="detail-block__label">Tarea para el grupo{% if cover.hasTask %} <span class="task-note-flag">tiene tarea</span>{% endif %}</div>
+            {% if cover.hasTask %}
+                <div class="guardia-tasknote">
+                    {% if cover.taskDescription %}<p class="detail-prose">{{ cover.taskDescription|nl2br }}</p>{% endif %}
+                    {% if cover.taskDocumentPath %}
+                        <a class="doc-card{{ cover.taskDescription ? ' doc-card--spaced' }}" href="{{ path('guardia_task_download', { id: cover.id }) }}">
+                            <span class="doc-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span>
+                            <span class="doc-card__body"><span class="doc-card__name">{{ cover.taskDocumentName ?: 'Documento de la tarea' }}</span><span class="doc-card__meta">Documento adjunto</span></span>
+                            <span class="doc-card__open">Descargar</span>
+                        </a>
+                    {% endif %}
+                </div>
             {% else %}
                 <div class="guardia-empty">
                     <span class="guardia-empty__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span>
@@ -57,5 +66,14 @@
                 <div class="meta-grid__cell"><dt>Aula</dt><dd>{{ cover.roomName ?: '—' }}</dd></div>
             </dl>
         </div>
+
+        {# El motivo de la ausencia es privado: solo coordinación (y el ausente), nunca quien cubre. #}
+        {% if canSeeReason and cover.absence.reason %}
+            <div class="detail-block">
+                <div class="detail-block__label">Motivo de la ausencia · privado</div>
+                <div class="guardia-tasknote"><p class="detail-prose">{{ cover.absence.reason|nl2br }}</p></div>
+                <p class="help">Solo visible para la coordinación de guardias y el profesor ausente.</p>
+            </div>
+        {% endif %}
     </div>
 {% endblock %}

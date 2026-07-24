@@ -62,7 +62,14 @@ final class AbsenceRegistrarTest extends KernelTestCase
 
     public function testWholeDayCreatesACoverPerTaughtPeriodAndAssignsThem(): void
     {
-        $result = $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), null, 'Ejercicios pág. 42');
+        $result = $this->registrar->register(
+            $this->year,
+            $this->absent,
+            new \DateTimeImmutable(self::MONDAY),
+            null,
+            'Cita médica.',
+            [0 => ['description' => 'Ejercicios pág. 42']],
+        );
 
         self::assertSame(2, $result->createdCount(), 'only the two taught periods become covers');
         self::assertSame(0, $result->skippedFree, 'whole-day mode never even considers free periods');
@@ -72,6 +79,45 @@ final class AbsenceRegistrarTest extends KernelTestCase
         self::assertSame($this->g1->getId(), $covers[0]->getAssignedGuardia()?->getId(), 'slot 0 covered by the guardia on call then');
         self::assertSame($this->g2->getId(), $covers[2]->getAssignedGuardia()?->getId(), 'slot 2 covered by its guardia');
         self::assertSame('1ºA', $covers[0]->getGroupName(), 'group snapshotted from the timetable');
+        self::assertSame('Ejercicios pág. 42', $covers[0]->getTaskDescription(), 'per-class description lands on its cover');
+        self::assertNull($covers[2]->getTaskDescription(), 'a class with no task carries none');
+
+        // The reason is single-sourced: both periods hang off the SAME absence, which holds it.
+        self::assertSame($covers[0]->getAbsence(), $covers[2]->getAbsence(), 'one absence groups the day');
+        self::assertSame('Cita médica.', $covers[0]->getAbsence()->getReason());
+    }
+
+    public function testMultiGroupPeriodFoldsIntoOneCoverListingEveryGroup(): void
+    {
+        // Same period, several groups at once (a multi-group activity in the assembly hall): Peñalara
+        // lists the teacher against every group, but it is still ONE guardia to cover.
+        $this->lective($this->absent, 3, 'E4B', 'S ACTOS');
+        $this->lective($this->absent, 3, 'E4A', 'S ACTOS');
+        $this->em->flush();
+
+        $result = $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), [3], null);
+
+        self::assertSame(1, $result->createdCount(), 'a multi-group period is one cover, not one per group');
+        $covers = $this->coversFor($this->absent);
+        self::assertSame('E4A, E4B', $covers[3]->getGroupName(), 'every group of the period is kept, joined and ordered');
+        self::assertSame('S ACTOS', $covers[3]->getRoomName(), 'the shared room folds to a single value');
+    }
+
+    public function testMultiGroupSnapshotSkipsNullGroupNames(): void
+    {
+        // Irregular Peñalara data: one of the folded classes has no group name. The snapshot must keep
+        // only the real ones, never a stray empty fragment.
+        $this->em->persist((new ScheduleEntry())
+            ->setAcademicYear($this->year)->setTeacher($this->absent)->setWeekday(Weekday::MONDAY)->setSlotIndex(4)
+            ->setStartsAt(new \DateTimeImmutable('08:00'))->setEndsAt(new \DateTimeImmutable('09:00'))
+            ->setKind(ScheduleActivityKind::LECTIVE)->setRoomName('S ACTOS'));
+        $this->lective($this->absent, 4, 'E4A', 'S ACTOS');
+        $this->em->flush();
+
+        $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), [4], null);
+
+        $covers = $this->coversFor($this->absent);
+        self::assertSame('E4A', $covers[4]->getGroupName(), 'the null group is folded away, only the real one kept');
     }
 
     public function testSpecificPeriodsSkipsTheFreeOne(): void
