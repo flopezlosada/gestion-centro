@@ -1967,14 +1967,24 @@ input[type="email"], input[type="text"], select, textarea {
 .cal-mini__day.is-today .cal-mini__num { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-weight: 600; }
 .cal-mini__dot { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 5px; height: 5px; border-radius: 50%; }
 
-/* En pantallas estrechas la rejilla de 7 columnas no cabe: pasa a scroll horizontal
-   conservando la semana completa, con un ancho mínimo legible por día. */
+/* En móvil el mes se compacta a la vista del handoff (9a): la rejilla de 7 columnas cabe entera
+   (sin scroll horizontal), cada día es su número + puntos de color centrados (sin títulos). Los
+   puntos siguen siendo enlaces a su tarea/evento; el detalle del día se abre en la vista de día. */
 @media (max-width: 720px) {
-    .calendar { overflow-x: auto; }
-    .calendar-weekdays, .calendar-week { min-width: 640px; }
-    .calendar-day { min-height: 92px; }
-    /* Sin hover en táctil: el "+" de alta rápida se muestra siempre. */
-    .day-add--corner .day-add__btn { opacity: 1; }
+    .calendar { overflow-x: visible; }
+    .calendar-weekdays, .calendar-week { min-width: 0; }
+    .calendar-weekday { padding: 6px 0 8px; text-align: center; font-size: 10px; letter-spacing: .06em; }
+    .calendar-day { min-height: 52px; padding: 6px 2px; gap: 4px; align-items: center; border-left: 0; }
+    .calendar-daynum { justify-content: center; font-size: 12.5px; }
+    /* Fuera de la vista compacta: textos largos y el alta rápida (se hace desde la vista de día). */
+    .calendar-nonlective, .calendar-daynum .day-add, .calendar-task-title { display: none; }
+    /* Tareas y eventos como una fila de puntos centrada. */
+    .calendar-tasks, .calendar-events { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 4px; margin: 0; }
+    .calendar-task, .calendar-event { padding: 0; gap: 0; }
+    .calendar-dot { width: 7px; height: 7px; }
+    /* Como mucho una fila de puntos por día: los que sobran no rompen la rejilla. */
+    .calendar-tasks li:nth-child(n+5), .calendar-events li:nth-child(n+5) { display: none; }
+    .calendar-day.is-nonlective { box-shadow: inset 0 -2px 0 var(--accent); }
 }
 
 /* ---- Título de sección en la barra lateral (p. ej. "Administración") ----
