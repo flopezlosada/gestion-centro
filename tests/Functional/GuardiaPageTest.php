@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
+use App\Entity\Absence;
 use App\Entity\AcademicYear;
 use App\Entity\GuardiaCover;
 use App\Entity\Role;
@@ -13,6 +14,7 @@ use App\Enum\Area;
 use App\Enum\PermissionLevel;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
+use App\Service\FileUploader;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -98,9 +100,23 @@ final class GuardiaPageTest extends WebTestCase
         return $entry;
     }
 
+    /** @var array<string, Absence> one absence per (absent teacher, day), reused across its periods */
+    private array $absences = [];
+
     private function cover(\DateTimeImmutable $date, int $slot, User $absent, ?User $assigned = null, bool $notCovered = false, string $group = '1ºA'): GuardiaCover
     {
+        // The day's periods for one teacher share a single absence (its private reason lives there),
+        // matching the unique (absent teacher, day) constraint.
+        $key = spl_object_id($absent).'|'.$date->format('Y-m-d');
+        $absence = $this->absences[$key] ?? null;
+        if (null === $absence) {
+            $absence = (new Absence())->setAbsentTeacher($absent)->setDate($date);
+            $this->em->persist($absence);
+            $this->absences[$key] = $absence;
+        }
+
         $cover = (new GuardiaCover())
+            ->setAbsence($absence)
             ->setDate($date)
             ->setSlotIndex($slot)
             ->setAbsentTeacher($absent)
@@ -325,5 +341,65 @@ final class GuardiaPageTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(403);
         self::assertFalse($this->reload($id)->isNotCovered());
+    }
+
+    /**
+     * The task document is downloadable by the guardia assigned to the cover and by the absent teacher
+     * (they need / left the work) and by the coordinator, but a teacher unrelated to it is denied.
+     */
+    public function testTaskDocumentDownloadIsRestrictedToInvolvedTeachers(): void
+    {
+        $this->login(); // coordinator, currently authenticated
+        $guardia = $this->user('Guardia Doc', 'gdoc@centro.test');
+        $absent = $this->user('Ausente Doc', 'adoc@centro.test');
+        $stranger = $this->user('Ajeno Doc', 'ajeno@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('2025-11-10'), 0, $absent, $guardia);
+
+        $uploader = self::getContainer()->get(FileUploader::class);
+        $path = $uploader->store('%PDF-1.4 contenido de prueba', 'guardia-tasks', 'pdf');
+        $cover->setTaskDocumentPath($path)->setTaskDocumentName('tarea.pdf');
+        $this->em->flush();
+        $url = '/guardias/'.$cover->getId().'/tarea';
+
+        $this->client->request('GET', $url); // coordinator
+        self::assertResponseIsSuccessful();
+
+        $this->client->loginUser($guardia);
+        $this->client->request('GET', $url);
+        self::assertResponseIsSuccessful();
+
+        $this->client->loginUser($absent);
+        $this->client->request('GET', $url);
+        self::assertResponseIsSuccessful();
+
+        $this->client->loginUser($stranger);
+        $this->client->request('GET', $url);
+        self::assertResponseStatusCodeSame(403);
+
+        $uploader->remove($path);
+    }
+
+    /**
+     * The private reason for the absence is shown to the coordinator on a cover's detail, but never to
+     * the guardia teacher who covers it — even when they open their own cover.
+     */
+    public function testAbsenceReasonIsHiddenFromTheCoveringTeacher(): void
+    {
+        $this->login(); // coordinator
+        $guardia = $this->user('Guardia Ver', 'gver@centro.test');
+        $absent = $this->user('Ausente Ver', 'aver@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('2025-11-10'), 0, $absent, $guardia);
+        $cover->getAbsence()->setReason('Cita médica confidencial.');
+        $this->em->flush();
+        $url = '/guardias/'.$cover->getId().'/ver';
+
+        $this->client->request('GET', $url); // coordinator sees it
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('body', 'Cita médica confidencial.');
+
+        $this->client->loginUser($guardia); // the covering teacher must not
+        $crawler = $this->client->request('GET', $url);
+        self::assertResponseIsSuccessful();
+        self::assertStringNotContainsString('Cita médica confidencial.', $crawler->html());
     }
 }

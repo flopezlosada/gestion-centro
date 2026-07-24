@@ -23,7 +23,8 @@ final class GuardiaActivityPresenter
     private const array FIELDS = [
         'assignedGuardia' => ['label' => 'Sustituto', 'kind' => 'user'],
         'notCovered' => ['label' => 'Sin cubrir', 'kind' => 'bool'],
-        'taskNote' => ['label' => 'Tarea', 'kind' => 'text'],
+        'taskDescription' => ['label' => 'Descripción de la tarea', 'kind' => 'text'],
+        'taskDocumentName' => ['label' => 'Documento de tarea', 'kind' => 'text'],
         'groupName' => ['label' => 'Grupo', 'kind' => 'text'],
         'roomName' => ['label' => 'Aula', 'kind' => 'text'],
     ];

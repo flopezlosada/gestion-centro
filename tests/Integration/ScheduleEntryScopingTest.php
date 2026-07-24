@@ -62,8 +62,8 @@ final class ScheduleEntryScopingTest extends KernelTestCase
 
     public function testLectiveLookupReturnsTheRightCoursesCell(): void
     {
-        self::assertSame('1ºA', $this->repo->lectiveAt($this->yearA, $this->teacher, Weekday::MONDAY, 0)?->getGroupName());
-        self::assertSame('2ºB', $this->repo->lectiveAt($this->yearB, $this->teacher, Weekday::MONDAY, 0)?->getGroupName());
+        self::assertSame('1ºA', $this->repo->lectiveEntriesAt($this->yearA, $this->teacher, Weekday::MONDAY, 0)[0]->getGroupName());
+        self::assertSame('2ºB', $this->repo->lectiveEntriesAt($this->yearB, $this->teacher, Weekday::MONDAY, 0)[0]->getGroupName());
     }
 
     public function testDistinctSlotsAreScopedToTheirCourse(): void
