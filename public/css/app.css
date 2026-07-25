@@ -382,16 +382,25 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 500; color: var(--te
     padding: 42px 56px;
     min-width: 0;
 }
+/* Cabecera de pantalla, único componente para todas: apila en móvil y se abre a dos lados en
+   escritorio. Los tamaños son los del handoff (título 24–27 en móvil, 30–36 en escritorio). Al vivir
+   aquí, cualquier pantalla que ya use .page-head adopta el diseño sin tocar su plantilla. */
 .page-head {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 26px;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 22px;
 }
-.page-head h1 { font-size: 30px; margin: 0 0 4px; line-height: 1.12; letter-spacing: -.01em; }
-.page-head .lead { color: var(--text-muted); margin: 0; max-width: 60ch; }
-.page-head-actions { display: flex; gap: 10px; flex: none; }
+.page-head h1 { font-size: 27px; margin: 0 0 4px; line-height: 1.12; letter-spacing: -.01em; }
+.page-head h2 { font-size: 20px; margin: 0 0 4px; }
+.page-head .lead { color: var(--text-muted); font-size: 13.5px; line-height: 1.5; margin: 0; max-width: 62ch; }
+.page-head-actions, .page-head__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+@media (min-width: 900px) {
+    .page-head { flex-direction: row; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 26px; }
+    .page-head h1 { font-size: 32px; }
+    .page-head-actions, .page-head__actions { flex: none; gap: 10px; }
+}
 
 /* Compat: encabezado simple usado por plantillas sin page-head. */
 .page > h1 { font-size: 28px; margin: 0 0 18px; }
@@ -805,7 +814,35 @@ a.badge:hover { border-color: currentColor; }
     color: var(--text-muted);
 }
 .form-row { margin-bottom: 16px; }
-.form-row > label, label.required { display: block; font-weight: 500; margin-bottom: 6px; color: var(--text); }
+/* Etiqueta de campo como "eyebrow" mono, el patrón del handoff para labels. Vive en el selector
+   general (no solo en las pantallas empujadas, donde nació) para que TODO formulario lo adopte sin
+   tocar su plantilla: admin, guardias y login incluidos. .field es el sistema anterior de campo, que
+   aún usan cuatro plantillas de guardias; se alinea aquí en vez de migrarlas una a una. */
+/* El :not(:has(input)) excluye el label que ENVUELVE su control (una casilla con su texto al lado):
+   ahí el label es la frase, no el rótulo del campo. */
+.form-row > label:not(:has(input)), .field > label:not(:has(input)), label.required {
+    display: block; margin-bottom: 8px;
+    font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint);
+}
+/* Y esto excluye el otro montaje de booleano: casilla e input como hermanos dentro del campo. */
+.form-row:has(> input[type="checkbox"]) > label,
+.form-row:has(> input[type="radio"]) > label,
+.field:has(> input[type="checkbox"]) > label {
+    display: inline; margin-bottom: 0;
+    font: inherit; letter-spacing: normal; text-transform: none; color: var(--text);
+}
+
+/* Input de archivo: el botón nativo es lo que más desentona de la interfaz. Se le da el aspecto de
+   botón secundario del sistema. Global, así que vale para todos los adjuntos de la app. */
+input[type="file"] { font: inherit; font-size: 13.5px; color: var(--text-muted); max-width: 100%; }
+input[type="file"]::file-selector-button {
+    margin-right: 10px; padding: 8px 14px; cursor: pointer;
+    background: var(--surface); color: var(--accent);
+    border: 1px solid var(--border-strong); border-radius: var(--radius);
+    font: 600 13px var(--font-body);
+}
+input[type="file"]::file-selector-button:hover { background: var(--surface-sunken); border-color: var(--accent); }
 .form-row input[type="text"],
 .form-row input[type="email"],
 .form-row input[type="number"],
@@ -847,6 +884,9 @@ input[type="email"], input[type="text"], select, textarea {
     outline-offset: 0;
 }
 .form-row input[type="checkbox"] { width: auto; margin-right: 8px; }
+/* El azul nativo del navegador es lo único de la interfaz que no sale de la paleta; una línea aquí
+   tiñe toda casilla y radio de la app sin tocar plantillas. */
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .help { color: var(--text-muted); font-size: 12.5px; margin: 6px 0 0; }
 
 /* Interruptor (switch) para opciones booleanas: reemplaza el checkbox cuadrado nativo del navegador.
@@ -892,11 +932,7 @@ input[type="email"], input[type="text"], select, textarea {
 .formtop__spacer { width: 56px; }
 .formscreen { max-width: 600px; }
 .stackform--screen { max-width: none; }
-/* Etiqueta de campo como "eyebrow" mono en los formularios a pantalla (más cercano al handoff). */
-.stackform--screen .form-row > label {
-    font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
-    color: var(--text-faint); font-weight: 600; margin-bottom: 8px;
-}
+/* El label mono ya es el general (ver .form-row > label); aquí no hace falta repetirlo. */
 .stackform--screen .form-row input[type="text"],
 .stackform--screen .form-row input[type="email"],
 .stackform--screen .form-row input[type="date"],
@@ -2793,9 +2829,6 @@ tr.is-not-covered { background: var(--danger-weak); }
    Móvil: tarjetas con lo sin cubrir primero. Escritorio: tabla refinada.
    ============================================================================= */
 .parte { display: grid; gap: 18px; }
-.parte-head { display: flex; flex-direction: column; gap: 14px; }
-.parte-title { font-family: var(--font-display); font-weight: 500; font-size: 27px; line-height: 1.12; margin: 4px 0 0; }
-.parte-lead { color: var(--text-muted); font-size: 13.5px; margin: 4px 0 0; }
 
 /* ---- Tramos horarios: chips mono con scroll lateral en móvil ---- */
 .slotchips { display: flex; gap: 7px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
@@ -2904,8 +2937,6 @@ tr.is-not-covered { background: var(--danger-weak); }
 .parte-table { display: none; }
 @media (min-width: 900px) {
     .parte { gap: 22px; }
-    .parte-head { flex-direction: row; align-items: flex-start; justify-content: space-between; gap: 24px; }
-    .parte-title { font-size: 32px; }
     .parte-cards, .coverage-bar { display: none; }
     .parte-table { display: table; }
     .parte-table thead th { border-top: 1px solid var(--border); }

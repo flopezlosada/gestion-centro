@@ -68,11 +68,11 @@
 
     <div class="parte">
         {# ---- Cabecera: fecha, título y navegación de día ---- #}
-        <header class="parte-head">
+        <header class="page-head">
             <div>
                 <p class="eyebrow">{{ dias[date|date('N', false)] }} {{ date|date('d/m/Y', false) }}</p>
-                <h1 class="parte-title">Parte de guardias</h1>
-                <p class="parte-lead">Ausencias del día y reparto de las guardias que las cubren.</p>
+                <h1>Parte de guardias</h1>
+                <p class="lead">Ausencias del día y reparto de las guardias que las cubren.</p>
             </div>
             <div class="day-nav">
                 <a class="day-nav-arrow" href="{{ path('guardia_index', { date: date|date_modify('-1 day')|date('Y-m-d', false), slot: slotIndex }) }}" aria-label="Día anterior">‹</a>
