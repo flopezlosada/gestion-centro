@@ -355,27 +355,34 @@ final class GuardiaPageTest extends WebTestCase
     }
 
     /**
-     * The sheet is submitted from a page rendered earlier, so the route re-checks what it offered. A
-     * teacher who is absent that period is refused even though the form carries their id: otherwise the
+     * The sheet is submitted from a page rendered earlier, so the route re-checks what it offered. This
+     * reproduces the actual race: the parte is rendered while the teacher is free, they are marked
+     * absent before the coordinator clicks, and the stale form must not go through — otherwise the
      * cover would be "covered" by someone who is not at the centre.
      */
-    public function testAssigningATeacherWhoIsAbsentThatPeriodIsRefused(): void
+    public function testAssigningATeacherWhoBecameAbsentAfterTheParteWasRenderedIsRefused(): void
     {
         $this->login();
         $year = $this->academicYear('2025-2026');
         $this->em->persist($year);
         $date = new \DateTimeImmutable('2025-11-10');
-        // On call that period, but also absent that period: their own absence makes them ineligible.
-        $onCallButAbsent = $this->user('Guardia Ausente', 'ga@centro.test');
-        $this->guardiaEntry($year, $onCallButAbsent, $date);
-        $this->cover($date, 0, $onCallButAbsent, null, group: '2ºB');
+        $free = $this->user('Guardia Libre Dos', 'libre2@centro.test');
+        $this->guardiaEntry($year, $free, $date);
         $target = $this->cover($date, 0, $this->user('Ausente Siete', 'a7@centro.test'), null);
         $this->em->flush();
         $id = (int) $target->getId();
+        $action = '/guardias/'.$id.'/asignar';
 
-        $this->client->request('GET', '/guardias?date='.$date->format('Y-m-d'));
-        $token = $this->client->getContainer()->get('security.csrf.token_manager')->getToken('guardia_cover_assign'.$id)->getValue();
-        $this->client->request('POST', '/guardias/'.$id.'/asignar', ['_token' => $token, 'guardia' => (string) $onCallButAbsent->getId()]);
+        // Página pintada con el profesor todavía libre: de ahí sale el token que llevaría el navegador.
+        $crawler = $this->client->request('GET', '/guardias?date='.$date->format('Y-m-d'));
+        self::assertSelectorTextContains('.assignsheet', 'Guardia Libre Dos');
+        $token = $this->tokenFrom($crawler, $action);
+
+        // Y ahora, antes del clic, ese profesor pasa a faltar esa misma hora.
+        $this->cover($date, 0, $free, null, group: '2ºB');
+        $this->em->flush();
+
+        $this->client->request('POST', $action, ['_token' => $token, 'guardia' => (string) $free->getId()]);
 
         self::assertResponseRedirects();
         self::assertNull($this->reload($id)->getAssignedGuardia(), 'no se asigna a quien falta esa hora');
@@ -387,27 +394,36 @@ final class GuardiaPageTest extends WebTestCase
 
     /**
      * Reassigning an already covered line is an edit, and an edit records a reason: the quick sheet
-     * refuses it and points at the modify screen, so it cannot be used to bypass the audit trail.
+     * refuses it and points at the modify screen, so it cannot be used to bypass the audit trail. Two
+     * submits of the same form (a double click, or two coordinators at once) are exactly that case.
      */
-    public function testAssigningOverAnAlreadyCoveredLineIsRefused(): void
+    public function testASecondSubmitOverAnAlreadyCoveredLineIsRefused(): void
     {
         $this->login();
         $year = $this->academicYear('2025-2026');
         $this->em->persist($year);
         $date = new \DateTimeImmutable('2025-11-10');
-        $already = $this->user('Ya Cubre', 'ya@centro.test');
-        $other = $this->user('Otro Libre', 'otro@centro.test');
-        $this->guardiaEntry($year, $other, $date);
-        $cover = $this->cover($date, 0, $this->user('Ausente Ocho', 'a8@centro.test'), $already);
+        $first = $this->user('Cubre Primero', 'c1@centro.test');
+        $second = $this->user('Cubre Segundo', 'c2@centro.test');
+        $this->guardiaEntry($year, $first, $date);
+        $this->guardiaEntry($year, $second, $date);
+        $cover = $this->cover($date, 0, $this->user('Ausente Ocho', 'a8@centro.test'), null);
         $this->em->flush();
         $id = (int) $cover->getId();
+        $action = '/guardias/'.$id.'/asignar';
 
-        $this->client->request('GET', '/guardias?date='.$date->format('Y-m-d'));
-        $token = $this->client->getContainer()->get('security.csrf.token_manager')->getToken('guardia_cover_assign'.$id)->getValue();
-        $this->client->request('POST', '/guardias/'.$id.'/asignar', ['_token' => $token, 'guardia' => (string) $other->getId()]);
+        $crawler = $this->client->request('GET', '/guardias?date='.$date->format('Y-m-d'));
+        $token = $this->tokenFrom($crawler, $action);
+
+        // Primer envío: asigna.
+        $this->client->request('POST', $action, ['_token' => $token, 'guardia' => (string) $first->getId()]);
+        self::assertSame($first->getId(), $this->reload($id)->getAssignedGuardia()?->getId());
+
+        // Segundo envío del mismo formulario: ya está cubierta, así que se rechaza en vez de pisarla.
+        $this->client->request('POST', $action, ['_token' => $token, 'guardia' => (string) $second->getId()]);
 
         self::assertResponseRedirects();
-        self::assertSame($already->getId(), $this->reload($id)->getAssignedGuardia()?->getId(), 'la asignación previa no se sobrescribe sin motivo');
+        self::assertSame($first->getId(), $this->reload($id)->getAssignedGuardia()?->getId(), 'la asignación previa no se sobrescribe sin motivo');
         $this->client->followRedirect();
         self::assertSelectorTextContains('.flash.error', 'ya está cubierta');
     }
