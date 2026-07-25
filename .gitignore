@@ -19,3 +19,7 @@
 
 # Datos reales del centro (PII) — nunca al repo, cargados por app:import-roster
 /fixtures/real/
+
+# Scratch local de la skill de diseño (Impeccable): config, snapshots de critique.
+# DESIGN.md y PRODUCT.md SÍ se versionan (docs compartibles, no servidas por HTTP).
+/.impeccable/
