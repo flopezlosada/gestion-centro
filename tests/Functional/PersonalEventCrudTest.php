@@ -121,6 +121,27 @@ final class PersonalEventCrudTest extends WebTestCase
         self::assertNull($event->getEndAt());
     }
 
+    public function testEmptyNewEventFormReportsTheBlankFieldsInsteadOfCrashing(): void
+    {
+        // Igual que en tareas: el título vacío llegaba como null a una propiedad `string` al mapear el
+        // formulario y reventaba con un 500 antes de validar. Debe ser un 422 con los avisos.
+        $owner = $this->user('profe@centro.test');
+        $this->em->flush();
+        $this->client->loginUser($owner);
+
+        $crawler = $this->client->request('GET', '/agenda/nueva');
+        $form = $crawler->selectButton('Crear evento')->form();
+        $form['personal_event_form[title]'] = '';
+        $form['personal_event_form[day]'] = '';
+        $this->client->submit($form);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertSelectorExists('[data-form-error]');
+        self::assertSelectorTextContains('body', 'El título es obligatorio.');
+        self::assertSelectorTextContains('body', 'Pon el día.');
+        self::assertSame(0, $this->em->getRepository(PersonalEvent::class)->count([]));
+    }
+
     public function testEndTimeWithoutStartTimeIsRejected(): void
     {
         $owner = $this->user('profe@centro.test');

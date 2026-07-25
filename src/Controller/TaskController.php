@@ -338,14 +338,19 @@ final class TaskController extends AbstractController
         // tarea (isOwnedBy: un jefe de departamento pasando su tarea a un miembro) o un admin — NO un
         // superior de rango superior (un director no delega la tarea de un jefe de departamento). Y solo
         // hacia gente a la que manda, por lo que un miembro raso (que no manda a nadie) nunca la ve.
-        $canDelegate = $isAdmin || $task->isOwnedBy($user);
+        // Además solo mientras la tarea sigue Pendiente: una entregada/finalizada/cancelada ya no cambia
+        // de titular (reasignarla reescribiría quién la hizo).
+        $canDelegate = ($isAdmin || $task->isOwnedBy($user)) && $task->isPending();
         $delegatable = $canDelegate
             ? array_values(array_filter($this->assignableUsers($user, $hierarchy, $users, $unitRepository), static fn (User $u): bool => $u !== $user))
             : [];
 
         return $this->render('task/show.html.twig', [
             'task' => $task,
-            'canWork' => $canWork,
+            // El enlace del entregable solo se corrige mientras la tarea está Entregada (a la espera de
+            // validación): es EXACTAMENTE la regla que aplica setDeliverable(), aquí para no ofrecer un
+            // formulario que el servidor va a rechazar (salía en una tarea ya finalizada).
+            'canEditDeliverable' => $canWork && $task->requiresDocument() && $task->isSubmitted(),
             // Editing/deleting is a management action (creator/superior/admin), a different set than
             // "who works on it" — the template gates the Edit link with this.
             'canManage' => $canManage,
@@ -377,6 +382,9 @@ final class TaskController extends AbstractController
         }
         if (!$this->isGranted('ROLE_ADMIN') && !$task->isOwnedBy($user)) {
             throw $this->createAccessDeniedException('No puedes delegar esta tarea.');
+        }
+        if (!$task->isPending()) {
+            throw $this->createAccessDeniedException('Una tarea ya entregada o cerrada no cambia de titular.');
         }
 
         $delegateeId = (string) $request->request->get('delegatedTo');
@@ -464,8 +472,9 @@ final class TaskController extends AbstractController
             throw $this->createNotFoundException('Esta tarea no lleva entregable.');
         }
         // Solo se corrige el enlace mientras está Entregada (a la espera de validación): al entregar ya
-        // se adjunta, y una tarea finalizada/cancelada/pendiente no se toca por aquí.
-        if ('submitted' !== $task->getStatus()) {
+        // se adjunta, y una tarea finalizada/cancelada/pendiente no se toca por aquí. Misma condición
+        // que decide si la vista ofrece el formulario (canEditDeliverable en show()).
+        if (!$task->isSubmitted()) {
             throw $this->createAccessDeniedException('Solo se puede editar el entregable de una tarea entregada.');
         }
 
@@ -520,6 +529,11 @@ final class TaskController extends AbstractController
         }
         if (!$this->canWorkOn($task, $user)) {
             throw $this->createAccessDeniedException('Esta tarea no es tuya.');
+        }
+        if ($task->isClosed()) {
+            // Finalizada o cancelada: de solo lectura. Marcar/desmarcar el progreso de algo ya cerrado
+            // solo podría contradecir al histórico.
+            throw $this->createAccessDeniedException('Esta tarea ya está cerrada.');
         }
         if (!$task->requiresCheckbox()) {
             // This task does not close via the progress checkbox (e.g. it is validated by deliverable).
