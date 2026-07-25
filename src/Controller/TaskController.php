@@ -543,9 +543,10 @@ final class TaskController extends AbstractController
         $task->setCheckboxDone(!$task->isCheckboxDone());
         $entityManager->flush();
 
-        // Back to the agenda, landing on the task just ticked. Route-based (no referer) to avoid
-        // any open-redirect; _fragment adds the "#tarea-id" anchor.
-        return $this->redirectToRoute('personal_event_index', ['_fragment' => 'tarea-'.$task->getId()]);
+        // Back to Inicio, the daily agenda. A ticked task leaves the "hoy/vencidas" list (it moves to
+        // the done bucket), so there is no stable row to anchor to — landing on the page is enough.
+        // Route-based (never the Referer) to rule out an open redirect.
+        return $this->redirectToRoute('app_homepage');
     }
 
     /**
