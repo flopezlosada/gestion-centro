@@ -8,13 +8,16 @@
     {% set nombre = app.user.fullName|trim|split(' ')|first %}
     {% set iniciales = app.user.fullName|initials %}
     {% set hoyStr = now|date('Y-m-d') %}
+    {# Saludo según la hora local: mañana / tarde / noche (antes era "Buenos días" fijo). #}
+    {% set hora = now|date('G') %}
+    {% set saludo = hora < 12 ? 'Buenos días' : (hora < 21 ? 'Buenas tardes' : 'Buenas noches') %}
 
     <div class="home">
         {# ---- Cabecera: fecha + saludo + avatar ---- #}
         <header class="home-head">
             <div>
                 <p class="eyebrow">{{ dias[now|date('N')] }} {{ now|date('d/m') }}</p>
-                <h1 class="home-greeting">Buenos días, {{ nombre }}</h1>
+                <h1 class="home-greeting">{{ saludo }}, {{ nombre }}</h1>
                 {% if roleSubtitle %}<p class="home-role">{{ roleSubtitle }}</p>{% endif %}
             </div>
             <a class="home-newtask" href="{{ path('task_new') }}">+ Nueva tarea</a>
@@ -59,7 +62,7 @@
             </div>
 
             {% if myTasks is empty %}
-                <p class="home-empty">No tienes tareas pendientes para hoy. 👌</p>
+                <p class="home-empty">Sin tareas para hoy. Todo en orden.</p>
             {% else %}
                 <ul class="tasklist">
                     {% for entry in myTasks %}
@@ -224,7 +227,7 @@
                     <span class="module-row__chevron" aria-hidden="true">›</span>
                 </a>
                 <a class="module-row" href="{{ path('task_index') }}">
-                    <span class="module-row__stat module-row__stat--danger">{{ c.overdue }}</span>
+                    <span class="module-row__stat module-row__stat--warning">{{ c.overdue }}</span>
                     <span class="module-row__body">
                         <span class="module-row__title">Tareas vencidas del centro</span>
                         <span class="module-row__sub">abiertas con fecha pasada</span>
