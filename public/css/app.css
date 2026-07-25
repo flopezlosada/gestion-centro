@@ -519,7 +519,12 @@ td .doc-title { font-family: var(--font-display); font-size: 16.5px; }
 
 /* Ficha clave-valor de las pantallas de detalle (identificación de un documento, etc.). */
 .detail-grid { display: grid; grid-template-columns: max-content 1fr; gap: 8px 22px; margin: 0 0 4px; }
-.detail-grid dt { color: var(--text-muted); font-size: 13px; }
+/* Rótulo de ficha: el mismo eyebrow mono que los labels de formulario. Había tres estilos distintos
+   para lo mismo (.detail-grid, .cover-summary, .meta-grid__cell); este es el del handoff. */
+.detail-grid dt, .cover-summary dt {
+    font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint);
+}
 .detail-grid dd { margin: 0; }
 @media (max-width: 560px) {
     .detail-grid { grid-template-columns: 1fr; gap: 2px 0; }
@@ -1212,7 +1217,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
        salir viven en el cajón "Más". Así se elimina la doble cabecera y el sangrado del nombre. */
     .topbar { display: none; }
     .page { padding: 22px 16px; }
-    .page-head { flex-direction: column; }
+    /* El apilado ya es el estado base de .page-head; aquí solo el tamaño de móvil del handoff. */
     .page-head h1 { font-size: 24px; }
     /* Tablas: en móvil cada fila se apila como tarjeta "Etiqueta: valor". Las etiquetas
        las inyecta responsive-tables.js leyendo las cabeceras (cero ediciones de plantilla). */
@@ -1238,6 +1243,15 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
         padding: 7px 0;
         text-align: right;
     }
+    /* La primera columna es siempre el identificador de la fila (nombre, fecha, código), así que hace
+       de título de la tarjeta: sin etiqueta —"NOMBRE" sobre un nombre no dice nada— y a la izquierda.
+       Da jerarquía y ahorra una línea por fila, que con 86 usuarios se nota. */
+    .card tbody td:first-child {
+        display: block; text-align: left;
+        padding: 4px 0 9px; margin-bottom: 3px;
+        font-size: 15px; border-bottom: 1px solid var(--separator);
+    }
+    .card tbody td:first-child::before { display: none; }
     .card tbody td::before {
         content: attr(data-label);
         font-family: var(--font-mono);
@@ -1810,8 +1824,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 /* ---- Puesto de trabajo de la tarea (detalle): siguiente paso + acciones del ciclo ---- */
 .task-workbench { display: flex; flex-direction: column; gap: 14px; }
 .task-nextstep { margin: 0; font-size: 15px; color: var(--text); }
-.task-actions { display: flex; flex-wrap: wrap; gap: 10px; }
-.task-actions form { margin: 0; }
+/* La barra de acciones del detalle es .actionbar desde el rediseño; .task-actions quedó sin uso. */
 .deliverable-form { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .deliverable-input { flex: 1 1 320px; min-width: 0; }
 
@@ -2264,24 +2277,9 @@ tr.is-not-covered { background: var(--danger-weak); }
 .absence-picker label { font-weight: 600; }
 .pill-value { margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-sunken); font-weight: 500; }
 .step-hint { margin: 18px 0 0; padding-top: 18px; border-top: 1px solid var(--border); }
-.step-head { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
-
-/* Paso 2: clases reales del día, una fila por clase (marcar + tarea). */
-.class-list { list-style: none; margin: 8px 0 20px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-.class-row {
-    display: grid; grid-template-columns: minmax(220px, 1fr) minmax(220px, 2fr); gap: 12px 16px;
-    align-items: start; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
-}
-.class-row:has(input[type="checkbox"]:not(:checked)) { opacity: .55; }
-.class-row__pick { display: flex; align-items: baseline; gap: 8px; cursor: pointer; font-weight: 400; }
-.class-row__time { flex: none; color: var(--text-muted); }
-.class-row__group { line-height: 1.4; }
-.class-row__task { display: flex; flex-direction: column; gap: 8px; }
-.class-row__task textarea { width: 100%; box-sizing: border-box; resize: vertical; }
-.class-row__file { display: flex; flex-direction: column; gap: 4px; font-weight: 400; }
-.class-row__file .field-label { font-size: 12px; color: var(--text-muted); }
+/* Las clases del día ya no son una rejilla .class-row sino tarjetas conmutables (ver .classcard, más
+   abajo): las reglas de aquel montaje se han retirado al quedar sin uso. */
 .field--reason { border-left: 3px solid var(--border); padding-left: 12px; }
-@media (max-width: 640px) { .class-row { grid-template-columns: 1fr; } }
 
 /* ── Guardias · celda de tarea del parte y pantalla de modificar ───────────── */
 .task-cell { max-width: 320px; color: var(--text-muted); display: flex; flex-direction: column; gap: 2px; }
@@ -2290,18 +2288,14 @@ tr.is-not-covered { background: var(--danger-weak); }
 .reason-note { font-size: 12px; cursor: help; white-space: nowrap; }
 .doc-current { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0 0 8px; }
 .cover-summary { display: flex; flex-wrap: wrap; gap: 10px 32px; margin: 0 0 20px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
-.cover-summary dt { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint); margin-bottom: 2px; }
+/* La tipografía la pone la regla común de arriba; aquí solo el hueco propio de esta ficha. */
+.cover-summary dt { margin-bottom: 2px; }
 .cover-summary dd { margin: 0; }
 .req { color: var(--danger-text); }
 
-/* ── Guardias · panel de profes (estado de reparto) ────────────────────────── */
-.pool-legend {
-    list-style: none; margin: 0 0 14px; padding: 0;
-    display: flex; flex-wrap: wrap; gap: 8px 20px;
-    font-size: 13px; color: var(--text-muted);
-}
-.pool-legend li { display: inline-flex; align-items: center; gap: 6px; }
-.pool-legend .load-count { min-width: 1.6em; }
+/* ── Guardias · panel de profes (estado de reparto) ──────────────────────────
+   La leyenda .pool-legend se retiró: el panel ahora explica los estados en una frase y los chips
+   se leen solos, así que la lista de leyenda quedó sin uso. */
 .mini-card.is-free { border-color: var(--success); }
 .mini-card.is-busy { opacity: .6; }
 .mini-card-status { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }

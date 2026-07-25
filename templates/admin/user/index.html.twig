@@ -7,6 +7,7 @@
 {% block body %}
     <div class="page-head">
         <div>
+            <p class="eyebrow">Administración</p>
             <h1>Usuarios</h1>
             <p class="lead">Personas con acceso al sistema. Solo quien esté dado de alta aquí puede entrar.</p>
         </div>
@@ -23,7 +24,9 @@
         {% else %}
             <table data-list-tools>
                 <thead>
-                    <tr><th>Nombre</th><th>Correo</th><th data-filter>Activo</th><th>Unidad</th><th>Roles</th><th></th></tr>
+                    {# "Estado", no "Activo": en móvil la cabecera se convierte en la etiqueta de la celda
+                       y quedaba un "ACTIVO: Activo" que no dice nada. #}
+                    <tr><th>Nombre</th><th>Correo</th><th data-filter>Estado</th><th>Unidad</th><th>Roles</th><th></th></tr>
                 </thead>
                 <tbody>
                     {% for user in users %}
