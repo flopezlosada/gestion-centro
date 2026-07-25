@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Twig;
 
 use App\Util\DecimalFormatter;
+use App\Util\Excerpt;
 use App\Util\Initials;
 use Twig\Extension\AbstractExtension;
 use Twig\TwigFilter;
@@ -22,6 +23,7 @@ class FormatExtension extends AbstractExtension
         return [
             new TwigFilter('decimal', DecimalFormatter::display(...)),
             new TwigFilter('initials', Initials::of(...)),
+            new TwigFilter('excerpt', Excerpt::of(...)),
         ];
     }
 }

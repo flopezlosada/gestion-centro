@@ -12,6 +12,7 @@
 {% block body %}
     <div class="page-head">
         <div>
+            <p class="eyebrow">Usuarios</p>
             <h1>{{ user.fullName }}
                 {% if user.active %}<span class="badge badge--success">Activo</span>{% else %}<span class="badge badge--draft">Inactivo</span>{% endif %}
             </h1>

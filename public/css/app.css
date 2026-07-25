@@ -382,16 +382,25 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 500; color: var(--te
     padding: 42px 56px;
     min-width: 0;
 }
+/* Cabecera de pantalla, único componente para todas: apila en móvil y se abre a dos lados en
+   escritorio. Los tamaños son los del handoff (título 24–27 en móvil, 30–36 en escritorio). Al vivir
+   aquí, cualquier pantalla que ya use .page-head adopta el diseño sin tocar su plantilla. */
 .page-head {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 26px;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 22px;
 }
-.page-head h1 { font-size: 30px; margin: 0 0 4px; line-height: 1.12; letter-spacing: -.01em; }
-.page-head .lead { color: var(--text-muted); margin: 0; max-width: 60ch; }
-.page-head-actions { display: flex; gap: 10px; flex: none; }
+.page-head h1 { font-size: 27px; margin: 0 0 4px; line-height: 1.12; letter-spacing: -.01em; }
+.page-head h2 { font-size: 20px; margin: 0 0 4px; }
+.page-head .lead { color: var(--text-muted); font-size: 13.5px; line-height: 1.5; margin: 0; max-width: 62ch; }
+.page-head-actions, .page-head__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+@media (min-width: 900px) {
+    .page-head { flex-direction: row; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 26px; }
+    .page-head h1 { font-size: 32px; }
+    .page-head-actions, .page-head__actions { flex: none; gap: 10px; }
+}
 
 /* Compat: encabezado simple usado por plantillas sin page-head. */
 .page > h1 { font-size: 28px; margin: 0 0 18px; }
@@ -510,7 +519,12 @@ td .doc-title { font-family: var(--font-display); font-size: 16.5px; }
 
 /* Ficha clave-valor de las pantallas de detalle (identificación de un documento, etc.). */
 .detail-grid { display: grid; grid-template-columns: max-content 1fr; gap: 8px 22px; margin: 0 0 4px; }
-.detail-grid dt { color: var(--text-muted); font-size: 13px; }
+/* Rótulo de ficha: el mismo eyebrow mono que los labels de formulario. Había tres estilos distintos
+   para lo mismo (.detail-grid, .cover-summary, .meta-grid__cell); este es el del handoff. */
+.detail-grid dt, .cover-summary dt {
+    font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint);
+}
 .detail-grid dd { margin: 0; }
 @media (max-width: 560px) {
     .detail-grid { grid-template-columns: 1fr; gap: 2px 0; }
@@ -805,7 +819,35 @@ a.badge:hover { border-color: currentColor; }
     color: var(--text-muted);
 }
 .form-row { margin-bottom: 16px; }
-.form-row > label, label.required { display: block; font-weight: 500; margin-bottom: 6px; color: var(--text); }
+/* Etiqueta de campo como "eyebrow" mono, el patrón del handoff para labels. Vive en el selector
+   general (no solo en las pantallas empujadas, donde nació) para que TODO formulario lo adopte sin
+   tocar su plantilla: admin, guardias y login incluidos. .field es el sistema anterior de campo, que
+   aún usan cuatro plantillas de guardias; se alinea aquí en vez de migrarlas una a una. */
+/* El :not(:has(input)) excluye el label que ENVUELVE su control (una casilla con su texto al lado):
+   ahí el label es la frase, no el rótulo del campo. */
+.form-row > label:not(:has(input)), .field > label:not(:has(input)), label.required {
+    display: block; margin-bottom: 8px;
+    font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint);
+}
+/* Y esto excluye el otro montaje de booleano: casilla e input como hermanos dentro del campo. */
+.form-row:has(> input[type="checkbox"]) > label,
+.form-row:has(> input[type="radio"]) > label,
+.field:has(> input[type="checkbox"]) > label {
+    display: inline; margin-bottom: 0;
+    font: inherit; letter-spacing: normal; text-transform: none; color: var(--text);
+}
+
+/* Input de archivo: el botón nativo es lo que más desentona de la interfaz. Se le da el aspecto de
+   botón secundario del sistema. Global, así que vale para todos los adjuntos de la app. */
+input[type="file"] { font: inherit; font-size: 13.5px; color: var(--text-muted); max-width: 100%; }
+input[type="file"]::file-selector-button {
+    margin-right: 10px; padding: 8px 14px; cursor: pointer;
+    background: var(--surface); color: var(--accent);
+    border: 1px solid var(--border-strong); border-radius: var(--radius);
+    font: 600 13px var(--font-body);
+}
+input[type="file"]::file-selector-button:hover { background: var(--surface-sunken); border-color: var(--accent); }
 .form-row input[type="text"],
 .form-row input[type="email"],
 .form-row input[type="number"],
@@ -847,6 +889,9 @@ input[type="email"], input[type="text"], select, textarea {
     outline-offset: 0;
 }
 .form-row input[type="checkbox"] { width: auto; margin-right: 8px; }
+/* El azul nativo del navegador es lo único de la interfaz que no sale de la paleta; una línea aquí
+   tiñe toda casilla y radio de la app sin tocar plantillas. */
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .help { color: var(--text-muted); font-size: 12.5px; margin: 6px 0 0; }
 
 /* Interruptor (switch) para opciones booleanas: reemplaza el checkbox cuadrado nativo del navegador.
@@ -892,11 +937,7 @@ input[type="email"], input[type="text"], select, textarea {
 .formtop__spacer { width: 56px; }
 .formscreen { max-width: 600px; }
 .stackform--screen { max-width: none; }
-/* Etiqueta de campo como "eyebrow" mono en los formularios a pantalla (más cercano al handoff). */
-.stackform--screen .form-row > label {
-    font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
-    color: var(--text-faint); font-weight: 600; margin-bottom: 8px;
-}
+/* El label mono ya es el general (ver .form-row > label); aquí no hace falta repetirlo. */
 .stackform--screen .form-row input[type="text"],
 .stackform--screen .form-row input[type="email"],
 .stackform--screen .form-row input[type="date"],
@@ -986,10 +1027,12 @@ input[type="email"], input[type="text"], select, textarea {
 .cdate__day.is-selected { background: var(--accent); color: var(--on-accent); }
 .cdate__day:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 
-/* Errores de formulario de Symfony: se renderizan como <ul><li>. Los estilamos
-   nosotros (los tests dependen del selector .form-row ul li / ul li). */
-.form-row ul, form > ul { list-style: none; margin: 6px 0 0; padding: 0; }
-.form-row ul li, form > ul li { color: var(--danger-text); font-size: 13px; }
+/* Errores de formulario de Symfony: form_errors los renderiza como <ul><li> SIN clase (no hay tema
+   propio de formulario). El :not([class]) es lo que impide que esto pinte de rojo cualquier lista que
+   una plantilla ponga dentro de un form con su propia clase — pasaba con las horas de "apuntar
+   ausencia", que salían con el grupo en rojo sin razón. */
+.form-row ul:not([class]), form > ul:not([class]) { list-style: none; margin: 6px 0 0; padding: 0; }
+.form-row ul:not([class]) li, form > ul:not([class]) li { color: var(--danger-text); font-size: 13px; }
 .form-row input[aria-invalid="true"], .form-row select[aria-invalid="true"] { border-color: var(--danger); }
 
 /* Bloque de error global del formulario (también usado en login). */
@@ -1118,7 +1161,11 @@ input[type="email"], input[type="text"], select, textarea {
        'clip' no fuerza scroll en el otro eje (a diferencia de hidden), así no rompe sticky. */
     html, body { overflow-x: clip; }
     /* minmax(0,1fr): la columna del grid no puede exceder el viewport. */
-    .layout { grid-template-columns: minmax(0, 1fr); }
+    /* grid-template-rows es necesario, no cosmético: .layout lleva min-height:100vh y, con filas
+       implícitas, el reparto por defecto estiraba la barra superior para llenar el hueco de una
+       página corta (se veía como una franja vacía de 100px+ bajo el logo). La barra toma su alto y
+       el contenido se queda el resto. */
+    .layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
     .main { overflow-x: clip; }
     /* La barra lateral pasa a barra superior; la navegación entra como cajón lateral
        desde la izquierda, superpuesta sobre el contenido, con fondo oscurecido. */
@@ -1170,7 +1217,7 @@ input[type="email"], input[type="text"], select, textarea {
        salir viven en el cajón "Más". Así se elimina la doble cabecera y el sangrado del nombre. */
     .topbar { display: none; }
     .page { padding: 22px 16px; }
-    .page-head { flex-direction: column; }
+    /* El apilado ya es el estado base de .page-head; aquí solo el tamaño de móvil del handoff. */
     .page-head h1 { font-size: 24px; }
     /* Tablas: en móvil cada fila se apila como tarjeta "Etiqueta: valor". Las etiquetas
        las inyecta responsive-tables.js leyendo las cabeceras (cero ediciones de plantilla). */
@@ -1196,6 +1243,15 @@ input[type="email"], input[type="text"], select, textarea {
         padding: 7px 0;
         text-align: right;
     }
+    /* La primera columna es siempre el identificador de la fila (nombre, fecha, código), así que hace
+       de título de la tarjeta: sin etiqueta —"NOMBRE" sobre un nombre no dice nada— y a la izquierda.
+       Da jerarquía y ahorra una línea por fila, que con 86 usuarios se nota. */
+    .card tbody td:first-child {
+        display: block; text-align: left;
+        padding: 4px 0 9px; margin-bottom: 3px;
+        font-size: 15px; border-bottom: 1px solid var(--separator);
+    }
+    .card tbody td:first-child::before { display: none; }
     .card tbody td::before {
         content: attr(data-label);
         font-family: var(--font-mono);
@@ -1768,8 +1824,7 @@ input[type="email"], input[type="text"], select, textarea {
 /* ---- Puesto de trabajo de la tarea (detalle): siguiente paso + acciones del ciclo ---- */
 .task-workbench { display: flex; flex-direction: column; gap: 14px; }
 .task-nextstep { margin: 0; font-size: 15px; color: var(--text); }
-.task-actions { display: flex; flex-wrap: wrap; gap: 10px; }
-.task-actions form { margin: 0; }
+/* La barra de acciones del detalle es .actionbar desde el rediseño; .task-actions quedó sin uso. */
 .deliverable-form { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .deliverable-input { flex: 1 1 320px; min-width: 0; }
 
@@ -2222,24 +2277,9 @@ tr.is-not-covered { background: var(--danger-weak); }
 .absence-picker label { font-weight: 600; }
 .pill-value { margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-sunken); font-weight: 500; }
 .step-hint { margin: 18px 0 0; padding-top: 18px; border-top: 1px solid var(--border); }
-.step-head { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
-
-/* Paso 2: clases reales del día, una fila por clase (marcar + tarea). */
-.class-list { list-style: none; margin: 8px 0 20px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-.class-row {
-    display: grid; grid-template-columns: minmax(220px, 1fr) minmax(220px, 2fr); gap: 12px 16px;
-    align-items: start; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
-}
-.class-row:has(input[type="checkbox"]:not(:checked)) { opacity: .55; }
-.class-row__pick { display: flex; align-items: baseline; gap: 8px; cursor: pointer; font-weight: 400; }
-.class-row__time { flex: none; color: var(--text-muted); }
-.class-row__group { line-height: 1.4; }
-.class-row__task { display: flex; flex-direction: column; gap: 8px; }
-.class-row__task textarea { width: 100%; box-sizing: border-box; resize: vertical; }
-.class-row__file { display: flex; flex-direction: column; gap: 4px; font-weight: 400; }
-.class-row__file .field-label { font-size: 12px; color: var(--text-muted); }
+/* Las clases del día ya no son una rejilla .class-row sino tarjetas conmutables (ver .classcard, más
+   abajo): las reglas de aquel montaje se han retirado al quedar sin uso. */
 .field--reason { border-left: 3px solid var(--border); padding-left: 12px; }
-@media (max-width: 640px) { .class-row { grid-template-columns: 1fr; } }
 
 /* ── Guardias · celda de tarea del parte y pantalla de modificar ───────────── */
 .task-cell { max-width: 320px; color: var(--text-muted); display: flex; flex-direction: column; gap: 2px; }
@@ -2248,18 +2288,14 @@ tr.is-not-covered { background: var(--danger-weak); }
 .reason-note { font-size: 12px; cursor: help; white-space: nowrap; }
 .doc-current { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0 0 8px; }
 .cover-summary { display: flex; flex-wrap: wrap; gap: 10px 32px; margin: 0 0 20px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
-.cover-summary dt { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint); margin-bottom: 2px; }
+/* La tipografía la pone la regla común de arriba; aquí solo el hueco propio de esta ficha. */
+.cover-summary dt { margin-bottom: 2px; }
 .cover-summary dd { margin: 0; }
 .req { color: var(--danger-text); }
 
-/* ── Guardias · panel de profes (estado de reparto) ────────────────────────── */
-.pool-legend {
-    list-style: none; margin: 0 0 14px; padding: 0;
-    display: flex; flex-wrap: wrap; gap: 8px 20px;
-    font-size: 13px; color: var(--text-muted);
-}
-.pool-legend li { display: inline-flex; align-items: center; gap: 6px; }
-.pool-legend .load-count { min-width: 1.6em; }
+/* ── Guardias · panel de profes (estado de reparto) ──────────────────────────
+   La leyenda .pool-legend se retiró: el panel ahora explica los estados en una frase y los chips
+   se leen solos, así que la lista de leyenda quedó sin uso. */
 .mini-card.is-free { border-color: var(--success); }
 .mini-card.is-busy { opacity: .6; }
 .mini-card-status { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
@@ -2781,3 +2817,196 @@ tr.is-not-covered { background: var(--danger-weak); }
 .guardia-empty__icon svg { width: 26px; height: 26px; }
 .guardia-empty__title { font-size: 15px; color: var(--text); font-weight: 600; }
 .guardia-empty__sub { font-size: 13px; line-height: 1.55; color: var(--text-muted); margin: 6px 0 0; }
+
+/* =============================================================================
+   Parte de guardias (coordinación) — handoff 8a móvil / 3a escritorio / 8b hoja
+   Móvil: tarjetas con lo sin cubrir primero. Escritorio: tabla refinada.
+   ============================================================================= */
+.parte { display: grid; gap: 18px; }
+
+/* ---- Tramos horarios: chips mono con scroll lateral en móvil ---- */
+.slotchips { display: flex; gap: 7px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.slotchips::-webkit-scrollbar { height: 0; }
+.slotchip {
+    position: relative; flex: none; background: var(--surface); color: var(--text-muted);
+    border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 12px;
+    font-family: var(--font-mono); font-size: 12.5px; text-decoration: none;
+}
+.slotchip:hover { border-color: var(--border-strong); color: var(--text); }
+.slotchip.is-active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+.slotchip__dot {
+    position: absolute; top: -4px; right: -4px; width: 9px; height: 9px; border-radius: 999px;
+    background: var(--amber); border: 1.5px solid var(--bg);
+}
+
+/* ---- Panel de ausencias ---- */
+.parte-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.parte-panel__head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 18px 18px 14px; }
+.parte-panel__titles { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.parte-panel__title { font-family: var(--font-display); font-weight: 500; font-size: 20px; margin: 0; }
+.parte-panel__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.coverage { display: flex; gap: 7px; }
+
+/* ---- Barra de cobertura: cuánto del tramo está resuelto ---- */
+.coverage-bar { display: flex; align-items: center; gap: 12px; padding: 0 18px 14px; }
+.coverage-bar__track { flex: 1; height: 8px; background: var(--surface-sunken); border-radius: 999px; overflow: hidden; }
+.coverage-bar__fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--success)); }
+.coverage-bar__count { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+
+/* ---- MÓVIL: tarjetas del parte ---- */
+.parte-cards { display: grid; gap: 10px; padding: 0 14px 16px; }
+.parte-card { position: relative; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 16px; padding: 14px 16px; }
+.parte-card.is-uncovered { background: var(--warning-weak); border-color: var(--warning-border); padding-left: 18px; }
+.parte-card.is-uncovered::before {
+    content: ""; position: absolute; left: 0; top: 13px; bottom: 13px; width: 4px;
+    border-radius: 999px; background: var(--amber);
+}
+.parte-card.is-failed { background: var(--danger-weak); border-color: var(--danger-border); }
+.parte-card__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.parte-card__what { min-width: 0; }
+.parte-card__group { font-weight: 600; font-size: 15px; }
+.parte-card__room { font-family: var(--font-mono); font-size: 12px; color: var(--text-faint); }
+.parte-card__absent { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; }
+.parte-card__task { flex: none; color: var(--amber-text); }
+.parte-card__task svg { width: 16px; height: 16px; }
+.parte-card__taskline { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; font-size: 12.5px; }
+.parte-card__taskdesc { color: var(--text-muted); }
+.parte-card__foot { display: flex; align-items: center; gap: 9px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--separator); }
+.parte-card__avatar { flex: none; width: 26px; height: 26px; border-radius: 999px; background: var(--accent-weak); color: var(--accent); display: grid; place-items: center; font-size: 10px; font-weight: 700; }
+.parte-card__covers { flex: 1; font-size: 13px; }
+.parte-card__change { flex: none; font-size: 12px; font-weight: 600; color: var(--success); text-decoration: none; }
+
+/* ---- Hoja para asignar (8b): candidatos que el reparto elegiría ---- */
+.assignsheet { margin-top: 12px; }
+.assignsheet__toggle {
+    display: block; text-align: center; background: var(--accent); color: var(--on-accent);
+    border-radius: 11px; padding: 11px; font-weight: 600; font-size: 13.5px; cursor: pointer;
+    list-style: none;
+}
+.assignsheet__toggle::-webkit-details-marker { display: none; }
+.assignsheet__toggle:active { transform: scale(.99); }
+.assignsheet[open] .assignsheet__toggle { background: var(--surface-sunken); color: var(--text-muted); }
+.assignsheet__panel {
+    margin-top: 10px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 18px; padding: 14px; box-shadow: var(--shadow-sheet);
+}
+.assignsheet__title { font-family: var(--font-display); font-weight: 500; font-size: 18px; margin: 4px 0 2px; }
+.assignsheet__when { font-size: 13px; color: var(--text-faint); }
+.assignsheet__sub { font-size: 12.5px; color: var(--text-faint); margin: 0 0 12px; }
+/* Sin scroll interno a propósito: el pool de guardia de un tramo son unas pocas personas, y una
+   lista recortada a media fila se lee como un fallo de render. */
+.assignsheet__list { display: grid; gap: 8px; }
+.assignsheet__row {
+    display: flex; align-items: center; gap: 10px; background: var(--surface-alt);
+    border: 1px solid var(--border); border-radius: 13px; padding: 9px 11px;
+}
+.assignsheet__row.is-off { background: var(--surface-sunken); opacity: .68; }
+.assignsheet__load {
+    flex: none; width: 30px; height: 30px; border-radius: 999px; background: var(--accent-weak);
+    color: var(--accent); display: grid; place-items: center;
+    font-family: var(--font-mono); font-size: 13px; font-weight: 600;
+}
+.assignsheet__row.is-off .assignsheet__load { background: var(--separator); color: var(--text-muted); }
+.assignsheet__name { flex: 1; font-weight: 600; font-size: 13.5px; min-width: 0; }
+.assignsheet__sep { height: 1px; background: var(--border); margin: 4px 2px; }
+.assignsheet__seplabel { padding: 0 4px; }
+
+.parte-empty { padding: 6px 18px 20px; color: var(--text-muted); font-size: 13.5px; }
+.parte-empty p { margin: 0; }
+
+/* ---- Quién está de guardia: referencia plegable ---- */
+.parte-pool { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.parte-pool__toggle {
+    display: flex; align-items: center; gap: 10px; padding: 15px 18px; cursor: pointer;
+    font-weight: 600; font-size: 14px; list-style: none;
+}
+.parte-pool__toggle::-webkit-details-marker { display: none; }
+.parte-pool__toggle::after { content: '▾'; margin-left: auto; color: var(--text-tenue); }
+.parte-pool[open] .parte-pool__toggle::after { content: '▴'; }
+.parte-pool__count { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); background: var(--surface-sunken); border-radius: 999px; padding: 2px 8px; }
+.parte-pool__body { padding: 0 18px 18px; }
+.parte-pool__lead { font-size: 13px; color: var(--text-muted); margin: 0 0 14px; }
+
+/* ---- La tabla del parte manda en escritorio; en móvil manda la tarjeta ---- */
+.parte-table { display: none; }
+@media (min-width: 900px) {
+    .parte { gap: 22px; }
+    .parte-cards, .coverage-bar { display: none; }
+    .parte-table { display: table; }
+    .parte-table thead th { border-top: 1px solid var(--border); }
+    .parte-table tbody tr:hover { background: color-mix(in srgb, var(--surface-sunken) 60%, var(--surface)); }
+    .parte-table tbody tr.is-uncovered td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
+    .parte-table td { padding-left: 18px; }
+    .parte-who { display: inline-flex; align-items: center; gap: 7px; }
+    .parte-who__avatar { flex: none; width: 22px; height: 22px; border-radius: 999px; background: var(--accent-weak); color: var(--accent); display: grid; place-items: center; font-size: 9px; font-weight: 700; }
+}
+
+/* =============================================================================
+   Apuntar ausencia (handoff 10a) — pantalla empujada: quién y qué día arriba,
+   sus clases como tarjetas conmutables (marcada = falta esa hora).
+   ============================================================================= */
+.absence-picker { display: grid; gap: 16px; margin-bottom: 22px; }
+.pickfield { display: grid; gap: 8px; }
+.pickrow {
+    display: flex; align-items: center; gap: 11px; background: var(--surface-alt);
+    border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px;
+}
+.pickrow:hover { border-color: var(--border-strong); }
+.pickrow__avatar {
+    flex: none; width: 32px; height: 32px; border-radius: 999px; background: var(--accent-weak);
+    color: var(--accent); display: grid; place-items: center; font-size: 11px; font-weight: 700;
+}
+.pickrow__icon { flex: none; width: 20px; height: 20px; color: var(--accent); }
+.pickrow__value { flex: 1; font-size: 14.5px; }
+/* El control va desnudo dentro de la tarjeta: el marco lo pone .pickrow. */
+.pickrow--select select, .pickrow--select input[type="date"] {
+    flex: 1; min-width: 0; border: 0; background: transparent; padding: 0;
+    font-family: inherit; font-size: 14.5px; color: var(--text);
+}
+.pickrow--select input[type="date"] { font-family: var(--font-mono); font-size: 14px; }
+.pickrow--select select:focus-visible, .pickrow--select input:focus-visible { outline: none; }
+.pickrow:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
+
+.classes-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 22px 0 6px; }
+.classes-head__title { font-family: var(--font-display); font-weight: 500; font-size: 19px; margin: 0; }
+.classes-help { font-size: 12.5px; line-height: 1.5; color: var(--text-faint); margin: 0 0 14px; }
+
+/* ---- Tarjeta de clase: marcada = falta. El estado apagado se resuelve con :has,
+        así que desmarcar responde sin una línea de JS. ---- */
+.classcards { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.classcard { background: var(--surface-alt); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+.classcard__pick { display: flex; align-items: center; gap: 12px; padding: 14px 15px; cursor: pointer; }
+.classcard__pick input[type="checkbox"] { position: absolute; opacity: 0; width: 0; height: 0; }
+.classcard__box {
+    flex: none; width: 24px; height: 24px; border-radius: 7px; background: var(--accent);
+    color: var(--on-accent); display: grid; place-items: center;
+}
+.classcard__box svg { width: 15px; height: 15px; }
+.classcard__pick input:focus-visible + .classcard__box { outline: 2px solid var(--focus); outline-offset: 2px; }
+.classcard__what { flex: 1; min-width: 0; }
+.classcard__time { display: block; font-family: var(--font-mono); font-weight: 600; font-size: 13px; color: var(--accent); }
+.classcard__group { display: block; font-size: 13px; margin-top: 2px; }
+.classcard__off { display: none; font-size: 13px; color: var(--text-faint); }
+.classcard__addtask {
+    display: block; border-top: 1px solid var(--separator); padding: 11px 15px; cursor: pointer;
+    font-weight: 600; font-size: 13px; color: var(--success); list-style: none;
+}
+.classcard__addtask::-webkit-details-marker { display: none; }
+.classcard__addtask::before { content: '+ '; }
+.classcard__task[open] .classcard__addtask::before { content: '− '; }
+.classcard__taskbody { padding: 0 15px 14px; display: grid; gap: 9px; }
+.classcard__file { display: grid; gap: 5px; }
+
+/* Hora desmarcada: no falta. Se apaga la tarjeta, el borde pasa a discontinuo y aparece "sí estará". */
+.classcard:has(input[type="checkbox"]:not(:checked)) {
+    background: var(--surface-sunken); border-style: dashed; border-color: var(--border-strong);
+}
+.classcard:has(input[type="checkbox"]:not(:checked)) .classcard__box { background: transparent; border: 2px solid var(--border-strong); color: transparent; }
+.classcard:has(input[type="checkbox"]:not(:checked)) .classcard__time,
+.classcard:has(input[type="checkbox"]:not(:checked)) .classcard__group { color: var(--text-faint); }
+.classcard:has(input[type="checkbox"]:not(:checked)) .classcard__group strong { font-weight: 500; }
+.classcard:has(input[type="checkbox"]:not(:checked)) .classcard__off { display: inline; }
+/* Sin falta no hay guardia que cubrir, así que la tarea de esa hora no procede. */
+.classcard:has(input[type="checkbox"]:not(:checked)) .classcard__task { display: none; }
+
+.field--reason { margin-top: 22px; }

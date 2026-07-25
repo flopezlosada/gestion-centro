@@ -1,156 +1,292 @@
 {% extends 'app_shell.html.twig' %}
 
 {% set ck = constant('App\\Enum\\ScheduleActivityKind::COLLABORATOR') %}
+{% set canWrite = is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::GUARDIAS')) %}
+{% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
 
 {% block title %}Parte de guardias{% endblock %}
 
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Parte de guardias{% endblock %}
 
-{% block body %}
-    <div class="page-head">
-        <div>
-            <h1>Parte de guardias</h1>
-            <p class="lead">Ausencias de {{ weekday.label|lower }} {{ date|date('d/m/Y', false) }} y reparto de las guardias que las cubren.</p>
-        </div>
-        <div class="day-nav">
-            <a class="day-nav-arrow" href="{{ path('guardia_index', { date: date|date_modify('-1 day')|date('Y-m-d', false), slot: slotIndex }) }}" aria-label="Día anterior">‹</a>
-            <form method="get" action="{{ path('guardia_index') }}" class="day-nav-date">
-                <input type="date" name="date" value="{{ date|date('Y-m-d', false) }}" onchange="this.form.submit()" aria-label="Fecha del parte">
-                <input type="hidden" name="slot" value="{{ slotIndex }}">
-                <noscript><button type="submit" class="btn">Ir</button></noscript>
-            </form>
-            <a class="day-nav-arrow" href="{{ path('guardia_index', { date: date|date_modify('+1 day')|date('Y-m-d', false), slot: slotIndex }) }}" aria-label="Día siguiente">›</a>
-            <a class="btn btn--ghost" href="{{ path('guardia_index', { slot: slotIndex }) }}">Hoy</a>
-        </div>
-    </div>
+{#
+   La hoja para asignar una ausencia concreta (handoff 8b): candidatos que el reparto elegiría,
+   primero quien menos carga lleva, y debajo quién NO puede cubrir y por qué. Se abre con <details>
+   para no depender de JS. `libres` son los GuardiaCandidate ya priorizados por el scheduler.
+#}
+{% macro assign_sheet(cover, libres, pool, absentIds, assignedHere, slotLoad, slotLabel) %}
+    <details class="assignsheet">
+        <summary class="assignsheet__toggle">Asignar profesor</summary>
+        <div class="assignsheet__panel">
+            <div class="assignsheet__head">
+                <div class="eyebrow">Asignar guardia</div>
+                <h3 class="assignsheet__title">{{ cover.groupName ?? 'Sin grupo' }}{% if cover.roomName %} · {{ cover.roomName }}{% endif %}
+                    {% if slotLabel %}<span class="assignsheet__when">· {{ slotLabel }}</span>{% endif %}
+                </h3>
+                <p class="assignsheet__sub">Falta {{ cover.absentTeacher.fullName }} · profesores libres, primero quien menos lleva</p>
+            </div>
 
-    {% if slots is empty %}
-        <div class="card">
-            <div class="empty-state">
-                <h2>No hay horario importado para el curso {{ schoolYear }}</h2>
-                <p>Importa el horario de Peñalara de este curso para poder registrar ausencias y repartir guardias.</p>
-                {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ADMINISTRATION')) %}
-                    <p><a class="btn" href="{{ path('admin_timetable_import') }}">Importar horario</a></p>
+            <div class="assignsheet__list">
+                {% for c in libres %}
+                    <form method="post" action="{{ path('guardia_cover_assign', { id: cover.id }) }}" class="assignsheet__row">
+                        <input type="hidden" name="_token" value="{{ csrf_token('guardia_cover_assign' ~ cover.id) }}">
+                        <input type="hidden" name="guardia" value="{{ c.teacher.id }}">
+                        <span class="assignsheet__load" title="{{ c.slotLoad }} guardia(s) en este tramo">{{ c.slotLoad }}</span>
+                        <span class="assignsheet__name">{{ c.teacher.fullName }}{% if c.collaborator %} <span class="badge badge--accent">Colaborador</span>{% endif %}</span>
+                        <button type="submit" class="btn btn-sm{{ c.slotLoad > 0 ? ' secondary' : '' }}">Asignar</button>
+                    </form>
+                {% else %}
+                    <p class="muted">Nadie libre en este tramo: todos los profesores de guardia ya cubren un grupo o faltan hoy.</p>
+                {% endfor %}
+
+                {# No disponibles: del pool del tramo, quien falta hoy o ya cubre otro grupo. #}
+                {% set ocupados = pool|filter(e => e.teacher.id in absentIds or assignedHere[e.teacher.id] is defined) %}
+                {% if ocupados is not empty %}
+                    <div class="assignsheet__sep"></div>
+                    <div class="eyebrow assignsheet__seplabel">No disponibles</div>
+                    {% for entry in ocupados %}
+                        {% set tid = entry.teacher.id %}
+                        <div class="assignsheet__row is-off">
+                            <span class="assignsheet__load">{{ slotLoad[tid] ?? 0 }}</span>
+                            <span class="assignsheet__name">{{ entry.teacher.fullName }}</span>
+                            {% if tid in absentIds %}
+                                <span class="badge badge--danger">Ausente</span>
+                            {% else %}
+                                <span class="badge badge--muted">→ {{ assignedHere[tid] }}</span>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
                 {% endif %}
             </div>
         </div>
-    {% else %}
-        {# Pestañas de tramo horario #}
-        <nav class="tabs" aria-label="Tramo horario">
-            {% for slot in slots %}
-                <a class="tab {{ slot.index == slotIndex ? 'is-active' }}"
-                   href="{{ path('guardia_index', { date: date|date('Y-m-d', false), slot: slot.index }) }}">
-                    {{ slot.startsAt|date('H:i', false) }}–{{ slot.endsAt|date('H:i', false) }}
-                </a>
-            {% endfor %}
-        </nav>
+    </details>
+{% endmacro %}
 
-        {# Tabla del parte #}
-        <div class="card">
-            <div class="page-head"><div><h2>Ausencias de esta hora</h2></div>
-                <div class="page-head-actions">
-                    <a class="btn" href="{{ path('guardia_absence_new', { date: date|date('Y-m-d', false) }) }}">+ Apuntar ausencia</a>
-                    <form method="post" action="{{ path('guardia_auto_assign') }}" class="inline-form">
-                        <input type="hidden" name="_token" value="{{ csrf_token('guardia_auto_assign') }}">
-                        <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
-                        <input type="hidden" name="slot" value="{{ slotIndex }}">
-                        <button type="submit" class="btn secondary" title="Vuelve a repartir las guardias pendientes de asignar de este tramo">↻ Repartir guardias</button>
-                    </form>
+{% block body %}
+    {% import _self as parte %}
+    {% set slotActual = slots|filter(s => s.index == slotIndex)|first %}
+    {% set slotLabel = slotActual ? slotActual.startsAt|date('H:i', false) ~ '–' ~ slotActual.endsAt|date('H:i', false) : null %}
+
+    <div class="parte">
+        {# ---- Cabecera: fecha, título y navegación de día ---- #}
+        <header class="page-head">
+            <div>
+                <p class="eyebrow">{{ dias[date|date('N', false)] }} {{ date|date('d/m/Y', false) }}</p>
+                <h1>Parte de guardias</h1>
+                <p class="lead">Ausencias del día y reparto de las guardias que las cubren.</p>
+            </div>
+            <div class="day-nav">
+                <a class="day-nav-arrow" href="{{ path('guardia_index', { date: date|date_modify('-1 day')|date('Y-m-d', false), slot: slotIndex }) }}" aria-label="Día anterior">‹</a>
+                <form method="get" action="{{ path('guardia_index') }}" class="day-nav-date">
+                    <input type="date" name="date" value="{{ date|date('Y-m-d', false) }}" onchange="this.form.submit()" aria-label="Fecha del parte">
+                    <input type="hidden" name="slot" value="{{ slotIndex }}">
+                    <noscript><button type="submit" class="btn">Ir</button></noscript>
+                </form>
+                <a class="day-nav-arrow" href="{{ path('guardia_index', { date: date|date_modify('+1 day')|date('Y-m-d', false), slot: slotIndex }) }}" aria-label="Día siguiente">›</a>
+                <a class="btn" href="{{ path('guardia_index', { slot: slotIndex }) }}">Hoy</a>
+            </div>
+        </header>
+
+        {% if slots is empty %}
+            <div class="card">
+                <div class="empty-state">
+                    <h2>No hay horario importado para el curso {{ schoolYear }}</h2>
+                    <p>Importa el horario de Peñalara de este curso para poder registrar ausencias y repartir guardias.</p>
+                    {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ADMINISTRATION')) %}
+                        <p><a class="btn" href="{{ path('admin_timetable_import') }}">Importar horario</a></p>
+                    {% endif %}
                 </div>
             </div>
+        {% else %}
+            {# ---- Tramos horarios: el activo en verde, con punto ámbar si le quedan ausencias sin cubrir ---- #}
+            <nav class="slotchips" aria-label="Tramo horario">
+                {% for slot in slots %}
+                    <a class="slotchip {{ slot.index == slotIndex ? 'is-active' }}"
+                       href="{{ path('guardia_index', { date: date|date('Y-m-d', false), slot: slot.index }) }}">
+                        {{ slot.startsAt|date('H:i', false) }}–{{ slot.endsAt|date('H:i', false) }}
+                        {% if slot.index == slotIndex and uncovered > 0 %}<span class="slotchip__dot" aria-hidden="true"></span>{% endif %}
+                    </a>
+                {% endfor %}
+            </nav>
 
-            {% if covers is empty %}
-                <p class="muted">No hay ausencias registradas en esta hora.</p>
-            {% else %}
-                <table>
-                    <thead>
-                        <tr><th>Grupo · Aula</th><th>Profesor ausente</th><th>Tarea para el grupo</th><th>Guardia asignada</th><th></th></tr>
-                        {# El "motivo" junto al ausente es el motivo de la ausencia (privado): solo aquí y en el detalle del coordinador. #}
-                    </thead>
-                    <tbody>
+            {# ---- Panel de ausencias del tramo ---- #}
+            <section class="parte-panel">
+                <div class="parte-panel__head">
+                    <div class="parte-panel__titles">
+                        <h2 class="parte-panel__title">Ausencias de esta hora</h2>
+                        {% if covers is not empty %}
+                            <div class="coverage">
+                                <span class="badge badge--ok">{{ covered }} cubierta{{ covered == 1 ? '' : 's' }}</span>
+                                {% if uncovered > 0 %}<span class="badge badge--warning">{{ uncovered }} sin cubrir</span>{% endif %}
+                            </div>
+                        {% endif %}
+                    </div>
+                    {% if canWrite %}
+                        <div class="parte-panel__actions">
+                            <a class="btn btn--ghost" href="{{ path('guardia_absence_new', { date: date|date('Y-m-d', false) }) }}">+ Apuntar ausencia</a>
+                            {% if uncovered > 0 %}
+                                <form method="post" action="{{ path('guardia_auto_assign') }}" class="inline-form">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('guardia_auto_assign') }}">
+                                    <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
+                                    <input type="hidden" name="slot" value="{{ slotIndex }}">
+                                    <button type="submit" class="btn" title="Reparte las guardias pendientes de asignar de este tramo">↻ Repartir</button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                </div>
+
+                {# Clase propia, no .empty-state: ese estado vacío es el de "sin horario importado",
+                   que es un problema a resolver; esto es la buena noticia de que no falta nadie. #}
+                {% if covers is empty %}
+                    <div class="parte-empty">
+                        <p>Nadie falta a esta hora.</p>
+                    </div>
+                {% else %}
+                    {# Barra de cobertura: sólo aporta en móvil, donde no cabe la tabla entera de un vistazo. #}
+                    <div class="coverage-bar" role="img" aria-label="{{ covered }} de {{ covers|length }} ausencias cubiertas">
+                        <div class="coverage-bar__track"><div class="coverage-bar__fill" style="width: {{ (covered / covers|length * 100)|round }}%"></div></div>
+                        <span class="coverage-bar__count">{{ covered }} / {{ covers|length }}</span>
+                    </div>
+
+                    {# ================= MÓVIL: tarjetas, sin cubrir primero (handoff 8a) ================= #}
+                    <div class="parte-cards">
                         {% for cover in covers %}
-                            <tr class="{{ cover.notCovered ? 'is-not-covered' }}">
-                                <td>
-                                    <strong>{{ cover.groupName ?? '—' }}</strong>
-                                    {% if cover.roomName %}<span class="muted mono"> · {{ cover.roomName }}</span>{% endif %}
-                                </td>
-                                <td>
-                                    {{ cover.absentTeacher.fullName }}
-                                    {% if cover.absence.reason %}<span class="reason-note muted" title="Motivo (privado): {{ cover.absence.reason }}">· motivo ▾</span>{% endif %}
-                                </td>
-                                <td class="task-cell">
-                                    {% if cover.taskDocumentPath %}
-                                        <a class="task-doc" href="{{ path('guardia_task_download', { id: cover.id }) }}">📎 {{ cover.taskDocumentName ?? 'Documento' }}</a>
-                                    {% endif %}
-                                    {% if cover.taskDescription %}
-                                        <span class="task-desc" title="{{ cover.taskDescription }}">{{ cover.taskDescription|length > 60 ? cover.taskDescription|slice(0, 60) ~ '…' : cover.taskDescription }}</span>
-                                    {% endif %}
-                                    {% if not cover.hasTask %}<span class="muted">Sin tarea</span>{% endif %}
-                                </td>
-                                <td>
+                            {% set sinCubrir = cover.assignedGuardia is null %}
+                            <article class="parte-card{{ sinCubrir ? ' is-uncovered' }}{{ cover.notCovered ? ' is-failed' }}">
+                                <div class="parte-card__top">
+                                    <div class="parte-card__what">
+                                        <span class="parte-card__group">{{ cover.groupName ?? '—' }}</span>
+                                        {% if cover.roomName %}<span class="parte-card__room">· {{ cover.roomName }}</span>{% endif %}
+                                        <div class="parte-card__absent">Falta: {{ cover.absentTeacher.fullName }}</div>
+                                    </div>
                                     {% if cover.notCovered %}
                                         <span class="badge badge--danger">No se cubrió</span>
-                                        {% if cover.assignedGuardia %}<span class="muted"> · {{ cover.assignedGuardia.fullName }}</span>{% endif %}
-                                    {% elseif cover.assignedGuardia %}
-                                        {{ cover.assignedGuardia.fullName }}
-                                    {% else %}
-                                        <span class="badge badge--muted">Sin asignar</span>
+                                    {% elseif sinCubrir %}
+                                        <span class="badge badge--warning">Sin cubrir</span>
+                                    {% elseif cover.hasTask %}
+                                        <span class="parte-card__task" title="Deja tarea para el grupo">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg>
+                                        </span>
                                     {% endif %}
-                                </td>
-                                <td class="row-actions">
-                                    <a class="link-action" href="{{ path('guardia_cover_edit', { id: cover.id }) }}">Modificar</a>
-                                    <form method="post" action="{{ path('guardia_delete', { id: cover.id }) }}" data-confirm="¿Borrar la ausencia de {{ cover.absentTeacher.fullName }} en {{ cover.groupName ?? 'este grupo' }}? Esta línea del parte desaparecerá.">
-                                        <input type="hidden" name="_token" value="{{ csrf_token('guardia_delete' ~ cover.id) }}">
-                                        <button type="submit" class="link-danger">Borrar</button>
-                                    </form>
-                                </td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            {% endif %}
-        </div>
+                                </div>
 
-        {# Panel de profesores de guardia a esta hora: quién puede cubrir y cómo va el reparto #}
-        <div class="card">
-            <div class="page-head"><div>
-                <h2>Profesores de guardia a esta hora</h2>
-                <p class="lead">Quién tiene guardia en este tramo según el horario, para poder cubrir las ausencias de arriba.</p>
-            </div></div>
-            {% if pool is empty %}
-                <p class="muted">Nadie tiene guardia en el horario para este tramo.</p>
-            {% else %}
-                <ul class="pool-legend" aria-label="Leyenda">
-                    <li><span class="badge badge--ok">Disponible</span> libre para cubrir</li>
-                    <li><span class="badge badge--muted">→ grupo</span> ya está cubriendo ese grupo</li>
-                    <li><span class="badge badge--danger">Ausente</span> hoy también falta, no puede cubrir</li>
-                    <li><span class="load-count">n</span> guardias que ya lleva en este tramo (se asigna primero al que menos tiene)</li>
-                </ul>
-                <div class="card-grid">
-                    {% for entry in pool %}
-                        {% set tid = entry.teacher.id %}
-                        {% set absent = tid in absentIds %}
-                        {% set coveringGroup = assignedHere[tid] ?? null %}
-                        {% set state = absent ? 'is-absent' : (coveringGroup ? 'is-busy' : 'is-free') %}
-                        <div class="mini-card {{ state }}">
-                            <div class="mini-card-head">
-                                <strong>{{ entry.teacher.fullName }}</strong>
-                                {% if entry.kind == ck %}<span class="badge badge--ok" title="Colaborador: solo entra si no llegan los profesores de guardia">Colaborador</span>{% endif %}
-                            </div>
-                            <div class="mini-card-status">
-                                {% if absent %}
-                                    <span class="badge badge--danger">Ausente</span>
-                                {% elseif coveringGroup %}
-                                    <span class="badge badge--muted">→ {{ coveringGroup }}</span>
-                                {% else %}
-                                    <span class="badge badge--ok">Disponible</span>
+                                {% if cover.hasTask %}
+                                    <div class="parte-card__taskline">
+                                        {% if cover.taskDocumentPath %}
+                                            <a class="task-doc" href="{{ path('guardia_task_download', { id: cover.id }) }}">{{ cover.taskDocumentName ?? 'Documento' }}</a>
+                                        {% endif %}
+                                        {% if cover.taskDescription %}
+                                            <span class="parte-card__taskdesc">{{ cover.taskDescription|excerpt(80) }}</span>
+                                        {% endif %}
+                                    </div>
                                 {% endif %}
-                                <span class="load-count" title="{{ slotLoad[tid] ?? 0 }} guardia(s) en este tramo. El reparto elige primero al que menos tiene.">{{ slotLoad[tid] ?? 0 }}</span>
-                            </div>
+
+                                {% if sinCubrir and canWrite %}
+                                    {{ parte.assign_sheet(cover, candidates, pool, absentIds, assignedHere, slotLoad, slotLabel) }}
+                                {% elseif cover.assignedGuardia %}
+                                    <div class="parte-card__foot">
+                                        <span class="parte-card__avatar" aria-hidden="true">{{ cover.assignedGuardia.fullName|initials }}</span>
+                                        <span class="parte-card__covers">Cubre <b>{{ cover.assignedGuardia.fullName }}</b></span>
+                                        {% if canWrite %}<a class="parte-card__change" href="{{ path('guardia_cover_edit', { id: cover.id }) }}">Cambiar</a>{% endif %}
+                                    </div>
+                                {% endif %}
+                            </article>
+                        {% endfor %}
+                    </div>
+
+                    {# ================= ESCRITORIO: tabla refinada (handoff 3a) ================= #}
+                    <table class="parte-table">
+                        <thead>
+                            <tr><th>Grupo · Aula</th><th>Profesor ausente</th><th>Tarea para el grupo</th><th>Guardia asignada</th><th></th></tr>
+                            {# El "motivo" junto al ausente es el motivo de la ausencia (privado): solo aquí y en el detalle del coordinador. #}
+                        </thead>
+                        <tbody>
+                            {% for cover in covers %}
+                                <tr class="{{ cover.notCovered ? 'is-not-covered' }}{{ cover.assignedGuardia is null ? ' is-uncovered' }}">
+                                    <td>
+                                        <strong>{{ cover.groupName ?? '—' }}</strong>
+                                        {% if cover.roomName %}<span class="muted mono"> · {{ cover.roomName }}</span>{% endif %}
+                                    </td>
+                                    <td>
+                                        {{ cover.absentTeacher.fullName }}
+                                        {% if cover.absence.reason %}<span class="reason-note muted" title="Motivo (privado): {{ cover.absence.reason }}">· motivo ▾</span>{% endif %}
+                                    </td>
+                                    <td class="task-cell">
+                                        {% if cover.taskDocumentPath %}
+                                            <a class="task-doc" href="{{ path('guardia_task_download', { id: cover.id }) }}">📎 {{ cover.taskDocumentName ?? 'Documento' }}</a>
+                                        {% endif %}
+                                        {% if cover.taskDescription %}
+                                            <span class="task-desc" title="{{ cover.taskDescription }}">{{ cover.taskDescription|excerpt(60) }}</span>
+                                        {% endif %}
+                                        {% if not cover.hasTask %}<span class="muted">Sin tarea</span>{% endif %}
+                                    </td>
+                                    <td>
+                                        {% if cover.notCovered %}
+                                            <span class="badge badge--danger">No se cubrió</span>
+                                            {% if cover.assignedGuardia %}<span class="muted"> · {{ cover.assignedGuardia.fullName }}</span>{% endif %}
+                                        {% elseif cover.assignedGuardia %}
+                                            <span class="parte-who">
+                                                <span class="parte-who__avatar" aria-hidden="true">{{ cover.assignedGuardia.fullName|initials }}</span>{{ cover.assignedGuardia.fullName }}
+                                            </span>
+                                        {% else %}
+                                            <span class="badge badge--warning">Sin asignar</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="row-actions">
+                                        {% if canWrite %}
+                                            <a class="link-action" href="{{ path('guardia_cover_edit', { id: cover.id }) }}">Modificar</a>
+                                            <form method="post" action="{{ path('guardia_delete', { id: cover.id }) }}" data-confirm="¿Borrar la ausencia de {{ cover.absentTeacher.fullName }} en {{ cover.groupName ?? 'este grupo' }}? Esta línea del parte desaparecerá.">
+                                                <input type="hidden" name="_token" value="{{ csrf_token('guardia_delete' ~ cover.id) }}">
+                                                <button type="submit" class="link-danger">Borrar</button>
+                                            </form>
+                                        {% else %}
+                                            <a class="link-action" href="{{ path('guardia_cover_show', { id: cover.id }) }}">Ver</a>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% endif %}
+            </section>
+
+            {# ---- Quién está de guardia a esta hora: referencia del reparto (escritorio) ---- #}
+            <details class="parte-pool"{{ covers is empty ? ' open' : '' }}>
+                <summary class="parte-pool__toggle">
+                    Profesores de guardia a esta hora
+                    <span class="parte-pool__count">{{ pool|length }}</span>
+                </summary>
+                <div class="parte-pool__body">
+                    {% if pool is empty %}
+                        <p class="muted">Nadie tiene guardia en el horario para este tramo.</p>
+                    {% else %}
+                        <p class="parte-pool__lead">Quién puede cubrir según el horario. El número es lo que ya lleva en este tramo: el reparto asigna primero al que menos tiene.</p>
+                        <div class="card-grid">
+                            {% for entry in pool %}
+                                {% set tid = entry.teacher.id %}
+                                {% set absent = tid in absentIds %}
+                                {% set coveringGroup = assignedHere[tid] ?? null %}
+                                <div class="mini-card {{ absent ? 'is-absent' : (coveringGroup ? 'is-busy' : 'is-free') }}">
+                                    <div class="mini-card-head">
+                                        <strong>{{ entry.teacher.fullName }}</strong>
+                                        {% if entry.kind == ck %}<span class="badge badge--accent" title="Colaborador: solo entra si no llegan los profesores de guardia">Colaborador</span>{% endif %}
+                                    </div>
+                                    <div class="mini-card-status">
+                                        {% if absent %}
+                                            <span class="badge badge--danger">Ausente</span>
+                                        {% elseif coveringGroup %}
+                                            <span class="badge badge--muted">→ {{ coveringGroup }}</span>
+                                        {% else %}
+                                            <span class="badge badge--ok">Disponible</span>
+                                        {% endif %}
+                                        <span class="load-count" title="{{ slotLoad[tid] ?? 0 }} guardia(s) en este tramo. El reparto elige primero al que menos tiene.">{{ slotLoad[tid] ?? 0 }}</span>
+                                    </div>
+                                </div>
+                            {% endfor %}
                         </div>
-                    {% endfor %}
+                    {% endif %}
                 </div>
-            {% endif %}
-        </div>
-    {% endif %}
+            </details>
+        {% endif %}
+    </div>
 {% endblock %}
