@@ -67,10 +67,11 @@ final class GuardiaController extends AbstractController
 
     /**
      * Shows the parte for a date and period, plus the on-call pool. Date and period come from the
-     * query string (today and the first period of the day by default).
+     * query string (today and the first period of the day by default). Uncovered lines are listed
+     * first — they are the ones that need action — and the coverage figures head the panel.
      */
     #[Route('', name: 'guardia_index', methods: ['GET'])]
-    public function index(Request $request, ScheduleEntryRepository $schedule, GuardiaCoverRepository $covers, AcademicYearRepository $years): Response
+    public function index(Request $request, ScheduleEntryRepository $schedule, GuardiaCoverRepository $covers, AcademicYearRepository $years, GuardiaScheduler $scheduler): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
@@ -96,17 +97,28 @@ final class GuardiaController extends AbstractController
             }
         }
 
+        // Uncovered first, keeping the repository's alphabetical order within each group: what needs
+        // assigning must not be buried under what is already sorted out.
+        $ordered = $parte;
+        usort($ordered, static fn (GuardiaCover $a, GuardiaCover $b): int => (null === $a->getAssignedGuardia() ? 0 : 1) <=> (null === $b->getAssignedGuardia() ? 0 : 1));
+
+        $uncovered = \count(array_filter($parte, static fn (GuardiaCover $c): bool => null === $c->getAssignedGuardia()));
+
         return $this->render('guardia/index.html.twig', [
             'date' => $date,
             'weekday' => $weekday,
             'schoolYear' => $schoolYear,
             'slots' => $slots,
             'slotIndex' => $slotIndex,
-            'covers' => $parte,
+            'covers' => $ordered,
             'pool' => $pool,
             'slotLoad' => $covers->loadBySlot($slotIndex),
             'absentIds' => $covers->absentTeacherIdsAt($date, $slotIndex),
             'assignedHere' => $assignedHere,
+            'uncovered' => $uncovered,
+            'covered' => \count($parte) - $uncovered,
+            // Who the split would pick, least loaded first: feeds the per-cover assignment sheet.
+            'candidates' => $year instanceof AcademicYear ? $scheduler->availableFor($year, $date, $slotIndex, $parte) : [],
         ]);
     }
 
@@ -805,6 +817,30 @@ final class GuardiaController extends AbstractController
         $this->addFlash('success', 0 === $assigned ? 'No había guardias pendientes de asignar.' : sprintf('%d guardia(s) asignada(s).', $assigned));
 
         return $this->backToParte($date, $slotIndex);
+    }
+
+    /**
+     * Assigns one teacher to one parte line from the assignment sheet in the parte. This is the initial
+     * assignment, the manual counterpart of "repartir": no change reason is asked for (unlike
+     * {@see updateCover}, which edits an assignment already made and does record one).
+     */
+    #[Route('/{id}/asignar', name: 'guardia_cover_assign', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function assignCover(GuardiaCover $cover, Request $request, UserRepository $users, GuardiaScheduler $scheduler): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
+        $this->assertCsrf($request, 'guardia_cover_assign'.$cover->getId());
+
+        $teacher = $users->find((int) $request->request->get('guardia'));
+        if (!$teacher instanceof User) {
+            $this->addFlash('error', 'No se encontró al profesor seleccionado.');
+
+            return $this->backToParte($cover->getDate(), $cover->getSlotIndex());
+        }
+
+        $scheduler->assign($cover, $teacher);
+        $this->addFlash('success', sprintf('%s cubre %s.', $teacher->getFullName(), $cover->getGroupName() ?? 'la ausencia'));
+
+        return $this->backToParte($cover->getDate(), $cover->getSlotIndex());
     }
 
     /**

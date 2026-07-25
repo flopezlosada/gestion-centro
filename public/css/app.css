@@ -2781,3 +2781,131 @@ tr.is-not-covered { background: var(--danger-weak); }
 .guardia-empty__icon svg { width: 26px; height: 26px; }
 .guardia-empty__title { font-size: 15px; color: var(--text); font-weight: 600; }
 .guardia-empty__sub { font-size: 13px; line-height: 1.55; color: var(--text-muted); margin: 6px 0 0; }
+
+/* =============================================================================
+   Parte de guardias (coordinación) — handoff 8a móvil / 3a escritorio / 8b hoja
+   Móvil: tarjetas con lo sin cubrir primero. Escritorio: tabla refinada.
+   ============================================================================= */
+.parte { display: grid; gap: 18px; }
+.parte-head { display: flex; flex-direction: column; gap: 14px; }
+.parte-title { font-family: var(--font-display); font-weight: 500; font-size: 27px; line-height: 1.12; margin: 4px 0 0; }
+.parte-lead { color: var(--text-muted); font-size: 13.5px; margin: 4px 0 0; }
+
+/* ---- Tramos horarios: chips mono con scroll lateral en móvil ---- */
+.slotchips { display: flex; gap: 7px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.slotchips::-webkit-scrollbar { height: 0; }
+.slotchip {
+    position: relative; flex: none; background: var(--surface); color: var(--text-muted);
+    border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 12px;
+    font-family: var(--font-mono); font-size: 12.5px; text-decoration: none;
+}
+.slotchip:hover { border-color: var(--border-strong); color: var(--text); }
+.slotchip.is-active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+.slotchip__dot {
+    position: absolute; top: -4px; right: -4px; width: 9px; height: 9px; border-radius: 999px;
+    background: var(--amber); border: 1.5px solid var(--bg);
+}
+
+/* ---- Panel de ausencias ---- */
+.parte-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.parte-panel__head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 18px 18px 14px; }
+.parte-panel__titles { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.parte-panel__title { font-family: var(--font-display); font-weight: 500; font-size: 20px; margin: 0; }
+.parte-panel__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.coverage { display: flex; gap: 7px; }
+
+/* ---- Barra de cobertura: cuánto del tramo está resuelto ---- */
+.coverage-bar { display: flex; align-items: center; gap: 12px; padding: 0 18px 14px; }
+.coverage-bar__track { flex: 1; height: 8px; background: var(--surface-sunken); border-radius: 999px; overflow: hidden; }
+.coverage-bar__fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--success)); }
+.coverage-bar__count { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+
+/* ---- MÓVIL: tarjetas del parte ---- */
+.parte-cards { display: grid; gap: 10px; padding: 0 14px 16px; }
+.parte-card { position: relative; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 16px; padding: 14px 16px; }
+.parte-card.is-uncovered { background: var(--warning-weak); border-color: var(--warning-border); padding-left: 18px; }
+.parte-card.is-uncovered::before {
+    content: ""; position: absolute; left: 0; top: 13px; bottom: 13px; width: 4px;
+    border-radius: 999px; background: var(--amber);
+}
+.parte-card.is-failed { background: var(--danger-weak); border-color: var(--danger-border); }
+.parte-card__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.parte-card__what { min-width: 0; }
+.parte-card__group { font-weight: 600; font-size: 15px; }
+.parte-card__room { font-family: var(--font-mono); font-size: 12px; color: var(--text-faint); }
+.parte-card__absent { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; }
+.parte-card__task { flex: none; color: var(--amber-text); }
+.parte-card__task svg { width: 16px; height: 16px; }
+.parte-card__taskline { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; font-size: 12.5px; }
+.parte-card__taskdesc { color: var(--text-muted); }
+.parte-card__foot { display: flex; align-items: center; gap: 9px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--separator); }
+.parte-card__avatar { flex: none; width: 26px; height: 26px; border-radius: 999px; background: var(--accent-weak); color: var(--accent); display: grid; place-items: center; font-size: 10px; font-weight: 700; }
+.parte-card__covers { flex: 1; font-size: 13px; }
+.parte-card__change { flex: none; font-size: 12px; font-weight: 600; color: var(--success); text-decoration: none; }
+
+/* ---- Hoja para asignar (8b): candidatos que el reparto elegiría ---- */
+.assignsheet { margin-top: 12px; }
+.assignsheet__toggle {
+    display: block; text-align: center; background: var(--accent); color: var(--on-accent);
+    border-radius: 11px; padding: 11px; font-weight: 600; font-size: 13.5px; cursor: pointer;
+    list-style: none;
+}
+.assignsheet__toggle::-webkit-details-marker { display: none; }
+.assignsheet__toggle:active { transform: scale(.99); }
+.assignsheet[open] .assignsheet__toggle { background: var(--surface-sunken); color: var(--text-muted); }
+.assignsheet__panel {
+    margin-top: 10px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 18px; padding: 14px; box-shadow: var(--shadow-sheet);
+}
+.assignsheet__title { font-family: var(--font-display); font-weight: 500; font-size: 18px; margin: 4px 0 2px; }
+.assignsheet__when { font-size: 13px; color: var(--text-faint); }
+.assignsheet__sub { font-size: 12.5px; color: var(--text-faint); margin: 0 0 12px; }
+/* Sin scroll interno a propósito: el pool de guardia de un tramo son unas pocas personas, y una
+   lista recortada a media fila se lee como un fallo de render. */
+.assignsheet__list { display: grid; gap: 8px; }
+.assignsheet__row {
+    display: flex; align-items: center; gap: 10px; background: var(--surface-alt);
+    border: 1px solid var(--border); border-radius: 13px; padding: 9px 11px;
+}
+.assignsheet__row.is-off { background: var(--surface-sunken); opacity: .68; }
+.assignsheet__load {
+    flex: none; width: 30px; height: 30px; border-radius: 999px; background: var(--accent-weak);
+    color: var(--accent); display: grid; place-items: center;
+    font-family: var(--font-mono); font-size: 13px; font-weight: 600;
+}
+.assignsheet__row.is-off .assignsheet__load { background: var(--separator); color: var(--text-muted); }
+.assignsheet__name { flex: 1; font-weight: 600; font-size: 13.5px; min-width: 0; }
+.assignsheet__sep { height: 1px; background: var(--border); margin: 4px 2px; }
+.assignsheet__seplabel { padding: 0 4px; }
+
+.parte-empty { padding: 6px 18px 20px; color: var(--text-muted); font-size: 13.5px; }
+.parte-empty p { margin: 0; }
+
+/* ---- Quién está de guardia: referencia plegable ---- */
+.parte-pool { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.parte-pool__toggle {
+    display: flex; align-items: center; gap: 10px; padding: 15px 18px; cursor: pointer;
+    font-weight: 600; font-size: 14px; list-style: none;
+}
+.parte-pool__toggle::-webkit-details-marker { display: none; }
+.parte-pool__toggle::after { content: '▾'; margin-left: auto; color: var(--text-tenue); }
+.parte-pool[open] .parte-pool__toggle::after { content: '▴'; }
+.parte-pool__count { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); background: var(--surface-sunken); border-radius: 999px; padding: 2px 8px; }
+.parte-pool__body { padding: 0 18px 18px; }
+.parte-pool__lead { font-size: 13px; color: var(--text-muted); margin: 0 0 14px; }
+
+/* ---- La tabla del parte manda en escritorio; en móvil manda la tarjeta ---- */
+.parte-table { display: none; }
+@media (min-width: 900px) {
+    .parte { gap: 22px; }
+    .parte-head { flex-direction: row; align-items: flex-start; justify-content: space-between; gap: 24px; }
+    .parte-title { font-size: 32px; }
+    .parte-cards, .coverage-bar { display: none; }
+    .parte-table { display: table; }
+    .parte-table thead th { border-top: 1px solid var(--border); }
+    .parte-table tbody tr:hover { background: color-mix(in srgb, var(--surface-sunken) 60%, var(--surface)); }
+    .parte-table tbody tr.is-uncovered td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
+    .parte-table td { padding-left: 18px; }
+    .parte-who { display: inline-flex; align-items: center; gap: 7px; }
+    .parte-who__avatar { flex: none; width: 22px; height: 22px; border-radius: 999px; background: var(--accent-weak); color: var(--accent); display: grid; place-items: center; font-size: 9px; font-weight: 700; }
+}

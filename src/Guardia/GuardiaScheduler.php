@@ -7,6 +7,7 @@ namespace App\Guardia;
 use App\Entity\AcademicYear;
 use App\Entity\GuardiaCover;
 use App\Entity\ScheduleEntry;
+use App\Entity\User;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use App\Repository\GuardiaCoverRepository;
@@ -73,6 +74,44 @@ final class GuardiaScheduler
         }
 
         return \count($newlyAssigned);
+    }
+
+    /**
+     * The teachers who can still cover a group at a period, in the order the equitable engine would
+     * pick them (whoever carries the least first). Same pool and same ordering the automatic split
+     * uses, so the manual assignment sheet in the parte offers exactly what "repartir" would choose.
+     *
+     * @param AcademicYear       $year      the course whose timetable supplies the guardia pool
+     * @param \DateTimeImmutable $date      the day
+     * @param int                $slotIndex the period index within the day
+     * @param list<GuardiaCover> $parte     the parte lines already loaded for that date and period
+     *
+     * @return list<GuardiaCandidate> the available teachers, least loaded first
+     */
+    public function availableFor(AcademicYear $year, \DateTimeImmutable $date, int $slotIndex, array $parte): array
+    {
+        $unassigned = \count(array_filter($parte, static fn (GuardiaCover $c): bool => null === $c->getAssignedGuardia()));
+
+        // How many covers are still open decides whether collaborators join at all (see prioritise),
+        // so a sheet opened for one cover offers the same people the bulk split would.
+        return $this->assigner->prioritise(
+            max(1, $unassigned),
+            $this->candidates($year, $date, $slotIndex, $this->assignedTeacherIds($parte)),
+        );
+    }
+
+    /**
+     * Assigns one teacher to one cover, as the automatic split does: no change reason is recorded
+     * (this is the initial assignment, not an edit) and the substitute is notified.
+     *
+     * @param GuardiaCover $cover   the parte line to cover
+     * @param User         $teacher the teacher who will cover it
+     */
+    public function assign(GuardiaCover $cover, User $teacher): void
+    {
+        $cover->setAssignedGuardia($teacher);
+        $this->em->flush();
+        $this->notifier->notifyAssigned($cover);
     }
 
     /**

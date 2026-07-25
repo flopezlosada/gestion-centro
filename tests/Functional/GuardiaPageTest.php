@@ -306,6 +306,55 @@ final class GuardiaPageTest extends WebTestCase
     }
 
     /**
+     * The parte lists what still needs covering first and offers the assignment sheet for it: the sheet
+     * shows the same candidates the automatic split would pick, and assigning from it needs no reason
+     * (it is the initial assignment, not a change to one already made).
+     */
+    public function testAssignsFromTheParteSheetWithoutAReason(): void
+    {
+        $this->login();
+        $year = $this->academicYear('2025-2026');
+        $this->em->persist($year);
+        $free = $this->user('Guardia Libre', 'libre@centro.test');
+        $absent = $this->user('Ausente Cinco', 'a5@centro.test');
+        $date = new \DateTimeImmutable('2025-11-10');
+        $this->guardiaEntry($year, $free, $date);
+        $cover = $this->cover($date, 0, $absent, null);
+        $this->em->flush();
+        $id = (int) $cover->getId();
+        $action = '/guardias/'.$id.'/asignar';
+
+        // The sheet is rendered on the parte itself, with the on-call teacher offered as a candidate.
+        $crawler = $this->client->request('GET', '/guardias?date='.$date->format('Y-m-d'));
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('.assignsheet', 'Guardia Libre');
+
+        $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action), 'guardia' => (string) $free->getId()]);
+
+        self::assertResponseRedirects();
+        self::assertSame($free->getId(), $this->reload($id)->getAssignedGuardia()?->getId());
+    }
+
+    /**
+     * Assigning is a write on the Guardias area: a plain teacher cannot do it even by posting straight
+     * to the route.
+     */
+    public function testAssignFromTheParteIsDeniedToAPlainTeacher(): void
+    {
+        $this->login(coordinator: false);
+        $free = $this->user('Guardia Seis', 'g6@centro.test');
+        $absent = $this->user('Ausente Seis', 'a6@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('2025-11-10'), 0, $absent, null);
+        $this->em->flush();
+        $id = (int) $cover->getId();
+
+        $this->client->request('POST', '/guardias/'.$id.'/asignar', ['_token' => 'irrelevante', 'guardia' => (string) $free->getId()]);
+
+        self::assertResponseStatusCodeSame(403);
+        self::assertNull($this->reload($id)->getAssignedGuardia());
+    }
+
+    /**
      * A change without a reason is refused and leaves the cover untouched: the motivo is the record of
      * why a manual change was made.
      */
