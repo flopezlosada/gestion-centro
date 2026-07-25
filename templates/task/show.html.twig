@@ -84,7 +84,7 @@
                 {% else %}
                     <p class="detail-prose">{{ task.deliverableReference }}</p>
                 {% endif %}
-                {% if canWork %}
+                {% if canEditDeliverable %}
                     <form method="post" action="{{ path('task_set_deliverable', { id: task.id }) }}" class="deliverable-form">
                         <input type="hidden" name="_token" value="{{ csrf_token('task_deliverable' ~ task.id) }}">
                         <input type="url" name="reference" value="{{ task.deliverableReference }}" placeholder="https://cloud.educa.madrid.org/…" class="deliverable-input">

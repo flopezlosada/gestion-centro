@@ -7,6 +7,7 @@ namespace App\Entity;
 use App\Contract\Auditable;
 use App\Enum\TaskType;
 use App\Repository\TaskRepository;
+use App\Support\TaskStatus;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -253,6 +254,52 @@ class Task implements Auditable
         $this->status = $status;
 
         return $this;
+    }
+
+    /**
+     * Whether the task is still in its initial place (Pendiente): nada entregado ni cerrado. Es la
+     * ventana en la que la tarea admite cambios de titular (delegar): una vez entregada, reasignarla
+     * reescribiría quién hizo qué.
+     *
+     * @return bool true while the task is Pendiente
+     */
+    public function isPending(): bool
+    {
+        return TaskStatus::PENDING === $this->status;
+    }
+
+    /**
+     * Whether the task has been delivered and awaits validation (Entregada). Es la única ventana en la
+     * que se corrige el enlace del entregable: antes no hay nada que corregir y después ya está juzgado.
+     *
+     * @return bool true while the task is Entregada
+     */
+    public function isSubmitted(): bool
+    {
+        return TaskStatus::SUBMITTED === $this->status;
+    }
+
+    /**
+     * Whether the task is closed: finalizada o cancelada ({@see TaskStatus::CLOSED}). Una tarea cerrada
+     * es de solo lectura — ni se ejecuta, ni se delega, ni se marca/desmarca.
+     *
+     * @return bool true if the task reached a terminal place
+     */
+    public function isClosed(): bool
+    {
+        return \in_array($this->status, TaskStatus::CLOSED, true);
+    }
+
+    /**
+     * Whether the task counts as done for the person: su responsable marcó la casilla de progreso o la
+     * tarea ya está Finalizada. Fuente ÚNICA del "hecho" que pintan la agenda y el calendario (la usa
+     * {@see \App\Agenda\AgendaEntry::fromTask()}), para que una finalizada nunca se vea como pendiente.
+     *
+     * @return bool true if the task is done
+     */
+    public function isDone(): bool
+    {
+        return $this->checkboxDone || TaskStatus::VALIDATED === $this->status;
     }
 
     public function getAssignedRole(): ?Role

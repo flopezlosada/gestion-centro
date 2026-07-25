@@ -6,7 +6,6 @@ namespace App\Agenda;
 
 use App\Entity\PersonalEvent;
 use App\Entity\Task;
-use App\Support\TaskStatus;
 
 /**
  * A single line of the personal agenda, wrapping either an institutional {@see Task} or a private
@@ -33,9 +32,10 @@ final readonly class AgendaEntry
 
     /**
      * Wraps an institutional task, keyed by its deadline. Cuenta como "hecha" (bucket Hechas, fuera de
-     * los pendientes) si el asignado marcó su casilla de progreso o si la tarea ya está Finalizada
-     * ({@see TaskStatus::VALIDATED}) — así una finalizada no vuelve a aparecer como pendiente. Las
-     * canceladas ni llegan aquí: {@see TaskRepository::findAgendaFor()} las excluye.
+     * los pendientes) según {@see Task::isDone()} — casilla de progreso marcada o tarea ya Finalizada,
+     * así una finalizada no vuelve a aparecer como pendiente. La plantilla pinta la casilla con ese
+     * MISMO flag, para que "está en Hechas" y "se ve hecha" no puedan discrepar. Las canceladas ni
+     * llegan aquí: {@see \App\Repository\TaskRepository::findAgendaFor()} las excluye.
      *
      * @param Task $task the task to wrap
      *
@@ -43,9 +43,7 @@ final readonly class AgendaEntry
      */
     public static function fromTask(Task $task): self
     {
-        $done = $task->isCheckboxDone() || TaskStatus::VALIDATED === $task->getStatus();
-
-        return new self(self::KIND_TASK, $task->getDueDate(), $done, $task, null);
+        return new self(self::KIND_TASK, $task->getDueDate(), $task->isDone(), $task, null);
     }
 
     /**
