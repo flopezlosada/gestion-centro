@@ -44,6 +44,23 @@ final class TaskCrudTest extends WebTestCase
         return $user;
     }
 
+    /**
+     * Moves a task's lifecycle place BETWEEN requests, re-reading it through the entity manager of the
+     * container that is alive right now. El browser reinicia el kernel en cada petición: el manager
+     * capturado en setUp queda reseteado y las entidades que trajo, detached — un flush() sobre ellas no
+     * escribe nada en silencio. Devuelve la tarea recargada para poder aseverar sobre ella.
+     */
+    private function moveTaskTo(int $taskId, string $status): Task
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $task = $em->getRepository(Task::class)->find($taskId);
+        self::assertNotNull($task);
+        $task->setStatus($status);
+        $em->flush();
+
+        return $task;
+    }
+
     public function testNewTaskFormRenders(): void
     {
         $unit = (new Department())->setCode('maths')->setName('Matemáticas');
@@ -585,19 +602,18 @@ final class TaskCrudTest extends WebTestCase
         $this->client->loginUser($boss);
         // Con la tarea aún Pendiente el control está: de ahí sale un token CSRF válido para el endpoint
         // (la intención no depende del estado), que luego reusamos con la tarea ya Entregada.
-        $crawler = $this->client->request('GET', '/tareas/'.$task->getId());
+        $crawler = $this->client->request('GET', '/tareas/'.$taskId);
         self::assertSelectorExists('select[name="delegatedTo"]');
         $token = (string) $crawler->filter('form[action$="/delegar"] input[name="_token"]')->attr('value');
 
-        $task->setStatus(TaskStatus::SUBMITTED);
-        $this->em->flush();
+        $this->moveTaskTo($taskId, TaskStatus::SUBMITTED);
 
-        $this->client->request('GET', '/tareas/'.$task->getId());
+        $this->client->request('GET', '/tareas/'.$taskId);
         self::assertResponseIsSuccessful();
         self::assertSelectorNotExists('select[name="delegatedTo"]', 'una tarea entregada ya no se delega');
 
         // Y por si alguien llega al endpoint a mano con un token válido: el servidor lo rechaza igual.
-        $this->client->request('POST', '/tareas/'.$task->getId().'/delegar', [
+        $this->client->request('POST', '/tareas/'.$taskId.'/delegar', [
             '_token' => $token,
             'delegatedTo' => (string) $memberId,
         ]);
@@ -606,16 +622,15 @@ final class TaskCrudTest extends WebTestCase
 
         // El mismo POST con la tarea de vuelta en Pendiente sí pasa: confirma que el 403 anterior venía
         // del estado de la tarea y no de un token CSRF caducado.
-        $task->setStatus(TaskStatus::PENDING);
-        $this->em->flush();
-        $this->client->request('POST', '/tareas/'.$task->getId().'/delegar', [
+        $this->moveTaskTo($taskId, TaskStatus::PENDING);
+        $this->client->request('POST', '/tareas/'.$taskId.'/delegar', [
             '_token' => $token,
             'delegatedTo' => (string) $memberId,
         ]);
 
         self::assertResponseRedirects();
-        $this->em->clear();
-        self::assertSame($memberId, $this->em->getRepository(Task::class)->find($taskId)?->getDelegatedTo()?->getId());
+        $reloaded = self::getContainer()->get(EntityManagerInterface::class)->getRepository(Task::class)->find($taskId);
+        self::assertSame($memberId, $reloaded?->getDelegatedTo()?->getId());
     }
 
     public function testFinishedTaskDoesNotOfferEditingTheDeliverable(): void
@@ -630,6 +645,8 @@ final class TaskCrudTest extends WebTestCase
         $owner->addAssignedRole($role);
         $task = new Task('Criterios de horarios', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::WITH_DELIVERABLE);
         $task->setResponsibility(new TaskResponsibility($role, null))->setAssignedUser($owner)->setCreatedBy($owner);
+        // El tipo NO implica el flag: lo pone el formulario (applyFormData), así que aquí también.
+        $task->setRequiresDocument(true);
         $task->setDeliverableReference('https://cloud.educa.madrid.org/A1-01');
         $task->setStatus(TaskStatus::VALIDATED);
         $this->em->persist($task);
@@ -659,30 +676,29 @@ final class TaskCrudTest extends WebTestCase
         $task->setAssignedUser($owner)->setCreatedBy($owner);
         $this->em->persist($task);
         $this->em->flush();
+        $taskId = (int) $task->getId();
 
         $this->client->loginUser($owner);
         // Pendiente: la casilla acciona (POST) y de ella sale el token para el intento posterior.
         $crawler = $this->client->request('GET', '/agenda');
-        self::assertSelectorExists('form[action$="/tareas/'.$task->getId().'/hecho"]');
-        $token = (string) $crawler->filter('form[action$="/tareas/'.$task->getId().'/hecho"] input[name="_token"]')->attr('value');
+        self::assertSelectorExists('form[action$="/tareas/'.$taskId.'/hecho"]');
+        $token = (string) $crawler->filter('form[action$="/tareas/'.$taskId.'/hecho"] input[name="_token"]')->attr('value');
 
-        $task->setStatus(TaskStatus::VALIDATED);
-        $this->em->flush();
+        $this->moveTaskTo($taskId, TaskStatus::VALIDATED);
 
-        $crawler = $this->client->request('GET', '/agenda');
+        $this->client->request('GET', '/agenda');
         self::assertResponseIsSuccessful();
-        self::assertSelectorNotExists('form[action$="/tareas/'.$task->getId().'/hecho"]', 'una tarea cerrada no acciona');
-        self::assertSelectorExists('#tarea-'.$task->getId().'.is-done');
-        self::assertSelectorExists('#tarea-'.$task->getId().' .checkbox.is-checked');
+        self::assertSelectorNotExists('form[action$="/tareas/'.$taskId.'/hecho"]', 'una tarea cerrada no acciona');
+        self::assertSelectorExists('#tarea-'.$taskId.'.is-done');
+        self::assertSelectorExists('#tarea-'.$taskId.' .checkbox.is-checked');
 
-        $this->client->request('POST', '/tareas/'.$task->getId().'/hecho', ['_token' => $token]);
+        $this->client->request('POST', '/tareas/'.$taskId.'/hecho', ['_token' => $token]);
 
         self::assertResponseStatusCodeSame(403);
 
         // Con la tarea reabierta el mismo POST pasa: el 403 era por estar cerrada, no por el token.
-        $task->setStatus(TaskStatus::PENDING);
-        $this->em->flush();
-        $this->client->request('POST', '/tareas/'.$task->getId().'/hecho', ['_token' => $token]);
+        $this->moveTaskTo($taskId, TaskStatus::PENDING);
+        $this->client->request('POST', '/tareas/'.$taskId.'/hecho', ['_token' => $token]);
 
         self::assertResponseRedirects();
     }
