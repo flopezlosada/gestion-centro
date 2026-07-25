@@ -228,6 +228,10 @@
                                             <span class="parte-who">
                                                 <span class="parte-who__avatar" aria-hidden="true">{{ cover.assignedGuardia.fullName|initials }}</span>{{ cover.assignedGuardia.fullName }}
                                             </span>
+                                        {% elseif canWrite %}
+                                            {# La misma hoja que en móvil: asignar sin salir del parte es
+                                               justamente lo que más se usa desde el escritorio. #}
+                                            {{ parte.assign_sheet(cover, candidates, pool, absentIds, assignedHere, slotLoad, slotLabel) }}
                                         {% else %}
                                             <span class="badge badge--warning">Sin asignar</span>
                                         {% endif %}

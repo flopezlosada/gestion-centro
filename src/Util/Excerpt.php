@@ -20,7 +20,13 @@ final class Excerpt
     public static function of(?string $text, int $limit = 60): string
     {
         $text = trim((string) $text);
-        if ('' === $text || mb_strlen($text) <= $limit) {
+        // Un límite de 0 o menos no deja sitio ni para la elipsis. Se ataja antes de llegar al
+        // mb_substr de abajo, donde una longitud negativa NO trunca: recorta desde el final, así que
+        // limit=0 devolvía casi el texto entero, justo lo contrario de lo prometido.
+        if ('' === $text || $limit < 1) {
+            return '';
+        }
+        if (mb_strlen($text) <= $limit) {
             return $text;
         }
 

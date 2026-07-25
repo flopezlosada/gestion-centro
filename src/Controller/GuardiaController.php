@@ -13,6 +13,7 @@ use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use App\Guardia\AbsenceRegistrar;
 use App\Guardia\AbsenceRegistrationResult;
+use App\Guardia\AssignmentRefused;
 use App\Guardia\GuardiaScheduler;
 use App\Guardia\GuardiaStatistics;
 use App\Repository\AcademicYearRepository;
@@ -117,8 +118,9 @@ final class GuardiaController extends AbstractController
             'assignedHere' => $assignedHere,
             'uncovered' => $uncovered,
             'covered' => \count($parte) - $uncovered,
-            // Who the split would pick, least loaded first: feeds the per-cover assignment sheet.
-            'candidates' => $year instanceof AcademicYear ? $scheduler->availableFor($year, $date, $slotIndex, $parte) : [],
+            // Who the split would pick, least loaded first: feeds the per-cover assignment sheet. With
+            // nothing left to cover no sheet is rendered, so the pool queries are not worth running.
+            'candidates' => ($uncovered > 0 && $year instanceof AcademicYear) ? $scheduler->availableFor($year, $date, $slotIndex, $parte) : [],
         ]);
     }
 
@@ -827,7 +829,7 @@ final class GuardiaController extends AbstractController
      * {@see updateCover}, which edits an assignment already made and does record one).
      */
     #[Route('/{id}/asignar', name: 'guardia_cover_assign', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function assignCover(GuardiaCover $cover, Request $request, UserRepository $users, GuardiaScheduler $scheduler): Response
+    public function assignCover(GuardiaCover $cover, Request $request, UserRepository $users, GuardiaCoverRepository $covers, AcademicYearRepository $years, GuardiaScheduler $scheduler): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $this->assertCsrf($request, 'guardia_cover_assign'.$cover->getId());
@@ -839,8 +841,21 @@ final class GuardiaController extends AbstractController
             return $this->backToParte($cover->getDate(), $cover->getSlotIndex());
         }
 
-        $scheduler->assign($cover, $teacher);
-        $this->addFlash('success', sprintf('%s cubre %s.', $teacher->getFullName(), $cover->getGroupName() ?? 'la ausencia'));
+        $year = $years->findBySchoolYear(SchoolYear::current($cover->getDate()));
+        if (!$year instanceof AcademicYear) {
+            $this->addFlash('error', sprintf('No hay horario importado para el curso %s.', SchoolYear::current($cover->getDate())));
+
+            return $this->backToParte($cover->getDate(), $cover->getSlotIndex());
+        }
+
+        // The scheduler re-checks that the cover is still uncovered and the teacher still available: the
+        // form was rendered from a pool that may have changed since (see GuardiaScheduler::assign).
+        try {
+            $scheduler->assign($year, $cover, $teacher, $covers->findForParte($cover->getDate(), $cover->getSlotIndex()));
+            $this->addFlash('success', sprintf('%s cubre %s.', $teacher->getFullName(), $cover->getGroupName() ?? 'la ausencia'));
+        } catch (AssignmentRefused $refused) {
+            $this->addFlash('error', $refused->getMessage());
+        }
 
         return $this->backToParte($cover->getDate(), $cover->getSlotIndex());
     }

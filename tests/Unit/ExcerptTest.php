@@ -28,6 +28,12 @@ final class ExcerptTest extends TestCase
         yield 'recorta los espacios de fuera' => ['   Hola mundo   ', 60, 'Hola mundo'];
         yield 'sin descripción' => [null, 60, ''];
         yield 'cadena vacía' => ['', 60, ''];
+        // Límites diminutos: un mb_substr con longitud negativa recorta desde el final en vez de
+        // truncar, así que limit=0 devolvía casi todo el texto.
+        yield 'límite de uno, solo cabe la elipsis' => ['Ejercicios de repaso', 1, '…'];
+        yield 'límite de dos' => ['Ejercicios de repaso', 2, 'E…'];
+        yield 'límite de cero no deja sitio a nada' => ['Ejercicios de repaso', 0, ''];
+        yield 'límite negativo' => ['Ejercicios de repaso', -5, ''];
     }
 
     #[DataProvider('texts')]
@@ -36,6 +42,6 @@ final class ExcerptTest extends TestCase
         $got = Excerpt::of($text, $limit);
 
         self::assertSame($expected, $got);
-        self::assertLessThanOrEqual($limit, mb_strlen($got), 'el resultado nunca pasa del límite pedido');
+        self::assertLessThanOrEqual(max($limit, 0), mb_strlen($got), 'el resultado nunca pasa del límite pedido');
     }
 }
