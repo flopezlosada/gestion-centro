@@ -6,7 +6,7 @@
 {% block body %}
     {% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
     {% set nombre = app.user.fullName|trim|split(' ')|first %}
-    {% set iniciales = app.user.fullName|split(' ')|map(w => w|first)|join|slice(0, 2)|upper %}
+    {% set iniciales = app.user.fullName|initials %}
     {% set hoyStr = now|date('Y-m-d') %}
 
     <div class="home">
@@ -177,7 +177,7 @@
                     <div class="module__eyebrow">Pendientes de tu validación</div>
                     {% for t in d.pending %}
                         <a class="module-row" href="{{ path('task_show', { id: t.id }) }}">
-                            <span class="module-row__avatar" aria-hidden="true">{{ t.assignedUser ? t.assignedUser.fullName|split(' ')|map(w => w|first)|join|slice(0, 2)|upper : '·' }}</span>
+                            <span class="module-row__avatar" aria-hidden="true">{{ t.assignedUser ? t.assignedUser.fullName|initials : '·' }}</span>
                             <span class="module-row__body">
                                 <span class="module-row__title">{{ t.title }}</span>
                                 <span class="module-row__sub">{% if t.assignedUser %}{{ t.assignedUser.fullName }} · {% endif %}entregada</span>

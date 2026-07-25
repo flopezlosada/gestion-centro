@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\User;
+use App\Enum\Area;
 use App\Home\HomeDashboard;
+use App\Security\Voter\AreaVoter;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
@@ -25,10 +27,7 @@ final class HomeController extends AbstractController
         $today = new \DateTimeImmutable('today');
         $now = new \DateTimeImmutable('now');
 
-        $isGuardiaCoordinator = $this->isGranted(
-            constant('App\\Security\\Voter\\AreaVoter::WRITE'),
-            constant('App\\Enum\\Area::GUARDIAS'),
-        );
+        $isGuardiaCoordinator = $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS);
 
         return $this->render('home/index.html.twig', $dashboard->baseFor($user, $today, $now) + [
             'now' => $now,

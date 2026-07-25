@@ -226,16 +226,8 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 500; color: var(--te
 .dash-greeting .brand-mark--lg { flex: none; }
 .sidebar .brand .brand-name { font-family: var(--font-display); font-size: 17px; }
 
-/* Botón hamburguesa: transparente en el flujo de escritorio (oculto), barra superior en móvil.
-   display:contents hace que en escritorio la marca siga en la columna como antes. */
+/* display:contents hace que en escritorio la marca siga en la columna como antes. */
 .sidebar-head { display: contents; }
-.nav-toggle { display: none; background: transparent; border: 0; cursor: pointer; padding: 10px; color: var(--text); }
-.nav-toggle-bars, .nav-toggle-bars::before, .nav-toggle-bars::after {
-    content: ''; display: block; width: 20px; height: 2px; background: currentColor; border-radius: 2px;
-}
-.nav-toggle-bars { position: relative; }
-.nav-toggle-bars::before { position: absolute; top: -6px; left: 0; }
-.nav-toggle-bars::after { position: absolute; top: 6px; left: 0; }
 .nav-backdrop { display: none; }
 
 /* Bloque de cuenta del cajón (tema + usuario + salir): solo en móvil (en escritorio manda la topbar). */
@@ -1137,9 +1129,8 @@ input[type="email"], input[type="text"], select, textarea {
         border-right: 0;
         border-bottom: 1px solid var(--border);
     }
-    .sidebar-head { display: flex; align-items: center; justify-content: space-between; }
     /* En móvil el menú se abre desde "Más" (barra inferior), no desde una hamburguesa arriba. */
-    .nav-toggle { display: none; }
+    .sidebar-head { display: flex; align-items: center; justify-content: space-between; }
     .sidebar .sidebar-foot { display: none; }
 
     .nav {

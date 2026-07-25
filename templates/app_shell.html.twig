@@ -14,9 +14,6 @@
                     <span class="brand-mark">{{ include('partials/_brand_mark.html.twig', { size: 30 }) }}</span>
                     <span class="brand-name">Gestión del centro</span>
                 </a>
-                <button class="nav-toggle" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="main-nav">
-                    <span class="nav-toggle-bars"></span>
-                </button>
             </div>
 
             <nav id="main-nav" class="nav" aria-label="Navegación principal">
@@ -63,7 +60,7 @@
                    viven aquí, en el cajón "Más". En escritorio este bloque se oculta (manda la topbar). #}
                 <div class="nav-account">
                     <span class="nav-account__user">
-                        <span class="avatar">{{ app.user.fullName|split(' ')|map(w => w|first)|join|slice(0, 2)|upper }}</span>
+                        <span class="avatar">{{ app.user.fullName|initials }}</span>
                         <span class="nav-account__name">{{ app.user.fullName }}</span>
                     </span>
                     <div class="theme-toggle" role="group" aria-label="Tema de color">
@@ -94,7 +91,7 @@
                     </div>
                     {% if app.user %}
                         <span class="user">
-                            <span class="avatar">{{ app.user.fullName|split(' ')|map(w => w|first)|join|slice(0, 2)|upper }}</span>
+                            <span class="avatar">{{ app.user.fullName|initials }}</span>
                             <span>{{ app.user.fullName }}</span>
                             <span aria-hidden="true">·</span>
                             <a href="{{ path('app_logout') }}">Salir</a>
