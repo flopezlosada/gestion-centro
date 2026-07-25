@@ -1062,6 +1062,22 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .flash.success { background: var(--success-weak); color: var(--success-text); border-color: var(--success); }
 .flash.error   { background: var(--danger-weak);  color: var(--danger-text);  border-color: var(--danger); }
 
+/* ---- Aviso en bloque dentro de una vista ---------------------------------
+   El hueco entre .form-error (el error rojo de un formulario) y .flash (el resultado de una acción
+   ya hecha): la advertencia que acompaña a algo que TODAVÍA no ha pasado y hay que leer antes de
+   decidir — p. ej. qué se va a sustituir al importar el horario. Admite párrafos y listas. */
+.callout { border: 1px solid var(--border-strong); border-left-width: 4px; border-radius: var(--radius); padding: 12px 16px; margin: 16px 0; font-size: 13.5px; }
+.callout > :first-child { margin-top: 0; }
+.callout > :last-child { margin-bottom: 0; }
+.callout ul { margin: 6px 0 0; padding-left: 20px; }
+.callout li + li { margin-top: 4px; }
+.callout--warning { background: var(--warning-weak); border-color: var(--warning); color: var(--warning-text); }
+/* Listas que pueden ser de dos nombres o del claustro entero: plegadas, para no sepultar lo que
+   viene debajo (normalmente el botón que confirma la acción que el aviso está describiendo). */
+.callout__more > summary { cursor: pointer; font-weight: 600; margin-top: 8px; }
+.callout__more > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-sm); }
+.callout__more[open] > summary { margin-bottom: 4px; }
+
 /* ---- Estado vacío (invitación a actuar) --------------------------------- */
 .empty-state {
     border: 1px dashed var(--border-strong);
@@ -1941,25 +1957,33 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 
 /* ---- Paleta de color de categoría (CategoryColor): cada clase fija --event-color con un token
    EXISTENTE del tema (soporte claro/oscuro gratis, cero hex nuevos). La consumen el punto del
-   calendario, el badge de la agenda y los swatches del formulario admin. ---- */
+   calendario, el badge de la agenda y los swatches del formulario admin.
+
+   Se usan los tokens CATEGÓRICOS (--pillar-*), no los de estado: --accent y --success son el MISMO
+   valor en tema oscuro (#7FB88C), así que "Verde azulado" y "Verde" salían idénticos; y reutilizar
+   --warning/--success hacía que el color de una categoría se confundiera con el estado de una tarea
+   (justo la ambigüedad que evita el punto cuadrado del calendario). ---- */
 .cat-color--slate { --event-color: var(--text-muted); }
-.cat-color--teal  { --event-color: var(--accent); }
-.cat-color--blue  { --event-color: var(--review); }
-.cat-color--green { --event-color: var(--success); }
-.cat-color--amber { --event-color: var(--warning); }
+.cat-color--teal  { --event-color: var(--pillar-check); }
+.cat-color--blue  { --event-color: var(--pillar-plan); }
+.cat-color--green { --event-color: var(--pillar-do); }
+.cat-color--amber { --event-color: var(--amber); }
 .cat-color--red   { --event-color: var(--danger); }
 /* Badge de categoría en las filas de agenda: un punto de color + la etiqueta. */
 .event-badge { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted); }
 .event-badge::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--event-color, var(--text-muted)); flex: none; }
 
-/* ---- Selector de color en swatches (form admin de categoría): radio oculto + etiqueta-chip. ---- */
+/* ---- Selector de color en swatches (form admin de categoría): radio oculto + etiqueta-chip.
+   Las clases van bajo el prefijo .swatch-picker__: la opción se llamaba .swatch a secas y una
+   regla homónima de más abajo (leyenda de gráficos) la pisaba, dejando cada pastilla en un
+   cuadrado de 12px con el texto desbordado. Nombre propio = no vuelve a colisionar. ---- */
 .swatch-picker { display: flex; flex-wrap: wrap; gap: 8px; }
-.swatch { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px 6px 9px; border: 1px solid var(--border-strong); border-radius: 999px; cursor: pointer; }
-.swatch input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-.swatch__chip { width: 14px; height: 14px; border-radius: 4px; background: var(--event-color, var(--text-muted)); flex: none; }
-.swatch__name { font-size: 13px; color: var(--text); }
-.swatch:has(input:checked) { border-color: var(--accent); background: var(--accent-weak); }
-.swatch:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.swatch-picker__option { position: relative; display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px 6px 9px; border: 1px solid var(--border-strong); border-radius: 999px; cursor: pointer; }
+.swatch-picker__option input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.swatch-picker__chip { width: 14px; height: 14px; border-radius: 4px; background: var(--event-color, var(--text-muted)); flex: none; }
+.swatch-picker__name { font-size: 13px; color: var(--text); }
+.swatch-picker__option:has(input:checked) { border-color: var(--accent); background: var(--accent-weak); }
+.swatch-picker__option:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 .calendar-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 16px 0 0; padding: 0; font-size: 12.5px; color: var(--text-muted); }
 .calendar-legend li { display: flex; align-items: center; gap: 6px; }
@@ -2236,27 +2260,10 @@ tr.is-not-covered { background: var(--danger-weak); }
 .text-success { color: var(--success); }
 .text-danger { color: var(--danger); }
 
-/* ---- Gráficos de estadísticas de guardias (SVG/CSS, sin dependencias) ------ */
-/* Leyenda compartida por los gráficos con varias series. */
-.chart-legend { display: flex; flex-wrap: wrap; gap: 16px; margin: 4px 0 16px; font-size: 13px; color: var(--text-muted); }
-.chart-legend__item { display: inline-flex; align-items: center; gap: 6px; }
-.swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
-.swatch--success { background: var(--success); }
-.swatch--warning { background: var(--warning); }
-.swatch--danger { background: var(--danger); }
-
-/* Evolución por mes: columnas apiladas (cubiertas / sin asignar / incidencias). */
-.mbar-chart { display: flex; align-items: flex-end; gap: 10px; height: 200px; padding-top: 8px; overflow-x: auto; }
-.mbar-col { flex: 1 1 0; min-width: 34px; display: flex; flex-direction: column; align-items: center; height: 100%; }
-.mbar-total { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
-.mbar-stack { flex: 1; width: 60%; max-width: 44px; display: flex; flex-direction: column-reverse; justify-content: flex-start; }
-.mbar-seg { display: block; width: 100%; }
-.mbar-seg + .mbar-seg { border-top: 2px solid var(--surface); }
-.mbar-stack .mbar-seg:first-child { border-radius: 4px 4px 0 0; }
-.mbar-seg--success { background: var(--success); }
-.mbar-seg--warning { background: var(--warning); }
-.mbar-seg--danger { background: var(--danger); }
-.mbar-label { font-size: 11.5px; color: var(--text-muted); margin-top: 6px; white-space: nowrap; }
+/* ---- Gráficos de estadísticas de guardias -----------------------------------
+   La leyenda (.chart-legend/.swatch) y las columnas apiladas (.mbar-*) del primer montaje SVG/CSS
+   se han retirado: los gráficos los pinta ApexCharts con su propia leyenda, así que aquel CSS
+   quedó sin un solo uso en las plantillas (y su .swatch pisaba al del selector de color). ---- */
 
 /* Mapa de calor día × tramo. */
 .heatmap-wrap { overflow-x: auto; }
@@ -3025,16 +3032,24 @@ tr.is-not-covered { background: var(--danger-weak); }
 .classcard { background: var(--surface-alt); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
 .classcard__pick { display: flex; align-items: center; gap: 12px; padding: 14px 15px; cursor: pointer; }
 .classcard__pick input[type="checkbox"] { position: absolute; opacity: 0; width: 0; height: 0; }
+/* Marcada = FALTA. Se pinta en rojo/danger (el token dice "ausente = rojo"), NO en el verde
+   de marca (que significa acción/hecho): un check verde para una ausencia se leía como "todo bien".
+   Es tinte, no relleno sólido, para no crear un muro rojo cuando todas nacen marcadas. */
 .classcard__box {
-    flex: none; width: 24px; height: 24px; border-radius: 7px; background: var(--accent);
-    color: var(--on-accent); display: grid; place-items: center;
+    flex: none; width: 24px; height: 24px; border-radius: 7px;
+    background: var(--danger-weak); border: 2px solid var(--danger); color: var(--danger-text);
+    display: grid; place-items: center;
 }
 .classcard__box svg { width: 15px; height: 15px; }
 .classcard__pick input:focus-visible + .classcard__box { outline: 2px solid var(--focus); outline-offset: 2px; }
 .classcard__what { flex: 1; min-width: 0; }
 .classcard__time { display: block; font-family: var(--font-mono); font-weight: 600; font-size: 13px; color: var(--accent); }
 .classcard__group { display: block; font-size: 13px; margin-top: 2px; }
-.classcard__off { display: none; font-size: 13px; color: var(--text-faint); }
+/* Estado de la hora, SIEMPRE con texto (no solo color): "Falta" en rojo por defecto (marcada),
+   "Sí estará" atenuado cuando se desmarca. El texto lo lee también un lector de pantalla. */
+.classcard__state { display: block; font-size: 12.5px; margin-top: 3px; font-weight: 600; }
+.classcard__state--falta { color: var(--danger-text); }
+.classcard__state--asiste { display: none; color: var(--text-faint); font-weight: 400; }
 .classcard__addtask {
     display: block; border-top: 1px solid var(--separator); padding: 11px 15px; cursor: pointer;
     font-weight: 600; font-size: 13px; color: var(--success); list-style: none;
@@ -3044,6 +3059,16 @@ tr.is-not-covered { background: var(--danger-weak); }
 .classcard__task[open] .classcard__addtask::before { content: '− '; }
 .classcard__taskbody { padding: 0 15px 14px; display: grid; gap: 9px; }
 .classcard__file { display: grid; gap: 5px; }
+/* El botón nativo del <input type=file> se viste como un secundario del sistema (antes salía el
+   control gris del SO, en inglés, rompiendo la pantalla cálida). El nombre del archivo lo pinta
+   el navegador a su lado. */
+.classcard__file input[type="file"] { font: 400 13px var(--font-body); color: var(--text-muted); }
+.classcard__file input[type="file"]::file-selector-button {
+    font: 500 13px var(--font-body); color: var(--accent); background: var(--surface-sunken);
+    border: 1px solid var(--border-strong); border-radius: 10px; padding: 7px 12px; margin-right: 10px;
+    cursor: pointer;
+}
+.classcard__file input[type="file"]::file-selector-button:hover { border-color: var(--accent); color: var(--accent-hover); }
 
 /* Hora desmarcada: no falta. Se apaga la tarjeta, el borde pasa a discontinuo y aparece "sí estará". */
 .classcard:has(input[type="checkbox"]:not(:checked)) {
@@ -3053,7 +3078,8 @@ tr.is-not-covered { background: var(--danger-weak); }
 .classcard:has(input[type="checkbox"]:not(:checked)) .classcard__time,
 .classcard:has(input[type="checkbox"]:not(:checked)) .classcard__group { color: var(--text-faint); }
 .classcard:has(input[type="checkbox"]:not(:checked)) .classcard__group strong { font-weight: 500; }
-.classcard:has(input[type="checkbox"]:not(:checked)) .classcard__off { display: inline; }
+.classcard:has(input[type="checkbox"]:not(:checked)) .classcard__state--falta { display: none; }
+.classcard:has(input[type="checkbox"]:not(:checked)) .classcard__state--asiste { display: inline; }
 /* Sin falta no hay guardia que cubrir, así que la tarea de esa hora no procede. */
 .classcard:has(input[type="checkbox"]:not(:checked)) .classcard__task { display: none; }
 

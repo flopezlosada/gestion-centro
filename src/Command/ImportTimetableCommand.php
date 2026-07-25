@@ -96,8 +96,9 @@ final class ImportTimetableCommand extends Command
     }
 
     /**
-     * Prints the import summary: totals, guardia count and — the part that needs action — the
-     * teachers nobody could be matched to.
+     * Prints the import summary: totals, guardia count, what was replaced and — the parts that need
+     * action — the teachers nobody could be matched to, the hand-marked guardias the import had to
+     * respect or drop, and the teachers this export leaves behind.
      *
      * @param SymfonyStyle          $io     the console style
      * @param AcademicYear          $year   the target course
@@ -106,13 +107,27 @@ final class ImportTimetableCommand extends Command
     private function report(SymfonyStyle $io, AcademicYear $year, TimetableImportResult $result): void
     {
         $io->success(sprintf(
-            '%s: %d celdas de horario (%d de guardia/colaboración) para %d profesores emparejados.%s',
+            '%s: %d celdas de horario (%d de guardia/colaboración) para %d profesores emparejados, en sustitución de %d celdas ya importadas.%s',
             $year->getSchoolYear(),
             $result->entryCount,
             $result->guardiaCount,
             $result->matchedCount,
+            $result->replacedCount,
             $result->dryRun ? ' [dry-run: nada escrito]' : '',
         ));
+
+        if ($result->keptManual > 0) {
+            $io->note(sprintf('%d guardias marcadas a mano se han respetado: el fichero traía guardia a esa hora, pero manda lo marcado en "Horario de guardias".', $result->keptManual));
+        }
+
+        if ($result->droppedManual > 0) {
+            $io->note(sprintf('%d guardias marcadas a mano se han quitado: el horario nuevo pone clase a esa hora.', $result->droppedManual));
+        }
+
+        if ([] !== $result->stale) {
+            $io->warning(sprintf('%d profesores conservan horario en %s que este fichero no trae (no se tocan). Si han dejado el centro, quítales el horario o seguirán entrando en el reparto de guardias:', \count($result->stale), $year->getSchoolYear()));
+            $io->listing($result->stale);
+        }
 
         if ([] !== $result->unmatched) {
             $io->warning(sprintf('%d profesores del horario sin emparejar con un usuario (su horario NO se ha importado):', \count($result->unmatched)));

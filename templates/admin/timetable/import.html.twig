@@ -1,6 +1,19 @@
 {% extends 'app_shell.html.twig' %}
 {% import '_macros/form.html.twig' as f %}
 
+{#
+   Una lista que puede traer dos nombres o el claustro entero (todo el que no venga en el fichero).
+   Corta se lee de un vistazo; larga sepultaría los botones de confirmar, así que a partir de unos
+   pocos se pliega en un <details> y el recuento ya va en el titular del aviso.
+#}
+{% macro long_list(markup, count, summary) %}
+    {% if count > 8 %}
+        <details class="callout__more"><summary>{{ summary|format(count) }}</summary>{{ markup }}</details>
+    {% else %}
+        {{ markup }}
+    {% endif %}
+{% endmacro %}
+
 {% block title %}Importar horario (Peñalara){% endblock %}
 
 {% block breadcrumb %}
@@ -17,32 +30,102 @@
         </div>
     </div>
 
-    {% if result %}
+    {% if preview %}
+        {# Paso 2: qué haría esta importación. Nada se ha escrito todavía. #}
         <div class="card">
-            <div class="page-head"><div><h2>Resultado de la importación</h2></div></div>
-            <p><strong>{{ result.entryCount }}</strong> celdas de horario ({{ result.guardiaCount }} de guardia/colaboración) para <strong>{{ result.matchedCount }}</strong> profesores emparejados.</p>
+            <div class="page-head"><div>
+                <p class="eyebrow">Paso 2 de 2 · nada se ha guardado aún</p>
+                <h2>Esto es lo que va a pasar en {{ year.schoolYear }}</h2>
+            </div></div>
 
-            {% if result.unmatched is empty %}
-                <p class="badge badge--ok">Todos los profesores del horario se emparejaron con un usuario.</p>
-            {% else %}
-                <div class="form-error" role="alert">
-                    {{ result.unmatched|length }} profesor(es) del horario sin emparejar con un usuario: su horario <strong>no</strong> se ha importado.
+            <dl class="cover-summary">
+                <div>
+                    <dt>Se importarán</dt>
+                    <dd><strong>{{ preview.entryCount }}</strong> celdas de horario</dd>
                 </div>
-                <ul>
-                    {% for code, name in result.unmatched %}
-                        <li>{{ name }} <span class="muted mono">(código {{ code }})</span></li>
-                    {% endfor %}
-                </ul>
-                <p class="help">Da de alta a esas personas en <a href="{{ path('admin_user_index') }}">Usuarios</a> (o corrige su nombre) y vuelve a importar: se emparejarán por nombre y quedará guardado su código de Peñalara.</p>
+                <div>
+                    <dt>De ellas, guardias</dt>
+                    <dd><strong>{{ preview.guardiaCount }}</strong> de guardia/colaboración</dd>
+                </div>
+                <div>
+                    <dt>Profesores emparejados</dt>
+                    <dd><strong>{{ preview.matchedCount }}</strong></dd>
+                </div>
+                <div>
+                    <dt>Sustituyen a</dt>
+                    <dd><strong>{{ preview.replacedCount }}</strong> celdas ya importadas</dd>
+                </div>
+            </dl>
+
+            {% if preview.entryCount == 0 %}
+                {# Ambos ficheros son XML válido, así que el parser no falla: casi siempre es que van
+                   cambiados de casilla o son los de otro curso. #}
+                <div class="callout callout--warning" role="alert">
+                    No se importaría <strong>ninguna</strong> celda de horario. ¿Has subido el planificador y el Horario correctos, y cada uno en su casilla?
+                </div>
+            {% elseif not preview.needsAttention %}
+                <p class="badge badge--ok">Todo cuadra: ningún profesor sin emparejar y nada marcado a mano se ve afectado.</p>
             {% endif %}
+
+            {% if preview.unmatched is not empty %}
+                <div class="form-error" role="alert">
+                    {{ preview.unmatched|length }} profesor(es) del horario no se emparejan con ningún usuario: su horario <strong>no</strong> se importará.
+                </div>
+                {% set unmatched %}
+                    <ul>
+                        {% for code, name in preview.unmatched %}
+                            <li>{{ name }} <span class="muted mono">(código {{ code }})</span></li>
+                        {% endfor %}
+                    </ul>
+                {% endset %}
+                {{ _self.long_list(unmatched, preview.unmatched|length, 'Ver los %d nombres') }}
+                <p class="help">Puedes importar igualmente y arreglarlo después: da de alta a esas personas en <a href="{{ path('admin_user_index') }}">Usuarios</a> (o corrige su nombre) y vuelve a importar; se emparejarán por nombre y quedará guardado su código de Peñalara.</p>
+            {% endif %}
+
+            {% if preview.keptManual > 0 or preview.droppedManual > 0 %}
+                <div class="callout callout--warning" role="note">
+                    <p><strong>Guardias marcadas a mano</strong></p>
+                    <ul>
+                        {% if preview.keptManual > 0 %}
+                            <li>Se respetarán <strong>{{ preview.keptManual }}</strong>: el fichero trae una guardia en esa hora, pero manda lo que marcasteis en <a href="{{ path('guardia_schedule_edit') }}">Horario de guardias</a>.</li>
+                        {% endif %}
+                        {% if preview.droppedManual > 0 %}
+                            <li>Se quitarán <strong>{{ preview.droppedManual }}</strong>: el horario nuevo pone clase a esa hora, así que esa persona ya no puede estar de guardia.</li>
+                        {% endif %}
+                    </ul>
+                </div>
+            {% endif %}
+
+            {% if preview.stale is not empty %}
+                <div class="callout callout--warning" role="note">
+                    <p><strong>{{ preview.stale|length }} profesor(es) con horario en {{ year.schoolYear }} que este fichero no trae.</strong> No se tocan: conservan el horario y las guardias que ya tenían. Si han dejado el centro, quítales el horario a mano o seguirán entrando en el reparto de guardias.</p>
+                    {% set stale %}
+                        <ul>{% for name in preview.stale %}<li>{{ name }}</li>{% endfor %}</ul>
+                    {% endset %}
+                    {{ _self.long_list(stale, preview.stale|length, 'Ver los %d nombres') }}
+                </div>
+            {% endif %}
+
+            <div class="form-actions">
+                <form method="post" action="{{ path('admin_timetable_import_confirm') }}">
+                    <input type="hidden" name="_token" value="{{ csrf_token('timetable_import_confirm') }}">
+                    <button class="btn" type="submit">Importar ahora</button>
+                </form>
+                <form method="post" action="{{ path('admin_timetable_import_discard') }}">
+                    <input type="hidden" name="_token" value="{{ csrf_token('timetable_import_confirm') }}">
+                    <button class="btn secondary" type="submit">Descartar</button>
+                </form>
+            </div>
+        </div>
+    {% else %}
+        <div class="card form-card">
+            <p class="eyebrow">Paso 1 de 2</p>
+            <p class="help">Al subirlos verás un resumen de lo que cambiaría antes de guardar nada.</p>
+            {{ form_start(form, { 'attr': { 'novalidate': 'novalidate' } }) }}
+                {{ form_errors(form) }}
+                {{ f.fields([form.academicYear, form.planificador, form.horario]) }}
+                {{ f.actions(path('guardia_index'), 'Ver qué va a pasar') }}
+            {{ form_end(form) }}
         </div>
     {% endif %}
-
-    <div class="card form-card">
-        {{ form_start(form, { 'attr': { 'novalidate': 'novalidate' } }) }}
-            {{ form_errors(form) }}
-            {{ f.fields([form.academicYear, form.planificador, form.horario]) }}
-            {{ f.actions(path('guardia_index'), 'Importar') }}
-        {{ form_end(form) }}
-    </div>
 {% endblock %}
