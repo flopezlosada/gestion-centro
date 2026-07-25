@@ -35,14 +35,21 @@
                 </button>
             </form>
         {% else %}
-            <span class="checkbox is-static{{ task.done ? ' is-checked' }}" aria-hidden="true">
+            {#- No accionable aquí: o la tarea está Finalizada (estado terminal, de solo lectura) o es de
+                otra persona vista en el calendario. El marcador refleja el estado, no invita a pulsar.
+                Deja de ser `aria-hidden` mudo: lleva estado por `title` y `aria-label` (WCAG AA). El
+                porqué de estar en "Hechas" —validada vs marcada por ti— se ve además en la meta. -#}
+            {% set doneLabel = task.closed ? _self.status_label(task.status) ~ ' — no editable' : 'Hecha' %}
+            <span class="checkbox is-static{{ task.done ? ' is-checked' }}" role="img"
+                  title="{{ task.done ? doneLabel }}"
+                  aria-label="«{{ task.title }}»: {{ task.done ? doneLabel : 'sin hacer' }}">
                 {% if task.done %}<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10.5 l3.2 3.2 L15 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>{% endif %}
             </span>
         {% endif %}
         <div class="agenda-body">
             <a href="{{ path('task_show', { id: task.id }) }}" class="agenda-title">{{ task.title }}</a>
             <span class="agenda-meta">
-                {{ task.dueDate|date('d/m/Y') }}{% if task.unit %} · {{ task.unit.name }}{% endif %}{% if not task.mandatory %} · voluntaria{% endif %}
+                {{ task.dueDate|date('d/m/Y') }}{% if task.unit %} · {{ task.unit.name }}{% endif %}{% if not task.mandatory %} · voluntaria{% endif %}{% if task.closed %} · {{ _self.status_label(task.status) }}{% endif %}
             </span>
         </div>
     </li>
