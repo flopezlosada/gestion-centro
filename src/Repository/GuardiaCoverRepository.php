@@ -20,14 +20,6 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
-     * The parte lines for a date and period, absent teacher and assigned guardia eager-loaded.
-     *
-     * @param \DateTimeImmutable $date      the day
-     * @param int                $slotIndex the period index within the day
-     *
-     * @return GuardiaCover[] the covers, absent teacher first by name
-     */
-    /**
      * How many covers on a given day are still without an assigned guardia — the "ausencias sin cubrir"
      * that the coordinator's home module surfaces. Counts covers, not teachers (one absent teacher may
      * have several uncovered slots).
@@ -43,6 +35,14 @@ class GuardiaCoverRepository extends ServiceEntityRepository
             ->getSingleScalarResult();
     }
 
+    /**
+     * The parte lines for a date and period, absent teacher and assigned guardia eager-loaded.
+     *
+     * @param \DateTimeImmutable $date      the day
+     * @param int                $slotIndex the period index within the day
+     *
+     * @return GuardiaCover[] the covers, absent teacher first by name
+     */
     public function findForParte(\DateTimeImmutable $date, int $slotIndex): array
     {
         return $this->createQueryBuilder('c')

@@ -13,7 +13,7 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 /**
  * The landing agenda (served at /agenda) mixes the user's tasks and their private personal events —
  * but only their own: a personal event is never shown on someone else's agenda. The site root (/) is
- * the panel/dashboard, a separate page.
+ * the personal home ("qué me toca hoy"), a separate page.
  */
 final class HomeAgendaTest extends WebTestCase
 {
@@ -95,7 +95,7 @@ final class HomeAgendaTest extends WebTestCase
         self::assertStringNotContainsString('Cita privada ajena', (string) $this->client->getResponse()->getContent());
     }
 
-    public function testTheSiteRootShowsThePanel(): void
+    public function testTheSiteRootShowsThePersonalHome(): void
     {
         $user = $this->user('profe@centro.test');
         $this->em->flush();
@@ -104,6 +104,9 @@ final class HomeAgendaTest extends WebTestCase
         $this->client->request('GET', '/');
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('h1', 'panel');
+        // El Inicio ya no es un "panel" genérico: encabeza con el saludo personal al usuario. Se asserta
+        // el nombre, no la fórmula de cortesía, para que el test aguante si el saludo pasa a variar
+        // según la hora del día.
+        self::assertSelectorTextContains('h1.home-greeting', 'Profe');
     }
 }

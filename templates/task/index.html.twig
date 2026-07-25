@@ -22,7 +22,7 @@
         <div class="task-card__foot">
             <span class="task-card__who">
                 {% if who %}
-                    <span class="task-card__avatar" aria-hidden="true">{{ who.fullName|split(' ')|map(w => w|first)|join|slice(0, 2)|upper }}</span>
+                    <span class="task-card__avatar" aria-hidden="true">{{ who.fullName|initials }}</span>
                     <span class="task-card__name">{{ who.fullName }}{% if t.unit %} · {{ t.unit.name }}{% endif %}</span>
                 {% else %}
                     <span class="task-card__avatar task-card__avatar--empty" aria-hidden="true">·</span>
@@ -48,7 +48,7 @@
         <span class="trow__title">{{ t.title }}</span>
         <span class="trow__unit">{{ t.unit ? t.unit.name : '—' }}</span>
         <span class="trow__who">
-            {% if who %}<span class="trow__avatar" aria-hidden="true">{{ who.fullName|split(' ')|map(w => w|first)|join|slice(0, 2)|upper }}</span><span class="trow__name">{{ who.fullName }}</span>{% else %}<span class="cell-muted">—</span>{% endif %}
+            {% if who %}<span class="trow__avatar" aria-hidden="true">{{ who.fullName|initials }}</span><span class="trow__name">{{ who.fullName }}</span>{% else %}<span class="cell-muted">—</span>{% endif %}
         </span>
         <span class="trow__date{{ overdue ? ' is-overdue' }}">{{ t.dueDate|date('d/m/Y') }}</span>
         <span class="task-pill task-pill--{{ pill.cls }}">{{ pill.label }}</span>
