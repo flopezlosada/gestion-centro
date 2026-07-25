@@ -67,7 +67,8 @@
                     <p>Ese día no tiene ninguna clase lectiva, así que no hay guardias que generar. Prueba con otro día.</p>
                 </div>
             {% else %}
-                <form method="post" action="{{ path('guardia_absence_create') }}" class="absence-form" enctype="multipart/form-data" data-absence-form>
+                <form method="post" action="{{ path('guardia_absence_create') }}" class="absence-form" enctype="multipart/form-data" data-absence-form
+                      data-confirm="Se generarán {{ dayClasses|length }} guardia{{ dayClasses|length == 1 ? '' : 's' }} y se avisará a los profesores asignados. ¿Continuar?">
                     <input type="hidden" name="_token" value="{{ csrf_token('guardia_absence_create') }}">
                     <input type="hidden" name="absent_teacher" value="{{ selectedTeacher }}">
                     <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
@@ -75,7 +76,7 @@
                     <div class="classes-head">
                         <h2 class="classes-head__title">Clases del {{ dias[date|date('N', false)]|lower }} {{ date|date('d/m', false) }}</h2>
                         {# Sin JS queda el total, que es cierto de partida (todas marcadas); con JS cuenta las marcadas. #}
-                        <span class="badge badge--ok" data-absence-count>falta {{ dayClasses|length }} de {{ dayClasses|length }}</span>
+                        <span class="badge badge--danger" data-absence-count aria-live="polite">falta {{ dayClasses|length }} de {{ dayClasses|length }}</span>
                     </div>
                     <p class="classes-help">Marcada = falta esa hora. Desmárcala si sí estará. En cada hora que falte puedes adjuntar la tarea.</p>
 
@@ -95,15 +96,18 @@
                                                 {# Actividad multigrupo (p.ej. Salón de Actos): el aula es la referencia, los grupos van listados. #}
                                                 <strong>{{ c.room ?? 'Actividad de nivel' }}</strong>
                                                 <span class="badge badge--muted">{{ c.groupCount }} grupos</span>
-                                                <span class="muted"> · {{ c.groups|join(', ') }}</span>
-                                                {% if c.subjectName %}<span class="muted"> · {{ c.subjectName }}</span>{% endif %}
+                                                <span class="muted mono"> · {{ c.groups|join(', ') }}</span>
+                                                {% if c.subjectName %}<span class="muted mono"> · {{ c.subjectName }}</span>{% endif %}
                                             {% else %}
                                                 <strong>{{ c.groups|first|default('—') }}</strong>
-                                                {% if c.subjectName %}<span class="muted"> · {{ c.subjectName }}</span>{% endif %}
+                                                {% if c.subjectName %}<span class="muted mono"> · {{ c.subjectName }}</span>{% endif %}
                                                 {% if c.room %}<span class="muted mono"> · {{ c.room }}</span>{% endif %}
                                             {% endif %}
                                         </span>
-                                        <span class="classcard__off">sí estará</span>
+                                        <span class="classcard__state">
+                                            <span class="classcard__state--falta">Falta esta hora</span>
+                                            <span class="classcard__state--asiste">Sí estará · no genera guardia</span>
+                                        </span>
                                     </span>
                                 </label>
                                 <details class="classcard__task">
