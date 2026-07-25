@@ -28,6 +28,7 @@ services:
         bind:
             string $uploadsDir: '%app.uploads_dir%'
             string $publicDir: '%kernel.project_dir%/public'
+            string $pendingImportsDir: '%kernel.project_dir%/var/timetable-imports'
             int $sessionIdleTimeout: '%app.session_idle_timeout%'
 
     # makes classes in src/ available to be used as services

@@ -15,8 +15,10 @@ use Symfony\Component\DomCrawler\Field\FileFormField;
 
 /**
  * The self-service timetable import screen at /admin/horario: gated to administration like the rest of
- * /admin, it lets the equipo directivo upload the two Peñalara exports for a course, runs the shared
- * {@see \App\Guardia\TimetableImporter} and shows the reconciliation result.
+ * /admin, it lets the equipo directivo upload the two Peñalara exports for a course, shows what the
+ * import WOULD do (the shared {@see \App\Guardia\TimetableImporter} in dry-run) and only writes once
+ * that preview is confirmed. The cases below pin the two steps down — a preview that leaves no trace
+ * whatsoever, and a confirmation that consumes the upload so a refresh cannot import twice.
  */
 final class AdminTimetableImportTest extends WebTestCase
 {
@@ -136,18 +138,17 @@ final class AdminTimetableImportTest extends WebTestCase
         self::assertResponseStatusCodeSame(403);
     }
 
-    public function testUploadImportsScheduleAndReportsTheUnmatched(): void
+    /**
+     * Uploads both exports for a course and follows the redirect to the preview. Leaves the client on
+     * the preview page, with nothing written yet.
+     *
+     * @param AcademicYear $year the target course
+     */
+    private function uploadFor(AcademicYear $year): void
     {
-        $year = $this->academicYear('2026-2027');
-        $this->em->persist($year);
-        // Jane matches by name (recording her code); Ghost matches nobody and stays unmatched.
-        $this->em->persist((new User())->setFullName('Jane Doe Smith')->setEmail('jane@centro.test'));
-        $this->em->flush();
-
-        $this->client->loginUser($this->admin());
         $crawler = $this->client->request('GET', '/admin/horario');
 
-        $form = $crawler->selectButton('Importar')->form();
+        $form = $crawler->selectButton('Ver qué va a pasar')->form();
         $form['timetable_import[academicYear]'] = (string) $year->getId();
         $planificador = $form['timetable_import[planificador]'];
         $horario = $form['timetable_import[horario]'];
@@ -156,13 +157,69 @@ final class AdminTimetableImportTest extends WebTestCase
         $planificador->upload($this->tmpXml(self::PLANIFICADOR));
         $horario->upload($this->tmpXml(self::HORARIO));
         $this->client->submit($form);
+        $this->client->followRedirect();
+    }
+
+    public function testUploadPreviewsWithoutWritingAnything(): void
+    {
+        $year = $this->academicYear('2026-2027');
+        $this->em->persist($year);
+        // Jane matches by name (recording her code); Ghost matches nobody and stays unmatched.
+        $this->em->persist((new User())->setFullName('Jane Doe Smith')->setEmail('jane@centro.test'));
+        $this->em->flush();
+
+        $this->client->loginUser($this->admin());
+        $this->uploadFor($year);
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('.card', 'profesores emparejados');
+        self::assertSelectorTextContains('.card', 'Esto es lo que va a pasar');
         self::assertSelectorTextContains('.card', 'Ghost Person');
+        self::assertCount(0, $this->em->getRepository(ScheduleEntry::class)->findAll(), 'the preview writes nothing');
+
+        // Not even the side effect of reconciling: Jane's Peñalara code is only recorded on the real run.
+        $this->em->clear();
+        $jane = $this->em->getRepository(User::class)->findOneBy(['email' => 'jane@centro.test']);
+        self::assertInstanceOf(User::class, $jane);
+        self::assertNull($jane->getPenalaraCode(), 'a preview leaves no trace on the matched users');
+    }
+
+    public function testConfirmingThePreviewImportsTheSchedule(): void
+    {
+        $year = $this->academicYear('2026-2027');
+        $this->em->persist($year);
+        $this->em->persist((new User())->setFullName('Jane Doe Smith')->setEmail('jane@centro.test'));
+        $this->em->flush();
+
+        $this->client->loginUser($this->admin());
+        $this->uploadFor($year);
+        $this->client->submitForm('Importar ahora');
+        $this->client->followRedirect();
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('.flash', 'importado');
 
         $entries = $this->em->getRepository(ScheduleEntry::class)->findAll();
         self::assertCount(1, $entries, 'only Jane\'s single cell was imported');
         self::assertSame('2026-2027', $entries[0]->getAcademicYear()->getSchoolYear());
+
+        // The upload is consumed: the screen is back to step one, so a refresh cannot import twice.
+        self::assertSelectorTextContains('.form-card', 'Paso 1 de 2');
+    }
+
+    public function testDiscardingThePreviewImportsNothing(): void
+    {
+        $year = $this->academicYear('2026-2027');
+        $this->em->persist($year);
+        $this->em->persist((new User())->setFullName('Jane Doe Smith')->setEmail('jane@centro.test'));
+        $this->em->flush();
+
+        $this->client->loginUser($this->admin());
+        $this->uploadFor($year);
+        $this->client->submitForm('Descartar');
+        $this->client->followRedirect();
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('.form-card', 'Paso 1 de 2');
+        self::assertCount(0, $this->em->getRepository(ScheduleEntry::class)->findAll());
     }
 }

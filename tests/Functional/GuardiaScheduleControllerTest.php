@@ -11,6 +11,7 @@ use App\Entity\User;
 use App\Enum\Area;
 use App\Enum\PermissionLevel;
 use App\Enum\ScheduleActivityKind;
+use App\Enum\ScheduleEntrySource;
 use App\Enum\Weekday;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -92,6 +93,7 @@ final class GuardiaScheduleControllerTest extends WebTestCase
         self::assertSame(Weekday::MONDAY, $entries[0]->getWeekday());
         self::assertSame(0, $entries[0]->getSlotIndex());
         self::assertSame('08:25', $entries[0]->getStartsAt()->format('H:i'), 'time taken from the marco horario');
+        self::assertSame(ScheduleEntrySource::MANUAL, $entries[0]->getSource(), 'stamped as hand-marked, so a re-import will not wipe it');
     }
 
     public function testInvalidCsrfTokenIsRejected(): void

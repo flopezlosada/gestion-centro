@@ -8,6 +8,7 @@ use App\Entity\AcademicYear;
 use App\Entity\ScheduleEntry;
 use App\Entity\User;
 use App\Enum\ScheduleActivityKind;
+use App\Enum\ScheduleEntrySource;
 use App\Enum\Weekday;
 use App\Repository\ScheduleEntryRepository;
 
@@ -18,6 +19,10 @@ use App\Repository\ScheduleEntryRepository;
  * lets the equipo directivo mark, per weekday and period, where the teacher is on guardia or
  * collaborator duty. Saving replaces only that teacher's duty cells for the course
  * ({@see ScheduleEntryRepository::replaceDutySlotsForTeacher()}); the lessons stay as imported.
+ *
+ * The saved cells are stamped {@see ScheduleEntrySource::MANUAL}, which takes that teacher's guardias
+ * out of the reach of later imports: the grid posted here is the whole truth about their duties, so
+ * letting an export overwrite it would silently undo the very work this screen exists for.
  *
  * Kept pure enough to unit-test: all reads and the write go through the repository, and the two rules
  * that matter live here — a cell is only stamped when it maps to a real period of the marco horario
@@ -140,7 +145,10 @@ final class GuardiaScheduleEditor
                     ->setSlotIndex($slotIndex)
                     ->setStartsAt($slotTimes[$slotIndex]['startsAt'])
                     ->setEndsAt($slotTimes[$slotIndex]['endsAt'])
-                    ->setKind($kind);
+                    ->setKind($kind)
+                    // Stamped as hand-marked: from now on the export updates this teacher's lessons but
+                    // leaves their guardias alone, which is the whole point of having marked them here.
+                    ->setSource(ScheduleEntrySource::MANUAL);
             }
         }
 

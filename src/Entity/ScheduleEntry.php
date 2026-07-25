@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Enum\ScheduleActivityKind;
+use App\Enum\ScheduleEntrySource;
 use App\Enum\Weekday;
 use App\Repository\ScheduleEntryRepository;
 use Doctrine\DBAL\Types\Types;
@@ -15,11 +16,14 @@ use Doctrine\ORM\Mapping as ORM;
  * slot the teacher is either teaching a group ({@see ScheduleActivityKind::LECTIVE}) or on a
  * non-teaching duty (a guardia / collaborator slot, with no group).
  *
- * This is imported reference data, replaced wholesale on each import (see
+ * This is mostly imported reference data, replaced on each import (see
  * {@see \App\Command\ImportTimetableCommand}); it is therefore NOT {@see \App\Contract\Auditable} —
  * the audit trail tracks hand edits, not the bulk timetable load. Two reads drive the whole guardias
  * module off this table: "which group/room does teacher T have at weekday W, slot S" (to know what an
  * absence leaves uncovered) and "who is on guardia at weekday W, slot S" (the pool to assign from).
+ *
+ * A cell records {@see $source}, who wrote it: the export or a person. An import only ever replaces
+ * the cells it owns, so hand-marked guardias survive it — see {@see ScheduleEntrySource}.
  *
  * Every cell belongs to one {@see AcademicYear}: timetables change each course, so an import targets a
  * concrete course and replaces only that course's entries, and the parte reads the timetable of the
@@ -81,6 +85,13 @@ class ScheduleEntry
     /** Subject short name (e.g. "Literatura Universal"); null for non-teaching duties. */
     #[ORM\Column(name: 'subject_name', length: 128, nullable: true)]
     private ?string $subjectName = null;
+
+    /**
+     * Who wrote this cell: the Peñalara export or a person using the manual guardia editor. Defaults to
+     * the export, which is where all but a handful of cells come from; the editor stamps its own.
+     */
+    #[ORM\Column(name: 'source', length: 16, enumType: ScheduleEntrySource::class, options: ['default' => 'penalara'])]
+    private ScheduleEntrySource $source = ScheduleEntrySource::PENALARA;
 
     public function getId(): ?int
     {
@@ -203,6 +214,18 @@ class ScheduleEntry
     public function setSubjectName(?string $subjectName): static
     {
         $this->subjectName = $subjectName;
+
+        return $this;
+    }
+
+    public function getSource(): ScheduleEntrySource
+    {
+        return $this->source;
+    }
+
+    public function setSource(ScheduleEntrySource $source): static
+    {
+        $this->source = $source;
 
         return $this;
     }

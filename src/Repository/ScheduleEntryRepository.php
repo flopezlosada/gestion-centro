@@ -8,8 +8,10 @@ use App\Entity\AcademicYear;
 use App\Entity\ScheduleEntry;
 use App\Entity\User;
 use App\Enum\ScheduleActivityKind;
+use App\Enum\ScheduleEntrySource;
 use App\Enum\Weekday;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\ORM\Query\Expr\Join;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
@@ -217,11 +219,102 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
+     * The hand-marked duty cells of a course, indexed for the importer as teacher id → "weekday:slot" →
+     * row id. Read in one query (never one per teacher) so the import can tell, for every cell it is
+     * about to write, whether a person already owns that period: a duty cell is then skipped (nobody
+     * ends up in the guardia pool twice) and a lesson wins, dropping the hand-marked guardia by id.
+     * Empty when every cell in the course came from an export.
+     *
+     * @param AcademicYear $year the course whose timetable to read
+     *
+     * @return array<int, array<string, int>> teacher id → "weekday:slotIndex" → schedule entry id
+     */
+    public function manualDutyCells(AcademicYear $year): array
+    {
+        // A scalar select still hydrates an enumType column into its enum (unlike MIN() in distinctSlots,
+        // which bypasses the field type), so weekday arrives as a Weekday — read its ISO value.
+        /** @var list<array{id: int, teacherId: int, weekday: Weekday, slotIndex: int}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('s.id AS id', 'IDENTITY(s.teacher) AS teacherId', 's.weekday AS weekday', 's.slotIndex AS slotIndex')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.source = :manual')
+            ->setParameter('year', $year)
+            ->setParameter('manual', ScheduleEntrySource::MANUAL)
+            ->getQuery()
+            ->getResult();
+
+        $cells = [];
+        foreach ($rows as $row) {
+            $cells[(int) $row['teacherId']][$row['weekday']->value.':'.(int) $row['slotIndex']] = (int) $row['id'];
+        }
+
+        return $cells;
+    }
+
+    /**
+     * How many imported cells the given teachers already have in a course — what a re-import is about to
+     * replace. Feeds the preview so the equipo directivo sees "1.240 celdas sustituyen a las 1.234 que
+     * ya había" before committing, instead of uploading blind.
+     *
+     * @param AcademicYear $year     the course whose timetable to count
+     * @param list<User>   $teachers the teachers the export resolved to
+     *
+     * @return int the number of export-sourced cells those teachers hold in that course
+     */
+    public function countImportedFor(AcademicYear $year, array $teachers): int
+    {
+        if ([] === $teachers) {
+            return 0;
+        }
+
+        return (int) $this->createQueryBuilder('s')
+            ->select('COUNT(s.id)')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.teacher IN (:teachers)')
+            ->andWhere('s.source = :penalara')
+            ->setParameter('year', $year)
+            ->setParameter('teachers', $teachers)
+            ->setParameter('penalara', ScheduleEntrySource::PENALARA)
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    /**
+     * The teachers who already have any timetable cell in a course, name ascending. The importer
+     * compares this with the teachers the export resolved to, so it can report the ones who kept a
+     * timetable nobody re-imported — someone who left the centre mid-course would otherwise stay in the
+     * guardia pool for ever, since an import only ever touches the teachers it found.
+     *
+     * @param AcademicYear $year the course whose timetable to read
+     *
+     * @return User[] the teachers with at least one cell in that course
+     */
+    public function teachersWithEntries(AcademicYear $year): array
+    {
+        // Rooted on User, not on ScheduleEntry: DQL cannot select an entity reached only through a
+        // join without also selecting the FROM alias, and here the teachers are what we are after.
+        return $this->getEntityManager()->createQueryBuilder()
+            ->select('DISTINCT t')
+            ->from(User::class, 't')
+            ->join(ScheduleEntry::class, 's', Join::WITH, 's.teacher = t')
+            ->andWhere('s.academicYear = :year')
+            ->setParameter('year', $year)
+            ->orderBy('t.fullName', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * Replaces only a teacher's guardia and collaborator cells in one course, leaving every lective
      * cell untouched. This backs the manual fallback for when Peñalara imports the timetable but not
      * the guardias: the equipo directivo marks the duty slots by hand, and re-saving wipes just the
      * previously-marked duty cells (never the imported lessons) before inserting the fresh ones — the
      * delete and inserts run in one transaction so a concurrent parte read never sees neither set.
+     *
+     * The delete spans duty cells of BOTH sources on purpose: the grid the editor posts back is the
+     * whole truth about that teacher's duties, so an imported guardia the person unticked has to go,
+     * and one they left ticked is re-inserted as theirs ({@see ScheduleEntrySource::MANUAL}). Editing a
+     * teacher by hand therefore takes their guardias out of the export's reach — the screen says so.
      *
      * @param AcademicYear        $year     the course whose duty cells are replaced
      * @param User                $teacher  the teacher whose duty cells are replaced
@@ -249,28 +342,42 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
-     * Replaces the given teachers' timetable for one course with the supplied entries. Used by the
-     * importer: it wipes only the reconciled teachers' rows in that course (so unmatched teachers, and
-     * every other course, keep whatever they had) and inserts the fresh ones, making a re-import of the
-     * same course idempotent. The delete and the inserts run in one transaction, so a concurrent parte
-     * read (now reachable any time through the self-service import screen) never sees a half-replaced
-     * timetable — either the old rows or the new ones, never neither.
+     * Replaces the given teachers' IMPORTED timetable for one course with the supplied entries. Used by
+     * the importer: it wipes only the reconciled teachers' export-sourced rows in that course (so
+     * unmatched teachers, every other course, and every hand-marked guardia keep whatever they had) and
+     * inserts the fresh ones, making a re-import of the same course idempotent. The delete and the
+     * inserts run in one transaction, so a concurrent parte read (reachable any time through the
+     * self-service import screen) never sees a half-replaced timetable — either the old rows or the new
+     * ones, never neither.
      *
-     * @param AcademicYear        $year     the course whose entries are replaced
-     * @param list<User>          $teachers the teachers whose old entries in that course are cleared
-     * @param list<ScheduleEntry> $entries  the fresh entries to persist
+     * @param AcademicYear        $year          the course whose entries are replaced
+     * @param list<User>          $teachers      the teachers whose old imported entries in that course are cleared
+     * @param list<ScheduleEntry> $entries       the fresh entries to persist
+     * @param list<int>           $dropManualIds ids of hand-marked cells a new lesson lands on, cleared too
      */
-    public function replaceForTeachers(AcademicYear $year, array $teachers, array $entries): void
+    public function replaceForTeachers(AcademicYear $year, array $teachers, array $entries, array $dropManualIds = []): void
     {
         $em = $this->getEntityManager();
-        $em->wrapInTransaction(function () use ($em, $year, $teachers, $entries): void {
+        $em->wrapInTransaction(function () use ($em, $year, $teachers, $entries, $dropManualIds): void {
             if ([] !== $teachers) {
                 $this->createQueryBuilder('s')
                     ->delete()
                     ->where('s.academicYear = :year')
                     ->andWhere('s.teacher IN (:teachers)')
+                    ->andWhere('s.source = :penalara')
                     ->setParameter('year', $year)
                     ->setParameter('teachers', $teachers)
+                    ->setParameter('penalara', ScheduleEntrySource::PENALARA)
+                    ->getQuery()
+                    ->execute();
+            }
+            // A hand-marked guardia the new timetable turns into a lesson has to go: leaving it would put
+            // the teacher in the guardia pool for a period they are now teaching.
+            if ([] !== $dropManualIds) {
+                $this->createQueryBuilder('s')
+                    ->delete()
+                    ->where('s.id IN (:ids)')
+                    ->setParameter('ids', $dropManualIds)
                     ->getQuery()
                     ->execute();
             }
