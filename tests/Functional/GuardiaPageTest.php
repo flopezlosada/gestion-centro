@@ -355,6 +355,64 @@ final class GuardiaPageTest extends WebTestCase
     }
 
     /**
+     * The sheet is submitted from a page rendered earlier, so the route re-checks what it offered. A
+     * teacher who is absent that period is refused even though the form carries their id: otherwise the
+     * cover would be "covered" by someone who is not at the centre.
+     */
+    public function testAssigningATeacherWhoIsAbsentThatPeriodIsRefused(): void
+    {
+        $this->login();
+        $year = $this->academicYear('2025-2026');
+        $this->em->persist($year);
+        $date = new \DateTimeImmutable('2025-11-10');
+        // On call that period, but also absent that period: their own absence makes them ineligible.
+        $onCallButAbsent = $this->user('Guardia Ausente', 'ga@centro.test');
+        $this->guardiaEntry($year, $onCallButAbsent, $date);
+        $this->cover($date, 0, $onCallButAbsent, null, group: '2ºB');
+        $target = $this->cover($date, 0, $this->user('Ausente Siete', 'a7@centro.test'), null);
+        $this->em->flush();
+        $id = (int) $target->getId();
+
+        $this->client->request('GET', '/guardias?date='.$date->format('Y-m-d'));
+        $token = $this->client->getContainer()->get('security.csrf.token_manager')->getToken('guardia_cover_assign'.$id)->getValue();
+        $this->client->request('POST', '/guardias/'.$id.'/asignar', ['_token' => $token, 'guardia' => (string) $onCallButAbsent->getId()]);
+
+        self::assertResponseRedirects();
+        self::assertNull($this->reload($id)->getAssignedGuardia(), 'no se asigna a quien falta esa hora');
+        // Se comprueba el motivo del rechazo, no solo que no se asignara: sin esto, un return temprano
+        // por otra causa (CSRF, curso sin horario) dejaría el test verde por el motivo equivocado.
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('.flash.error', 'ya no puede cubrir esta hora');
+    }
+
+    /**
+     * Reassigning an already covered line is an edit, and an edit records a reason: the quick sheet
+     * refuses it and points at the modify screen, so it cannot be used to bypass the audit trail.
+     */
+    public function testAssigningOverAnAlreadyCoveredLineIsRefused(): void
+    {
+        $this->login();
+        $year = $this->academicYear('2025-2026');
+        $this->em->persist($year);
+        $date = new \DateTimeImmutable('2025-11-10');
+        $already = $this->user('Ya Cubre', 'ya@centro.test');
+        $other = $this->user('Otro Libre', 'otro@centro.test');
+        $this->guardiaEntry($year, $other, $date);
+        $cover = $this->cover($date, 0, $this->user('Ausente Ocho', 'a8@centro.test'), $already);
+        $this->em->flush();
+        $id = (int) $cover->getId();
+
+        $this->client->request('GET', '/guardias?date='.$date->format('Y-m-d'));
+        $token = $this->client->getContainer()->get('security.csrf.token_manager')->getToken('guardia_cover_assign'.$id)->getValue();
+        $this->client->request('POST', '/guardias/'.$id.'/asignar', ['_token' => $token, 'guardia' => (string) $other->getId()]);
+
+        self::assertResponseRedirects();
+        self::assertSame($already->getId(), $this->reload($id)->getAssignedGuardia()?->getId(), 'la asignación previa no se sobrescribe sin motivo');
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('.flash.error', 'ya está cubierta');
+    }
+
+    /**
      * A change without a reason is refused and leaves the cover untouched: the motivo is the record of
      * why a manual change was made.
      */

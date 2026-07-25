@@ -396,7 +396,12 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 500; color: var(--te
 .page-head .lead { color: var(--text-muted); font-size: 13.5px; line-height: 1.5; margin: 0; max-width: 62ch; }
 .page-head-actions, .page-head__actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
-@media (min-width: 900px) {
+/* 761px, no 900: la cabecera es parte del MARCO de la pantalla, y el marco cambia a 760px (donde el
+   sidebar deja de ser barra superior, ver el @media de .layout). Abrirla a 900 dejaba un hueco de
+   761-899px —tablet en vertical— con sidebar de escritorio y cabecera apilada como en móvil. El
+   contenido (tablas anchas, 2 columnas) sí espera a 900px, que es criterio distinto: ahí manda el
+   espacio que necesitan las columnas, no el marco. */
+@media (min-width: 761px) {
     .page-head { flex-direction: row; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 26px; }
     .page-head h1 { font-size: 32px; }
     .page-head-actions, .page-head__actions { flex: none; gap: 10px; }
@@ -1221,8 +1226,17 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
     .page { padding: 22px 16px; }
     /* El apilado ya es el estado base de .page-head; aquí solo el tamaño de móvil del handoff. */
     .page-head h1 { font-size: 24px; }
-    /* Tablas: en móvil cada fila se apila como tarjeta "Etiqueta: valor". Las etiquetas
-       las inyecta responsive-tables.js leyendo las cabeceras (cero ediciones de plantilla). */
+}
+
+/* =============================================================================
+   Tablas apiladas: cada fila como tarjeta "Etiqueta: valor". Las etiquetas las inyecta
+   responsive-tables.js leyendo las cabeceras (cero ediciones de plantilla).
+
+   Corta a 899px, NO a 760 como el resto del shell, y es a propósito: el marco (sidebar, barra
+   inferior) cambia a 760, pero una tabla de cinco columnas no cabe en una tablet en vertical. Con el
+   corte en 760 se desbordaba por la derecha entre 761 y 899px, cortando la última columna.
+   ============================================================================= */
+@media (max-width: 899px) {
     .card table { min-width: 0; }
     .card thead { display: none; }
     .card table, .card tbody, .card tbody tr { display: block; }
@@ -2861,6 +2875,11 @@ tr.is-not-covered { background: var(--danger-weak); }
 
 /* ---- Panel de ausencias ---- */
 .parte-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+/* Ese overflow:hidden es lo que mantiene la tabla dentro de las esquinas redondeadas, pero también
+   recorta la hoja de asignación de escritorio, que es absoluta y vive dentro del panel: al abrirla en
+   las últimas filas (o en un parte de una sola línea) quedaba invisible. Se libera SOLO mientras hay
+   una hoja abierta; el resto del tiempo manda el redondeo. */
+.parte-panel:has(.assignsheet[open]) { overflow: visible; }
 .parte-panel__head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 18px 18px 14px; }
 .parte-panel__titles { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .parte-panel__title { font-family: var(--font-display); font-weight: 500; font-size: 20px; margin: 0; }
@@ -2957,6 +2976,15 @@ tr.is-not-covered { background: var(--danger-weak); }
     .parte-table tbody tr:hover { background: color-mix(in srgb, var(--surface-sunken) 60%, var(--surface)); }
     .parte-table tbody tr.is-uncovered td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
     .parte-table td { padding-left: 18px; }
+    /* La hoja dentro de una celda: el panel flota sobre la tabla en vez de estirar la fila, que
+       empujaría todas las demás al abrirse. */
+    .parte-table td { position: relative; }
+    .parte-table .assignsheet { margin-top: 0; }
+    .parte-table .assignsheet__toggle { padding: 7px 12px; font-size: 12.5px; border-radius: var(--radius-sm); }
+    .parte-table .assignsheet__panel {
+        position: absolute; z-index: 20; top: calc(100% + 6px); right: 0;
+        width: 340px; max-height: 60vh; overflow-y: auto;
+    }
     .parte-who { display: inline-flex; align-items: center; gap: 7px; }
     .parte-who__avatar { flex: none; width: 22px; height: 22px; border-radius: 999px; background: var(--accent-weak); color: var(--accent); display: grid; place-items: center; font-size: 9px; font-weight: 700; }
 }

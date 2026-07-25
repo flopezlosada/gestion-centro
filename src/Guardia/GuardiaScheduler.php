@@ -101,14 +101,37 @@ final class GuardiaScheduler
     }
 
     /**
-     * Assigns one teacher to one cover, as the automatic split does: no change reason is recorded
-     * (this is the initial assignment, not an edit) and the substitute is notified.
+     * Assigns one teacher to one still-uncovered parte line, as the automatic split does: no change
+     * reason is recorded (this is the initial assignment, not an edit) and the substitute is notified.
      *
-     * @param GuardiaCover $cover   the parte line to cover
-     * @param User         $teacher the teacher who will cover it
+     * Both refusals below are the point of this method rather than a formality, because the caller
+     * takes the teacher from a submitted form: the page was rendered from a pool that was correct then,
+     * and by the time the coordinator clicks, that teacher may have been marked absent or given another
+     * group, or the cover may already have been filled by "repartir" in another tab.
+     *
+     * @param AcademicYear       $year    the course whose timetable supplies the guardia pool
+     * @param GuardiaCover       $cover   the parte line to cover, which must still be uncovered
+     * @param User               $teacher the teacher who will cover it, who must still be available
+     * @param list<GuardiaCover> $parte   the parte lines for that date and period
+     *
+     * @throws AssignmentRefused when the cover is already assigned or the teacher is no longer eligible
      */
-    public function assign(GuardiaCover $cover, User $teacher): void
+    public function assign(AcademicYear $year, GuardiaCover $cover, User $teacher, array $parte): void
     {
+        if (null !== $cover->getAssignedGuardia()) {
+            // Changing an assignment already made is an edit, and an edit carries a mandatory reason
+            // into the audit log — that is what the modify screen is for.
+            throw AssignmentRefused::alreadyCovered($cover);
+        }
+
+        $elegibles = array_map(
+            static fn (GuardiaCandidate $c): ?int => $c->teacher->getId(),
+            $this->availableFor($year, $cover->getDate(), $cover->getSlotIndex(), $parte),
+        );
+        if (!\in_array($teacher->getId(), $elegibles, true)) {
+            throw AssignmentRefused::notAvailable($teacher);
+        }
+
         $cover->setAssignedGuardia($teacher);
         $this->em->flush();
         $this->notifier->notifyAssigned($cover);
