@@ -102,7 +102,9 @@ final class DesignPagesTest extends WebTestCase
         $this->client->request('GET', '/tareas');
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('table', 'Memoria del departamento');
+        // Tras el rediseño la lista de escritorio ya no es un <table>, sino una rejilla de filas .trow
+        // dentro de .tasks-table (en móvil se sirve la misma lista como tarjetas).
+        self::assertSelectorTextContains('.tasks-table', 'Memoria del departamento');
     }
 
     public function testAdminSeesActivityHistoryOnTaskShow(): void
@@ -113,8 +115,10 @@ final class DesignPagesTest extends WebTestCase
         $this->client->request('GET', '/tareas/'.$s['task']->getId());
 
         self::assertResponseIsSuccessful();
-        self::assertStringContainsString('Histórico de actividad', (string) $this->client->getResponse()->getContent());
+        // El rótulo del bloque pasó a ser "Actividad", pero assertar el copy es frágil: lo que importa
+        // es que el admin recibe el histórico con al menos una entrada renderizada.
         self::assertSelectorExists('.obj-timeline');
+        self::assertSelectorExists('.obj-timeline__item');
     }
 
     public function testOwnerSeesActivityHistory(): void
@@ -177,7 +181,9 @@ final class DesignPagesTest extends WebTestCase
 
         $crawler = $this->client->request('GET', '/tareas/'.$s['task']->getId());
         // Entregar adjunta la referencia del documento en el mismo paso.
-        $form = $crawler->filter('.task-actions form')->first()->form();
+        // La barra de acciones se llama .actionbar tras el rediseño, y cada transición tiene su propio
+        // form: se apunta al de "submit" en vez de al primero, que depende del orden de las acciones.
+        $form = $crawler->filter('form.actionbar__form--submit')->form();
         $form['reference'] = 'https://cloud.educa.madrid.org/memoria';
         $this->client->submit($form);
 
