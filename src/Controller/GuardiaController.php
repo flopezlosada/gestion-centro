@@ -615,6 +615,8 @@ final class GuardiaController extends AbstractController
             'hasTimetable' => $year instanceof AcademicYear,
             'allTeachers' => $canManage ? $users->findBy([], ['fullName' => 'ASC']) : [$user],
             'selectedTeacher' => $selected?->getId(),
+            // Name of the chosen teacher, so the picker can show their monogram next to the select.
+            'selectedTeacherName' => $selected?->getFullName(),
             'dayClasses' => $dayClasses,
         ]);
     }

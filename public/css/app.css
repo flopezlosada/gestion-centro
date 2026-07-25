@@ -986,10 +986,12 @@ input[type="email"], input[type="text"], select, textarea {
 .cdate__day.is-selected { background: var(--accent); color: var(--on-accent); }
 .cdate__day:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 
-/* Errores de formulario de Symfony: se renderizan como <ul><li>. Los estilamos
-   nosotros (los tests dependen del selector .form-row ul li / ul li). */
-.form-row ul, form > ul { list-style: none; margin: 6px 0 0; padding: 0; }
-.form-row ul li, form > ul li { color: var(--danger-text); font-size: 13px; }
+/* Errores de formulario de Symfony: form_errors los renderiza como <ul><li> SIN clase (no hay tema
+   propio de formulario). El :not([class]) es lo que impide que esto pinte de rojo cualquier lista que
+   una plantilla ponga dentro de un form con su propia clase — pasaba con las horas de "apuntar
+   ausencia", que salían con el grupo en rojo sin razón. */
+.form-row ul:not([class]), form > ul:not([class]) { list-style: none; margin: 6px 0 0; padding: 0; }
+.form-row ul:not([class]) li, form > ul:not([class]) li { color: var(--danger-text); font-size: 13px; }
 .form-row input[aria-invalid="true"], .form-row select[aria-invalid="true"] { border-color: var(--danger); }
 
 /* Bloque de error global del formulario (también usado en login). */
@@ -1118,7 +1120,11 @@ input[type="email"], input[type="text"], select, textarea {
        'clip' no fuerza scroll en el otro eje (a diferencia de hidden), así no rompe sticky. */
     html, body { overflow-x: clip; }
     /* minmax(0,1fr): la columna del grid no puede exceder el viewport. */
-    .layout { grid-template-columns: minmax(0, 1fr); }
+    /* grid-template-rows es necesario, no cosmético: .layout lleva min-height:100vh y, con filas
+       implícitas, el reparto por defecto estiraba la barra superior para llenar el hueco de una
+       página corta (se veía como una franja vacía de 100px+ bajo el logo). La barra toma su alto y
+       el contenido se queda el resto. */
+    .layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
     .main { overflow-x: clip; }
     /* La barra lateral pasa a barra superior; la navegación entra como cajón lateral
        desde la izquierda, superpuesta sobre el contenido, con fondo oscurecido. */
@@ -2909,3 +2915,73 @@ tr.is-not-covered { background: var(--danger-weak); }
     .parte-who { display: inline-flex; align-items: center; gap: 7px; }
     .parte-who__avatar { flex: none; width: 22px; height: 22px; border-radius: 999px; background: var(--accent-weak); color: var(--accent); display: grid; place-items: center; font-size: 9px; font-weight: 700; }
 }
+
+/* =============================================================================
+   Apuntar ausencia (handoff 10a) — pantalla empujada: quién y qué día arriba,
+   sus clases como tarjetas conmutables (marcada = falta esa hora).
+   ============================================================================= */
+.absence-picker { display: grid; gap: 16px; margin-bottom: 22px; }
+.pickfield { display: grid; gap: 8px; }
+.pickrow {
+    display: flex; align-items: center; gap: 11px; background: var(--surface-alt);
+    border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px;
+}
+.pickrow:hover { border-color: var(--border-strong); }
+.pickrow__avatar {
+    flex: none; width: 32px; height: 32px; border-radius: 999px; background: var(--accent-weak);
+    color: var(--accent); display: grid; place-items: center; font-size: 11px; font-weight: 700;
+}
+.pickrow__icon { flex: none; width: 20px; height: 20px; color: var(--accent); }
+.pickrow__value { flex: 1; font-size: 14.5px; }
+/* El control va desnudo dentro de la tarjeta: el marco lo pone .pickrow. */
+.pickrow--select select, .pickrow--select input[type="date"] {
+    flex: 1; min-width: 0; border: 0; background: transparent; padding: 0;
+    font-family: inherit; font-size: 14.5px; color: var(--text);
+}
+.pickrow--select input[type="date"] { font-family: var(--font-mono); font-size: 14px; }
+.pickrow--select select:focus-visible, .pickrow--select input:focus-visible { outline: none; }
+.pickrow:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
+
+.classes-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 22px 0 6px; }
+.classes-head__title { font-family: var(--font-display); font-weight: 500; font-size: 19px; margin: 0; }
+.classes-help { font-size: 12.5px; line-height: 1.5; color: var(--text-faint); margin: 0 0 14px; }
+
+/* ---- Tarjeta de clase: marcada = falta. El estado apagado se resuelve con :has,
+        así que desmarcar responde sin una línea de JS. ---- */
+.classcards { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.classcard { background: var(--surface-alt); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+.classcard__pick { display: flex; align-items: center; gap: 12px; padding: 14px 15px; cursor: pointer; }
+.classcard__pick input[type="checkbox"] { position: absolute; opacity: 0; width: 0; height: 0; }
+.classcard__box {
+    flex: none; width: 24px; height: 24px; border-radius: 7px; background: var(--accent);
+    color: var(--on-accent); display: grid; place-items: center;
+}
+.classcard__box svg { width: 15px; height: 15px; }
+.classcard__pick input:focus-visible + .classcard__box { outline: 2px solid var(--focus); outline-offset: 2px; }
+.classcard__what { flex: 1; min-width: 0; }
+.classcard__time { display: block; font-family: var(--font-mono); font-weight: 600; font-size: 13px; color: var(--accent); }
+.classcard__group { display: block; font-size: 13px; margin-top: 2px; }
+.classcard__off { display: none; font-size: 13px; color: var(--text-faint); }
+.classcard__addtask {
+    display: block; border-top: 1px solid var(--separator); padding: 11px 15px; cursor: pointer;
+    font-weight: 600; font-size: 13px; color: var(--success); list-style: none;
+}
+.classcard__addtask::-webkit-details-marker { display: none; }
+.classcard__addtask::before { content: '+ '; }
+.classcard__task[open] .classcard__addtask::before { content: '− '; }
+.classcard__taskbody { padding: 0 15px 14px; display: grid; gap: 9px; }
+.classcard__file { display: grid; gap: 5px; }
+
+/* Hora desmarcada: no falta. Se apaga la tarjeta, el borde pasa a discontinuo y aparece "sí estará". */
+.classcard:has(input[type="checkbox"]:not(:checked)) {
+    background: var(--surface-sunken); border-style: dashed; border-color: var(--border-strong);
+}
+.classcard:has(input[type="checkbox"]:not(:checked)) .classcard__box { background: transparent; border: 2px solid var(--border-strong); color: transparent; }
+.classcard:has(input[type="checkbox"]:not(:checked)) .classcard__time,
+.classcard:has(input[type="checkbox"]:not(:checked)) .classcard__group { color: var(--text-faint); }
+.classcard:has(input[type="checkbox"]:not(:checked)) .classcard__group strong { font-weight: 500; }
+.classcard:has(input[type="checkbox"]:not(:checked)) .classcard__off { display: inline; }
+/* Sin falta no hay guardia que cubrir, así que la tarea de esa hora no procede. */
+.classcard:has(input[type="checkbox"]:not(:checked)) .classcard__task { display: none; }
+
+.field--reason { margin-top: 22px; }

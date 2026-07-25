@@ -4,15 +4,19 @@
 
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_index') }}">Guardias</a><span class="sep">/</span>Apuntar ausencia{% endblock %}
 
+{# Pantalla empujada: fuera la barra inferior, la salida es "Cancelar" (handoff 10a). #}
+{% block bottomnav %}{% endblock %}
+
 {% block body %}
-    <div class="page-head">
-        <div>
-            <h1>Apuntar ausencia</h1>
-            <p class="lead">Elige el profesor y el día; marca las horas en las que falta y deja una tarea para cada grupo. El sistema genera y reparte las guardias.</p>
-        </div>
+    {% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
+
+    <div class="formtop">
+        <a class="formtop__cancel" href="{{ path('guardia_index', { date: date|date('Y-m-d', false) }) }}">Cancelar</a>
+        <span class="formtop__title">Apuntar ausencia</span>
+        <span class="formtop__spacer"></span>
     </div>
 
-    <div class="card">
+    <div class="formscreen">
         {% if not hasTimetable %}
             <div class="empty-state">
                 <h2>No hay horario importado para el curso {{ schoolYear }}</h2>
@@ -24,23 +28,32 @@
         {% else %}
             {# Paso 1 · quién y qué día. Cambiar cualquiera recarga la lista de clases (GET). #}
             <form method="get" action="{{ path('guardia_absence_new') }}" class="absence-picker">
-                <div class="field">
-                    <label for="absent_teacher">Profesor ausente</label>
+                <div class="pickfield">
+                    <label class="eyebrow" for="absent_teacher">Profesor ausente</label>
                     {% if allTeachers|length == 1 %}
                         <input type="hidden" name="teacher" value="{{ allTeachers[0].id }}">
-                        <p class="pill-value">{{ allTeachers[0].fullName }}</p>
+                        <div class="pickrow">
+                            <span class="pickrow__avatar" aria-hidden="true">{{ allTeachers[0].fullName|initials }}</span>
+                            <span class="pickrow__value">{{ allTeachers[0].fullName }}</span>
+                        </div>
                     {% else %}
-                        <select id="absent_teacher" name="teacher" onchange="this.form.submit()">
-                            <option value="">Elige un profesor…</option>
-                            {% for teacher in allTeachers %}
-                                <option value="{{ teacher.id }}" {{ teacher.id == selectedTeacher ? 'selected' }}>{{ teacher.fullName }}</option>
-                            {% endfor %}
-                        </select>
+                        <div class="pickrow pickrow--select">
+                            {% if selectedTeacherName %}<span class="pickrow__avatar" aria-hidden="true">{{ selectedTeacherName|initials }}</span>{% endif %}
+                            <select id="absent_teacher" name="teacher" onchange="this.form.submit()">
+                                <option value="">Elige un profesor…</option>
+                                {% for teacher in allTeachers %}
+                                    <option value="{{ teacher.id }}" {{ teacher.id == selectedTeacher ? 'selected' }}>{{ teacher.fullName }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
                     {% endif %}
                 </div>
-                <div class="field">
-                    <label for="absence_date">Día</label>
-                    <input type="date" id="absence_date" name="date" value="{{ date|date('Y-m-d', false) }}" onchange="this.form.submit()">
+                <div class="pickfield">
+                    <label class="eyebrow" for="absence_date">Día</label>
+                    <div class="pickrow pickrow--select">
+                        <svg class="pickrow__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 11h18"/></svg>
+                        <input type="date" id="absence_date" name="date" value="{{ date|date('Y-m-d', false) }}" onchange="this.form.submit()">
+                    </div>
                 </div>
                 <noscript><button type="submit" class="btn secondary">Ver clases</button></noscript>
             </form>
@@ -54,59 +67,69 @@
                     <p>Ese día no tiene ninguna clase lectiva, así que no hay guardias que generar. Prueba con otro día.</p>
                 </div>
             {% else %}
-                <form method="post" action="{{ path('guardia_absence_create') }}" class="absence-form" enctype="multipart/form-data">
+                <form method="post" action="{{ path('guardia_absence_create') }}" class="absence-form" enctype="multipart/form-data" data-absence-form>
                     <input type="hidden" name="_token" value="{{ csrf_token('guardia_absence_create') }}">
                     <input type="hidden" name="absent_teacher" value="{{ selectedTeacher }}">
                     <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
 
-                    <div class="page-head step-head"><div>
-                        <h2>Clases del {{ weekday.label|lower }} {{ date|date('d/m/Y', false) }}</h2>
-                        <p class="lead">Todas marcadas = día entero. Desmarca las horas en las que sí estará. Para cada grupo puedes adjuntar el documento con la tarea y añadir una descripción; los verá el profesor de guardia.</p>
-                    </div></div>
+                    <div class="classes-head">
+                        <h2 class="classes-head__title">Clases del {{ dias[date|date('N', false)]|lower }} {{ date|date('d/m', false) }}</h2>
+                        {# Sin JS queda el total, que es cierto de partida (todas marcadas); con JS cuenta las marcadas. #}
+                        <span class="badge badge--ok" data-absence-count>falta {{ dayClasses|length }} de {{ dayClasses|length }}</span>
+                    </div>
+                    <p class="classes-help">Marcada = falta esa hora. Desmárcala si sí estará. En cada hora que falte puedes adjuntar la tarea.</p>
 
-                    <ul class="class-list">
+                    <ul class="classcards">
                         {% for c in dayClasses %}
                             {% set label = c.groupCount > 1 ? (c.room ?? 'la actividad') : (c.groups|first|default('el grupo')) %}
-                            <li class="class-row">
-                                <label class="class-row__pick">
+                            <li class="classcard">
+                                <label class="classcard__pick">
                                     <input type="checkbox" name="slots[]" value="{{ c.slotIndex }}" checked>
-                                    <span class="class-row__time mono">{{ c.startsAt|date('H:i', false) }}–{{ c.endsAt|date('H:i', false) }}</span>
-                                    <span class="class-row__group">
-                                        {% if c.groupCount > 1 %}
-                                            {# Actividad multigrupo (p.ej. Salón de Actos): el aula es la referencia, los grupos van listados. #}
-                                            <strong>{{ c.room ?? 'Actividad de nivel' }}</strong>
-                                            <span class="badge badge--muted">{{ c.groupCount }} grupos</span>
-                                            <span class="muted"> · {{ c.groups|join(', ') }}</span>
-                                            {% if c.subjectName %}<span class="muted"> · {{ c.subjectName }}</span>{% endif %}
-                                        {% else %}
-                                            <strong>{{ c.groups|first|default('—') }}</strong>
-                                            {% if c.subjectName %}<span class="muted"> · {{ c.subjectName }}</span>{% endif %}
-                                            {% if c.room %}<span class="muted mono"> · {{ c.room }}</span>{% endif %}
-                                        {% endif %}
+                                    <span class="classcard__box" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-11"/></svg>
+                                    </span>
+                                    <span class="classcard__what">
+                                        <span class="classcard__time">{{ c.startsAt|date('H:i', false) }}–{{ c.endsAt|date('H:i', false) }}</span>
+                                        <span class="classcard__group">
+                                            {% if c.groupCount > 1 %}
+                                                {# Actividad multigrupo (p.ej. Salón de Actos): el aula es la referencia, los grupos van listados. #}
+                                                <strong>{{ c.room ?? 'Actividad de nivel' }}</strong>
+                                                <span class="badge badge--muted">{{ c.groupCount }} grupos</span>
+                                                <span class="muted"> · {{ c.groups|join(', ') }}</span>
+                                                {% if c.subjectName %}<span class="muted"> · {{ c.subjectName }}</span>{% endif %}
+                                            {% else %}
+                                                <strong>{{ c.groups|first|default('—') }}</strong>
+                                                {% if c.subjectName %}<span class="muted"> · {{ c.subjectName }}</span>{% endif %}
+                                                {% if c.room %}<span class="muted mono"> · {{ c.room }}</span>{% endif %}
+                                            {% endif %}
+                                        </span>
+                                        <span class="classcard__off">sí estará</span>
                                     </span>
                                 </label>
-                                <div class="class-row__task">
-                                    <label class="class-row__file">
-                                        <span class="field-label">Documento de tarea</span>
-                                        <input type="file" name="documents[{{ c.slotIndex }}]">
-                                    </label>
-                                    <textarea name="description[{{ c.slotIndex }}]" rows="2" maxlength="1000"
-                                              placeholder="Descripción para {{ label }} (opcional): lo que no venga en el documento — página, ejercicios, dónde está el examen…"></textarea>
-                                </div>
+                                <details class="classcard__task">
+                                    <summary class="classcard__addtask">Añadir tarea para el grupo</summary>
+                                    <div class="classcard__taskbody">
+                                        <label class="classcard__file">
+                                            <span class="field-label">Documento de tarea</span>
+                                            <input type="file" name="documents[{{ c.slotIndex }}]">
+                                        </label>
+                                        <textarea name="description[{{ c.slotIndex }}]" rows="2" maxlength="1000"
+                                                  placeholder="Descripción para {{ label }} (opcional): lo que no venga en el documento — página, ejercicios, dónde está el examen…"></textarea>
+                                    </div>
+                                </details>
                             </li>
                         {% endfor %}
                     </ul>
 
-                    <div class="field field--reason">
-                        <label for="absence_reason">Motivo de la ausencia <span class="muted">(privado)</span></label>
+                    <div class="form-row field--reason">
+                        <label class="eyebrow" for="absence_reason">Motivo de la ausencia · privado</label>
                         <textarea id="absence_reason" name="reason" rows="2" maxlength="500"
                                   placeholder="Solo lo veréis el profesor ausente y la coordinación de guardias. El profesor de guardia no lo ve."></textarea>
                         <p class="field-help">Opcional. Queda guardado con la ausencia y no se muestra a quien cubre la clase.</p>
                     </div>
 
-                    <div class="form-actions">
-                        <button type="submit" class="btn">Apuntar ausencia</button>
-                        <a class="btn secondary" href="{{ path('guardia_index', { date: date|date('Y-m-d', false) }) }}">Cancelar</a>
+                    <div class="stackform__foot">
+                        <button type="submit" class="btn-lg btn-lg--primary">Generar y repartir guardias</button>
                     </div>
                 </form>
             {% endif %}
