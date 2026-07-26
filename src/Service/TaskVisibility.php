@@ -80,9 +80,11 @@ final class TaskVisibility
         }
 
         // A department head sees EVERY task of their department, delegated or not (delegation never
-        // moves a task out of its department).
+        // moves a task out of its department). Compare by object identity (like isOwnedBy), not by id:
+        // the identity map makes both sides the same instance, and it does not trip over two null ids
+        // (an unsaved task's absent department vs the commanded one) collapsing to "equal".
         $commanded = $this->hierarchy->commandedDepartment($user);
-        if (null !== $commanded && $this->departmentOf($task)?->getId() === $commanded->getId()) {
+        if (null !== $commanded && $this->departmentOf($task) === $commanded) {
             return true;
         }
 
