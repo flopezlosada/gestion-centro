@@ -5,7 +5,11 @@
 
 {# Una tarjeta de aviso: barra verde a la izquierda si no leído, icono por tipo, título + NUEVO, cuerpo y hora. #}
 {% macro notice(n, today) %}
-    {% set link = n.task ? path('task_show', { id: n.task.id }) : null %}
+    {#- El destino sale de la MISMA fuente que la notificación push (App\Support\NotificationLink), así
+        la fila y el aviso del móvil nunca llevan a sitios distintos. Un aviso sin mejor destino apunta
+        a esta propia bandeja: ahí no se enlaza, que no tiene sentido enlazar a donde ya estás. -#}
+    {% set link = notification_path(n) %}
+    {% set link = link == path('notification_index') ? null : link %}
     <{{ link ? 'a' : 'div' }} class="notice{{ n.read ? '' : ' is-unread' }}"{% if link %} href="{{ link }}"{% endif %}>
         <span class="notice__icon notice__icon--{{ n.task ? 'task' : 'bell' }}" aria-hidden="true">
             {% if n.task %}
