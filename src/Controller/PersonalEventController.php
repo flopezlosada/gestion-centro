@@ -10,6 +10,7 @@ use App\Entity\User;
 use App\Form\PersonalEventFormData;
 use App\Form\PersonalEventFormType;
 use App\Repository\PersonalEventRepository;
+use App\Support\TickOutcome;
 use App\Util\CalendarDate;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -110,12 +111,12 @@ final class PersonalEventController extends AbstractController
     }
 
     /**
-     * One-click "done" toggle on a checklist row. Only its owner may do it. Always returns to Inicio,
-     * the block that owns "lo de hoy" and where the tick lives. Route-based (never the Referer) to rule
-     * out an open redirect.
+     * One-click "done" toggle on a checklist row. Only its owner may do it. Returns to the surface the
+     * tick was on ({@see TickOutcome}) — Inicio or the calendar day — never to the Referer, so no open
+     * redirect is possible.
      */
     #[Route('/agenda/{id}/hecho', name: 'personal_event_toggle_done', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function toggleDone(PersonalEvent $event, Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager): Response
+    public function toggleDone(PersonalEvent $event, Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager, TickOutcome $tick): Response
     {
         if (!$this->isCsrfTokenValid('personal_event_done'.$event->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
@@ -125,7 +126,9 @@ final class PersonalEventController extends AbstractController
         $event->setDone(!$event->isDone());
         $entityManager->flush();
 
-        return $this->redirectToRoute('app_homepage');
+        [$route, $parameters] = $tick->routeFor($request);
+
+        return $this->redirectToRoute($route, $parameters);
     }
 
     /**

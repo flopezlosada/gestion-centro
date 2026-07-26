@@ -38,12 +38,13 @@
             {% endfor %}
             {# canWork calculado en el cuerpo (aquí `is_granted`/`app` sí están disponibles) y pasado
                al macro: mismo criterio que TaskController::canWorkOn (admin o dueño de la tarea). #}
+            {# `day.date` viaja en el POST del tick para volver a ESTE día y no a Inicio (TickOutcome). #}
             {% for task in day.tasks %}
-                {{ taskUi.agenda_item(task, is_granted('ROLE_ADMIN') or task.isOwnedBy(app.user)) }}
+                {{ taskUi.agenda_item(task, is_granted('ROLE_ADMIN') or task.isOwnedBy(app.user), day.date) }}
             {% endfor %}
             {# Los eventos personales son privados del usuario; solo llegan aquí los suyos. #}
             {% for event in day.events %}
-                {{ taskUi.event_item(event) }}
+                {{ taskUi.event_item(event, day.date) }}
             {% endfor %}
         </ol>
     {% endif %}
