@@ -52,6 +52,11 @@
                         <a href="{{ path('admin_timetable_import') }}" class="{{ route starts with 'admin_timetable_' ? 'is-active' }}">Horario (Peñalara)</a>
                         <a href="{{ path('admin_non_lective_day_index') }}" class="{{ route starts with 'admin_non_lective_day_' ? 'is-active' }}">Días no lectivos</a>
                         <a href="{{ path('admin_event_category_index') }}" class="{{ route starts with 'admin_event_category_' ? 'is-active' }}">Categorías de evento</a>
+                        {# Quién puede entrar en la aplicación: reservado a administradores, más
+                           estrecho que el resto de /admin, porque es el interruptor de la puerta. #}
+                        {% if is_granted('ROLE_ADMIN') %}
+                            <a href="{{ path('admin_access_index') }}" class="{{ route starts with 'admin_access_' ? 'is-active' }}">Acceso</a>
+                        {% endif %}
                     </div>
                 {% endif %}
 

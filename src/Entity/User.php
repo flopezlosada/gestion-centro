@@ -8,6 +8,7 @@ use App\Contract\Auditable;
 use App\Repository\UserRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -44,6 +45,23 @@ class User implements UserInterface, Auditable
 
     #[ORM\Column]
     private bool $active = true;
+
+    /**
+     * Whether this person may sign in while sign-in is restricted to a reduced group (see
+     * {@see \App\Service\AppSettings::isLoginOpen()}). Ignored while sign-in is open, so it is the
+     * roll-out list, not a second allow-list: it never takes access away from anybody.
+     */
+    #[ORM\Column(name: 'early_access', options: ['default' => false])]
+    private bool $earlyAccess = false;
+
+    /**
+     * When this person's access was last changed (activated/deactivated, early access granted or
+     * withdrawn). Compared against the session's creation time to expel someone whose access was
+     * revoked while they were already inside; see
+     * {@see \App\EventSubscriber\AccessRevocationSubscriber}. Null until the first change.
+     */
+    #[ORM\Column(name: 'access_changed_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $accessChangedAt = null;
 
     /**
      * The teacher's stable code in Peñalara GHC (the resolved timetable's {@code X_EMPLEADO}). Set
@@ -134,9 +152,44 @@ class User implements UserInterface, Auditable
 
     public function setActive(bool $active): static
     {
+        $this->stampAccessChange($active !== $this->active);
         $this->active = $active;
 
         return $this;
+    }
+
+    public function hasEarlyAccess(): bool
+    {
+        return $this->earlyAccess;
+    }
+
+    public function setEarlyAccess(bool $earlyAccess): static
+    {
+        $this->stampAccessChange($earlyAccess !== $this->earlyAccess);
+        $this->earlyAccess = $earlyAccess;
+
+        return $this;
+    }
+
+    public function getAccessChangedAt(): ?\DateTimeImmutable
+    {
+        return $this->accessChangedAt;
+    }
+
+    /**
+     * Records that the person's access was just changed, so any session opened before this moment
+     * can be re-checked and dropped. Kept inside the setters rather than left to each caller: the
+     * timestamp is an invariant of "access changed", and a caller that forgot to set it would leave
+     * a revoked user quietly browsing on.
+     *
+     * @param bool $changed whether the setter actually changed the value (a no-op write must not
+     *                      invalidate anyone's session)
+     */
+    private function stampAccessChange(bool $changed): void
+    {
+        if ($changed) {
+            $this->accessChangedAt = new \DateTimeImmutable();
+        }
     }
 
     /**

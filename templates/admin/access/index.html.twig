@@ -1,0 +1,96 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}Acceso{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Acceso
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Administración</p>
+            <h1>Acceso a la aplicación</h1>
+            <p class="lead">Quién puede entrar ahora mismo. Sirve para abrir la aplicación por fases: primero un grupo reducido que la prueba, y cuando esté madura, todo el claustro.</p>
+        </div>
+    </div>
+
+    <form method="post" action="{{ path('admin_access_save') }}">
+        <input type="hidden" name="_token" value="{{ csrf_token('access_save') }}">
+
+        <div class="card">
+            <div class="switches">
+                {{ f.checkbox_switch(
+                    'login_open',
+                    loginOpen,
+                    'Acceso abierto a todo el claustro',
+                    'Con el interruptor apagado solo entran las personas marcadas abajo (y quien administre). El resto ve un aviso al intentar entrar.'
+                ) }}
+            </div>
+
+            {% if loginOpen %}
+                <div class="callout" role="note">
+                    El acceso está <strong>abierto</strong>: entra cualquiera que esté dado de alta y con la cuenta activa. La lista de abajo no se aplica, pero se guarda para cuando vuelvas a cerrarlo.
+                </div>
+            {% else %}
+                <div class="callout callout--warning" role="note">
+                    El acceso está <strong>cerrado</strong>: pueden entrar {{ allowedNow }} persona{{ allowedNow == 1 ? '' : 's' }} de {{ (admins|length) + (others|length) }}.
+                </div>
+            {% endif %}
+
+            <p class="help">Al cerrar el acceso, quien ya esté trabajando sigue hasta que cierre sesión; lo que se corta son los inicios de sesión nuevos. En cambio, si le quitas el acceso a una persona concreta (aquí o desactivando su cuenta), sale a la siguiente página que abra.</p>
+            <p class="help">Quien no puede entrar tampoco recibe correos ni notificaciones: sus avisos se guardan y los encuentra esperándole el día que le abras el acceso.</p>
+        </div>
+
+        <div class="card">
+            <h2>Quién entra durante el cierre</h2>
+            <p class="help">Marca a las personas que quieres que puedan entrar mientras el acceso está cerrado. Dar de alta o desactivar cuentas se hace en <a href="{{ path('admin_user_index') }}">Usuarios</a>.</p>
+
+            {% if admins is not empty %}
+                <p class="muted">Entran siempre, esté el acceso como esté: {% for user in admins %}{{ user.fullName }}{% if not loop.last %}, {% endif %}{% endfor %}. Es a propósito: cerrar el acceso nunca puede dejar fuera a quien tiene que volver a abrirlo.</p>
+            {% endif %}
+
+            {% if others is empty %}
+                <div class="empty-state">
+                    <h2>No hay más personas dadas de alta</h2>
+                    <p>Da de alta al resto del claustro para poder ir abriéndoles el acceso.</p>
+                    <a class="btn" href="{{ path('admin_user_new') }}">Nuevo usuario</a>
+                </div>
+            {% else %}
+                <table data-list-tools>
+                    <thead>
+                        <tr><th>Nombre</th><th>Correo</th><th data-filter>Cuenta</th><th>Puede entrar durante el cierre</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for user in others %}
+                            <tr>
+                                <td><a href="{{ path('admin_user_show', { id: user.id }) }}">{{ user.fullName }}</a></td>
+                                <td class="muted">{{ user.email }}</td>
+                                <td>
+                                    {% if user.active %}
+                                        <span class="badge badge--success">Activa</span>
+                                    {% else %}
+                                        <span class="badge badge--draft">Desactivada</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="switches">
+                                        {{ f.checkbox_switch(
+                                            'early[' ~ user.id ~ ']',
+                                            user.earlyAccess,
+                                            'Acceso anticipado',
+                                            user.active ? null : 'Su cuenta está desactivada: no entrará aunque esté marcado.'
+                                        ) }}
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% endif %}
+        </div>
+
+        {{ f.actions(path('app_homepage')) }}
+    </form>
+{% endblock %}

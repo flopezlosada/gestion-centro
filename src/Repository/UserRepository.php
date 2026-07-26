@@ -34,6 +34,23 @@ class UserRepository extends ServiceEntityRepository
     }
 
     /**
+     * Everyone, by full name, with their roles already loaded. For screens that ask each user what
+     * they are allowed to do (which walks the role collection): without the join that is one extra
+     * query per person.
+     *
+     * @return User[] every user, ordered by name
+     */
+    public function findAllWithRoles(): array
+    {
+        return $this->createQueryBuilder('u')
+            ->leftJoin('u.assignedRoles', 'r')
+            ->addSelect('r')
+            ->orderBy('u.fullName', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * The active users who hold the given role — the people behind a responsibility, who receive
      * its obligation reminders (several co-responsibles are allowed).
      *
