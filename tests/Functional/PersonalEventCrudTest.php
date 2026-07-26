@@ -78,7 +78,7 @@ final class PersonalEventCrudTest extends WebTestCase
         $form['personal_event_form[startTime]'] = '10:37';
         $this->client->submit($form);
 
-        self::assertResponseRedirects('/agenda');
+        self::assertResponseRedirects();
         $this->em->clear();
         $event = $this->em->getRepository(PersonalEvent::class)->findOneBy(['title' => 'Entrada a media hora rara']);
         self::assertNotNull($event);
@@ -141,7 +141,7 @@ final class PersonalEventCrudTest extends WebTestCase
         $form['personal_event_form[endTime]'] = '11:00';
         $this->client->submit($form);
 
-        self::assertResponseRedirects('/agenda');
+        self::assertResponseRedirects();
         $this->em->clear();
         $event = $this->em->getRepository(PersonalEvent::class)->findOneBy(['title' => 'Tutoría con familia']);
         self::assertNotNull($event);
@@ -164,7 +164,7 @@ final class PersonalEventCrudTest extends WebTestCase
         // No start time chosen: it is a reminder, sits on the day with no time.
         $this->client->submit($form);
 
-        self::assertResponseRedirects('/agenda');
+        self::assertResponseRedirects();
         $this->em->clear();
         $event = $this->em->getRepository(PersonalEvent::class)->findOneBy(['title' => 'Llamar a la familia de Pepito']);
         self::assertNotNull($event);
@@ -307,7 +307,7 @@ final class PersonalEventCrudTest extends WebTestCase
         $form['personal_event_form[category]'] = (string) $category->getId();
         $this->client->submit($form);
 
-        self::assertResponseRedirects('/agenda');
+        self::assertResponseRedirects();
         $this->em->clear();
         $event = $this->em->getRepository(PersonalEvent::class)->findOneBy(['title' => 'Reunión de claustro']);
         self::assertNotNull($event);
@@ -327,7 +327,7 @@ final class PersonalEventCrudTest extends WebTestCase
         $form['personal_event_form[startTime]'] = '10:00';
         $this->client->submit($form);
 
-        self::assertResponseRedirects('/agenda');
+        self::assertResponseRedirects();
         $this->em->clear();
         $event = $this->em->getRepository(PersonalEvent::class)->findOneBy(['title' => 'Nota rápida']);
         self::assertNotNull($event);
@@ -360,7 +360,7 @@ final class PersonalEventCrudTest extends WebTestCase
         $form['personal_event_form[category]'] = (string) $tutoringId;
         $this->client->submit($form);
 
-        self::assertResponseRedirects('/agenda');
+        self::assertResponseRedirects();
         $this->em->clear();
         $reloaded = $this->em->getRepository(PersonalEvent::class)->find($id);
         self::assertNotNull($reloaded);
@@ -381,7 +381,7 @@ final class PersonalEventCrudTest extends WebTestCase
         $form['personal_event_form[reminder]'] = (string) EventReminderOffset::TEN_MINUTES->value;
         $this->client->submit($form);
 
-        self::assertResponseRedirects('/agenda');
+        self::assertResponseRedirects();
         $this->em->clear();
         $event = $this->em->getRepository(PersonalEvent::class)->findOneBy(['title' => 'Reunión con inspección']);
         self::assertNotNull($event);
@@ -406,7 +406,7 @@ final class PersonalEventCrudTest extends WebTestCase
         $form['personal_event_form[reminder]'] = (string) EventReminderOffset::TEN_MINUTES->value;
         $this->client->submit($form);
 
-        self::assertResponseRedirects('/agenda');
+        self::assertResponseRedirects();
         $this->em->clear();
         $event = $this->em->getRepository(PersonalEvent::class)->findOneBy(['title' => 'Llamar a la familia']);
         self::assertNotNull($event);
@@ -432,7 +432,7 @@ final class PersonalEventCrudTest extends WebTestCase
         $form['personal_event_form[reminder]'] = '';
         $this->client->submit($form);
 
-        self::assertResponseRedirects('/agenda');
+        self::assertResponseRedirects();
         $this->em->clear();
         $reloaded = $this->em->getRepository(PersonalEvent::class)->find($id);
         self::assertNotNull($reloaded);

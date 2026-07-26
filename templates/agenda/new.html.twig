@@ -31,7 +31,7 @@
             {% if form.repeat is defined %}{{ f.field(form.repeat) }}{% endif %}
             {% if form.repeatUntil is defined %}{{ f.field(form.repeatUntil, 'repeating') }}{% endif %}
             <div class="stackform__foot">
-                <a class="btn secondary" href="{{ path('personal_event_index') }}">Cancelar</a>
+                <a class="btn secondary" href="{{ path('calendar_index') }}">Cancelar</a>
                 <button class="btn" type="submit">Crear evento</button>
             </div>
         </div>

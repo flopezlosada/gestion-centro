@@ -2442,6 +2442,11 @@ tr.is-not-covered { background: var(--danger-weak); }
 .tick.is-checked { background: var(--accent); border-color: var(--accent); }
 .tick.is-static { cursor: default; }
 .is-overdue .tick { border-color: color-mix(in srgb, var(--warning) 55%, var(--border-strong)); }
+/* Recordatorio personal (malva) dentro de "Por hacer": distingue de un vistazo lo tuyo/privado de una
+   tarea del centro (verde). Conserva el malva incluso vencido, porque el color marca el TIPO, no el estado. */
+.tick--personal { border-color: var(--personal); }
+.tick--personal.is-checked { background: var(--personal); border-color: var(--personal); }
+.is-overdue .tick--personal { border-color: var(--personal); }
 .tasklist__body { flex: 1; min-width: 0; text-decoration: none; display: flex; flex-direction: column; gap: 5px; }
 .tasklist__title { font-size: 14.5px; line-height: 1.35; color: var(--text); font-weight: 500; }
 .tasklist__meta { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-faint); }

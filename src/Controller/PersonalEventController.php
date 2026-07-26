@@ -71,7 +71,7 @@ final class PersonalEventController extends AbstractController
             $entityManager->flush();
             $this->addFlash('success', null !== $seriesId ? \sprintf('Serie creada: %d eventos.', \count($days)) : 'Evento creado.');
 
-            return $this->redirectToRoute('personal_event_index');
+            return $this->toCalendarOn($data->day);
         }
 
         return $this->render('agenda/new.html.twig', ['form' => $form]);
@@ -95,7 +95,7 @@ final class PersonalEventController extends AbstractController
             $entityManager->flush();
             $this->addFlash('success', 'Evento actualizado.');
 
-            return $this->redirectToRoute('personal_event_index');
+            return $this->toCalendarOn($event->getStartAt());
         }
 
         return $this->render('agenda/edit.html.twig', ['form' => $form, 'event' => $event]);
@@ -112,11 +112,12 @@ final class PersonalEventController extends AbstractController
         }
         $this->denyUnlessOwner($event, $user);
 
+        $day = $event->getStartAt();
         $entityManager->remove($event);
         $entityManager->flush();
         $this->addFlash('success', 'Evento borrado.');
 
-        return $this->redirectToRoute('personal_event_index');
+        return $this->toCalendarOn($day);
     }
 
     /**
@@ -135,7 +136,7 @@ final class PersonalEventController extends AbstractController
         $event->setDone(!$event->isDone());
         $entityManager->flush();
 
-        return $this->redirectToRoute('personal_event_index', ['_fragment' => 'evento-'.$event->getId()]);
+        return $this->redirectToRoute('app_homepage');
     }
 
     /**
@@ -150,6 +151,7 @@ final class PersonalEventController extends AbstractController
         }
         $this->denyUnlessOwner($event, $user);
 
+        $day = $event->getStartAt();
         $seriesId = $event->getSeriesId();
         if (null === $seriesId) {
             $entityManager->remove($event);
@@ -160,7 +162,19 @@ final class PersonalEventController extends AbstractController
             $this->addFlash('success', \sprintf('Serie borrada: %d eventos.', $deleted));
         }
 
-        return $this->redirectToRoute('personal_event_index');
+        return $this->toCalendarOn($day);
+    }
+
+    /**
+     * Redirects to the calendar's week view focused on the given day, where the just-created, edited or
+     * deleted event sat. The calendar is the home of events across time (like a calendar app), so an
+     * action lands you where you can see the change in place — week view, not month (the month loses you).
+     *
+     * @param \DateTimeImmutable $day the day to focus the calendar on
+     */
+    private function toCalendarOn(\DateTimeImmutable $day): Response
+    {
+        return $this->redirectToRoute('calendar_index', ['vista' => 'semana', 'fecha' => $day->format('Y-m-d')]);
     }
 
     /**

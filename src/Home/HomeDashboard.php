@@ -52,8 +52,9 @@ final readonly class HomeDashboard
      * @return array{
      *     nextGuardia: array{cover: GuardiaCover, startsAt: ?\DateTimeImmutable, minutesUntil: ?int}|null,
      *     upcomingGuardia: array{cover: GuardiaCover, startsAt: ?\DateTimeImmutable}|null,
-     *     myTasks: AgendaEntry[],
-     *     agendaEvents: AgendaEntry[]
+     *     timedToday: AgendaEntry[],
+     *     todos: AgendaEntry[],
+     *     upcoming: AgendaEntry[]
      * }
      */
     public function baseFor(User $user, \DateTimeImmutable $today, \DateTimeImmutable $now): array
@@ -61,21 +62,34 @@ final readonly class HomeDashboard
         $buckets = $this->agenda->bucketsFor($user, $today);
 
         $isTask = static fn (AgendaEntry $e): bool => AgendaEntry::KIND_TASK === $e->kind;
-        $isEvent = static fn (AgendaEntry $e): bool => AgendaEntry::KIND_EVENT === $e->kind;
+        // Una cita: un evento CON hora (no un recordatorio de todo el día). Va al bloque "Con hora".
+        $isTimedEvent = static fn (AgendaEntry $e): bool => AgendaEntry::KIND_EVENT === $e->kind && null !== $e->event && !$e->event->isAllDay();
+        // Un "por hacer": una tarea del centro (fecha límite) o un recordatorio personal sin hora.
+        $isTodo = static fn (AgendaEntry $e): bool => $isTask($e) || (AgendaEntry::KIND_EVENT === $e->kind && null !== $e->event && $e->event->isAllDay());
 
-        // Mis tareas = lo que aprieta hoy: vencidas primero, luego las de hoy (solo institucionales).
-        // Es un vistazo corto: se recorta a unas pocas y "Ver todas" lleva al listado completo.
-        $myTasks = \array_slice(array_values(array_filter([...$buckets['overdue'], ...$buckets['today']], $isTask)), 0, 5);
-        // Mi agenda = mis citas/recordatorios privados de hoy y los próximos días.
-        $agendaEvents = \array_slice(array_values(array_filter([...$buckets['today'], ...$buckets['week']], $isEvent)), 0, 4);
+        // "Con hora": tu horario de HOY — las citas con hora, en orden de reloj (los buckets ya vienen
+        // ordenados por su instante). Una cita no se "hace con casilla"; se cumple estando.
+        $timedToday = array_values(array_filter($buckets['today'], $isTimedEvent));
 
-        [$next, $upcoming] = $this->guardia($user, $today, $now);
+        // "Por hacer": lo pendiente en tu plato hoy, como checklist — vencidas (de cualquier tipo) primero,
+        // luego las tareas de hoy y los recordatorios sin hora. Las citas con hora NO entran aquí.
+        $todos = \array_slice([
+            ...$buckets['overdue'],
+            ...array_values(array_filter($buckets['today'], $isTodo)),
+        ], 0, 8);
+
+        // "Próximos 7 días": un vistazo compacto y tipado (tareas y eventos juntos por día); lo lejano
+        // vive en el Calendario, al que se sale desde el pie de la sección.
+        $upcoming = \array_slice($buckets['week'], 0, 6);
+
+        [$next, $upcomingGuardia] = $this->guardia($user, $today, $now);
 
         return [
             'nextGuardia' => $next,
-            'upcomingGuardia' => $upcoming,
-            'myTasks' => $myTasks,
-            'agendaEvents' => $agendaEvents,
+            'upcomingGuardia' => $upcomingGuardia,
+            'timedToday' => $timedToday,
+            'todos' => $todos,
+            'upcoming' => $upcoming,
             'roleSubtitle' => $this->roleSubtitle($user),
         ];
     }
