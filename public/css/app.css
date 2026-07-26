@@ -2491,6 +2491,16 @@ tr.is-not-covered { background: var(--danger-weak); }
 /* "+ Nueva tarea" en la cabecera: solo escritorio (en móvil se crea desde Tareas). */
 .home-newtask { display: none; }
 
+/* Las secciones personales ("Por hacer", "Próximos 7 días") anuncian el contenido MÁS importante de la
+   pantalla y llevaban la tipografía más débil del sistema (eyebrow mono de 11px en --text-muted), mientras
+   los módulos de gestión —secundarios— lucían título serif, icono y caja: la jerarquía estaba invertida.
+   Pasan a TÍTULO, que es lo que DESIGN.md ya contemplaba para "Mi agenda", y a encabezado real (la página
+   no tenía ninguno). El contraste con los módulos lo sigue dando la ausencia de caja, no la debilidad. */
+.home-section__title {
+    margin: 0; font-family: var(--font-display); font-weight: 500; font-size: 19px; line-height: 1.2;
+    color: var(--text);
+}
+
 /* Debajo del hero: columna única en móvil; en escritorio, dos columnas que aprovechan el ancho. */
 .home-cols { display: flex; flex-direction: column; gap: 24px; }
 @media (min-width: 900px) {

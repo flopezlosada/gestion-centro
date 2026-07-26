@@ -58,7 +58,7 @@
                Vencidas primero. Las citas con hora NO están aquí: viven en el bloque "Con hora". ---- #}
         <section class="home-section">
             <div class="home-section__head">
-                <span class="eyebrow">Por hacer</span>
+                <h2 class="home-section__title">Por hacer</h2>
                 <a class="home-section__more" href="{{ path('task_index') }}">Ver tareas</a>
             </div>
 
@@ -124,8 +124,9 @@
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
                     </span>
                     <div>
+                        {# Sin subtítulo: la caja malva ya significa "privado" en el sistema, y la frase
+                           competía con su propio título. #}
                         <div class="module__title">Con hora</div>
-                        <div class="module__sub">Tus citas de hoy · solo tú las ves</div>
                     </div>
                 </div>
                 <a class="module__action" href="{{ path('personal_event_new') }}">+ Nuevo</a>
@@ -153,7 +154,7 @@
         {% if upcoming is not empty %}
         <section class="home-section">
             <div class="home-section__head">
-                <span class="eyebrow">Próximos 7 días</span>
+                <h2 class="home-section__title">Próximos 7 días</h2>
                 <a class="home-section__more" href="{{ path('calendar_index', { vista: 'semana' }) }}">Ver semana</a>
             </div>
             <ul class="tasklist">
