@@ -2497,6 +2497,10 @@ tr.is-not-covered { background: var(--danger-weak); }
 }
 .tick--doc svg { width: 18px; height: 18px; }
 .is-overdue .tick--doc { color: var(--warning-text); }
+/* Ni casilla ni documento: se resuelve en su ficha. Aro DISCONTINUO — se lee "aquí no se cierra" sin
+   prometer un documento que no existe. */
+.tick--elsewhere { border: 0; cursor: default; color: var(--text-faint); }
+.tick--elsewhere svg { width: 20px; height: 20px; }
 /* Chevron de "esto se resuelve en otra pantalla": solo en esas filas, la asimetría es el mensaje. */
 .tasklist__go { flex: none; align-self: center; color: var(--text-faint); font-size: 18px; line-height: 1; }
 /* Recordatorio personal (malva) dentro de "Por hacer": distingue de un vistazo lo tuyo/privado de una

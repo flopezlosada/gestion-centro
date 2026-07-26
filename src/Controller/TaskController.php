@@ -688,7 +688,8 @@ final class TaskController extends AbstractController
             ->setDueDate($data->dueDate)
             ->setSchoolYear(SchoolYear::current($data->dueDate))
             ->setMandatory($data->mandatory)
-            ->setRequiresCheckbox($data->requiresCheckbox)
+            // requiresCheckbox is NOT touched: the form does not edit it (see TaskFormData), so whatever
+            // the task template set must survive an edit untouched.
             ->setRequiresDocument($data->requiresDocument);
 
         // Responsibility = role + (department, only for per-department roles): the structural backbone,

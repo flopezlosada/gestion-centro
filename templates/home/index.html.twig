@@ -78,9 +78,9 @@
                                             {% if t.checkboxDone %}<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10.5 l3.2 3.2 L15 6.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>{% endif %}
                                         </button>
                                     </form>
-                                {% else %}
-                                    {#- Esta tarea NO se cierra con la casilla: se cierra entregando (con su
-                                        documento) y validando. Un círculo apagado sería un botón que no
+                                {% elseif t.requiresDocument %}
+                                    {#- Esta tarea NO se cierra con la casilla: se cierra entregando su
+                                        documento y validando. Un círculo apagado sería un botón que no
                                         responde, sin decir por qué; un CLIP tiene otra forma, así que no
                                         promete cerrarse de un toque y anuncia de qué va. Misma idea que en
                                         el calendario (círculo=tarea, cuadrado=evento, escudo=guardia): la
@@ -88,6 +88,16 @@
                                         lleva la fila entera. -#}
                                     <span class="tick tick--doc" role="img" aria-label="«{{ t.title }}»: se cierra entregando el documento, no con la casilla">
                                         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 5.5 7 11a2.1 2.1 0 0 0 3 3l5.5-5.5a3.6 3.6 0 0 0-5-5L4.8 9.2a5 5 0 0 0 7 7l3.7-3.7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                    </span>
+                                {% else %}
+                                    {#- Ni casilla ni documento: se resuelve entera desde su ficha. No lleva
+                                        clip porque no hay nada que adjuntar — el marcador diría algo falso.
+                                        Este estado no se puede pedir desde el formulario (no ofrece la
+                                        casilla), pero sí existe en filas que lo grabaron cuando editar una
+                                        tarea con documento corrompía `requires_checkbox`, así que la
+                                        pantalla tiene que saber contarlo en vez de pintar un aro muerto. -#}
+                                    <span class="tick tick--elsewhere" role="img" aria-label="«{{ t.title }}»: se gestiona desde su ficha, no con la casilla">
+                                        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 2.6"/></svg>
                                     </span>
                                 {% endif %}
                                 <a class="tasklist__body" href="{{ path('task_show', { id: t.id }) }}">

@@ -35,21 +35,29 @@ final class HomeDeliverableRowTest extends WebTestCase
     }
 
     /**
-     * Seeds a task due today, assigned to its owner, of the given type.
+     * Seeds a task due today, assigned to its owner, with the two flags that decide the marker.
      *
-     * @param TaskType $type the task type, which decides whether the tick applies
+     * Both are set EXPLICITLY because the type does not imply them: `requiresDocument` defaults to false
+     * whatever the TaskType is ({@see Task}), so building a WITH_DELIVERABLE task and expecting a
+     * document flag would test nothing — the row would render the ordinary tickable circle.
      *
-     * @return User the owner, already logged in by the caller
+     * @param bool $document whether the task must be closed by handing in a document
+     * @param bool $checkbox whether the task declares a progress checkbox at all
+     *
+     * @return User the owner, to be logged in by the caller
      */
-    private function seed(TaskType $type): User
+    private function seed(bool $document, bool $checkbox = true): User
     {
         $dept = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($dept);
         $owner = (new User())->setFullName('Profe Test')->setEmail('profe@centro.test')->setUnit($dept);
         $this->em->persist($owner);
         $today = new \DateTimeImmutable('today');
+        $type = $document ? TaskType::WITH_DELIVERABLE : TaskType::SIMPLE;
         $task = new Task('Memoria del departamento', SchoolYear::current($today), $today, $type);
-        $task->setAssignedUser($owner)->setCreatedBy($owner);
+        $task->setAssignedUser($owner)->setCreatedBy($owner)
+            ->setRequiresDocument($document)
+            ->setRequiresCheckbox($checkbox);
         $this->em->persist($task);
         $this->em->flush();
 
@@ -58,7 +66,7 @@ final class HomeDeliverableRowTest extends WebTestCase
 
     public function testADeliverableTaskShowsAClipInsteadOfADeadCircle(): void
     {
-        $this->client->loginUser($this->seed(TaskType::WITH_DELIVERABLE));
+        $this->client->loginUser($this->seed(document: true));
 
         $this->client->request('GET', '/');
 
@@ -74,7 +82,7 @@ final class HomeDeliverableRowTest extends WebTestCase
     {
         // The regression being pinned: the old marker was aria-hidden with no text at all, so a screen
         // reader user got a row with no hint of why it could not be ticked.
-        $this->client->loginUser($this->seed(TaskType::WITH_DELIVERABLE));
+        $this->client->loginUser($this->seed(document: true));
 
         $crawler = $this->client->request('GET', '/');
 
@@ -86,12 +94,32 @@ final class HomeDeliverableRowTest extends WebTestCase
     public function testAnOrdinaryTaskStillGetsItsTickableCircle(): void
     {
         // The other half of the contract: nothing changed for a task that DOES close with the tick.
-        $this->client->loginUser($this->seed(TaskType::SIMPLE));
+        $this->client->loginUser($this->seed(document: false));
 
         $this->client->request('GET', '/');
 
         self::assertSelectorExists('form.tasklist__check-form');
         self::assertSelectorNotExists('.tick--doc');
         self::assertSelectorNotExists('.tasklist__go');
+    }
+
+    public function testATaskWithNeitherCheckboxNorDocumentDoesNotClaimToNeedOne(): void
+    {
+        // "No tick" is not the same as "needs a document": a row with neither must not show the clip, or
+        // the marker would promise a deliverable that does not exist. This state cannot be asked for in
+        // the form, but rows in the wild carry it (editing a document task used to write
+        // requires_checkbox = 0), so the screen has to tell it apart.
+        $this->client->loginUser($this->seed(document: false, checkbox: false));
+
+        $crawler = $this->client->request('GET', '/');
+
+        self::assertSelectorNotExists('form.tasklist__check-form', 'no ofrece una casilla que no aplica');
+        self::assertSelectorNotExists('.tick--doc', 'no dice que haya que adjuntar nada');
+        self::assertSelectorExists('.tick--elsewhere');
+        self::assertStringNotContainsString(
+            'documento',
+            (string) $crawler->filter('.tick--elsewhere')->attr('aria-label'),
+            'el marcador no menciona un entregable que esta tarea no tiene',
+        );
     }
 }
