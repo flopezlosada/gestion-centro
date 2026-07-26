@@ -39,20 +39,23 @@ final class TaskEditPreservesFlagsTest extends WebTestCase
     {
         $dept = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($dept);
-        // Direction, so the editor is allowed to open the form for someone else's task.
-        $role = (new Role())->setCode('direction')->setName('Dirección')->setAdmin(true);
+        // A centre-wide role, held by the editor so they are a valid responsible person for it.
+        $role = (new Role())->setCode('direction')->setName('Dirección');
         $this->em->persist($role);
         $editor = (new User())->setFullName('Directora Test')->setEmail('direccion@centro.test')->setUnit($dept);
         $editor->addAssignedRole($role);
         $this->em->persist($editor);
 
-        $today = new \DateTimeImmutable('today');
-        $task = new Task('Memoria del departamento', SchoolYear::current($today), $today, TaskType::WITH_DELIVERABLE);
+        // A FIXED weekday deadline, not "today": the form refuses a deadline that falls on a weekend, so
+        // a relative date would make this test fail every Saturday and Sunday for the wrong reason.
+        $dueDate = new \DateTimeImmutable('2026-06-30');
+        $task = new Task('Memoria del departamento', SchoolYear::current($dueDate), $dueDate, TaskType::WITH_DELIVERABLE);
         // The template's choice: it DOES declare a checkbox, and it also wants a document. The derived
         // getter therefore reads false, which is exactly the value that used to leak into the column.
+        // The responsibility carries NO department, because a centre-wide role has none — pairing one
+        // with a department leaves the form unable to offer a valid responsible person.
         $task->setRequiresCheckbox(true)->setRequiresDocument(true)
-            ->setResponsibility(new TaskResponsibility($role, $dept))
-            ->setUnit($dept)
+            ->setResponsibility(new TaskResponsibility($role, null))
             ->setAssignedUser($editor)
             ->setCreatedBy($editor);
         $this->em->persist($task);
