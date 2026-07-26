@@ -34,32 +34,39 @@ final class NotificationInboxTest extends WebTestCase
         return $user;
     }
 
-    public function testAnAgendaReminderLinksToTheAgenda(): void
+    public function testAnAgendaReminderOpensAndForwardsToTheAgenda(): void
     {
         $user = $this->loggedInUser();
-        $this->em->persist(new Notification($user, 'event.reminder', 'Claustro', 'Hoy a las 10:00.'));
+        $notification = new Notification($user, 'event.reminder', 'Claustro', 'Hoy a las 10:00.');
+        $this->em->persist($notification);
         $this->em->flush();
         $this->client->loginUser($user);
 
         $this->client->request('GET', '/avisos');
-
         self::assertResponseIsSuccessful();
-        self::assertSelectorExists('a.notice[href="/agenda"]');
+        // Every notice links to its open action (which marks it read on click); the destination — the
+        // agenda for an agenda reminder — is resolved server-side by NotificationLink.
+        self::assertSelectorExists('a.notice[href="/avisos/'.$notification->getId().'"]');
         self::assertSelectorTextContains('.notice__title', 'Claustro');
+
+        $this->client->request('GET', '/avisos/'.$notification->getId());
+        self::assertResponseRedirects('/agenda');
     }
 
-    public function testANoticeWithNoBetterDestinationIsNotLinked(): void
+    public function testANoticeWithNoBetterDestinationStillOpensAndReturnsToTheInbox(): void
     {
         $user = $this->loggedInUser();
-        $this->em->persist(new Notification($user, 'system.notice', 'Aviso general', 'Sin destino.'));
+        $notification = new Notification($user, 'system.notice', 'Aviso general', 'Sin destino.');
+        $this->em->persist($notification);
         $this->em->flush();
         $this->client->loginUser($user);
 
         $this->client->request('GET', '/avisos');
-
         self::assertResponseIsSuccessful();
-        // Rendered as a plain block, not as a link back to this very page.
-        self::assertSelectorExists('div.notice');
-        self::assertSelectorNotExists('a.notice');
+        // It is still a link to its open action (so opening it marks it read); it just returns here.
+        self::assertSelectorExists('a.notice[href="/avisos/'.$notification->getId().'"]');
+
+        $this->client->request('GET', '/avisos/'.$notification->getId());
+        self::assertResponseRedirects('/avisos');
     }
 }
