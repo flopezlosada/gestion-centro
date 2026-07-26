@@ -662,9 +662,12 @@ final class TaskController extends AbstractController
         $task->setCheckboxDone(!$task->isCheckboxDone());
         $entityManager->flush();
 
+        // A ticked task LEAVES the "hoy/vencidas" list of Inicio (it moves to the done bucket), so the
+        // row just vanishes: the toast is the only trace of what happened and the only way back.
+        $this->addFlash(TickOutcome::FLASH, $tick->flashFor('task', (int) $task->getId(), $task->getTitle(), $task->isCheckboxDone(), $request));
+
         // Back to the surface the tick was on ({@see TickOutcome}): Inicio, or the calendar day you were
-        // looking at. A ticked task leaves the "hoy/vencidas" list of Inicio (it moves to the done
-        // bucket), so there is no stable row to anchor to — landing on the page is enough.
+        // looking at.
         [$route, $parameters] = $tick->routeFor($request);
 
         return $this->redirectToRoute($route, $parameters);

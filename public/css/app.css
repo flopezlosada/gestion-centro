@@ -1069,6 +1069,55 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .flash.success { background: var(--success-weak); color: var(--success-text); border-color: var(--success); }
 .flash.error   { background: var(--danger-weak);  color: var(--danger-text);  border-color: var(--danger); }
 
+/* ---- Toast de "hecho", con deshacer --------------------------------------
+   Distinto de .flash a propósito: un flash es un cartel en el flujo de la página que informa de algo
+   ya cerrado; esto es una ventana de tiempo para RECTIFICAR, así que flota, se va solo y no empuja el
+   contenido (si empujara, la lista se movería justo después de que la fila desapareciera de ella).
+   Ancho contenido (no de borde a borde) para que no se lea como un banner del sistema. */
+.toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    /* Por encima de la barra inferior (z 50) y por debajo del cajón de navegación (58/62). */
+    z-index: 55;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: min(440px, calc(100vw - 32px));
+    padding: 10px 12px 10px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
+    font-size: 14px;
+}
+.toast__icon { flex: none; display: grid; place-items: center; width: 22px; height: 22px; color: var(--success); }
+.toast__icon svg { width: 20px; height: 20px; }
+.toast__body { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.toast__label { flex: none; font-weight: 600; }
+/* El título se recorta antes que empujar el botón: "Deshacer" nunca puede quedar fuera de la pastilla. */
+.toast__title { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toast__undo { flex: none; margin-left: auto; }
+.toast__undo button {
+    padding: 6px 12px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--surface-sunken);
+    color: var(--accent);
+    font: 600 13.5px var(--font-body);
+    cursor: pointer;
+}
+.toast__undo button:hover { background: var(--accent-weak); }
+.toast.is-leaving { opacity: 0; transform: translate(-50%, 6px); transition: opacity .25s ease, transform .25s ease; }
+@media (prefers-reduced-motion: reduce) {
+    .toast.is-leaving { transition: none; }
+}
+@media (max-width: 760px) {
+    /* Sobre la barra inferior, no detrás: si la tapara, escondería la navegación mientras se lee. */
+    .toast { bottom: calc(86px + env(safe-area-inset-bottom, 14px)); }
+}
+
 /* ---- Aviso en bloque dentro de una vista ---------------------------------
    El hueco entre .form-error (el error rojo de un formulario) y .flash (el resultado de una acción
    ya hecha): la advertencia que acompaña a algo que TODAVÍA no ha pasado y hay que leer antes de

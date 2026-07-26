@@ -133,6 +133,45 @@
             </main>
         </div>
 
+        {# ---- Toast de "hecho", con deshacer ----------------------------------------------------
+           Al marcar algo hecho su fila DESAPARECE de la checklist de Inicio (se va al bucket de
+           hechas), así que sin esto no queda ninguna señal de que pasó ni forma de volver atrás sin
+           irse a buscar la tarea a otra pantalla.
+
+           Es HTML servido, no construido en JS: el "Deshacer" es un <form> normal que vuelve a postear
+           al MISMO toggle (marcar es reversible), así que funciona con JS desactivado. El JS solo lo
+           desvanece pasados unos segundos — sin él, el aviso simplemente se queda hasta la siguiente
+           navegación, que es un fallo inocuo.
+
+           Deshacer NO ofrece su propio deshacer (ver TickOutcome::flashFor): tras recuperarla la fila
+           vuelve a estar visible, así que la red de seguridad ya ha hecho su trabajo. #}
+        {% for tick in app.flashes(constant('App\\Support\\TickOutcome::FLASH')) %}
+            {% set undoRoute = tick.kind == 'task' ? 'task_toggle_done' : 'personal_event_toggle_done' %}
+            {% set undoToken = tick.kind == 'task' ? 'toggle_done' ~ tick.id : 'personal_event_done' ~ tick.id %}
+            {#- role=status + aria-live: lo anuncia un lector de pantalla sin robar el foco, que tras la
+                recarga está al principio del documento. -#}
+            <div class="toast" data-toast role="status" aria-live="polite">
+                <span class="toast__icon" aria-hidden="true">
+                    {% if tick.done %}
+                        <svg viewBox="0 0 20 20"><path d="M5 10.5 l3.2 3.2 L15 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    {% else %}
+                        <svg viewBox="0 0 20 20"><path d="M10 4.5a5.5 5.5 0 1 0 5.5 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M10 1.8V7l2.6-2.6z" fill="currentColor"/></svg>
+                    {% endif %}
+                </span>
+                <span class="toast__body">
+                    <span class="toast__label">{{ tick.done ? 'Hecho' : 'Otra vez pendiente' }}</span>
+                    <span class="toast__title">{{ tick.title }}</span>
+                </span>
+                {% if tick.done %}
+                    <form method="post" action="{{ path(undoRoute, { id: tick.id }) }}" class="toast__undo">
+                        <input type="hidden" name="_token" value="{{ csrf_token(undoToken) }}">
+                        {% if tick.dia %}<input type="hidden" name="{{ constant('App\\Support\\TickOutcome::FIELD') }}" value="{{ tick.dia }}">{% endif %}
+                        <button type="submit">Deshacer</button>
+                    </form>
+                {% endif %}
+            </div>
+        {% endfor %}
+
         {# Barra inferior móvil: 5 destinos para el pulgar. Oculta en escritorio (el sidebar manda).
            Fuera de .main (hija de .layout) para que su posicionamiento fijo no dependa de esa columna.
            "Más" abre el mismo cajón de navegación que la hamburguesa (data-nav-toggle → nav.js).

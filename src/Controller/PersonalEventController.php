@@ -126,6 +126,10 @@ final class PersonalEventController extends AbstractController
         $event->setDone(!$event->isDone());
         $entityManager->flush();
 
+        // Like a ticked task, a ticked reminder leaves Inicio's checklist: the toast is what tells you it
+        // happened and the way back if it was a slip.
+        $this->addFlash(TickOutcome::FLASH, $tick->flashFor('event', (int) $event->getId(), $event->getTitle(), $event->isDone(), $request));
+
         [$route, $parameters] = $tick->routeFor($request);
 
         return $this->redirectToRoute($route, $parameters);
