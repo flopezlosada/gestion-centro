@@ -2613,58 +2613,89 @@ tr.is-not-covered { background: var(--danger-weak); }
 }
 .tasks-add:hover { background: var(--accent-hover); color: var(--on-accent); }
 
-.tasks-search {
-    display: flex; align-items: center; gap: 9px;
-    background: var(--surface); border: 1px solid var(--border); border-radius: 13px; padding: 11px 14px;
+/* NAVEGAR: las vistas del plan. Pestañas subrayadas, no píldoras rellenas — el verde relleno queda
+   para la acción (Acotar, + Nueva), no para el estado de la navegación. */
+.taskviews {
+    display: flex; flex-wrap: wrap; gap: 0 4px;
+    border-bottom: 1px solid var(--border);
 }
-.tasks-search svg { width: 16px; height: 16px; color: var(--text-faint); flex: none; }
-.tasks-search input[type="search"] {
+.taskview {
+    display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; flex: none; min-height: 44px;
+    padding: 0 12px; font-size: 13.5px; color: var(--text-muted); text-decoration: none;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.taskview:hover { color: var(--text); }
+.taskview__n { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
+.taskview.is-warning .taskview__n { color: var(--warning-text); font-weight: 600; }
+.taskview.is-active { color: var(--accent); font-weight: 600; border-bottom-color: var(--accent); }
+.taskview.is-active .taskview__n { color: var(--accent); }
+
+/* ACOTAR: un solo formulario, plegado por defecto para no empujar la primera tarea bajo el pliegue.
+   Lo que está acotado se lee siempre fuera, en las etiquetas, así que plegarlo no esconde nada. */
+.narrow { margin: 0; }
+.narrow__toggle {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 44px; cursor: pointer;
+    list-style: none; user-select: none; padding: 0 14px; white-space: nowrap;
+    background: var(--surface); border: 1px solid var(--border-strong); border-radius: 999px;
+    font-size: 13px; font-weight: 500; color: var(--text-muted);
+}
+.narrow__toggle::-webkit-details-marker { display: none; }
+.narrow__toggle:hover { color: var(--text); background: var(--surface-sunken); }
+.narrow__toggle svg { width: 14px; height: 14px; }
+.narrow[open] .narrow__toggle { border-color: var(--accent); color: var(--accent); }
+.narrow__n { font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--accent); }
+.narrow__panel {
+    margin-top: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    padding: 14px 16px; display: flex; flex-direction: column; gap: 12px;
+}
+.narrow__search {
+    display: flex; align-items: center; gap: 9px;
+    background: var(--surface-sunken); border: 1px solid var(--border-strong); border-radius: 12px; padding: 10px 13px;
+}
+.narrow__search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak); }
+.narrow__search svg { width: 16px; height: 16px; color: var(--text-faint); flex: none; }
+.narrow__search input[type="search"] {
     flex: 1; min-width: 0; border: 0; background: transparent; outline: none;
     font: 400 14px var(--font-body); color: var(--text);
 }
-.tasks-search input::placeholder { color: var(--text-faint); }
-
-.tasks-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.task-chip {
-    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
-    background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
-    padding: 8px 13px; font-size: 13px; color: var(--text-muted); text-decoration: none;
+.narrow__search input::placeholder { color: var(--text-faint); }
+.narrow__row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+.narrow__field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.narrow__label {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--text-faint);
 }
-.task-chip:hover { border-color: var(--border-strong); color: var(--text); }
-.task-chip.is-active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
-.task-chip.is-danger:not(.is-active) { color: var(--danger-text); }
-.task-chip__dot { width: 7px; height: 7px; border-radius: 999px; background: var(--danger); flex: none; }
-.task-chip__n { font-family: var(--font-mono); font-size: 12px; opacity: .85; }
+.narrow__field select { border-radius: 12px; width: 100%; }
+.narrow__go { align-self: flex-start; padding: 11px 20px; }
 
-/* Hoja de filtros (rol/unidad/fecha): <details> desplegable, panel en tarjeta. */
-.filtersheet { margin-bottom: 4px; }
-.filtersheet__toggle { cursor: pointer; list-style: none; user-select: none; }
-.filtersheet__toggle::-webkit-details-marker { display: none; }
-.filtersheet__toggle svg { width: 14px; height: 14px; }
-.filtersheet[open] .filtersheet__toggle { border-color: var(--accent); color: var(--accent); }
-.filtersheet__panel {
-    margin-top: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px;
-    display: flex; flex-direction: column; gap: 16px; max-width: 460px;
+/* Lo acotado, a la vista y retirable de una en una: cada etiqueta se quita sola sin borrar las demás. */
+.narrow-active { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 30px; }
+.ntoken {
+    display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; min-height: 44px;
+    background: var(--accent-weak); border: 1px solid var(--accent-weak-border); border-radius: 999px;
+    padding: 4px 12px 4px 15px; font-size: 12.5px; font-weight: 500; color: var(--accent); text-decoration: none;
 }
-.filtersheet__group { display: flex; flex-direction: column; gap: 8px; }
-.filtersheet__label { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint); }
-.filtersheet__group select { border-radius: 12px; }
-.segmented { display: flex; gap: 8px; }
-.segmented__opt { flex: 1; text-align: center; border: 1px solid var(--border); border-radius: 11px; padding: 9px; font-size: 13px; color: var(--text-muted); cursor: pointer; }
-.segmented__opt input { position: absolute; opacity: 0; width: 0; height: 0; }
-.segmented__opt.is-on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
-.filtersheet__foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.filtersheet__foot .btn-lg { flex: 0 0 auto; padding: 12px 22px; }
-.filtersheet__clear { color: var(--danger-text); font-size: 13px; font-weight: 600; text-decoration: none; }
+.ntoken:hover { background: var(--surface-sunken); border-color: var(--border-strong); color: var(--text); }
+.ntoken__x { font-size: 11px; opacity: .75; }
+.narrow-active__count {
+    margin: 0 0 0 auto; font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--text-muted);
+}
+.narrow-active__clear { display: inline-flex; align-items: center; min-height: 44px; font-size: 12.5px; color: var(--text-muted); }
+
+/* El histórico se alcanza por el pie, no por la fila de vistas: no compite con el trabajo vivo. */
+.tasks-closed { align-self: flex-start; padding: 10px 2px; font-size: 13px; font-weight: 600; color: var(--accent); text-decoration: none; }
+.tasks-closed:hover { text-decoration: underline; }
 
 .tasks-group__head {
     display: flex; align-items: center; gap: 8px; margin: 0 2px 10px;
-    font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint);
+    font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--text-muted);
 }
 .tasks-group + .tasks-group { margin-top: 22px; }
-.tasks-group__head.is-danger { color: var(--danger-text); }
+.tasks-group__head.is-warning { color: var(--warning-text); }
 .tasks-group__dot { width: 7px; height: 7px; border-radius: 999px; background: var(--border-strong); flex: none; }
-.tasks-group__head.is-danger .tasks-group__dot { background: var(--danger); }
+.tasks-group__head.is-warning .tasks-group__dot { background: var(--warning-text); }
 
 .tasks-cards { display: flex; flex-direction: column; gap: 10px; }
 .task-card {
@@ -2675,7 +2706,7 @@ tr.is-not-covered { background: var(--danger-weak); }
 .task-card:hover { border-color: var(--border-strong); }
 .task-card.is-overdue { padding-left: 18px; }
 .task-card.is-overdue::before {
-    content: ""; position: absolute; left: 0; top: 13px; bottom: 13px; width: 4px; border-radius: 999px; background: var(--danger);
+    content: ""; position: absolute; left: 0; top: 13px; bottom: 13px; width: 4px; border-radius: 999px; background: var(--warning-text);
 }
 .task-card.is-cancelled { opacity: .62; }
 .task-card__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
@@ -2701,7 +2732,7 @@ tr.is-not-covered { background: var(--danger-weak); }
 .task-card__avatar--empty { background: var(--separator); color: var(--text-faint); }
 .task-card__name { font-size: 12.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .task-card__date { flex: none; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-faint); }
-.task-card__date.is-overdue { color: var(--danger-text); font-weight: 600; }
+.task-card__date.is-overdue { color: var(--warning-text); font-weight: 600; }
 
 .tasks-empty { padding: 30px 8px; text-align: center; color: var(--text-muted); }
 .tasks-empty a { font-weight: 600; }
@@ -2710,6 +2741,7 @@ tr.is-not-covered { background: var(--danger-weak); }
 .tasks-table { display: none; }
 @media (min-width: 900px) {
     .tasks-page { max-width: 1080px; }
+    .narrow__row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     .tasks-mobile { display: none; }
     .tasks-table { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
     .trow {
@@ -2721,8 +2753,14 @@ tr.is-not-covered { background: var(--danger-weak); }
     .trow:not(.trow--head):hover { background: color-mix(in srgb, var(--surface-sunken) 60%, var(--surface)); }
     .trow--head { background: var(--surface-sunken); font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); }
     .trow--head:hover { background: var(--surface-sunken); }
+    .trow--group {
+        display: block; margin: 0; background: var(--surface-sunken); padding: 9px 20px;
+        font-family: var(--font-mono); font-size: 10px; font-weight: 500; letter-spacing: .1em;
+        text-transform: uppercase; color: var(--text-muted);
+    }
+    .trow--group.is-warning { color: var(--warning-text); }
     .trow.is-overdue { padding-left: 23px; }
-    .trow.is-overdue::before { content: ""; position: absolute; left: 0; top: 11px; bottom: 11px; width: 3px; border-radius: 999px; background: var(--danger); }
+    .trow.is-overdue::before { content: ""; position: absolute; left: 0; top: 11px; bottom: 11px; width: 4px; border-radius: 999px; background: var(--warning-text); }
     .trow.is-cancelled { opacity: .6; }
     .trow__title { font-size: 14px; color: var(--text); }
     .trow.is-cancelled .trow__title { text-decoration: line-through; text-decoration-color: var(--text-tenue); }
@@ -2731,7 +2769,7 @@ tr.is-not-covered { background: var(--danger-weak); }
     .trow__avatar { flex: none; width: 22px; height: 22px; border-radius: 999px; background: var(--accent-weak); color: var(--accent); display: grid; place-items: center; font-size: 9px; font-weight: 700; }
     .trow__name { font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .trow__date { font-family: var(--font-mono); font-size: 13px; color: var(--text-muted); }
-    .trow__date.is-overdue { color: var(--danger-text); font-weight: 600; }
+    .trow__date.is-overdue { color: var(--warning-text); font-weight: 600; }
     .trow .task-pill { justify-self: start; }
 }
 

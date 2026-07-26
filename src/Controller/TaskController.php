@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use App\Dashboard\CentreDashboard;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskResponsibility;
@@ -41,81 +40,138 @@ final class TaskController extends AbstractController
     /** Transitions reserved to the superior/admin (guarded by the workflow); the rest are progress. */
     private const array SUPERIOR_TRANSITIONS = ['validate', 'reject'];
 
+    /** The deadline windows of the narrowing form, aligned with the buckets Inicio already speaks. */
+    private const array DATE_WINDOWS = [
+        '7dias' => 'Próximos 7 días',
+        'adelante' => 'Más adelante',
+    ];
+
+    /** The "persona" value meaning "nobody is on the hook for it": tasks with no resolvable responsible. */
+    private const string NOBODY = 'nadie';
+
     /**
      * The course plan, scoped to the tasks the user may see: their own, those under a unit they are a
      * superior of, or every task for an admin (see {@see TaskVisibility}). The page itself is open to
      * any authenticated user; the organisation chart decides what shows up, not the permission matrix.
+     *
+     * The screen separates two things that used to be tangled: NAVIGATING (the named views, which are
+     * the questions people actually arrive with) and NARROWING (one form: departamento, persona, rol,
+     * fecha, búsqueda). Every count is computed over the narrowed set, so a view always delivers the
+     * number it promises — the old status chips counted the whole course and lied as soon as anything
+     * was filtered.
      */
     #[Route('/tareas', name: 'task_index', methods: ['GET'])]
-    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility, CentreDashboard $dashboard): Response
+    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility, OrganizationHierarchy $hierarchy): Response
     {
         $today = new \DateTimeImmutable('today');
-        $schoolYear = $request->query->getString('curso') ?: SchoolYear::current($today);
+        $todayStr = $today->format('Y-m-d');
+        $isAdmin = $this->isGranted('ROLE_ADMIN');
+
         // Cursos entre los que se puede navegar (histórico): los que tienen tareas + el actual, por si
-        // aún no tiene ninguna. Se ofrece el selector solo cuando hay más de uno.
+        // aún no tiene ninguna. El `curso` pedido se valida por FORMATO, no por pertenencia: antes se
+        // aceptaba cualquier cadena y se reflejaba como pestaña activa y en el <title> con la pantalla a
+        // cero; pero exigir que tenga tareas dejaría fuera un curso recién generado y aún vacío, al que
+        // AdminAcademicYearController::generate() redirige.
         $years = $tasks->schoolYearsWithTasks();
-        if (!\in_array($schoolYear, $years, true)) {
-            $years[] = $schoolYear;
-            rsort($years);
+        $currentYear = SchoolYear::current($today);
+        if (!\in_array($currentYear, $years, true)) {
+            $years[] = $currentYear;
         }
+        $schoolYear = $request->query->getString('curso');
+        if (1 !== preg_match('/^\d{4}-\d{4}$/', $schoolYear)) {
+            $schoolYear = $currentYear;
+        } elseif (!\in_array($schoolYear, $years, true)) {
+            $years[] = $schoolYear;
+        }
+        rsort($years);
 
-        $visible = $visibility->visibleTo($tasks->findBySchoolYear($schoolYear), $user, $this->isGranted('ROLE_ADMIN'));
+        $visible = $visibility->visibleTo($tasks->findBySchoolYear($schoolYear), $user, $isAdmin);
 
-        // Conteos para los chips de estado (sobre TODO lo visible, antes de filtrar). Reusa el mismo
-        // recuento del panel para no divergir.
-        $ov = $dashboard->overview($visible, $today);
-        $counts = [
-            'all' => \count($visible),
-            'overdue' => $ov['overdue'],
-            'pending' => $ov['pending'],
-            'submitted' => $ov['submitted'],
-            'validated' => $ov['finalized'],
-        ];
-
-        // Opciones de la hoja de filtros: unidades y roles presentes en lo visible (sin consulta extra).
-        $units = $roles = [];
+        // Opciones del acotado: departamentos, roles y personas presentes en lo visible (sin consulta
+        // extra). Las personas se listan por el responsable QUE SE MUESTRA, para que el desplegable y
+        // la columna digan lo mismo también en una tarea delegada.
+        $departments = $roles = $people = [];
         foreach ($visible as $t) {
-            if (null !== ($u = $t->getUnit()?->getName())) {
-                $units[$u] = true;
+            if (null !== ($d = $t->getUnit()?->getName())) {
+                $departments[$d] = true;
             }
             if (null !== ($r = self::roleNameOf($t))) {
                 $roles[$r] = true;
             }
+            if (null !== ($p = $t->resolveResponsible())) {
+                $people[$p->getId()] = $p->getFullName();
+            }
         }
-        $units = array_keys($units);
+        $departments = array_keys($departments);
         $roles = array_keys($roles);
-        sort($units);
+        sort($departments);
         sort($roles);
+        asort($people);
 
-        // Filtros (chip de estado + hoja: unidad, rol, fecha) + búsqueda. Server-side: robusto, sin JS,
-        // compartible por URL.
-        $estado = $request->query->getString('estado') ?: 'all';
-        $q = mb_strtolower(trim($request->query->getString('q')));
-        $unidad = $request->query->getString('unidad');
+        // NAVEGAR. Las vistas se ofrecen por CAPACIDAD, no por su recuento: una fila de navegación que
+        // aparece y desaparece según los datos no se puede aprender. Para quien no manda en nadie, "Mías"
+        // sería idéntica a "Abiertas" (su ámbito visible ES lo suyo) y "Esperando mi validación" nunca
+        // podría tener nada, así que solo ve dos. Se resuelve ANTES de acotar porque no depende de los
+        // datos, solo de quién mira.
+        $supervises = $isAdmin || $hierarchy->commandsWholeSchool($user) || null !== $hierarchy->commandedDepartment($user);
+        $viewDefs = array_filter([
+            ['key' => 'abiertas', 'label' => 'Abiertas'],
+            ['key' => 'mias', 'label' => 'Mías', 'only' => $supervises],
+            ['key' => 'validar', 'label' => 'Esperando mi validación', 'only' => $supervises],
+            ['key' => 'vencidas', 'label' => 'Vencidas', 'tone' => 'warning'],
+        ], static fn (array $v): bool => false !== ($v['only'] ?? true));
+        // "cerradas" no está en la fila de vistas (se alcanza por el pie): el histórico no compite con
+        // el trabajo vivo, que es un tercio de las filas.
+        $vista = $request->query->getString('vista');
+        if (!\in_array($vista, [...array_column($viewDefs, 'key'), 'cerradas'], true)) {
+            $vista = 'abiertas';
+        }
+
+        // ACOTAR. Un valor que no está entre las opciones se descarta: filtrar por algo que no puede
+        // casar solo produce un vacío inexplicable.
+        $departamento = $request->query->getString('departamento');
+        // "nadie" (sin responsable) es un VALOR del filtro de persona, no una vista: pertenece a acotar
+        // por persona, y así la fila de navegación se queda en cuatro opciones.
+        $persona = $request->query->getString('persona');
         $rol = $request->query->getString('rol');
-        $fecha = $request->query->getString('fecha'); // '' | 'vencidas' | 'mes'
-        $monthStr = $today->format('Y-m');
+        $fecha = $request->query->getString('fecha');
+        $rawQuery = trim($request->query->getString('q'));
+        $q = mb_strtolower($rawQuery);
+        if (!\in_array($departamento, $departments, true)) {
+            $departamento = '';
+        }
+        if (self::NOBODY !== $persona && !\array_key_exists($persona, $people)) {
+            $persona = '';
+        }
+        if (!\in_array($rol, $roles, true)) {
+            $rol = '';
+        }
+        // Las ventanas van de hoy hacia delante y "vencida" es hacia atrás: en esa vista la intersección
+        // sería vacía siempre, así que la ventana no aplica y tampoco se ofrece.
+        $offersDateWindow = 'vencidas' !== $vista;
+        if (!$offersDateWindow || !\array_key_exists($fecha, self::DATE_WINDOWS)) {
+            $fecha = '';
+        }
 
-        $matches = static function (Task $t) use ($estado, $q, $unidad, $rol, $fecha, $today, $monthStr): bool {
-            $byStatus = match ($estado) {
-                'overdue' => self::isOverdue($t, $today),
-                'pending' => TaskStatus::PENDING === $t->getStatus(),
-                'submitted' => TaskStatus::SUBMITTED === $t->getStatus(),
-                'validated' => TaskStatus::VALIDATED === $t->getStatus(),
-                default => true,
-            };
-            if (!$byStatus) {
+        $weekEnd = $today->modify('+7 days')->format('Y-m-d');
+        $narrows = static function (Task $t) use ($departamento, $persona, $rol, $fecha, $q, $todayStr, $weekEnd): bool {
+            if ('' !== $departamento && $t->getUnit()?->getName() !== $departamento) {
                 return false;
             }
-            if ('' !== $unidad && $t->getUnit()?->getName() !== $unidad) {
+            $who = $t->resolveResponsible();
+            if (self::NOBODY === $persona && null !== $who) {
+                return false;
+            }
+            if ('' !== $persona && self::NOBODY !== $persona && (string) $who?->getId() !== $persona) {
                 return false;
             }
             if ('' !== $rol && self::roleNameOf($t) !== $rol) {
                 return false;
             }
+            $due = $t->getDueDate()->format('Y-m-d');
             $byDate = match ($fecha) {
-                'vencidas' => self::isOverdue($t, $today),
-                'mes' => $t->getDueDate()->format('Y-m') === $monthStr,
+                '7dias' => $due >= $todayStr && $due <= $weekEnd,
+                'adelante' => $due > $weekEnd,
                 default => true,
             };
             if (!$byDate) {
@@ -124,17 +180,41 @@ final class TaskController extends AbstractController
             if ('' === $q) {
                 return true;
             }
-            $hay = mb_strtolower($t->getTitle().' '.($t->getAssignedUser()?->getFullName() ?? '').' '.($t->getUnit()?->getName() ?? ''));
+            // Busca en el responsable que la fila ENSEÑA (resolveResponsible), no en el asignado: una
+            // tarea delegada no se encontraba por el nombre que el usuario está leyendo en pantalla.
+            $hay = mb_strtolower($t->getTitle().' '.($who?->getFullName() ?? '').' '.($t->getUnit()?->getName() ?? ''));
 
             return str_contains($hay, $q);
         };
+        $scoped = array_values(array_filter($visible, $narrows));
 
-        $filtered = array_values(array_filter($visible, $matches));
-        $hasFilters = '' !== $q || '' !== $unidad || '' !== $rol || '' !== $fecha;
+        $viewMatches = static function (string $view, Task $t) use ($user, $isAdmin, $hierarchy, $today): bool {
+            return match ($view) {
+                'mias' => !$t->isClosed() && $t->isOwnedBy($user),
+                'validar' => TaskStatus::SUBMITTED === $t->getStatus() && ($isAdmin || $hierarchy->isSuperiorOfTask($user, $t)),
+                'vencidas' => self::isOverdue($t, $today),
+                'cerradas' => $t->isClosed(),
+                // "Abiertas" es TODO lo abierto del ámbito visible, y es la vista por defecto: cualquier
+                // tarea viva tiene que ser alcanzable desde aquí sin acotar nada.
+                default => !$t->isClosed(),
+            };
+        };
+        // Cada contador se calcula sobre lo YA acotado, que es lo que hace que una vista entregue siempre
+        // el número que promete.
+        $views = array_map(
+            static fn (array $v): array => [...$v, 'n' => \count(array_filter($scoped, static fn (Task $t): bool => $viewMatches($v['key'], $t)))],
+            $viewDefs,
+        );
+
+        $filtered = array_values(array_filter($scoped, static fn (Task $t): bool => $viewMatches($vista, $t)));
+        // Lo más vencido arriba. Dentro de una vista el estado de cierre es uniforme (todas abiertas o
+        // todas cerradas), así que la fecha es la única clave que discrimina; el sort de PHP es estable,
+        // de modo que los empates conservan el orden de la consulta.
         usort($filtered, static fn (Task $a, Task $b): int => $a->getDueDate() <=> $b->getDueDate());
 
-        // Agrupación por urgencia solo en la vista "Todas" sin filtros: vencidas primero, luego el resto.
-        $grouped = 'all' === $estado && !$hasFilters;
+        // La agrupación por urgencia es invariante, no un premio por no filtrar (antes desaparecía en
+        // cuanto se acotaba, justo cuando más falta hace). En el histórico no aplica: nada vence ya.
+        $grouped = 'cerradas' !== $vista;
         $overdue = $upcoming = [];
         if ($grouped) {
             foreach ($filtered as $t) {
@@ -146,19 +226,57 @@ final class TaskController extends AbstractController
             }
         }
 
+        // Todo el estado de la pantalla en un mapa: la plantilla construye CADA enlace partiendo de
+        // aquí, así que ningún control puede volver a tirar en silencio los filtros de otro (el
+        // buscador y el selector de curso lo hacían).
+        $params = [
+            'curso' => $schoolYear,
+            'vista' => 'abiertas' !== $vista ? $vista : null,
+            'departamento' => $departamento ?: null,
+            'persona' => $persona ?: null,
+            'rol' => $rol ?: null,
+            'fecha' => $fecha ?: null,
+            'q' => '' !== $rawQuery ? $rawQuery : null,
+        ];
+        // Acotado activo como etiquetas retirables: cada una se quita sola, sin borrar las demás.
+        $personaLabel = match (true) {
+            self::NOBODY === $persona => 'Sin asignar',
+            '' !== $persona => $people[$persona],
+            default => '',
+        };
+        $tokens = [];
+        foreach ([
+            ['key' => 'departamento', 'label' => $departamento],
+            ['key' => 'persona', 'label' => $personaLabel],
+            ['key' => 'rol', 'label' => $rol],
+            ['key' => 'fecha', 'label' => self::DATE_WINDOWS[$fecha] ?? ''],
+            ['key' => 'q', 'label' => '' !== $rawQuery ? '«'.$rawQuery.'»' : ''],
+        ] as $token) {
+            if ('' !== $token['label']) {
+                $tokens[] = $token;
+            }
+        }
+
         return $this->render('task/index.html.twig', [
             'schoolYear' => $schoolYear,
             'years' => $years,
-            'todayStr' => $today->format('Y-m-d'),
-            'counts' => $counts,
-            'estado' => $estado,
-            'q' => $request->query->getString('q'),
-            'unidad' => $unidad,
+            'todayStr' => $todayStr,
+            'params' => $params,
+            'views' => $views,
+            'vista' => $vista,
+            'tokens' => $tokens,
+            'closedCount' => \count(array_filter($scoped, static fn (Task $t): bool => $t->isClosed())),
+            'departamento' => $departamento,
+            'persona' => $persona,
+            'nobody' => self::NOBODY,
             'rol' => $rol,
             'fecha' => $fecha,
-            'unitOptions' => $units,
+            'dateWindows' => $offersDateWindow ? self::DATE_WINDOWS : [],
+            'offersDateWindow' => $offersDateWindow,
+            'q' => $rawQuery,
+            'departmentOptions' => $departments,
             'roleOptions' => $roles,
-            'activeFilters' => ('' !== $unidad ? 1 : 0) + ('' !== $rol ? 1 : 0) + ('' !== $fecha ? 1 : 0),
+            'peopleOptions' => $people,
             'grouped' => $grouped,
             'tasks' => $filtered,
             'overdueTasks' => $overdue,

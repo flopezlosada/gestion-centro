@@ -4,21 +4,33 @@
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Tareas{% endblock %}
 
 {# Una tarjeta de tarea: título + píldora de estado, y pie con responsable y fecha. Vencida = barra
-   roja a la izquierda y fecha en rojo; cancelada = atenuada y tachada. Compartida por los tres bloques. #}
+   naranja a la izquierda y fecha en naranja (naranja = urgencia; el rojo es destructivo);
+   cancelada = atenuada y tachada. #}
+{# La píldora de estado: el color lo decide la pantalla, el TEXTO lo manda TaskStatus::LABELS, que es
+   la única fuente de las etiquetas en castellano (antes este fichero las reescribía a mano, dos veces, y
+   ya divergía del macro compartido con un "✓ Finalizada"). #}
+{% macro pill(status) %}
+    {% set cls = {
+        'pending':   'is-pending',
+        'submitted': 'is-amber',
+        'validated': 'is-success',
+        'cancelled': 'is-muted',
+    }[status]|default('is-pending') %}
+    <span class="task-pill task-pill--{{ cls }}">{{ constant('App\\Support\\TaskStatus::LABELS')[status]|default(status) }}</span>
+{% endmacro %}
+
+{# Una tarjeta de tarea (móvil): título + píldora de estado, y pie con responsable y fecha. Vencida = barra
+   naranja a la izquierda y fecha en naranja (naranja = urgencia; el rojo es destructivo);
+   cancelada = atenuada y tachada. #}
 {% macro task_card(t, todayStr) %}
-    {% set overdue = t.status not in ['validated', 'cancelled'] and t.dueDate|date('Y-m-d', false) < todayStr %}
-    {% set pill = {
-        'pending':   {'cls': 'is-pending',  'label': 'Pendiente'},
-        'submitted': {'cls': 'is-amber',    'label': 'Entregada'},
-        'validated': {'cls': 'is-success',  'label': '✓ Finalizada'},
-        'cancelled': {'cls': 'is-muted',    'label': 'Cancelada'},
-    }[t.status]|default({'cls': 'is-pending', 'label': t.status}) %}
+    {% import _self as ui %}
+    {% set overdue = t.status not in constant('App\\Support\\TaskStatus::CLOSED') and t.dueDate|date('Y-m-d', false) < todayStr %}
     {# El responsable ACTUAL: el delegado si la tarea está delegada, si no el asignado (resolveResponsible). #}
     {% set who = t.resolveResponsible %}
     <a class="task-card{{ overdue ? ' is-overdue' }}{{ t.status == 'cancelled' ? ' is-cancelled' }}" href="{{ path('task_show', { id: t.id }) }}">
         <div class="task-card__top">
             <span class="task-card__title">{{ t.title }}</span>
-            <span class="task-pill task-pill--{{ pill.cls }}">{{ pill.label }}</span>
+            {{ ui.pill(t.status) }}
         </div>
         <div class="task-card__foot">
             <span class="task-card__who">
@@ -35,16 +47,13 @@
     </a>
 {% endmacro %}
 
-{# Una FILA de tabla (escritorio): las mismas columnas que el handoff 13a. #}
+{# Una FILA de la rejilla de escritorio. Es un ENLACE, sin roles ARIA de tabla: poner role="row" en un <a>
+   sustituye su rol implícito y el lector de pantalla deja de anunciarlo como enlace. El nombre accesible
+   del enlace ya concatena tarea, departamento, responsable, fecha y estado, así que la cabecera visual va
+   aria-hidden. #}
 {% macro task_row(t, todayStr) %}
-    {% set overdue = t.status not in ['validated', 'cancelled'] and t.dueDate|date('Y-m-d', false) < todayStr %}
-    {% set pill = {
-        'pending':   {'cls': 'is-pending',  'label': 'Pendiente'},
-        'submitted': {'cls': 'is-amber',    'label': 'Entregada'},
-        'validated': {'cls': 'is-success',  'label': '✓ Finalizada'},
-        'cancelled': {'cls': 'is-muted',    'label': 'Cancelada'},
-    }[t.status]|default({'cls': 'is-pending', 'label': t.status}) %}
-    {# El responsable ACTUAL: el delegado si la tarea está delegada, si no el asignado (resolveResponsible). #}
+    {% import _self as ui %}
+    {% set overdue = t.status not in constant('App\\Support\\TaskStatus::CLOSED') and t.dueDate|date('Y-m-d', false) < todayStr %}
     {% set who = t.resolveResponsible %}
     <a class="trow{{ overdue ? ' is-overdue' }}{{ t.status == 'cancelled' ? ' is-cancelled' }}" href="{{ path('task_show', { id: t.id }) }}">
         <span class="trow__title">{{ t.title }}</span>
@@ -53,19 +62,21 @@
             {% if who %}<span class="trow__avatar" aria-hidden="true">{{ who.fullName|initials }}</span><span class="trow__name">{{ who.fullName }}{% if t.delegatedTo %} · delegada{% endif %}</span>{% else %}<span class="cell-muted">—</span>{% endif %}
         </span>
         <span class="trow__date{{ overdue ? ' is-overdue' }}">{{ t.dueDate|date('d/m/Y') }}</span>
-        <span class="task-pill task-pill--{{ pill.cls }}">{{ pill.label }}</span>
+        {{ ui.pill(t.status) }}
     </a>
 {% endmacro %}
 
 {% block body %}
     {% import _self as ui %}
-    {% set chips = [
-        {'key': 'all',       'label': 'Todas',       'n': counts.all},
-        {'key': 'overdue',   'label': 'Vencidas',    'n': counts.overdue,   'tone': 'danger'},
-        {'key': 'pending',   'label': 'Pendientes',  'n': counts.pending},
-        {'key': 'submitted', 'label': 'Entregadas',  'n': counts.submitted},
-        {'key': 'validated', 'label': 'Finalizadas', 'n': counts.validated},
-    ] %}
+    {# Cada enlace de la pantalla se construye sobre `params`, el estado completo de la pantalla: así
+       ningún control puede volver a tirar en silencio los filtros de otro. #}
+    {% set emptyCopy = {
+        'abiertas': 'No hay ninguna tarea abierta. Todo al día.',
+        'mias':     'No tienes tareas abiertas.',
+        'validar':  'No hay nada esperando tu validación.',
+        'vencidas': 'No hay tareas vencidas. Todo al día.',
+        'cerradas': 'Todavía no hay tareas cerradas este curso.',
+    } %}
 
     <div class="tasks-page">
         <header class="tasks-head">
@@ -79,86 +90,117 @@
         {% if years|length > 1 %}
             <nav class="year-nav" aria-label="Curso">
                 {% for y in years %}
-                    <a href="{{ path('task_index', { curso: y }) }}" class="year-nav__item{{ y == schoolYear ? ' is-active' }}"{{ y == schoolYear ? ' aria-current=page' }}>{{ y }}</a>
+                    <a href="{{ path('task_index', params|merge({'curso': y})) }}" class="year-nav__item{{ y == schoolYear ? ' is-active' }}"{% if y == schoolYear %} aria-current="page"{% endif %}>{{ y }}</a>
                 {% endfor %}
             </nav>
         {% endif %}
 
-        {# Buscador (GET): recarga con ?q=. Conserva estado y curso. #}
-        <form class="tasks-search" method="get" action="{{ path('task_index') }}" role="search">
-            <input type="hidden" name="curso" value="{{ schoolYear }}">
-            {% if estado != 'all' %}<input type="hidden" name="estado" value="{{ estado }}">{% endif %}
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-            <input type="search" name="q" value="{{ q }}" placeholder="Buscar tarea…" autocomplete="off">
-        </form>
+        {# NAVEGAR: las vistas son las preguntas con las que se entra. Aplican al instante (son enlaces)
+           y se ofrecen por capacidad, no por su recuento, para que la fila se pueda aprender. #}
+        <nav class="taskviews" aria-label="Vistas de tareas">
+            {% for v in views %}
+                <a class="taskview{{ vista == v.key ? ' is-active' }}{{ (v.tone ?? '') == 'warning' ? ' is-warning' }}"
+                   href="{{ path('task_index', params|merge({'vista': v.key == 'abiertas' ? null : v.key})) }}"
+                   {%- if vista == v.key %} aria-current="page"{% endif %}>
+                    {{ v.label }} <span class="taskview__n">{{ v.n }}</span>
+                </a>
+            {% endfor %}
+        </nav>
 
-        {# Hoja de filtros (handoff 5b): rol, unidad y fecha. <details> = despliegue sin JS; envío GET. #}
-        {% if unitOptions is not empty or roleOptions is not empty %}
-            <details class="filtersheet"{{ activeFilters > 0 ? ' open' }}>
-                <summary class="task-chip filtersheet__toggle">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 5h18M6 12h12M10 19h4"/></svg>
-                    Filtros{% if activeFilters > 0 %} <span class="task-chip__n">{{ activeFilters }}</span>{% endif %}
-                </summary>
-                <form class="filtersheet__panel" method="get" action="{{ path('task_index') }}">
-                    <input type="hidden" name="curso" value="{{ schoolYear }}">
-                    {% if estado != 'all' %}<input type="hidden" name="estado" value="{{ estado }}">{% endif %}
-                    {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+        {# ACOTAR: un solo formulario con todo dentro (búsqueda, departamento, persona, rol, fecha) y un
+           solo botón. Plegado por defecto para que la primera tarea no caiga bajo el pliegue; abierto si
+           hay algo acotado. Lo que está filtrado se lee SIEMPRE fuera, en las etiquetas de abajo, así que
+           plegarlo no esconde ninguna información. #}
+        <details class="narrow"{{ tokens is not empty ? ' open' }}>
+            <summary class="narrow__toggle">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 5h18M6 12h12M10 19h4"/></svg>
+                Acotar{% if tokens is not empty %} <span class="narrow__n">{{ tokens|length }}</span>{% endif %}
+            </summary>
+            <form class="narrow__panel" method="get" action="{{ path('task_index') }}">
+                <input type="hidden" name="curso" value="{{ schoolYear }}">
+                {% if params.vista %}<input type="hidden" name="vista" value="{{ params.vista }}">{% endif %}
+
+                <div class="narrow__search">
+                    <label class="visually-hidden" for="n-q">Buscar por tarea, persona o departamento</label>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+                    <input type="search" id="n-q" name="q" value="{{ q }}" placeholder="Buscar por tarea, persona o departamento…" autocomplete="off">
+                </div>
+
+                <div class="narrow__row">
+                    {% if departmentOptions is not empty %}
+                        <div class="narrow__field">
+                            <label class="narrow__label" for="n-dep">Departamento</label>
+                            <select id="n-dep" name="departamento">
+                                <option value="">Todos</option>
+                                {% for d in departmentOptions %}<option value="{{ d }}"{{ d == departamento ? ' selected' }}>{{ d }}</option>{% endfor %}
+                            </select>
+                        </div>
+                    {% endif %}
+                    {% if peopleOptions is not empty %}
+                        <div class="narrow__field">
+                            <label class="narrow__label" for="n-per">Persona</label>
+                            <select id="n-per" name="persona">
+                                <option value="">Todas</option>
+                                <option value="{{ nobody }}"{{ persona == nobody ? ' selected' }}>Sin asignar</option>
+                                {% for id, name in peopleOptions %}<option value="{{ id }}"{{ id == persona ? ' selected' }}>{{ name }}</option>{% endfor %}
+                            </select>
+                        </div>
+                    {% endif %}
                     {% if roleOptions is not empty %}
-                        <div class="filtersheet__group">
-                            <span class="filtersheet__label">Rol</span>
-                            <select name="rol">
-                                <option value="">Todos los roles</option>
+                        <div class="narrow__field">
+                            <label class="narrow__label" for="n-rol">Rol</label>
+                            <select id="n-rol" name="rol">
+                                <option value="">Todos</option>
                                 {% for r in roleOptions %}<option value="{{ r }}"{{ r == rol ? ' selected' }}>{{ r }}</option>{% endfor %}
                             </select>
                         </div>
                     {% endif %}
-                    {% if unitOptions is not empty %}
-                        <div class="filtersheet__group">
-                            <span class="filtersheet__label">Unidad / departamento</span>
-                            <select name="unidad">
-                                <option value="">Todas las unidades</option>
-                                {% for u in unitOptions %}<option value="{{ u }}"{{ u == unidad ? ' selected' }}>{{ u }}</option>{% endfor %}
+                    {% if offersDateWindow %}
+                        <div class="narrow__field">
+                            <label class="narrow__label" for="n-fec">Fecha límite</label>
+                            <select id="n-fec" name="fecha">
+                                <option value="">Todo el curso</option>
+                                {% for key, label in dateWindows %}<option value="{{ key }}"{{ fecha == key ? ' selected' }}>{{ label }}</option>{% endfor %}
                             </select>
                         </div>
                     {% endif %}
-                    <div class="filtersheet__group">
-                        <span class="filtersheet__label">Fecha límite</span>
-                        <div class="segmented">
-                            <label class="segmented__opt{{ fecha == '' ? ' is-on' }}"><input type="radio" name="fecha" value=""{{ fecha == '' ? ' checked' }}>Todo el curso</label>
-                            <label class="segmented__opt{{ fecha == 'vencidas' ? ' is-on' }}"><input type="radio" name="fecha" value="vencidas"{{ fecha == 'vencidas' ? ' checked' }}>Vencidas</label>
-                            <label class="segmented__opt{{ fecha == 'mes' ? ' is-on' }}"><input type="radio" name="fecha" value="mes"{{ fecha == 'mes' ? ' checked' }}>Este mes</label>
-                        </div>
-                    </div>
-                    <div class="filtersheet__foot">
-                        <a class="filtersheet__clear" href="{{ path('task_index', { curso: schoolYear, estado: estado != 'all' ? estado : null }) }}">Limpiar</a>
-                        <button class="btn-lg btn-lg--primary" type="submit">Aplicar filtros</button>
-                    </div>
-                </form>
-            </details>
-        {% endif %}
+                </div>
 
-        {# Chips de estado con conteo (GET). El activo, en verde. #}
-        <div class="tasks-chips">
-            {% for c in chips %}
-                <a class="task-chip{{ estado == c.key ? ' is-active' }}{{ (c.tone ?? '') == 'danger' ? ' is-danger' }}"
-                   href="{{ path('task_index', { curso: schoolYear, estado: c.key, q: q ?: null, unidad: unidad ?: null, rol: rol ?: null, fecha: fecha ?: null }) }}">
-                    {% if (c.tone ?? '') == 'danger' %}<span class="task-chip__dot" aria-hidden="true"></span>{% endif %}{{ c.label }} <span class="task-chip__n">{{ c.n }}</span>
-                </a>
+                <button class="btn-lg btn-lg--primary narrow__go" type="submit">Aplicar</button>
+            </form>
+        </details>
+
+        {# Lo acotado, retirable de una en una, y el recuento de lo que se está viendo de verdad. #}
+        <div class="narrow-active">
+            {% for tok in tokens %}
+                <a class="ntoken" href="{{ path('task_index', params|merge({(tok.key): null})) }}">{{ tok.label }}<span class="ntoken__x" aria-hidden="true">✕</span><span class="visually-hidden"> · quitar este filtro</span></a>
             {% endfor %}
+            <p class="narrow-active__count">{{ tasks|length }} {{ tasks|length == 1 ? 'tarea' : 'tareas' }}</p>
+            {# Cuando no hay resultados, la salida la da el propio bloque vacío: no se repite aquí. #}
+            {% if tokens|length > 1 and tasks is not empty %}
+                <a class="narrow-active__clear" href="{{ path('task_index', {'curso': schoolYear, 'vista': params.vista}) }}">Quitar el acotado</a>
+            {% endif %}
         </div>
 
         {% if tasks is empty %}
             <div class="tasks-empty">
-                <p>No hay tareas que coincidan{{ q ? ' con «' ~ q ~ '»' }}.</p>
-                {% if estado != 'all' or q %}<a href="{{ path('task_index', { curso: schoolYear }) }}">Ver todas</a>{% endif %}
+                {% if tokens is not empty %}
+                    <p>Ningún resultado con este acotado. Quita alguno de los filtros de arriba para ver más.</p>
+                    <a href="{{ path('task_index', {'curso': schoolYear, 'vista': params.vista}) }}">Quitar el acotado</a>
+                {% else %}
+                    <p>{{ emptyCopy[vista] }}</p>
+                    {% if vista != 'cerradas' and closedCount > 0 %}
+                        <a href="{{ path('task_index', params|merge({'vista': 'cerradas'})) }}">Ver {{ closedCount }} cerradas</a>
+                    {% endif %}
+                {% endif %}
             </div>
         {% else %}
-            {# MÓVIL: tarjetas agrupadas por urgencia. #}
+            {# MÓVIL: tarjetas agrupadas por urgencia. La agrupación es invariante: también al acotar. #}
             <div class="tasks-mobile">
                 {% if grouped %}
                     {% if overdueTasks is not empty %}
                         <div class="tasks-group">
-                            <div class="tasks-group__head is-danger"><span class="tasks-group__dot"></span>Vencidas · {{ overdueTasks|length }}</div>
+                            <h2 class="tasks-group__head is-warning"><span class="tasks-group__dot"></span>Vencidas · {{ overdueTasks|length }}</h2>
                             <div class="tasks-cards">
                                 {% for t in overdueTasks %}{{ ui.task_card(t, todayStr) }}{% endfor %}
                             </div>
@@ -166,7 +208,7 @@
                     {% endif %}
                     {% if upcomingTasks is not empty %}
                         <div class="tasks-group">
-                            <div class="tasks-group__head"><span class="tasks-group__dot"></span>Próximas</div>
+                            <h2 class="tasks-group__head"><span class="tasks-group__dot"></span>Próximas · {{ upcomingTasks|length }}</h2>
                             <div class="tasks-cards">
                                 {% for t in upcomingTasks %}{{ ui.task_card(t, todayStr) }}{% endfor %}
                             </div>
@@ -179,13 +221,31 @@
                 {% endif %}
             </div>
 
-            {# ESCRITORIO: tabla legible (handoff 13a), filas ordenadas por urgencia. #}
+            {# ESCRITORIO: la misma agrupación que el móvil, en filas de cabecera dentro de la rejilla. #}
             <div class="tasks-table">
-                <div class="trow trow--head">
-                    <span>Tarea</span><span>Unidad</span><span>Responsable</span><span>Fecha límite</span><span>Estado</span>
+                <div class="trow trow--head" aria-hidden="true">
+                    <span>Tarea</span><span>Departamento</span><span>Responsable</span><span>Fecha límite</span><span>Estado</span>
                 </div>
-                {% for t in tasks %}{{ ui.task_row(t, todayStr) }}{% endfor %}
+                {% if grouped %}
+                    {% if overdueTasks is not empty %}
+                        <h2 class="trow trow--group is-warning">Vencidas · {{ overdueTasks|length }}</h2>
+                        {% for t in overdueTasks %}{{ ui.task_row(t, todayStr) }}{% endfor %}
+                    {% endif %}
+                    {% if upcomingTasks is not empty %}
+                        <h2 class="trow trow--group">Próximas · {{ upcomingTasks|length }}</h2>
+                        {% for t in upcomingTasks %}{{ ui.task_row(t, todayStr) }}{% endfor %}
+                    {% endif %}
+                {% else %}
+                    {% for t in tasks %}{{ ui.task_row(t, todayStr) }}{% endfor %}
+                {% endif %}
             </div>
+        {% endif %}
+
+        {# El histórico no compite con el trabajo vivo: se alcanza por el pie, no por la fila de vistas. #}
+        {% if vista != 'cerradas' and closedCount > 0 and tasks is not empty %}
+            <a class="tasks-closed" href="{{ path('task_index', params|merge({'vista': 'cerradas'})) }}">Ver {{ closedCount }} cerradas →</a>
+        {% elseif vista == 'cerradas' %}
+            <a class="tasks-closed" href="{{ path('task_index', params|merge({'vista': null})) }}">← Volver a las abiertas</a>
         {% endif %}
     </div>
 {% endblock %}
