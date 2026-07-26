@@ -21,7 +21,6 @@
                 <a href="{{ path('task_index') }}" class="{{ route starts with 'task_' ? 'is-active' }}">Tareas</a>
                 <a href="{{ path('guardia_mine') }}" class="{{ route == 'guardia_mine' ? 'is-active' }}">Mis guardias</a>
                 <a href="{{ path('calendar_index') }}" class="{{ route starts with 'calendar_' ? 'is-active' }}">Calendario</a>
-                <a href="{{ path('notification_index') }}" class="{{ route starts with 'notification_' ? 'is-active' }}">Avisos{% if unread > 0 %} <span class="badge badge--danger">{{ unread }}</span>{% endif %}</a>
 
                 {# Gestión de guardias: solo para quien coordina (lectura en el área Guardias; el flag de
                    administrador la concede por bypass). Las acciones del parte exigen escritura, verificada
@@ -89,6 +88,11 @@
                     {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a>{% endblock %}
                 </nav>
                 <div class="topbar-right">
+                    {# Avisos como CAMPANA (convención: no es destino de navegación primaria; el punto marca no leídos). #}
+                    <a href="{{ path('notification_index') }}" class="topbar-bell{{ route starts with 'notification_' ? ' is-active' }}" title="Avisos" aria-label="Avisos{% if unread > 0 %} · {{ unread }} sin leer{% endif %}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+                        {% if unread > 0 %}<span class="topbar-bell__dot" aria-hidden="true"></span>{% endif %}
+                    </a>
                     <div class="theme-toggle" role="group" aria-label="Tema de color">
                         <button type="button" data-theme-value="light" aria-pressed="true">Claro</button>
                         <button type="button" data-theme-value="dark" aria-pressed="false">Oscuro</button>
