@@ -261,6 +261,7 @@ final class CalendarController extends AbstractController
      * @param \DateTimeImmutable                 $today           today, to flag the current day
      * @param array<string, Task[]>              $byDay           tasks indexed by deadline day
      * @param array<string, PersonalEvent[]>     $eventsByDay     personal events indexed by start day
+     * @param array<string, GuardiaCover[]>      $guardiasByDay   the user's guardias indexed by day
      * @param array<string, NonLectiveDay>       $nonLectiveByDay non-teaching days indexed by day
      * @param SchoolCalendar                     $schoolCalendar  the teaching-day calendar
      *
