@@ -31,11 +31,12 @@ final readonly class AgendaEntry
     }
 
     /**
-     * Wraps an institutional task, keyed by its deadline. Cuenta como "hecha" (bucket Hechas, fuera de
-     * los pendientes) según {@see Task::isDone()} — casilla de progreso marcada o tarea ya Finalizada,
-     * así una finalizada no vuelve a aparecer como pendiente. La plantilla pinta la casilla con ese
-     * MISMO flag, para que "está en Hechas" y "se ve hecha" no puedan discrepar. Las canceladas ni
-     * llegan aquí: {@see \App\Repository\TaskRepository::findAgendaFor()} las excluye.
+     * Wraps an institutional task, keyed by its deadline. Cuenta como "hecha" (bucket `done`, aparte de
+     * los pendientes, que es lo único que pinta Inicio) según {@see Task::isDone()} — casilla de
+     * progreso marcada o tarea ya Finalizada, así una finalizada no vuelve a aparecer como pendiente.
+     * La vista de día del calendario pinta su casilla con ese MISMO flag, para que "cuenta como hecha" y
+     * "se ve hecha" no puedan discrepar. Las canceladas ni llegan aquí:
+     * {@see \App\Repository\TaskRepository::findAgendaFor()} las excluye.
      *
      * @param Task $task the task to wrap
      *

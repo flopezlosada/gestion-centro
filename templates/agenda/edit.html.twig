@@ -2,7 +2,8 @@
 {% import '_macros/form.html.twig' as f %}
 
 {% block title %}Editar evento · {{ app_organization_name }}{% endblock %}
-{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('personal_event_index') }}">Agenda</a><span class="sep">/</span>Editar{% endblock %}
+{# Sube por el Calendario, donde aterriza el guardado; la lista de agenda aparte ya no existe. #}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('calendar_index', { vista: 'semana', fecha: event.startAt|date('Y-m-d', false) }) }}">Calendario</a><span class="sep">/</span>Editar{% endblock %}
 
 {% block body %}
     <div class="page-head">

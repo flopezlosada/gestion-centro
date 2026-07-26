@@ -1817,25 +1817,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .obj-timeline__raw > summary { font-size: 12.5px; cursor: pointer; }
 .obj-timeline__raw[open] > summary { margin-bottom: 4px; }
 
-/* ---- Agenda del inicio ("qué tengo que hacer") --------------------------
-   Checklist familiar: una casilla de 1 clic + título + cuándo/dónde, agrupada por tiempo.
-   Vencidas en ámbar suave (nunca rojo agresivo): que no dé pereza abrirla. */
-.agenda-group { margin: 0 0 28px; max-width: 760px; }
-.agenda-group__title {
-    display: flex; align-items: center; gap: 8px;
-    font-family: var(--font-body); font-size: 12.5px; font-weight: 600;
-    letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted);
-    margin: 0 0 8px; padding: 0 2px;
-}
-.agenda-count {
-    display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px;
-    border-radius: 999px; background: var(--surface-sunken); color: var(--text-muted);
-    font-size: 11px; font-weight: 600; letter-spacing: 0;
-}
-.agenda-group--overdue .agenda-group__title { color: var(--warning-text); }
-.agenda-group--overdue .agenda-count { background: var(--warning-weak); color: var(--warning-text); }
-
-/* Lista plana estilo Todoist: filas separadas por filete fino, sin cajitas; hover tiñe la fila. */
+/* ---- Lista de agenda de la vista de día del calendario -------------------
+   Checklist familiar: una casilla de 1 clic + título + cuándo/dónde.
+   Lista plana estilo Todoist: filas separadas por filete fino, sin cajitas; hover tiñe la fila. */
 .agenda-list { list-style: none; margin: 0; padding: 0; }
 .agenda-item {
     display: flex; align-items: flex-start; gap: 12px;
@@ -1878,9 +1862,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 /* Campanita de "este evento avisa": va dentro de .agenda-meta, así que hereda su color apagado; solo
    necesita alinearse ópticamente con el texto de la línea. */
 .agenda-bell { display: inline-flex; vertical-align: -2px; }
-.agenda-group--overdue .agenda-meta { color: var(--warning-text); }
 .agenda-item.is-done .agenda-title { color: var(--text-faint); text-decoration: line-through; }
-.agenda-group--done { opacity: .7; }
 
 @media (max-width: 760px) {
     .agenda-item { padding: 12px 6px; gap: 12px; }

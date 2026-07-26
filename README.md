@@ -9,8 +9,9 @@ tiene que hacer hoy**; la dirección coordina el plan del centro.
 
 ## Qué hace (Fase 1)
 
-- **Inicio**: agenda personal "qué me toca hoy", agrupada por Vencidas / Hoy / Próximos 7 días /
-  Más adelante, con casilla de hecho de 1 clic.
+- **Inicio**: agenda personal "qué me toca hoy" en dos bloques — Con hora (tus citas de hoy) y Por
+  hacer (tareas del centro vencidas o de hoy + recordatorios sin hora, con casilla de hecho de 1 clic)
+  — más un anticipo de los próximos 7 días. Lo de otro día se ve en el Calendario.
 - **Tareas**: plan del curso + ficha con el ciclo de vida (empezar → entregar → validar/devolver) y su
   histórico de actividad.
 - **CRUD de tareas** por jerarquía: cada quien crea/asigna para sí y para sus inferiores en la cadena de

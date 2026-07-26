@@ -12,7 +12,8 @@ use App\Util\SchoolYear;
 /**
  * Builds a user's personal agenda: their institutional tasks (assigned to them) and their private
  * personal events (reminders and appointments) merged into one timeline and split into time buckets.
- * The single source of this merge/bucket logic, shared by the home dashboard and the agenda page.
+ * The single source of this merge/bucket logic, used by the home dashboard (the only page that reads
+ * "lo mío" as a merged timeline; the Calendario reads tasks and events per day instead).
  */
 final class PersonalAgenda
 {
