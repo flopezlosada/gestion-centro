@@ -102,4 +102,22 @@ final class PersonalAgendaTest extends KernelTestCase
 
         self::assertContains('Tarea pending', $this->taskTitles($buckets['overdue']), 'una pendiente vencida sigue saliendo');
     }
+
+    public function testADelegatedTaskLeavesTheDelegatorAndEntersTheDelegatee(): void
+    {
+        $boss = (new User())->setFullName('Jefa')->setEmail('jefa@centro.test');
+        $sub = (new User())->setFullName('Sub')->setEmail('sub@centro.test');
+        $this->em->persist($boss);
+        $this->em->persist($sub);
+        // Assigned to the boss, delegated down to the sub: the agenda is "what I must do", so it must
+        // leave the delegator and appear for the delegatee (mirrors Task::isOwnedBy in the query).
+        $this->assignedTask($boss, $this->today, TaskStatus::PENDING)->setDelegatedTo($sub);
+        $this->em->flush();
+
+        $bossToday = $this->taskTitles($this->agenda->bucketsFor($boss, $this->today)['today']);
+        $subToday = $this->taskTitles($this->agenda->bucketsFor($sub, $this->today)['today']);
+
+        self::assertNotContains('Tarea pending', $bossToday, 'una tarea que delegué sale de mi agenda');
+        self::assertContains('Tarea pending', $subToday, 'y entra en la agenda del delegado');
+    }
 }

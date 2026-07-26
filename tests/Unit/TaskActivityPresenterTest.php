@@ -127,6 +127,22 @@ final class TaskActivityPresenterTest extends TestCase
         self::assertSame('Se dio de baja la tarea «Vieja tarea».', $rows[0]['summary']);
     }
 
+    public function testDelegationIsHumanisedAsDelegatedToWithTheDelegateesName(): void
+    {
+        // The delegatedTo change resolves the delegatee id to their name, like any other ref field.
+        $delegatee = $this->user('Agustín Criado Pinto', 'agustin@centro.test', 326);
+        $presenter = new TaskActivityPresenter($this->emReturning([$delegatee]));
+
+        $rows = $presenter->present([
+            $this->entry('task.updated', ['delegatedTo' => ['old' => null, 'new' => 326]]),
+        ]);
+
+        self::assertSame(
+            [['label' => 'Delegada a', 'old' => '—', 'new' => 'Agustín Criado Pinto']],
+            $rows[0]['changes'],
+        );
+    }
+
     public function testUnmappedFieldIsHiddenFromFriendlyButKeptInRaw(): void
     {
         $presenter = new TaskActivityPresenter($this->emWithNoLookups());

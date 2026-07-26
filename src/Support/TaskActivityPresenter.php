@@ -40,6 +40,7 @@ final class TaskActivityPresenter
         'status' => ['label' => 'Estado', 'kind' => 'status'],
         'assignedRole' => ['label' => 'Rol responsable', 'kind' => 'ref', 'class' => Role::class],
         'assignedUser' => ['label' => 'Responsable', 'kind' => 'ref', 'class' => User::class],
+        'delegatedTo' => ['label' => 'Delegada a', 'kind' => 'ref', 'class' => User::class],
         'unit' => ['label' => 'Unidad', 'kind' => 'ref', 'class' => Department::class],
         'requiresDocument' => ['label' => 'Requiere documento', 'kind' => 'bool'],
         'requiresCheckbox' => ['label' => 'Requiere confirmación', 'kind' => 'bool'],

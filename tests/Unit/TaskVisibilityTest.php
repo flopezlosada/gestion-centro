@@ -126,4 +126,39 @@ final class TaskVisibilityTest extends TestCase
         self::assertFalse($visibility->isVisibleTo($orphan, $head, false), 'a department head cannot reach a unit-less task');
         self::assertTrue($visibility->isVisibleTo($orphan, $director, true), 'an admin still sees it');
     }
+
+    public function testAssigneeStillSeesTheirTaskAfterDelegatingItDown(): void
+    {
+        ['head' => $head, 'teacher' => $teacher, 'dept' => $dept, 0 => $visibility] = $this->scenario();
+        // The head owns the department task and delegates it down to the teacher. isOwnedBy() now hands
+        // the task to the teacher alone, and the head does not outrank their own role — so without the
+        // assignee clause the head (the one who delegated it) would lose sight of it entirely.
+        $dept->setDelegatedTo($teacher);
+
+        self::assertTrue($visibility->isVisibleTo($dept, $head, false), 'the assignee keeps sight of a task they delegated down');
+        self::assertTrue($visibility->isVisibleTo($dept, $teacher, false), 'the delegatee, the new owner, sees it too');
+    }
+
+    public function testWholeSchoolLeadershipSeesEveryTaskEvenAtTheirOwnRank(): void
+    {
+        ['director' => $director, 'head' => $head, 0 => $visibility] = $this->scenario();
+        // A dirección-level task the director neither owns nor outranks (assigned to, and delegated by,
+        // someone else): a director does not "outrank" a dirección role, but leadership oversees the
+        // whole school — so they must see it. Isolates the commandsWholeSchool rule.
+        $topLevel = $this->task(null, $head, new TaskResponsibility($this->role('direction', 40), null));
+        $topLevel->setDelegatedTo($head);
+
+        self::assertTrue($visibility->isVisibleTo($topLevel, $director, false), 'whole-school leadership sees every task, at any rank');
+    }
+
+    public function testDepartmentHeadSeesEveryTaskOfTheirDepartmentAtAnyRankAndDelegated(): void
+    {
+        ['head' => $head, 'teacher' => $teacher, 'dept' => $dept, 0 => $visibility] = $this->scenario();
+        // 'dept' is a head-level Maths task: the head does NOT outrank a head-level role (same rank),
+        // and here it is reassigned to and delegated among others — but they COMMAND Maths, so they
+        // keep seeing it. Isolates the commandedDepartment rule (not isSuperiorOfTask, not ownership).
+        $dept->setAssignedUser($teacher)->setDelegatedTo($teacher);
+
+        self::assertTrue($visibility->isVisibleTo($dept, $head, false), 'a head sees every task of their department, at any rank and delegated');
+    }
 }
