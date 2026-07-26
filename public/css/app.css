@@ -2487,8 +2487,18 @@ tr.is-not-covered { background: var(--danger-weak); }
 .tick::before { content: ""; position: absolute; inset: -10px; }
 .tick svg { width: 14px; height: 14px; }
 .tick.is-checked { background: var(--accent); border-color: var(--accent); }
-.tick.is-static { cursor: default; }
 .is-overdue .tick { border-color: color-mix(in srgb, var(--warning) 55%, var(--border-strong)); }
+/* Tarea que NO se cierra con la casilla (necesita entregar su documento): ocupa el mismo hueco para no
+   romper la columna, pero pierde el círculo — un aro apagado sería un botón que no responde. El clip
+   tiene otra forma, así que no promete cerrarse de un toque. */
+.tick--doc {
+    border: 0; border-radius: 0; cursor: default;
+    color: var(--text-faint);
+}
+.tick--doc svg { width: 18px; height: 18px; }
+.is-overdue .tick--doc { color: var(--warning-text); }
+/* Chevron de "esto se resuelve en otra pantalla": solo en esas filas, la asimetría es el mensaje. */
+.tasklist__go { flex: none; align-self: center; color: var(--text-faint); font-size: 18px; line-height: 1; }
 /* Recordatorio personal (malva) dentro de "Por hacer": distingue de un vistazo lo tuyo/privado de una
    tarea del centro (verde). Conserva el malva incluso vencido, porque el color marca el TIPO, no el estado. */
 .tick--personal { border-color: var(--personal); }

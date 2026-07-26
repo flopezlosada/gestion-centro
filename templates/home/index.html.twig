@@ -79,7 +79,16 @@
                                         </button>
                                     </form>
                                 {% else %}
-                                    <span class="tick is-static" aria-hidden="true"></span>
+                                    {#- Esta tarea NO se cierra con la casilla: se cierra entregando (con su
+                                        documento) y validando. Un círculo apagado sería un botón que no
+                                        responde, sin decir por qué; un CLIP tiene otra forma, así que no
+                                        promete cerrarse de un toque y anuncia de qué va. Misma idea que en
+                                        el calendario (círculo=tarea, cuadrado=evento, escudo=guardia): la
+                                        forma dice qué es. El camino real está en la ficha, a la que ya
+                                        lleva la fila entera. -#}
+                                    <span class="tick tick--doc" role="img" aria-label="«{{ t.title }}»: se cierra entregando el documento, no con la casilla">
+                                        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 5.5 7 11a2.1 2.1 0 0 0 3 3l5.5-5.5a3.6 3.6 0 0 0-5-5L4.8 9.2a5 5 0 0 0 7 7l3.7-3.7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                    </span>
                                 {% endif %}
                                 <a class="tasklist__body" href="{{ path('task_show', { id: t.id }) }}">
                                     <span class="tasklist__title">{{ t.title }}</span>
@@ -89,6 +98,9 @@
                                         {%- if t.requiresDocument %} · adjuntar documento{% endif -%}
                                     </span>
                                 </a>
+                                {#- Chevron solo en estas filas: la asimetría es el mensaje — esta no se
+                                    resuelve aquí, te lleva a otro sitio. -#}
+                                {% if not t.requiresCheckbox %}<span class="tasklist__go" aria-hidden="true">›</span>{% endif %}
                             </li>
                         {% else %}
                             {# Recordatorio personal sin hora: misma checklist, pero es tuyo y privado. #}
