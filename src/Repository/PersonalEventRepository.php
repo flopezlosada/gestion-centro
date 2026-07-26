@@ -64,6 +64,33 @@ class PersonalEventRepository extends ServiceEntityRepository
     }
 
     /**
+     * The entries whose push reminder is due: the instant has arrived, nothing was sent yet and the
+     * event has NOT started. Deliberately NOT scoped by owner — this is the only query in the class
+     * that crosses the privacy boundary, and it exists to notify each owner about their own entry
+     * ({@see \App\Service\EventReminderNotifier}), never to show one to anybody else.
+     *
+     * Skipping events already under way is what makes a late run harmless: after an outage the sweep
+     * catches up on what is still ahead instead of pushing "empieza en 10 minutos" about a meeting
+     * that started an hour ago.
+     *
+     * @param \DateTimeImmutable $now the sweep instant
+     *
+     * @return PersonalEvent[] the entries to remind about, earliest first
+     */
+    public function findDueReminders(\DateTimeImmutable $now): array
+    {
+        return $this->createQueryBuilder('e')
+            ->andWhere('e.remindAt IS NOT NULL')
+            ->andWhere('e.remindAt <= :now')
+            ->andWhere('e.reminderSentAt IS NULL')
+            ->andWhere('e.startAt >= :now')
+            ->setParameter('now', $now)
+            ->orderBy('e.startAt', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * Deletes every occurrence of a recurring series owned by the given user, in one query. Scoped by
      * owner — the privacy boundary — so a series id alone can never reach another user's events.
      *

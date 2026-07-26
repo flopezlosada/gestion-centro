@@ -8,6 +8,7 @@ use App\Entity\EventCategory;
 use App\Entity\PersonalEvent;
 use App\Entity\User;
 use App\Enum\CategoryColor;
+use App\Enum\EventReminderOffset;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -46,6 +47,57 @@ final class PersonalEventCrudTest extends WebTestCase
 
         self::assertResponseIsSuccessful();
         self::assertSelectorExists('form');
+    }
+
+    public function testTimesAreNativeTimeInputsNotLongDropdowns(): void
+    {
+        // Regresión: las horas fueron un <select> de 96 huecos de cuarto de hora que arrancaba en
+        // 00:00, con buscador incluido — inservible para elegir las 10:30. Deben ser el control nativo.
+        $user = $this->user('profe@centro.test');
+        $this->em->flush();
+        $this->client->loginUser($user);
+
+        $this->client->request('GET', '/agenda/nueva');
+
+        self::assertSelectorExists('input[type="time"][name="personal_event_form[startTime]"]');
+        self::assertSelectorExists('input[type="time"][name="personal_event_form[endTime]"]');
+        self::assertSelectorNotExists('select[name="personal_event_form[startTime]"]');
+    }
+
+    public function testAnyMinuteIsAValidTimeNotJustQuarters(): void
+    {
+        // Con los huecos de cuarto de hora, una reunión a las 10:37 era irrepresentable.
+        $owner = $this->user('profe@centro.test');
+        $this->em->flush();
+        $this->client->loginUser($owner);
+
+        $crawler = $this->client->request('GET', '/agenda/nueva');
+        $form = $crawler->selectButton('Crear evento')->form();
+        $form['personal_event_form[title]'] = 'Entrada a media hora rara';
+        $form['personal_event_form[day]'] = '2026-09-15';
+        $form['personal_event_form[startTime]'] = '10:37';
+        $this->client->submit($form);
+
+        self::assertResponseRedirects('/agenda');
+        $this->em->clear();
+        $event = $this->em->getRepository(PersonalEvent::class)->findOneBy(['title' => 'Entrada a media hora rara']);
+        self::assertNotNull($event);
+        self::assertSame('2026-09-15 10:37', $event->getStartAt()->format('Y-m-d H:i'));
+    }
+
+    public function testEditingPreloadsTheTimeInTheNativeField(): void
+    {
+        $owner = $this->user('profe@centro.test');
+        $event = new PersonalEvent($owner, 'Claustro', new \DateTimeImmutable('2026-09-15 10:30'));
+        $this->em->persist($event);
+        $this->em->flush();
+
+        $this->client->loginUser($owner);
+        $this->client->request('GET', '/agenda/'.$event->getId().'/editar');
+
+        self::assertResponseIsSuccessful();
+        // "HH:MM" sin segundos: es lo que el DTO guarda y lo que el input nativo espera.
+        self::assertSelectorExists('input[name="personal_event_form[startTime]"][value="10:30"]');
     }
 
     public function testNewEventPrefillsDayFromQuery(): void
@@ -313,5 +365,78 @@ final class PersonalEventCrudTest extends WebTestCase
         $reloaded = $this->em->getRepository(PersonalEvent::class)->find($id);
         self::assertNotNull($reloaded);
         self::assertSame($tutoringId, $reloaded->getCategory()?->getId());
+    }
+
+    public function testCreateTimedEventWithAReminderStoresWhenItMustFire(): void
+    {
+        $owner = $this->user('profe@centro.test');
+        $this->em->flush();
+        $this->client->loginUser($owner);
+
+        $crawler = $this->client->request('GET', '/agenda/nueva');
+        $form = $crawler->selectButton('Crear evento')->form();
+        $form['personal_event_form[title]'] = 'Reunión con inspección';
+        $form['personal_event_form[day]'] = '2026-09-15';
+        $form['personal_event_form[startTime]'] = '10:00';
+        $form['personal_event_form[reminder]'] = (string) EventReminderOffset::TEN_MINUTES->value;
+        $this->client->submit($form);
+
+        self::assertResponseRedirects('/agenda');
+        $this->em->clear();
+        $event = $this->em->getRepository(PersonalEvent::class)->findOneBy(['title' => 'Reunión con inspección']);
+        self::assertNotNull($event);
+        self::assertSame(EventReminderOffset::TEN_MINUTES, $event->getReminder());
+        self::assertSame('2026-09-15 09:50', $event->getRemindAt()?->format('Y-m-d H:i'));
+        self::assertNull($event->getReminderSentAt());
+    }
+
+    public function testAReminderChosenOnAnEntryWithNoTimeIsDropped(): void
+    {
+        // The JS hides the field once the hour is cleared, but a stale value can still be posted (or
+        // the form submitted with JS off): a no-time entry has nothing to count back from, so the
+        // reminder is dropped instead of stored as something that would never fire.
+        $owner = $this->user('profe@centro.test');
+        $this->em->flush();
+        $this->client->loginUser($owner);
+
+        $crawler = $this->client->request('GET', '/agenda/nueva');
+        $form = $crawler->selectButton('Crear evento')->form();
+        $form['personal_event_form[title]'] = 'Llamar a la familia';
+        $form['personal_event_form[day]'] = '2026-09-15';
+        $form['personal_event_form[reminder]'] = (string) EventReminderOffset::TEN_MINUTES->value;
+        $this->client->submit($form);
+
+        self::assertResponseRedirects('/agenda');
+        $this->em->clear();
+        $event = $this->em->getRepository(PersonalEvent::class)->findOneBy(['title' => 'Llamar a la familia']);
+        self::assertNotNull($event);
+        self::assertNull($event->getReminder());
+        self::assertNull($event->getRemindAt());
+    }
+
+    public function testEditingPreloadsAndClearsTheReminder(): void
+    {
+        $owner = $this->user('profe@centro.test');
+        $event = (new PersonalEvent($owner, 'Claustro', new \DateTimeImmutable('2026-09-15 10:00')))
+            ->setReminder(EventReminderOffset::ONE_HOUR);
+        $this->em->persist($event);
+        $this->em->flush();
+        $id = (int) $event->getId();
+
+        $this->client->loginUser($owner);
+        $crawler = $this->client->request('GET', '/agenda/'.$id.'/editar');
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('[name="personal_event_form[reminder]"] option[value="60"][selected]');
+
+        $form = $crawler->selectButton('Guardar')->form();
+        $form['personal_event_form[reminder]'] = '';
+        $this->client->submit($form);
+
+        self::assertResponseRedirects('/agenda');
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(PersonalEvent::class)->find($id);
+        self::assertNotNull($reloaded);
+        self::assertNull($reloaded->getReminder());
+        self::assertNull($reloaded->getRemindAt());
     }
 }

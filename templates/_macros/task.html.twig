@@ -78,6 +78,9 @@
                 {{ event.startAt|date('d/m/Y') }}
                 {%- if not event.allDay %} · {{ event.startAt|date('H:i') }}{% if event.endAt %}–{{ event.endAt|date('H:i') }}{% endif %}{% endif %}
                 {%- if event.category %} · <span class="event-badge {{ event.category.color.cssClass }}">{{ event.category.name }}</span>{% endif %}
+                {#- Campanita cuando el evento tiene aviso push, para saber de un vistazo cuáles avisan
+                    y cuáles no (como en Google Calendar). El texto del title lleva la antelación. -#}
+                {%- if event.reminder %} · <span class="agenda-bell" title="Aviso {{ event.reminder.label|lower }}"><svg viewBox="0 0 20 20" width="13" height="13" aria-hidden="true"><path d="M10 2.5a4.5 4.5 0 0 0-4.5 4.5v3l-1.2 2.2a.6.6 0 0 0 .53.9h10.34a.6.6 0 0 0 .53-.9L14.5 10V7A4.5 4.5 0 0 0 10 2.5Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8.2 15.4a1.9 1.9 0 0 0 3.6 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span class="visually-hidden">Aviso {{ event.reminder.label|lower }}</span></span>{% endif %}
             </span>
         </div>
     </li>

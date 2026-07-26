@@ -26,6 +26,7 @@
             {{ f.field(form.day) }}
             {{ f.field(form.startTime) }}
             {{ f.field(form.endTime, 'hasstart') }}
+            {{ f.field(form.reminder, 'hasstart') }}
             {{ f.field(form.category) }}
             {% if form.repeat is defined %}{{ f.field(form.repeat) }}{% endif %}
             {% if form.repeatUntil is defined %}{{ f.field(form.repeatUntil, 'repeating') }}{% endif %}

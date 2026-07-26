@@ -857,6 +857,7 @@ input[type="file"]::file-selector-button:hover { background: var(--surface-sunke
 .form-row input[type="email"],
 .form-row input[type="number"],
 .form-row input[type="date"],
+.form-row input[type="time"],
 .form-row select,
 .form-row textarea,
 input[type="email"], input[type="text"], select, textarea {
@@ -946,6 +947,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .stackform--screen .form-row input[type="text"],
 .stackform--screen .form-row input[type="email"],
 .stackform--screen .form-row input[type="date"],
+.stackform--screen .form-row input[type="time"],
 .stackform--screen .form-row select,
 .stackform--screen .form-row textarea { border-radius: 13px; border-color: var(--border); background: var(--surface); padding: 13px 15px; }
 .stackform--screen .form-row input:focus,
@@ -1864,6 +1866,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .agenda-title { font-size: 15px; font-weight: 500; color: var(--text); text-decoration: none; }
 .agenda-title:hover { color: var(--accent); }
 .agenda-meta { font-size: 12.5px; color: var(--text-muted); }
+/* Campanita de "este evento avisa": va dentro de .agenda-meta, así que hereda su color apagado; solo
+   necesita alinearse ópticamente con el texto de la línea. */
+.agenda-bell { display: inline-flex; vertical-align: -2px; }
 .agenda-group--overdue .agenda-meta { color: var(--warning-text); }
 .agenda-item.is-done .agenda-title { color: var(--text-faint); text-decoration: line-through; }
 .agenda-group--done { opacity: .7; }

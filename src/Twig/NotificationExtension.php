@@ -4,20 +4,24 @@ declare(strict_types=1);
 
 namespace App\Twig;
 
+use App\Entity\Notification;
 use App\Entity\User;
 use App\Repository\NotificationRepository;
+use App\Support\NotificationLink;
 use Symfony\Bundle\SecurityBundle\Security;
 use Twig\Extension\AbstractExtension;
 use Twig\TwigFunction;
 
 /**
- * Exposes the current user's unread-notification count to templates, for the inbox badge in the nav.
+ * Notification helpers for templates: the current user's unread count (the inbox badge in the nav) and
+ * where a notice leads, so the inbox row and the push notification for the same notice always agree.
  */
 final class NotificationExtension extends AbstractExtension
 {
     public function __construct(
         private readonly Security $security,
         private readonly NotificationRepository $notifications,
+        private readonly NotificationLink $link,
     ) {
     }
 
@@ -25,7 +29,21 @@ final class NotificationExtension extends AbstractExtension
     {
         return [
             new TwigFunction('unread_notifications', $this->unreadCount(...)),
+            new TwigFunction('notification_path', $this->pathFor(...)),
         ];
+    }
+
+    /**
+     * Where a notice leads when clicked in the inbox — the very path its push notification opens
+     * ({@see NotificationLink}).
+     *
+     * @param Notification $notification the notice
+     *
+     * @return string the in-app path to open
+     */
+    public function pathFor(Notification $notification): string
+    {
+        return $this->link->pathFor($notification);
     }
 
     /**

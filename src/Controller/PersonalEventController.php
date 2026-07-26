@@ -179,7 +179,8 @@ final class PersonalEventController extends AbstractController
             ->setCategory($data->category);
 
         // No time chosen → a reminder: it sits on the day, marked internally as all-day (never shown
-        // as "todo el día"). A time → an appointment, with an optional end.
+        // as "todo el día"). Setting all-day drops any push reminder, which has nothing to count back
+        // from. A time → an appointment, with an optional end and an optional reminder.
         if (null === $data->startTime) {
             $event->setStartAt($day)->setEndAt(null)->setAllDay(true);
 
@@ -188,22 +189,23 @@ final class PersonalEventController extends AbstractController
 
         $event->setStartAt($this->at($day, $data->startTime))
             ->setEndAt(null !== $data->endTime ? $this->at($day, $data->endTime) : null)
-            ->setAllDay(false);
+            ->setAllDay(false)
+            ->setReminder($data->reminder);
     }
 
     /**
-     * The given day at the given "HH:MM" time.
+     * The given day at the given time of day. Only the hour and minute of $time are read: the time
+     * field carries a whole instant, but its date part is meaningless here (see
+     * {@see PersonalEventFormData::$startTime}) — the day always comes from $day.
      *
      * @param \DateTimeImmutable $day  the day (its time part is ignored)
-     * @param string             $hhmm the time as "HH:MM"
+     * @param \DateTimeImmutable $time the time of day (its date part is ignored)
      *
      * @return \DateTimeImmutable the day at that time
      */
-    private function at(\DateTimeImmutable $day, string $hhmm): \DateTimeImmutable
+    private function at(\DateTimeImmutable $day, \DateTimeImmutable $time): \DateTimeImmutable
     {
-        $parts = explode(':', $hhmm);
-
-        return $day->setTime((int) $parts[0], (int) ($parts[1] ?? 0));
+        return $day->setTime((int) $time->format('G'), (int) $time->format('i'));
     }
 
     /**

@@ -8,19 +8,20 @@ use App\Entity\Notification;
 use App\Entity\Task;
 use App\Entity\User;
 use App\Security\AccessGate;
+use App\Support\NotificationLink;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Email;
-use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
 /**
- * The single place that materialises "notify a person": it persists the in-app notice and then, for
- * each notice, sends an e-mail and a Web Push notification. Every notifier ({@see GuardiaAssignmentNotifier},
- * {@see TaskAssignmentNotifier}, {@see TaskReminderNotifier}) decides WHO to notify and WHAT to say
- * and delegates the delivery here, so the three delivery channels live in one spot.
+ * The single place that materialises "notify a person": it persists the in-app notice and then sends
+ * it as a Web Push notification and, for the kinds that warrant one ({@see wantsEmail()}), an e-mail.
+ * Every notifier ({@see GuardiaAssignmentNotifier}, {@see TaskAssignmentNotifier},
+ * {@see TaskReminderNotifier}, {@see EventReminderNotifier}) decides WHO to notify and WHAT to say and
+ * delegates the delivery here, so the delivery channels live in one spot.
  *
  * Both the e-mail and the push legs are best-effort: a failure on either is logged and swallowed so it
  * never loses the in-app notice (already persisted) nor aborts a nightly batch.
@@ -41,7 +42,7 @@ final class NotificationDispatcher
         private readonly MailerInterface $mailer,
         private readonly WebPushSender $webPush,
         private readonly AccessGate $accessGate,
-        private readonly UrlGeneratorInterface $urlGenerator,
+        private readonly NotificationLink $link,
         private readonly LoggerInterface $logger,
         #[Autowire('%app.mailer_from%')]
         private readonly string $mailerFrom,
@@ -89,8 +90,9 @@ final class NotificationDispatcher
     }
 
     /**
-     * Flushes any pending in-app notices, then delivers each over e-mail and Web Push. A failure on a
-     * single recipient/channel is logged and skipped so it never aborts the rest of a batch.
+     * Flushes any pending in-app notices, then delivers each over Web Push and — when the kind calls
+     * for it ({@see wantsEmail()}) — e-mail. A failure on a single recipient/channel is logged and
+     * skipped so it never aborts the rest of a batch.
      *
      * Recipients who cannot sign in are written but not delivered to. The notice is deliberately
      * still persisted: the reminder engine is idempotent by matching an exact day, with no
@@ -105,6 +107,8 @@ final class NotificationDispatcher
 
         foreach ($notifications as $notification) {
             $recipient = $notification->getRecipient();
+            // The access gate comes first, before any channel: someone who cannot sign in gets nothing
+            // delivered, whatever the kind would otherwise warrant.
             if (!$this->accessGate->allows($recipient)) {
                 $this->logger->debug('Aviso guardado sin enviar: el destinatario no puede acceder', [
                     'recipient' => $recipient->getEmail(),
@@ -114,47 +118,57 @@ final class NotificationDispatcher
                 continue;
             }
 
-            $path = $this->pathFor($notification);
-
-            try {
-                $this->mailer->send((new Email())
-                    ->from($this->mailerFrom)
-                    ->to($recipient->getEmail())
-                    ->subject($notification->getTitle())
-                    ->text((string) $notification->getBody()));
-            } catch (TransportExceptionInterface $e) {
-                $this->logger->error('No se pudo enviar el aviso por email', [
-                    'recipient' => $recipient->getEmail(),
-                    'exception' => $e,
-                ]);
+            if ($this->wantsEmail($notification)) {
+                $this->email($notification);
             }
 
-            $this->webPush->sendToUser($recipient, $notification->getTitle(), $notification->getBody(), $path);
+            $this->webPush->sendToUser(
+                $recipient,
+                $notification->getTitle(),
+                $notification->getBody(),
+                $this->link->pathFor($notification),
+            );
         }
     }
 
     /**
-     * The in-app path a notice should open on click: the linked task, or the inbox otherwise. Kept as
-     * a relative path (not absolute) so it works both from an HTTP request and from the CLI reminder
-     * batch, and resolves against the app origin in the service worker.
+     * Whether a notice also deserves an e-mail. Decided here, from the kind, for the same reason
+     * {@see NotificationLink} decides the destination from it: it is a property of the KIND of notice,
+     * not of whoever raises it, so every caller gets the same policy without passing a flag around.
      *
-     * @param Notification $notification the notice
+     * A personal agenda reminder ("empieza en 10 minutos") is deliberately push-only: by the time an
+     * e-mail is read the event has started, so it would be pure noise in the inbox.
      *
-     * @return string the path to open (e.g. "/tareas/42" or "/avisos")
+     * @param Notification $notification the notice about to be delivered
+     *
+     * @return bool true when it should also go out by e-mail
      */
-    private function pathFor(Notification $notification): string
+    private function wantsEmail(Notification $notification): bool
     {
-        $task = $notification->getTask();
-        if (null !== $task && null !== $task->getId()) {
-            return $this->urlGenerator->generate('task_show', ['id' => $task->getId()]);
-        }
+        return !str_starts_with($notification->getKind(), 'event.');
+    }
 
-        // A guardia notice (assigned/reassigned) opens the teacher's own "mis guardias", where they see
-        // the guardia they were just assigned; anything else falls back to the inbox.
-        if (str_starts_with($notification->getKind(), 'guardia.')) {
-            return $this->urlGenerator->generate('guardia_mine');
-        }
+    /**
+     * Sends one notice by e-mail. Best-effort: a transport failure is logged and swallowed so it never
+     * costs the already-persisted in-app notice nor aborts the rest of a batch.
+     *
+     * @param Notification $notification the notice to send
+     */
+    private function email(Notification $notification): void
+    {
+        $recipient = $notification->getRecipient();
 
-        return $this->urlGenerator->generate('notification_index');
+        try {
+            $this->mailer->send((new Email())
+                ->from($this->mailerFrom)
+                ->to($recipient->getEmail())
+                ->subject($notification->getTitle())
+                ->text((string) $notification->getBody()));
+        } catch (TransportExceptionInterface $e) {
+            $this->logger->error('No se pudo enviar el aviso por email', [
+                'recipient' => $recipient->getEmail(),
+                'exception' => $e,
+            ]);
+        }
     }
 }

@@ -6,6 +6,7 @@ namespace App\Form;
 
 use App\Entity\EventCategory;
 use App\Entity\PersonalEvent;
+use App\Enum\EventReminderOffset;
 use App\Enum\RecurrenceFrequency;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
@@ -30,11 +31,23 @@ final class PersonalEventFormData
     /** Colour-coding category, or null for uncategorised. */
     public ?EventCategory $category = null;
 
-    /** Start time as "HH:MM", or null for a no-time reminder (e.g. "llamar a Pepito"). */
-    public ?string $startTime = null;
+    /**
+     * Start time, or null for a no-time reminder (e.g. "llamar a Pepito"). Only the hour and minute
+     * carry meaning: the form composes them onto {@see $day}, and the date part of whatever the time
+     * field hands over (today, or the epoch) is never read.
+     */
+    public ?\DateTimeImmutable $startTime = null;
 
-    /** End time as "HH:MM", or null when there is no explicit end (only valid with a start time). */
-    public ?string $endTime = null;
+    /** End time, or null when there is no explicit end (only valid with a start time). */
+    public ?\DateTimeImmutable $endTime = null;
+
+    /**
+     * How long before the start to get a push reminder, or null for none. Only applies to a timed
+     * entry; on a no-time reminder the entity drops it ({@see PersonalEvent::setAllDay()}), which is
+     * why this is not a validation error: the field is hidden once the hour is cleared, so refusing
+     * the submit would point at a control the user cannot even see.
+     */
+    public ?EventReminderOffset $reminder = null;
 
     /** Recurrence frequency. */
     public RecurrenceFrequency $repeat = RecurrenceFrequency::NONE;
@@ -44,8 +57,10 @@ final class PersonalEventFormData
 
     /**
      * Cross-field rules a single-field constraint cannot express: an end time only makes sense with a
-     * start time, and it must come after it. No start time at all is fine — that is a reminder. Times
-     * are "HH:MM" strings, so a lexicographic compare is a chronological compare.
+     * start time, and it must come after it. No start time at all is fine — that is a reminder.
+     *
+     * Compares the "HH:MM" of each, not the instants: only the time of day is meaningful here (see
+     * {@see $startTime}), so this stays right whatever date the two happen to carry.
      *
      * @param ExecutionContextInterface $context the validation context to attach violations to
      */
@@ -61,7 +76,7 @@ final class PersonalEventFormData
 
             return;
         }
-        if (null !== $this->endTime && $this->endTime <= $this->startTime) {
+        if (null !== $this->endTime && $this->endTime->format('H:i') <= $this->startTime->format('H:i')) {
             $context->buildViolation('La hora de fin debe ser posterior a la de inicio.')
                 ->atPath('endTime')
                 ->addViolation();
@@ -103,7 +118,7 @@ final class PersonalEventFormData
 
     /**
      * Prefills the form data from an existing entry (for editing), splitting its instants back into a
-     * day and "HH:MM" times.
+     * day and the times of day.
      *
      * @param PersonalEvent $event the entry to edit
      *
@@ -117,10 +132,11 @@ final class PersonalEventFormData
         $data->day = $event->getStartAt()->setTime(0, 0);
         $data->category = $event->getCategory();
         // A timed entry prefills its time(s); a no-time reminder ({@see PersonalEvent::isAllDay()})
-        // leaves them empty.
+        // leaves them empty. The instants go in whole: the time field renders only their "HH:MM".
         if (!$event->isAllDay()) {
-            $data->startTime = $event->getStartAt()->format('H:i');
-            $data->endTime = $event->getEndAt()?->format('H:i');
+            $data->startTime = $event->getStartAt();
+            $data->endTime = $event->getEndAt();
+            $data->reminder = $event->getReminder();
         }
 
         return $data;
