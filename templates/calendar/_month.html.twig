@@ -10,7 +10,7 @@
     <div class="calendar-grid">
         {% for week in weeks %}
             <div class="calendar-week" role="row">
-                {% for cell in week %}{{ cal.day_cell(cell) }}{% endfor %}
+                {% for cell in week %}{{ cal.day_cell(cell, guardiasByDay) }}{% endfor %}
             </div>
         {% endfor %}
     </div>

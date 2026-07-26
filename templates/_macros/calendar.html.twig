@@ -31,7 +31,7 @@
    "no lectivo" solo llega relleno (cell.nonLective) para los días del propio mes: el controlador lo
    anula en los días de meses colindantes que asoman en la rejilla, así que aquí no hay que filtrar.
 #}
-{% macro day_cell(cell) %}
+{% macro day_cell(cell, guardiasByDay = {}) %}
     {% import '_macros/task.html.twig' as taskUi %}
     <div class="calendar-day{{ cell.inMonth ? '' : ' is-outside' }}{{ cell.isToday ? ' is-today' : '' }}{{ cell.isWeekend ? ' is-weekend' : '' }}{{ cell.nonLective ? ' is-nonlective' : '' }}" role="gridcell"{% if cell.nonLective %} title="{{ cell.nonLective.description }}"{% endif %}>
         <div class="calendar-daynum">
@@ -43,6 +43,20 @@
         </div>
         {% if cell.nonLective %}
             <p class="calendar-nonlective">{{ cell.nonLective.description }}</p>
+        {% endif %}
+        {# Guardias del día (ancla): marcador ESCUDO, distinto del punto de tarea/evento. Solo las propias. #}
+        {% set dayGuardias = guardiasByDay[cell.date|date('Y-m-d', false)] ?? [] %}
+        {% if dayGuardias is not empty %}
+            <ul class="calendar-guardias">
+                {% for g in dayGuardias %}
+                    <li>
+                        <a class="calendar-guardia" href="{{ path('guardia_mine') }}" title="Guardia{% if g.roomName %} · {{ g.roomName }}{% endif %} · cubres a {{ g.absentTeacher.fullName }}">
+                            <span class="calendar-guardia-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>
+                            <span class="calendar-task-title">Guardia{% if g.roomName %} · {{ g.roomName }}{% endif %}</span>
+                        </a>
+                    </li>
+                {% endfor %}
+            </ul>
         {% endif %}
         {% if cell.tasks is not empty %}
             <ul class="calendar-tasks">

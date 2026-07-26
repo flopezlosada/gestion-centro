@@ -16,12 +16,26 @@
         <p class="calendar-dayview-flag">Fin de semana</p>
     {% endif %}
 
-    {% if day.tasks is empty and day.events is empty %}
+    {% set guardias = day.guardias ?? [] %}
+    {% if day.tasks is empty and day.events is empty and guardias is empty %}
         <div class="empty-state">
-            <p>No hay tareas ni eventos este día.</p>
+            <p>No hay guardias, tareas ni eventos este día.</p>
         </div>
     {% else %}
         <ol class="agenda-list">
+            {# Guardias primero: son el ancla del día. Marcador ESCUDO, forma distinta de la tarea
+               (círculo) y del evento (cuadrado). Solo llegan las asignadas al propio usuario. #}
+            {% for g in guardias %}
+                <li class="agenda-item agenda-item--guardia">
+                    <span class="agenda-guardia-marker" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>
+                    </span>
+                    <div class="agenda-body">
+                        <a href="{{ path('guardia_mine') }}" class="agenda-title">Guardia{% if g.roomName %} · {{ g.roomName }}{% endif %}</a>
+                        <span class="agenda-meta">Cubres a {{ g.absentTeacher.fullName }}{% if g.groupName %} · {{ g.groupName }}{% endif %}</span>
+                    </div>
+                </li>
+            {% endfor %}
             {# canWork calculado en el cuerpo (aquí `is_granted`/`app` sí están disponibles) y pasado
                al macro: mismo criterio que TaskController::canWorkOn (admin o dueño de la tarea). #}
             {% for task in day.tasks %}

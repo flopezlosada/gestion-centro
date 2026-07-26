@@ -112,6 +112,33 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
+     * The guardias assigned to a teacher within a day range (inclusive), earliest day and period first —
+     * used by the calendar to lay them out by day alongside tasks and events. The absent teacher is
+     * eager-loaded so the list reads without extra queries.
+     *
+     * @param User               $guardia the guardia teacher
+     * @param \DateTimeImmutable $start   the first day (inclusive)
+     * @param \DateTimeImmutable $end     the last day (inclusive)
+     *
+     * @return GuardiaCover[] the covers assigned to them in that range, chronological
+     */
+    public function findAssignedToBetween(User $guardia, \DateTimeImmutable $start, \DateTimeImmutable $end): array
+    {
+        return $this->createQueryBuilder('c')
+            ->addSelect('absent')
+            ->join('c.absentTeacher', 'absent')
+            ->andWhere('c.assignedGuardia = :guardia')
+            ->andWhere('c.date BETWEEN :start AND :end')
+            ->setParameter('guardia', $guardia)
+            ->setParameter('start', $start, 'date_immutable')
+            ->setParameter('end', $end, 'date_immutable')
+            ->orderBy('c.date', 'ASC')
+            ->addOrderBy('c.slotIndex', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * The guardias assigned to a teacher from a date onwards (today included), earliest day and period
      * first — everything they still have to cover, for their own "mis guardias" screen. The absent
      * teacher is eager-loaded so the list reads without extra queries.

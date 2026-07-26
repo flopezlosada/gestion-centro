@@ -6,10 +6,12 @@ namespace App\Controller;
 
 use App\Entity\AcademicYear;
 use App\Entity\NonLectiveDay;
+use App\Entity\GuardiaCover;
 use App\Entity\PersonalEvent;
 use App\Entity\Task;
 use App\Entity\User;
 use App\Repository\AcademicYearRepository;
+use App\Repository\GuardiaCoverRepository;
 use App\Repository\NonLectiveDayRepository;
 use App\Repository\PersonalEventRepository;
 use App\Repository\TaskRepository;
@@ -71,7 +73,7 @@ final class CalendarController extends AbstractController
      * @return Response the rendered calendar page
      */
     #[Route('/calendario', name: 'calendar_index', methods: ['GET'])]
-    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility, NonLectiveDayRepository $nonLectiveDays, SchoolCalendar $schoolCalendar, AcademicYearRepository $academicYears, PersonalEventRepository $personalEvents): Response
+    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility, NonLectiveDayRepository $nonLectiveDays, SchoolCalendar $schoolCalendar, AcademicYearRepository $academicYears, PersonalEventRepository $personalEvents, GuardiaCoverRepository $covers): Response
     {
         $timeZone = new \DateTimeZone(self::TIME_ZONE);
         $today = new \DateTimeImmutable('today', $timeZone);
@@ -87,10 +89,15 @@ final class CalendarController extends AbstractController
             $personalEvents->findForOwnerBetween($user, $rangeStart, $rangeEnd->setTime(23, 59, 59)),
             static fn (PersonalEvent $event): string => $event->getStartAt()->format('Y-m-d'),
         );
+        // The user's own guardias in the same window, laid out by day next to tasks and events.
+        $guardiasByDay = $this->groupByDay(
+            $covers->findAssignedToBetween($user, $rangeStart, $rangeEnd),
+            static fn (GuardiaCover $g): string => $g->getDate()->format('Y-m-d'),
+        );
         $nonLectiveByDay = $this->indexNonLectiveDays($nonLectiveDays->findBetween($rangeStart, $rangeEnd));
 
         $model = match ($view) {
-            'dia' => $this->dayModel($anchor, $today, $byDay, $eventsByDay, $nonLectiveByDay, $schoolCalendar),
+            'dia' => $this->dayModel($anchor, $today, $byDay, $eventsByDay, $guardiasByDay, $nonLectiveByDay, $schoolCalendar),
             'semana' => $this->weekModel($anchor, $today, $byDay, $eventsByDay, $nonLectiveByDay, $schoolCalendar),
             'anio' => $this->yearModel($anchor, $today, $byDay, $eventsByDay, $nonLectiveByDay, $schoolCalendar, $academicYears),
             default => $this->monthModel($anchor, $today, $byDay, $eventsByDay, $nonLectiveByDay, $schoolCalendar),
@@ -103,6 +110,8 @@ final class CalendarController extends AbstractController
             'prevDate' => $this->step($view, $anchor, -1),
             'nextDate' => $this->step($view, $anchor, 1),
             'todayDate' => $today->format('Y-m-d'),
+            // Guardias por día (Y-m-d → GuardiaCover[]); las vistas de rejilla las miran por fecha de celda.
+            'guardiasByDay' => $guardiasByDay,
             ...$model,
         ]);
     }
@@ -257,12 +266,16 @@ final class CalendarController extends AbstractController
      *
      * @return array{template: string, label: string, day: DayCell} the template and view data
      */
-    private function dayModel(\DateTimeImmutable $anchor, \DateTimeImmutable $today, array $byDay, array $eventsByDay, array $nonLectiveByDay, SchoolCalendar $schoolCalendar): array
+    private function dayModel(\DateTimeImmutable $anchor, \DateTimeImmutable $today, array $byDay, array $eventsByDay, array $guardiasByDay, array $nonLectiveByDay, SchoolCalendar $schoolCalendar): array
     {
+        $cell = $this->cell($anchor, null, $today, $byDay, $eventsByDay, $nonLectiveByDay, $schoolCalendar);
+        // Guardias ride along only on the day (agenda) view for now; the grid views keep their cells as-is.
+        $cell['guardias'] = $guardiasByDay[$anchor->format('Y-m-d')] ?? [];
+
         return [
             'template' => 'calendar/_day.html.twig',
             'label' => self::WEEKDAY_NAMES[(int) $anchor->format('N')].', '.$anchor->format('j').' de '.$this->monthName($anchor).' de '.$anchor->format('Y'),
-            'day' => $this->cell($anchor, null, $today, $byDay, $eventsByDay, $nonLectiveByDay, $schoolCalendar),
+            'day' => $cell,
         ];
     }
 
