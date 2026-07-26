@@ -12,6 +12,8 @@ use App\Service\AppSettings;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\DomCrawler\Field\ChoiceFormField;
+use Symfony\Component\DomCrawler\Form;
 
 /**
  * Phased roll-out of the application: the /admin/acceso screen (reserved to superusers) and what
@@ -63,8 +65,8 @@ final class AccessControlTest extends WebTestCase
         $form = $crawler->selectButton('Guardar')->form();
         // The switch renders ticked (sign-in starts open), so closing it means unticking it: the
         // browser would otherwise post it back as it stands.
-        $form['login_open']->untick();
-        $form['early['.$insideId.']']->tick();
+        self::checkbox($form, 'login_open')->untick();
+        self::checkbox($form, 'early['.$insideId.']')->tick();
         $this->client->submit($form);
 
         self::assertResponseRedirects('/admin/acceso');
@@ -129,6 +131,24 @@ final class AccessControlTest extends WebTestCase
 
         $this->client->request('GET', '/admin/acceso');
         self::assertResponseIsSuccessful();
+    }
+
+    /**
+     * A checkbox of the given form, typed. Form::offsetGet is declared as "field or array of
+     * fields" (a form can hold several inputs under one name), so it has to be narrowed before
+     * tick()/untick() can be called on it.
+     *
+     * @param Form   $form the form being filled in
+     * @param string $name the input's name attribute
+     *
+     * @return ChoiceFormField the checkbox
+     */
+    private static function checkbox(Form $form, string $name): ChoiceFormField
+    {
+        $field = $form[$name];
+        self::assertInstanceOf(ChoiceFormField::class, $field);
+
+        return $field;
     }
 
     /**
