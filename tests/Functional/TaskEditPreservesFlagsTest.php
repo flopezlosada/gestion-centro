@@ -64,7 +64,9 @@ final class TaskEditPreservesFlagsTest extends WebTestCase
         self::assertResponseIsSuccessful();
         // Save without changing a thing: the plain "open and Guardar" that used to corrupt the row.
         $this->client->submit($crawler->selectButton('Guardar')->form());
-        self::assertResponseRedirects();
+        // A 422 here would mean the form rejected its OWN prefilled values, which is a different bug than
+        // the one under test — say so, instead of failing with a bare status mismatch.
+        self::assertResponseRedirects(null, null, 'el formulario debe aceptar sus propios valores precargados');
 
         $this->em->clear();
         $reloaded = $this->em->getRepository(Task::class)->find($taskId);

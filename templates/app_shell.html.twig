@@ -148,9 +148,13 @@
         {% for tick in app.flashes(constant('App\\Support\\TickOutcome::FLASH')) %}
             {% set undoRoute = tick.kind == 'task' ? 'task_toggle_done' : 'personal_event_toggle_done' %}
             {% set undoToken = tick.kind == 'task' ? 'toggle_done' ~ tick.id : 'personal_event_done' ~ tick.id %}
-            {#- role=status + aria-live: lo anuncia un lector de pantalla sin robar el foco, que tras la
-                recarga está al principio del documento. -#}
-            <div class="toast" data-toast role="status" aria-live="polite">
+            {#- Sin role=status a propósito: una región viva no anuncia el texto con el que NACE, y este
+                llega ya escrito en la respuesta, así que el atributo no serviría de nada aquí y en los
+                lectores que sí leen el contenido inicial se solaparía con el aviso que emite toast.js
+                (que crea la región después de la carga, cuando sí cuenta como cambio). El foco no se
+                toca: tras el redirect está al principio del documento y robarlo por una confirmación
+                sacaría al usuario del sitio donde estaba trabajando. -#}
+            <div class="toast" data-toast>
                 <span class="toast__icon" aria-hidden="true">
                     {% if tick.done %}
                         <svg viewBox="0 0 20 20"><path d="M5 10.5 l3.2 3.2 L15 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>

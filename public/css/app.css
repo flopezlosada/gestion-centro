@@ -2496,6 +2496,10 @@ tr.is-not-covered { background: var(--danger-weak); }
     color: var(--text-faint);
 }
 .tick--doc svg { width: 18px; height: 18px; }
+/* Sin el área táctil de 44px que .tick añade para su botón: aquí no hay nada que pulsar, así que ese
+   parche invisible solo sería una zona muerta estorbando el camino al enlace de la fila. */
+.tick--doc::before,
+.tick--elsewhere::before { content: none; }
 .is-overdue .tick--doc { color: var(--warning-text); }
 /* Ni casilla ni documento: se resuelve en su ficha. Aro DISCONTINUO — se lee "aquí no se cierra" sin
    prometer un documento que no existe. */

@@ -34,7 +34,37 @@
         // Sin animación para quien pide menos movimiento: se quita de golpe.
         var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+        /**
+         * Lee el toast en voz alta a través de una región viva CREADA AHORA.
+         *
+         * Por qué no basta con poner aria-live en el propio toast: una región viva solo anuncia lo que
+         * CAMBIA una vez está registrada, y el toast llega ya escrito en el HTML de la página, así que su
+         * texto cuenta como contenido de partida y no se anuncia. Se copia a un nodo oculto que se
+         * inserta después de la carga, con lo que sí es un cambio. No se toca el toast visible: vaciarlo
+         * y volver a escribirlo lo haría parpadear.
+         *
+         * Sin JS el toast se sigue viendo y su botón se alcanza con el tabulador; solo se pierde el aviso
+         * hablado, que es una degradación aceptable.
+         */
+        function announce(toast) {
+            var text = (toast.textContent || '').replace(/\s+/g, ' ').trim();
+            if (!text) {
+                return;
+            }
+            var region = document.createElement('div');
+            region.className = 'visually-hidden';
+            region.setAttribute('aria-live', 'polite');
+            document.body.appendChild(region);
+            // El texto va en un ciclo posterior a la inserción: si se pusiera de una vez, volvería a ser
+            // contenido inicial de la región y tampoco se anunciaría.
+            window.setTimeout(function () {
+                region.textContent = text;
+            }, 120);
+        }
+
         toasts.forEach(function (toast) {
+            announce(toast);
+
             var timer = null;
             // Cuenta de "razones para quedarse" (ratón encima, foco dentro): mientras haya alguna, no
             // se va. Un contador y no un booleano porque ratón y foco pueden solaparse.
