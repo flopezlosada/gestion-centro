@@ -66,7 +66,7 @@ final class PersonalEventRecurrenceTest extends WebTestCase
         $form['personal_event_form[repeatUntil]'] = '2026-03-30';
         $this->client->submit($form);
 
-        self::assertResponseRedirects('/agenda');
+        self::assertResponseRedirects('/calendario?vista=semana&fecha=2026-03-02');
         $this->em->clear();
         $events = $this->em->getRepository(PersonalEvent::class)->findBy(['title' => 'Reunión semanal'], ['startAt' => 'ASC']);
         self::assertCount(5, $events);
@@ -109,7 +109,7 @@ final class PersonalEventRecurrenceTest extends WebTestCase
         self::assertResponseIsSuccessful();
         $this->client->submit($crawler->selectButton('Borrar toda la serie')->form());
 
-        self::assertResponseRedirects('/agenda');
+        self::assertResponseRedirects('/calendario?vista=semana&fecha=2026-03-02');
         $this->em->clear();
         self::assertSame(0, $this->em->getRepository(PersonalEvent::class)->count(['title' => 'Reunión semanal']));
     }
@@ -123,7 +123,7 @@ final class PersonalEventRecurrenceTest extends WebTestCase
         $crawler = $this->client->request('GET', '/agenda/'.$events[0]->getId().'/editar');
         $this->client->submit($crawler->selectButton('Borrar solo este')->form());
 
-        self::assertResponseRedirects('/agenda');
+        self::assertResponseRedirects('/calendario?vista=semana&fecha=2026-03-02');
         $this->em->clear();
         self::assertSame(2, $this->em->getRepository(PersonalEvent::class)->count(['title' => 'Reunión semanal']));
     }
@@ -198,7 +198,7 @@ final class PersonalEventRecurrenceTest extends WebTestCase
         // No start time: every occurrence is a no-time reminder.
         $this->client->submit($form);
 
-        self::assertResponseRedirects('/agenda');
+        self::assertResponseRedirects('/calendario?vista=semana&fecha=2026-03-02');
         $this->em->clear();
         $events = $this->em->getRepository(PersonalEvent::class)->findBy(['title' => 'Recordatorio semanal'], ['startAt' => 'ASC']);
         self::assertCount(3, $events);

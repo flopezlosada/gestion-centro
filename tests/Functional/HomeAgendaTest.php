@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace App\Tests\Functional;
 
 use App\Entity\PersonalEvent;
+use App\Entity\Task;
 use App\Entity\User;
+use App\Enum\TaskType;
+use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -108,5 +111,28 @@ final class HomeAgendaTest extends WebTestCase
         // el nombre, no la fórmula de cortesía, para que el test aguante si el saludo pasa a variar
         // según la hora del día.
         self::assertSelectorTextContains('h1.home-greeting', 'Profe');
+    }
+
+    public function testTheHomeRendersTasksAndEventsWithRealContentWithoutErroring(): void
+    {
+        $user = $this->user('profe@centro.test');
+        $today = new \DateTimeImmutable('today');
+        // Una tarea que vence hoy → "Por hacer"; una cita con hora hoy → "Con hora"; un recordatorio sin
+        // hora → "Por hacer". Con strict_variables activo en el entorno de test, poblar de verdad la
+        // plantilla nueva caza cualquier error de variable (el 500 de g.taskNote habría saltado aquí).
+        $task = (new Task('Entregar memoria PGA', SchoolYear::current($today), $today, TaskType::SIMPLE))->setAssignedUser($user);
+        $this->em->persist($task);
+        $this->em->persist((new PersonalEvent($user, 'Reunión de departamento', $today->setTime(10, 30)))->setAllDay(false));
+        $this->em->persist((new PersonalEvent($user, 'Llamar a la editorial', $today))->setAllDay(true));
+        $this->em->flush();
+
+        $this->client->loginUser($user);
+        $this->client->request('GET', '/');
+
+        self::assertResponseIsSuccessful();
+        $html = (string) $this->client->getResponse()->getContent();
+        self::assertStringContainsString('Entregar memoria PGA', $html, 'la tarea de hoy sale en "Por hacer"');
+        self::assertStringContainsString('Reunión de departamento', $html, 'la cita con hora sale en "Con hora"');
+        self::assertStringContainsString('Llamar a la editorial', $html, 'el recordatorio sin hora sale en "Por hacer"');
     }
 }
