@@ -39,6 +39,7 @@ security:
         # controller (not a session), so the firewall must let them through unauthenticated. Each is
         # pinned to its exact path so a broad ^/cron prefix never opens a future route by accident.
         - { path: ^/cron/task-reminders$, roles: PUBLIC_ACCESS }
+        - { path: ^/cron/event-reminders$, roles: PUBLIC_ACCESS }
         # The activity trail is sensitive (it shows everyone's actions): admins only.
         - { path: ^/audit, roles: ROLE_ADMIN }
         # User/role/org administration: only requires an authenticated user here; the fine-grained
