@@ -58,10 +58,12 @@ final class TaskController extends AbstractController
      * the questions people actually arrive with) and NARROWING (one form: departamento, persona, rol,
      * fecha, búsqueda). Every count is computed over the narrowed set, so a view always delivers the
      * number it promises — the old status chips counted the whole course and lied as soon as anything
-     * was filtered.
+     * was filtered. For the same reason "Esperando mi validación" asks the workflow whether the verdict
+     * transition is actually enabled, instead of re-deriving the rule: the list must never offer what the
+     * task detail will refuse.
      */
     #[Route('/tareas', name: 'task_index', methods: ['GET'])]
-    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility, OrganizationHierarchy $hierarchy): Response
+    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility, OrganizationHierarchy $hierarchy, TaskWorkflow $workflows): Response
     {
         $today = new \DateTimeImmutable('today');
         $todayStr = $today->format('Y-m-d');
@@ -188,10 +190,15 @@ final class TaskController extends AbstractController
         };
         $scoped = array_values(array_filter($visible, $narrows));
 
-        $viewMatches = static function (string $view, Task $t) use ($user, $isAdmin, $hierarchy, $today): bool {
+        $viewMatches = static function (string $view, Task $t) use ($user, $workflows, $today): bool {
             return match ($view) {
                 'mias' => !$t->isClosed() && $t->isOwnedBy($user),
-                'validar' => TaskStatus::SUBMITTED === $t->getStatus() && ($isAdmin || $hierarchy->isSuperiorOfTask($user, $t)),
+                // Se le pregunta al WORKFLOW, que es quien decide si el botón "Validar" existe: reimplementar
+                // el predicado aquí ya se tragó la separación de funciones y la vista listaba tareas propias
+                // que el guard iba a rechazar (una jefa de departamento supera al rol Tutor/a de su propia
+                // tarea, así que pasaba el filtro de jerarquía). Un listado no debe prometer lo que la ficha
+                // va a negar.
+                'validar' => TaskStatus::SUBMITTED === $t->getStatus() && $workflows->for($t)->can($t, 'validate'),
                 'vencidas' => self::isOverdue($t, $today),
                 'cerradas' => $t->isClosed(),
                 // "Abiertas" es TODO lo abierto del ámbito visible, y es la vista por defecto: cualquier

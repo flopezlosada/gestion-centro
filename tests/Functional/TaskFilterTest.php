@@ -430,6 +430,38 @@ final class TaskFilterTest extends WebTestCase
         self::assertSame(['abiertas', 'vencidas'], array_keys($counters), 'a teacher validates nothing, and everything in scope is already theirs');
     }
 
+    /**
+     * Separation of duties, surfaced in the list: a jefa de departamento outranks the Tutor/a role, so she
+     * IS a superior of her own tutoring task — but the workflow forbids validating your own work, so the
+     * view must not offer it. Re-deriving the rule here instead of asking the workflow was a real bug: the
+     * screen promised two tasks to validate that the detail page then refused.
+     */
+    public function testYouAreNeverOfferedYourOwnTaskToValidateEvenIfYouOutrankIt(): void
+    {
+        $tutor = (new Role())->setCode('tutor')->setName('Tutor/a')->setPerDepartment(true);
+        $head = (new Role())->setCode('head')->setName('Jefatura de departamento')->setHierarchyLevel(10)->setPerDepartment(true);
+        array_map($this->em->persist(...), [$tutor, $head]);
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($maths);
+        // Jefa de departamento Y tutora: supera al rol Tutor/a en su propio departamento.
+        $boss = (new User())->setFullName('Mercedes Jefa')->setEmail('jefa@centro.test')->setUnit($maths)->addAssignedRole($head)->addAssignedRole($tutor);
+        $member = (new User())->setFullName('Pedro Tutor')->setEmail('tutor@centro.test')->setUnit($maths)->addAssignedRole($tutor);
+        array_map($this->em->persist(...), [$boss, $member]);
+
+        $year = SchoolYear::current(new \DateTimeImmutable('today'));
+        $own = $this->task('Mi propia programación', $year, new \DateTimeImmutable('today +2 days'), $maths, $boss, $tutor)->setStatus(TaskStatus::SUBMITTED);
+        $theirs = $this->task('La programación de Pedro', $year, new \DateTimeImmutable('today +2 days'), $maths, $member, $tutor)->setStatus(TaskStatus::SUBMITTED);
+        array_map($this->em->persist(...), [$own, $theirs]);
+        $this->em->flush();
+        $this->client->loginUser($boss);
+
+        $this->get('/tareas?vista=validar');
+
+        self::assertStringContainsString('La programación de Pedro', $this->html(), "a subordinate's submitted task is hers to validate");
+        self::assertStringNotContainsString('Mi propia programación', $this->html(), 'you never validate your own task, even outranking its role');
+        self::assertSame(1, $this->viewCounters($this->get('/tareas'))['validar'], 'and the counter agrees');
+    }
+
     /** An empty result names the way out; it used to be a dead end when only the sheet was filtering. */
     public function testAnEmptyResultAlwaysOffersAWayBack(): void
     {
