@@ -5,34 +5,48 @@ declare(strict_types=1);
 namespace App\Form;
 
 use App\Entity\EventCategory;
+use App\Enum\EventReminderOffset;
 use App\Enum\RecurrenceFrequency;
 use App\Repository\EventCategoryRepository;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
-use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
 use Symfony\Component\Form\Extension\Core\Type\EnumType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
+use Symfony\Component\Form\Extension\Core\Type\TimeType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 
 /**
- * Create/edit form for a personal agenda entry. The times are plain {@see ChoiceType} dropdowns of
- * quarter-hour slots (not a native time picker), so they inherit the app's own combobox styling —
- * no extra widget needed. The day reuses the app's date field.
+ * Create/edit form for a personal agenda entry.
+ *
+ * The times are native `<input type="time">`. They used to be dropdowns of quarter-hour slots, which
+ * meant scrolling (or searching!) a 96-item list that started at 00:00 just to pick 10:30 — and even
+ * then, only quarters were representable. The native control types in four keystrokes on a desktop
+ * and opens the system wheel on a phone. Unlike the DATE field (whose native picker the app replaces
+ * with its own, because native date UX and dd/mm ordering vary wildly across systems), HH:MM is
+ * unambiguous everywhere, so there is nothing to gain from reinventing it.
  *
  * @extends AbstractType<PersonalEventFormData>
  */
 final class PersonalEventFormType extends AbstractType
 {
     /**
-     * Quarter-hour slots across the whole day (minutes since midnight). This is a personal diary, so
-     * no reminder time should be unrepresentable; the searchable combobox keeps the long list usable.
+     * What both time fields share.
+     *
+     * `input` is NOT 'string', tempting as it looks for a "HH:MM" DTO: with that setting an empty
+     * field reaches the model as the empty STRING, not as null — the model transformer ends up calling
+     * DateTimeToStringTransformer::transform(null), which returns ''. "Sin hora" would then read as
+     * "hay hora" and every cross-field rule would misfire. With 'datetime_immutable' the null travels
+     * all the way through, which is what an empty optional field means.
      */
-    private const int SLOT_FROM = 0;             // 00:00
-    private const int SLOT_TO = 23 * 60 + 45;    // 23:45
-    private const int SLOT_STEP = 15;            // quarter-hour granularity
+    private const array TIME_FIELD = [
+        'widget' => 'single_text',
+        'input' => 'datetime_immutable',
+        'required' => false,
+        'invalid_message' => 'Pon la hora como HH:MM (por ejemplo, 10:30).',
+    ];
 
     public function __construct(private readonly EventCategoryRepository $categories)
     {
@@ -40,8 +54,6 @@ final class PersonalEventFormType extends AbstractType
 
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
-        $slots = $this->timeSlots();
-
         $builder
             ->add('title', TextType::class, ['label' => 'Título'])
             ->add('description', TextareaType::class, ['label' => 'Descripción', 'required' => false])
@@ -59,19 +71,23 @@ final class PersonalEventFormType extends AbstractType
                 'widget' => 'single_text',
                 'input' => 'datetime_immutable',
             ])
-            ->add('startTime', ChoiceType::class, [
+            ->add('startTime', TimeType::class, [
                 'label' => 'Hora',
-                'required' => false,
-                'placeholder' => '— Sin hora —',
-                'choices' => $slots,
-                'help' => 'Déjalo en «Sin hora» si es un recordatorio sin hora concreta.',
+                ...self::TIME_FIELD,
+                'help' => 'Déjalo vacío si es un recordatorio sin hora concreta.',
             ])
-            ->add('endTime', ChoiceType::class, [
+            ->add('endTime', TimeType::class, [
                 'label' => 'Hasta',
-                'required' => false,
-                'placeholder' => '— Sin fin —',
-                'choices' => $slots,
+                ...self::TIME_FIELD,
                 'help' => 'Opcional, si tiene una hora de fin.',
+            ])
+            ->add('reminder', EnumType::class, [
+                'label' => 'Avisarme',
+                'class' => EventReminderOffset::class,
+                'choice_label' => static fn (EventReminderOffset $offset): string => $offset->label(),
+                'required' => false,
+                'placeholder' => '— Sin aviso —',
+                'help' => 'Te llega una notificación al móvil. Requiere tener los avisos activados en este dispositivo (se activan en «Avisos»).',
             ]);
 
         // Recurrence is a create-time decision: once materialised into occurrences, each is edited on
@@ -91,23 +107,6 @@ final class PersonalEventFormType extends AbstractType
                     'help' => 'Solo si se repite: el último día en que aparece.',
                 ]);
         }
-    }
-
-    /**
-     * The quarter-hour slots offered by the "from"/"until" dropdowns, as label => value with both in
-     * "HH:MM" form (so the stored value is a chronological string).
-     *
-     * @return array<string, string> the slots, keyed by their own label
-     */
-    private function timeSlots(): array
-    {
-        $slots = [];
-        for ($minutes = self::SLOT_FROM; $minutes <= self::SLOT_TO; $minutes += self::SLOT_STEP) {
-            $label = \sprintf('%02d:%02d', intdiv($minutes, 60), $minutes % 60);
-            $slots[$label] = $label;
-        }
-
-        return $slots;
     }
 
     public function configureOptions(OptionsResolver $resolver): void
