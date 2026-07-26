@@ -28,7 +28,7 @@ final class NotificationLink
      *
      * @param Notification $notification the notice
      *
-     * @return string the path to open (e.g. "/tareas/42", "/agenda" or "/avisos")
+     * @return string the path to open (e.g. "/tareas/42", "/" or "/avisos")
      */
     public function pathFor(Notification $notification): string
     {
@@ -41,8 +41,11 @@ final class NotificationLink
             // A guardia notice (assigned/reassigned) opens the teacher's own "mis guardias", where they
             // see the guardia they were just assigned.
             str_starts_with($notification->getKind(), 'guardia.') => $this->urlGenerator->generate('guardia_mine'),
-            // An agenda reminder opens the agenda, where the event it is about is the next one up.
-            str_starts_with($notification->getKind(), 'event.') => $this->urlGenerator->generate('personal_event_index'),
+            // An agenda reminder opens Inicio, which carries every event it can be about: it only fires
+            // for a TIMED event (an all-day entry drops its reminder, see PersonalEvent::setAllDay) and
+            // at most a day ahead (see EventReminderOffset), so the event is either in today's "Con
+            // hora" block or in "Próximos 7 días".
+            str_starts_with($notification->getKind(), 'event.') => $this->urlGenerator->generate('app_homepage'),
             // Anything else has nowhere better to go than the inbox itself.
             default => $this->urlGenerator->generate('notification_index'),
         };

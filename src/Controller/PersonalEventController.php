@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use App\Agenda\PersonalAgenda;
 use App\Agenda\RecurrenceExpander;
 use App\Entity\PersonalEvent;
 use App\Entity\User;
@@ -20,26 +19,16 @@ use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\CurrentUser;
 
 /**
- * The teacher's personal agenda: private entries (timed events or all-day reminders) that only their
- * owner can see or manage. Every action is scoped to the current user — there is no superior/admin
- * bypass on purpose, because {@see PersonalEvent} is private by construction.
+ * The teacher's personal agenda entries: private events (timed appointments or all-day reminders) that
+ * only their owner can see or manage. Every action is scoped to the current user — there is no
+ * superior/admin bypass on purpose, because {@see PersonalEvent} is private by construction.
+ *
+ * Write-only by design: this controller has no list page. Where an entry is READ is decided by the two
+ * blocks of the agenda model — Inicio ({@see HomeController}) for today, and the Calendario
+ * ({@see CalendarController}) for any other day — so there is no third place that would drift from them.
  */
 final class PersonalEventController extends AbstractController
 {
-    /**
-     * The user's personal agenda: the tasks assigned to them plus their own reminders and
-     * appointments, merged and split into time buckets ({@see PersonalAgenda}).
-     */
-    #[Route('/agenda', name: 'personal_event_index', methods: ['GET'])]
-    public function index(#[CurrentUser] User $user, PersonalAgenda $agenda): Response
-    {
-        $today = new \DateTimeImmutable('today', new \DateTimeZone('Europe/Madrid'));
-
-        return $this->render('agenda/index.html.twig', [
-            'buckets' => $agenda->bucketsFor($user, $today),
-        ]);
-    }
-
     /**
      * Creates a personal entry owned by the current user. When it recurs, every occurrence is
      * materialised as its own event sharing a series id, so each stays an ordinary editable entry.
@@ -121,9 +110,9 @@ final class PersonalEventController extends AbstractController
     }
 
     /**
-     * One-click "done" toggle from the agenda. Only its owner may do it. Returns to the agenda,
-     * landing on the row just ticked ("#evento-id"). Route-based (never the Referer) to rule out an
-     * open redirect.
+     * One-click "done" toggle on a checklist row. Only its owner may do it. Always returns to Inicio,
+     * the block that owns "lo de hoy" and where the tick lives. Route-based (never the Referer) to rule
+     * out an open redirect.
      */
     #[Route('/agenda/{id}/hecho', name: 'personal_event_toggle_done', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function toggleDone(PersonalEvent $event, Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager): Response

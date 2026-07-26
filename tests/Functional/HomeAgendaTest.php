@@ -14,9 +14,10 @@ use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 /**
- * The landing agenda (served at /agenda) mixes the user's tasks and their private personal events —
- * but only their own: a personal event is never shown on someone else's agenda. The site root (/) is
- * the personal home ("qué me toca hoy"), a separate page.
+ * Inicio (the site root) is the personal agenda: it mixes the user's institutional tasks with their
+ * private personal events — but only their own, since a personal event is never shown on someone
+ * else's page. It shows what is on your plate NOW (overdue, today, the next 7 days); anything further
+ * out, or already done, belongs to the Calendario. There is no separate agenda list page.
  */
 final class HomeAgendaTest extends WebTestCase
 {
@@ -37,65 +38,95 @@ final class HomeAgendaTest extends WebTestCase
         return $user;
     }
 
-    public function testOwnPersonalEventShowsOnTheHomeAgenda(): void
+    /**
+     * A relative day anchored at midday. Buckets are decided by comparing "YYYY-MM-DD" strings, so an
+     * entry created at the wall-clock hour can land on the previous/next day when the runner's zone
+     * differs from the app's (Europe/Madrid): midday leaves hours of slack either way.
+     *
+     * @param string $modifier a relative date expression, e.g. "+2 days"
+     *
+     * @return \DateTimeImmutable that day at 12:00
+     */
+    private static function midday(string $modifier): \DateTimeImmutable
+    {
+        return (new \DateTimeImmutable($modifier))->setTime(12, 0);
+    }
+
+    public function testOwnPersonalEventShowsOnTheHome(): void
     {
         $user = $this->user('profe@centro.test');
-        // A couple of days out so it lands in the "next 7 days" bucket regardless of wall-clock.
-        $event = new PersonalEvent($user, 'Tutoría con familia', new \DateTimeImmutable('+2 days'));
+        // A couple of days out so it lands in the "Próximos 7 días" bucket regardless of wall-clock,
+        // and at midday so no CI-vs-Madrid offset can push it onto a neighbouring day.
+        $event = new PersonalEvent($user, 'Tutoría con familia', self::midday('+2 days'));
         $this->em->persist($event);
         $this->em->flush();
 
         $this->client->loginUser($user);
-        $this->client->request('GET', '/agenda');
+        $this->client->request('GET', '/');
 
         self::assertResponseIsSuccessful();
         self::assertStringContainsString('Tutoría con familia', (string) $this->client->getResponse()->getContent());
     }
 
-    public function testOverduePersonalEventStillShowsOnTheHomeAgenda(): void
+    public function testOverduePersonalEventStillShowsOnTheHome(): void
     {
         $user = $this->user('profe@centro.test');
         // A few days in the past: within the "from a month back" window, so it must still surface
-        // (in the "Vencidas" bucket) rather than be silently dropped.
-        $event = new PersonalEvent($user, 'Recordatorio vencido', new \DateTimeImmutable('-5 days'));
+        // (among the overdue entries of "Por hacer") rather than be silently dropped.
+        $event = (new PersonalEvent($user, 'Recordatorio vencido', self::midday('-5 days')))->setAllDay(true);
         $this->em->persist($event);
         $this->em->flush();
 
         $this->client->loginUser($user);
-        $this->client->request('GET', '/agenda');
+        $this->client->request('GET', '/');
 
         self::assertResponseIsSuccessful();
         self::assertStringContainsString('Recordatorio vencido', (string) $this->client->getResponse()->getContent());
     }
 
-    public function testDonePersonalEventShowsOnTheHomeAgenda(): void
+    public function testADonePersonalEventLeavesTheHomeButStaysInTheCalendar(): void
     {
+        // The point of the two-block agenda: ticking something takes it OFF your plate, so Inicio only
+        // ever lists what is still pending. The entry is not gone, though — the Calendario keeps it on
+        // its day, shown as done. (Both entries are the same day so the assertions cannot pass by date.)
         $user = $this->user('profe@centro.test');
-        $event = (new PersonalEvent($user, 'Evento ya hecho', new \DateTimeImmutable('+2 days')))->setDone(true);
-        $this->em->persist($event);
+        $day = self::midday('+2 days');
+        $this->em->persist((new PersonalEvent($user, 'Evento ya hecho', $day))->setDone(true));
+        $this->em->persist(new PersonalEvent($user, 'Evento pendiente', $day));
         $this->em->flush();
 
         $this->client->loginUser($user);
-        $this->client->request('GET', '/agenda');
+        $this->client->request('GET', '/');
 
         self::assertResponseIsSuccessful();
-        // Done entries are kept apart in the "Hechas" bucket, but still rendered.
+        $home = (string) $this->client->getResponse()->getContent();
+        self::assertStringContainsString('Evento pendiente', $home, 'lo pendiente sí ocupa Inicio');
+        self::assertStringNotContainsString('Evento ya hecho', $home, 'lo hecho sale de Inicio');
+
+        $this->client->request('GET', '/calendario?vista=dia&fecha='.$day->format('Y-m-d'));
+
+        self::assertResponseIsSuccessful();
         self::assertStringContainsString('Evento ya hecho', (string) $this->client->getResponse()->getContent());
     }
 
-    public function testAnotherUsersPersonalEventDoesNotShowOnMyHomeAgenda(): void
+    public function testAnotherUsersPersonalEventDoesNotShowOnMyHome(): void
     {
         $owner = $this->user('duena@centro.test');
         $me = $this->user('yo@centro.test');
-        $event = new PersonalEvent($owner, 'Cita privada ajena', new \DateTimeImmutable('+2 days'));
-        $this->em->persist($event);
+        // Mine on the same day as theirs: seeing mine proves the block is actually rendered, so the
+        // "not theirs" assertion cannot pass just because nothing was listed at all.
+        $day = self::midday('+2 days');
+        $this->em->persist(new PersonalEvent($owner, 'Cita privada ajena', $day));
+        $this->em->persist(new PersonalEvent($me, 'Mi propia cita', $day));
         $this->em->flush();
 
         $this->client->loginUser($me);
-        $this->client->request('GET', '/agenda');
+        $this->client->request('GET', '/');
 
         self::assertResponseIsSuccessful();
-        self::assertStringNotContainsString('Cita privada ajena', (string) $this->client->getResponse()->getContent());
+        $html = (string) $this->client->getResponse()->getContent();
+        self::assertStringContainsString('Mi propia cita', $html);
+        self::assertStringNotContainsString('Cita privada ajena', $html);
     }
 
     public function testTheSiteRootShowsThePersonalHome(): void
@@ -134,5 +165,19 @@ final class HomeAgendaTest extends WebTestCase
         self::assertStringContainsString('Entregar memoria PGA', $html, 'la tarea de hoy sale en "Por hacer"');
         self::assertStringContainsString('Reunión de departamento', $html, 'la cita con hora sale en "Con hora"');
         self::assertStringContainsString('Llamar a la editorial', $html, 'el recordatorio sin hora sale en "Por hacer"');
+    }
+
+    public function testThereIsNoSeparateAgendaListPage(): void
+    {
+        // Fase C: la lista /agenda se retiró (Inicio + Calendario son los dos únicos sitios donde se lee
+        // la agenda). Las rutas de alta/edición de eventos siguen bajo /agenda/..., así que se asserta
+        // que la RAÍZ ya no responde, no que el prefijo entero haya desaparecido.
+        $user = $this->user('profe@centro.test');
+        $this->em->flush();
+
+        $this->client->loginUser($user);
+        $this->client->request('GET', '/agenda');
+
+        self::assertResponseStatusCodeSame(404);
     }
 }

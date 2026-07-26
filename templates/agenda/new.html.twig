@@ -2,7 +2,9 @@
 {% import '_macros/form.html.twig' as f %}
 
 {% block title %}Nuevo evento · {{ app_organization_name }}{% endblock %}
-{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('personal_event_index') }}">Agenda</a><span class="sep">/</span>Nuevo{% endblock %}
+{# El calendario es donde aterriza el guardado (PersonalEventController::toCalendarOn), así que la miga
+   de pan sube por ahí y no por una lista de agenda aparte, que ya no existe. #}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('calendar_index', { vista: 'semana' }) }}">Calendario</a><span class="sep">/</span>Nuevo{% endblock %}
 
 {% block body %}
     <div class="page-head">

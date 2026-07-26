@@ -15,9 +15,10 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
 
 /**
  * The site root: the personal "qué me toca hoy" home. It leads with the viewer's next guardia, their
- * tasks due today or overdue, and their private agenda — the at-a-glance landing, not the full lists
- * ({@see TaskController::index}, {@see PersonalEventController::index}). Role-aware modules (mi
- * departamento, el centro, guardias de hoy) grow on top of this base. See {@see HomeDashboard}.
+ * tasks due today or overdue, and their private agenda — the at-a-glance landing for TODAY, not the
+ * full lists ({@see TaskController::index} for the task backlog, {@see CalendarController::index} for
+ * events on any other day). Role-aware modules (mi departamento, el centro, guardias de hoy) grow on
+ * top of this base. See {@see HomeDashboard}.
  */
 final class HomeController extends AbstractController
 {
