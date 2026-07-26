@@ -7,6 +7,7 @@ namespace App\Service;
 use App\Entity\Notification;
 use App\Entity\Task;
 use App\Entity\User;
+use App\Security\AccessGate;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -24,6 +25,10 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
  * Both the e-mail and the push legs are best-effort: a failure on either is logged and swallowed so it
  * never loses the in-app notice (already persisted) nor aborts a nightly batch.
  *
+ * Nothing is delivered to someone who cannot get into the application ({@see AccessGate}): during a
+ * phased roll-out, mailing "tienes una tarea, entra" to staff who cannot sign in yet only confuses
+ * them. The in-app notice IS still written, on purpose — see {@see flushAndSend()}.
+ *
  * Two entry points to fit both callers:
  *  - {@see dispatch()} for a single notice (persist + flush + send in one call);
  *  - {@see record()} + {@see flushAndSend()} for a batch (record many, one flush, then send), which is
@@ -35,6 +40,7 @@ final class NotificationDispatcher
         private readonly EntityManagerInterface $entityManager,
         private readonly MailerInterface $mailer,
         private readonly WebPushSender $webPush,
+        private readonly AccessGate $accessGate,
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly LoggerInterface $logger,
         #[Autowire('%app.mailer_from%')]
@@ -86,6 +92,11 @@ final class NotificationDispatcher
      * Flushes any pending in-app notices, then delivers each over e-mail and Web Push. A failure on a
      * single recipient/channel is logged and skipped so it never aborts the rest of a batch.
      *
+     * Recipients who cannot sign in are written but not delivered to. The notice is deliberately
+     * still persisted: the reminder engine is idempotent by matching an exact day, with no
+     * "already notified" flag, so skipping the write would lose that reminder for good instead of
+     * merely postponing it — the person finds it waiting the day their access opens.
+     *
      * @param iterable<Notification> $notifications the notices to deliver (already recorded)
      */
     public function flushAndSend(iterable $notifications): void
@@ -94,6 +105,15 @@ final class NotificationDispatcher
 
         foreach ($notifications as $notification) {
             $recipient = $notification->getRecipient();
+            if (!$this->accessGate->allows($recipient)) {
+                $this->logger->debug('Aviso guardado sin enviar: el destinatario no puede acceder', [
+                    'recipient' => $recipient->getEmail(),
+                    'kind' => $notification->getKind(),
+                ]);
+
+                continue;
+            }
+
             $path = $this->pathFor($notification);
 
             try {

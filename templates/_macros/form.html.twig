@@ -108,6 +108,25 @@
 {% endmacro %}
 
 {#
+   El mismo interruptor que `toggle`, pero para un <input> escrito a mano en vez de un campo de
+   Symfony Form. Para las pantallas que envían un POST plano (una lista de casillas cuyo número
+   depende de los datos, no de una entidad), de modo que no acaben con un checkbox cuadrado suelto
+   con otra estética. Mismo markup y mismas clases: el CSS se escribe una vez.
+#}
+{% macro checkbox_switch(name, checked = false, label = '', help = null, value = 'on') %}
+    <div class="switch-row">
+        <label class="switch">
+            <input type="checkbox" class="switch__input" name="{{ name }}" value="{{ value }}"{% if checked %} checked{% endif %}>
+            <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+            <span class="switch__text">
+                <span class="switch__label">{{ label }}</span>
+                {% if help %}<span class="switch__help">{{ help }}</span>{% endif %}
+            </span>
+        </label>
+    </div>
+{% endmacro %}
+
+{#
    Barra de acciones del formulario: el botón primario de envío y un enlace de cancelar.
    cancelUrl: destino del enlace "Cancelar". submitLabel: texto del botón (por defecto "Guardar").
 #}
