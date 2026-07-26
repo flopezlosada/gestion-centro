@@ -13,7 +13,8 @@
         'validated': {'cls': 'is-success',  'label': '✓ Finalizada'},
         'cancelled': {'cls': 'is-muted',    'label': 'Cancelada'},
     }[t.status]|default({'cls': 'is-pending', 'label': t.status}) %}
-    {% set who = t.assignedUser %}
+    {# El responsable ACTUAL: el delegado si la tarea está delegada, si no el asignado (resolveResponsible). #}
+    {% set who = t.resolveResponsible %}
     <a class="task-card{{ overdue ? ' is-overdue' }}{{ t.status == 'cancelled' ? ' is-cancelled' }}" href="{{ path('task_show', { id: t.id }) }}">
         <div class="task-card__top">
             <span class="task-card__title">{{ t.title }}</span>
@@ -23,7 +24,7 @@
             <span class="task-card__who">
                 {% if who %}
                     <span class="task-card__avatar" aria-hidden="true">{{ who.fullName|initials }}</span>
-                    <span class="task-card__name">{{ who.fullName }}{% if t.unit %} · {{ t.unit.name }}{% endif %}</span>
+                    <span class="task-card__name">{{ who.fullName }}{% if t.delegatedTo %} · delegada{% endif %}{% if t.unit %} · {{ t.unit.name }}{% endif %}</span>
                 {% else %}
                     <span class="task-card__avatar task-card__avatar--empty" aria-hidden="true">·</span>
                     <span class="task-card__name">{{ t.unit ? t.unit.name : 'Sin asignar' }}</span>
@@ -43,12 +44,13 @@
         'validated': {'cls': 'is-success',  'label': '✓ Finalizada'},
         'cancelled': {'cls': 'is-muted',    'label': 'Cancelada'},
     }[t.status]|default({'cls': 'is-pending', 'label': t.status}) %}
-    {% set who = t.assignedUser %}
+    {# El responsable ACTUAL: el delegado si la tarea está delegada, si no el asignado (resolveResponsible). #}
+    {% set who = t.resolveResponsible %}
     <a class="trow{{ overdue ? ' is-overdue' }}{{ t.status == 'cancelled' ? ' is-cancelled' }}" href="{{ path('task_show', { id: t.id }) }}">
         <span class="trow__title">{{ t.title }}</span>
         <span class="trow__unit">{{ t.unit ? t.unit.name : '—' }}</span>
         <span class="trow__who">
-            {% if who %}<span class="trow__avatar" aria-hidden="true">{{ who.fullName|initials }}</span><span class="trow__name">{{ who.fullName }}</span>{% else %}<span class="cell-muted">—</span>{% endif %}
+            {% if who %}<span class="trow__avatar" aria-hidden="true">{{ who.fullName|initials }}</span><span class="trow__name">{{ who.fullName }}{% if t.delegatedTo %} · delegada{% endif %}</span>{% else %}<span class="cell-muted">—</span>{% endif %}
         </span>
         <span class="trow__date{{ overdue ? ' is-overdue' }}">{{ t.dueDate|date('d/m/Y') }}</span>
         <span class="task-pill task-pill--{{ pill.cls }}">{{ pill.label }}</span>

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Service;
 
+use App\Entity\Department;
 use App\Entity\Task;
 use App\Entity\User;
 
@@ -13,10 +14,15 @@ use App\Entity\User;
  * per-row scope built from the organisation chart, kept in one place so the list and the calendar
  * stay consistent.
  *
- * A task is visible when it is the user's own (assigned to them or to a role they hold) or it falls
- * under a unit they are a superior of (they manage that unit or an ancestor of it); admins see every
- * task. The personal agenda on the homepage is a stricter "just mine" view and does not go through
- * here — it is built by {@see \App\Repository\TaskRepository::findAgendaFor()}.
+ * A task is visible when: it is the user's own (they hold it now, or they were assigned it and
+ * delegated it down — they stay accountable); OR they lead the whole school (dirección/jefatura see
+ * every task, since a director does not "outrank" a director-level task, they simply oversee all); OR
+ * they head the task's department (a head sees every task of their department, delegated or not); OR
+ * they outrank the task's role in its department; OR they are an admin.
+ *
+ * This is the "what I may see / supervise" scope (the course plan, the calendar, the task page). The
+ * personal agenda on the homepage is a STRICTER "just what I must do" view — a task delegated down
+ * leaves it — and does not go through here: it is built by {@see \App\Repository\TaskRepository::findAgendaFor()}.
  */
 final class TaskVisibility
 {
@@ -49,8 +55,9 @@ final class TaskVisibility
 
     /**
      * Whether a single task is visible to the user: their own (assigned to them or to a role they
-     * hold), under a unit they are a superior of, or any task for an admin. Same rule as
-     * {@see visibleTo()}, exposed per task so the detail page can enforce it too.
+     * hold), one they were assigned and delegated down (they stay accountable), under a unit they are a
+     * superior of, or any task for an admin. Same rule as {@see visibleTo()}, exposed per task so the
+     * detail page can enforce it too.
      *
      * @param Task $task    the task to check
      * @param User $user    the person browsing
@@ -60,6 +67,40 @@ final class TaskVisibility
      */
     public function isVisibleTo(Task $task, User $user, bool $isAdmin): bool
     {
-        return $isAdmin || $task->isOwnedBy($user) || $this->hierarchy->isSuperiorOfTask($user, $task);
+        // Admin and whole-school leadership (dirección/jefatura) see every task, no exceptions — a
+        // director does not "outrank" a director-level task (same rank), they simply oversee everything.
+        if ($isAdmin || $this->hierarchy->commandsWholeSchool($user)) {
+            return true;
+        }
+
+        // The current holder (the delegatee once delegated) and the assignee who delegated it down and
+        // stays accountable — both keep sight of it.
+        if ($task->isOwnedBy($user) || $task->getAssignedUser() === $user) {
+            return true;
+        }
+
+        // A department head sees EVERY task of their department, delegated or not (delegation never
+        // moves a task out of its department).
+        $commanded = $this->hierarchy->commandedDepartment($user);
+        if (null !== $commanded && $this->departmentOf($task)?->getId() === $commanded->getId()) {
+            return true;
+        }
+
+        // Otherwise, anyone who outranks the task's role in its department.
+        return $this->hierarchy->isSuperiorOfTask($user, $task);
+    }
+
+    /**
+     * The department a task belongs to: its responsibility's unit, or its own unit as a fallback (the
+     * same source {@see OrganizationHierarchy::isSuperiorOfTask()} ranks against). Null for an ad-hoc,
+     * unit-less task.
+     *
+     * @param Task $task the task
+     *
+     * @return Department|null the task's department, or null if it has none
+     */
+    private function departmentOf(Task $task): ?Department
+    {
+        return $task->getResponsibility()?->getUnit() ?? $task->getUnit();
     }
 }

@@ -32,10 +32,12 @@ class TaskRepository extends ServiceEntityRepository
     public function findBySchoolYear(string $schoolYear): array
     {
         // Fetch-join the associations shown in the list/plan (and read by the visibility scope) to
-        // avoid an N+1 per row — including the responsibility (role + department).
+        // avoid an N+1 per row — including the responsibility (role + department) and the delegatee,
+        // now that the RESPONSABLE column resolves to the current responsible (delegatee if delegated).
         return $this->createQueryBuilder('t')
             ->leftJoin('t.unit', 'unit')->addSelect('unit')
             ->leftJoin('t.assignedUser', 'assignedUser')->addSelect('assignedUser')
+            ->leftJoin('t.delegatedTo', 'delegatedTo')->addSelect('delegatedTo')
             ->leftJoin('t.assignedRole', 'assignedRole')->addSelect('assignedRole')
             ->leftJoin('t.responsibility', 'resp')->addSelect('resp')
             ->leftJoin('resp.role', 'respRole')->addSelect('respRole')
@@ -143,10 +145,15 @@ class TaskRepository extends ServiceEntityRepository
             ->orderBy('t.dueDate', 'ASC')
             ->addOrderBy('t.id', 'ASC');
 
+        // La agenda es "lo MÍO que hacer" = el responsable ACTUAL. Si la tarea está delegada, el
+        // responsable es SOLO el delegado: una que yo delegué hacia abajo deja de ser mi pendiente y
+        // sale de mi agenda; una delegada A mí entra. Sin delegación, el asignado (o el titular del
+        // rol). Es la misma noción que Task::isOwnedBy, llevada a la consulta.
         if ([] === $roleIds) {
-            $qb->andWhere('t.assignedUser = :user')->setParameter('user', $user);
+            $qb->andWhere('t.delegatedTo = :user OR (t.delegatedTo IS NULL AND t.assignedUser = :user)')
+                ->setParameter('user', $user);
         } else {
-            $qb->andWhere('t.assignedUser = :user OR IDENTITY(t.assignedRole) IN (:roles)')
+            $qb->andWhere('t.delegatedTo = :user OR (t.delegatedTo IS NULL AND (t.assignedUser = :user OR IDENTITY(t.assignedRole) IN (:roles)))')
                 ->setParameter('user', $user)
                 ->setParameter('roles', $roleIds);
         }
