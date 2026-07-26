@@ -7,15 +7,17 @@ namespace App\Controller;
 use App\Entity\Notification;
 use App\Entity\User;
 use App\Repository\NotificationRepository;
+use App\Support\NotificationLink;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
-use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\CurrentUser;
 
 /**
- * The user's notification inbox: their reminders and escalations, and a way to mark them read.
+ * The user's notification inbox. Each notification is marked read only when its recipient OPENS it —
+ * which also forwards them to what it is about — so the header bell keeps reflecting what they have
+ * not yet looked at (opening the inbox alone does not clear it).
  */
 final class NotificationController extends AbstractController
 {
@@ -27,20 +29,23 @@ final class NotificationController extends AbstractController
         ]);
     }
 
-    #[Route('/avisos/leer', name: 'notification_mark_read', methods: ['POST'])]
-    public function markAllRead(Request $request, #[CurrentUser] User $user, NotificationRepository $notifications, EntityManagerInterface $entityManager): Response
+    /**
+     * Opens a single notification: marks it read (once) and forwards the user to what it is about. The
+     * destination comes from {@see NotificationLink} — the SAME source the Web Push payload uses — so a
+     * push and its inbox row never disagree. Only its recipient may open it.
+     */
+    #[Route('/avisos/{id}', name: 'notification_open', requirements: ['id' => '\d+'], methods: ['GET'])]
+    public function open(Notification $notification, #[CurrentUser] User $user, EntityManagerInterface $entityManager, NotificationLink $link): Response
     {
-        if (!$this->isCsrfTokenValid('mark_notifications_read', (string) $request->request->get('_token'))) {
-            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        if ($notification->getRecipient() !== $user) {
+            throw $this->createAccessDeniedException('Este aviso no es tuyo.');
         }
 
-        foreach ($notifications->findBy(['recipient' => $user, 'readAt' => null]) as $notification) {
+        if (!$notification->isRead()) {
             $notification->markRead();
+            $entityManager->flush();
         }
-        $entityManager->flush();
 
-        $this->addFlash('success', 'Avisos marcados como leídos.');
-
-        return $this->redirectToRoute('notification_index');
+        return $this->redirect($link->pathFor($notification));
     }
 }

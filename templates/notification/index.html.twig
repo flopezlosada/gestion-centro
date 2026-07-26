@@ -5,12 +5,11 @@
 
 {# Una tarjeta de aviso: barra verde a la izquierda si no leído, icono por tipo, título + NUEVO, cuerpo y hora. #}
 {% macro notice(n, today) %}
-    {#- El destino sale de la MISMA fuente que la notificación push (App\Support\NotificationLink), así
-        la fila y el aviso del móvil nunca llevan a sitios distintos. Un aviso sin mejor destino apunta
-        a esta propia bandeja: ahí no se enlaza, que no tiene sentido enlazar a donde ya estás. -#}
-    {% set link = notification_path(n) %}
-    {% set link = link == path('notification_index') ? null : link %}
-    <{{ link ? 'a' : 'div' }} class="notice{{ n.read ? '' : ' is-unread' }}"{% if link %} href="{{ link }}"{% endif %}>
+    {#- Cada aviso enlaza a notification_open, que lo marca leído y redirige a su destino (vía
+        App\Support\NotificationLink, la MISMA fuente que la notificación push, para que la fila y el
+        aviso del móvil nunca lleven a sitios distintos). Abrir un aviso lo marca leído; abrir la
+        bandeja, no. Un aviso sin mejor destino vuelve aquí (marcado ya como leído). -#}
+    <a class="notice{{ n.read ? '' : ' is-unread' }}" href="{{ path('notification_open', { id: n.id }) }}">
         <span class="notice__icon notice__icon--{{ n.task ? 'task' : 'bell' }}" aria-hidden="true">
             {% if n.task %}
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 1.5-1.5M4 12l1 1 1.5-1.5M4 18l1 1 1.5-1.5"/></svg>
@@ -26,7 +25,7 @@
             {% if n.body %}<p class="notice__text">{{ n.body }}</p>{% endif %}
             <div class="notice__time">{% if n.createdAt|date('Y-m-d') == today %}{{ n.createdAt|date('H:i') }}{% else %}{{ n.createdAt|date('d/m · H:i') }}{% endif %}</div>
         </div>
-    </{{ link ? 'a' : 'div' }}>
+    </a>
 {% endmacro %}
 
 {% block body %}
@@ -38,12 +37,6 @@
     <div class="avisos-page">
         <header class="avisos-head">
             <h1 class="avisos-title">Avisos</h1>
-            {% if notifications is not empty %}
-                <form method="post" action="{{ path('notification_mark_read') }}">
-                    <input type="hidden" name="_token" value="{{ csrf_token('mark_notifications_read') }}">
-                    <button type="submit" class="avisos-markread">Marcar leídos</button>
-                </form>
-            {% endif %}
         </header>
 
         {% if app_vapid_public_key is not empty %}
@@ -64,7 +57,7 @@
                 <div class="avisos-list">{% for n in hoy %}{{ ui.notice(n, today) }}{% endfor %}</div>
             {% endif %}
             {% if antes is not empty %}
-                <div class="avisos-group__label avisos-group__label--sep">Antes</div>
+                <div class="avisos-group__label avisos-group__label--sep">Anteriores</div>
                 <div class="avisos-list">{% for n in antes %}{{ ui.notice(n, today) }}{% endfor %}</div>
             {% endif %}
         {% endif %}
