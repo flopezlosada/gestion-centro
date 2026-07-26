@@ -299,7 +299,9 @@ class Task implements Auditable
      */
     public function isDone(): bool
     {
-        return $this->checkboxDone || TaskStatus::VALIDATED === $this->status;
+        // The progress checkbox only counts when the task actually uses it (a deliverable task does not),
+        // so a stale checkbox on a deliverable never masquerades as done — only Finalizada closes it.
+        return ($this->requiresCheckbox() && $this->checkboxDone) || TaskStatus::VALIDATED === $this->status;
     }
 
     public function getAssignedRole(): ?Role
@@ -381,9 +383,15 @@ class Task implements Auditable
         return $this;
     }
 
+    /**
+     * Whether this task closes via a one-click progress checkbox. A task with a deliverable NEVER does:
+     * it is completed by Entregar (with the document) → Validar, so the two completion paths stay
+     * mutually exclusive. Enforced here so a deliverable task can't be closed with the checkbox skipping
+     * its document, whatever the stored flags say (fixes existing rows too, no migration).
+     */
     public function requiresCheckbox(): bool
     {
-        return $this->requiresCheckbox;
+        return $this->requiresCheckbox && !$this->requiresDocument;
     }
 
     public function setRequiresCheckbox(bool $requiresCheckbox): static
