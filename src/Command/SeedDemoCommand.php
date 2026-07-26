@@ -48,13 +48,21 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 #[AsCommand(name: 'app:seed-demo', description: 'DEV: genera actividad inventada (tareas de centro, agenda, avisos, calendario) sobre el claustro real')]
 final class SeedDemoCommand extends Command
 {
-    /** Activity tables owned by this seeder, in FK-safe deletion order (children before parents). */
+    /**
+     * Activity tables owned by this seeder, in FK-safe deletion order (children before parents).
+     *
+     * `guardia_absence` has to be here even though nothing else references it from this list: the seeder
+     * writes one Absence per (teacher, day) and that pair is unique, so leaving the table behind made a
+     * second run die on a duplicate key with the rest of the activity already wiped — the command was
+     * effectively single-use. It goes after `guardia_cover`, which is its child.
+     */
     private const array ACTIVITY_TABLES = [
         'notification',
         'task',
         'task_responsibility',
         'personal_event',
         'guardia_cover',
+        'guardia_absence',
         'non_lective_day',
         'academic_year',
         'event_category',
