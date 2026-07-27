@@ -664,29 +664,33 @@ final class TaskCrudTest extends WebTestCase
 
     public function testClosedTaskIsShownDoneAndCannotBeTicked(): void
     {
-        // Una finalizada cae en el bucket "Hechas" de la agenda: debe VERSE hecha (antes se pintaba con
-        // el círculo vacío, porque la casilla miraba solo checkboxDone) y su casilla ya no acciona.
+        // Una finalizada sigue apareciendo en su día del calendario: debe VERSE hecha (antes se pintaba
+        // con el círculo vacío, porque la casilla miraba solo checkboxDone) y su casilla ya no acciona.
         $dept = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($dept);
         $owner = $this->user('profe@centro.test', $dept);
-        // Mismo anclaje que la agenda (PersonalAgenda::bucketsFor): hoy en Madrid, no en la zona del
-        // runner de CI, para que el curso y el "vencida" coincidan con lo que calcula la app.
+        // Mismo anclaje que el calendario (CalendarController::TIME_ZONE): hoy en Madrid, no en la zona
+        // del runner de CI, para que el curso y el día de la vista coincidan con lo que calcula la app.
         $today = new \DateTimeImmutable('today', new \DateTimeZone('Europe/Madrid'));
-        $task = new Task('Memoria', SchoolYear::current($today), $today->modify('-1 day'), TaskType::SIMPLE);
+        $dueDate = $today->modify('-1 day');
+        $task = new Task('Memoria', SchoolYear::current($today), $dueDate, TaskType::SIMPLE);
         $task->setAssignedUser($owner)->setCreatedBy($owner);
         $this->em->persist($task);
         $this->em->flush();
         $taskId = (int) $task->getId();
+        // La vista de día del calendario: la lista de agenda que pinta el macro `agenda_item` desde que
+        // se retiró /agenda. Se ancla en la fecha límite de la tarea, así que no depende del reloj.
+        $dayView = '/calendario?vista=dia&fecha='.$dueDate->format('Y-m-d');
 
         $this->client->loginUser($owner);
         // Pendiente: la casilla acciona (POST) y de ella sale el token para el intento posterior.
-        $crawler = $this->client->request('GET', '/agenda');
+        $crawler = $this->client->request('GET', $dayView);
         self::assertSelectorExists('form[action$="/tareas/'.$taskId.'/hecho"]');
         $token = (string) $crawler->filter('form[action$="/tareas/'.$taskId.'/hecho"] input[name="_token"]')->attr('value');
 
         $this->moveTaskTo($taskId, TaskStatus::VALIDATED);
 
-        $this->client->request('GET', '/agenda');
+        $this->client->request('GET', $dayView);
         self::assertResponseIsSuccessful();
         self::assertSelectorNotExists('form[action$="/tareas/'.$taskId.'/hecho"]', 'una tarea cerrada no acciona');
         self::assertSelectorExists('#tarea-'.$taskId.'.is-done');

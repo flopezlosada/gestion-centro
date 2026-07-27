@@ -37,6 +37,19 @@ final class PersonalEventCrudTest extends WebTestCase
         return $user;
     }
 
+    /**
+     * A relative day anchored at midday, so no offset between the runner's zone and the app's
+     * (Europe/Madrid) can push the entry onto a neighbouring day of the calendar.
+     *
+     * @param string $modifier a relative date expression, e.g. "+10 days"
+     *
+     * @return \DateTimeImmutable that day at 12:00
+     */
+    private static function midday(string $modifier): \DateTimeImmutable
+    {
+        return (new \DateTimeImmutable($modifier))->setTime(12, 0);
+    }
+
     public function testNewEventFormRenders(): void
     {
         $user = $this->user('profe@centro.test');
@@ -238,17 +251,21 @@ final class PersonalEventCrudTest extends WebTestCase
     {
         $owner = $this->user('duena@centro.test');
         $stranger = $this->user('otro@centro.test');
-        // Relative to now: the agenda lists from today onward, so a fixed past date would make the
-        // "not in the list" assertion pass for the wrong reason (past, not privacy) after that day.
-        $event = new PersonalEvent($owner, 'Cita privada', new \DateTimeImmutable('+10 days'));
+        // Both on the SAME day: the stranger's own entry proves the day is really being listed, so the
+        // "not theirs" assertion cannot pass just because the page showed nothing at all.
+        $day = self::midday('+10 days');
+        $event = new PersonalEvent($owner, 'Cita privada', $day);
         $this->em->persist($event);
+        $this->em->persist(new PersonalEvent($stranger, 'Mi propia cita', $day));
         $this->em->flush();
 
-        // The stranger does not see it in their own agenda...
+        // The stranger does not see it on that day of their calendar...
         $this->client->loginUser($stranger);
-        $this->client->request('GET', '/agenda');
+        $this->client->request('GET', '/calendario?vista=dia&fecha='.$day->format('Y-m-d'));
         self::assertResponseIsSuccessful();
-        self::assertStringNotContainsString('Cita privada', (string) $this->client->getResponse()->getContent());
+        $html = (string) $this->client->getResponse()->getContent();
+        self::assertStringContainsString('Mi propia cita', $html);
+        self::assertStringNotContainsString('Cita privada', $html);
 
         // ...and cannot open its edit page.
         $this->client->request('GET', '/agenda/'.$event->getId().'/editar');
@@ -275,17 +292,18 @@ final class PersonalEventCrudTest extends WebTestCase
         self::assertNotNull($this->em->getRepository(PersonalEvent::class)->find($id));
     }
 
-    public function testOwnerSeesTheirOwnEventInTheAgenda(): void
+    public function testOwnerSeesTheirOwnEventInTheCalendar(): void
     {
         $owner = $this->user('profe@centro.test');
-        // Relative to now: the agenda lists entries from today onward, so a fixed past date would make
-        // this flaky once wall-clock time passes it.
-        $event = new PersonalEvent($owner, 'Reunión de departamento', new \DateTimeImmutable('+30 days'));
+        // A month out: too far for Inicio (which only carries hoy + los próximos 7 días), so the
+        // Calendario is the block that must show it — that is the whole point of the two-block agenda.
+        $day = self::midday('+30 days');
+        $event = new PersonalEvent($owner, 'Reunión de departamento', $day);
         $this->em->persist($event);
         $this->em->flush();
 
         $this->client->loginUser($owner);
-        $this->client->request('GET', '/agenda');
+        $this->client->request('GET', '/calendario?vista=dia&fecha='.$day->format('Y-m-d'));
 
         self::assertResponseIsSuccessful();
         self::assertStringContainsString('Reunión de departamento', (string) $this->client->getResponse()->getContent());

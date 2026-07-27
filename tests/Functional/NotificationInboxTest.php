@@ -34,7 +34,7 @@ final class NotificationInboxTest extends WebTestCase
         return $user;
     }
 
-    public function testAnAgendaReminderOpensAndForwardsToTheAgenda(): void
+    public function testAnAgendaReminderOpensAndForwardsToTheHome(): void
     {
         $user = $this->loggedInUser();
         $notification = new Notification($user, 'event.reminder', 'Claustro', 'Hoy a las 10:00.');
@@ -44,13 +44,14 @@ final class NotificationInboxTest extends WebTestCase
 
         $this->client->request('GET', '/avisos');
         self::assertResponseIsSuccessful();
-        // Every notice links to its open action (which marks it read on click); the destination — the
-        // agenda for an agenda reminder — is resolved server-side by NotificationLink.
+        // Every notice links to its open action (which marks it read on click); the destination — Inicio
+        // for an agenda reminder, where today's timed events live — is resolved server-side by
+        // NotificationLink.
         self::assertSelectorExists('a.notice[href="/avisos/'.$notification->getId().'"]');
         self::assertSelectorTextContains('.notice__title', 'Claustro');
 
         $this->client->request('GET', '/avisos/'.$notification->getId());
-        self::assertResponseRedirects('/agenda');
+        self::assertResponseRedirects('/');
     }
 
     public function testANoticeWithNoBetterDestinationStillOpensAndReturnsToTheInbox(): void

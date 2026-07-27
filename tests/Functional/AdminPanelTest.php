@@ -234,7 +234,8 @@ final class AdminPanelTest extends WebTestCase
     {
         $this->client->loginUser($this->admin());
 
-        $this->client->request('GET', '/agenda');
+        // Cualquier página con el shell sirve para asertar el nav; Inicio es la más barata.
+        $this->client->request('GET', '/');
 
         self::assertResponseIsSuccessful();
         // An admin now sees more than one nav section (Guardias, Administración), so assert Administración
@@ -246,7 +247,7 @@ final class AdminPanelTest extends WebTestCase
     {
         $this->client->loginUser($this->teacher());
 
-        $this->client->request('GET', '/agenda');
+        $this->client->request('GET', '/');
 
         self::assertResponseIsSuccessful();
         self::assertSelectorNotExists('.nav-section-title');

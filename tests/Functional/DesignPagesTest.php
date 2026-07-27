@@ -21,6 +21,9 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class DesignPagesTest extends WebTestCase
 {
+    /** Fecha límite de la tarea del seed: la comparten el seed y la vista de día que la muestra. */
+    private const string TASK_DUE_DAY = '2026-06-30';
+
     private KernelBrowser $client;
     private EntityManagerInterface $em;
 
@@ -59,7 +62,7 @@ final class DesignPagesTest extends WebTestCase
         $maths = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($maths);
 
-        $task = new Task('Memoria del departamento', SchoolYear::current(new \DateTimeImmutable()), new \DateTimeImmutable('2026-06-30'), TaskType::WITH_DELIVERABLE);
+        $task = new Task('Memoria del departamento', SchoolYear::current(new \DateTimeImmutable()), new \DateTimeImmutable(self::TASK_DUE_DAY), TaskType::WITH_DELIVERABLE);
         $task->setUnit($maths)->setAssignedUser($teacher);
         $this->em->persist($task);
         $this->em->flush();
@@ -67,12 +70,14 @@ final class DesignPagesTest extends WebTestCase
         return ['task' => $task, 'admin' => $admin, 'teacher' => $teacher];
     }
 
-    public function testHomeAgendaShowsMyTasks(): void
+    public function testCalendarDayViewShowsMyTasks(): void
     {
+        // La vista de día del calendario es la lista de agenda que queda tras retirar /agenda: pinta
+        // cada tarea con el macro `agenda_item`, dentro del shell autenticado.
         $s = $this->seed();
         $this->client->loginUser($s['teacher']);
 
-        $this->client->request('GET', '/agenda');
+        $this->client->request('GET', '/calendario?vista=dia&fecha='.self::TASK_DUE_DAY);
 
         self::assertResponseIsSuccessful();
         self::assertSelectorExists('aside.sidebar');
@@ -84,7 +89,7 @@ final class DesignPagesTest extends WebTestCase
         $s = $this->seed();
         $this->client->loginUser($s['teacher']);
 
-        $crawler = $this->client->request('GET', '/agenda');
+        $crawler = $this->client->request('GET', '/calendario?vista=dia&fecha='.self::TASK_DUE_DAY);
         $this->client->submit($crawler->filter('form.agenda-check')->first()->form());
 
         self::assertResponseRedirects();

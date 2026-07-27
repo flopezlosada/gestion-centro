@@ -27,7 +27,7 @@ A diferencia de un gestor de tareas genérico, el modelo está construido sobre 
 ## Operating Context
 
 - **Fase 1 (sin datos de alumnado):** los entregables de una tarea son **referencias/enlaces** a la nube del centro; la app nunca guarda su contenido.
-- **Uso diario y móvil**: consulta rápida "qué me toca hoy" (agenda personal agrupada por Vencidas / Hoy / Próximos 7 días / Más adelante) con casilla de hecho de 1 clic.
+- **Uso diario y móvil**: consulta rápida "qué me toca hoy" (agenda personal en dos bloques: Con hora = tus citas de hoy, Por hacer = tareas del centro vencidas o de hoy + recordatorios sin hora, con casilla de hecho de 1 clic), más un anticipo de los próximos 7 días; cualquier otro día se consulta en el Calendario.
 - **Ciclo de vida de tarea** por máquina de estados (Symfony Workflow): Pendiente → Entregada → Finalizada + Cancelada; Devolver → Pendiente.
 - **Calendario del curso** mensual, con días no lectivos que condicionan las fechas límite.
 - **Avisos in-app** + motor de recordatorios (15/7 días antes) y escalado de vencidas.
