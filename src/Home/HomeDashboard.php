@@ -16,6 +16,7 @@ use App\Repository\ScheduleEntryRepository;
 use App\Repository\TaskRepository;
 use App\Repository\UserRepository;
 use App\Service\OrganizationHierarchy;
+use App\Service\TaskWorkflow;
 use App\Support\TaskStatus;
 use App\Util\SchoolYear;
 
@@ -39,6 +40,7 @@ final readonly class HomeDashboard
         private CentreDashboard $centre,
         private OrganizationHierarchy $hierarchy,
         private UserRepository $usersRepo,
+        private TaskWorkflow $workflows,
     ) {
     }
 
@@ -132,16 +134,23 @@ final readonly class HomeDashboard
                 static fn (Task $t): bool => $t->getUnit()?->getId() === $dept->getId(),
             ));
             $ov = $this->centre->overview($deptTasks, $today);
-            $pending = array_values(array_filter(
+            // "Por validar" es lo que ESTE usuario puede validar de verdad, y eso lo decide el workflow
+            // (TaskValidationGuardSubscriber): nadie valida su propia tarea, aunque mande en su
+            // departamento. Contar todas las entregadas del depto metía las suyas y prometía un trabajo
+            // que la ficha de la tarea iba a negar — una jefa de departamento supera al rol Tutor/a de su
+            // propia tarea, así que colaba.
+            $toValidate = array_values(array_filter(
                 $deptTasks,
-                static fn (Task $t): bool => TaskStatus::SUBMITTED === $t->getStatus(),
+                fn (Task $t): bool => TaskStatus::SUBMITTED === $t->getStatus() && $this->workflows->for($t)->can($t, 'validate'),
             ));
             $modules['department'] = [
                 'dept' => $dept,
                 'people' => \count($this->usersRepo->findByUnit($dept)),
-                'toValidate' => $ov['submitted'],
+                'toValidate' => \count($toValidate),
+                // "Abierto del equipo" sí incluye lo propio: es la carga del departamento, no un trabajo
+                // pendiente de este usuario.
                 'teamOpen' => $ov['pending'] + $ov['submitted'],
-                'pending' => \array_slice($pending, 0, 3),
+                'pending' => \array_slice($toValidate, 0, 3),
             ];
         }
 
