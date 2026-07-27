@@ -9,7 +9,7 @@
     {{- labels[status]|default(status) -}}
 {% endmacro %}
 
-{% macro agenda_item(task, canWork = true) %}
+{% macro agenda_item(task, canWork = true, backToDay = null) %}
     {#- Una fila de la vista de día del calendario: casilla "Hecho" (1 clic, POST) + título enlazado +
         cuándo/dónde. El botón accionable solo se ofrece si `canWork` (mismo criterio que
         TaskController::canWorkOn); si no, la casilla se muestra estática (refleja el estado, no
@@ -17,6 +17,10 @@
         flag calculado; el default a true deja el macro reutilizable en una vista de solo lo propio.
         Se recibe por parámetro (no vía `is_granted`/`app` aquí dentro) porque las macros de Twig
         están aisladas del contexto: el cálculo vive en el cuerpo de la plantilla.
+
+        `backToDay` es el día del calendario en el que se pinta la fila: viaja en el POST para que
+        marcar aquí devuelva a ESTE día y no te eche a Inicio (ver App\Support\TickOutcome). Nulo = la
+        fila no está en el calendario, así que se vuelve a Inicio.
 
         "Hecha" es `task.done` (Task::isDone: casilla marcada O tarea Finalizada), el MISMO flag con
         el que la agenda la manda al bucket "Hechas" — pintar aquí solo `checkboxDone` dejaba las
@@ -27,6 +31,7 @@
         {% if canToggle %}
             <form method="post" action="{{ path('task_toggle_done', { id: task.id }) }}" class="agenda-check">
                 <input type="hidden" name="_token" value="{{ csrf_token('toggle_done' ~ task.id) }}">
+                {% if backToDay %}<input type="hidden" name="dia" value="{{ backToDay|date('Y-m-d', false) }}">{% endif %}
                 <button type="submit" class="checkbox{{ task.done ? ' is-checked' }}"
                         aria-pressed="{{ task.done ? 'true' : 'false' }}"
                         title="{{ task.done ? 'Hecho — pulsa para deshacer' : 'Marcar como hecho (reversible)' }}"
@@ -55,16 +60,17 @@
     </li>
 {% endmacro %}
 
-{% macro event_item(event) %}
+{% macro event_item(event, backToDay = null) %}
     {#- Fila de agenda para un evento PERSONAL (privado de su dueño): casilla "Hecho" de 1 clic +
         título enlazado a su edición + cuándo (el día, y la hora si la tiene; un recordatorio sin hora
         solo muestra el día), con un badge de categoría. A diferencia de `agenda_item`, el evento no tiene
         workflow ni estado: solo el `done`. La casilla siempre acciona porque estos eventos solo se
-        listan a su propio dueño (nadie más los ve). Tras marcar, el controlador vuelve siempre a
-        Inicio (ver PersonalEventController::toggleDone). -#}
+        listan a su propio dueño (nadie más los ve). `backToDay` funciona igual que en `agenda_item`:
+        marcar devuelve al día del calendario donde está la fila (ver App\Support\TickOutcome). -#}
     <li class="agenda-item{{ event.done ? ' is-done' }}" id="evento-{{ event.id }}">
         <form method="post" action="{{ path('personal_event_toggle_done', { id: event.id }) }}" class="agenda-check">
             <input type="hidden" name="_token" value="{{ csrf_token('personal_event_done' ~ event.id) }}">
+            {% if backToDay %}<input type="hidden" name="dia" value="{{ backToDay|date('Y-m-d', false) }}">{% endif %}
             <button type="submit" class="checkbox{{ event.done ? ' is-checked' }}"
                     aria-pressed="{{ event.done ? 'true' : 'false' }}"
                     title="{{ event.done ? 'Hecho — pulsa para deshacer' : 'Marcar como hecho (reversible)' }}"

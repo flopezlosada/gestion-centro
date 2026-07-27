@@ -23,6 +23,7 @@ use App\Service\TaskVisibility;
 use App\Service\TaskWorkflow;
 use App\Support\TaskActivityPresenter;
 use App\Support\TaskStatus;
+use App\Support\TickOutcome;
 use App\Util\CalendarDate;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
@@ -640,7 +641,7 @@ final class TaskController extends AbstractController
      * task's role, or an admin may do it.
      */
     #[Route('/tareas/{id}/hecho', name: 'task_toggle_done', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function toggleDone(Task $task, Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager): Response
+    public function toggleDone(Task $task, Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager, TickOutcome $tick): Response
     {
         if (!$this->isCsrfTokenValid('toggle_done'.$task->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
@@ -661,10 +662,15 @@ final class TaskController extends AbstractController
         $task->setCheckboxDone(!$task->isCheckboxDone());
         $entityManager->flush();
 
-        // Back to Inicio, the daily agenda. A ticked task leaves the "hoy/vencidas" list (it moves to
-        // the done bucket), so there is no stable row to anchor to — landing on the page is enough.
-        // Route-based (never the Referer) to rule out an open redirect.
-        return $this->redirectToRoute('app_homepage');
+        // A ticked task LEAVES the "hoy/vencidas" list of Inicio (it moves to the done bucket), so the
+        // row just vanishes: the toast is the only trace of what happened and the only way back.
+        $this->addFlash(TickOutcome::FLASH, $tick->flashFor('task', (int) $task->getId(), $task->getTitle(), $task->isCheckboxDone(), $request));
+
+        // Back to the surface the tick was on ({@see TickOutcome}): Inicio, or the calendar day you were
+        // looking at.
+        [$route, $parameters] = $tick->routeFor($request);
+
+        return $this->redirectToRoute($route, $parameters);
     }
 
     /**
@@ -682,7 +688,8 @@ final class TaskController extends AbstractController
             ->setDueDate($data->dueDate)
             ->setSchoolYear(SchoolYear::current($data->dueDate))
             ->setMandatory($data->mandatory)
-            ->setRequiresCheckbox($data->requiresCheckbox)
+            // requiresCheckbox is NOT touched: the form does not edit it (see TaskFormData), so whatever
+            // the task template set must survive an edit untouched.
             ->setRequiresDocument($data->requiresDocument);
 
         // Responsibility = role + (department, only for per-department roles): the structural backbone,
