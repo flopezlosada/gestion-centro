@@ -43,8 +43,14 @@ final class TaskFormData
 
     public bool $mandatory = true;
 
-    public bool $requiresCheckbox = true;
-
+    /**
+     * Deliberately NO $requiresCheckbox here. The form does not offer it (only the task TEMPLATE does,
+     * see {@see \App\Form\TaskTemplateType}), and carrying it anyway corrupted the column: it was filled
+     * from {@see \App\Entity\Task::requiresCheckbox()}, which is DERIVED (`checkbox && !document`), and
+     * then written straight back — so merely editing a task with a deliverable persisted
+     * requires_checkbox = 0, and dropping the document afterwards left a task that could not be closed
+     * any way at all. A field the form cannot edit has no business in its data object.
+     */
     public bool $requiresDocument = false;
 
     /**
@@ -96,7 +102,6 @@ final class TaskFormData
         $data->description = $task->getDescription();
         $data->dueDate = $task->getDueDate();
         $data->mandatory = $task->isMandatory();
-        $data->requiresCheckbox = $task->requiresCheckbox();
         $data->requiresDocument = $task->requiresDocument();
 
         $responsibility = $task->getResponsibility();

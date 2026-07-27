@@ -23,6 +23,7 @@ use App\Service\TaskVisibility;
 use App\Service\TaskWorkflow;
 use App\Support\TaskActivityPresenter;
 use App\Support\TaskStatus;
+use App\Support\TickOutcome;
 use App\Util\CalendarDate;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
@@ -58,10 +59,12 @@ final class TaskController extends AbstractController
      * the questions people actually arrive with) and NARROWING (one form: departamento, persona, rol,
      * fecha, búsqueda). Every count is computed over the narrowed set, so a view always delivers the
      * number it promises — the old status chips counted the whole course and lied as soon as anything
-     * was filtered.
+     * was filtered. For the same reason "Esperando mi validación" asks the workflow whether the verdict
+     * transition is actually enabled, instead of re-deriving the rule: the list must never offer what the
+     * task detail will refuse.
      */
     #[Route('/tareas', name: 'task_index', methods: ['GET'])]
-    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility, OrganizationHierarchy $hierarchy): Response
+    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility, OrganizationHierarchy $hierarchy, TaskWorkflow $workflows): Response
     {
         $today = new \DateTimeImmutable('today');
         $todayStr = $today->format('Y-m-d');
@@ -188,10 +191,15 @@ final class TaskController extends AbstractController
         };
         $scoped = array_values(array_filter($visible, $narrows));
 
-        $viewMatches = static function (string $view, Task $t) use ($user, $isAdmin, $hierarchy, $today): bool {
+        $viewMatches = static function (string $view, Task $t) use ($user, $workflows, $today): bool {
             return match ($view) {
                 'mias' => !$t->isClosed() && $t->isOwnedBy($user),
-                'validar' => TaskStatus::SUBMITTED === $t->getStatus() && ($isAdmin || $hierarchy->isSuperiorOfTask($user, $t)),
+                // Se le pregunta al WORKFLOW, que es quien decide si el botón "Validar" existe: reimplementar
+                // el predicado aquí ya se tragó la separación de funciones y la vista listaba tareas propias
+                // que el guard iba a rechazar (una jefa de departamento supera al rol Tutor/a de su propia
+                // tarea, así que pasaba el filtro de jerarquía). Un listado no debe prometer lo que la ficha
+                // va a negar.
+                'validar' => TaskStatus::SUBMITTED === $t->getStatus() && $workflows->for($t)->can($t, 'validate'),
                 'vencidas' => self::isOverdue($t, $today),
                 'cerradas' => $t->isClosed(),
                 // "Abiertas" es TODO lo abierto del ámbito visible, y es la vista por defecto: cualquier
@@ -640,7 +648,7 @@ final class TaskController extends AbstractController
      * task's role, or an admin may do it.
      */
     #[Route('/tareas/{id}/hecho', name: 'task_toggle_done', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function toggleDone(Task $task, Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager): Response
+    public function toggleDone(Task $task, Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager, TickOutcome $tick): Response
     {
         if (!$this->isCsrfTokenValid('toggle_done'.$task->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
@@ -661,10 +669,15 @@ final class TaskController extends AbstractController
         $task->setCheckboxDone(!$task->isCheckboxDone());
         $entityManager->flush();
 
-        // Back to Inicio, the daily agenda. A ticked task leaves the "hoy/vencidas" list (it moves to
-        // the done bucket), so there is no stable row to anchor to — landing on the page is enough.
-        // Route-based (never the Referer) to rule out an open redirect.
-        return $this->redirectToRoute('app_homepage');
+        // A ticked task LEAVES the "hoy/vencidas" list of Inicio (it moves to the done bucket), so the
+        // row just vanishes: the toast is the only trace of what happened and the only way back.
+        $this->addFlash(TickOutcome::FLASH, $tick->flashFor('task', (int) $task->getId(), $task->getTitle(), $task->isCheckboxDone(), $request));
+
+        // Back to the surface the tick was on ({@see TickOutcome}): Inicio, or the calendar day you were
+        // looking at.
+        [$route, $parameters] = $tick->routeFor($request);
+
+        return $this->redirectToRoute($route, $parameters);
     }
 
     /**
@@ -682,7 +695,8 @@ final class TaskController extends AbstractController
             ->setDueDate($data->dueDate)
             ->setSchoolYear(SchoolYear::current($data->dueDate))
             ->setMandatory($data->mandatory)
-            ->setRequiresCheckbox($data->requiresCheckbox)
+            // requiresCheckbox is NOT touched: the form does not edit it (see TaskFormData), so whatever
+            // the task template set must survive an edit untouched.
             ->setRequiresDocument($data->requiresDocument);
 
         // Responsibility = role + (department, only for per-department roles): the structural backbone,

@@ -4,14 +4,19 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
+use App\Entity\Department;
 use App\Entity\PersonalEvent;
+use App\Entity\Role;
 use App\Entity\Task;
+use App\Entity\TaskResponsibility;
 use App\Entity\User;
 use App\Enum\TaskType;
+use App\Support\TaskStatus;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\DomCrawler\Crawler;
 
 /**
  * Inicio (the site root) is the personal agenda: it mixes the user's institutional tasks with their
@@ -165,6 +170,49 @@ final class HomeAgendaTest extends WebTestCase
         self::assertStringContainsString('Entregar memoria PGA', $html, 'la tarea de hoy sale en "Por hacer"');
         self::assertStringContainsString('Reunión de departamento', $html, 'la cita con hora sale en "Con hora"');
         self::assertStringContainsString('Llamar a la editorial', $html, 'el recordatorio sin hora sale en "Por hacer"');
+    }
+
+    /**
+     * The "por validar" figure of the "Mi departamento" module is what THIS user may actually validate,
+     * and the workflow decides that: nobody validates their own work, even running the department. Counting
+     * every submitted task of the department put her own in — a jefa de departamento outranks the Tutor/a
+     * role of her own task, so it slipped through — and the tile promised work the task page then refused.
+     */
+    public function testTheDepartmentModuleOnlyCountsWhatThisUserMayReallyValidate(): void
+    {
+        $head = (new Role())->setCode('head')->setName('Jefatura de departamento')->setHierarchyLevel(10)->setPerDepartment(true);
+        $tutor = (new Role())->setCode('tutor')->setName('Tutor/a')->setPerDepartment(true);
+        array_map($this->em->persist(...), [$head, $tutor]);
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($maths);
+
+        $boss = (new User())->setFullName('Mercedes Jefa')->setEmail('jefa@centro.test')->setUnit($maths)->addAssignedRole($head)->addAssignedRole($tutor);
+        $member = (new User())->setFullName('Pedro Tutor')->setEmail('tutor@centro.test')->setUnit($maths)->addAssignedRole($tutor);
+        array_map($this->em->persist(...), [$boss, $member]);
+
+        $year = SchoolYear::current(new \DateTimeImmutable('today'));
+        foreach ([[$boss, 'Mi propia acta'], [$member, 'El acta de Pedro']] as [$who, $title]) {
+            $task = (new Task($title, $year, new \DateTimeImmutable('+3 days'), TaskType::SIMPLE))
+                ->setUnit($maths)
+                ->setAssignedUser($who)
+                ->setResponsibility(new TaskResponsibility($tutor, $maths))
+                ->setStatus(TaskStatus::SUBMITTED);
+            $this->em->persist($task);
+        }
+        $this->em->flush();
+
+        $this->client->loginUser($boss);
+        $crawler = $this->client->request('GET', '/');
+
+        self::assertResponseIsSuccessful();
+        // Dos entregadas en el departamento, pero solo UNA es suya de validar. Se busca el mosaico por su
+        // etiqueta y no por su posición: el orden de los módulos de Inicio cambia con el rol y con el día.
+        $tile = $crawler->filter('.module-tile')->reduce(static fn (Crawler $node): bool => str_contains($node->text(), 'por validar'));
+        self::assertCount(1, $tile, 'the department module renders its "por validar" tile');
+        self::assertSame('1', trim($tile->filter('.module-tile__num')->text()), 'only the subordinate\'s task counts as pending her validation');
+        $listed = $crawler->filter('.module-row__title')->each(static fn ($node): string => $node->text());
+        self::assertContains('El acta de Pedro', $listed);
+        self::assertNotContains('Mi propia acta', $listed, 'you are never offered your own task to validate');
     }
 
     public function testThereIsNoSeparateAgendaListPage(): void
