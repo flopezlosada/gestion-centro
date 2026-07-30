@@ -167,7 +167,7 @@ final class TaskReminderNotifierTest extends KernelTestCase
 
         $notified = $this->notifier->nudge($task);
 
-        self::assertSame([$teacher], $notified);
+        self::assertSame($teacher, $notified);
         $notice = $this->notifications->findRecentFor($teacher)[0] ?? null;
         self::assertNotNull($notice);
         self::assertSame(TaskReminderNotifier::REMINDER_KIND, $notice->getKind());
@@ -188,7 +188,7 @@ final class TaskReminderNotifierTest extends KernelTestCase
         $this->notifier->nudge($task);
         $again = $this->notifier->nudge($task);
 
-        self::assertSame([], $again, 'ya se avisó hoy');
+        self::assertNull($again, 'ya se avisó hoy');
         self::assertCount(1, $this->notifications->findRecentFor($teacher), 'un solo aviso, no dos');
         self::assertNotNull($this->notifier->nudgedTodayAt($task), 'la ficha lo puede decir en pantalla');
     }
@@ -211,7 +211,7 @@ final class TaskReminderNotifierTest extends KernelTestCase
         $this->em->flush();
 
         self::assertNull($this->notifier->nudgedTodayAt($task), 'el de ayer no cuenta como el de hoy');
-        self::assertSame([$teacher], $this->notifier->nudge($task), 'y se puede volver a avisar');
+        self::assertSame($teacher, $this->notifier->nudge($task), 'y se puede volver a avisar');
     }
 
     /**
@@ -230,7 +230,7 @@ final class TaskReminderNotifierTest extends KernelTestCase
 
         self::assertSame(1, $this->notifier->sendDue($today));
 
-        self::assertSame([], $this->notifier->nudge($task), 'el cron ya avisó hoy');
+        self::assertNull($this->notifier->nudge($task), 'el cron ya avisó hoy');
         self::assertCount(1, $this->notifications->findRecentFor($teacher));
     }
 
@@ -242,8 +242,8 @@ final class TaskReminderNotifierTest extends KernelTestCase
         $task = $this->task(new \DateTimeImmutable('-3 days'), $unit);
         $this->em->flush();
 
-        self::assertSame([], $this->notifier->nudge($task));
-        self::assertSame([], $this->notifier->nudgeRecipients($task));
+        self::assertNull($this->notifier->nudge($task));
+        self::assertNull($this->notifier->nudgeRecipient($task));
         self::assertNull($this->notifier->nudgedTodayAt($task), 'nadie a quien avisar no es "ya avisado"');
     }
 
@@ -257,7 +257,7 @@ final class TaskReminderNotifierTest extends KernelTestCase
         $task->setStatus(TaskStatus::VALIDATED);
         $this->em->flush();
 
-        self::assertSame([], $this->notifier->nudge($task));
+        self::assertNull($this->notifier->nudge($task));
         self::assertCount(0, $this->notifications->findRecentFor($teacher));
     }
 

@@ -64,42 +64,35 @@ final class TaskReminderNotifier
      * createdAt from the system clock, so a caller-supplied "now" would be a second clock to
      * disagree with — and it did, silently letting a second nudge through.
      *
+     * It reaches ONE person: the responsible the screen shows ({@see Task::resolveResponsible()}), not
+     * every holder of the task's role like the nightly sweep does. Whoever presses the button is looking
+     * at a name; on a task assigned to a broad role ("Docente" has 78 holders) fanning out would put an
+     * e-mail and a push to the whole staff behind a single click.
+     *
      * @param Task $task the task to nudge about
      *
-     * @return list<User> the people actually notified — empty when everyone was already told today,
-     *                    or when the task has nobody to nudge
+     * @return User|null the person notified, or null when they were already told today / there is nobody
      */
-    public function nudge(Task $task): array
+    public function nudge(Task $task): ?User
     {
         // Nadie tiene que hacer una tarea ya cerrada. Se comprueba AQUÍ y no solo en el controlador para
         // que el servicio no dependa de que su llamador se acuerde.
-        if ($task->isClosed()) {
-            return [];
+        $recipient = $this->nudgeRecipient($task);
+        if (null === $recipient || null !== $this->lastRemindedAt($task, $recipient)) {
+            return null;
         }
 
-        $notifications = [];
-        $notified = [];
-        foreach ($this->assigneeRecipients($task) as $recipient) {
-            if (null !== $this->lastRemindedAt($task, $recipient)) {
-                continue;
-            }
-            $notifications[] = $this->dispatcher->record(
-                $recipient,
-                self::REMINDER_KIND,
-                sprintf('Recordatorio: %s', $task->getTitle()),
-                // Sirve igual antes y después de la fecha: el aviso manual se manda sobre todo con la
-                // tarea ya vencida, y un "vence el" en pasado se lee como un error de la aplicación.
-                sprintf('Sigue pendiente. Fecha límite: %s.', $task->getDueDate()->format('d/m/Y')),
-                $task,
-            );
-            $notified[] = $recipient;
-        }
-        if ([] === $notifications) {
-            return []; // sin nada que mandar, ni un flush
-        }
-        $this->dispatcher->flushAndSend($notifications);
+        $this->dispatcher->dispatch(
+            $recipient,
+            self::REMINDER_KIND,
+            sprintf('Recordatorio: %s', $task->getTitle()),
+            // Sirve igual antes y después de la fecha: el aviso manual se manda sobre todo con la
+            // tarea ya vencida, y un "vence el" en pasado se lee como un error de la aplicación.
+            sprintf('Sigue pendiente. Fecha límite: %s.', $task->getDueDate()->format('d/m/Y')),
+            $task,
+        );
 
-        return $notified;
+        return $recipient;
     }
 
     /**
@@ -121,39 +114,34 @@ final class TaskReminderNotifier
     }
 
     /**
-     * The people a manual nudge would reach: whoever has to do the task right now.
+     * Who a manual nudge would reach: the responsible the screen shows, and only while the task is still
+     * open. Null when the task is closed or has nobody on the hook — which the caller must tell apart
+     * from "already nudged today".
      *
      * @param Task $task the task
      *
-     * @return list<User> the recipients (empty when the task has no one to do it)
+     * @return User|null the person to nudge, or null
      */
-    public function nudgeRecipients(Task $task): array
+    public function nudgeRecipient(Task $task): ?User
     {
-        return $this->assigneeRecipients($task);
+        return $task->isClosed() ? null : $task->resolveResponsible();
     }
 
     /**
-     * When the task's people were already reminded today — that is, when a nudge would reach NOBODY new.
-     * Null while there is still someone to tell (or nobody to tell at all). The task page uses it to
+     * When the task's responsible was already reminded today — that is, when a nudge would reach nobody
+     * new. Null while there is still someone to tell (or nobody to tell at all). The task page uses it to
      * replace the button with "Avisado hoy a las 13:40", so what it offers matches what the endpoint
      * would actually do.
      *
      * @param Task $task the task
      *
-     * @return \DateTimeImmutable|null the latest reminder of the day, or null if a nudge would still reach someone
+     * @return \DateTimeImmutable|null today's reminder, or null if a nudge would still reach someone
      */
     public function nudgedTodayAt(Task $task): ?\DateTimeImmutable
     {
-        $sent = [];
-        foreach ($this->assigneeRecipients($task) as $recipient) {
-            $at = $this->lastRemindedAt($task, $recipient);
-            if (null === $at) {
-                return null; // someone has not been told yet: the button stays live
-            }
-            $sent[] = $at;
-        }
+        $recipient = $this->nudgeRecipient($task);
 
-        return [] !== $sent ? max($sent) : null;
+        return null !== $recipient ? $this->lastRemindedAt($task, $recipient) : null;
     }
 
     /**

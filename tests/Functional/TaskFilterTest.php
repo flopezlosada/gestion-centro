@@ -462,6 +462,37 @@ final class TaskFilterTest extends WebTestCase
         self::assertSame(1, $this->viewCounters($this->get('/tareas'))['validar'], 'and the counter agrees');
     }
 
+    /**
+     * "Esperando mi validación" keeps meaning ENTREGADA, even though a superior may now close a Pendiente
+     * with "Dar por finalizada". Dirección can close ANY open task of the school, so counting those would
+     * turn an inbox of real work into the whole course plan — the shortcut is reached from the task itself.
+     */
+    public function testAPendingTaskASuperiorCouldCloseIsNotWaitingForValidation(): void
+    {
+        $tutor = (new Role())->setCode('tutor')->setName('Tutor/a')->setPerDepartment(true);
+        $head = (new Role())->setCode('head')->setName('Jefatura de departamento')->setHierarchyLevel(10)->setPerDepartment(true);
+        array_map($this->em->persist(...), [$tutor, $head]);
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($maths);
+        $boss = (new User())->setFullName('Mercedes Jefa')->setEmail('jefa@centro.test')->setUnit($maths)->addAssignedRole($head);
+        $member = (new User())->setFullName('Pedro Tutor')->setEmail('tutor@centro.test')->setUnit($maths)->addAssignedRole($tutor);
+        array_map($this->em->persist(...), [$boss, $member]);
+
+        $year = SchoolYear::current(new \DateTimeImmutable('today'));
+        // Pendiente: la jefa YA puede darla por finalizada desde su ficha, pero no está esperando su OK.
+        $pending = $this->task('Acta que nadie ha entregado', $year, new \DateTimeImmutable('today +2 days'), $maths, $member, $tutor);
+        $this->em->persist($pending);
+        $this->em->flush();
+        $this->client->loginUser($boss);
+
+        $this->get('/tareas?vista=validar');
+        self::assertStringNotContainsString('Acta que nadie ha entregado', $this->html(), 'una pendiente no espera validación');
+
+        $counters = $this->viewCounters($this->get('/tareas'));
+        self::assertSame(0, $counters['validar']);
+        self::assertSame(1, $counters['abiertas'], 'pero sigue estando en Abiertas, que es donde se alcanza');
+    }
+
     /** An empty result names the way out; it used to be a dead end when only the sheet was filtering. */
     public function testAnEmptyResultAlwaysOffersAWayBack(): void
     {

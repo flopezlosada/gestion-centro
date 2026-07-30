@@ -200,7 +200,7 @@ final class TaskController extends AbstractController
                 // que el guard iba a rechazar (una jefa de departamento supera al rol Tutor/a de su propia
                 // tarea, así que pasaba el filtro de jerarquía). Un listado no debe prometer lo que la ficha
                 // va a negar.
-                'validar' => TaskStatus::SUBMITTED === $t->getStatus() && $workflows->for($t)->can($t, 'validate'),
+                'validar' => $workflows->isAwaitingVerdict($t),
                 'vencidas' => self::isOverdue($t, $today),
                 'cerradas' => $t->isClosed(),
                 // "Abiertas" es TODO lo abierto del ámbito visible, y es la vista por defecto: cualquier
@@ -612,20 +612,17 @@ final class TaskController extends AbstractController
         }
 
         $notified = $reminders->nudge($task);
-        if ([] === $notified) {
-            // Either everyone was already told today (the cap) or the task has nobody to nudge: say which,
-            // instead of a "listo" that did nothing.
-            $this->addFlash('error', [] === $reminders->nudgeRecipients($task)
+        if (null === $notified) {
+            // O ya se avisó hoy (el tope) o no hay a quién avisar: decir CUÁL de las dos, en vez de un
+            // "listo" que no hizo nada.
+            $this->addFlash('error', null === $reminders->nudgeRecipient($task)
                 ? 'Esta tarea no tiene a nadie a quien avisar.'
                 : 'Ya se avisó hoy de esta tarea.');
 
             return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
         }
 
-        $this->addFlash('success', sprintf('Recordatorio enviado a %s.', implode(', ', array_map(
-            static fn (User $u): string => $u->getFullName(),
-            $notified,
-        ))));
+        $this->addFlash('success', sprintf('Recordatorio enviado a %s.', $notified->getFullName()));
 
         return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
     }
