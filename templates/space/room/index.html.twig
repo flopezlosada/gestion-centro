@@ -4,6 +4,8 @@
 
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('space_index') }}">Espacios</a><span class="sep">/</span>Catálogo{% endblock %}
 
+{% import 'space/_size.html.twig' as size %}
+
 {% block body %}
     <div class="page-head">
         <div>
@@ -45,7 +47,10 @@
                             <td><strong>{{ room.code }}</strong></td>
                             <td>{{ room.name != room.code ? room.name : '—' }}</td>
                             <td>{{ room.kind.label }}</td>
-                            <td>{{ room.size ? room.size.label : '—' }}{% if room.capacity %} <span class="muted">({{ room.capacity }})</span>{% endif %}</td>
+                            {# Sin clasificar no significa «sin saber nada»: el horario ya dice cuántos grupos
+                               ha metido a la vez, y eso se ofrece como propuesta para que rellenar la ficha
+                               sea confirmar o corregir, no adivinar. #}
+                            <td>{% if room.sizeConfirmed %}{{ room.size.label }}{% elseif room.effectiveSize %}<span class="muted">{{ size.label(room) }}</span>{% else %}—{% endif %}{% if room.capacity %} <span class="muted">({{ room.capacity }})</span>{% endif %}</td>
                             <td class="muted">
                                 {%- if room.building %}{{ room.building }}{% endif -%}
                                 {%- if room.floor is not null %}{{ room.building ? ', ' }}planta {{ room.floor }}{% endif -%}
