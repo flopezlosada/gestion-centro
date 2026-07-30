@@ -29,8 +29,13 @@
                     <span class="nav-section-title">Guardias</span>
                     <div class="nav-group">
                         <a href="{{ path('guardia_index') }}" class="{{ (route == 'guardia_index' or route starts with 'guardia_absence') ? 'is-active' }}">Parte del día</a>
+                        <a href="{{ path('guardia_rooms') }}" class="{{ route == 'guardia_rooms' ? 'is-active' }}">Aulas libres</a>
                         <a href="{{ path('guardia_history') }}" class="{{ route == 'guardia_history' ? 'is-active' }}">Histórico</a>
                         <a href="{{ path('guardia_stats') }}" class="{{ route == 'guardia_stats' ? 'is-active' }}">Estadísticas</a>
+                        {# El recreo es otro carril: cuadrante fijo de curso y, cuando alguien falta, un
+                           hueco que se avisa en vez de reasignarse. De ahí sus dos entradas propias. #}
+                        <a href="{{ path('break_duty_index') }}" class="{{ (route == 'break_duty_index' or route starts with 'break_zone_') ? 'is-active' }}">Cuadrante de recreo</a>
+                        <a href="{{ path('break_duty_gap_index') }}" class="{{ route starts with 'break_duty_gap' ? 'is-active' }}">Recreos sin vigilar</a>
                         {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::GUARDIAS')) %}
                             <a href="{{ path('guardia_schedule_edit') }}" class="{{ route starts with 'guardia_schedule_' ? 'is-active' }}">Horario de guardias</a>
                         {% endif %}
@@ -124,6 +129,12 @@
 
                 {% for message in app.flashes('success') %}
                     <div class="flash success">{{ message }}</div>
+                {% endfor %}
+                {# 'warning' = la acción se hizo, pero con una salvedad. Se pintaba en ninguna parte hasta
+                   ahora, así que avisos ya existentes (un documento de tarea que no se pudo subir, un
+                   import con profesores sin emparejar) se perdían en silencio. #}
+                {% for message in app.flashes('warning') %}
+                    <div class="flash warning" role="alert">{{ message }}</div>
                 {% endfor %}
                 {% for message in app.flashes('error') %}
                     <div class="flash error">{{ message }}</div>

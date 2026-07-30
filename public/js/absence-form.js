@@ -12,7 +12,7 @@
         var out = form.querySelector('[data-absence-count]');
         var boxes = form.querySelectorAll('input[name="slots[]"]');
         if (!out || !boxes.length) {
-            return;
+            return; // Un día sin clases (solo el recreo): no hay nada que contar.
         }
 
         function render() {
@@ -24,7 +24,16 @@
             out.classList.toggle('badge--danger', marcadas > 0);
             out.classList.toggle('badge--muted', 0 === marcadas);
             // El diálogo de confirmación (confirm-dialog.js) refleja el número real de guardias a generar.
-            form.setAttribute('data-confirm', 'Se generarán ' + marcadas + ' guardia' + (1 === marcadas ? '' : 's') + ' y se avisará a los profesores asignados. ¿Continuar?');
+            var texto = marcadas > 0
+                ? 'Se generarán ' + marcadas + ' guardia' + (1 === marcadas ? '' : 's') + ' y se avisará a los profesores asignados.'
+                : 'No se generará ninguna guardia.';
+            // El recreo no genera guardia: si está marcado, lo que sale de aquí es el aviso al equipo
+            // directivo, y hay que decirlo o el diálogo describe mal lo que se va a hacer.
+            var recreo = form.querySelector('input[name="misses_break"]');
+            if (recreo && recreo.checked) {
+                texto += ' Su recreo se queda sin vigilar: se avisará al equipo directivo.';
+            }
+            form.setAttribute('data-confirm', texto + ' ¿Continuar?');
         }
 
         boxes.forEach(function (b) { b.addEventListener('change', render); });

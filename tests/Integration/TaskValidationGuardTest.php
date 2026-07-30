@@ -122,6 +122,75 @@ final class TaskValidationGuardTest extends WebTestCase
         self::assertFalse($this->canValidate($client, $s['task']), 'no self-validation, even for a superior by rank');
     }
 
+    /**
+     * Separation of duties is measured against whoever HOLDS the task now, not against the titular: on a
+     * delegated task the work is the delegatee's, so they must not sign off their own delivery — even
+     * though the assignee column still points at the person who handed it over.
+     */
+    public function testDelegateeCannotValidateTheirOwnWork(): void
+    {
+        $client = static::createClient();
+        $s = $this->scenario();
+        // The head of Maths' own task, delegated down to the teacher, who has just submitted it.
+        $s['task']->setAssignedUser($s['headMaths'])->setDelegatedTo($s['teacher']);
+        $client->loginUser($s['teacher']);
+
+        self::assertFalse($this->canValidate($client, $s['task']), 'el delegado no valida su propio trabajo');
+    }
+
+    /**
+     * The mirror case: the titular who delegated the work DOES judge what the delegatee delivered. By
+     * rank alone they would never qualify (nobody outranks themselves), yet it is their own task and
+     * they stay accountable for it.
+     */
+    public function testTitularWhoDelegatedCanValidateTheDelegateesWork(): void
+    {
+        $client = static::createClient();
+        $s = $this->scenario();
+        $s['task']->setAssignedUser($s['headMaths'])->setDelegatedTo($s['teacher']);
+        $client->loginUser($s['headMaths']);
+
+        self::assertTrue($this->canValidate($client, $s['task']), 'quien delegó juzga lo que entregó su delegado');
+        self::assertTrue($this->canReject($s['task']), 'y también puede devolvérselo');
+    }
+
+    /**
+     * A superior may close a task that is still Pendiente ("Dar por finalizada"), for the work that got
+     * done outside the app or by someone who cannot deliver it: otherwise the only way out was Cancelar,
+     * which records it as void and is terminal.
+     */
+    public function testSuperiorCanCloseAPendingTask(): void
+    {
+        $client = static::createClient();
+        $s = $this->scenario();
+        $s['task']->setStatus('pending');
+        $client->loginUser($s['headStudies']);
+
+        self::assertTrue($this->canValidate($client, $s['task']), 'un superior puede dar por finalizada una pendiente');
+    }
+
+    /** The same door does NOT open for the person who owes the work: that would be self-validation. */
+    public function testAssigneeCannotCloseTheirOwnPendingTask(): void
+    {
+        $client = static::createClient();
+        $s = $this->scenario();
+        $s['task']->setStatus('pending');
+        $client->loginUser($s['teacher']);
+
+        self::assertFalse($this->canValidate($client, $s['task']), 'el responsable no se cierra su propia tarea');
+    }
+
+    /** "Devolver" still needs something delivered: there is nothing to send back from Pendiente. */
+    public function testRejectIsNotAvailableFromPending(): void
+    {
+        $client = static::createClient();
+        $s = $this->scenario();
+        $s['task']->setStatus('pending');
+        $client->loginUser($s['headStudies']);
+
+        self::assertFalse($this->canReject($s['task']), 'no se devuelve algo que nadie ha entregado');
+    }
+
     public function testCentreWideSuperiorCanValidateEvenWithoutUnit(): void
     {
         $client = static::createClient();

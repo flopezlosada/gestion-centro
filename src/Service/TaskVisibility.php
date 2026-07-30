@@ -74,8 +74,8 @@ final class TaskVisibility
         }
 
         // The current holder (the delegatee once delegated) and the assignee who delegated it down and
-        // stays accountable — both keep sight of it.
-        if ($task->isOwnedBy($user) || $task->getAssignedUser() === $user) {
+        // stays accountable — both keep sight of it ({@see Task::concerns()}).
+        if ($task->concerns($user)) {
             return true;
         }
 

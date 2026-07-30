@@ -1,0 +1,79 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Zonas de recreo{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('break_duty_index') }}">Cuadrante de recreo</a><span class="sep">/</span>Zonas{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Zonas de recreo y pesos</h1>
+            <p class="lead">Los sitios que hay que vigilar en el recreo. El <strong>peso</strong> dice lo exigente que es cada zona, y el reparto equitativo suma pesos en vez de contar turnos: así quien siempre está en el patio no cuenta lo mismo que quien está en la biblioteca.</p>
+        </div>
+    </div>
+
+    {% if breaks is not empty %}
+        <p class="help">
+            Recreos del curso actual:
+            {% for slot in breaks %}<strong>{{ loop.index }}.º</strong> {{ slot.startsAt|date('H:i', false) }}–{{ slot.endsAt|date('H:i', false) }}{{ not loop.last ? ' · ' }}{% endfor %}
+        </p>
+    {% endif %}
+
+    <div class="card">
+        <h2>Zonas</h2>
+        {% if zones is empty %}
+            <p class="muted">Todavía no hay ninguna zona. Añade abajo las del centro.</p>
+        {% else %}
+            <table class="worklist">
+                <thead>
+                    <tr>
+                        <th scope="col">Zona</th><th scope="col">Peso</th><th scope="col">Personas/recreo</th>
+                        <th scope="col">En uso</th><th scope="col">Cambiar</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for zone in zones %}
+                        <tr>
+                            <td>
+                                <strong>{{ zone.name }}</strong>
+                                {% if zone.archived %}<span class="badge badge--muted">Archivada</span>{% endif %}
+                            </td>
+                            <td>{{ zone.weight }} <span class="muted">{{ zone.weightLabel }}</span></td>
+                            <td>{{ zone.requiredTeachers }}</td>
+                            <td class="muted">{{ usage[zone.id] }} guardia(s)</td>
+                            <td>
+                                <form method="post" action="{{ path('break_zone_save') }}" class="inline-form">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('break_zone_save') }}">
+                                    <input type="hidden" name="id" value="{{ zone.id }}">
+                                    <label class="visually-hidden" for="name-{{ zone.id }}">Nombre de {{ zone.name }}</label>
+                                    <input type="text" id="name-{{ zone.id }}" name="name" value="{{ zone.name }}" maxlength="80" required>
+                                    <label class="visually-hidden" for="weight-{{ zone.id }}">Peso de {{ zone.name }}</label>
+                                    <input type="number" id="weight-{{ zone.id }}" name="weight" value="{{ zone.weight }}" min="{{ minWeight }}" max="{{ maxWeight }}" required>
+                                    <label class="visually-hidden" for="required-{{ zone.id }}">Personas por recreo en {{ zone.name }}</label>
+                                    <input type="number" id="required-{{ zone.id }}" name="required" value="{{ zone.requiredTeachers }}" min="1" max="20" required>
+                                    <label class="choice"><input type="checkbox" name="archived" value="1" {{ zone.archived ? 'checked' }}> Archivada</label>
+                                    <button type="submit" class="btn btn-sm">Guardar</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <p class="help">Una zona que se deja de usar se <strong>archiva</strong>, no se borra: desaparece del cuadrante nuevo pero los cuadrantes de cursos anteriores siguen diciendo dónde estuvo cada uno.</p>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <h2>Añadir zona</h2>
+        <form method="post" action="{{ path('break_zone_save') }}" class="inline-form">
+            <input type="hidden" name="_token" value="{{ csrf_token('break_zone_save') }}">
+            <label class="field-label" for="new-name">Nombre</label>
+            <input type="text" id="new-name" name="name" maxlength="80" placeholder="Patio dirigido" required>
+            <label class="field-label" for="new-weight">Peso ({{ minWeight }}–{{ maxWeight }})</label>
+            <input type="number" id="new-weight" name="weight" value="2" min="{{ minWeight }}" max="{{ maxWeight }}" required>
+            <label class="field-label" for="new-required">Personas por recreo</label>
+            <input type="number" id="new-required" name="required" value="1" min="1" max="20" required>
+            <button type="submit" class="btn">Añadir zona</button>
+        </form>
+    </div>
+{% endblock %}

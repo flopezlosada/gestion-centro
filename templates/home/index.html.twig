@@ -34,7 +34,10 @@
                 </div>
                 <div class="guardia-hero__line">
                     {% if nextGuardia.startsAt %}<span class="guardia-hero__time">{{ nextGuardia.startsAt|date('H:i') }}</span>{% endif %}
-                    <span class="guardia-hero__where">{{ g.roomName ?: 'Aula por asignar' }}{% if g.groupName %} · {{ g.groupName }}{% endif %}</span>
+                    {#- effectiveRoomName, no roomName: si a este grupo lo han juntado con otros en un aula
+                        grande, el sitio al que hay que ir es ESE. Inicio no puede decir un aula distinta
+                        de la que dicen "Mis guardias" y el detalle. -#}
+                    <span class="guardia-hero__where">{{ g.effectiveRoomName ?: 'Aula por asignar' }}{% if g.groupName %} · {{ g.groupName }}{% endif %}</span>
                 </div>
                 <div class="guardia-hero__sub">Cubres a {{ g.absentTeacher.fullName }} · {% if g.hasTask %}<span class="guardia-hero__task">tiene tarea</span>{% else %}<span class="guardia-hero__notask">sin tarea</span>{% endif %}</div>
             </a>
@@ -74,7 +77,7 @@
                             <a class="guardia-rest__row{{ item.done ? ' is-done' }}" href="{{ path('guardia_cover_show', { id: c.id }) }}">
                                 <span class="guardia-rest__time">{% if item.startsAt %}{{ item.startsAt|date('H:i', false) }}{% else %}{{ c.slotIndex + 1 }}ª{% endif %}</span>
                                 <span class="guardia-rest__body">
-                                    <span class="guardia-rest__where">{{ [c.roomName, c.groupName]|filter(v => v)|join(' · ') ?: 'Sin especificar' }}</span>
+                                    <span class="guardia-rest__where">{{ [c.effectiveRoomName, c.groupName]|filter(v => v)|join(' · ') ?: 'Sin especificar' }}</span>
                                     <span class="guardia-rest__who">{{ item.done ? 'Cubriste' : 'Cubres' }} a {{ c.absentTeacher.fullName }}</span>
                                 </span>
                                 {% if c.notCovered %}<span class="badge badge--danger" data-tone="danger">Incidencia</span>
@@ -237,7 +240,7 @@
                                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                             </span>
                             <a class="tasklist__body" href="{{ path('guardia_cover_show', { id: c.id }) }}">
-                                <span class="tasklist__title">Guardia{% if c.roomName or c.groupName %} · {{ [c.roomName, c.groupName]|filter(v => v)|join(' · ') }}{% endif %}</span>
+                                <span class="tasklist__title">Guardia{% if c.effectiveRoomName or c.groupName %} · {{ [c.effectiveRoomName, c.groupName]|filter(v => v)|join(' · ') }}{% endif %}</span>
                                 <span class="tasklist__meta">{{ dias[entry.date|date('N', false)]|slice(0, 3) }} {{ entry.date|date('d/m', false) }} · cubres a {{ c.absentTeacher.fullName }}{% if c.hasTask %} · tiene tarea{% endif %}</span>
                             </a>
                             <span class="tasklist__go" aria-hidden="true">›</span>

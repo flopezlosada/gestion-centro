@@ -11,6 +11,8 @@ use App\Entity\TaskResponsibility;
 use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
+use App\Repository\NotificationRepository;
+use App\Service\TaskReminderNotifier;
 use App\Support\TaskStatus;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
@@ -552,6 +554,171 @@ final class TaskCrudTest extends WebTestCase
         $reloaded = $this->em->getRepository(Task::class)->find($task->getId());
         self::assertNotNull($reloaded);
         self::assertSame($memberId, $reloaded->getDelegatedTo()?->getId(), 'the task is now delegated to the subordinate');
+    }
+
+    /**
+     * Delegating must not be a one-way trip: the titular keeps the control to retire or change their own
+     * delegation. It used to vanish the moment they delegated ({@see Task::isOwnedBy()} handed ownership
+     * to the delegatee in exclusive), leaving them unable to undo what they had just done — that is what
+     * the directora hit with her three tasks.
+     */
+    public function testTitularCanRetireTheirOwnDelegation(): void
+    {
+        $dept = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($dept);
+        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
+        $this->em->persist($headRole);
+        $boss = $this->user('jefa@centro.test', $dept);
+        $boss->addAssignedRole($headRole);
+        $member = $this->user('profe@centro.test', $dept);
+        $task = new Task('Memoria', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
+        // Already delegated: the state the titular was locked out of.
+        $task->setUnit($dept)->setResponsibility(new TaskResponsibility($headRole, $dept))
+            ->setAssignedUser($boss)->setCreatedBy($boss)->setDelegatedTo($member);
+        $this->em->persist($task);
+        $this->em->flush();
+        $taskId = (int) $task->getId();
+
+        $this->client->loginUser($boss);
+        $crawler = $this->client->request('GET', '/tareas/'.$taskId);
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('select[name="delegatedTo"]', 'quien delegó sigue viendo el control de delegación');
+
+        // "— Sin delegar —": the empty value recalls it.
+        $form = $crawler->filter('form[action$="/delegar"]')->form();
+        $form['delegatedTo'] = '';
+        $this->client->submit($form);
+
+        self::assertResponseRedirects();
+        $this->em->clear();
+        self::assertNull(
+            $this->em->getRepository(Task::class)->find($taskId)?->getDelegatedTo(),
+            'la delegación se retira y la tarea vuelve a su responsable estructural',
+        );
+    }
+
+    /**
+     * A superior may close a Pendiente ("Dar por finalizada"): the work got done outside the app, or its
+     * holder cannot deliver it. Before this the only exit was Cancelar — recorded as void, and terminal.
+     */
+    public function testSuperiorCanCloseAPendingTaskFromTheDetail(): void
+    {
+        $dept = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($dept);
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
+        $headStudies = (new Role())->setCode('head_of_studies')->setName('Jefatura de estudios')->setHierarchyLevel(30);
+        $this->em->persist($teacherRole);
+        $this->em->persist($headStudies);
+        $boss = $this->user('jefatura@centro.test', $dept);
+        $boss->addAssignedRole($headStudies);
+        $teacher = $this->user('profe@centro.test', $dept);
+        $teacher->addAssignedRole($teacherRole);
+        $task = new Task('Acta de la CCP', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
+        $task->setUnit($dept)->setResponsibility(new TaskResponsibility($teacherRole, $dept))->setAssignedUser($teacher);
+        $this->em->persist($task);
+        $this->em->flush();
+        $taskId = (int) $task->getId();
+
+        $this->client->loginUser($boss);
+        $crawler = $this->client->request('GET', '/tareas/'.$taskId);
+        self::assertResponseIsSuccessful();
+        // Sobre una Pendiente el mismo cierre se llama "Dar por finalizada": no hay nada entregado que validar.
+        self::assertSelectorTextContains('.actionbar', 'Dar por finalizada');
+        self::assertSelectorNotExists('.actionbar__form--submit', 'un superior no ejecuta la tarea de otro');
+
+        $this->client->submit($crawler->filter('form.actionbar__form--validate')->form());
+
+        self::assertResponseRedirects();
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(Task::class)->find($taskId);
+        self::assertSame(TaskStatus::VALIDATED, $reloaded?->getStatus());
+        self::assertSame($teacher->getId(), $reloaded->getCompletedBy()?->getId(), 'quien la hizo sigue siendo el responsable');
+    }
+
+    /** The person who owes the work is never offered that shortcut: it would be self-validation. */
+    public function testAssigneeIsNotOfferedToCloseTheirOwnPendingTask(): void
+    {
+        $dept = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($dept);
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
+        $this->em->persist($teacherRole);
+        $teacher = $this->user('profe@centro.test', $dept);
+        $teacher->addAssignedRole($teacherRole);
+        $task = new Task('Acta de la CCP', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
+        $task->setUnit($dept)->setResponsibility(new TaskResponsibility($teacherRole, $dept))->setAssignedUser($teacher);
+        $this->em->persist($task);
+        $this->em->flush();
+
+        $this->client->loginUser($teacher);
+        $this->client->request('GET', '/tareas/'.$task->getId());
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('.actionbar__form--submit', 'el responsable entrega');
+        self::assertSelectorNotExists('.actionbar__form--validate', 'pero no se cierra su propia tarea');
+    }
+
+    /**
+     * "Recordar" is a supervision control: the superior nudges whoever owes the work, at most once a day.
+     * It exists because the automatic reminders only fire on exact days and stop reaching the person once
+     * the task is overdue.
+     */
+    public function testSuperiorCanNudgeTheResponsibleOncePerDay(): void
+    {
+        $dept = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($dept);
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
+        $headStudies = (new Role())->setCode('head_of_studies')->setName('Jefatura de estudios')->setHierarchyLevel(30);
+        $this->em->persist($teacherRole);
+        $this->em->persist($headStudies);
+        $boss = $this->user('jefatura@centro.test', $dept);
+        $boss->addAssignedRole($headStudies);
+        $teacher = $this->user('profe@centro.test', $dept);
+        $teacher->addAssignedRole($teacherRole);
+        $task = new Task('Acta de la CCP', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
+        $task->setUnit($dept)->setResponsibility(new TaskResponsibility($teacherRole, $dept))->setAssignedUser($teacher);
+        $this->em->persist($task);
+        $this->em->flush();
+        $taskId = (int) $task->getId();
+
+        $this->client->loginUser($boss);
+        $crawler = $this->client->request('GET', '/tareas/'.$taskId);
+        self::assertResponseIsSuccessful();
+        $this->client->submit($crawler->filter('form[action$="/recordar"]')->form());
+
+        self::assertResponseRedirects();
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('body', 'Recordatorio enviado');
+        // El aviso in-app queda escrito para quien debe hacerla.
+        $notices = self::getContainer()->get(NotificationRepository::class)->findRecentFor($teacher);
+        self::assertCount(1, $notices);
+        self::assertSame(TaskReminderNotifier::REMINDER_KIND, $notices[0]->getKind());
+
+        // Segundo intento el mismo día: la ficha ya no ofrece el botón, y el endpoint tampoco duplica.
+        $crawler = $this->client->request('GET', '/tareas/'.$taskId);
+        self::assertSelectorTextContains('body', 'Avisado hoy');
+        self::assertCount(0, $crawler->filter('form[action$="/recordar"]'), 'sin botón: ya se avisó hoy');
+        self::assertCount(1, self::getContainer()->get(NotificationRepository::class)->findRecentFor($teacher), 'un solo aviso');
+    }
+
+    /** Nudging is for whoever does NOT owe the work: the responsible never gets the button. */
+    public function testAssigneeIsNotOfferedTheNudgeButton(): void
+    {
+        $dept = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($dept);
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
+        $this->em->persist($teacherRole);
+        $teacher = $this->user('profe@centro.test', $dept);
+        $teacher->addAssignedRole($teacherRole);
+        $task = new Task('Acta de la CCP', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
+        $task->setUnit($dept)->setResponsibility(new TaskResponsibility($teacherRole, $dept))->setAssignedUser($teacher);
+        $this->em->persist($task);
+        $this->em->flush();
+
+        $this->client->loginUser($teacher);
+        $crawler = $this->client->request('GET', '/tareas/'.$task->getId());
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(0, $crawler->filter('form[action$="/recordar"]'), 'no te recuerdas a ti mismo');
     }
 
     public function testEmptyNewTaskFormReportsTheBlankFieldsInsteadOfCrashing(): void
