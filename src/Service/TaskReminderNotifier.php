@@ -60,13 +60,16 @@ final class TaskReminderNotifier
      * {@see REMINDER_KIND}): a button that can be pressed ten times is ten e-mails and ten push
      * notifications to the same person, which stops being a reminder.
      *
-     * @param Task               $task the task to nudge about
-     * @param \DateTimeImmutable $now  the current moment (the day of it is what caps the nudge)
+     * "Today" is deliberately NOT a parameter: {@see \App\Entity\Notification} stamps its own
+     * createdAt from the system clock, so a caller-supplied "now" would be a second clock to
+     * disagree with — and it did, silently letting a second nudge through.
+     *
+     * @param Task $task the task to nudge about
      *
      * @return list<User> the people actually notified — empty when everyone was already told today,
      *                    or when the task has nobody to nudge
      */
-    public function nudge(Task $task, \DateTimeImmutable $now): array
+    public function nudge(Task $task): array
     {
         // Nadie tiene que hacer una tarea ya cerrada. Se comprueba AQUÍ y no solo en el controlador para
         // que el servicio no dependa de que su llamador se acuerde.
@@ -77,14 +80,16 @@ final class TaskReminderNotifier
         $notifications = [];
         $notified = [];
         foreach ($this->assigneeRecipients($task) as $recipient) {
-            if (null !== $this->lastRemindedAt($task, $recipient, $now)) {
+            if (null !== $this->lastRemindedAt($task, $recipient)) {
                 continue;
             }
             $notifications[] = $this->dispatcher->record(
                 $recipient,
                 self::REMINDER_KIND,
                 sprintf('Recordatorio: %s', $task->getTitle()),
-                sprintf('Sigue pendiente y vencía el %s.', $task->getDueDate()->format('d/m/Y')),
+                // Sirve igual antes y después de la fecha: el aviso manual se manda sobre todo con la
+                // tarea ya vencida, y un "vence el" en pasado se lee como un error de la aplicación.
+                sprintf('Sigue pendiente. Fecha límite: %s.', $task->getDueDate()->format('d/m/Y')),
                 $task,
             );
             $notified[] = $recipient;
@@ -98,20 +103,21 @@ final class TaskReminderNotifier
     }
 
     /**
-     * When the person was last reminded about the task ON the given day, or null if not yet today. Lets
-     * the task page show "Avisado hoy a las 13:40" instead of a button that would do nothing.
+     * When the person was last reminded about the task TODAY, or null if not yet today. Lets the task
+     * page show "Avisado hoy a las 13:40" instead of a button that would do nothing. Reads the same
+     * clock the notices are stamped with, so the page and the endpoint can never disagree.
      *
-     * @param Task               $task      the task
-     * @param User               $recipient the person
-     * @param \DateTimeImmutable $day       any moment of the day to look at
+     * @param Task $task      the task
+     * @param User $recipient the person
      *
-     * @return \DateTimeImmutable|null the moment of the last reminder that day, or null
+     * @return \DateTimeImmutable|null the moment of today's last reminder, or null
      */
-    public function lastRemindedAt(Task $task, User $recipient, \DateTimeImmutable $day): ?\DateTimeImmutable
+    public function lastRemindedAt(Task $task, User $recipient): ?\DateTimeImmutable
     {
         $sentAt = $this->notifications->findLatestAbout($recipient, $task, self::REMINDER_KIND)?->getCreatedAt();
+        $today = (new \DateTimeImmutable())->format('Y-m-d');
 
-        return null !== $sentAt && $sentAt->format('Y-m-d') === $day->format('Y-m-d') ? $sentAt : null;
+        return null !== $sentAt && $sentAt->format('Y-m-d') === $today ? $sentAt : null;
     }
 
     /**
@@ -132,16 +138,15 @@ final class TaskReminderNotifier
      * replace the button with "Avisado hoy a las 13:40", so what it offers matches what the endpoint
      * would actually do.
      *
-     * @param Task               $task the task
-     * @param \DateTimeImmutable $now  the current moment
+     * @param Task $task the task
      *
      * @return \DateTimeImmutable|null the latest reminder of the day, or null if a nudge would still reach someone
      */
-    public function nudgedTodayAt(Task $task, \DateTimeImmutable $now): ?\DateTimeImmutable
+    public function nudgedTodayAt(Task $task): ?\DateTimeImmutable
     {
         $sent = [];
         foreach ($this->assigneeRecipients($task) as $recipient) {
-            $at = $this->lastRemindedAt($task, $recipient, $now);
+            $at = $this->lastRemindedAt($task, $recipient);
             if (null === $at) {
                 return null; // someone has not been told yet: the button stays live
             }

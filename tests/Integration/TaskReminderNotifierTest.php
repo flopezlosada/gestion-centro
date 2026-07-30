@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration;
 
+use App\Entity\Notification;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\Department;
@@ -11,6 +12,7 @@ use App\Entity\User;
 use App\Enum\TaskType;
 use App\Repository\NotificationRepository;
 use App\Service\TaskReminderNotifier;
+use App\Support\TaskStatus;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -149,18 +151,21 @@ final class TaskReminderNotifierTest extends KernelTestCase
         self::assertCount(0, $this->notifications->findRecentFor($titular), 'quien delegó ya no es quien debe hacerla');
     }
 
-    /** The manual nudge reaches whoever owes the work, with the same kind the nightly engine uses. */
+    /**
+     * The nudge is capped against TODAY as the notices themselves record it: {@see Notification} stamps
+     * its createdAt from the system clock, so these cases work on real dates instead of a simulated
+     * "now" — a second clock is exactly the bug the CI caught.
+     */
     public function testNudgeNotifiesTheResponsible(): void
     {
-        $now = new \DateTimeImmutable('2026-01-10 13:40');
         $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
         $teacher = $this->user('profe@centro.test');
         // Already overdue: exactly the case the automatic reminders no longer cover.
-        $task = $this->task($now->modify('-3 days'), $unit)->setAssignedUser($teacher);
+        $task = $this->task(new \DateTimeImmutable('-3 days'), $unit)->setAssignedUser($teacher);
         $this->em->flush();
 
-        $notified = $this->notifier->nudge($task, $now);
+        $notified = $this->notifier->nudge($task);
 
         self::assertSame([$teacher], $notified);
         $notice = $this->notifications->findRecentFor($teacher)[0] ?? null;
@@ -174,36 +179,39 @@ final class TaskReminderNotifierTest extends KernelTestCase
      */
     public function testSecondNudgeTheSameDayIsHeldBack(): void
     {
-        $now = new \DateTimeImmutable('2026-01-10 13:40');
         $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
         $teacher = $this->user('profe@centro.test');
-        $task = $this->task($now->modify('-3 days'), $unit)->setAssignedUser($teacher);
+        $task = $this->task(new \DateTimeImmutable('-3 days'), $unit)->setAssignedUser($teacher);
         $this->em->flush();
 
-        $this->notifier->nudge($task, $now);
-        $again = $this->notifier->nudge($task, $now->modify('+2 hours'));
+        $this->notifier->nudge($task);
+        $again = $this->notifier->nudge($task);
 
         self::assertSame([], $again, 'ya se avisó hoy');
         self::assertCount(1, $this->notifications->findRecentFor($teacher), 'un solo aviso, no dos');
-        self::assertNotNull($this->notifier->nudgedTodayAt($task, $now), 'la ficha lo puede decir en pantalla');
+        self::assertNotNull($this->notifier->nudgedTodayAt($task), 'la ficha lo puede decir en pantalla');
     }
 
-    /** The cap is per DAY: tomorrow the same task can be nudged again. */
-    public function testNudgeIsAvailableAgainTheNextDay(): void
+    /**
+     * The cap is per DAY, not forever: an old notice does not hold today's nudge back. Se envejece el
+     * aviso ya guardado (es lo único que el tope mira) en vez de simular el reloj.
+     */
+    public function testAnOlderReminderDoesNotHoldTodaysNudgeBack(): void
     {
-        $now = new \DateTimeImmutable('2026-01-10 13:40');
         $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
         $teacher = $this->user('profe@centro.test');
-        $task = $this->task($now->modify('-3 days'), $unit)->setAssignedUser($teacher);
+        $task = $this->task(new \DateTimeImmutable('-3 days'), $unit)->setAssignedUser($teacher);
         $this->em->flush();
 
-        $this->notifier->nudge($task, $now);
-        $tomorrow = $now->modify('+1 day');
+        $this->notifier->nudge($task);
+        $notice = $this->notifications->findRecentFor($teacher)[0];
+        (new \ReflectionProperty(Notification::class, 'createdAt'))->setValue($notice, new \DateTimeImmutable('-1 day'));
+        $this->em->flush();
 
-        self::assertNull($this->notifier->nudgedTodayAt($task, $tomorrow));
-        self::assertSame([$teacher], $this->notifier->nudge($task, $tomorrow));
+        self::assertNull($this->notifier->nudgedTodayAt($task), 'el de ayer no cuenta como el de hoy');
+        self::assertSame([$teacher], $this->notifier->nudge($task), 'y se puede volver a avisar');
     }
 
     /**
@@ -212,7 +220,7 @@ final class TaskReminderNotifierTest extends KernelTestCase
      */
     public function testNudgeIsHeldBackWhenTheEngineAlreadyRemindedToday(): void
     {
-        $today = new \DateTimeImmutable('2026-01-10 09:00');
+        $today = new \DateTimeImmutable('today');
         $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
         $teacher = $this->user('profe@centro.test');
@@ -222,22 +230,35 @@ final class TaskReminderNotifierTest extends KernelTestCase
 
         self::assertSame(1, $this->notifier->sendDue($today));
 
-        self::assertSame([], $this->notifier->nudge($task, $today->modify('+4 hours')), 'el cron ya avisó hoy');
+        self::assertSame([], $this->notifier->nudge($task), 'el cron ya avisó hoy');
         self::assertCount(1, $this->notifications->findRecentFor($teacher));
     }
 
     /** With nobody to do it there is nobody to nudge, and the caller must be able to tell that apart. */
     public function testNudgeOnAnUnassignedTaskReachesNobody(): void
     {
-        $now = new \DateTimeImmutable('2026-01-10 13:40');
         $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
-        $task = $this->task($now->modify('-3 days'), $unit);
+        $task = $this->task(new \DateTimeImmutable('-3 days'), $unit);
         $this->em->flush();
 
-        self::assertSame([], $this->notifier->nudge($task, $now));
+        self::assertSame([], $this->notifier->nudge($task));
         self::assertSame([], $this->notifier->nudgeRecipients($task));
-        self::assertNull($this->notifier->nudgedTodayAt($task, $now), 'nadie a quien avisar no es "ya avisado"');
+        self::assertNull($this->notifier->nudgedTodayAt($task), 'nadie a quien avisar no es "ya avisado"');
+    }
+
+    /** A closed task has nobody who owes work on it, so the service refuses on its own. */
+    public function testNudgeOnAClosedTaskSendsNothing(): void
+    {
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $teacher = $this->user('profe@centro.test');
+        $task = $this->task(new \DateTimeImmutable('-3 days'), $unit)->setAssignedUser($teacher);
+        $task->setStatus(TaskStatus::VALIDATED);
+        $this->em->flush();
+
+        self::assertSame([], $this->notifier->nudge($task));
+        self::assertCount(0, $this->notifications->findRecentFor($teacher));
     }
 
     public function testRoleWithOnlyInactiveHolderProducesNoReminder(): void

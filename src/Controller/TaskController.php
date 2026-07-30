@@ -495,7 +495,7 @@ final class TaskController extends AbstractController
             // "Recordar": supervisión, no trabajo. Y si a quien hay que avisar ya se le avisó hoy, la
             // ficha lo dice en vez de ofrecer un botón que el servidor va a frenar (mismo tope).
             'canRemind' => $canRemind,
-            'remindedAt' => $canRemind ? $reminders->nudgedTodayAt($task, new \DateTimeImmutable()) : null,
+            'remindedAt' => $canRemind ? $reminders->nudgedTodayAt($task) : null,
             // The trail humanised for non-technical readers; the raw diff rides along for admins only.
             'activityRows' => $activity->present($auditLog->findForSubject('Task', (string) $task->getId())),
             'isAdmin' => $isAdmin,
@@ -611,7 +611,7 @@ final class TaskController extends AbstractController
             throw $this->createAccessDeniedException('No puedes mandar un recordatorio de esta tarea.');
         }
 
-        $notified = $reminders->nudge($task, new \DateTimeImmutable());
+        $notified = $reminders->nudge($task);
         if ([] === $notified) {
             // Either everyone was already told today (the cap) or the task has nobody to nudge: say which,
             // instead of a "listo" that did nothing.
