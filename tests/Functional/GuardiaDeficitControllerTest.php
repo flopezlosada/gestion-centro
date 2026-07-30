@@ -142,6 +142,27 @@ final class GuardiaDeficitControllerTest extends WebTestCase
         self::assertCount(1, $this->em->getRepository(GuardiaSupport::class)->findBy(['teacher' => $freed]), 'still one arrangement, no duplicate and no crash');
     }
 
+    public function testSigningUpSomebodyAlreadyOnTheRotaIsRefused(): void
+    {
+        // A no-op arrangement: the engine counts them once anyway (as a guardia, which wins the band), and
+        // storing it would leave a rota row in the parte with no way to undo the arrangement behind it.
+        $this->login();
+        $onDuty = $this->user('Ana Guardia', 'ana@centro.test');
+        $this->guardiaEntry($onDuty, 0);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias?date='.self::MONDAY.'&slot=0');
+        $this->client->request('POST', '/guardias/apoyo', [
+            '_token' => $this->tokenFrom($crawler, '/guardias/apoyo'),
+            'date' => self::MONDAY,
+            'slot' => '0',
+            'teacher' => (string) $onDuty->getId(),
+        ]);
+
+        self::assertResponseRedirects('/guardias?date='.self::MONDAY.'&slot=0');
+        self::assertNull($this->em->getRepository(GuardiaSupport::class)->findOneBy(['teacher' => $onDuty]));
+    }
+
     public function testSigningUpSupportRejectsABadCsrfToken(): void
     {
         $this->login();

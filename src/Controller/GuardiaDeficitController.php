@@ -74,7 +74,7 @@ final class GuardiaDeficitController extends AbstractController
      * it will normally say the teacher is teaching, and only a person knows better (the form says so).
      */
     #[Route('/apoyo', name: 'guardia_support_add', methods: ['POST'])]
-    public function addSupport(Request $request, UserRepository $users, GuardiaSupportRepository $support, EntityManagerInterface $em): Response
+    public function addSupport(Request $request, UserRepository $users, GuardiaSupportRepository $support, ScheduleEntryRepository $schedule, AcademicYearRepository $years, EntityManagerInterface $em): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $this->assertCsrf($request, 'guardia_support_add');
@@ -84,6 +84,16 @@ final class GuardiaDeficitController extends AbstractController
         $teacher = $users->find((int) $request->request->get('teacher'));
         if (!$teacher instanceof User) {
             $this->addFlash('error', 'Elige el profesor que va a hacer el apoyo.');
+
+            return $this->backToParte($date, $slotIndex);
+        }
+
+        // Somebody already on the rota that hour gains nothing from being signed up: the engine would
+        // count them once anyway (as a guardia, which wins), and the parte would then show a rota row with
+        // no way to undo the arrangement. Refused with an explanation rather than stored as a no-op.
+        $year = $years->findBySchoolYear(SchoolYear::current($date));
+        if ($year instanceof AcademicYear && $this->isOnDuty($schedule, $year, $date, $slotIndex, $teacher)) {
+            $this->addFlash('warning', sprintf('%s ya tiene guardia a esta hora en su horario: no hace falta darle de alta como apoyo.', $teacher->getFullName()));
 
             return $this->backToParte($date, $slotIndex);
         }
@@ -310,6 +320,28 @@ final class GuardiaDeficitController extends AbstractController
         $this->addFlash('success', 'Agrupación deshecha. Cada grupo vuelve a su aula.');
 
         return $this->backToParte($date, $slotIndex);
+    }
+
+    /**
+     * Whether a teacher is already on the rota (guardia or collaborator) at that date and period.
+     *
+     * @param ScheduleEntryRepository $schedule  the timetable repository
+     * @param AcademicYear            $year      the course the date falls into
+     * @param \DateTimeImmutable      $date      the day
+     * @param int                     $slotIndex the period index within the day
+     * @param User                    $teacher   the teacher to look for
+     *
+     * @return bool true when the timetable already puts them on duty then
+     */
+    private function isOnDuty(ScheduleEntryRepository $schedule, AcademicYear $year, \DateTimeImmutable $date, int $slotIndex, User $teacher): bool
+    {
+        foreach ($schedule->dutyPoolAt($year, Weekday::from((int) $date->format('N')), $slotIndex) as $entry) {
+            if ($entry->getTeacher()->getId() === $teacher->getId()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
