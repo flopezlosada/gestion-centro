@@ -1,0 +1,73 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Catálogo de espacios{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('space_index') }}">Espacios</a><span class="sep">/</span>Catálogo{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Espacios</p>
+            <h1>Catálogo de espacios</h1>
+            <p class="lead">Las aulas, laboratorios y demás espacios del centro. El horario de Peñalara los nombra pero no dice ni cuántas personas caben ni de qué tipo son: eso se completa aquí.</p>
+        </div>
+        <a class="btn" href="{{ path('space_room_new') }}">+ Nuevo espacio</a>
+    </div>
+
+    {% if unlinkedCells > 0 %}
+        <div class="callout callout--warning" role="alert">
+            <p><strong>{{ unlinkedCells }} clase(s) del horario nombran un espacio que no está aquí.</strong> Mientras falte su ficha, esos espacios se cuentan como libres aunque estén ocupados.</p>
+            <form method="post" action="{{ path('space_room_sync') }}" class="inline-form">
+                <input type="hidden" name="_token" value="{{ csrf_token('space_room_sync') }}">
+                <button type="submit" class="btn">Sincronizar con el horario</button>
+            </form>
+        </div>
+    {% endif %}
+
+    <div class="card">
+        {% if rooms is empty %}
+            <div class="empty-state">
+                <h2>Todavía no hay espacios</h2>
+                <p>Si ya has importado el horario de Peñalara, el programa puede crear una ficha por cada aula que el horario nombre; luego solo hay que completarlas.</p>
+                <form method="post" action="{{ path('space_room_sync') }}">
+                    <input type="hidden" name="_token" value="{{ csrf_token('space_room_sync') }}">
+                    <button type="submit" class="btn">Crear las fichas desde el horario</button>
+                </form>
+            </div>
+        {% else %}
+            <table data-list-tools>
+                <thead>
+                    <tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Capacidad</th><th>Dónde</th><th>Estado</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for room in rooms %}
+                        <tr>
+                            <td><strong>{{ room.code }}</strong></td>
+                            <td>{{ room.name != room.code ? room.name : '—' }}</td>
+                            <td>{{ room.kind.label }}</td>
+                            <td>{{ room.capacity ?? '—' }}</td>
+                            <td class="muted">
+                                {%- if room.building %}{{ room.building }}{% endif -%}
+                                {%- if room.floor is not null %}{{ room.building ? ', ' }}planta {{ room.floor }}{% endif -%}
+                                {%- if not room.building and room.floor is null %}—{% endif -%}
+                            </td>
+                            <td>
+                                {% if not room.active %}<span class="badge badge--muted">Sin uso</span>
+                                {% elseif room.needsReview %}<span class="badge badge--warning">Sin completar</span>
+                                {% else %}<span class="badge badge--ok">Completo</span>{% endif %}
+                                {% if room.active and not room.assignable %}<span class="badge badge--muted" title="No se le envían grupos">No asignable</span>{% endif %}
+                            </td>
+                            <td class="row-actions">
+                                <a href="{{ path('space_room_edit', { id: room.id }) }}">Editar</a>
+                                <form method="post" action="{{ path('space_room_delete', { id: room.id }) }}" data-confirm="¿Seguro que quieres borrar «{{ room.code }}»? Solo se puede si el horario no lo usa; si se usa, desactívalo en su ficha.">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('space_room_delete' ~ room.id) }}">
+                                    <button type="submit" class="link-danger">Borrar</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}

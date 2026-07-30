@@ -42,7 +42,12 @@ final class RoleFixtures extends AbstractGoldenFixture
         // (functional/permission role only). The leadership team is centre-wide; jefatura de departamento
         // is per-department (commands only its own department). TIC, secretaría, tutor and docente carry
         // no rank — they grant feature access but command nobody.
-        $direction = (new Role())->setCode('direction')->setName('Dirección')->setLevel(Area::ADMINISTRATION, PermissionLevel::WRITE)->setHierarchyLevel(40);
+        $direction = (new Role())->setCode('direction')->setName('Dirección')
+            ->setLevel(Area::ADMINISTRATION, PermissionLevel::WRITE)
+            // Espacios: the equipo directivo is who decides where a group goes and who completes the
+            // room catalogue (capacity, type), so it is the one role that writes here by default.
+            ->setLevel(Area::ESPACIOS, PermissionLevel::WRITE)
+            ->setHierarchyLevel(40);
         $catalog = [
             $direction,
             (new Role())->setCode('tic')->setName('TIC')->setAdmin(true),
@@ -52,7 +57,11 @@ final class RoleFixtures extends AbstractGoldenFixture
             // Guardia coordinator: manages the daily parte (register absences, assign covers, mark
             // incidents, history and stats). A functional permission role, not a rank — it commands
             // nobody. Any role can be granted this same access from the roles matrix (Guardias = escritura).
-            (new Role())->setCode('guardias')->setName('Coordinación de guardias')->setLevel(Area::GUARDIAS, PermissionLevel::WRITE),
+            (new Role())->setCode('guardias')->setName('Coordinación de guardias')
+                ->setLevel(Area::GUARDIAS, PermissionLevel::WRITE)
+                // Read on Espacios so the coordinator can find a big free room to merge groups into when
+                // there are more absences than teachers on call — that consultation is why it exists.
+                ->setLevel(Area::ESPACIOS, PermissionLevel::READ),
             // Per-department roles: a holder is "X of a given department", so a task's responsibility on
             // one of these also needs the department (resolved live to whoever holds it there).
             (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10),

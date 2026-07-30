@@ -25,6 +25,7 @@ use App\Security\Voter\AreaVoter;
 use App\Service\FileUploader;
 use App\Service\GuardiaAssignmentNotifier;
 use App\Support\AuditContext;
+use App\Support\SchedulePicker;
 use App\Support\GuardiaActivityPresenter;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
@@ -76,7 +77,7 @@ final class GuardiaController extends AbstractController
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
-        $date = $this->dateFromRequest($request);
+        $date = SchedulePicker::date($request);
         $schoolYear = SchoolYear::current($date);
         $year = $years->findBySchoolYear($schoolYear);
         $weekday = Weekday::from((int) $date->format('N'));
@@ -84,7 +85,7 @@ final class GuardiaController extends AbstractController
         // Slots and the guardia pool come from the timetable of the course this date falls into; with
         // no course imported for it there is nothing to show but the empty state.
         $slots = null !== $year ? $schedule->distinctSlots($year) : [];
-        $slotIndex = $this->slotFromRequest($request, $slots);
+        $slotIndex = SchedulePicker::slot($request, $slots);
         $pool = null !== $year ? $schedule->dutyPoolAt($year, $weekday, $slotIndex) : [];
         $parte = $covers->findForParte($date, $slotIndex);
 
@@ -593,7 +594,7 @@ final class GuardiaController extends AbstractController
     public function newAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
     {
         $canManage = $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS);
-        $date = $this->dateFromRequest($request);
+        $date = SchedulePicker::date($request);
         $schoolYear = SchoolYear::current($date);
         $year = $years->findBySchoolYear($schoolYear);
         $weekday = Weekday::from((int) $date->format('N'));
@@ -677,7 +678,7 @@ final class GuardiaController extends AbstractController
     {
         $this->assertCsrf($request, 'guardia_absence_create');
 
-        $date = $this->dateFromRequest($request);
+        $date = SchedulePicker::date($request);
         $year = $years->findBySchoolYear(SchoolYear::current($date));
         if (!$year instanceof AcademicYear) {
             $this->addFlash('error', sprintf('No hay horario importado para el curso %s. Impórtalo antes de registrar ausencias.', SchoolYear::current($date)));
@@ -807,7 +808,7 @@ final class GuardiaController extends AbstractController
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $this->assertCsrf($request, 'guardia_auto_assign');
-        $date = $this->dateFromRequest($request);
+        $date = SchedulePicker::date($request);
         $slotIndex = (int) $request->request->get('slot');
 
         $year = $years->findBySchoolYear(SchoolYear::current($date));
@@ -1038,39 +1039,6 @@ final class GuardiaController extends AbstractController
         $this->addFlash('success', 'Línea del parte eliminada.');
 
         return $this->backToParte($date, $slotIndex);
-    }
-
-    /**
-     * Reads the requested date from the query/post ("Y-m-d"), falling back to today on absence or a
-     * bad value.
-     *
-     * @param Request $request the current request
-     *
-     * @return \DateTimeImmutable the date to show (time set to midnight)
-     */
-    private function dateFromRequest(Request $request): \DateTimeImmutable
-    {
-        $raw = (string) ($request->query->get('date') ?? $request->request->get('date'));
-        $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $raw);
-
-        return false !== $date ? $date : new \DateTimeImmutable('today');
-    }
-
-    /**
-     * Reads the requested period index, defaulting to the day's first period when absent or unknown.
-     *
-     * @param Request                                                                          $request the current request
-     * @param list<array{index: int, startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}> $slots   the available periods
-     *
-     * @return int the period index to show
-     */
-    private function slotFromRequest(Request $request, array $slots): int
-    {
-        if ($request->query->has('slot')) {
-            return (int) $request->query->get('slot');
-        }
-
-        return $slots[0]['index'] ?? 0;
     }
 
     /**

@@ -1,0 +1,161 @@
+{% extends 'app_shell.html.twig' %}
+
+{% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
+{% set canWrite = is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ESPACIOS')) %}
+
+{% block title %}Aulas libres{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Aulas libres{% endblock %}
+
+{#
+   Una tarjeta de espacio libre: código, nombre, tipo y los datos que deciden si sirve (capacidad,
+   dónde está). La capacidad desconocida se dice, no se disimula: Peñalara no la exporta y hasta que
+   alguien la rellene el programa no puede afirmar que un grupo quepa.
+#}
+{% macro room_card(room, muted = false) %}
+    <div class="mini-card{{ muted ? ' is-busy' : ' is-free' }}">
+        <div class="mini-card-head">
+            <strong>{{ room.code }}</strong>
+            {% if room.name != room.code %}<span class="muted"> · {{ room.name }}</span>{% endif %}
+            {% if room.kind.specialised %}<span class="badge badge--muted">{{ room.kind.label }}</span>{% endif %}
+        </div>
+        <div class="mini-card-status">
+            {% if room.capacity %}{{ room.capacity }} plazas{% else %}<span class="muted">capacidad sin indicar</span>{% endif %}
+            {% if room.building %} · {{ room.building }}{% endif %}
+            {% if room.floor is not null %} · planta {{ room.floor }}{% endif %}
+            {% if not room.assignable %} · <span class="muted">no se le asignan grupos</span>{% endif %}
+        </div>
+        {% if room.notes %}<div class="mini-card-status muted">{{ room.notes }}</div>{% endif %}
+    </div>
+{% endmacro %}
+
+{% block body %}
+    {% import _self as sp %}
+
+    <div class="parte">
+        <header class="page-head">
+            <div>
+                <p class="eyebrow">{{ dias[date|date('N', false)] }} {{ date|date('d/m/Y', false) }}</p>
+                <h1>Aulas libres</h1>
+                <p class="lead">Qué espacios quedan libres <strong>según el horario</strong> a una hora concreta, y quién ocupa el resto.</p>
+            </div>
+            <div class="day-nav">
+                <a class="day-nav-arrow" href="{{ path('space_index', { date: date|date_modify('-1 day')|date('Y-m-d', false), slot: slotIndex, personas: forPeople }) }}" aria-label="Día anterior">‹</a>
+                <form method="get" action="{{ path('space_index') }}" class="day-nav-date">
+                    <input type="date" name="date" value="{{ date|date('Y-m-d', false) }}" onchange="this.form.submit()" aria-label="Fecha a consultar">
+                    <input type="hidden" name="slot" value="{{ slotIndex }}">
+                    {% if forPeople %}<input type="hidden" name="personas" value="{{ forPeople }}">{% endif %}
+                    <noscript><button type="submit" class="btn">Ir</button></noscript>
+                </form>
+                <a class="day-nav-arrow" href="{{ path('space_index', { date: date|date_modify('+1 day')|date('Y-m-d', false), slot: slotIndex, personas: forPeople }) }}" aria-label="Día siguiente">›</a>
+                <a class="btn" href="{{ path('space_index', { slot: slotIndex }) }}">Hoy</a>
+            </div>
+        </header>
+
+        {# El horario no sabe de reuniones, ensayos ni charlas: decirlo aquí evita que "libre" se lea
+           como una reserva. Es la limitación conocida del módulo, no un descuido. #}
+        <div class="callout" role="note">
+            <p>Esto sale del <strong>horario de clases</strong>: un aula reservada de palabra para una reunión aparecerá como libre. Confírmalo antes de mandar a un grupo.</p>
+        </div>
+
+        {% if not isLective %}
+            <div class="callout callout--warning" role="note">
+                <p>Ese día no es lectivo (fin de semana o día no lectivo del calendario), así que el horario no coloca a nadie: aparecerán todas las aulas libres.</p>
+            </div>
+        {% endif %}
+
+        {% if unlinkedCells > 0 %}
+            <div class="callout callout--warning" role="alert">
+                <p><strong>{{ unlinkedCells }} clase(s) del horario nombran un aula que no está en el catálogo</strong>, así que esas aulas se contarán como libres aunque estén ocupadas.</p>
+                {% if canWrite %}
+                    <p><a href="{{ path('space_room_index') }}">Ve al catálogo de espacios</a> y pulsa «Sincronizar con el horario».</p>
+                {% endif %}
+            </div>
+        {% endif %}
+
+        {% if slots is empty %}
+            <div class="card">
+                <div class="empty-state">
+                    <h2>No hay horario importado para el curso {{ schoolYear }}</h2>
+                    <p>Sin el horario del curso no se puede saber qué aulas están ocupadas.</p>
+                    {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ADMINISTRATION')) %}
+                        <p><a class="btn" href="{{ path('admin_timetable_import') }}">Importar horario</a></p>
+                    {% endif %}
+                </div>
+            </div>
+        {% else %}
+            <nav class="slotchips" aria-label="Tramo horario">
+                {% for slot in slots %}
+                    <a class="slotchip {{ slot.index == slotIndex ? 'is-active' }}"
+                       href="{{ path('space_index', { date: date|date('Y-m-d', false), slot: slot.index, personas: forPeople }) }}">
+                        {{ slot.startsAt|date('H:i', false) }}–{{ slot.endsAt|date('H:i', false) }}
+                    </a>
+                {% endfor %}
+            </nav>
+
+            <section class="parte-panel">
+                <div class="parte-panel__head">
+                    <div class="parte-panel__titles">
+                        <h2 class="parte-panel__title">Libres y disponibles</h2>
+                        <div class="coverage">
+                            <span class="badge badge--ok">{{ candidates|length }} espacio{{ candidates|length == 1 ? '' : 's' }}</span>
+                        </div>
+                    </div>
+                    <form method="get" action="{{ path('space_index') }}" class="inline-form">
+                        <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
+                        <input type="hidden" name="slot" value="{{ slotIndex }}">
+                        <label class="field-label" for="personas">Para cuántas personas</label>
+                        <input type="number" id="personas" name="personas" min="1" max="500" value="{{ forPeople }}" placeholder="p. ej. 60">
+                        <button type="submit" class="btn btn-sm">Filtrar</button>
+                    </form>
+                </div>
+
+                {% if candidates is empty %}
+                    <p class="muted">No queda ningún espacio libre al que se pueda enviar un grupo a esta hora{% if forPeople %} con capacidad para {{ forPeople }} personas{% endif %}.</p>
+                {% else %}
+                    <div class="card-grid">
+                        {% for room in candidates %}{{ sp.room_card(room) }}{% endfor %}
+                    </div>
+                {% endif %}
+
+                {% if otherFree is not empty %}
+                    <details class="callout__more">
+                        <summary>Otros {{ otherFree|length }} espacio(s) libres que no se ofrecen</summary>
+                        <p class="muted">Libres a esta hora, pero no se proponen: o no se les asignan grupos (pistas, almacenes) o su capacidad no llega a la pedida.</p>
+                        <div class="card-grid">
+                            {% for room in otherFree %}{{ sp.room_card(room, true) }}{% endfor %}
+                        </div>
+                    </details>
+                {% endif %}
+            </section>
+
+            <section class="parte-panel">
+                <div class="parte-panel__head">
+                    <div class="parte-panel__titles">
+                        <h2 class="parte-panel__title">Ocupadas a esta hora</h2>
+                    </div>
+                </div>
+
+                {% if availability is null or availability.occupied is empty %}
+                    <p class="muted">El horario no coloca ninguna clase a esta hora.</p>
+                {% else %}
+                    <table data-list-tools>
+                        <thead>
+                            <tr><th>Espacio</th><th>Grupo(s)</th><th>Profesorado</th><th>Materia</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for occupation in availability.occupied %}
+                                <tr>
+                                    <td><strong>{{ occupation.room.code }}</strong>{% if occupation.room.name != occupation.room.code %} <span class="muted">{{ occupation.room.name }}</span>{% endif %}</td>
+                                    <td>{{ occupation.groups }}</td>
+                                    <td>{{ occupation.teachers }}</td>
+                                    <td class="muted">{{ occupation.subjects }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% endif %}
+            </section>
+        {% endif %}
+    </div>
+{% endblock %}

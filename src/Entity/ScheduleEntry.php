@@ -33,6 +33,7 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Table(name: 'schedule_entry')]
 #[ORM\Index(name: 'IDX_sched_year_slot_kind', columns: ['academic_year_id', 'weekday', 'slot_index', 'kind'])]
 #[ORM\Index(name: 'IDX_sched_teacher', columns: ['teacher_id'])]
+#[ORM\Index(name: 'IDX_sched_room', columns: ['room_id'])]
 class ScheduleEntry
 {
     #[ORM\Id]
@@ -81,6 +82,19 @@ class ScheduleEntry
     /** Room short name (e.g. "A10", "BIBL"); null when the slot has no room. */
     #[ORM\Column(name: 'room_name', length: 64, nullable: true)]
     private ?string $roomName = null;
+
+    /**
+     * The catalogued space {@see $roomName} refers to, resolved by {@see \App\Space\RoomSynchroniser}
+     * after each import. This is what the space module reads: matching rooms by text would make a
+     * stray space or a renamed code drop cells from the occupancy calculation in silence, and the
+     * symptom (two groups sent to the same room) would surface far from the cause.
+     *
+     * Null on the cells that legitimately have no room (guardias, collaborator duty) and, briefly, on
+     * imported cells whose card the synchroniser has not created yet.
+     */
+    #[ORM\ManyToOne(targetEntity: Room::class)]
+    #[ORM\JoinColumn(name: 'room_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?Room $room = null;
 
     /** Subject short name (e.g. "Literatura Universal"); null for non-teaching duties. */
     #[ORM\Column(name: 'subject_name', length: 128, nullable: true)]
@@ -202,6 +216,18 @@ class ScheduleEntry
     public function setRoomName(?string $roomName): static
     {
         $this->roomName = $roomName;
+
+        return $this;
+    }
+
+    public function getRoom(): ?Room
+    {
+        return $this->room;
+    }
+
+    public function setRoom(?Room $room): static
+    {
+        $this->room = $room;
 
         return $this;
     }

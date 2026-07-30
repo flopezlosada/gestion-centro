@@ -14,6 +14,7 @@ use App\Penalara\PenalaraTimetableParser;
 use App\Penalara\ScheduleEntryDto;
 use App\Repository\ScheduleEntryRepository;
 use App\Repository\UserRepository;
+use App\Space\RoomSynchroniser;
 use Symfony\Component\String\Slugger\AsciiSlugger;
 
 /**
@@ -36,6 +37,10 @@ use Symfony\Component\String\Slugger\AsciiSlugger;
  *
  * Shared by {@see \App\Command\ImportTimetableCommand} (CLI) and the admin self-service screen, so the
  * matching and persistence live here once rather than in each entry point.
+ *
+ * Its last step (never on a dry run) hands over to {@see RoomSynchroniser}: the cells name rooms, and
+ * the space module can only reason about a room it has a card for. Discovering spaces belongs to that
+ * module, not here — this just makes sure it happens whenever the timetable changes.
  */
 final class TimetableImporter
 {
@@ -45,6 +50,7 @@ final class TimetableImporter
         private readonly UserRepository $users,
         private readonly ScheduleEntryRepository $schedule,
         private readonly PenalaraTimetableParser $parser,
+        private readonly RoomSynchroniser $rooms,
     ) {
         $this->slugger = new AsciiSlugger();
     }
@@ -72,8 +78,12 @@ final class TimetableImporter
         $stale = $this->staleTeachers($year, $matched);
 
         [$entries, $keptManual, $dropManualIds] = $this->buildEntries($year, $byTeacher, $matched, $this->schedule->manualDutyCells($year));
+        $newRooms = [];
         if (!$dryRun) {
             $this->schedule->replaceForTeachers($year, $teachers, $entries, $dropManualIds);
+            // The cells are in; now make sure every room they name has a card and points at it. A dry
+            // run must not do this — previewing an import may not create anything, catalogue included.
+            $newRooms = $this->rooms->sync()->createdCodes;
         }
 
         $guardias = \count(array_filter($entries, static fn (ScheduleEntry $e): bool => ScheduleActivityKind::LECTIVE !== $e->getKind()));
@@ -88,6 +98,7 @@ final class TimetableImporter
             $keptManual,
             \count($dropManualIds),
             $stale,
+            $newRooms,
         );
     }
 

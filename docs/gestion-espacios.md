@@ -1,8 +1,8 @@
 # Gestión de espacios — plan y modelo de datos
 
 > Diseño del apartado **C** del volcado de requisitos del centro (30-07-2026): puntos 11, 12, 13 y 14.
-> Sin código todavía. Este documento se cierra con decisiones abiertas que hay que resolver antes de
-> tocar `src/`.
+> **Estado: la fase 1 (catálogo de espacios + "aulas libres") está implementada** (§8); de la 2 en
+> adelante esto sigue siendo diseño. Las decisiones que quedan abiertas están en §9.
 
 ---
 
@@ -95,17 +95,19 @@ Seis entidades. Cada una existe por una razón distinta; ninguna es un contenedo
 | `kind` | enum `RoomKind` | `CLASSROOM`, `LAB`, `WORKSHOP`, `COMPUTER_ROOM`, `GYM`, `OUTDOOR`, `LIBRARY`, `ASSEMBLY_HALL`, `OTHER` |
 | `capacity` | smallint NULL | A mano. Null = desconocida (no se inventa) |
 | `building` | string(32) NULL | Para el criterio "no cruzar el centro" |
-| `floor` | smallint NULL | Idem |
+| `floor` | smallint NULL (columna `floor_level`: `FLOOR()` es función SQL) | Idem |
 | `assignable` | bool, default true | ¿Puede recibir una clase reubicada? La biblioteca sí, las pistas no |
 | `active` | bool, default true | Un aula que deja de usarse no se borra (rompería el histórico) |
 | `notes` | text NULL | "Tiene proyector, no tiene enchufes" |
 
 `Auditable`: **sí**. Es catálogo editado a mano y su capacidad decide reubicaciones.
 
-**Cómo se cruza con el horario — decisión de diseño (recomendada):** añadir a `ScheduleEntry` una FK
+**Cómo se cruza con el horario — decisión tomada e implementada:** `ScheduleEntry` tiene una FK
 `room_id` NULL (null legítimo: guardias y celdas sin aula), **manteniendo `room_name` como snapshot
-textual**, y que el importador haga *upsert* de la ficha por `code` normalizado cuando encuentre un aula
-nueva (`kind = OTHER`, `capacity = null`, marcada como "sin catalogar" en la UI).
+textual**. Tras cada import, `RoomSynchroniser` crea la ficha de las aulas nuevas (`kind = OTHER`,
+`capacity = null`, marcada "sin completar" en la UI) y enlaza las celdas. El emparejamiento
+código↔nombre se hace **en PHP sobre el código normalizado**, nunca por igualdad SQL: eso dependería de
+la colación de la base de datos, que no es la misma en local (MySQL 8) que en el servidor (MariaDB).
 
 - *Por qué*: si la ocupación se calcula comparando cadenas, un espacio de más o una mayúscula distinta
   hace que un aula ocupada aparezca libre **en silencio**, y el error se descubre con dos grupos en la
@@ -355,7 +357,7 @@ Cada fase entrega valor por sí sola y se puede parar ahí.
 
 | Fase | Qué entra | Qué desbloquea |
 |---|---|---|
-| **F1 — Catálogo y ocupación** | `Room` + FK en `ScheduleEntry` + comando de sincronización desde el horario + CRUD en admin + `RoomOccupancy` + pantalla **"Aulas libres"** | Valor inmediato **sin ningún motor**: resuelve el punto A.2 (agrupar guardias en un aula grande) y es la base de todo lo demás |
+| **F1 — Catálogo y ocupación** ✅ **HECHA** | `Room` + FK en `ScheduleEntry` + `RoomSynchroniser` (+ `app:sync-rooms`) + catálogo en `/espacios/catalogo` + `RoomOccupancy` + pantalla **"Aulas libres"** en `/espacios` + área `ESPACIOS` en la matriz de roles | Valor inmediato **sin ningún motor**: resuelve el punto A.2 (agrupar guardias en un aula grande) y es la base de todo lo demás |
 | **F2 — Plan de cambio de aula** | `SpacePlan`, `SpacePlanActivity`, `SpacePlanOption`, `SpacePlanAssignment` + `RelocationProposer` + pantallas de crear/comparar/editar/aprobar + `EffectiveTimetable` | El punto 11 completo |
 | **F3 — Aviso y documento** | Notificación a afectados + documento imprimible + enlace público | El punto 12. A partir de aquí el módulo es usable de verdad |
 | **F4 — Semana de exámenes** | Preset `EXAM_PERIOD` + `substitution_scope = GROUPS` + estrategia `STABLE_ROOM` | El punto 13. Casi todo es configuración de lo ya hecho |
@@ -389,10 +391,12 @@ Cada fase entrega valor por sí sola y se puede parar ahí.
 
 ### Para Paco (técnicas)
 
-7. **La FK `room_id` en `ScheduleEntry`** (§4.1): toca el importador, que es código delicado. ¿Se acepta
-   el coste en F1 o se empieza cruzando por texto asumiendo el riesgo?
-8. **¿`building`/`floor` en el catálogo?** El criterio "no cruzar el centro" es de los que más se
-   agradecen en la práctica y son dos columnas. Yo las metería.
+7. ~~**La FK `room_id` en `ScheduleEntry`** (§4.1)~~ **RESUELTA en F1: sí, con FK.** El importador solo
+   gana una línea (llama al sincronizador al terminar, nunca en dry-run); el emparejamiento por código
+   normalizado se hace en PHP, no en SQL, porque comparar por texto haría depender el resultado de la
+   colación de la base de datos — que no es la misma en local (MySQL 8) que en el servidor (MariaDB).
+8. ~~**¿`building`/`floor` en el catálogo?**~~ **RESUELTA: metidas** (la columna se llama `floor_level`,
+   porque `FLOOR()` es una función SQL). Están vacías hasta que el centro las rellene.
 9. **Migración de consumidores a `EffectiveTimetable`** (§5): ¿se hace toda en F2 o se difiere el parte
    de guardias a F6 asumiendo que durante ese tiempo el parte puede mostrar el aula antigua?
 

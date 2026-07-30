@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repository;
 
 use App\Entity\AcademicYear;
+use App\Entity\Room;
 use App\Entity\ScheduleEntry;
 use App\Entity\User;
 use App\Enum\ScheduleActivityKind;
@@ -302,6 +303,127 @@ class ScheduleEntryRepository extends ServiceEntityRepository
             ->orderBy('t.fullName', 'ASC')
             ->getQuery()
             ->getResult();
+    }
+
+    /**
+     * The cells that name a room but point at no catalogued space, as {@code [id, roomName]} pairs —
+     * everything the synchroniser needs to know which cards are missing and which rows to link.
+     *
+     * Deliberately returns the RAW names and leaves the comparison to PHP: matching a room by SQL
+     * equality would make the result depend on the database collation (MySQL 8 here, MariaDB on the
+     * server) and would still miss "S  ACTOS" against "S ACTOS". Normalising in one place —
+     * {@see Room::normaliseCode()} — is the only way both halves agree.
+     *
+     * @return list<array{id: int, roomName: string}> the unlinked cells
+     */
+    public function unlinkedRoomCells(): array
+    {
+        /** @var list<array{id: int, roomName: string}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('s.id AS id', 's.roomName AS roomName')
+            ->andWhere('s.room IS NULL')
+            ->andWhere('s.roomName IS NOT NULL')
+            ->andWhere("TRIM(s.roomName) <> ''")
+            ->getQuery()
+            ->getResult();
+
+        return array_map(static fn (array $r): array => ['id' => (int) $r['id'], 'roomName' => $r['roomName']], $rows);
+    }
+
+    /**
+     * Points the given cells at a space, by id. The ids come from {@see unlinkedRoomCells()}, already
+     * matched in PHP, so this never re-derives which cells belong to which room.
+     *
+     * @param Room      $room the space to link to
+     * @param list<int> $ids  the cells to link
+     *
+     * @return int how many cells were linked
+     */
+    public function linkCells(Room $room, array $ids): int
+    {
+        if ([] === $ids) {
+            return 0;
+        }
+
+        return (int) $this->createQueryBuilder('s')
+            ->update()
+            ->set('s.room', ':room')
+            ->where('s.id IN (:ids)')
+            ->setParameter('room', $room)
+            ->setParameter('ids', $ids)
+            ->getQuery()
+            ->execute();
+    }
+
+    /**
+     * How many cells name a room but point at no catalogued space — always zero right after a sync.
+     * A non-zero count means the occupancy calculation is blind to those cells, so it is surfaced
+     * rather than left to be discovered as "that room looked free".
+     *
+     * @return int the number of unlinked cells
+     */
+    public function countCellsWithoutRoom(): int
+    {
+        return (int) $this->createQueryBuilder('s')
+            ->select('COUNT(s.id)')
+            ->andWhere('s.room IS NULL')
+            ->andWhere('s.roomName IS NOT NULL')
+            ->andWhere("TRIM(s.roomName) <> ''")
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    /**
+     * Who is in which space at one period of one weekday: every lective cell of that course, period and
+     * weekday that has a catalogued room, with its teacher joined so the screen can name them without a
+     * query per row.
+     *
+     * This is the raw occupancy the space module reads. Guardia and collaborator cells are excluded —
+     * they occupy nobody's room — and so are cells with no catalogued space, which is why the sync has
+     * to have run (see {@see countCellsWithoutRoom()}).
+     *
+     * @param AcademicYear $year      the course whose timetable to read
+     * @param Weekday      $weekday   the weekday
+     * @param int          $slotIndex the period index within the day
+     *
+     * @return ScheduleEntry[] the occupying lessons, teachers joined
+     */
+    public function occupancyAt(AcademicYear $year, Weekday $weekday, int $slotIndex): array
+    {
+        return $this->createQueryBuilder('s')
+            ->addSelect('t', 'r')
+            ->join('s.teacher', 't')
+            ->join('s.room', 'r')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.weekday = :weekday')
+            ->andWhere('s.slotIndex = :slot')
+            ->andWhere('s.kind = :lective')
+            ->setParameter('year', $year)
+            ->setParameter('weekday', $weekday)
+            ->setParameter('slot', $slotIndex)
+            ->setParameter('lective', ScheduleActivityKind::LECTIVE)
+            ->orderBy('r.code', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * How many timetable cells reference a space. Guards the catalogue's delete action: a room the
+     * timetable uses may only be deactivated, never removed, or its cells would silently stop counting
+     * as occupied.
+     *
+     * @param Room $room the space to count uses of
+     *
+     * @return int the number of cells pointing at it
+     */
+    public function countByRoom(Room $room): int
+    {
+        return (int) $this->createQueryBuilder('s')
+            ->select('COUNT(s.id)')
+            ->andWhere('s.room = :room')
+            ->setParameter('room', $room)
+            ->getQuery()
+            ->getSingleScalarResult();
     }
 
     /**

@@ -1,0 +1,32 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}{{ room.id ? 'Editar espacio' : 'Nuevo espacio' }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('space_room_index') }}">Catálogo de espacios</a><span class="sep">/</span>
+    {{ room.id ? 'Editar' : 'Nuevo' }}
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <p class="eyebrow">Catálogo de espacios</p>
+        <h1>{{ room.id ? 'Editar ' ~ room.code : 'Nuevo espacio' }}</h1>
+    </div>
+
+    <div class="card form-card">
+        {{ form_start(form, { 'attr': { 'novalidate': 'novalidate' } }) }}
+            {{ f.submit_error(form) }}
+            {{ form_errors(form) }}
+            {{ f.section('Identificación', [form.code, form.name, form.kind]) }}
+            {{ f.section('Datos para reubicar grupos', [form.capacity, form.building, form.floor]) }}
+            <fieldset class="form-section">
+                <legend class="form-section-title">Uso</legend>
+                {{ f.toggles([form.assignable, form.active]) }}
+            </fieldset>
+            {{ f.fields([form.notes]) }}
+            {{ f.actions(path('space_room_index')) }}
+        {{ form_end(form) }}
+    </div>
+{% endblock %}

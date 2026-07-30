@@ -26,6 +26,7 @@ final class TimetableImportResult
      * @param int                   $keptManual    export cells skipped because a hand-marked guardia holds that period
      * @param int                   $droppedManual hand-marked guardias removed because the new timetable teaches then
      * @param list<string>          $stale         teachers holding a timetable in this course that the export does not carry
+     * @param list<string>          $newRooms      space cards the import had to create for rooms the timetable names
      */
     public function __construct(
         public readonly int $entryCount,
@@ -37,6 +38,7 @@ final class TimetableImportResult
         public readonly int $keptManual = 0,
         public readonly int $droppedManual = 0,
         public readonly array $stale = [],
+        public readonly array $newRooms = [],
     ) {
     }
 
