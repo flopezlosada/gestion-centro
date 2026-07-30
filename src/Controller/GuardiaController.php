@@ -14,12 +14,15 @@ use App\Enum\Weekday;
 use App\Guardia\AbsenceRegistrar;
 use App\Guardia\AbsenceRegistrationResult;
 use App\Guardia\AssignmentRefused;
+use App\Guardia\BreakDutyGapRegistrar;
 use App\Guardia\GuardiaScheduler;
 use App\Guardia\GuardiaStatistics;
 use App\Repository\AcademicYearRepository;
 use App\Repository\AuditLogRepository;
+use App\Repository\BreakDutyAssignmentRepository;
 use App\Repository\GuardiaCoverRepository;
 use App\Repository\ScheduleEntryRepository;
+use App\Repository\TimeSlotRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
 use App\Service\FileUploader;
@@ -127,9 +130,13 @@ final class GuardiaController extends AbstractController
     /**
      * The teacher's own "mis guardias": today's guardias front and centre (period time, group, room,
      * absent teacher and any task left), plus the ones coming up on later days. Shows only their own.
+     *
+     * Their break duty rota comes too, and as a standing fact rather than a list of days: it is fixed for
+     * the whole course, so what the teacher needs is "los martes, patio, 11:10–11:35" once, not one row
+     * per Tuesday of the year.
      */
     #[Route('/mias', name: 'guardia_mine', methods: ['GET'])]
-    public function mine(#[CurrentUser] User $user, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
+    public function mine(#[CurrentUser] User $user, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years, BreakDutyAssignmentRepository $breakDuties, TimeSlotRepository $timeSlots): Response
     {
         $today = new \DateTimeImmutable('today');
         $now = new \DateTimeImmutable('now');
@@ -140,6 +147,9 @@ final class GuardiaController extends AbstractController
             'today' => $this->buildTodayView($covers->findAssignedTo($user, $today), $slotTimes, $now),
             'upcoming' => $this->groupByDay($covers->findUpcomingAssignedTo($user, $today->modify('+1 day')), $today),
             'slotTimes' => $slotTimes,
+            'breakDuties' => $year instanceof AcademicYear ? $breakDuties->findByTeacher($year, $user) : [],
+            'breakSlots' => $timeSlots->findBreaksByYear($year instanceof AcademicYear ? $year : null),
+            'todayWeekday' => Weekday::from((int) $today->format('N')),
         ]);
     }
 
@@ -590,7 +600,7 @@ final class GuardiaController extends AbstractController
      * picker is limited to themselves. Reachable prefilled with {@code ?teacher=<id>} for a coordinator.
      */
     #[Route('/ausencia/nueva', name: 'guardia_absence_new', methods: ['GET'])]
-    public function newAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
+    public function newAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, ScheduleEntryRepository $schedule, AcademicYearRepository $years, BreakDutyGapRegistrar $breakGaps, TimeSlotRepository $timeSlots): Response
     {
         $canManage = $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $date = $this->dateFromRequest($request);
@@ -610,6 +620,14 @@ final class GuardiaController extends AbstractController
             ? $this->groupClassesBySlot($schedule->lectiveDayFor($year, $selected, $weekday))
             : [];
 
+        // The recreo the absence would leave unwatched, if this teacher is on the break rota that weekday.
+        // Offered as its own tick rather than inferred: a recreo is nobody's teaching period, so it is
+        // absent from the class list above, and the centre's rule (it is NOT re-covered, the equipo
+        // directivo is alerted) makes it something the person registering should see they are triggering.
+        $breakDuty = ($selected instanceof User && $year instanceof AcademicYear)
+            ? $breakGaps->dutyOn($year, $selected, $date)
+            : null;
+
         return $this->render('guardia/absence_new.html.twig', [
             'date' => $date,
             'weekday' => $weekday,
@@ -620,6 +638,8 @@ final class GuardiaController extends AbstractController
             // Name of the chosen teacher, so the picker can show their monogram next to the select.
             'selectedTeacherName' => $selected?->getFullName(),
             'dayClasses' => $dayClasses,
+            'breakDuty' => $breakDuty,
+            'breakSlots' => $timeSlots->findBreaksByYear($year instanceof AcademicYear ? $year : null),
         ]);
     }
 
@@ -697,7 +717,10 @@ final class GuardiaController extends AbstractController
 
         // The periods ticked on the class list, each with its own optional task.
         $slotIndexes = array_map(intval(...), $request->request->all('slots'));
-        if ([] === $slotIndexes) {
+        // Ticking only the recreo is a legitimate registration on its own: a teacher may be away on a day
+        // they teach nothing yet still leave their zone unwatched.
+        $missesBreak = $request->request->getBoolean('misses_break');
+        if ([] === $slotIndexes && !$missesBreak) {
             $this->addFlash('error', 'Marca al menos una hora en la que falta el profesor.');
 
             return $this->redirectToRoute('guardia_absence_new', ['date' => $date->format('Y-m-d'), 'teacher' => $teacher->getId()]);
@@ -723,7 +746,7 @@ final class GuardiaController extends AbstractController
             ];
         }
 
-        $result = $registrar->register($year, $teacher, $date, $slotIndexes, '' !== $reason ? $reason : null, $taskBySlot);
+        $result = $registrar->register($year, $teacher, $date, $slotIndexes, '' !== $reason ? $reason : null, $taskBySlot, $missesBreak);
 
         // A document uploaded for a period that ended up skipped (free / already registered) is now
         // referenced by no cover: delete it so it does not linger in storage forever.
@@ -734,6 +757,12 @@ final class GuardiaController extends AbstractController
         }
 
         $this->flashRegistration($teacher, $result);
+
+        // When the only consequence was an unwatched recreo, the parte has nothing new to show: land on
+        // the gaps screen, which is where somebody has to go looking for a volunteer.
+        if ([] === $result->createdSlots && null !== $result->breakGap) {
+            return $this->redirectToRoute('break_duty_gap_index');
+        }
 
         return $this->backToParte($date, $result->createdSlots[0] ?? ($slotIndexes[0] ?? 0));
     }
@@ -747,7 +776,19 @@ final class GuardiaController extends AbstractController
      */
     private function flashRegistration(User $teacher, AbsenceRegistrationResult $result): void
     {
+        // The recreo is reported apart from the covers, because it is the opposite of a cover: nothing was
+        // assigned and nothing will be. Saying so here is what stops "no se generó ninguna guardia" from
+        // reading as "nothing happened" on a day whose only consequence was an unwatched zone.
+        $breakNote = null !== $result->breakGap
+            ? sprintf(' El recreo de %s se queda sin vigilar: avisado el equipo directivo para buscar un voluntario.', $result->breakGap->getAssignment()->getZone()->getName())
+            : '';
+
         if (0 === $result->createdCount()) {
+            if ('' !== $breakNote) {
+                $this->addFlash('warning', sprintf('No se generó ninguna guardia para %s (no da clase esas horas o ya estaban en el parte).%s', $teacher->getFullName(), $breakNote));
+
+                return;
+            }
             $this->addFlash('error', sprintf('No se generó ninguna guardia para %s: no da clase esas horas o ya estaban en el parte.', $teacher->getFullName()));
 
             return;
@@ -760,7 +801,7 @@ final class GuardiaController extends AbstractController
         if ($result->skippedExisting > 0) {
             $msg .= sprintf(' %d ya estaba(n) en el parte.', $result->skippedExisting);
         }
-        $this->addFlash('success', $msg);
+        $this->addFlash('success', $msg.$breakNote);
     }
 
     /**

@@ -127,4 +127,29 @@
             </aside>
         </div>
     {% endif %}
+
+    {# La guardia de recreo NO es una fila más del día: es fija todo el curso, así que se cuenta una vez
+       como un hecho permanente ("los martes, patio") y no una vez por cada martes del año. Va fuera del
+       if de arriba porque el profesor la tiene igual haya o no guardias de sustitución hoy. #}
+    {% if breakDuties is not empty %}
+        <section class="card">
+            <h2>Mi guardia de recreo</h2>
+            <table class="worklist">
+                <thead><tr><th scope="col">Día</th><th scope="col">Zona</th><th scope="col">Horas</th></tr></thead>
+                <tbody>
+                    {% for duty in breakDuties %}
+                        <tr>
+                            <td>
+                                <strong>{{ duty.weekday.label }}</strong>
+                                {% if duty.weekday.value == todayWeekday.value %}<span class="badge badge--accent">Hoy</span>{% endif %}
+                            </td>
+                            <td>{{ duty.zone.name }}</td>
+                            <td class="mono">{{ include('guardia/_break_times.html.twig', {duty: duty, breakSlots: breakSlots}) }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <p class="help">Es la misma todo el curso. Si vas a faltar, apúntalo en «Voy a faltar…» y marca también el recreo: no se reasigna a nadie, pero avisa al equipo directivo para buscar un voluntario.</p>
+        </section>
+    {% endif %}
 {% endblock %}
