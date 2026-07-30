@@ -43,7 +43,7 @@ final class RelocationSolver
 
         $placements = [];
         foreach ($this->hardestFirst($displacements, $freeByMoment) as $index => $displacement) {
-            $key = $displacement->moment().'|'.$displacement->originRoom->getId();
+            $key = $displacement->moment().'|'.$displacement->togetherKey;
             $room = $together[$key] ?? null;
 
             if (null === $room) {
@@ -106,7 +106,7 @@ final class RelocationSolver
      */
     private function candidatesFor(Displacement $displacement, array $freeByMoment, array $taken): array
     {
-        $size = $displacement->sizeNeeded();
+        $size = $displacement->sizeNeeded;
         $seats = $displacement->seatsNeeded();
         $moment = $displacement->moment();
 
@@ -168,7 +168,7 @@ final class RelocationSolver
         // sending one group to the assembly hall because it happened to be nearest is a bad plan.
         $slack = null === $room->getSize()
             ? 9
-            : $room->getSize()->groups() - ($displacement->sizeNeeded()?->groups() ?? 0);
+            : $room->getSize()->groups() - ($displacement->sizeNeeded?->groups() ?? 0);
 
         return match ($strategy) {
             ProposalStrategy::PRESERVE_SPECIALISED => [$specialised * 10, $distance, $slack, $room->getCode()],
@@ -184,13 +184,18 @@ final class RelocationSolver
      * anybody needs between periods. It stays at 3 for every room until somebody fills in the catalogue,
      * and then all candidates tie and the next term of the key decides.
      *
-     * @param Room $room   the candidate
-     * @param Room $origin the room being left
+     * @param Room      $room   the candidate
+     * @param Room|null $origin the room being left, or null for something that never had one (a workshop)
      *
      * @return int the penalty
      */
-    private function distance(Room $room, Room $origin): int
+    private function distance(Room $room, ?Room $origin): int
     {
+        // A workshop is not coming from anywhere, so no room is nearer than another for it.
+        if (null === $origin) {
+            return 0;
+        }
+
         if (null === $room->getBuilding() && null === $origin->getBuilding() && null === $room->getFloor() && null === $origin->getFloor()) {
             return 3;
         }

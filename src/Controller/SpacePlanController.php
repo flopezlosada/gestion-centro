@@ -123,6 +123,7 @@ final class SpacePlanController extends AbstractController
             'rooms' => $rooms->findActive(),
             'activityForm' => $this->createForm(SpaceOccupationBlockType::class, null, [
                 'slot_choices' => $this->slotChoices($schedule, $plan->getAcademicYear()),
+                'group_choices' => $this->groupChoices($schedule, $plan->getAcademicYear()),
                 'action' => $this->generateUrl('space_plan_activity_add', ['id' => $plan->getId()]),
             ]),
             // Shown before approving rather than after failing: whoever decides sees the double booking
@@ -268,17 +269,24 @@ final class SpacePlanController extends AbstractController
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ESPACIOS);
         $this->assertEditable($plan);
 
-        $form = $this->createForm(SpaceOccupationBlockType::class, null, ['slot_choices' => $this->slotChoices($schedule, $plan->getAcademicYear())]);
+        $form = $this->createForm(SpaceOccupationBlockType::class, null, [
+            'slot_choices' => $this->slotChoices($schedule, $plan->getAcademicYear()),
+            'group_choices' => $this->groupChoices($schedule, $plan->getAcademicYear()),
+        ]);
         $form->handleRequest($request);
 
         if (!$form->isSubmitted() || !$form->isValid()) {
-            $this->addFlash('error', 'Revisa los datos: hacen falta un nombre, al menos un aula, las fechas y al menos una hora.');
+            $this->addFlash('error', 'Revisa los datos: hacen falta un nombre, las fechas y al menos una hora.');
 
             return $this->redirectToRoute('space_plan_show', ['id' => $plan->getId()]);
         }
 
-        /** @var array{title: string, rooms: iterable<Room>, from: \DateTimeImmutable, to: \DateTimeImmutable, slots: list<int>} $data */
+        /** @var array{title: string, rooms: iterable<Room>, groups: list<string>, from: \DateTimeImmutable, to: \DateTimeImmutable, slots: list<int>} $data */
         $data = $form->getData();
+        // No rooms named means "find one": ONE activity per day, whose room the engine decides. Naming
+        // rooms means the event takes those, so there is one activity per room and day.
+        $rooms = [...$data['rooms']];
+        $targets = [] === $rooms ? [null] : $rooms;
 
         $created = 0;
         $skippedDays = 0;
@@ -288,12 +296,13 @@ final class SpacePlanController extends AbstractController
                 continue;
             }
 
-            foreach ($data['rooms'] as $room) {
+            foreach ($targets as $room) {
                 $activity = (new SpacePlanActivity())
                     ->setTitle($data['title'])
                     ->setRoom($room)
                     ->setFixedDate($date)
-                    ->setFixedSlots($data['slots']);
+                    ->setFixedSlots($data['slots'])
+                    ->setTargetGroupNames($data['groups']);
                 $plan->addActivity($activity);
                 $em->persist($activity);
                 ++$created;
@@ -458,6 +467,22 @@ final class SpacePlanController extends AbstractController
         }
 
         return $choices;
+    }
+
+    /**
+     * The course's groups as form choices, so a workshop's audience is picked from the timetable rather
+     * than typed in (a name that does not match exactly would size the room wrong).
+     *
+     * @param ScheduleEntryRepository $schedule the timetable repository
+     * @param AcademicYear            $year     the course
+     *
+     * @return array<string, string> group name → group name
+     */
+    private function groupChoices(ScheduleEntryRepository $schedule, AcademicYear $year): array
+    {
+        $groups = $schedule->distinctGroupNames($year);
+
+        return array_combine($groups, $groups);
     }
 
     /**

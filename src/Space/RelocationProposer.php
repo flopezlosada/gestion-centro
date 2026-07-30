@@ -23,11 +23,18 @@ use App\Service\SchoolCalendar;
  * makes the criteria testable without fixtures — and it is the same shape the guardia module already
  * uses ({@see \App\Guardia\GuardiaScheduler} over {@see \App\Guardia\GuardiaAssigner}).
  *
+ * It places two kinds of thing, and they turn out to be the same problem: a LESSON thrown out of its
+ * room, and a WORKSHOP that never had one (the cultural days, where the equipo directivo brings the
+ * timetable of workshops already decided and only the rooms are missing). Both are "this many groups, at
+ * this moment, need a room at least this big", so one solver does both.
+ *
  * Two things it does NOT do, said out loud rather than discovered later:
- *  - An activity with no room and no date (a workshop to be placed) is left alone. Placing sessions and
- *    staff is the cultural-days engine, a later phase; this one relocates what an event displaces.
- *  - It proposes; it never approves. Nothing it writes affects the effective timetable until a person
- *    picks an option and approves the plan.
+ *  - An activity with no DATE is left alone: deciding which day a workshop runs on is the centre's, not
+ *    the program's. Give it a date and periods and it will find it a room.
+ *  - It assigns rooms, never teachers. Sharing out who runs each workshop is the next piece.
+ *
+ * And it proposes; it never approves. Nothing it writes affects the effective timetable until a person
+ * picks an option and approves the plan.
  */
 final class RelocationProposer
 {
@@ -148,7 +155,18 @@ final class RelocationProposer
             $fixedLines[] = $this->activityLine($activity, $room, $date, $slotIndex);
         }
 
+        // Activities with a date and periods but NO room: workshops waiting for one. They compete for
+        // the same free rooms as the displaced lessons, through the same solver.
         $displacements = [];
+        foreach ($plan->getActivities() as $activity) {
+            if (null !== $activity->getRoom() || $activity->getFixedDate()?->format('Y-m-d') !== $date->format('Y-m-d')) {
+                continue;
+            }
+            if (\in_array($slotIndex, $activity->getFixedSlots(), true)) {
+                $displacements[] = Displacement::forActivity($date, $slotIndex, $activity);
+            }
+        }
+
         $free = [];
         foreach ($availability->occupied as $occupation) {
             $roomId = $occupation->room->getId();
@@ -172,15 +190,7 @@ final class RelocationProposer
                     continue;
                 }
 
-                $displacements[] = new Displacement(
-                    $date,
-                    $slotIndex,
-                    $occupation->room,
-                    $entry->getGroupName(),
-                    $entry->getSubjectName(),
-                    $entry->getTeacher(),
-                    $entry,
-                );
+                $displacements[] = Displacement::fromLesson($date, $slotIndex, $occupation->room, $entry);
             }
         }
 
@@ -262,11 +272,13 @@ final class RelocationProposer
             $option->addAssignment((new SpacePlanAssignment())
                 ->setDate($displacement->date)
                 ->setSlotIndex($displacement->slotIndex)
-                ->setKind(AssignmentKind::RELOCATION)
+                // A workshop that just got a room is an ACTIVITY, not a relocation: nothing was moved.
+                ->setKind(null === $displacement->originRoom ? AssignmentKind::ACTIVITY : AssignmentKind::RELOCATION)
                 ->setRoom($placement->room)
-                ->setOriginRoomName($displacement->originRoom->getCode())
+                ->setOriginRoomName($displacement->originRoom?->getCode())
                 ->setGroupNames($displacement->groupNames)
                 ->setSubjectName($displacement->subjectName)
+                ->setActivityTitle($displacement->activityTitle)
                 ->setTeacher($displacement->teacher)
                 ->setSourceEntry($displacement->sourceEntry));
 
@@ -285,8 +297,10 @@ final class RelocationProposer
             }
         }
 
+        $moved = \count(array_filter($placements, static fn (Placement $p): bool => null !== $p->displacement->originRoom));
         $option->setMetrics([
-            'movedClasses' => \count($placements),
+            'movedClasses' => $moved,
+            'placedActivities' => \count($placements) - $moved,
             'affectedGroups' => \count($groups),
             'affectedTeachers' => \count($teachers),
             'specialisedRoomsUsed' => $specialised,
@@ -307,7 +321,14 @@ final class RelocationProposer
     private function rationale(SpacePlanOption $option): string
     {
         $moved = $option->metric('movedClasses');
-        $parts = [sprintf('Mueve %d clase%s de %d grupo%s', $moved, 1 === $moved ? '' : 's', $option->metric('affectedGroups'), 1 === $option->metric('affectedGroups') ? '' : 's')];
+        $placed = $option->metric('placedActivities');
+        $parts = [];
+        if ($moved > 0 || 0 === $placed) {
+            $parts[] = sprintf('Mueve %d clase%s de %d grupo%s', $moved, 1 === $moved ? '' : 's', $option->metric('affectedGroups'), 1 === $option->metric('affectedGroups') ? '' : 's');
+        }
+        if ($placed > 0) {
+            $parts[] = sprintf('coloca %d %s de actividad', $placed, 1 === $placed ? 'sesión' : 'sesiones');
+        }
 
         if ($option->metric('specialisedRoomsUsed') > 0) {
             $parts[] = sprintf('ocupa %d espacio%s especializado%s', $option->metric('specialisedRoomsUsed'), 1 === $option->metric('specialisedRoomsUsed') ? '' : 's', 1 === $option->metric('specialisedRoomsUsed') ? '' : 's');

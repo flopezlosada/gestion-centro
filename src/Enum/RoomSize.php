@@ -75,6 +75,24 @@ enum RoomSize: string
     }
 
     /**
+     * The smallest size that holds the given number of whole groups — how a workshop for two groups
+     * turns into "needs a room for two groups".
+     *
+     * @param int $groups how many groups have to fit
+     *
+     * @return self the size needed
+     */
+    public static function forGroups(int $groups): self
+    {
+        return match (true) {
+            $groups <= 0 => self::SMALL,
+            1 === $groups => self::ONE_GROUP,
+            2 === $groups => self::TWO_GROUPS,
+            default => self::MANY_GROUPS,
+        };
+    }
+
+    /**
      * The curated order in which sizes are offered, smallest first.
      *
      * @return list<RoomSize> every size, in display order

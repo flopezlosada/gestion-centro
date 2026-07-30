@@ -147,6 +147,38 @@ final class RelocationSolverTest extends TestCase
         self::assertSame('2IN5', $placements[0]->room?->getCode());
     }
 
+    public function testAWorkshopWithNoRoomOfItsOwnIsPlacedTooAndSizedByItsGroups(): void
+    {
+        // The cultural days: the centre brings the workshop timetable decided and only the rooms are
+        // missing. Two groups going to one workshop need a room for two groups.
+        $workshop = new Displacement(
+            date: $this->monday,
+            slotIndex: 0,
+            togetherKey: 'activity:7:0',
+            sizeNeeded: RoomSize::TWO_GROUPS,
+            groupNames: 'E1A, E1B',
+            activityTitle: 'Taller de primeros auxilios',
+        );
+        $small = $this->sized($this->room(1, '0LC1', RoomKind::CLASSROOM, null), RoomSize::ONE_GROUP);
+        $big = $this->sized($this->room(2, 'BIBL', RoomKind::LIBRARY, null), RoomSize::TWO_GROUPS);
+
+        $placements = $this->solver->solve([$workshop], [$workshop->moment() => [$small, $big]], ProposalStrategy::NEAREST);
+
+        self::assertSame('BIBL', $placements[0]->room?->getCode(), 'the one-group room cannot hold two groups');
+        self::assertNull($placements[0]->displacement->originRoom, 'a workshop comes from nowhere');
+    }
+
+    public function testTwoWorkshopsAtTheSameHourDoNotShareARoom(): void
+    {
+        $first = new Displacement(date: $this->monday, slotIndex: 0, togetherKey: 'activity:1:0', activityTitle: 'Taller A');
+        $second = new Displacement(date: $this->monday, slotIndex: 0, togetherKey: 'activity:2:0', activityTitle: 'Taller B');
+        $free = [$this->room(1, '0LC1', RoomKind::CLASSROOM, null), $this->room(2, '0LC7', RoomKind::CLASSROOM, null)];
+
+        $placements = $this->solver->solve([$first, $second], [$first->moment() => $free], ProposalStrategy::NEAREST);
+
+        self::assertNotSame($placements[0]->room?->getCode(), $placements[1]->room?->getCode());
+    }
+
     public function testNearestPrefersTheSameFloorOfTheSameBuilding(): void
     {
         $origin = $this->room(1, '2IN5', RoomKind::CLASSROOM, 30, 'A', 1);
@@ -261,6 +293,14 @@ final class RelocationSolverTest extends TestCase
      */
     private function displacement(Room $origin, string $group, int $slot = 0, ?\DateTimeImmutable $date = null): Displacement
     {
-        return new Displacement($date ?? $this->monday, $slot, $origin, $group, 'Materia');
+        return new Displacement(
+            date: $date ?? $this->monday,
+            slotIndex: $slot,
+            togetherKey: 'room:'.$origin->getId(),
+            originRoom: $origin,
+            sizeNeeded: $origin->getSize(),
+            groupNames: $group,
+            subjectName: 'Materia',
+        );
     }
 }

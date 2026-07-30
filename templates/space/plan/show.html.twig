@@ -89,7 +89,10 @@
                     {% for activity in plan.activities %}
                         <tr>
                             <td><strong>{{ activity.title }}</strong></td>
-                            <td>{{ activity.room ? activity.room.label : '<span class="muted">que lo decida el programa</span>'|raw }}</td>
+                            <td>
+                                {{ activity.room ? activity.room.label : '<span class="muted">que lo decida el programa</span>'|raw }}
+                                {% if activity.targetGroupNames is not empty %}<div class="muted">{{ activity.targetGroupNames|join(', ') }}</div>{% endif %}
+                            </td>
                             <td>
                                 {% if activity.fixedDate %}{{ activity.fixedDate|date('d/m/Y', false) }}{% else %}<span class="muted">sin día fijo</span>{% endif %}
                                 {% if activity.fixedSlots is not empty %}
@@ -114,10 +117,10 @@
             <details class="callout__more">
                 <summary>Añadir lo que ocupa el evento</summary>
                 <div class="form-card">
-                    <p class="help">Varias aulas y varios días de una vez: para una semana de exámenes, marca las aulas donde se examina, el rango de días y las horas. Los días no lectivos se saltan solos.</p>
+                    <p class="help">Varias aulas y varios días de una vez. <strong>Semana de exámenes:</strong> marca las aulas donde se examina, el rango de días y las horas. <strong>Taller de jornadas culturales:</strong> deja las aulas vacías, marca los grupos que van, y el programa le busca aula del tamaño que haga falta. Los días no lectivos se saltan solos.</p>
                     {{ form_start(activityForm, { 'attr': { 'novalidate': 'novalidate' } }) }}
                         {{ form_errors(activityForm) }}
-                        {{ f.fields([activityForm.title, activityForm.rooms, activityForm.from, activityForm.to]) }}
+                        {{ f.fields([activityForm.title, activityForm.rooms, activityForm.groups, activityForm.from, activityForm.to]) }}
                         <div class="form-row">
                             {{ form_label(activityForm.slots) }}
                             <div class="slot-checks">{{ form_widget(activityForm.slots) }}</div>

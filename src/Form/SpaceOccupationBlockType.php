@@ -25,10 +25,14 @@ use Symfony\Component\Validator\Constraints\NotNull;
  * forms, and a person filling in sixteen identical forms makes mistakes on the fourteenth. Here they
  * pick the rooms, the range of days and the periods once, and the screen creates the lines.
  *
+ * The same form covers the cultural days, which the centre brings already decided ("cada grupo entero va
+ * a un taller, a veces varios grupos al mismo taller"): name the workshop, say which groups go and when,
+ * and leave the rooms EMPTY — then the engine finds each session a room big enough for those groups.
+ *
  * It is not backed by an entity: the controller turns it into as many {@see \App\Entity\SpacePlanActivity}
  * as it describes.
  *
- * @extends AbstractType<array{title: string, rooms: list<Room>, from: \DateTimeImmutable, to: \DateTimeImmutable, slots: list<int>}>
+ * @extends AbstractType<array{title: string, rooms: list<Room>, groups: list<string>, from: \DateTimeImmutable, to: \DateTimeImmutable, slots: list<int>}>
  */
 final class SpaceOccupationBlockType extends AbstractType
 {
@@ -50,8 +54,16 @@ final class SpaceOccupationBlockType extends AbstractType
                 'choice_label' => static fn (Room $r): string => $r->getLabel(),
                 'multiple' => true,
                 'expanded' => false,
-                'constraints' => [new Count(min: 1, minMessage: 'Elige al menos un aula.')],
-                'help' => 'Todas las que se quedan tomadas. Para la semana de exámenes, las aulas donde se examina.',
+                'required' => false,
+                'help' => 'Las que se quedan tomadas (para la semana de exámenes, donde se examina). Déjalo VACÍO en un taller para que el programa le busque aula.',
+            ])
+            ->add('groups', ChoiceType::class, [
+                'label' => 'Grupos que van',
+                'choices' => $options['group_choices'],
+                'multiple' => true,
+                'expanded' => false,
+                'required' => false,
+                'help' => 'Para un taller de jornadas culturales: qué grupos asisten. De aquí sale el tamaño de aula que necesita.',
             ])
             ->add('from', DateType::class, [
                 'label' => 'Desde el día',
@@ -75,7 +87,8 @@ final class SpaceOccupationBlockType extends AbstractType
 
     public function configureOptions(OptionsResolver $resolver): void
     {
-        $resolver->setDefaults(['slot_choices' => []]);
+        $resolver->setDefaults(['slot_choices' => [], 'group_choices' => []]);
         $resolver->setAllowedTypes('slot_choices', 'array');
+        $resolver->setAllowedTypes('group_choices', 'array');
     }
 }
