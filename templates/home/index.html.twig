@@ -34,21 +34,60 @@
                 </div>
                 <div class="guardia-hero__line">
                     {% if nextGuardia.startsAt %}<span class="guardia-hero__time">{{ nextGuardia.startsAt|date('H:i') }}</span>{% endif %}
-                    <span class="guardia-hero__where">{{ g.roomName ?: 'Aula por asignar' }}{% if g.groupName %} · {{ g.groupName }}{% endif %}</span>
+                    {#- effectiveRoomName, no roomName: si a este grupo lo han juntado con otros en un aula
+                        grande, el sitio al que hay que ir es ESE. Inicio no puede decir un aula distinta
+                        de la que dicen "Mis guardias" y el detalle. -#}
+                    <span class="guardia-hero__where">{{ g.effectiveRoomName ?: 'Aula por asignar' }}{% if g.groupName %} · {{ g.groupName }}{% endif %}</span>
                 </div>
                 <div class="guardia-hero__sub">Cubres a {{ g.absentTeacher.fullName }} · {% if g.hasTask %}<span class="guardia-hero__task">tiene tarea</span>{% else %}<span class="guardia-hero__notask">sin tarea</span>{% endif %}</div>
             </a>
         {% else %}
+            {#- Sin guardia PENDIENTE hoy. Dos casos que no son el mismo: no tenías ninguna, o ya las has
+                hecho todas (y entonces siguen listadas debajo, así que decir "hoy no tienes guardia"
+                contradiría la lista). -#}
             <a class="no-guardia" href="{{ path('guardia_mine') }}">
                 <span class="no-guardia__icon" aria-hidden="true">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
                 </span>
                 <span class="no-guardia__body">
-                    <span class="no-guardia__title">Hoy no tienes guardia</span>
+                    <span class="no-guardia__title">
+                        {%- if guardiasTodayCount > 0 -%}
+                            Ya has hecho {{ guardiasTodayCount == 1 ? 'tu guardia de hoy' : 'tus ' ~ guardiasTodayCount ~ ' guardias de hoy' }}
+                        {%- else -%}
+                            Hoy no tienes guardia
+                        {%- endif -%}
+                    </span>
                     {% if upcomingGuardia %}<span class="no-guardia__meta">Próxima: {{ dias[upcomingGuardia.cover.date|date('N')] }} {{ upcomingGuardia.cover.date|date('d/m') }}{% if upcomingGuardia.startsAt %} · {{ upcomingGuardia.startsAt|date('H:i') }}{% endif %}</span>{% endif %}
                 </span>
                 <span class="no-guardia__cta">Ver</span>
             </a>
+        {% endif %}
+
+        {# ---- El resto de tus guardias de hoy. El centro pidió que aparezcan TODAS, no solo la próxima:
+               un día con tres guardias tiene que leerse como tres. Las ya pasadas siguen aquí, marcadas
+               como hechas, porque desaparecer sin más se lee como "no la tenías". Cada fila lleva a SU
+               guardia (la tarea del grupo y el aviso de RAICES viven en el detalle). ---- #}
+        {% if otherGuardiasToday is not empty %}
+            <section class="guardia-rest">
+                <h2 class="guardia-rest__title">{{ nextGuardia ? 'Resto de tus guardias de hoy' : 'Tus guardias de hoy' }}</h2>
+                <ul class="guardia-rest__list">
+                    {% for item in otherGuardiasToday %}
+                        {% set c = item.cover %}
+                        <li>
+                            <a class="guardia-rest__row{{ item.done ? ' is-done' }}" href="{{ path('guardia_cover_show', { id: c.id }) }}">
+                                <span class="guardia-rest__time">{% if item.startsAt %}{{ item.startsAt|date('H:i', false) }}{% else %}{{ c.slotIndex + 1 }}ª{% endif %}</span>
+                                <span class="guardia-rest__body">
+                                    <span class="guardia-rest__where">{{ [c.effectiveRoomName, c.groupName]|filter(v => v)|join(' · ') ?: 'Sin especificar' }}</span>
+                                    <span class="guardia-rest__who">{{ item.done ? 'Cubriste' : 'Cubres' }} a {{ c.absentTeacher.fullName }}</span>
+                                </span>
+                                {% if c.notCovered %}<span class="badge badge--danger" data-tone="danger">Incidencia</span>
+                                {% elseif item.done %}<span class="guardia-rest__flag">✓ Hecha</span>
+                                {% elseif c.hasTask %}<span class="badge badge--warning" data-tone="warning">Tarea</span>{% endif %}
+                            </a>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </section>
         {% endif %}
 
         {# En escritorio, todo lo de debajo del hero se reparte en dos columnas (rejilla responsive);
@@ -188,6 +227,23 @@
                                 <span class="tasklist__title">{{ t.title }}</span>
                                 <span class="tasklist__meta">{{ dias[t.dueDate|date('N')]|slice(0, 3) }} {{ t.dueDate|date('d/m') }} · tarea{% if t.unit %} · {{ t.unit.name }}{% endif %}</span>
                             </a>
+                        </li>
+                    {% elseif entry.kind == 'guardia' %}
+                        {#- Una guardia de los próximos días. Lleva ESCUDO, la misma forma con la que el
+                            calendario la distingue de la tarea (círculo) y del evento (cuadrado); aquí sí
+                            ocupa la columna del marcador porque no es decorativo, es lo que dice de qué
+                            tipo de compromiso se trata. La fecha va sin convertir de zona (|date(...,false)):
+                            el instante se compuso con la fecha del cover, no hay que moverlo. -#}
+                        {% set c = entry.guardia %}
+                        <li class="tasklist__item upcoming-item">
+                            <span class="tick tick--guardia" role="img" aria-label="Guardia">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            </span>
+                            <a class="tasklist__body" href="{{ path('guardia_cover_show', { id: c.id }) }}">
+                                <span class="tasklist__title">Guardia{% if c.effectiveRoomName or c.groupName %} · {{ [c.effectiveRoomName, c.groupName]|filter(v => v)|join(' · ') }}{% endif %}</span>
+                                <span class="tasklist__meta">{{ dias[entry.date|date('N', false)]|slice(0, 3) }} {{ entry.date|date('d/m', false) }} · cubres a {{ c.absentTeacher.fullName }}{% if c.hasTask %} · tiene tarea{% endif %}</span>
+                            </a>
+                            <span class="tasklist__go" aria-hidden="true">›</span>
                         </li>
                     {% else %}
                         {% set e = entry.event %}

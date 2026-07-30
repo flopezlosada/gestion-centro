@@ -1,0 +1,71 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Fotocopias{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Fotocopias{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Conserjería</p>
+            <h1>Encargos de fotocopias</h1>
+            <p class="lead">{% if seesAll %}Todos los encargos enviados a conserjería.{% else %}Los encargos que has enviado a conserjería.{% endif %} Salen por correo a <span class="mono">{{ recipient }}</span> con el documento adjunto y el número de copias.</p>
+        </div>
+        <a class="btn" href="{{ path('copy_request_new') }}">+ Nuevo encargo</a>
+    </div>
+
+    <div class="card">
+        {% if requests is empty %}
+            <div class="empty-state">
+                <h2>Todavía no has pedido fotocopias</h2>
+                <p>Desde una guardia puedes mandar la tarea del grupo a conserjería, o crear aquí un encargo suelto con cualquier documento.</p>
+                <a class="btn" href="{{ path('copy_request_new') }}">Nuevo encargo</a>
+            </div>
+        {% else %}
+            <table data-list-tools>
+                <thead>
+                    <tr>
+                        <th data-filter-range="Fecha">Enviado</th>
+                        <th>Para</th>
+                        <th>Copias</th>
+                        <th>Documento</th>
+                        {% if seesAll %}<th data-filter="Pedido por">Pedido por</th>{% endif %}
+                        <th data-filter="Estado">Estado</th>
+                        <th data-nosort></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in requests %}
+                        <tr>
+                            <td>{{ order.requestedAt|date('d/m/Y H:i', false) }}</td>
+                            <td>
+                                {{ order.context }}
+                                {% if order.notes %}<div class="help">{{ order.notes|excerpt(100) }}</div>{% endif %}
+                            </td>
+                            <td class="mono">{{ order.copies }}</td>
+                            <td>
+                                {% if order.hasDocument %}
+                                    <a href="{{ path('copy_request_download', { id: order.id }) }}">{{ order.documentName ?: 'documento' }}</a>
+                                {% else %}—{% endif %}
+                            </td>
+                            {% if seesAll %}<td>{{ order.requestedBy ? order.requestedBy.fullName : '—' }}</td>{% endif %}
+                            <td>
+                                {% if order.isSent %}
+                                    <span class="badge badge--ok" data-tone="success">Enviado</span>
+                                {% else %}
+                                    <span class="badge badge--danger" data-tone="danger">Sin enviar</span>
+                                {% endif %}
+                            </td>
+                            <td class="row-actions">
+                                <form method="post" action="{{ path('copy_request_resend', { id: order.id }) }}"{% if order.isSent %} data-confirm="Este encargo ya se envió. ¿Reenviarlo a conserjería?"{% endif %}>
+                                    <input type="hidden" name="_token" value="{{ csrf_token('copy_request_resend' ~ order.id) }}">
+                                    <button type="submit" class="btn btn-sm{{ order.isSent ? ' secondary' }}">{{ order.isSent ? 'Reenviar' : 'Reintentar envío' }}</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}

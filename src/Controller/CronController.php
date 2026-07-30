@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Service\EventReminderNotifier;
+use App\Service\GuardiaRaicesReminder;
 use App\Service\TaskReminderNotifier;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -45,18 +46,31 @@ final class CronController extends AbstractController
     }
 
     /**
-     * Every few minutes: push reminders for personal agenda events that are about to start.
+     * Every few minutes: the two sweeps that carry a minute-level antelación — push reminders for personal
+     * agenda events about to start, and the "apunta las ausencias en RAICES" reminder for the guardias
+     * being covered right now.
+     *
+     * They share ONE endpoint on purpose. Both want the same cadence, and splitting them would make the
+     * new one depend on somebody remembering to add a second entry to the host's cron table — a silent
+     * "no reminders ever" if they do not. One URL, one schedule, both sweeps.
+     *
+     * They also run unguarded, so a failure in the first stops the second this tick. That is deliberate:
+     * catching would turn a persistent breakage into a 200 with a half-done sweep, which no cron monitor
+     * would flag, and both sweeps are already best-effort per recipient ({@see NotificationDispatcher})
+     * and retried five minutes later. Better both fail loudly together than one fail quietly alone.
      */
     #[Route('/cron/event-reminders', name: 'cron_event_reminders', methods: ['GET'])]
-    public function eventReminders(Request $request, EventReminderNotifier $notifier): Response
+    public function eventReminders(Request $request, EventReminderNotifier $notifier, GuardiaRaicesReminder $raices): Response
     {
         $this->denyUnlessCronToken($request);
 
-        // PHP's default time zone, unlike the daily job above: this sweep compares clock times against
-        // the instants Doctrine wrote (see EventReminderNotifier's class doc).
-        $count = $notifier->sendDue(new \DateTimeImmutable('now'));
+        // PHP's default time zone, unlike the daily job above: these sweeps compare clock times against
+        // the instants Doctrine wrote / the timetable's period times (see each notifier's class doc).
+        $now = new \DateTimeImmutable('now');
+        $events = $notifier->sendDue($now);
+        $guardias = $raices->sendDue($now);
 
-        return new Response(\sprintf('%d avisos de agenda enviados.', $count));
+        return new Response(\sprintf('%d avisos de agenda y %d de RAICES enviados.', $events, $guardias));
     }
 
     /**

@@ -6,13 +6,16 @@ namespace App\Guardia;
 
 use App\Entity\AcademicYear;
 use App\Entity\ScheduleEntry;
+use App\Entity\TimeSlot;
 use App\Entity\User;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\ScheduleEntrySource;
 use App\Enum\Weekday;
 use App\Penalara\PenalaraTimetableParser;
 use App\Penalara\ScheduleEntryDto;
+use App\Penalara\TimeFrameSlotDto;
 use App\Repository\ScheduleEntryRepository;
+use App\Repository\TimeSlotRepository;
 use App\Repository\UserRepository;
 use App\Space\RoomSynchroniser;
 use Symfony\Component\String\Slugger\AsciiSlugger;
@@ -35,6 +38,11 @@ use Symfony\Component\String\Slugger\AsciiSlugger;
  * guardia pool. The one exception is a new LESSON on that period — a person cannot be on guardia while
  * teaching, so there the timetable wins and the hand-marked cell is dropped. Both are reported.
  *
+ * Besides the cells, an import records the course's marco horario ({@see TimeSlot}): the periods of the
+ * day with their times and which of them are recreos. That part is pure export data with no hand-edited
+ * counterpart, so it is simply rebuilt — but only when the export carries one, since losing it would
+ * leave the break duty rota with no recreo to show.
+ *
  * Shared by {@see \App\Command\ImportTimetableCommand} (CLI) and the admin self-service screen, so the
  * matching and persistence live here once rather than in each entry point.
  *
@@ -49,10 +57,34 @@ final class TimetableImporter
     public function __construct(
         private readonly UserRepository $users,
         private readonly ScheduleEntryRepository $schedule,
+        private readonly TimeSlotRepository $timeSlots,
         private readonly PenalaraTimetableParser $parser,
         private readonly RoomSynchroniser $rooms,
     ) {
         $this->slugger = new AsciiSlugger();
+    }
+
+    /**
+     * Turns the export's marco horario into {@see TimeSlot} rows for the course — the day's periods with
+     * their times and, crucially, which of them are recreos. Built even on a dry run so the preview can
+     * report what the import would record, and persisted only on the real one.
+     *
+     * @param AcademicYear           $year  the course the frame belongs to
+     * @param list<TimeFrameSlotDto> $frame the parsed periods
+     *
+     * @return list<TimeSlot> the periods to persist, earliest first
+     */
+    private function buildFrame(AcademicYear $year, array $frame): array
+    {
+        return array_map(
+            static fn (TimeFrameSlotDto $slot): TimeSlot => (new TimeSlot())
+                ->setAcademicYear($year)
+                ->setSlotIndex($slot->index)
+                ->setStartsAt(new \DateTimeImmutable($slot->startsAt))
+                ->setEndsAt(new \DateTimeImmutable($slot->endsAt))
+                ->setKind($slot->kind),
+            $frame,
+        );
     }
 
     /**
@@ -69,7 +101,8 @@ final class TimetableImporter
      */
     public function import(AcademicYear $year, string $planificadorXml, string $horarioXml, bool $dryRun = false): TimetableImportResult
     {
-        $byTeacher = $this->groupByTeacher($this->parser->parse($planificadorXml, $horarioXml));
+        $parsed = $this->parser->parse($planificadorXml, $horarioXml);
+        $byTeacher = $this->groupByTeacher($parsed->entries);
         [$matched, $unmatched] = $this->reconcile($byTeacher, $dryRun);
 
         // Read before writing: what is already there is what the report compares the export against.
@@ -78,9 +111,15 @@ final class TimetableImporter
         $stale = $this->staleTeachers($year, $matched);
 
         [$entries, $keptManual, $dropManualIds] = $this->buildEntries($year, $byTeacher, $matched, $this->schedule->manualDutyCells($year));
+        $frame = $this->buildFrame($year, $parsed->frame);
         $newRooms = [];
         if (!$dryRun) {
             $this->schedule->replaceForTeachers($year, $teachers, $entries, $dropManualIds);
+            // Only when the export actually carried a marco horario: a planificador without one must not
+            // wipe the day's shape, which is what the break duty rota reads its times from.
+            if ([] !== $frame) {
+                $this->timeSlots->replaceForYear($year, $frame);
+            }
             // The cells are in; now make sure every room they name has a card and points at it. A dry
             // run must not do this — previewing an import may not create anything, catalogue included.
             $newRooms = $this->rooms->sync()->createdCodes;
@@ -98,6 +137,9 @@ final class TimetableImporter
             $keptManual,
             \count($dropManualIds),
             $stale,
+            \count($frame),
+            \count(array_filter($frame, static fn (TimeSlot $s): bool => $s->isBreak())),
+            $parsed->frameConflicts,
             $newRooms,
         );
     }

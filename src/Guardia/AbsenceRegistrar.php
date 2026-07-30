@@ -25,6 +25,10 @@ use Doctrine\ORM\EntityManagerInterface;
  * This is the single entry point behind both the coordinator's "apuntar ausencia" screen and a
  * teacher self-reporting their own absence, so the "register → auto-assign → notify" flow lives in
  * one place.
+ *
+ * A recreo the absence leaves unwatched is handled apart, through {@see BreakDutyGapRegistrar}: break
+ * duties are not periods anybody teaches and the centre's rule is that they are NOT re-covered, so
+ * instead of joining the split they are recorded and the equipo directivo is alerted.
  */
 final class AbsenceRegistrar
 {
@@ -33,6 +37,7 @@ final class AbsenceRegistrar
         private readonly GuardiaCoverRepository $covers,
         private readonly AbsenceRepository $absences,
         private readonly GuardiaScheduler $scheduler,
+        private readonly BreakDutyGapRegistrar $breakGaps,
         private readonly EntityManagerInterface $em,
     ) {
     }
@@ -46,13 +51,17 @@ final class AbsenceRegistrar
      * @param list<int>|null     $slotIndexes the periods to register, or null for the whole teaching day
      * @param string|null        $reason      the private reason for the absence; only set when non-empty,
      *                                         so re-registering more periods without retyping it keeps it
-     * @param array<int, array{documentPath?: ?string, documentName?: ?string, description?: ?string}> $taskBySlot
+     * @param array<int, array{documentPath?: ?string, documentName?: ?string, description?: ?string, copies?: ?int}> $taskBySlot
      *                                         per-period task (slot index → the group's document and/or
-     *                                         description); each period/group carries its own work
+     *                                         description, plus the copies it needs); each period/group
+     *                                         carries its own work
+     * @param bool               $missesBreakDuty whether the absence also covers the recreo: told, not
+     *                                         inferred, because a recreo is nobody's teaching period and
+     *                                         so cannot be read off the periods ticked
      *
      * @return AbsenceRegistrationResult what was created and what was skipped
      */
-    public function register(AcademicYear $year, User $teacher, \DateTimeImmutable $date, ?array $slotIndexes, ?string $reason, array $taskBySlot = []): AbsenceRegistrationResult
+    public function register(AcademicYear $year, User $teacher, \DateTimeImmutable $date, ?array $slotIndexes, ?string $reason, array $taskBySlot = [], bool $missesBreakDuty = false): AbsenceRegistrationResult
     {
         $weekday = Weekday::from((int) $date->format('N'));
         $slots = $slotIndexes ?? $this->schedule->lectiveSlotsFor($year, $teacher, $weekday);
@@ -95,9 +104,13 @@ final class AbsenceRegistrar
                 ->setAbsentTeacher($teacher)
                 ->setGroupName(self::snapshot(array_map(static fn (ScheduleEntry $e): ?string => $e->getGroupName(), $entries)))
                 ->setRoomName(self::snapshot(array_map(static fn (ScheduleEntry $e): ?string => $e->getRoomName(), $entries)))
+                // La materia se congela aquí porque es con lo que se casa el banco de tareas: el grupo
+                // trabaja la asignatura que le tocaba, y eso no puede depender de un reimport posterior.
+                ->setSubjectName(self::onlySubject($entries))
                 ->setTaskDocumentPath($task['documentPath'] ?? null)
                 ->setTaskDocumentName($task['documentName'] ?? null)
-                ->setTaskDescription($task['description'] ?? null));
+                ->setTaskDescription($task['description'] ?? null)
+                ->setCopiesNeeded($task['copies'] ?? null));
             $createdSlots[] = $slotIndex;
         }
 
@@ -114,7 +127,32 @@ final class AbsenceRegistrar
             $this->scheduler->autoAssign($year, $date, $slotIndex);
         }
 
-        return new AbsenceRegistrationResult($createdSlots, $skippedFree, $skippedExisting);
+        // The recreo is a separate consequence of the same absence: it is never re-covered, only recorded
+        // and alerted. It stands on its own — a teacher whose day holds no lesson at all (so no cover was
+        // created) still leaves their zone unwatched.
+        $breakGap = $missesBreakDuty ? $this->breakGaps->register($year, $teacher, $date) : null;
+
+        return new AbsenceRegistrationResult($createdSlots, $skippedFree, $skippedExisting, $breakGap);
+    }
+
+    /**
+     * The subject of a period, when there is exactly ONE. A multi-subject period (a grouped optional,
+     * an activity covering several classes at once) yields null on purpose: the bank matches the
+     * subject exactly, so "Matemáticas, Física" would match nothing and the covering teacher would be
+     * told the bank is empty instead of being asked to pick by hand — which is what null does.
+     *
+     * @param list<ScheduleEntry> $entries the period's classes
+     *
+     * @return string|null the single subject, or null when there is none or more than one
+     */
+    private static function onlySubject(array $entries): ?string
+    {
+        $subjects = array_values(array_unique(array_filter(
+            array_map(static fn (ScheduleEntry $e): string => trim((string) $e->getSubjectName()), $entries),
+            static fn (string $s): bool => '' !== $s,
+        )));
+
+        return 1 === \count($subjects) ? $subjects[0] : null;
     }
 
     /**

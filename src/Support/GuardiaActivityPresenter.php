@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support;
 
 use App\Entity\AuditLog;
+use App\Entity\GuardiaTaskBankItem;
 use App\Entity\User;
 use Doctrine\ORM\EntityManagerInterface;
 
@@ -25,6 +26,8 @@ final class GuardiaActivityPresenter
         'notCovered' => ['label' => 'Sin cubrir', 'kind' => 'bool'],
         'taskDescription' => ['label' => 'Descripción de la tarea', 'kind' => 'text'],
         'taskDocumentName' => ['label' => 'Documento de tarea', 'kind' => 'text'],
+        'bankItem' => ['label' => 'Tarea del banco', 'kind' => 'bank'],
+        'copiesNeeded' => ['label' => 'Copias que hacen falta', 'kind' => 'text'],
         'groupName' => ['label' => 'Grupo', 'kind' => 'text'],
         'roomName' => ['label' => 'Aula', 'kind' => 'text'],
     ];
@@ -52,9 +55,10 @@ final class GuardiaActivityPresenter
     public function present(array $entries): array
     {
         $userNames = $this->resolveUserNames($entries);
+        $bankTitles = $this->resolveBankTitles($entries);
         $actors = $this->resolveActorNames($entries);
 
-        return array_map(function (AuditLog $entry) use ($userNames, $actors): array {
+        return array_map(function (AuditLog $entry) use ($userNames, $bankTitles, $actors): array {
             $parts = explode('.', $entry->getAction());
             $verb = end($parts);
             $actor = $entry->getActor();
@@ -64,7 +68,7 @@ final class GuardiaActivityPresenter
                 'actor' => null === $actor || '' === $actor ? null : ($actors[$actor] ?? $actor),
                 'occurredAt' => $entry->getOccurredAt(),
                 'motivo' => $entry->getSummary(),
-                'changes' => 'updated' === $verb ? $this->friendlyChanges($entry->getChanges() ?? [], $userNames) : [],
+                'changes' => 'updated' === $verb ? $this->friendlyChanges($entry->getChanges() ?? [], $userNames, $bankTitles) : [],
             ];
         }, $entries);
     }
@@ -73,12 +77,13 @@ final class GuardiaActivityPresenter
      * Humanises the real field changes, skipping unmapped properties (date/slot/absent teacher — set
      * once at creation and not shown as diffs here).
      *
-     * @param array<string, mixed>   $changes   the raw diff
-     * @param array<int, string>     $userNames resolved user id → name
+     * @param array<string, mixed> $changes    the raw diff
+     * @param array<int, string>   $userNames  resolved user id → name
+     * @param array<int, string>   $bankTitles resolved bank task id → title
      *
      * @return list<array{label: string, old: string, new: string}> the humanised changes
      */
-    private function friendlyChanges(array $changes, array $userNames): array
+    private function friendlyChanges(array $changes, array $userNames, array $bankTitles): array
     {
         $rows = [];
         foreach ($changes as $field => $change) {
@@ -88,8 +93,8 @@ final class GuardiaActivityPresenter
             }
             $rows[] = [
                 'label' => $meta['label'],
-                'old' => $this->formatValue($meta['kind'], $change['old'], $userNames),
-                'new' => $this->formatValue($meta['kind'], $change['new'] ?? null, $userNames),
+                'old' => $this->formatValue($meta['kind'], $change['old'], $userNames, $bankTitles),
+                'new' => $this->formatValue($meta['kind'], $change['new'] ?? null, $userNames, $bankTitles),
             ];
         }
 
@@ -99,13 +104,14 @@ final class GuardiaActivityPresenter
     /**
      * Renders one value for a non-technical reader according to its field kind.
      *
-     * @param string             $kind      the value formatter key
-     * @param mixed              $value     the raw stored value
-     * @param array<int, string> $userNames resolved user id → name
+     * @param string             $kind       the value formatter key
+     * @param mixed              $value      the raw stored value
+     * @param array<int, string> $userNames  resolved user id → name
+     * @param array<int, string> $bankTitles resolved bank task id → title
      *
      * @return string the display string
      */
-    private function formatValue(string $kind, mixed $value, array $userNames): string
+    private function formatValue(string $kind, mixed $value, array $userNames, array $bankTitles): string
     {
         if (null === $value || '' === $value) {
             return self::BLANK;
@@ -114,8 +120,59 @@ final class GuardiaActivityPresenter
         return match ($kind) {
             'bool' => $value ? 'Sí' : 'No',
             'user' => $userNames[(int) $value] ?? sprintf('#%d (eliminado)', (int) $value),
+            'bank' => $bankTitles[(int) $value] ?? sprintf('#%d (borrada del banco)', (int) $value),
             default => (string) $value,
         };
+    }
+
+    /**
+     * Resolves the bank tasks referenced across the trail to their titles in a single query, so the
+     * history reads "Tarea del banco: — → Lectura y comentario" instead of a bare id.
+     *
+     * @param AuditLog[] $entries the audit entries
+     *
+     * @return array<int, string> bank task id → title
+     */
+    private function resolveBankTitles(array $entries): array
+    {
+        $ids = self::referencedIds($entries, 'bankItem');
+        if ([] === $ids) {
+            return [];
+        }
+
+        $titles = [];
+        foreach ($this->entityManager->getRepository(GuardiaTaskBankItem::class)->findBy(['id' => $ids]) as $item) {
+            $titles[(int) $item->getId()] = $item->getTitle();
+        }
+
+        return $titles;
+    }
+
+    /**
+     * The distinct ids a field takes on either side of the trail's changes.
+     *
+     * @param AuditLog[] $entries the audit entries
+     * @param string     $field   the diff key to read
+     *
+     * @return list<int> the referenced ids
+     */
+    private static function referencedIds(array $entries, string $field): array
+    {
+        $ids = [];
+        foreach ($entries as $entry) {
+            $change = ($entry->getChanges() ?? [])[$field] ?? null;
+            if (!\is_array($change)) {
+                continue;
+            }
+            foreach (['old', 'new'] as $side) {
+                $id = $change[$side] ?? null;
+                if (\is_int($id) || (\is_string($id) && ctype_digit($id))) {
+                    $ids[(int) $id] = (int) $id;
+                }
+            }
+        }
+
+        return array_values($ids);
     }
 
     /**
@@ -128,25 +185,13 @@ final class GuardiaActivityPresenter
      */
     private function resolveUserNames(array $entries): array
     {
-        $ids = [];
-        foreach ($entries as $entry) {
-            $change = ($entry->getChanges() ?? [])['assignedGuardia'] ?? null;
-            if (!\is_array($change)) {
-                continue;
-            }
-            foreach (['old', 'new'] as $side) {
-                $id = $change[$side] ?? null;
-                if (\is_int($id) || (\is_string($id) && ctype_digit($id))) {
-                    $ids[(int) $id] = (int) $id;
-                }
-            }
-        }
+        $ids = self::referencedIds($entries, 'assignedGuardia');
         if ([] === $ids) {
             return [];
         }
 
         $names = [];
-        foreach ($this->entityManager->getRepository(User::class)->findBy(['id' => array_values($ids)]) as $user) {
+        foreach ($this->entityManager->getRepository(User::class)->findBy(['id' => $ids]) as $user) {
             $names[(int) $user->getId()] = $user->getFullName();
         }
 

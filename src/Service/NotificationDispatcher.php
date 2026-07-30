@@ -37,6 +37,12 @@ use Symfony\Component\Mime\Email;
  */
 final class NotificationDispatcher
 {
+    /**
+     * Kinds (by prefix) delivered by push and the in-app bell only, never by e-mail: the reminders that
+     * fire at the very moment they are about. See {@see wantsEmail()}.
+     */
+    private const array PUSH_ONLY_KINDS = ['event.', 'guardia.raices'];
+
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly MailerInterface $mailer,
@@ -136,8 +142,11 @@ final class NotificationDispatcher
      * {@see NotificationLink} decides the destination from it: it is a property of the KIND of notice,
      * not of whoever raises it, so every caller gets the same policy without passing a flag around.
      *
-     * A personal agenda reminder ("empieza en 10 minutos") is deliberately push-only: by the time an
-     * e-mail is read the event has started, so it would be pure noise in the inbox.
+     * The exceptions are the reminders that fire AT the moment they are about: a personal agenda nudge
+     * ("empieza en 10 minutos") and the RAICES reminder sent while a guardia is under way. By the time
+     * an e-mail about either is read the moment has passed, so it would be pure noise in the inbox —
+     * whereas "te han asignado una guardia" ({@see GuardiaAssignmentNotifier}) is about something days
+     * ahead and does warrant one.
      *
      * @param Notification $notification the notice about to be delivered
      *
@@ -145,7 +154,13 @@ final class NotificationDispatcher
      */
     private function wantsEmail(Notification $notification): bool
     {
-        return !str_starts_with($notification->getKind(), 'event.');
+        foreach (self::PUSH_ONLY_KINDS as $prefix) {
+            if (str_starts_with($notification->getKind(), $prefix)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

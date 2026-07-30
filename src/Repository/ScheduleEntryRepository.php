@@ -55,6 +55,42 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
+     * Who is teaching at a weekday and period, and what — teacher id → the group names they have then.
+     * Read to warn before signing somebody up as guardia support ({@see \App\Entity\GuardiaSupport}): the
+     * normal case is precisely that the timetable says they are teaching and reality says otherwise
+     * (their Bachillerato group has finished lessons), so this is a warning to a human, never a filter.
+     *
+     * @param AcademicYear $year      the course whose timetable to read
+     * @param Weekday      $weekday   the weekday
+     * @param int          $slotIndex the period index within the day
+     *
+     * @return array<int, list<string>> teacher id → the groups they teach then (never empty per key)
+     */
+    public function lectiveGroupsByTeacherAt(AcademicYear $year, Weekday $weekday, int $slotIndex): array
+    {
+        /** @var list<array{teacherId: int, groupName: string|null}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('IDENTITY(s.teacher) AS teacherId', 's.groupName AS groupName')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.weekday = :weekday')
+            ->andWhere('s.slotIndex = :slot')
+            ->andWhere('s.kind = :lective')
+            ->setParameter('year', $year)
+            ->setParameter('weekday', $weekday)
+            ->setParameter('slot', $slotIndex)
+            ->setParameter('lective', ScheduleActivityKind::LECTIVE)
+            ->getQuery()
+            ->getResult();
+
+        $byTeacher = [];
+        foreach ($rows as $row) {
+            $byTeacher[(int) $row['teacherId']][] = $row['groupName'] ?? 'sin grupo';
+        }
+
+        return $byTeacher;
+    }
+
+    /**
      * The teaching cells a teacher has on a weekday at a given period of a course — usually one, but
      * several when the period is a multi-group activity (Peñalara lists the teacher against every
      * group at once, e.g. a whole-level session in the assembly hall). Empty when they are free then.
@@ -143,6 +179,139 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
+     * Every room the course's timetable mentions, alphabetically — the universe of spaces the centre
+     * actually uses, derived from the timetable instead of from a document that goes stale. A room
+     * nobody ever has a class in is invisible here, which is the honest limit of deriving it: we can only
+     * know about the rooms somebody uses.
+     *
+     * @param AcademicYear $year the course whose timetable to read
+     *
+     * @return list<string> the room short names, alphabetically
+     */
+    public function distinctRooms(AcademicYear $year): array
+    {
+        /** @var list<array{roomName: string}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('DISTINCT s.roomName AS roomName')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.roomName IS NOT NULL')
+            ->andWhere("s.roomName <> ''")
+            ->setParameter('year', $year)
+            ->orderBy('s.roomName', 'ASC')
+            ->getQuery()
+            ->getResult();
+
+        return array_map(static fn (array $r): string => $r['roomName'], $rows);
+    }
+
+    /**
+     * The classes taking place in a room at a weekday and period, teachers eager-loaded — who would have
+     * to be moved to free up a big room for a grouped guardia, and therefore who must be told.
+     *
+     * @param AcademicYear $year      the course whose timetable to read
+     * @param Weekday      $weekday   the weekday
+     * @param int          $slotIndex the period index within the day
+     *
+     * @return ScheduleEntry[] the lective entries that have a room then, by room and group
+     */
+    public function lectiveEntriesWithRoomAt(AcademicYear $year, Weekday $weekday, int $slotIndex): array
+    {
+        return $this->createQueryBuilder('s')
+            ->addSelect('t')
+            ->join('s.teacher', 't')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.weekday = :weekday')
+            ->andWhere('s.slotIndex = :slot')
+            ->andWhere('s.kind = :lective')
+            ->andWhere('s.roomName IS NOT NULL')
+            ->andWhere("s.roomName <> ''")
+            ->setParameter('year', $year)
+            ->setParameter('weekday', $weekday)
+            ->setParameter('slot', $slotIndex)
+            ->setParameter('lective', ScheduleActivityKind::LECTIVE)
+            ->orderBy('s.roomName', 'ASC')
+            ->addOrderBy('s.groupName', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Which rooms are taken at each period of a weekday: period index → room short names. One query for
+     * the whole day, so the "aulas libres" sheet can list every period without a query per row.
+     *
+     * @param AcademicYear $year    the course whose timetable to read
+     * @param Weekday      $weekday the weekday
+     *
+     * @return array<int, list<string>> period index → the rooms in use then, alphabetically
+     */
+    public function occupiedRoomsBySlot(AcademicYear $year, Weekday $weekday): array
+    {
+        /** @var list<array{slotIndex: int, roomName: string}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('DISTINCT s.slotIndex AS slotIndex', 's.roomName AS roomName')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.weekday = :weekday')
+            ->andWhere('s.kind = :lective')
+            ->andWhere('s.roomName IS NOT NULL')
+            ->andWhere("s.roomName <> ''")
+            ->setParameter('year', $year)
+            ->setParameter('weekday', $weekday)
+            ->setParameter('lective', ScheduleActivityKind::LECTIVE)
+            ->orderBy('s.slotIndex', 'ASC')
+            ->addOrderBy('s.roomName', 'ASC')
+            ->getQuery()
+            ->getResult();
+
+        $bySlot = [];
+        foreach ($rows as $row) {
+            $bySlot[(int) $row['slotIndex']][] = $row['roomName'];
+        }
+
+        return $bySlot;
+    }
+
+    /**
+     * How many groups each room has been seen holding AT ONCE anywhere in the course's timetable —
+     * evidence of which rooms are the big ones, instead of a capacity somebody would have to type in and
+     * keep up to date. The assembly hall comes out at 8 because Peñalara really does put eight groups in
+     * it at the same time; an ordinary classroom comes out at 1.
+     *
+     * Not a real capacity and not called one: it is a floor ("has held at least this many"), which is
+     * exactly what is needed to sort rooms by how much they can take. A proper capacity belongs to the
+     * spaces module, with its own entity.
+     *
+     * @param AcademicYear $year the course whose timetable to read
+     *
+     * @return array<string, int> room short name → most groups seen in it simultaneously
+     */
+    public function observedRoomCapacity(AcademicYear $year): array
+    {
+        // COUNT(DISTINCT …) is an aggregate, so it comes back as a raw scalar string, not through any
+        // field type — cast it (see distinctSlots() for the same trap with MIN()).
+        /** @var list<array{roomName: string, groups: string|int}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('s.roomName AS roomName', 'COUNT(DISTINCT s.groupName) AS groups')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.kind = :lective')
+            ->andWhere('s.roomName IS NOT NULL')
+            ->andWhere("s.roomName <> ''")
+            ->setParameter('year', $year)
+            ->setParameter('lective', ScheduleActivityKind::LECTIVE)
+            ->groupBy('s.roomName')
+            ->addGroupBy('s.weekday')
+            ->addGroupBy('s.slotIndex')
+            ->getQuery()
+            ->getResult();
+
+        $capacity = [];
+        foreach ($rows as $row) {
+            $capacity[$row['roomName']] = max($capacity[$row['roomName']] ?? 0, (int) $row['groups']);
+        }
+
+        return $capacity;
+    }
+
+    /**
      * The distinct time slots present in a course's imported timetable, ordered by start time — the
      * periods the "Parte de guardias" screen offers as tabs. Each row is {@code [index, startsAt, endsAt]}.
      *
@@ -173,6 +342,38 @@ class ScheduleEntryRepository extends ServiceEntityRepository
             ],
             $rows,
         );
+    }
+
+    /**
+     * The distinct subjects actually taught in a course, alphabetically — the centre's real subject
+     * names, spelled exactly as the parte snapshots them from the timetable.
+     *
+     * This is what the guardia task bank offers when a department labels a task: a bank task has to be
+     * of the subject the group was going to have, and two people typing "Lengua" and "Lengua Castellana"
+     * by hand would never match. Reading the list off the timetable makes the match exact by
+     * construction, with no catalogue to maintain.
+     *
+     * @param AcademicYear|null $year the course whose timetable to read, or null for none
+     *
+     * @return list<string> the subject names, alphabetically
+     */
+    public function distinctSubjects(?AcademicYear $year): array
+    {
+        if (null === $year) {
+            return [];
+        }
+
+        /** @var list<array{subject: string}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('DISTINCT s.subjectName AS subject')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.subjectName IS NOT NULL')
+            ->setParameter('year', $year)
+            ->orderBy('subject', 'ASC')
+            ->getQuery()
+            ->getResult();
+
+        return array_map(static fn (array $r): string => $r['subject'], $rows);
     }
 
     /**

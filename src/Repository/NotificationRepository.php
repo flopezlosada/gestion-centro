@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repository;
 
 use App\Entity\Notification;
+use App\Entity\Task;
 use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
@@ -37,6 +38,30 @@ class NotificationRepository extends ServiceEntityRepository
             ->setMaxResults($limit)
             ->getQuery()
             ->getResult();
+    }
+
+    /**
+     * The newest notice of a kind sent to a person about a task, or null if there is none. Used to hold
+     * back a repeated nudge: the manual "Recordar" button and the nightly reminder engine share the kind
+     * ({@see \App\Service\TaskReminderNotifier}) on purpose, so a person is never told twice in one day
+     * about the same task through two different routes.
+     *
+     * @param User   $recipient who received it
+     * @param Task   $task      the task it is about
+     * @param string $kind      the machine kind (e.g. "task.reminder")
+     *
+     * @return Notification|null the newest matching notice, or null
+     */
+    public function findLatestAbout(User $recipient, Task $task, string $kind): ?Notification
+    {
+        return $this->createQueryBuilder('n')
+            ->andWhere('n.recipient = :user')->setParameter('user', $recipient)
+            ->andWhere('n.task = :task')->setParameter('task', $task)
+            ->andWhere('n.kind = :kind')->setParameter('kind', $kind)
+            ->orderBy('n.createdAt', 'DESC')->addOrderBy('n.id', 'DESC')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
     }
 
     /**

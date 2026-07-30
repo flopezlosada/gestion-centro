@@ -120,6 +120,53 @@ final class AbsenceRegistrarTest extends KernelTestCase
         self::assertSame('E4A', $covers[4]->getGroupName(), 'the null group is folded away, only the real one kept');
     }
 
+    public function testTheSubjectIsSnapshottedSoTheBankCanMatchIt(): void
+    {
+        // Es el dato del que depende todo el banco de tareas: el grupo trabaja la asignatura que
+        // le tocaba, y no puede recalcularse después (un reimport cambia el horario, no lo que se perdió).
+        $teacher = $this->user('Ana', 'ana@centro.test');
+        $this->lective($teacher, 0, '1ºA', 'A1', 'Matemáticas');
+        $this->em->flush();
+
+        $this->registrar->register($this->year, $teacher, new \DateTimeImmutable(self::MONDAY), [0], null);
+
+        $cover = $this->em->getRepository(GuardiaCover::class)->findOneBy(['absentTeacher' => $teacher, 'slotIndex' => 0]);
+        self::assertInstanceOf(GuardiaCover::class, $cover);
+        self::assertSame('Matemáticas', $cover->getSubjectName());
+    }
+
+    public function testAPeriodWithSeveralSubjectsSnapshotsNoneInsteadOfAMixedOne(): void
+    {
+        // Tramo multigrupo con materias distintas (desdoble, optativa agrupada). Juntarlas en
+        // "Matemáticas, Física" no casaría con NINGUNA tarea del banco —el filtro es exacto— y encima
+        // desbordaría la columna; null es honesto: esa guardia se elige a mano.
+        $teacher = $this->user('Ana', 'ana@centro.test');
+        $this->lective($teacher, 0, '1ºA', 'A1', 'Matemáticas');
+        $this->lective($teacher, 0, '1ºB', 'A2', 'Física y Química');
+        $this->em->flush();
+
+        $this->registrar->register($this->year, $teacher, new \DateTimeImmutable(self::MONDAY), [0], null);
+
+        $cover = $this->em->getRepository(GuardiaCover::class)->findOneBy(['absentTeacher' => $teacher, 'slotIndex' => 0]);
+        self::assertInstanceOf(GuardiaCover::class, $cover);
+        self::assertNull($cover->getSubjectName());
+        // Los grupos sí se conservan los dos: lo que no se puede es inventar una materia.
+        self::assertSame('1ºA, 1ºB', $cover->getGroupName());
+    }
+
+    public function testTheCopiesTheAbsentTeacherAskedForTravelWithTheCover(): void
+    {
+        $teacher = $this->user('Ana', 'ana@centro.test');
+        $this->lective($teacher, 0, '1ºA', 'A1');
+        $this->em->flush();
+
+        $this->registrar->register($this->year, $teacher, new \DateTimeImmutable(self::MONDAY), [0], null, [0 => ['copies' => 31]]);
+
+        $cover = $this->em->getRepository(GuardiaCover::class)->findOneBy(['absentTeacher' => $teacher, 'slotIndex' => 0]);
+        self::assertInstanceOf(GuardiaCover::class, $cover);
+        self::assertSame(31, $cover->getCopiesNeeded());
+    }
+
     public function testSpecificPeriodsSkipsTheFreeOne(): void
     {
         $result = $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), [0, 1, 2], null);
@@ -179,13 +226,14 @@ final class AbsenceRegistrarTest extends KernelTestCase
      * @param int    $slotIndex the period index
      * @param string $group     the group short name
      * @param string $room      the room short name
+     * @param string $subject   the subject taught, which the cover snapshots to match the task bank
      */
-    private function lective(User $teacher, int $slotIndex, string $group, string $room): void
+    private function lective(User $teacher, int $slotIndex, string $group, string $room, string $subject = 'Materia'): void
     {
         $this->em->persist((new ScheduleEntry())
             ->setAcademicYear($this->year)->setTeacher($teacher)->setWeekday(Weekday::MONDAY)->setSlotIndex($slotIndex)
             ->setStartsAt(new \DateTimeImmutable('08:00'))->setEndsAt(new \DateTimeImmutable('09:00'))
-            ->setKind(ScheduleActivityKind::LECTIVE)->setGroupName($group)->setRoomName($room)->setSubjectName('Materia'));
+            ->setKind(ScheduleActivityKind::LECTIVE)->setGroupName($group)->setRoomName($room)->setSubjectName($subject));
     }
 
     /**

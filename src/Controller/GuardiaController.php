@@ -6,27 +6,35 @@ namespace App\Controller;
 
 use App\Entity\AcademicYear;
 use App\Entity\GuardiaCover;
+use App\Entity\GuardiaSupport;
 use App\Entity\ScheduleEntry;
 use App\Entity\User;
 use App\Enum\Area;
+use App\Enum\GuardiaDutyBand;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use App\Guardia\AbsenceRegistrar;
 use App\Guardia\AbsenceRegistrationResult;
 use App\Guardia\AssignmentRefused;
+use App\Guardia\BreakDutyGapRegistrar;
 use App\Guardia\GuardiaScheduler;
 use App\Guardia\GuardiaStatistics;
+use App\Guardia\TeacherGuardiaDay;
 use App\Repository\AcademicYearRepository;
 use App\Repository\AuditLogRepository;
+use App\Repository\BreakDutyAssignmentRepository;
 use App\Repository\GuardiaCoverRepository;
+use App\Repository\GuardiaSupportRepository;
 use App\Repository\ScheduleEntryRepository;
+use App\Repository\TimeSlotRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
 use App\Service\FileUploader;
 use App\Service\GuardiaAssignmentNotifier;
 use App\Support\AuditContext;
-use App\Support\SchedulePicker;
+use App\Support\DocumentUpload;
 use App\Support\GuardiaActivityPresenter;
+use App\Support\GuardiaDate;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -54,18 +62,10 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
 #[Route('/guardias')]
 final class GuardiaController extends AbstractController
 {
-    /** Size ceiling for an uploaded task document; larger ones are rejected with a warning. */
-    private const int MAX_TASK_DOCUMENT_BYTES = 10 * 1024 * 1024;
+    use GuardiaParteTrait;
 
     /** Private storage subdirectory for the task documents left with an absence. */
     private const string TASK_DOCUMENT_SUBDIR = 'guardia-tasks';
-
-    /** Accepted task-document extensions (defence in depth on top of private storage + forced download). */
-    private const array ALLOWED_TASK_DOCUMENT_EXTENSIONS = [
-        'pdf', 'doc', 'docx', 'odt', 'rtf', 'txt',
-        'ppt', 'pptx', 'xls', 'xlsx', 'ods',
-        'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic',
-    ];
 
     /**
      * Shows the parte for a date and period, plus the on-call pool. Date and period come from the
@@ -73,11 +73,11 @@ final class GuardiaController extends AbstractController
      * first — they are the ones that need action — and the coverage figures head the panel.
      */
     #[Route('', name: 'guardia_index', methods: ['GET'])]
-    public function index(Request $request, ScheduleEntryRepository $schedule, GuardiaCoverRepository $covers, AcademicYearRepository $years, GuardiaScheduler $scheduler): Response
+    public function index(Request $request, ScheduleEntryRepository $schedule, GuardiaCoverRepository $covers, GuardiaSupportRepository $support, AcademicYearRepository $years, UserRepository $users, GuardiaScheduler $scheduler): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
-        $date = SchedulePicker::date($request);
+        $date = $this->dateFromRequest($request);
         $schoolYear = SchoolYear::current($date);
         $year = $years->findBySchoolYear($schoolYear);
         $weekday = Weekday::from((int) $date->format('N'));
@@ -85,19 +85,30 @@ final class GuardiaController extends AbstractController
         // Slots and the guardia pool come from the timetable of the course this date falls into; with
         // no course imported for it there is nothing to show but the empty state.
         $slots = null !== $year ? $schedule->distinctSlots($year) : [];
-        $slotIndex = SchedulePicker::slot($request, $slots);
+        $slotIndex = $this->slotFromRequest($request, $slots);
         $pool = null !== $year ? $schedule->dutyPoolAt($year, $weekday, $slotIndex) : [];
         $parte = $covers->findForParte($date, $slotIndex);
 
-        // The group each on-call teacher is already covering this period, so the pool panel can tell
-        // who is busy from who is still free at a glance.
+        // The groups each on-call teacher is already covering this period, so the pool panel can tell
+        // who is busy from who is still free at a glance. A LIST per teacher, not a single name: in
+        // deficit the same teacher minds several groups, and keeping only the last one would report
+        // the parte wrongly on the very screen meant to expose the overload.
+        //
+        // Alongside it, how many guardias that actually COSTS them: several groups folded into one
+        // grouping are one guardia between them (the centre's rule, mirrored in
+        // GuardiaCoverRepository::WORK_UNIT), so once they are together in a room the overload is
+        // resolved and must stop being flagged as one.
         $assignedHere = [];
+        $workUnits = [];
         foreach ($parte as $cover) {
             $guardia = $cover->getAssignedGuardia();
             if (null !== $guardia && null !== $guardia->getId()) {
-                $assignedHere[$guardia->getId()] = $cover->getGroupName() ?? 'un grupo';
+                $assignedHere[$guardia->getId()][] = $cover->getGroupName() ?? 'un grupo';
+                $unit = null !== $cover->getGrouping() ? 'g'.$cover->getGrouping()->getId() : 'c'.$cover->getId();
+                $workUnits[$guardia->getId()][$unit] = true;
             }
         }
+        $workUnits = array_map(\count(...), $workUnits);
 
         // Uncovered first, keeping the repository's alphabetical order within each group: what needs
         // assigning must not be buried under what is already sorted out.
@@ -105,6 +116,8 @@ final class GuardiaController extends AbstractController
         usort($ordered, static fn (GuardiaCover $a, GuardiaCover $b): int => (null === $a->getAssignedGuardia() ? 0 : 1) <=> (null === $b->getAssignedGuardia() ? 0 : 1));
 
         $uncovered = \count(array_filter($parte, static fn (GuardiaCover $c): bool => null === $c->getAssignedGuardia()));
+        $absentIds = $covers->absentTeacherIdsAt($date, $slotIndex);
+        $poolView = $this->poolView($pool, $support->findForSlot($date, $slotIndex), $absentIds, $assignedHere, $covers->loadBySlot($slotIndex));
 
         return $this->render('guardia/index.html.twig', [
             'date' => $date,
@@ -113,24 +126,116 @@ final class GuardiaController extends AbstractController
             'slots' => $slots,
             'slotIndex' => $slotIndex,
             'covers' => $ordered,
-            'pool' => $pool,
-            'slotLoad' => $covers->loadBySlot($slotIndex),
-            'absentIds' => $covers->absentTeacherIdsAt($date, $slotIndex),
+            'pool' => $poolView,
             'assignedHere' => $assignedHere,
+            'workUnits' => $workUnits,
             'uncovered' => $uncovered,
             'covered' => \count($parte) - $uncovered,
             // Who the split would pick, least loaded first: feeds the per-cover assignment sheet. With
             // nothing left to cover no sheet is rendered, so the pool queries are not worth running.
             'candidates' => ($uncovered > 0 && $year instanceof AcademicYear) ? $scheduler->availableFor($year, $date, $slotIndex, $parte) : [],
+            'deficit' => $this->deficitSummary($poolView, $workUnits, $uncovered),
+            // Everyone, to sign up a colleague as support; flagged with the class the timetable says
+            // they are teaching that hour, because that clash is the normal case and only a human can
+            // judge it (their Bachillerato group has finished lessons — the timetable does not know).
+            'supportPicker' => $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS) ? $users->findBy([], ['fullName' => 'ASC']) : [],
+            'teachingHere' => $year instanceof AcademicYear ? $schedule->lectiveGroupsByTeacherAt($year, $weekday, $slotIndex) : [],
         ]);
+    }
+
+    /**
+     * One row per person who could cover this period, whatever brings them here: the weekly rota, a
+     * collaborator slot, or a hand-added support arrangement for that very day. Same shape for all three
+     * so the pool panel and the assignment sheet read one list instead of stitching two together, and so
+     * a support teacher is visible exactly where a coordinator looks for "who can cover this hour".
+     *
+     * A teacher on the rota who is ALSO signed up as support keeps the rota label (a duty, not a favour)
+     * and appears once — the same precedence {@see GuardiaScheduler} applies when building candidates.
+     *
+     * @param ScheduleEntry[]          $pool         the period's duty entries (a teacher may appear twice)
+     * @param GuardiaSupport[]         $support      the hand-added arrangements for that date and period
+     * @param list<int>                $absentIds    ids of teachers themselves absent that period
+     * @param array<int, list<string>> $assignedHere teacher id → groups they already cover that period
+     * @param array<int, int>          $slotLoad     teacher id → guardias done at this period, all course
+     *
+     * @return list<array{teacher: User, band: GuardiaDutyBand, note: ?string, supportId: ?int, absent: bool, groups: list<string>, load: int}> the rows, rota first then by name
+     */
+    private function poolView(array $pool, array $support, array $absentIds, array $assignedHere, array $slotLoad): array
+    {
+        $rows = [];
+        foreach ($support as $entry) {
+            $id = (int) $entry->getTeacher()->getId();
+            $rows[$id] = ['teacher' => $entry->getTeacher(), 'band' => GuardiaDutyBand::SUPPORT, 'note' => $entry->getNote(), 'supportId' => $entry->getId()];
+        }
+        foreach ($pool as $entry) {
+            $id = (int) $entry->getTeacher()->getId();
+            $band = ScheduleActivityKind::COLLABORATOR === $entry->getKind() ? GuardiaDutyBand::COLLABORATOR : GuardiaDutyBand::GUARDIA;
+            if (GuardiaDutyBand::GUARDIA === ($rows[$id]['band'] ?? null)) {
+                continue;
+            }
+            $rows[$id] = ['teacher' => $entry->getTeacher(), 'band' => $band, 'note' => null, 'supportId' => null];
+        }
+
+        $view = [];
+        foreach ($rows as $id => $row) {
+            $view[] = $row + [
+                'absent' => \in_array($id, $absentIds, true),
+                'groups' => $assignedHere[$id] ?? [],
+                'load' => $slotLoad[$id] ?? 0,
+            ];
+        }
+        usort($view, static fn (array $a, array $b): int => $a['band']->rank() <=> $b['band']->rank()
+            ?: strcasecmp($a['teacher']->getFullName(), $b['teacher']->getFullName()));
+
+        return $view;
+    }
+
+    /**
+     * The staffing arithmetic of one period, so the parte can say out loud when there are more absences
+     * than people to cover them instead of quietly doubling somebody up: how many people are actually
+     * free, how many groups are still open, how many of those can only be covered by giving a colleague
+     * a second guardia, and how many second guardias are already handed out.
+     *
+     * {@code doubled} matters as much as {@code missing}: once the split has run, nothing is left
+     * uncovered and the shortfall reads as zero, yet three teachers may be minding two guardias each. The
+     * warning has to survive the split, or the screen hides exactly what it is there to show.
+     *
+     * It is counted in guardias, not in groups, so grouping several classes into one room CLEARS it —
+     * which is the point of the warning: it is there to be acted on, not to nag for ever.
+     *
+     * @param list<array{teacher: User, band: GuardiaDutyBand, note: ?string, supportId: ?int, absent: bool, groups: list<string>, load: int}> $poolView who could cover this period
+     * @param array<int, int>                                                                                                                 $workUnits teacher id → guardias it costs them here
+     * @param int                                                                                                                             $uncovered groups still without a substitute
+     *
+     * @return array{free: int, uncovered: int, missing: int, doubled: int, extra: int} free people, open
+     *                                                                                 groups, shortfall,
+     *                                                                                 teachers doubling up
+     *                                                                                 and extra guardias they carry
+     */
+    private function deficitSummary(array $poolView, array $workUnits, int $uncovered): array
+    {
+        $free = \count(array_filter($poolView, static fn (array $row): bool => !$row['absent'] && [] === $row['groups']));
+        $doubling = array_filter($workUnits, static fn (int $units): bool => $units > 1);
+
+        return [
+            'free' => $free,
+            'uncovered' => $uncovered,
+            'missing' => max(0, $uncovered - $free),
+            'doubled' => \count($doubling),
+            'extra' => array_sum(array_map(static fn (int $units): int => $units - 1, $doubling)),
+        ];
     }
 
     /**
      * The teacher's own "mis guardias": today's guardias front and centre (period time, group, room,
      * absent teacher and any task left), plus the ones coming up on later days. Shows only their own.
+     *
+     * Their break duty rota comes too, and as a standing fact rather than a list of days: it is fixed for
+     * the whole course, so what the teacher needs is "los martes, patio, 11:10–11:35" once, not one row
+     * per Tuesday of the year.
      */
     #[Route('/mias', name: 'guardia_mine', methods: ['GET'])]
-    public function mine(#[CurrentUser] User $user, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
+    public function mine(#[CurrentUser] User $user, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years, TeacherGuardiaDay $day, BreakDutyAssignmentRepository $breakDuties, TimeSlotRepository $timeSlots): Response
     {
         $today = new \DateTimeImmutable('today');
         $now = new \DateTimeImmutable('now');
@@ -138,61 +243,15 @@ final class GuardiaController extends AbstractController
         $slotTimes = $this->slotTimes($schedule, $year);
 
         return $this->render('guardia/mine.html.twig', [
-            'today' => $this->buildTodayView($covers->findAssignedTo($user, $today), $slotTimes, $now),
+            // El mismo view-model que usa el hero de Inicio (App\Guardia\TeacherGuardiaDay): así las dos
+            // pantallas no pueden discrepar sobre cuál es "tu próxima guardia".
+            'today' => $day->forDay($covers->findAssignedTo($user, $today), $slotTimes, $now),
             'upcoming' => $this->groupByDay($covers->findUpcomingAssignedTo($user, $today->modify('+1 day')), $today),
             'slotTimes' => $slotTimes,
+            'breakDuties' => $year instanceof AcademicYear ? $breakDuties->findByTeacher($year, $user) : [],
+            'breakSlots' => $timeSlots->findBreaksByYear($year instanceof AcademicYear ? $year : null),
+            'todayWeekday' => Weekday::from((int) $today->format('N')),
         ]);
-    }
-
-    /**
-     * Turns a teacher's covers for today into the "mis guardias de hoy" view model the redesign needs:
-     * each cover flagged done/pending against the current time, the countdown to the next one still to
-     * cover (the screen's protagonist) and the day's tallies for the summary panel.
-     *
-     * A cover counts as done only when its period end time is known AND already past; with no imported
-     * timetable (unknown times) nothing can be called done, so every cover stays pending.
-     *
-     * @param GuardiaCover[]                                                   $covers    today's covers, earliest period first
-     * @param array<int, array{startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}> $slotTimes times by slot index
-     * @param \DateTimeImmutable                                               $now       the current instant
-     *
-     * @return array{items: list<array{cover: GuardiaCover, done: bool, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable, minutesUntil: ?int}>, next: ?int, counts: array{assigned: int, pending: int, withTask: int}}
-     */
-    private function buildTodayView(array $covers, array $slotTimes, \DateTimeImmutable $now): array
-    {
-        $items = [];
-        $next = null;
-        $pending = 0;
-        $withTask = 0;
-
-        foreach ($covers as $i => $cover) {
-            $times = $slotTimes[$cover->getSlotIndex()] ?? null;
-            $startsAt = $times['startsAt'] ?? null;
-            $endsAt = $times['endsAt'] ?? null;
-            $done = null !== $endsAt && $endsAt < $now;
-
-            if (!$done) {
-                ++$pending;
-                $next ??= $i; // the first cover not yet done is the protagonist ("tu próxima guardia")
-            }
-            if ($cover->hasTask()) {
-                ++$withTask;
-            }
-
-            $items[] = [
-                'cover' => $cover,
-                'done' => $done,
-                'startsAt' => $startsAt,
-                'endsAt' => $endsAt,
-                'minutesUntil' => null !== $startsAt && $startsAt > $now ? intdiv($startsAt->getTimestamp() - $now->getTimestamp(), 60) : null,
-            ];
-        }
-
-        return [
-            'items' => $items,
-            'next' => $next,
-            'counts' => ['assigned' => \count($covers), 'pending' => $pending, 'withTask' => $withTask],
-        ];
     }
 
     /**
@@ -591,10 +650,10 @@ final class GuardiaController extends AbstractController
      * picker is limited to themselves. Reachable prefilled with {@code ?teacher=<id>} for a coordinator.
      */
     #[Route('/ausencia/nueva', name: 'guardia_absence_new', methods: ['GET'])]
-    public function newAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
+    public function newAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, ScheduleEntryRepository $schedule, AcademicYearRepository $years, BreakDutyGapRegistrar $breakGaps, TimeSlotRepository $timeSlots): Response
     {
         $canManage = $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS);
-        $date = SchedulePicker::date($request);
+        $date = $this->dateFromRequest($request);
         $schoolYear = SchoolYear::current($date);
         $year = $years->findBySchoolYear($schoolYear);
         $weekday = Weekday::from((int) $date->format('N'));
@@ -611,6 +670,14 @@ final class GuardiaController extends AbstractController
             ? $this->groupClassesBySlot($schedule->lectiveDayFor($year, $selected, $weekday))
             : [];
 
+        // The recreo the absence would leave unwatched, if this teacher is on the break rota that weekday.
+        // Offered as its own tick rather than inferred: a recreo is nobody's teaching period, so it is
+        // absent from the class list above, and the centre's rule (it is NOT re-covered, the equipo
+        // directivo is alerted) makes it something the person registering should see they are triggering.
+        $breakDuty = ($selected instanceof User && $year instanceof AcademicYear)
+            ? $breakGaps->dutyOn($year, $selected, $date)
+            : null;
+
         return $this->render('guardia/absence_new.html.twig', [
             'date' => $date,
             'weekday' => $weekday,
@@ -621,6 +688,8 @@ final class GuardiaController extends AbstractController
             // Name of the chosen teacher, so the picker can show their monogram next to the select.
             'selectedTeacherName' => $selected?->getFullName(),
             'dayClasses' => $dayClasses,
+            'breakDuty' => $breakDuty,
+            'breakSlots' => $timeSlots->findBreaksByYear($year instanceof AcademicYear ? $year : null),
         ]);
     }
 
@@ -678,7 +747,7 @@ final class GuardiaController extends AbstractController
     {
         $this->assertCsrf($request, 'guardia_absence_create');
 
-        $date = SchedulePicker::date($request);
+        $date = $this->dateFromRequest($request);
         $year = $years->findBySchoolYear(SchoolYear::current($date));
         if (!$year instanceof AcademicYear) {
             $this->addFlash('error', sprintf('No hay horario importado para el curso %s. Impórtalo antes de registrar ausencias.', SchoolYear::current($date)));
@@ -698,7 +767,10 @@ final class GuardiaController extends AbstractController
 
         // The periods ticked on the class list, each with its own optional task.
         $slotIndexes = array_map(intval(...), $request->request->all('slots'));
-        if ([] === $slotIndexes) {
+        // Ticking only the recreo is a legitimate registration on its own: a teacher may be away on a day
+        // they teach nothing yet still leave their zone unwatched.
+        $missesBreak = $request->request->getBoolean('misses_break');
+        if ([] === $slotIndexes && !$missesBreak) {
             $this->addFlash('error', 'Marca al menos una hora en la que falta el profesor.');
 
             return $this->redirectToRoute('guardia_absence_new', ['date' => $date->format('Y-m-d'), 'teacher' => $teacher->getId()]);
@@ -708,6 +780,8 @@ final class GuardiaController extends AbstractController
         $reason = trim((string) $request->request->get('reason'));
         /** @var array<int|string, mixed> $descriptions */
         $descriptions = $request->request->all('description');
+        /** @var array<int|string, mixed> $copies */
+        $copies = $request->request->all('copies');
         /** @var array<int|string, UploadedFile|null> $files */
         $files = $request->files->all('documents');
 
@@ -716,15 +790,18 @@ final class GuardiaController extends AbstractController
             $description = trim((string) ($descriptions[$slotIndex] ?? ''));
             $document = $files[$slotIndex] ?? null;
             $stored = $document instanceof UploadedFile ? $this->storeTaskDocument($document, $uploader) : null;
+            // Las copias de esa clase, si el profesor que falta las sabe (opcional, ver la ficha de la hora).
+            $needed = (int) ($copies[$slotIndex] ?? 0);
 
             $taskBySlot[$slotIndex] = [
                 'documentPath' => $stored['path'] ?? null,
                 'documentName' => $stored['name'] ?? null,
                 'description' => '' !== $description ? $description : null,
+                'copies' => $needed > 0 ? $needed : null,
             ];
         }
 
-        $result = $registrar->register($year, $teacher, $date, $slotIndexes, '' !== $reason ? $reason : null, $taskBySlot);
+        $result = $registrar->register($year, $teacher, $date, $slotIndexes, '' !== $reason ? $reason : null, $taskBySlot, $missesBreak);
 
         // A document uploaded for a period that ended up skipped (free / already registered) is now
         // referenced by no cover: delete it so it does not linger in storage forever.
@@ -735,6 +812,12 @@ final class GuardiaController extends AbstractController
         }
 
         $this->flashRegistration($teacher, $result);
+
+        // When the only consequence was an unwatched recreo, the parte has nothing new to show: land on
+        // the gaps screen, which is where somebody has to go looking for a volunteer.
+        if ([] === $result->createdSlots && null !== $result->breakGap) {
+            return $this->redirectToRoute('break_duty_gap_index');
+        }
 
         return $this->backToParte($date, $result->createdSlots[0] ?? ($slotIndexes[0] ?? 0));
     }
@@ -748,7 +831,19 @@ final class GuardiaController extends AbstractController
      */
     private function flashRegistration(User $teacher, AbsenceRegistrationResult $result): void
     {
+        // The recreo is reported apart from the covers, because it is the opposite of a cover: nothing was
+        // assigned and nothing will be. Saying so here is what stops "no se generó ninguna guardia" from
+        // reading as "nothing happened" on a day whose only consequence was an unwatched zone.
+        $breakNote = null !== $result->breakGap
+            ? sprintf(' El recreo de %s se queda sin vigilar: avisado el equipo directivo para buscar un voluntario.', $result->breakGap->getAssignment()->getZone()->getName())
+            : '';
+
         if (0 === $result->createdCount()) {
+            if ('' !== $breakNote) {
+                $this->addFlash('warning', sprintf('No se generó ninguna guardia para %s (no da clase esas horas o ya estaban en el parte).%s', $teacher->getFullName(), $breakNote));
+
+                return;
+            }
             $this->addFlash('error', sprintf('No se generó ninguna guardia para %s: no da clase esas horas o ya estaban en el parte.', $teacher->getFullName()));
 
             return;
@@ -761,13 +856,13 @@ final class GuardiaController extends AbstractController
         if ($result->skippedExisting > 0) {
             $msg .= sprintf(' %d ya estaba(n) en el parte.', $result->skippedExisting);
         }
-        $this->addFlash('success', $msg);
+        $this->addFlash('success', $msg.$breakNote);
     }
 
     /**
-     * Validates and stores one uploaded task document. Empty file fields (no file chosen) yield null
-     * silently; a failed upload or one over {@see MAX_TASK_DOCUMENT_BYTES} flashes a warning and yields
-     * null, so the rest of the absence still registers without that document.
+     * Validates and stores one uploaded task document against the shared {@see DocumentUpload} policy.
+     * Empty file fields (no file chosen) yield null silently; a rejected upload flashes the reason and
+     * yields null, so the rest of the absence still registers without that document.
      *
      * @param UploadedFile $file     the uploaded file
      * @param FileUploader $uploader the private-storage uploader
@@ -776,28 +871,18 @@ final class GuardiaController extends AbstractController
      */
     private function storeTaskDocument(UploadedFile $file, FileUploader $uploader): ?array
     {
-        if (\UPLOAD_ERR_NO_FILE === $file->getError()) {
+        if (!DocumentUpload::isPresent($file)) {
             return null;
         }
-        if (!$file->isValid()) {
-            $this->addFlash('warning', sprintf('No se pudo subir «%s»; se registró sin ese documento.', $file->getClientOriginalName()));
 
-            return null;
-        }
-        if ($file->getSize() > self::MAX_TASK_DOCUMENT_BYTES) {
-            $this->addFlash('warning', sprintf('«%s» supera los %d MB; se registró sin ese documento.', $file->getClientOriginalName(), intdiv(self::MAX_TASK_DOCUMENT_BYTES, 1024 * 1024)));
-
-            return null;
-        }
-        if (!\in_array(strtolower($file->getClientOriginalExtension()), self::ALLOWED_TASK_DOCUMENT_EXTENSIONS, true)) {
-            $this->addFlash('warning', sprintf('«%s» tiene un tipo de archivo no admitido (usa PDF, Office, texto o imagen); se registró sin ese documento.', $file->getClientOriginalName()));
+        $problem = DocumentUpload::problem($file);
+        if (null !== $problem) {
+            $this->addFlash('warning', $problem.' Se registró sin ese documento.');
 
             return null;
         }
 
-        $name = $file->getClientOriginalName();
-
-        return ['path' => $uploader->upload($file, self::TASK_DOCUMENT_SUBDIR), 'name' => '' !== $name ? $name : 'documento'];
+        return ['path' => $uploader->upload($file, self::TASK_DOCUMENT_SUBDIR), 'name' => DocumentUpload::nameOf($file)];
     }
 
     /**
@@ -808,7 +893,7 @@ final class GuardiaController extends AbstractController
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $this->assertCsrf($request, 'guardia_auto_assign');
-        $date = SchedulePicker::date($request);
+        $date = $this->dateFromRequest($request);
         $slotIndex = (int) $request->request->get('slot');
 
         $year = $years->findBySchoolYear(SchoolYear::current($date));
@@ -913,6 +998,9 @@ final class GuardiaController extends AbstractController
             'slotTimes' => $this->slotTimes($schedule, $year),
             'canEdit' => $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS),
             'canSeeReason' => $canManage,
+            // Quien cubre ve el recordatorio de RAICES (apuntar las ausencias del alumnado de la sesión);
+            // la coordinación mirando la guardia de otra persona, no: no es su tarea.
+            'isAssignedGuardia' => $isOwner,
         ]);
     }
 
@@ -941,8 +1029,9 @@ final class GuardiaController extends AbstractController
 
     /**
      * Applies a manual change to a cover: reassigns the substitute (empty clears it) and/or toggles the
-     * "did not happen" flag, with a mandatory reason recorded in the event log ({@see AuditContext}).
-     * Notifies the substitute when it actually changes.
+     * "did not happen" flag, with a mandatory explanation recorded in the event log ({@see AuditContext}).
+     * When the substitute actually changes, that explanation is sent to both people it affects — the one
+     * who takes the guardia over and the one relieved of it.
      */
     #[Route('/{id}/modificar', name: 'guardia_cover_update', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function updateCover(GuardiaCover $cover, Request $request, UserRepository $users, EntityManagerInterface $em, GuardiaAssignmentNotifier $notifier, AuditContext $audit, FileUploader $uploader): Response
@@ -952,7 +1041,7 @@ final class GuardiaController extends AbstractController
 
         $reason = trim((string) $request->request->get('motivo'));
         if ('' === $reason) {
-            $this->addFlash('error', 'Indica el motivo del cambio: queda registrado en el histórico de la guardia.');
+            $this->addFlash('error', 'Explica por qué cambias esta guardia: se lo contamos a los profesores afectados y queda en el histórico.');
 
             return $this->redirectToRoute('guardia_cover_edit', ['id' => $cover->getId()]);
         }
@@ -963,6 +1052,9 @@ final class GuardiaController extends AbstractController
         $cover->setNotCovered($request->request->getBoolean('not_covered'));
         // setTaskDescription normaliza cadena vacía a null, así que "borrar la descripción" queda soportado.
         $cover->setTaskDescription((string) $request->request->get('task_description'));
+        // Copias de la tarea: las deja dichas el profesor ausente al apuntar la falta, o las anota aquí
+        // la coordinación cuando la guardia es sobrevenida (setter normaliza 0/vacío a null).
+        $cover->setCopiesNeeded((int) $request->request->get('copies_needed'));
 
         // Task document: replace it with a freshly uploaded one, or drop it if "quitar" was ticked. The
         // old file is deleted only AFTER the change is committed (below), so a failed flush never leaves
@@ -994,10 +1086,28 @@ final class GuardiaController extends AbstractController
         }
 
         // Notify only when the substitute actually changes (reselecting the same one does not notify).
-        if ($cover->getAssignedGuardia() !== $previous) {
-            $notifier->notifyAssigned($cover);
+        // Everyone the change affects hears about it with the coordinator's explanation: whoever takes
+        // the guardia over and whoever is relieved of it — otherwise the relieved teacher would still
+        // turn up to a group that is no longer theirs, and the mandatory explanation would die unread
+        // in the audit trail.
+        $incoming = $cover->getAssignedGuardia();
+        $substituteChanged = $incoming !== $previous;
+        if ($substituteChanged) {
+            // notifyAssigned no hace nada si el hueco se ha dejado vacío, así que no hace falta guardarlo.
+            $notifier->notifyAssigned($cover, $reason);
+            if (null !== $previous) {
+                $notifier->notifyRelieved($cover, $previous, $reason);
+            }
         }
-        $this->addFlash('success', 'Guardia modificada y registrada en el histórico.');
+
+        // El acuse dice la verdad, y dice CUÁNTOS avisos han salido: cubrir un hueco vacío (o dejarlo
+        // vacío) afecta a una sola persona, así que el plural sería mentira en la mitad de los casos.
+        $notified = $substituteChanged ? (int) (null !== $incoming) + (int) (null !== $previous) : 0;
+        $this->addFlash('success', match ($notified) {
+            2 => 'Guardia modificada. Hemos avisado a los dos profesores y queda en el histórico.',
+            1 => 'Guardia modificada. Hemos avisado al profesor afectado y queda en el histórico.',
+            default => 'Guardia modificada y registrada en el histórico.',
+        });
 
         return $this->backToParte($cover->getDate(), $cover->getSlotIndex());
     }
@@ -1042,6 +1152,36 @@ final class GuardiaController extends AbstractController
     }
 
     /**
+     * Reads the requested date from the query/post ("Y-m-d"), falling back to today on absence or a
+     * bad value. Delegates to {@see GuardiaDate}, shared with the rest of the module's controllers.
+     *
+     * @param Request $request the current request
+     *
+     * @return \DateTimeImmutable the date to show (time set to midnight)
+     */
+    private function dateFromRequest(Request $request): \DateTimeImmutable
+    {
+        return GuardiaDate::fromRequest($request);
+    }
+
+    /**
+     * Reads the requested period index, defaulting to the day's first period when absent or unknown.
+     *
+     * @param Request                                                                          $request the current request
+     * @param list<array{index: int, startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}> $slots   the available periods
+     *
+     * @return int the period index to show
+     */
+    private function slotFromRequest(Request $request, array $slots): int
+    {
+        if ($request->query->has('slot')) {
+            return (int) $request->query->get('slot');
+        }
+
+        return $slots[0]['index'] ?? 0;
+    }
+
+    /**
      * The given course's periods keyed by their index, so a view holding only a {@code slotIndex}
      * (e.g. a cover) can print the period's start/end time without another query per row. Empty when
      * no course (hence no timetable) applies.
@@ -1056,29 +1196,4 @@ final class GuardiaController extends AbstractController
         return $schedule->slotTimes($year);
     }
 
-    /**
-     * Validates the CSRF token for an action or denies access.
-     *
-     * @param Request $request the current request
-     * @param string  $id      the CSRF token id
-     */
-    private function assertCsrf(Request $request, string $id): void
-    {
-        if (!$this->isCsrfTokenValid($id, (string) $request->request->get('_token'))) {
-            throw $this->createAccessDeniedException('Token CSRF inválido.');
-        }
-    }
-
-    /**
-     * Redirects back to the parte for a date and period.
-     *
-     * @param \DateTimeImmutable $date      the day
-     * @param int                $slotIndex the period index
-     *
-     * @return Response the redirect
-     */
-    private function backToParte(\DateTimeImmutable $date, int $slotIndex): Response
-    {
-        return $this->redirectToRoute('guardia_index', ['date' => $date->format('Y-m-d'), 'slot' => $slotIndex]);
-    }
 }

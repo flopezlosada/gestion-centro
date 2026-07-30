@@ -10,6 +10,7 @@ use App\Dashboard\CentreDashboard;
 use App\Entity\GuardiaCover;
 use App\Entity\Task;
 use App\Entity\User;
+use App\Guardia\TeacherGuardiaDay;
 use App\Repository\AcademicYearRepository;
 use App\Repository\GuardiaCoverRepository;
 use App\Repository\ScheduleEntryRepository;
@@ -21,10 +22,16 @@ use App\Support\TaskStatus;
 use App\Util\SchoolYear;
 
 /**
- * Assembles the "qué me toca hoy" home view for a user: their next guardia (the single dark anchor of
- * the design), their institutional tasks due today or overdue, and their private agenda for today and
- * the coming week. Reuses {@see PersonalAgenda} for the task/event merge+bucket logic (single source)
- * and only splits the result back by kind, since the redesign shows tasks and personal events apart.
+ * Assembles the "qué me toca hoy" home view for a user: every guardia they cover today (the next one as
+ * the single dark anchor of the design, the rest listed under it), their institutional tasks due today
+ * or overdue, and their private agenda for today and the coming week. Reuses {@see PersonalAgenda} for
+ * the task/event merge+bucket logic (single source) and only splits the result back by kind, since the
+ * redesign shows tasks and personal events apart.
+ *
+ * Guardias ride along the two blocks instead of joining one of them: the day's blocks are "Con hora"
+ * (private appointments) and "Por hacer" (checklist), and a guardia is neither private nor tickable.
+ * They keep their own anchor above the blocks and, for later days, appear as a third kind of
+ * {@see AgendaEntry} in "Próximos 7 días" — where the point is only "what is coming".
  *
  * Role-aware modules (mi departamento, el centro, guardias de hoy) are layered on top elsewhere; this
  * builds the base every role shares.
@@ -41,6 +48,7 @@ final readonly class HomeDashboard
         private OrganizationHierarchy $hierarchy,
         private UserRepository $usersRepo,
         private TaskWorkflow $workflows,
+        private TeacherGuardiaDay $guardiaDay,
     ) {
     }
 
@@ -52,7 +60,9 @@ final readonly class HomeDashboard
      * @param \DateTimeImmutable $now   the current instant (for "en X min" and done detection)
      *
      * @return array{
-     *     nextGuardia: array{cover: GuardiaCover, startsAt: ?\DateTimeImmutable, minutesUntil: ?int}|null,
+     *     nextGuardia: array{cover: GuardiaCover, done: bool, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable, minutesUntil: ?int}|null,
+     *     otherGuardiasToday: list<array{cover: GuardiaCover, done: bool, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable, minutesUntil: ?int}>,
+     *     guardiasTodayCount: int,
      *     upcomingGuardia: array{cover: GuardiaCover, startsAt: ?\DateTimeImmutable}|null,
      *     timedToday: AgendaEntry[],
      *     todos: AgendaEntry[],
@@ -80,15 +90,19 @@ final readonly class HomeDashboard
             ...array_values(array_filter($buckets['today'], $isTodo)),
         ], 0, 8);
 
-        // "Próximos 7 días": un vistazo compacto y tipado (tareas y eventos juntos por día); lo lejano
-        // vive en el Calendario, al que se sale desde el pie de la sección.
-        $upcoming = \array_slice($buckets['week'], 0, 6);
+        $guardias = $this->guardias($user, $today, $now);
 
-        [$next, $upcomingGuardia] = $this->guardia($user, $today, $now);
+        // "Próximos 7 días": un vistazo compacto y tipado (tareas, eventos y guardias juntos por día,
+        // en orden); lo lejano vive en el Calendario, al que se sale desde el pie de la sección.
+        $upcoming = [...$buckets['week'], ...$guardias['weekEntries']];
+        usort($upcoming, static fn (AgendaEntry $a, AgendaEntry $b): int => $a->date <=> $b->date);
+        $upcoming = \array_slice($upcoming, 0, 6);
 
         return [
-            'nextGuardia' => $next,
-            'upcomingGuardia' => $upcomingGuardia,
+            'nextGuardia' => $guardias['next'],
+            'otherGuardiasToday' => $guardias['others'],
+            'guardiasTodayCount' => $guardias['todayCount'],
+            'upcomingGuardia' => $guardias['upcomingGuardia'],
             'timedToday' => $timedToday,
             'todos' => $todos,
             'upcoming' => $upcoming,
@@ -141,7 +155,7 @@ final readonly class HomeDashboard
             // propia tarea, así que colaba.
             $toValidate = array_values(array_filter(
                 $deptTasks,
-                fn (Task $t): bool => TaskStatus::SUBMITTED === $t->getStatus() && $this->workflows->for($t)->can($t, 'validate'),
+                fn (Task $t): bool => $this->workflows->isAwaitingVerdict($t),
             ));
             $modules['department'] = [
                 'dept' => $dept,
@@ -192,40 +206,96 @@ final readonly class HomeDashboard
     }
 
     /**
-     * The user's next guardia today (the hero) and, only if there is none left today, the next future
-     * one (for the "hoy no tienes guardia" strip). Times come from the slot index via the year's schedule.
+     * Every guardia the user has coming, split into what each part of Inicio needs — the centre asked
+     * for ALL of them to show up in the agenda, not just the next one:
+     *  - `next`: the first one today not yet over, the hero;
+     *  - `others`: the REST of today, listed under the hero (the ones already over included, flagged
+     *    done — a day with three guardias must read as three);
+     *  - `todayCount`: how many there are today at all, so the "hoy no tienes guardia" strip can tell
+     *    "no tienes ninguna" apart from "ya las has hecho todas";
+     *  - `upcomingGuardia`: the next future one, for that same strip, at ANY distance (a guardia three
+     *    weeks out still deserves the mention when today is clear);
+     *  - `weekEntries`: the ones in the next 7 days as agenda entries, for "Próximos 7 días".
      *
-     * @return array{0: array{cover: GuardiaCover, startsAt: ?\DateTimeImmutable, minutesUntil: ?int}|null, 1: array{cover: GuardiaCover, startsAt: ?\DateTimeImmutable}|null}
+     * One query feeds all five: the covers assigned from today on, split by day in PHP. Period times
+     * come from the slot index via the course's timetable.
+     *
+     * @return array{
+     *     next: array{cover: GuardiaCover, done: bool, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable, minutesUntil: ?int}|null,
+     *     others: list<array{cover: GuardiaCover, done: bool, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable, minutesUntil: ?int}>,
+     *     todayCount: int,
+     *     upcomingGuardia: array{cover: GuardiaCover, startsAt: ?\DateTimeImmutable}|null,
+     *     weekEntries: list<AgendaEntry>
+     * }
      */
-    private function guardia(User $user, \DateTimeImmutable $today, \DateTimeImmutable $now): array
+    private function guardias(User $user, \DateTimeImmutable $today, \DateTimeImmutable $now): array
     {
         $year = $this->years->findBySchoolYear(SchoolYear::current($today));
         $slotTimes = $this->schedule->slotTimes($year);
 
-        // Primera guardia de hoy aún no terminada = la protagonista.
-        foreach ($this->covers->findAssignedTo($user, $today) as $cover) {
-            $times = $slotTimes[$cover->getSlotIndex()] ?? null;
-            $startsAt = $times['startsAt'] ?? null;
-            $endsAt = $times['endsAt'] ?? null;
-            if (null === $endsAt || $endsAt >= $now) {
-                return [[
-                    'cover' => $cover,
-                    'startsAt' => $startsAt,
-                    'minutesUntil' => null !== $startsAt && $startsAt > $now
-                        ? intdiv($startsAt->getTimestamp() - $now->getTimestamp(), 60)
-                        : null,
-                ], null];
+        $todayKey = $today->format('Y-m-d');
+        $weekKey = $today->modify('+7 days')->format('Y-m-d');
+
+        $todayCovers = [];
+        $future = [];
+        foreach ($this->covers->findUpcomingAssignedTo($user, $today) as $cover) {
+            if ($cover->getDate()->format('Y-m-d') === $todayKey) {
+                $todayCovers[] = $cover;
+            } else {
+                $future[] = $cover;
             }
         }
 
-        // Nada más hoy: la próxima futura, para la tira tranquila.
-        $future = $this->covers->findUpcomingAssignedTo($user, $today->modify('+1 day'));
-        if ([] !== $future) {
-            $cover = $future[0];
-
-            return [null, ['cover' => $cover, 'startsAt' => $slotTimes[$cover->getSlotIndex()]['startsAt'] ?? null]];
+        // El MISMO view-model que /guardias/mias, para que las dos pantallas no puedan discrepar sobre
+        // cuál es "tu próxima guardia" ni sobre cuáles ya han pasado.
+        $day = $this->guardiaDay->forDay($todayCovers, $slotTimes, $now);
+        $next = null !== $day['next'] ? $day['items'][$day['next']] : null;
+        $others = [];
+        foreach ($day['items'] as $i => $item) {
+            if ($i !== $day['next']) {
+                $others[] = $item;
+            }
         }
 
-        return [null, null];
+        $weekEntries = [];
+        foreach ($future as $cover) {
+            if ($cover->getDate()->format('Y-m-d') > $weekKey) {
+                break; // la consulta viene en orden cronológico: a partir de aquí ya es "lo lejano"
+            }
+            $weekEntries[] = AgendaEntry::fromGuardia($cover, $this->startOf($cover, $slotTimes));
+        }
+
+        return [
+            'next' => $next,
+            'others' => $others,
+            'todayCount' => $day['counts']['assigned'],
+            'upcomingGuardia' => (null === $next && [] !== $future)
+                ? ['cover' => $future[0], 'startsAt' => $this->startOf($future[0], $slotTimes)]
+                : null,
+            'weekEntries' => $weekEntries,
+        ];
+    }
+
+    /**
+     * The instant a cover's period starts, on the cover's OWN day.
+     *
+     * {@see ScheduleEntryRepository::slotTimes()} carries clock times parsed with no date, so they land
+     * on whatever "today" was when they were built. Reading them straight for a cover on another day
+     * would date every future guardia today — which sorts it into the wrong place in "Próximos 7 días"
+     * and prints the wrong day next to it. So take the time of day from the timetable and the date from
+     * the cover.
+     *
+     * @param GuardiaCover                                                                $cover     the cover
+     * @param array<int, array{startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}> $slotTimes period times by slot index
+     *
+     * @return \DateTimeImmutable|null the start instant, or null with no timetable for that period
+     */
+    private function startOf(GuardiaCover $cover, array $slotTimes): ?\DateTimeImmutable
+    {
+        $startsAt = $slotTimes[$cover->getSlotIndex()]['startsAt'] ?? null;
+
+        return null !== $startsAt
+            ? $cover->getDate()->setTime((int) $startsAt->format('G'), (int) $startsAt->format('i'))
+            : null;
     }
 }

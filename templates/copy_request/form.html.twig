@@ -1,0 +1,61 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}Pedir fotocopias{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('copy_request_index') }}">Fotocopias</a><span class="sep">/</span>
+    Nuevo encargo
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Conserjería</p>
+            <h1>Pedir fotocopias</h1>
+            <p class="lead">El encargo sale por correo a <span class="mono">{{ recipient }}</span> con el documento adjunto. El número de copias es obligatorio: sin él no se puede preparar.</p>
+        </div>
+    </div>
+
+    {% if cover %}
+        {# Encargo desde una guardia: qué se manda ya está decidido, solo faltan las copias. #}
+        <section class="card copy-context">
+            <div class="detail-block__label">Qué se va a fotocopiar</div>
+            <p class="copy-context__line">{{ [cover.groupName, cover.roomName]|filter(v => v)|join(' · ') ?: 'Guardia' }} · {{ cover.date|date('d/m/Y', false) }}</p>
+
+            {% if cover.printableDocumentPath %}
+                <p>
+                    Documento:
+                    {% if cover.taskDocumentPath %}
+                        <a href="{{ path('guardia_task_download', { id: cover.id }) }}">{{ cover.printableDocumentName ?: 'documento' }}</a>
+                        <span class="help">Lo dejó el profesor ausente.</span>
+                    {% else %}
+                        <a href="{{ path('guardia_bank_download', { id: cover.bankItem.id }) }}">{{ cover.printableDocumentName ?: 'documento' }}</a>
+                        <span class="help">Del banco de tareas: «{{ cover.bankItem.title }}».</span>
+                    {% endif %}
+                </p>
+            {% else %}
+                <div class="callout">
+                    <p>Esta guardia no tiene ningún documento que imprimir. Puedes enviar el encargo igualmente describiendo abajo qué hay que fotocopiar, o antes <a href="{{ path('guardia_bank_index', { para: cover.id }) }}">coger una tarea del banco</a>.</p>
+                </div>
+            {% endif %}
+
+            {% if previous is defined and previous is not empty %}
+                <p class="help">Ya se han pedido fotocopias para esta guardia:
+                    {% for p in previous %}{{ p.copies }} copias el {{ p.requestedAt|date('d/m H:i', false) }}{% if not p.isSent %} (sin enviar){% endif %}{{ not loop.last ? '; ' }}{% endfor %}.
+                </p>
+            {% endif %}
+        </section>
+    {% endif %}
+
+    <div class="card form-card">
+        {{ form_start(form, { attr: { novalidate: 'novalidate', enctype: 'multipart/form-data' } }) }}
+            {{ f.submit_error(form) }}
+            {{ form_errors(form) }}
+            {% if form.context is defined %}{{ f.fields([form.context, form.document]) }}{% endif %}
+            {{ f.fields([form.copies, form.notes]) }}
+            {{ f.actions(cover ? path('guardia_cover_show', { id: cover.id }) : path('copy_request_index'), 'Enviar a fotocopias') }}
+        {{ form_end(form) }}
+    </div>
+{% endblock %}

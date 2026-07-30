@@ -118,6 +118,35 @@ final class TaskResponsibilityTest extends TestCase
         self::assertSame($delegatee, $task->resolveResponsible());
     }
 
+    /**
+     * Delegating hands over the WORK, not the accountability: {@see Task::isOwnedBy()} is exclusive (only
+     * the delegatee does it), but {@see Task::concerns()} keeps the titular in — which is what lets them
+     * retire their own delegation. With isOwnedBy alone, delegating was a one-way trip.
+     */
+    public function testDelegationKeepsTheTitularConcerned(): void
+    {
+        $maths = $this->unit('Matematicas');
+        $titular = $this->user('Ana', $maths);
+        $delegatee = $this->user('Beto', $maths);
+        $outsider = $this->user('Carla', $maths);
+        $task = $this->task()->setAssignedUser($titular)->setDelegatedTo($delegatee);
+
+        self::assertTrue($task->concerns($delegatee), 'quien la tiene ahora');
+        self::assertTrue($task->concerns($titular), 'y el titular, aunque la haya delegado');
+        self::assertFalse($task->concerns($outsider));
+        self::assertFalse($task->isOwnedBy($titular), 'pero ejecutarla sigue siendo solo del delegado');
+    }
+
+    /** Without a delegation the two notions coincide: the assignee both holds it and answers for it. */
+    public function testWithoutDelegationConcernsMatchesOwnership(): void
+    {
+        $ana = $this->user('Ana');
+        $task = $this->task()->setAssignedUser($ana);
+
+        self::assertTrue($task->isOwnedBy($ana));
+        self::assertTrue($task->concerns($ana));
+    }
+
     public function testLabelIncludesTheDepartmentForPerDepartmentRoles(): void
     {
         $maths = $this->unit('Matematicas');

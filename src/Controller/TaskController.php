@@ -19,6 +19,7 @@ use App\Repository\DepartmentRepository;
 use App\Repository\UserRepository;
 use App\Service\OrganizationHierarchy;
 use App\Service\TaskAssignmentNotifier;
+use App\Service\TaskReminderNotifier;
 use App\Service\TaskVisibility;
 use App\Service\TaskWorkflow;
 use App\Support\TaskActivityPresenter;
@@ -199,7 +200,7 @@ final class TaskController extends AbstractController
                 // que el guard iba a rechazar (una jefa de departamento supera al rol Tutor/a de su propia
                 // tarea, así que pasaba el filtro de jerarquía). Un listado no debe prometer lo que la ficha
                 // va a negar.
-                'validar' => TaskStatus::SUBMITTED === $t->getStatus() && $workflows->for($t)->can($t, 'validate'),
+                'validar' => $workflows->isAwaitingVerdict($t),
                 'vencidas' => self::isOverdue($t, $today),
                 'cerradas' => $t->isClosed(),
                 // "Abiertas" es TODO lo abierto del ámbito visible, y es la vista por defecto: cualquier
@@ -444,6 +445,7 @@ final class TaskController extends AbstractController
         DepartmentRepository $unitRepository,
         TaskWorkflow $workflows,
         TaskActivityPresenter $activity,
+        TaskReminderNotifier $reminders,
     ): Response {
         // Same organisation-chart scope as the plan and the calendar, enforced here so the detail
         // cannot be reached by guessing an id: only the task's own people, a superior of its unit, or
@@ -465,8 +467,10 @@ final class TaskController extends AbstractController
         // superior de rango superior (un director no delega la tarea de un jefe de departamento). Y solo
         // hacia gente a la que manda, por lo que un miembro raso (que no manda a nadie) nunca la ve.
         // Además solo mientras la tarea sigue Pendiente: una entregada/finalizada/cancelada ya no cambia
-        // de titular (reasignarla reescribiría quién la hizo).
-        $canDelegate = ($isAdmin || $task->isOwnedBy($user)) && $task->isPending();
+        // de titular (reasignarla reescribiría quién la hizo). Y vale el TITULAR aunque ya la haya
+        // delegado ({@see Task::concerns()}), para que pueda retirar o cambiar su propia delegación.
+        $canDelegate = ($isAdmin || $task->concerns($user)) && $task->isPending();
+        $canRemind = $this->canRemind($task, $user, $hierarchy);
         $delegatable = $canDelegate
             ? array_values(array_filter($this->assignableUsers($user, $hierarchy, $users, $unitRepository), static fn (User $u): bool => $u !== $user))
             : [];
@@ -488,6 +492,10 @@ final class TaskController extends AbstractController
             // Only a superior with subordinates gets the delegate control.
             'canDelegate' => $canDelegate && [] !== $delegatable,
             'delegatable' => $delegatable,
+            // "Recordar": supervisión, no trabajo. Y si a quien hay que avisar ya se le avisó hoy, la
+            // ficha lo dice en vez de ofrecer un botón que el servidor va a frenar (mismo tope).
+            'canRemind' => $canRemind,
+            'remindedAt' => $canRemind ? $reminders->nudgedTodayAt($task) : null,
             // The trail humanised for non-technical readers; the raw diff rides along for admins only.
             'activityRows' => $activity->present($auditLog->findForSubject('Task', (string) $task->getId())),
             'isAdmin' => $isAdmin,
@@ -506,7 +514,10 @@ final class TaskController extends AbstractController
         if (!$this->isCsrfTokenValid('task_delegate'.$task->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
-        if (!$this->isGranted('ROLE_ADMIN') && !$task->isOwnedBy($user)) {
+        // El TITULAR sigue mandando en su tarea aunque la haya delegado ({@see Task::concerns()}): con
+        // `isOwnedBy` a secas, delegar era un viaje sin vuelta — la propiedad pasaba en exclusiva al
+        // delegado y el titular no podía ni retirar la delegación que él mismo había puesto.
+        if (!$this->isGranted('ROLE_ADMIN') && !$task->concerns($user)) {
             throw $this->createAccessDeniedException('No puedes delegar esta tarea.');
         }
         if (!$task->isPending()) {
@@ -577,6 +588,41 @@ final class TaskController extends AbstractController
         $workflow->apply($task, $transition);
         $entityManager->flush();
         $this->addFlash('success', 'Tarea actualizada.');
+
+        return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
+    }
+
+    /**
+     * Nudges whoever has to do the task ("Recordar"): an in-app notice + e-mail + push, on demand. It is
+     * a SUPERVISION action — offered to whoever answers for the task without having to do it (its
+     * manager, or the titular who delegated it), never to the person who owes the work (nudging
+     * yourself is noise) nor on a closed task.
+     *
+     * The one-a-day cap lives in the notifier, shared with the nightly engine, so this endpoint cannot
+     * be turned into a spam button by reloading it.
+     */
+    #[Route('/tareas/{id}/recordar', name: 'task_remind', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function remind(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, TaskReminderNotifier $reminders): Response
+    {
+        if (!$this->isCsrfTokenValid('task_remind'.$task->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+        if (!$this->canRemind($task, $user, $hierarchy)) {
+            throw $this->createAccessDeniedException('No puedes mandar un recordatorio de esta tarea.');
+        }
+
+        $notified = $reminders->nudge($task);
+        if (null === $notified) {
+            // O ya se avisó hoy (el tope) o no hay a quién avisar: decir CUÁL de las dos, en vez de un
+            // "listo" que no hizo nada.
+            $this->addFlash('error', null === $reminders->nudgeRecipient($task)
+                ? 'Esta tarea no tiene a nadie a quien avisar.'
+                : 'Ya se avisó hoy de esta tarea.');
+
+            return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
+        }
+
+        $this->addFlash('success', sprintf('Recordatorio enviado a %s.', $notified->getFullName()));
 
         return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
     }
@@ -823,6 +869,20 @@ final class TaskController extends AbstractController
         $department = $hierarchy->commandedDepartment($user);
 
         return null !== $department ? [$department] : [];
+    }
+
+    /**
+     * Whether the user may nudge the task's people ("Recordar"). Supervision, so: only on a task that is
+     * still open, only for someone who does NOT owe the work (you do not remind yourself), and only if
+     * they manage it or it is their own task delegated down ({@see Task::concerns()}).
+     */
+    private function canRemind(Task $task, User $user, OrganizationHierarchy $hierarchy): bool
+    {
+        if ($task->isClosed() || $task->isOwnedBy($user)) {
+            return false;
+        }
+
+        return $this->canManage($task, $user, $hierarchy) || $task->concerns($user);
     }
 
     /**

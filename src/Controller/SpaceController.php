@@ -13,7 +13,7 @@ use App\Security\Voter\AreaVoter;
 use App\Service\SchoolCalendar;
 use App\Space\RoomOccupancy;
 use App\Space\RoomSynchroniser;
-use App\Support\SchedulePicker;
+use App\Support\GuardiaDate;
 use App\Util\SchoolYear;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -51,14 +51,14 @@ final class SpaceController extends AbstractController
     ): Response {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::ESPACIOS);
 
-        $date = SchedulePicker::date($request);
+        $date = GuardiaDate::fromRequest($request);
         $schoolYear = SchoolYear::current($date);
         $year = $years->findBySchoolYear($schoolYear);
 
         // Periods and occupancy both come from the timetable of the course the date falls into; with no
         // course imported there is nothing to answer, and the template shows the empty state.
         $slots = null !== $year ? $schedule->distinctSlots($year) : [];
-        $slotIndex = SchedulePicker::slot($request, $slots);
+        $slotIndex = $request->query->has('slot') ? $request->query->getInt('slot') : ($slots[0]['index'] ?? 0);
         $availability = null !== $year ? $occupancy->at($year, $date, $slotIndex) : null;
 
         // How many whole groups must fit — the question the guardia coordinator actually asks when
