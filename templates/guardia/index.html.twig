@@ -68,6 +68,25 @@
     </details>
 {% endmacro %}
 
+{#
+   Coger tarea del banco sin salir del parte, para una línea que no tiene ninguna: "Del banco" saca una
+   al azar del nivel que deduce el grupo (un clic, que es el gesto de la mañana de guardias) y "Elegir…"
+   abre el banco filtrado para esa guardia. Vuelve al parte, no al detalle: el coordinador está
+   repasando la hora entera.
+#}
+{% macro bank_pick(cover, canWrite) %}
+    {% if canWrite %}
+        <span class="bank-pick">
+            <form method="post" action="{{ path('guardia_bank_apply', { cover: cover.id }) }}" class="inline-form">
+                <input type="hidden" name="_token" value="{{ csrf_token('guardia_bank_apply' ~ cover.id) }}">
+                <input type="hidden" name="volver" value="parte">
+                <button type="submit" class="link-action" title="Coge una tarea al azar del banco para el nivel de este grupo">Del banco</button>
+            </form>
+            <a class="link-action" href="{{ path('guardia_bank_index', { para: cover.id }) }}">Elegir…</a>
+        </span>
+    {% endif %}
+{% endmacro %}
+
 {% block body %}
     {% import _self as parte %}
     {% set slotActual = slots|filter(s => s.index == slotIndex)|first %}
@@ -210,15 +229,21 @@
                                     {% endif %}
                                 </div>
 
-                                {% if cover.hasTask %}
-                                    <div class="parte-card__taskline">
-                                        {% if cover.taskDocumentPath %}
-                                            <a class="task-doc" href="{{ path('guardia_task_download', { id: cover.id }) }}">{{ cover.taskDocumentName ?? 'Documento' }}</a>
-                                        {% endif %}
-                                        {% if cover.taskDescription %}
-                                            <span class="parte-card__taskdesc">{{ cover.taskDescription|excerpt(80) }}</span>
-                                        {% endif %}
-                                    </div>
+                                {% if cover.hasTask or canWrite %}
+                                <div class="parte-card__taskline">
+                                    {% if cover.taskDocumentPath %}
+                                        <a class="task-doc" href="{{ path('guardia_task_download', { id: cover.id }) }}">{{ cover.taskDocumentName ?? 'Documento' }}</a>
+                                    {% endif %}
+                                    {% if cover.taskDescription %}
+                                        <span class="parte-card__taskdesc">{{ cover.taskDescription|excerpt(80) }}</span>
+                                    {% endif %}
+                                    {% if cover.hasBankTask %}
+                                        <span class="parte-card__taskdesc"><span class="badge badge--warning">Del banco</span> {{ cover.bankItem.title|excerpt(60) }}</span>
+                                    {% endif %}
+                                    {% if not cover.hasTask %}
+                                        {{ parte.bank_pick(cover, canWrite) }}
+                                    {% endif %}
+                                </div>
                                 {% endif %}
 
                                 {% if sinCubrir and canWrite %}
@@ -266,7 +291,14 @@
                                         {% if cover.taskDescription %}
                                             <span class="task-desc" title="{{ cover.taskDescription }}">{{ cover.taskDescription|excerpt(60) }}</span>
                                         {% endif %}
-                                        {% if not cover.hasTask %}<span class="muted">Sin tarea</span>{% endif %}
+                                        {# La del banco se distingue de la que dejó el profesor: no es su trabajo, es de repuesto. #}
+                                        {% if cover.hasBankTask %}
+                                            <span class="task-desc"><span class="badge badge--warning">Del banco</span> {{ cover.bankItem.title|excerpt(48) }}</span>
+                                        {% endif %}
+                                        {% if not cover.hasTask %}
+                                            <span class="muted">Sin tarea</span>
+                                            {{ parte.bank_pick(cover, canWrite) }}
+                                        {% endif %}
                                     </td>
                                     <td>
                                         {% if cover.notCovered %}

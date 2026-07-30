@@ -1,0 +1,156 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Banco de tareas de guardia{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Banco de tareas{% endblock %}
+
+{% block body %}
+    {% if noCourse %}
+        <div class="card">
+            <div class="empty-state">
+                <h2>No hay curso dado de alta para {{ noCourse }}</h2>
+                <p>El banco de tareas va por curso (se vacía cada septiembre) y necesita el horario importado para saber qué materias se dan.</p>
+            </div>
+        </div>
+    {% else %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Guardias</p>
+            <h1>Banco de tareas <span class="muted mono">{{ course }}</span></h1>
+            <p class="lead">Trabajo preparado por los departamentos para cada nivel y materia. Si el profesor ausente no dejó tarea, quien esté de guardia coge una de aquí — siempre de la asignatura que tocaba.</p>
+        </div>
+        <a class="btn" href="{{ path('guardia_bank_new') }}">+ Añadir tarea</a>
+    </div>
+
+    {# MODO ELECCIÓN — se llega desde una guardia concreta: el objetivo es salir de aquí con una tarea. #}
+    {% if cover %}
+        <section class="card bank-picking">
+            <div class="bank-picking__what">
+                <p class="eyebrow">Eligiendo tarea para</p>
+                <p class="bank-picking__cover">{{ [cover.groupName, cover.roomName]|filter(v => v)|join(' · ') ?: 'la guardia' }} · {{ cover.date|date('d/m/Y', false) }}</p>
+                {% if cover.subjectName %}
+                    <p class="help">Solo se ofrecen tareas de <strong>{{ cover.subjectName }}</strong>{% if level %} de {{ level.label }}{% endif %}{% if coverSections is not empty %}, y las que valen para el grupo {{ coverSections|join('/') }}{% endif %}: el grupo trabaja la asignatura que le tocaba.</p>
+                {% else %}
+                    <p class="help">Esta guardia no tiene guardada la materia de la clase (se apuntó antes de que se registrara), así que hay que elegir la tarea a mano.</p>
+                {% endif %}
+                {% if level is null %}
+                    <p class="help">No se ha podido deducir el nivel del grupo: elígelo abajo para poder coger una al azar.</p>
+                {% endif %}
+            </div>
+            <form method="post" action="{{ path('guardia_bank_apply', { cover: cover.id }) }}" class="bank-picking__actions">
+                <input type="hidden" name="_token" value="{{ csrf_token('guardia_bank_apply' ~ cover.id) }}">
+                {% if level %}<input type="hidden" name="nivel" value="{{ level.value }}">{% endif %}
+                {# La materia la manda la guardia, no el filtro; el departamento sí acota el sorteo. #}
+                {% if departmentId %}<input type="hidden" name="depto" value="{{ departmentId }}">{% endif %}
+                <button type="submit" class="btn"{{ level is null ? ' disabled' }}>Coger una al azar</button>
+                <a class="btn secondary" href="{{ path('guardia_cover_show', { id: cover.id }) }}">Volver a la guardia</a>
+            </form>
+        </section>
+    {% endif %}
+
+    {# FILTROS — mandan también sobre el azar: se sortea entre lo que estás viendo. #}
+    <form method="get" action="{{ path('guardia_bank_index') }}" class="card bank-filters">
+        {% if cover %}<input type="hidden" name="para" value="{{ cover.id }}">{% endif %}
+        <div class="bank-filters__row">
+            <label class="field">
+                <span class="field-label">Nivel</span>
+                <select name="nivel">
+                    <option value="">Todos los niveles</option>
+                    {% for l in levels %}
+                        {# El recuento solo se enseña al navegar: eligiendo para una guardia contaría
+                           todas las materias del nivel y prometería tareas que no van a salir. #}
+                        <option value="{{ l.value }}"{{ level and level.value == l.value ? ' selected' }}>{{ l.label }}{% if not cover and countsByLevel[l.value] is defined %} ({{ countsByLevel[l.value] }}){% endif %}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            {% if not cover %}
+                <label class="field">
+                    <span class="field-label">Materia</span>
+                    <select name="materia">
+                        <option value="">Todas</option>
+                        {% for s in subjects %}
+                            <option value="{{ s }}"{{ subject == s ? ' selected' }}>{{ s }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+            {% endif %}
+            <label class="field">
+                <span class="field-label">Departamento</span>
+                <select name="depto">
+                    <option value="">Todos</option>
+                    {% for d in departments %}
+                        <option value="{{ d.id }}"{{ departmentId == d.id ? ' selected' }}>{{ d.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="choice">
+                <input type="checkbox" name="retiradas" value="1"{{ includeRetired ? ' checked' }}>
+                <span>Ver también las retiradas</span>
+            </label>
+            <button type="submit" class="btn secondary">Filtrar</button>
+        </div>
+        <p class="help">Cada tarea es de un nivel y una materia. Las letras de grupo son opcionales: sin letras vale para cualquier grupo de ese nivel.</p>
+    </form>
+
+    <div class="card">
+        {% if items is empty %}
+            <div class="empty-state">
+                <h2>No hay tareas con esos filtros</h2>
+                <p>{% if cover %}Nadie ha dejado trabajo de {{ cover.subjectName ?: 'esa materia' }}{% if level %} para {{ level.label }}{% endif %} en el banco de este curso.{% elseif level %}Nadie ha dejado todavía trabajo preparado para {{ level.label }}.{% else %}El banco de {{ course }} está vacío: cada departamento puede ir dejando aquí fichas y lecturas para las guardias.{% endif %}</p>
+                <a class="btn" href="{{ path('guardia_bank_new') }}">Añadir la primera</a>
+            </div>
+        {% else %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nivel</th>
+                        <th>Materia</th>
+                        <th>Grupos</th>
+                        <th>Tarea</th>
+                        <th>Departamento</th>
+                        <th>Copias</th>
+                        <th>Usos</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items %}
+                        <tr class="{{ not item.active ? 'is-retired' }}">
+                            <td>{{ item.level.label }}</td>
+                            <td>{{ item.subject }}</td>
+                            <td class="mono">{{ item.sections is empty ? 'Todos' : item.sections|join(', ') }}</td>
+                            <td>
+                                <strong>{{ item.title }}</strong>
+                                {% if not item.active %} <span class="badge badge--muted" data-tone="muted">Retirada</span>{% endif %}
+                                {% if item.description %}<div class="help">{{ item.description|excerpt(120) }}</div>{% endif %}
+                                {% if item.hasDocument %}
+                                    <a class="bank-doc" href="{{ path('guardia_bank_download', { id: item.id }) }}">{{ item.documentName ?: 'Documento' }}</a>
+                                {% endif %}
+                            </td>
+                            <td>{{ item.department.name }}</td>
+                            <td class="mono">{{ item.suggestedCopies ?? '—' }}</td>
+                            <td class="mono">{{ item.timesUsed }}</td>
+                            <td class="row-actions">
+                                {% if cover and item.active %}
+                                    <form method="post" action="{{ path('guardia_bank_apply', { cover: cover.id }) }}">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('guardia_bank_apply' ~ cover.id) }}">
+                                        <input type="hidden" name="item" value="{{ item.id }}">
+                                        <button type="submit" class="btn btn-sm">Usar esta</button>
+                                    </form>
+                                {% endif %}
+                                {% if item.id in curatableIds %}
+                                    <a href="{{ path('guardia_bank_edit', { id: item.id }) }}">Editar</a>
+                                    <form method="post" action="{{ path('guardia_bank_delete', { id: item.id }) }}" data-confirm="¿Seguro que quieres borrar «{{ item.title }}» del banco? Mejor retírala si ya se ha usado.">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('guardia_bank_delete' ~ item.id) }}">
+                                        <button type="submit" class="link-danger">Borrar</button>
+                                    </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+    {% endif %}
+{% endblock %}
