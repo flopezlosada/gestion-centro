@@ -1,0 +1,31 @@
+{#
+   El recordatorio operativo que pidió el centro: quien hace una guardia tiene que entrar en RAICES y
+   apuntar las ausencias del alumnado de esa sesión. Vive aquí, en un solo sitio, porque sale en cuatro
+   superficies (detalle de la guardia, "Mis guardias", el aviso de asignación y el push de la hora) y un
+   recordatorio que se contradice a sí mismo entre pantallas no lo cumple nadie.
+
+   El enlace a RAICES es OPCIONAL y sale solo si está configurado (`app_raices_url`, vacío por defecto).
+   No se pone una URL a ojo: un enlace roto en mitad de una guardia es peor que ningún enlace.
+#}
+
+{# Aviso completo, para la pantalla de UNA guardia concreta ("estoy aquí, haciéndola"). Redactado en
+   presente y sin plazo ("recuerda", no "antes de acabar") porque la misma pantalla se abre antes, durante
+   y después de la guardia, y una frase con plazo envejece mal en dos de los tres casos. #}
+{% macro notice() %}
+    <div class="callout callout--warning raices-notice">
+        <p>
+            <strong>Recuerda:</strong> entra en RAICES y apunta las ausencias del alumnado de esta sesión.
+            {% if app_raices_url %}<a class="raices-notice__link" href="{{ app_raices_url }}" target="_blank" rel="noopener">Abrir RAICES</a>{% endif %}
+        </p>
+    </div>
+{% endmacro %}
+
+{# Una línea para la vista del DÍA: un recordatorio por jornada, no uno por fila (eso sería ruido y se
+   dejaría de leer al tercer día). #}
+{% macro line() %}
+    <p class="raices-line">
+        <span class="raices-line__mark" aria-hidden="true">!</span>
+        En cada guardia, entra en RAICES y apunta las ausencias del alumnado de esa sesión.
+        {% if app_raices_url %}<a href="{{ app_raices_url }}" target="_blank" rel="noopener">Abrir RAICES</a>{% endif %}
+    </p>
+{% endmacro %}

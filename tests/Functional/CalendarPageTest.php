@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
+use App\Entity\Absence;
 use App\Entity\AcademicYear;
+use App\Entity\GuardiaCover;
 use App\Entity\NonLectiveDay;
 use App\Entity\Role;
 use App\Entity\Task;
@@ -302,5 +304,70 @@ final class CalendarPageTest extends WebTestCase
         self::assertResponseIsSuccessful();
         self::assertSelectorTextContains('.calendar-dayview', 'Memoria de la colega');
         self::assertSelectorNotExists('.calendar-dayview form.agenda-check');
+    }
+
+    /**
+     * El centro pidió que las guardias salgan en el calendario, y "el calendario" incluye el zoom de año,
+     * que era el único nivel que se las dejaba fuera. No lleva punto —ese hueco es del estado de la
+     * tarea, y por eso se quitaron en su día— sino un contorno en la celda, otro canal visual.
+     */
+    public function testYearViewMarksTheDaysWithYourOwnGuardia(): void
+    {
+        $this->em->persist($this->academicYear('2025-2026'));
+        $teacher = $this->teacherWithTask(new \DateTimeImmutable('2026-07-15'), 'Memoria del departamento');
+        $absent = (new User())->setFullName('Ausente Test')->setEmail('ausente@centro.test');
+        $this->em->persist($absent);
+        $this->guardiaCover($teacher, $absent, new \DateTimeImmutable('2026-05-12'));
+        $this->em->flush();
+
+        $this->client->loginUser($teacher);
+        $crawler = $this->client->request('GET', '/calendario?vista=anio&fecha=2026-07-15');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(1, $crawler->filter('.cal-mini__day.has-guardia'), 'el día de la guardia queda perfilado');
+        self::assertGreaterThan(0, $crawler->filter('.cal-year-legend__swatch--guardia')->count(), 'y la leyenda lo explica');
+    }
+
+    /**
+     * En la rejilla del mes, la guardia enlaza a SU ficha y no a "Mis guardias": desde una celda de otro
+     * mes, esa lista (que solo sabe de hoy y de lo que viene) era un callejón sin salida.
+     */
+    public function testMonthViewGuardiaLinksToItsOwnDetail(): void
+    {
+        $this->em->persist($this->academicYear('2025-2026'));
+        $teacher = $this->teacherWithTask(new \DateTimeImmutable('2026-07-15'), 'Memoria del departamento');
+        $absent = (new User())->setFullName('Ausente Test')->setEmail('ausente@centro.test');
+        $this->em->persist($absent);
+        $cover = $this->guardiaCover($teacher, $absent, new \DateTimeImmutable('2026-07-14'));
+        $this->em->flush();
+
+        $this->client->loginUser($teacher);
+        $crawler = $this->client->request('GET', '/calendario?vista=mes&fecha=2026-07-15');
+
+        self::assertResponseIsSuccessful();
+        $link = $crawler->filter('a.calendar-guardia');
+        self::assertCount(1, $link);
+        self::assertSame('/guardias/'.$cover->getId().'/ver', $link->attr('href'));
+    }
+
+    /**
+     * Persists a parte line assigned to a teacher on the given day, with its absence.
+     */
+    private function guardiaCover(User $guardia, User $absent, \DateTimeImmutable $date): GuardiaCover
+    {
+        $absence = (new Absence())->setAbsentTeacher($absent)->setDate($date);
+        $this->em->persist($absence);
+
+        $cover = (new GuardiaCover())
+            ->setAbsence($absence)
+            ->setDate($date)
+            ->setSlotIndex(0)
+            ->setAbsentTeacher($absent)
+            ->setAssignedGuardia($guardia)
+            ->setGroupName('1ºA')
+            ->setRoomName('A11');
+        $this->em->persist($cover);
+
+        return $cover;
     }
 }

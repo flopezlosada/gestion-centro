@@ -7,6 +7,9 @@ twig:
         # VAPID public key exposed to the browser so it can subscribe to Web Push. Empty = push
         # disabled: the "Activar avisos" button stays hidden (see base.html.twig / public/js/push.js).
         app_vapid_public_key: '%env(VAPID_PUBLIC_KEY)%'
+        # Acceso a RAICES, enlazado desde el recordatorio de ausencias de cada guardia. Vacío = el aviso
+        # se muestra sin enlace (ver templates/_macros/raices.html.twig).
+        app_raices_url: '%app.raices_url%'
 
 when@test:
     twig:

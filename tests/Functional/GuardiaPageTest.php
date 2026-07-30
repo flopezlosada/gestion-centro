@@ -635,4 +635,135 @@ final class GuardiaPageTest extends WebTestCase
         self::assertResponseIsSuccessful();
         self::assertStringNotContainsString('Cita médica confidencial.', $crawler->html());
     }
+
+    /**
+     * El recordatorio operativo que pidió el centro: quien cubre una guardia tiene que ver SIEMPRE, en la
+     * pantalla de la guardia, el aviso de entrar en RAICES a apuntar las ausencias del alumnado.
+     */
+    public function testTheCoveringTeacherAlwaysSeesTheRaicesReminderOnTheGuardiaDetail(): void
+    {
+        $this->login(); // coordinador, para poder crear el escenario
+        $guardia = $this->user('Guardia Raices', 'graices@centro.test');
+        $absent = $this->user('Ausente Raices', 'araices@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('2025-11-10'), 0, $absent, $guardia);
+        $this->em->flush();
+
+        $this->client->loginUser($guardia);
+        $crawler = $this->client->request('GET', '/guardias/'.$cover->getId().'/ver');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(1, $crawler->filter('.raices-notice'));
+        self::assertStringContainsString('RAICES', $crawler->filter('.raices-notice')->text());
+    }
+
+    /**
+     * Pero NO con la incidencia registrada: eso significa que el de guardia no apareció, o que el ausente
+     * volvió y dio él la clase. En los dos casos quien lee la pantalla no estuvo delante, así que pedirle
+     * que apunte las ausencias de esa sesión es pedirle algo que no puede hacer. Es el mismo criterio con
+     * el que el barrido del push descarta esos covers, y tenerlo distinto en cada superficie era el bug.
+     */
+    public function testAnIncidentDropsTheRaicesReminder(): void
+    {
+        $this->login();
+        $guardia = $this->user('Guardia Inc', 'ginc@centro.test');
+        $absent = $this->user('Ausente Inc', 'ainc@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('2025-11-10'), 0, $absent, $guardia, notCovered: true);
+        $this->em->flush();
+
+        $this->client->loginUser($guardia);
+        $crawler = $this->client->request('GET', '/guardias/'.$cover->getId().'/ver');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(0, $crawler->filter('.raices-notice'));
+        self::assertSelectorTextContains('.guardia-detail-head', 'Incidencia', 'la pantalla sigue siendo la de la guardia, solo que sin el recordatorio');
+    }
+
+    /**
+     * Y en la vista del día, si TODAS las guardias de hoy acabaron en incidencia no hubo ninguna sesión de
+     * la que tomar lista, así que tampoco se encabeza con el recordatorio.
+     */
+    public function testADayWhereEveryGuardiaWasAnIncidentCarriesNoRaicesReminder(): void
+    {
+        $user = $this->login(false);
+        $absent = $this->user('Ausente Todo', 'atodo@centro.test');
+        $today = new \DateTimeImmutable('today');
+        $this->cover($today, 0, $absent, $user, notCovered: true);
+        $this->cover($today, 1, $absent, $user, notCovered: true);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/mias');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(0, $crawler->filter('.raices-line'));
+    }
+
+    /**
+     * Con una sola que sí se dé, el recordatorio del día vuelve: la incidencia de una guardia no exime de
+     * apuntar las ausencias de la otra.
+     */
+    public function testOneRealGuardiaAmongIncidentsStillCarriesTheDayReminder(): void
+    {
+        $user = $this->login(false);
+        $absent = $this->user('Ausente Mixto', 'amixto@centro.test');
+        $today = new \DateTimeImmutable('today');
+        $this->cover($today, 0, $absent, $user, notCovered: true);
+        $this->cover($today, 1, $absent, $user);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/mias');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(1, $crawler->filter('.raices-line'));
+    }
+
+    /**
+     * A la coordinación mirando la guardia de OTRA persona no se le da: ahí el aviso no es un
+     * recordatorio, es una instrucción que no le toca a quien la lee.
+     */
+    public function testTheCoordinatorLookingAtSomeoneElsesGuardiaDoesNotGetTheRaicesReminder(): void
+    {
+        $this->login(); // coordinador, y NO es quien cubre
+        $guardia = $this->user('Guardia Otra', 'gotra@centro.test');
+        $absent = $this->user('Ausente Otra', 'aotra@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('2025-11-10'), 0, $absent, $guardia);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/'.$cover->getId().'/ver');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(0, $crawler->filter('.raices-notice'));
+    }
+
+    /**
+     * En "Mis guardias" el recordatorio va UNA vez por jornada, no uno por fila: repetido en cada guardia
+     * se vuelve decoración y se deja de leer.
+     */
+    public function testMisGuardiasCarriesOneRaicesReminderForTheWholeDay(): void
+    {
+        $user = $this->login(false);
+        $absent = $this->user('Ausente Dia', 'adia@centro.test');
+        $today = new \DateTimeImmutable('today');
+        $this->cover($today, 0, $absent, $user);
+        $this->cover($today, 1, $absent, $user);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/mias');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(1, $crawler->filter('.raices-line'), 'uno por día, aunque haya dos guardias');
+        self::assertStringContainsString('RAICES', $crawler->filter('.raices-line')->text());
+    }
+
+    /**
+     * Y no aparece un aviso de "apunta las ausencias" en un día sin guardias: no hay sesión ninguna de la
+     * que tomar lista.
+     */
+    public function testMisGuardiasWithoutGuardiasTodayCarriesNoRaicesReminder(): void
+    {
+        $this->login(false);
+        $crawler = $this->client->request('GET', '/guardias/mias');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(0, $crawler->filter('.raices-line'));
+    }
 }

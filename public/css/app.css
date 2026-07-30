@@ -1131,6 +1131,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .callout ul { margin: 6px 0 0; padding-left: 20px; }
 .callout li + li { margin-top: 4px; }
 .callout--warning { background: var(--warning-weak); border-color: var(--warning); color: var(--warning-text); }
+/* Enlace de salida dentro de un callout (p. ej. "Abrir RAICES"): hereda el color del aviso y no parte
+   en dos líneas, que es lo que hace un enlace corto al final de una frase larga. */
+.raices-notice__link { color: var(--warning-text); font-weight: 600; white-space: nowrap; }
 /* Listas que pueden ser de dos nombres o del claustro entero: plegadas, para no sepultar lo que
    viene debajo (normalmente el botón que confirma la acción que el aviso está describiendo). */
 .callout__more > summary { cursor: pointer; font-weight: 600; margin-top: 8px; }
@@ -2107,6 +2110,12 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .cal-mini__day.is-blank { visibility: hidden; }
 .cal-mini__day.is-today .cal-mini__num { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-weight: 600; }
 .cal-mini__dot { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 5px; height: 5px; border-radius: 50%; }
+/* Día con guardia tuya: la celda se PERFILA, no gana un punto. El único punto del mini-día es del
+   estado de la tarea y por eso la guardia se quedó fuera de esta vista; un contorno es otro canal
+   visual, así que ambos caben sin competir (y sigue leyéndose a 22px). El detalle —qué grupo, a quién
+   cubres— está a un clic, en la vista de mes y de día. */
+.cal-mini__day.has-guardia { box-shadow: inset 0 0 0 1px var(--accent); border-radius: 5px; }
+.cal-year-legend__swatch--guardia { background: transparent; border: 1px solid var(--accent); }
 
 /* En móvil el mes se compacta a la vista del handoff (9a): la rejilla de 7 columnas cabe entera
    (sin scroll horizontal), cada día es su número + puntos de color centrados (sin títulos). Los
@@ -2182,6 +2191,16 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .today__title { margin: 0; font-size: 22px; }
 .today__date { color: var(--text-muted); font-size: 14px; text-transform: capitalize; }
 .count-chip { margin-left: auto; font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-weak); border: 1px solid var(--accent); border-radius: 999px; padding: 3px 11px; white-space: nowrap; }
+/* Recordatorio de RAICES en la vista del día: una línea, no un callout. El callout (ámbar, con borde)
+   es para UNA guardia concreta; aquí encabeza una lista y a ese tamaño competiría con las filas, que
+   son lo que hay que leer. Mismo ámbar en el signo para que se reconozca como el mismo aviso. */
+.raices-line { display: flex; align-items: baseline; gap: 9px; margin: -4px 0 16px; font-size: 13px; color: var(--text-muted); }
+.raices-line__mark {
+    flex: none; width: 18px; height: 18px; border-radius: 999px;
+    background: var(--warning-weak); color: var(--warning-text);
+    display: grid; place-items: center; font: 600 12px var(--font-mono);
+}
+.raices-line a { color: var(--warning-text); font-weight: 600; }
 
 /* Rejilla de dos columnas: el resto del día a la izquierda; la próxima guardia (protagonista)
    y el resumen a la derecha, fijos al hacer scroll. En móvil se apila y el protagonista sube. */
@@ -2532,6 +2551,31 @@ tr.is-not-covered { background: var(--danger-weak); }
 .no-guardia__meta { font-size: 12px; color: var(--text-faint); }
 .no-guardia__cta { flex: none; font-size: 12px; color: var(--success); font-weight: 600; }
 
+/* ---- Resto de las guardias de hoy (todas, no solo la próxima) ----
+   Acompaña al ancla sin competir con ella: el hero es la caja oscura, esto son filas sobre la caja
+   hundida. Las que ya han pasado se atenúan, pero SIGUEN listadas — un día con tres guardias tiene
+   que leerse como tres. Comparte la columna de hora monoespaciada de .agenda-row, pero no reusa esa
+   clase: allí la hora va en malva (= privado) y una guardia es del centro. */
+.guardia-rest {
+    background: var(--surface-sunken); border: 1px solid var(--border); border-radius: 16px;
+    padding: 12px 4px 4px;
+}
+.guardia-rest__title {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--text-faint); margin: 0 0 4px; padding: 0 14px;
+}
+.guardia-rest__list { list-style: none; margin: 0; padding: 0; }
+.guardia-rest__row { display: flex; align-items: center; gap: 13px; padding: 11px 14px; text-decoration: none; border-radius: 12px; }
+.guardia-rest__row:hover { background: var(--surface); }
+.guardia-rest__list li + li .guardia-rest__row { border-top: 1px solid var(--separator); border-radius: 0; }
+.guardia-rest__time { flex: none; width: 46px; font-family: var(--font-mono); font-weight: 600; font-size: 14px; color: var(--accent); }
+.guardia-rest__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.guardia-rest__where { font-size: 14px; font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guardia-rest__who { font-size: 12px; color: var(--text-faint); }
+.guardia-rest__flag { flex: none; font-family: var(--font-mono); font-size: 11px; color: var(--success); }
+.guardia-rest__row.is-done .guardia-rest__time { color: var(--text-faint); font-weight: 400; }
+.guardia-rest__row.is-done .guardia-rest__where { color: var(--text-muted); font-weight: 400; }
+
 /* ---- Secciones (eyebrow + "ver todas") ---- */
 .home-section__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .home-section__more { font-size: 12px; color: var(--success); font-weight: 600; text-decoration: none; }
@@ -2586,6 +2630,11 @@ tr.is-not-covered { background: var(--danger-weak); }
 .tick--personal { border-color: var(--personal); }
 .tick--personal.is-checked { background: var(--personal); border-color: var(--personal); }
 .is-overdue .tick--personal { border-color: var(--personal); }
+/* Guardia en "Próximos 7 días": ESCUDO, la misma forma con la que el calendario la distingue de la
+   tarea (círculo) y del evento (cuadrado). Sin aro ni área táctil: no se marca, se va a ella. */
+.tick--guardia { border: 0; cursor: default; color: var(--accent); }
+.tick--guardia::before { content: none; }
+.tick--guardia svg { width: 20px; height: 20px; }
 .tasklist__body { flex: 1; min-width: 0; text-decoration: none; display: flex; flex-direction: column; gap: 5px; }
 .tasklist__title { font-size: 14.5px; line-height: 1.35; color: var(--text); font-weight: 500; }
 .tasklist__meta { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-faint); }

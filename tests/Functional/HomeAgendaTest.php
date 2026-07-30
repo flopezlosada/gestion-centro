@@ -4,13 +4,19 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
+use App\Entity\Absence;
+use App\Entity\AcademicYear;
 use App\Entity\Department;
+use App\Entity\GuardiaCover;
 use App\Entity\PersonalEvent;
 use App\Entity\Role;
+use App\Entity\ScheduleEntry;
 use App\Entity\Task;
 use App\Entity\TaskResponsibility;
 use App\Entity\User;
+use App\Enum\ScheduleActivityKind;
 use App\Enum\TaskType;
+use App\Enum\Weekday;
 use App\Support\TaskStatus;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
@@ -28,6 +34,9 @@ final class HomeAgendaTest extends WebTestCase
 {
     private KernelBrowser $client;
     private EntityManagerInterface $em;
+
+    /** @var array<string, Absence> absences already created, keyed "email|day" (see {@see guardiaCover()}) */
+    private array $absences = [];
 
     protected function setUp(): void
     {
@@ -213,6 +222,141 @@ final class HomeAgendaTest extends WebTestCase
         $listed = $crawler->filter('.module-row__title')->each(static fn ($node): string => $node->text());
         self::assertContains('El acta de Pedro', $listed);
         self::assertNotContains('Mi propia acta', $listed, 'you are never offered your own task to validate');
+    }
+
+    /**
+     * El centro pidió que TODAS las guardias salgan en la agenda, no solo la próxima: un día con tres
+     * guardias tiene que leerse como tres. El hero se queda con la siguiente y las demás se listan
+     * debajo, incluidas las que ya han pasado (marcadas), porque desaparecer se lee como "no la tenías".
+     */
+    public function testEveryGuardiaOfTodayIsListedOnTheHomeNotJustTheNextOne(): void
+    {
+        $me = $this->user('guardia@centro.test');
+        $absent = $this->user('ausente@centro.test');
+        $today = new \DateTimeImmutable('today');
+
+        // Sin horario importado ninguna hora "ha pasado" (no se saben las horas), así que las tres
+        // quedan pendientes: una va al hero y las otras dos a la lista.
+        foreach ([['A11', '1ºA'], ['A12', '2ºB'], ['A13', '3ºC']] as $i => [$room, $group]) {
+            $this->guardiaCover($me, $absent, $today, $i, $room, $group);
+        }
+        $this->em->flush();
+
+        $this->client->loginUser($me);
+        $crawler = $this->client->request('GET', '/');
+
+        self::assertResponseIsSuccessful();
+        $html = (string) $this->client->getResponse()->getContent();
+        self::assertStringContainsString('A11', $html, 'la primera es el ancla del día');
+        self::assertStringContainsString('A12', $html);
+        self::assertStringContainsString('A13', $html);
+        self::assertCount(2, $crawler->filter('.guardia-rest__row'), 'las dos que no son el hero se listan aparte');
+        // Y llevan a SU guardia, no a la lista genérica: es donde está la tarea del grupo y el aviso de RAICES.
+        self::assertStringContainsString('/guardias/', $crawler->filter('.guardia-rest__row')->attr('href') ?? '');
+    }
+
+    /**
+     * Una guardia de los próximos días es un compromiso más del anticipo, así que entra en "Próximos 7
+     * días" junto a las tareas y los eventos — antes solo existía en la pantalla de guardias.
+     */
+    public function testAGuardiaInTheComingDaysShowsInTheUpcomingSection(): void
+    {
+        $me = $this->user('guardia@centro.test');
+        $absent = $this->user('ausente@centro.test');
+        // Pasado mañana: dentro de la ventana de 7 días con holgura, y a mediodía no aplica aquí porque
+        // un cover se guarda como DÍA (date_immutable), sin hora.
+        $this->guardiaCover($me, $absent, self::midday('+2 days')->setTime(0, 0), 0, 'B21', '4ºD');
+        $this->em->flush();
+
+        $this->client->loginUser($me);
+        $crawler = $this->client->request('GET', '/');
+
+        self::assertResponseIsSuccessful();
+        $upcoming = $crawler->filter('.upcoming-item')->each(static fn (Crawler $n): string => $n->text());
+        self::assertNotEmpty($upcoming, 'la sección "Próximos 7 días" se pinta');
+        self::assertStringContainsString('B21', implode(' | ', $upcoming));
+        self::assertStringContainsString('Ausente Test', implode(' | ', $upcoming), 'dice a quién cubres');
+    }
+
+    /**
+     * "Hoy no tienes guardia" y "ya has hecho las de hoy" no son lo mismo, y ahora se distinguen: con la
+     * lista de las ya pasadas debajo, el mensaje viejo se contradecía con lo que se veía.
+     */
+    public function testADayWhoseGuardiasAreAllOverDoesNotClaimThereWereNone(): void
+    {
+        $me = $this->user('guardia@centro.test');
+        $absent = $this->user('ausente@centro.test');
+        $today = new \DateTimeImmutable('today');
+        $year = $this->academicYearFor($today);
+
+        // "Ya pasó" solo se sabe con el horario importado, que es de donde salen las horas del tramo. Se
+        // usa un tramo de 00:00 a 00:01 para que la guardia esté terminada a cualquier hora a la que corra
+        // el test y en cualquier zona del runner (ambos extremos se comparan en la zona por defecto de
+        // PHP, la misma que usa Inicio). Único hueco: el minuto exacto de la medianoche.
+        $this->em->persist(
+            (new ScheduleEntry())
+                ->setAcademicYear($year)
+                ->setTeacher($absent)
+                ->setWeekday(Weekday::from((int) $today->format('N')))
+                ->setSlotIndex(0)
+                ->setStartsAt(new \DateTimeImmutable('00:00'))
+                ->setEndsAt(new \DateTimeImmutable('00:01'))
+                ->setKind(ScheduleActivityKind::LECTIVE)
+        );
+        $this->guardiaCover($me, $absent, $today, 0, 'A11', '1ºA');
+        $this->em->flush();
+
+        $this->client->loginUser($me);
+        $this->client->request('GET', '/');
+
+        self::assertResponseIsSuccessful();
+        $html = (string) $this->client->getResponse()->getContent();
+        self::assertStringNotContainsString('Hoy no tienes guardia', $html);
+        self::assertStringContainsString('Ya has hecho tu guardia de hoy', $html);
+        self::assertStringContainsString('A11', $html, 'y la guardia sigue listada, no desaparece');
+    }
+
+    /**
+     * Persists one parte line assigned to a teacher, with its absence (one per absent teacher and day:
+     * that pair is UNIQUE in guardia_absence).
+     */
+    private function guardiaCover(User $guardia, User $absent, \DateTimeImmutable $date, int $slot, string $room, string $group): void
+    {
+        $key = $absent->getEmail().'|'.$date->format('Y-m-d');
+        if (!isset($this->absences[$key])) {
+            $absence = (new Absence())->setAbsentTeacher($absent)->setDate($date);
+            $this->em->persist($absence);
+            $this->absences[$key] = $absence;
+        }
+
+        $this->em->persist(
+            (new GuardiaCover())
+                ->setAbsence($this->absences[$key])
+                ->setDate($date)
+                ->setSlotIndex($slot)
+                ->setAbsentTeacher($absent)
+                ->setAssignedGuardia($guardia)
+                ->setRoomName($room)
+                ->setGroupName($group)
+        );
+    }
+
+    /** The course the given day belongs to, created on the fly (the home resolves period times from it). */
+    private function academicYearFor(\DateTimeImmutable $day): AcademicYear
+    {
+        $schoolYear = SchoolYear::current($day);
+        $start = (int) substr($schoolYear, 0, 4);
+        $year = (new AcademicYear())
+            ->setSchoolYear($schoolYear)
+            ->setTerm1Start(new \DateTimeImmutable($start.'-09-15'))
+            ->setTerm1End(new \DateTimeImmutable($start.'-12-22'))
+            ->setTerm2Start(new \DateTimeImmutable(($start + 1).'-01-08'))
+            ->setTerm2End(new \DateTimeImmutable(($start + 1).'-03-27'))
+            ->setTerm3Start(new \DateTimeImmutable(($start + 1).'-04-07'))
+            ->setTerm3End(new \DateTimeImmutable(($start + 1).'-06-22'));
+        $this->em->persist($year);
+
+        return $year;
     }
 
     public function testThereIsNoSeparateAgendaListPage(): void

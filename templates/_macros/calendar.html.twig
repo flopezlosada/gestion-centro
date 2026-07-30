@@ -44,15 +44,17 @@
         {% if cell.nonLective %}
             <p class="calendar-nonlective">{{ cell.nonLective.description }}</p>
         {% endif %}
-        {# Guardias del día (ancla): marcador ESCUDO, distinto del punto de tarea/evento. Solo las propias. #}
+        {# Guardias del día (ancla): marcador ESCUDO, distinto del punto de tarea/evento. Solo las propias.
+           Enlazan a SU guardia (no a "mis guardias", que solo sabe de hoy y de lo que viene: desde una
+           celda de la semana pasada era un callejón sin salida). #}
         {% set dayGuardias = guardiasByDay[cell.date|date('Y-m-d', false)] ?? [] %}
         {% if dayGuardias is not empty %}
             <ul class="calendar-guardias">
                 {% for g in dayGuardias %}
                     <li>
-                        <a class="calendar-guardia" href="{{ path('guardia_mine') }}" title="Guardia{% if g.roomName %} · {{ g.roomName }}{% endif %} · cubres a {{ g.absentTeacher.fullName }}">
+                        <a class="calendar-guardia" href="{{ path('guardia_cover_show', { id: g.id }) }}" title="Guardia{% if g.effectiveRoomName %} · {{ g.effectiveRoomName }}{% endif %} · cubres a {{ g.absentTeacher.fullName }}">
                             <span class="calendar-guardia-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>
-                            <span class="calendar-task-title">Guardia{% if g.roomName %} · {{ g.roomName }}{% endif %}</span>
+                            <span class="calendar-task-title">Guardia{% if g.effectiveRoomName %} · {{ g.effectiveRoomName }}{% endif %}</span>
                         </a>
                     </li>
                 {% endfor %}

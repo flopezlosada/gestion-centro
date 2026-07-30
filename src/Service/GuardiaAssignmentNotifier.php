@@ -19,6 +19,14 @@ use App\Entity\User;
  */
 final class GuardiaAssignmentNotifier
 {
+    /**
+     * El recordatorio operativo del centro, que cierra el aviso de asignación. Aquí llega con antelación,
+     * así que se enuncia como parte del trabajo que se acepta, no como un "hazlo ahora": ese lo manda
+     * {@see GuardiaRaicesReminder} durante la propia hora. Solo acompaña a la asignación — al aviso de
+     * "ya no tienes la guardia" no le pega, porque justamente ya no hay sesión que apuntar.
+     */
+    private const string RAICES_REMINDER = "\n\nRecuerda apuntar en RAICES las ausencias del alumnado de esa sesión.";
+
     public function __construct(
         private readonly NotificationDispatcher $dispatcher,
     ) {
@@ -26,7 +34,8 @@ final class GuardiaAssignmentNotifier
 
     /**
      * Notifica al profesor asignado a una guardia. No hace nada si la línea no tiene guardia asignada
-     * (una asignación borrada no genera aviso). El cuerpo resume qué grupo/aula cubre y a quién sustituye.
+     * (una asignación borrada no genera aviso). El cuerpo resume qué grupo/aula cubre y a quién sustituye,
+     * y cierra con el recordatorio de RAICES ({@see self::RAICES_REMINDER}).
      *
      * @param GuardiaCover $cover the cover just assigned (already flushed)
      * @param string|null  $note  the coordinator's explanation, when the assignment comes from a manual change
@@ -45,7 +54,9 @@ final class GuardiaAssignmentNotifier
             self::whatIsCovered($cover),
         );
 
-        $this->dispatcher->dispatch($recipient, 'guardia.assigned', $title, $body.self::explanation($note));
+        // El recordatorio de RAICES va al FINAL, después de la explicación de coordinación: primero por
+        // qué te toca a ti, y luego lo que hay que hacer al darla.
+        $this->dispatcher->dispatch($recipient, 'guardia.assigned', $title, $body.self::explanation($note).self::RAICES_REMINDER);
     }
 
     /**

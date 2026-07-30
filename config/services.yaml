@@ -27,6 +27,12 @@ parameters:
     # environment via APP_ORG_NAME (kept out of the repo on purpose).
     app.organization_name: '%env(default:app_organization_name_default:APP_ORG_NAME)%'
     app_organization_name_default: 'Centro educativo'
+    # Acceso a RAICES para el recordatorio "apunta las ausencias del alumnado" que acompaña a cada
+    # guardia. VACÍO por defecto a propósito: el aviso se da igual, pero sin enlace mientras no se
+    # configure la URL real del centro (APP_RAICES_URL) — un enlace inventado en mitad de una guardia
+    # es peor que ninguno.
+    app.raices_url: '%env(default:app_raices_url_default:APP_RAICES_URL)%'
+    app_raices_url_default: ''
     # Idle-session timeout in seconds. 0 disables it (dev/test, so development sessions don't drop);
     # production overrides it in the when@prod block below.
     app.session_idle_timeout: 0
