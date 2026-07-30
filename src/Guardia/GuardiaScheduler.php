@@ -6,8 +6,8 @@ namespace App\Guardia;
 
 use App\Entity\AcademicYear;
 use App\Entity\GuardiaCover;
-use App\Entity\ScheduleEntry;
 use App\Entity\User;
+use App\Enum\GuardiaDutyBand;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use App\Repository\GuardiaCoverRepository;
@@ -20,9 +20,11 @@ use Doctrine\ORM\EntityManagerInterface;
  * cover balance (assigned covers with no incident) for a date and period, and fills the
  * still-unassigned parte lines.
  *
- * Two rules it enforces on top of the pure ordering: a teacher who is themselves absent that period
- * is dropped from the pool, and a teacher already covering another group that period is not offered
- * again (one teacher covers at most one group per hour).
+ * One rule it enforces on top of the pure ordering: a teacher who is themselves absent that period is
+ * dropped from the pool — that is not a preference, it is impossible. Everyone else is offered to the
+ * assigner along with how many groups they are ALREADY covering that period, and the assigner decides:
+ * while there are enough people, nobody is double-booked; when the absences outnumber the guardia
+ * teachers, somebody has to mind two groups and it goes to whoever carries least.
  */
 final class GuardiaScheduler
 {
@@ -54,17 +56,18 @@ final class GuardiaScheduler
             return 0;
         }
 
-        $takenTeacherIds = $this->assignedTeacherIds($parte);
-        $candidates = $this->candidates($year, $date, $slotIndex, $takenTeacherIds);
+        $candidates = $this->candidates($year, $date, $slotIndex, $this->hereLoadByTeacher($parte));
 
-        $ordered = $this->assigner->prioritise(\count($unassigned), $candidates);
+        // One pick per uncovered group. In deficit the sequence repeats people, so a group is never
+        // left with nobody just because the rota ran out.
+        $picks = $this->assigner->sequence(\count($unassigned), $candidates);
 
         $newlyAssigned = [];
         foreach ($unassigned as $i => $cover) {
-            if (!isset($ordered[$i])) {
+            if (!isset($picks[$i])) {
                 break;
             }
-            $cover->setAssignedGuardia($ordered[$i]->teacher);
+            $cover->setAssignedGuardia($picks[$i]->teacher);
             $newlyAssigned[] = $cover;
         }
         $this->em->flush();
@@ -77,9 +80,10 @@ final class GuardiaScheduler
     }
 
     /**
-     * The teachers who can still cover a group at a period, in the order the equitable engine would
-     * pick them (whoever carries the least first). Same pool and same ordering the automatic split
-     * uses, so the manual assignment sheet in the parte offers exactly what "repartir" would choose.
+     * The teachers who can cover a group at a period, in the order the equitable engine would pick them
+     * (whoever carries the least first). Same pool and same ordering the automatic split uses, so the
+     * manual assignment sheet in the parte offers exactly what "repartir" would choose — including, in
+     * deficit, the colleagues who would have to mind a second group.
      *
      * @param AcademicYear       $year      the course whose timetable supplies the guardia pool
      * @param \DateTimeImmutable $date      the day
@@ -92,11 +96,13 @@ final class GuardiaScheduler
     {
         $unassigned = \count(array_filter($parte, static fn (GuardiaCover $c): bool => null === $c->getAssignedGuardia()));
 
-        // How many covers are still open decides whether collaborators join at all (see prioritise),
-        // so a sheet opened for one cover offers the same people the bulk split would.
+        // How many covers are still open decides which bands open and whether doubling up is on the
+        // table (see prioritise), so a sheet opened for one cover offers the same people the bulk split
+        // would. Never below 1: with nothing open the list would come back empty and the sheet would
+        // wrongly read as "nobody can cover".
         return $this->assigner->prioritise(
             max(1, $unassigned),
-            $this->candidates($year, $date, $slotIndex, $this->assignedTeacherIds($parte)),
+            $this->candidates($year, $date, $slotIndex, $this->hereLoadByTeacher($parte)),
         );
     }
 
@@ -138,38 +144,42 @@ final class GuardiaScheduler
     }
 
     /**
-     * Builds the pool of candidates for a period: guardia and collaborator duty holders in the given
-     * course, minus anyone absent that period and anyone already covering a group then, each with
-     * their cover balance.
+     * Builds the pool of candidates for a period: the guardia and collaborator duty holders in the given
+     * course, minus anyone absent that period, each with their cover balance and with how many groups
+     * they are already covering right there.
      *
-     * @param AcademicYear       $year            the course whose timetable supplies the pool
-     * @param \DateTimeImmutable $date            the day
-     * @param int                $slotIndex       the period index within the day
-     * @param list<int>          $takenTeacherIds ids already covering a group this period
+     * Whoever is already covering a group is NOT dropped here: they are handed over carrying their
+     * {@code hereLoad} so the assigner can leave them out while there is anybody else, and reach for
+     * them only in deficit. Deciding that is the pure engine's job, not this one's.
      *
-     * @return list<GuardiaCandidate> the available candidates
+     * @param AcademicYear       $year      the course whose timetable supplies the pool
+     * @param \DateTimeImmutable $date      the day
+     * @param int                $slotIndex the period index within the day
+     * @param array<int, int>    $hereLoad  teacher id → groups already covered by them at this date and period
+     *
+     * @return list<GuardiaCandidate> the candidates who could cover
      */
-    private function candidates(AcademicYear $year, \DateTimeImmutable $date, int $slotIndex, array $takenTeacherIds): array
+    private function candidates(AcademicYear $year, \DateTimeImmutable $date, int $slotIndex, array $hereLoad): array
     {
         $weekday = Weekday::from((int) $date->format('N'));
         $absentIds = $this->covers->absentTeacherIdsAt($date, $slotIndex);
         $slotLoad = $this->covers->loadBySlot($slotIndex);
         $totalLoad = $this->covers->totalLoad();
-        $excluded = array_merge($absentIds, $takenTeacherIds);
 
         $candidates = [];
         $seen = [];
         foreach ($this->schedule->dutyPoolAt($year, $weekday, $slotIndex) as $entry) {
             $teacherId = $entry->getTeacher()->getId();
-            if (null === $teacherId || \in_array($teacherId, $excluded, true) || isset($seen[$teacherId])) {
+            if (null === $teacherId || \in_array($teacherId, $absentIds, true) || isset($seen[$teacherId])) {
                 continue;
             }
             $seen[$teacherId] = true;
             $candidates[] = new GuardiaCandidate(
                 $entry->getTeacher(),
-                ScheduleActivityKind::COLLABORATOR === $entry->getKind(),
+                ScheduleActivityKind::COLLABORATOR === $entry->getKind() ? GuardiaDutyBand::COLLABORATOR : GuardiaDutyBand::GUARDIA,
                 $slotLoad[$teacherId] ?? 0,
                 $totalLoad[$teacherId] ?? 0,
+                $hereLoad[$teacherId] ?? 0,
             );
         }
 
@@ -177,22 +187,24 @@ final class GuardiaScheduler
     }
 
     /**
-     * The ids of teachers already assigned to a cover in the given parte lines.
+     * How many groups each teacher is already covering in the given parte lines — 1 for the ordinary
+     * case, more when they have already been doubled up. Read from the lines in memory, not from a
+     * query: the caller has them loaded and they are the truth about this date and period.
      *
      * @param list<GuardiaCover> $parte the parte lines
      *
-     * @return list<int> the assigned teachers' ids
+     * @return array<int, int> teacher id → groups they already cover at that date and period
      */
-    private function assignedTeacherIds(array $parte): array
+    private function hereLoadByTeacher(array $parte): array
     {
-        $ids = [];
+        $load = [];
         foreach ($parte as $cover) {
             $teacher = $cover->getAssignedGuardia();
             if (null !== $teacher && null !== $teacher->getId()) {
-                $ids[] = $teacher->getId();
+                $load[$teacher->getId()] = ($load[$teacher->getId()] ?? 0) + 1;
             }
         }
 
-        return $ids;
+        return $load;
     }
 }

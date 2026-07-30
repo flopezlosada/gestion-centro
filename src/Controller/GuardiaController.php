@@ -88,13 +88,15 @@ final class GuardiaController extends AbstractController
         $pool = null !== $year ? $schedule->dutyPoolAt($year, $weekday, $slotIndex) : [];
         $parte = $covers->findForParte($date, $slotIndex);
 
-        // The group each on-call teacher is already covering this period, so the pool panel can tell
-        // who is busy from who is still free at a glance.
+        // The groups each on-call teacher is already covering this period, so the pool panel can tell
+        // who is busy from who is still free at a glance. A LIST per teacher, not a single name: in
+        // deficit the same teacher minds several groups, and keeping only the last one would report
+        // the parte wrongly on the very screen meant to expose the overload.
         $assignedHere = [];
         foreach ($parte as $cover) {
             $guardia = $cover->getAssignedGuardia();
             if (null !== $guardia && null !== $guardia->getId()) {
-                $assignedHere[$guardia->getId()] = $cover->getGroupName() ?? 'un grupo';
+                $assignedHere[$guardia->getId()][] = $cover->getGroupName() ?? 'un grupo';
             }
         }
 
@@ -104,6 +106,7 @@ final class GuardiaController extends AbstractController
         usort($ordered, static fn (GuardiaCover $a, GuardiaCover $b): int => (null === $a->getAssignedGuardia() ? 0 : 1) <=> (null === $b->getAssignedGuardia() ? 0 : 1));
 
         $uncovered = \count(array_filter($parte, static fn (GuardiaCover $c): bool => null === $c->getAssignedGuardia()));
+        $absentIds = $covers->absentTeacherIdsAt($date, $slotIndex);
 
         return $this->render('guardia/index.html.twig', [
             'date' => $date,
@@ -114,14 +117,56 @@ final class GuardiaController extends AbstractController
             'covers' => $ordered,
             'pool' => $pool,
             'slotLoad' => $covers->loadBySlot($slotIndex),
-            'absentIds' => $covers->absentTeacherIdsAt($date, $slotIndex),
+            'absentIds' => $absentIds,
             'assignedHere' => $assignedHere,
             'uncovered' => $uncovered,
             'covered' => \count($parte) - $uncovered,
             // Who the split would pick, least loaded first: feeds the per-cover assignment sheet. With
             // nothing left to cover no sheet is rendered, so the pool queries are not worth running.
             'candidates' => ($uncovered > 0 && $year instanceof AcademicYear) ? $scheduler->availableFor($year, $date, $slotIndex, $parte) : [],
+            'deficit' => $this->deficitSummary($pool, $absentIds, $assignedHere, $uncovered),
         ]);
+    }
+
+    /**
+     * The staffing arithmetic of one period, so the parte can say out loud when there are more absences
+     * than people to cover them instead of quietly doubling somebody up: how many on-call teachers are
+     * actually free, how many groups are still open, how many of those can only be covered by giving a
+     * colleague a second group, and how many second groups are already handed out.
+     *
+     * {@code doubled} matters as much as {@code missing}: once the split has run, nothing is left
+     * uncovered and the shortfall reads as zero, yet three teachers may be minding two groups each. The
+     * warning has to survive the split, or the screen hides exactly what it is there to show.
+     *
+     * @param ScheduleEntry[]          $pool         the period's duty entries (a teacher may appear twice)
+     * @param list<int>                $absentIds    ids of teachers themselves absent that period
+     * @param array<int, list<string>> $assignedHere teacher id → groups they already cover that period
+     * @param int                      $uncovered    groups still without a substitute
+     *
+     * @return array{free: int, uncovered: int, missing: int, doubled: int, extra: int} free teachers, open
+     *                                                                                 groups, shortfall,
+     *                                                                                 teachers doubling up
+     *                                                                                 and extra groups they carry
+     */
+    private function deficitSummary(array $pool, array $absentIds, array $assignedHere, int $uncovered): array
+    {
+        $free = [];
+        foreach ($pool as $entry) {
+            $id = $entry->getTeacher()->getId();
+            if (null !== $id && !\in_array($id, $absentIds, true) && !isset($assignedHere[$id])) {
+                $free[$id] = true;
+            }
+        }
+
+        $doubling = array_filter($assignedHere, static fn (array $groups): bool => \count($groups) > 1);
+
+        return [
+            'free' => \count($free),
+            'uncovered' => $uncovered,
+            'missing' => max(0, $uncovered - \count($free)),
+            'doubled' => \count($doubling),
+            'extra' => array_sum(array_map(static fn (array $groups): int => \count($groups) - 1, $doubling)),
+        ];
     }
 
     /**

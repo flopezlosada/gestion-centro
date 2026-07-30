@@ -12,6 +12,10 @@
    La hoja para asignar una ausencia concreta (handoff 8b): candidatos que el reparto elegiría,
    primero quien menos carga lleva, y debajo quién NO puede cubrir y por qué. Se abre con <details>
    para no depender de JS. `libres` son los GuardiaCandidate ya priorizados por el scheduler.
+
+   En déficit la lista incluye a compañeros que YA cubren un grupo a esa hora (hereLoad > 0): salen al
+   final, marcados, y el botón dice «Doblar» en vez de «Asignar» — que quede claro que asignarlos es
+   ponerles un segundo grupo, no darles trabajo nuevo.
 #}
 {% macro assign_sheet(cover, libres, pool, absentIds, assignedHere, slotLoad, slotLabel) %}
     <details class="assignsheet">
@@ -27,19 +31,24 @@
 
             <div class="assignsheet__list">
                 {% for c in libres %}
-                    <form method="post" action="{{ path('guardia_cover_assign', { id: cover.id }) }}" class="assignsheet__row">
+                    <form method="post" action="{{ path('guardia_cover_assign', { id: cover.id }) }}" class="assignsheet__row{{ c.doublingUp ? ' is-doubling' }}">
                         <input type="hidden" name="_token" value="{{ csrf_token('guardia_cover_assign' ~ cover.id) }}">
                         <input type="hidden" name="guardia" value="{{ c.teacher.id }}">
                         <span class="assignsheet__load" title="{{ c.slotLoad }} guardia(s) en este tramo">{{ c.slotLoad }}</span>
-                        <span class="assignsheet__name">{{ c.teacher.fullName }}{% if c.collaborator %} <span class="badge badge--accent">Colaborador</span>{% endif %}</span>
-                        <button type="submit" class="btn btn-sm{{ c.slotLoad > 0 ? ' secondary' : '' }}">Asignar</button>
+                        <span class="assignsheet__name">{{ c.teacher.fullName }}
+                            {% if c.band.label %}<span class="badge badge--accent" title="{{ c.band.hint }}">{{ c.band.label }}</span>{% endif %}
+                            {% if c.doublingUp %}<span class="badge badge--warning" title="Ya cubre {{ (assignedHere[c.teacher.id] ?? [])|join(', ') }} a esta hora">Ya cubre {{ c.hereLoad }}</span>{% endif %}
+                        </span>
+                        <button type="submit" class="btn btn-sm{{ (c.doublingUp or c.slotLoad > 0) ? ' secondary' : '' }}">{{ c.doublingUp ? 'Doblar' : 'Asignar' }}</button>
                     </form>
                 {% else %}
                     <p class="muted">Nadie libre en este tramo: todos los profesores de guardia ya cubren un grupo o faltan hoy.</p>
                 {% endfor %}
 
-                {# No disponibles: del pool del tramo, quien falta hoy o ya cubre otro grupo. #}
-                {% set ocupados = pool|filter(e => e.teacher.id in absentIds or assignedHere[e.teacher.id] is defined) %}
+                {# No disponibles: del pool del tramo, quien falta hoy o ya cubre otro grupo y NO se
+                   ofrece arriba (en déficit los que doblan sí se ofrecen, así que no se repiten aquí). #}
+                {% set ofrecidos = libres|map(c => c.teacher.id) %}
+                {% set ocupados = pool|filter(e => (e.teacher.id in absentIds or assignedHere[e.teacher.id] is defined) and e.teacher.id not in ofrecidos) %}
                 {% if ocupados is not empty %}
                     <div class="assignsheet__sep"></div>
                     <div class="eyebrow assignsheet__seplabel">No disponibles</div>
@@ -51,7 +60,7 @@
                             {% if tid in absentIds %}
                                 <span class="badge badge--danger">Ausente</span>
                             {% else %}
-                                <span class="badge badge--muted">→ {{ assignedHere[tid] }}</span>
+                                <span class="badge badge--muted">→ {{ assignedHere[tid]|join(', ') }}</span>
                             {% endif %}
                         </div>
                     {% endfor %}
@@ -107,6 +116,24 @@
                     </a>
                 {% endfor %}
             </nav>
+
+            {# ---- Déficit de personal: se dice, no se disimula ----
+               Sale si faltan profesores para las ausencias abiertas (missing) o si YA hay dobletes
+               repartidos (doubled). Lo segundo es lo que hace que el aviso sobreviva a «Repartir»:
+               después del reparto no queda nada «sin cubrir» pero puede haber gente con dos grupos. #}
+            {% if deficit.missing > 0 or deficit.doubled > 0 %}
+                <div class="callout callout--warning parte-deficit">
+                    <div>
+                        <strong>No hay profesores de guardia para todas las ausencias de esta hora.</strong>
+                        <p>
+                            {{ deficit.uncovered }} ausencia{{ deficit.uncovered == 1 ? '' : 's' }} sin cubrir ·
+                            {{ deficit.free }} profesor{{ deficit.free == 1 ? '' : 'es' }} libre{{ deficit.free == 1 ? '' : 's' }}
+                            {%- if deficit.doubled > 0 %} · {{ deficit.doubled }} profesor{{ deficit.doubled == 1 ? '' : 'es' }} con {{ deficit.extra }} grupo{{ deficit.extra == 1 ? '' : 's' }} de más{% endif %}
+                        </p>
+                        <p class="muted">El reparto da varios grupos al mismo profesor cuando no queda nadie libre, empezando por quien menos lleva. Para que sea viable, júntalos en un aula grande o da de alta apoyo puntual.</p>
+                    </div>
+                </div>
+            {% endif %}
 
             {# ---- Panel de ausencias del tramo ---- #}
             <section class="parte-panel">
@@ -184,9 +211,11 @@
                                 {% if sinCubrir and canWrite %}
                                     {{ parte.assign_sheet(cover, candidates, pool, absentIds, assignedHere, slotLoad, slotLabel) }}
                                 {% elseif cover.assignedGuardia %}
+                                    {% set aQue = assignedHere[cover.assignedGuardia.id] ?? [] %}
                                     <div class="parte-card__foot">
                                         <span class="parte-card__avatar" aria-hidden="true">{{ cover.assignedGuardia.fullName|initials }}</span>
                                         <span class="parte-card__covers">Cubre <b>{{ cover.assignedGuardia.fullName }}</b></span>
+                                        {% if aQue|length > 1 %}<span class="badge badge--warning" title="Cubre {{ aQue|join(', ') }} a esta hora">×{{ aQue|length }}</span>{% endif %}
                                         {% if canWrite %}<a class="parte-card__change" href="{{ path('guardia_cover_edit', { id: cover.id }) }}">Cambiar</a>{% endif %}
                                     </div>
                                 {% endif %}
@@ -225,9 +254,13 @@
                                             <span class="badge badge--danger">No se cubrió</span>
                                             {% if cover.assignedGuardia %}<span class="muted"> · {{ cover.assignedGuardia.fullName }}</span>{% endif %}
                                         {% elseif cover.assignedGuardia %}
+                                            {% set aQue = assignedHere[cover.assignedGuardia.id] ?? [] %}
                                             <span class="parte-who">
                                                 <span class="parte-who__avatar" aria-hidden="true">{{ cover.assignedGuardia.fullName|initials }}</span>{{ cover.assignedGuardia.fullName }}
                                             </span>
+                                            {% if aQue|length > 1 %}
+                                                <span class="badge badge--warning" title="Cubre {{ aQue|join(', ') }} a esta hora: agrúpalos en un aula para que sea viable">Doble guardia</span>
+                                            {% endif %}
                                         {% elseif canWrite %}
                                             {# La misma hoja que en móvil: asignar sin salir del parte es
                                                justamente lo que más se usa desde el escritorio. #}
@@ -269,8 +302,8 @@
                             {% for entry in pool %}
                                 {% set tid = entry.teacher.id %}
                                 {% set absent = tid in absentIds %}
-                                {% set coveringGroup = assignedHere[tid] ?? null %}
-                                <div class="mini-card {{ absent ? 'is-absent' : (coveringGroup ? 'is-busy' : 'is-free') }}">
+                                {% set coveringGroups = assignedHere[tid] ?? [] %}
+                                <div class="mini-card {{ absent ? 'is-absent' : (coveringGroups ? 'is-busy' : 'is-free') }}">
                                     <div class="mini-card-head">
                                         <strong>{{ entry.teacher.fullName }}</strong>
                                         {% if entry.kind == ck %}<span class="badge badge--accent" title="Colaborador: solo entra si no llegan los profesores de guardia">Colaborador</span>{% endif %}
@@ -278,8 +311,10 @@
                                     <div class="mini-card-status">
                                         {% if absent %}
                                             <span class="badge badge--danger">Ausente</span>
-                                        {% elseif coveringGroup %}
-                                            <span class="badge badge--muted">→ {{ coveringGroup }}</span>
+                                        {% elseif coveringGroups|length > 1 %}
+                                            <span class="badge badge--warning" title="Cubre {{ coveringGroups|join(', ') }} a esta hora">→ {{ coveringGroups|length }} grupos</span>
+                                        {% elseif coveringGroups %}
+                                            <span class="badge badge--muted">→ {{ coveringGroups|join(', ') }}</span>
                                         {% else %}
                                             <span class="badge badge--ok">Disponible</span>
                                         {% endif %}
