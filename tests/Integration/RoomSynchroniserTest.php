@@ -9,6 +9,7 @@ use App\Entity\Room;
 use App\Entity\ScheduleEntry;
 use App\Entity\User;
 use App\Enum\RoomKind;
+use App\Enum\RoomSize;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use App\Repository\RoomRepository;
@@ -126,6 +127,75 @@ final class RoomSynchroniserTest extends KernelTestCase
         self::assertNotNull($kept);
         self::assertSame('Aula de Inglés 5', $kept->getName());
         self::assertSame(28, $kept->getCapacity());
+        self::assertNull($kept->getSize(), 'the size the centre has NOT set is not set by the sync either');
+    }
+
+    public function testWritesDownHowManyGroupsTheTimetableFitsInARoom(): void
+    {
+        // Two groups in the assembly hall at the same time is the evidence that it holds two; the ordinary
+        // classroom next door never holds more than one, and that proves nothing about a second.
+        $this->lective(Weekday::MONDAY, 0, 'S ACTOS', 'E4A');
+        $this->lective(Weekday::MONDAY, 0, 'S ACTOS', 'E4B');
+        $this->lective(Weekday::MONDAY, 0, '2IN5', 'E1A');
+        $this->em->flush();
+
+        $result = $this->synchroniser->sync();
+        $this->em->clear();
+
+        self::assertSame(2, $result->resizedRooms, 'both cards learned their size from the timetable');
+        $hall = $this->rooms->findByCode('S ACTOS');
+        self::assertNotNull($hall);
+        self::assertSame(2, $hall->getObservedGroups());
+        self::assertSame(RoomSize::TWO_GROUPS, $hall->effectiveSize());
+        self::assertFalse($hall->isSizeConfirmed(), 'evidence is not a person saying so');
+        self::assertTrue($hall->needsReview(), 'and the card still asks to be completed');
+
+        $classroom = $this->rooms->findByCode('2IN5');
+        self::assertNotNull($classroom);
+        self::assertSame(RoomSize::ONE_GROUP, $classroom->effectiveSize());
+    }
+
+    public function testASizeTheCentreConfirmedWinsOverTheTimetableEvidence(): void
+    {
+        // A room that has held two groups can still be classified as one-group ("we did it once and it was
+        // a squeeze"). The person's answer is the one the engine must obey.
+        $card = (new Room())->setCode('S ACTOS')->setName('Salón de actos')->setSize(RoomSize::ONE_GROUP);
+        $this->em->persist($card);
+        $this->lective(Weekday::MONDAY, 0, 'S ACTOS', 'E4A');
+        $this->lective(Weekday::MONDAY, 0, 'S ACTOS', 'E4B');
+        $this->em->flush();
+
+        $this->synchroniser->sync();
+        $this->em->clear();
+
+        $hall = $this->rooms->findByCode('S ACTOS');
+        self::assertNotNull($hall);
+        self::assertSame(2, $hall->getObservedGroups(), 'the evidence is still recorded');
+        self::assertSame(RoomSize::ONE_GROUP, $hall->effectiveSize(), 'but it does not override the centre');
+        self::assertTrue($hall->isSizeConfirmed());
+    }
+
+    public function testARoomThatLeavesTheTimetableLosesItsObservedSize(): void
+    {
+        // Evidence has to be able to go away: keeping "two groups fit" from a timetable that no longer
+        // says so would be exactly the stale figure this replaces.
+        $this->lective(Weekday::MONDAY, 0, 'S ACTOS', 'E4A');
+        $this->lective(Weekday::MONDAY, 0, 'S ACTOS', 'E4B');
+        $this->em->flush();
+        $this->synchroniser->sync();
+
+        foreach ($this->cells() as $cell) {
+            $this->em->remove($cell);
+        }
+        $this->em->flush();
+        $result = $this->synchroniser->sync();
+        $this->em->clear();
+
+        self::assertSame(1, $result->resizedRooms);
+        $hall = $this->rooms->findByCode('S ACTOS');
+        self::assertNotNull($hall);
+        self::assertNull($hall->getObservedGroups());
+        self::assertNull($hall->effectiveSize(), 'no evidence and no answer means no size, not a guess');
     }
 
     public function testDutyCellsHaveNoRoomAndAreNotCountedAsUnlinked(): void
@@ -149,15 +219,16 @@ final class RoomSynchroniserTest extends KernelTestCase
      * @param Weekday $weekday   the weekday
      * @param int     $slotIndex the period index
      * @param string  $roomName  the room name exactly as the timetable spells it
+     * @param string  $group     the group in the room, which is what the observed size counts
      */
-    private function lective(Weekday $weekday, int $slotIndex, string $roomName): void
+    private function lective(Weekday $weekday, int $slotIndex, string $roomName, string $group = 'E1A'): void
     {
         $this->em->persist((new ScheduleEntry())
             ->setAcademicYear($this->year)->setTeacher($this->teacher)
             ->setWeekday($weekday)->setSlotIndex($slotIndex)
             ->setStartsAt(new \DateTimeImmutable('08:00'))->setEndsAt(new \DateTimeImmutable('09:00'))
             ->setKind(ScheduleActivityKind::LECTIVE)
-            ->setGroupName('E1A')->setRoomName($roomName)->setSubjectName('Inglés'));
+            ->setGroupName($group)->setRoomName($roomName)->setSubjectName('Inglés'));
     }
 
     /**

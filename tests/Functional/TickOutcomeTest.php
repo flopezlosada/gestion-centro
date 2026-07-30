@@ -54,8 +54,11 @@ final class TickOutcomeTest extends WebTestCase
         $this->em->persist($dept);
         $owner = $this->user('profe@centro.test');
         $owner->setUnit($dept);
-        // Anchored in the app's zone, like the calendar, so the seeded day and the rendered day agree.
-        $today = new \DateTimeImmutable('today', new \DateTimeZone('Europe/Madrid'));
+        // Anchored in the SAME zone the app resolves "today" in (PHP's default, {@see \App\Support\TickOutcome}),
+        // never in a fixed Europe/Madrid: CI runs in UTC, so between 22:00 and midnight UTC a Madrid
+        // "today" is already tomorrow and the task lands outside "Por hacer" — a green suite that goes red
+        // at night for no code reason.
+        $today = new \DateTimeImmutable('today');
         $task = new Task('Memoria', SchoolYear::current($today), $today, TaskType::SIMPLE);
         $task->setAssignedUser($owner)->setCreatedBy($owner);
         $this->em->persist($task);

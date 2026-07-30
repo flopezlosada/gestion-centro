@@ -21,9 +21,9 @@ use Doctrine\ORM\Mapping as ORM;
  *
  * {@see $displacedToRoom} is where the class that WAS in that room is sent, when the room chosen is not
  * free — freeing up the library or the assembly hall is exactly the centre's case. Who was displaced is
- * deliberately not stored: it is always re-derivable from the timetable
- * ({@see \App\Guardia\FreeRooms::classesIn()}), and a copy would be one more thing to keep in step with
- * a re-import. What cannot be re-derived, and is therefore stored, is where they were sent.
+ * deliberately not stored: it is always re-derivable from the effective timetable
+ * ({@see \App\Space\RoomOccupancy::at()}), and a copy would be one more thing to keep in step with a
+ * re-import. What cannot be re-derived, and is therefore stored, is where they were sent.
  *
  * There is no edit path: a grouping is undone and made again. That keeps the notices honest — every
  * change of room is one cancellation and one new arrangement, never a silent overwrite.

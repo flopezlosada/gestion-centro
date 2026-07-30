@@ -13,6 +13,8 @@
    alguien la rellene el programa no puede afirmar que un grupo quepa.
 #}
 {% macro room_card(room, muted = false) %}
+    {# Importado AQUÍ y no arriba: un macro solo ve sus argumentos, nunca el contexto de la plantilla. #}
+    {% import 'space/_size.html.twig' as size %}
     <div class="mini-card{{ muted ? ' is-busy' : ' is-free' }}">
         <div class="mini-card-head">
             <strong>{{ room.code }}</strong>
@@ -20,7 +22,7 @@
             {% if room.kind.specialised %}<span class="badge badge--muted">{{ room.kind.label }}</span>{% endif %}
         </div>
         <div class="mini-card-status">
-            {% if room.size %}{{ room.size.label }}{% else %}<span class="muted">tamaño sin indicar</span>{% endif %}
+            {% if room.sizeConfirmed %}{{ room.size.label }}{% elseif room.effectiveSize %}<span class="muted">{{ size.label(room) }}</span>{% else %}<span class="muted">tamaño sin indicar</span>{% endif %}
             {% if room.capacity %} · {{ room.capacity }} plazas{% endif %}
             {% if room.building %} · {{ room.building }}{% endif %}
             {% if room.floor is not null %} · planta {{ room.floor }}{% endif %}

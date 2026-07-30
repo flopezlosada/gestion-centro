@@ -58,9 +58,72 @@ final class RoomOccupancy
         // What the approved plans say about this moment, read before the ordinary timetable because they
         // override it: a moved lesson no longer occupies the room it came from, and a group whose
         // timetable a plan replaces (2º de Bachillerato during exam week) is not in a classroom at all.
-        $lines = $this->assignments->inForceAt($date, $slotIndex);
-        $plans = $this->plans->approvedCovering($date);
+        return $this->assemble(
+            $this->rooms->findActive(),
+            $this->schedule->occupancyAt($year, $weekday, $slotIndex),
+            $this->assignments->inForceAt($date, $slotIndex),
+            new ApprovedPlans($this->plans->approvedCovering($date)),
+            $date,
+            $slotIndex,
+        );
+    }
 
+    /**
+     * The occupancy of every period of one day — the same answer as {@see at()}, for the printable sheet
+     * that has to show a whole day at once.
+     *
+     * Reads the day in three queries instead of three per period: asking {@see at()} in a loop is where a
+     * six-period sheet turns into eighteen round trips.
+     *
+     * @param AcademicYear       $year         the course the date falls into (supplies the timetable)
+     * @param \DateTimeImmutable $date         the day
+     * @param list<int>          $slotIndexes  the period indices to answer for
+     *
+     * @return array<int, RoomAvailability> period index → the free and occupied spaces then
+     */
+    public function forDay(AcademicYear $year, \DateTimeImmutable $date, array $slotIndexes): array
+    {
+        $weekday = Weekday::from((int) $date->format('N'));
+
+        $rooms = $this->rooms->findActive();
+        $entriesBySlot = $this->schedule->occupancyBySlotOn($year, $weekday);
+        $linesBySlot = $this->assignments->inForceBySlotOn($date);
+        $plans = new ApprovedPlans($this->plans->approvedCovering($date));
+
+        $bySlot = [];
+        foreach ($slotIndexes as $slotIndex) {
+            $bySlot[$slotIndex] = $this->assemble(
+                $rooms,
+                $entriesBySlot[$slotIndex] ?? [],
+                $linesBySlot[$slotIndex] ?? [],
+                $plans,
+                $date,
+                $slotIndex,
+            );
+        }
+
+        return $bySlot;
+    }
+
+    /**
+     * Puts one period's answer together out of what has already been read: the catalogue, the ordinary
+     * lessons, the lines of the approved plans and those plans.
+     *
+     * The one place the effective timetable is actually composed, shared by {@see at()} and
+     * {@see forDay()} — two copies of this arithmetic would be two definitions of "free", which is the
+     * very bug this service exists to prevent.
+     *
+     * @param list<Room>                                  $rooms     the catalogued spaces to answer about
+     * @param list<\App\Entity\ScheduleEntry>             $entries   the ordinary lessons of that period
+     * @param list<\App\Entity\SpacePlanAssignment>       $lines     the plan lines in force then
+     * @param ApprovedPlans                               $plans     the approved plans covering the day
+     * @param \DateTimeImmutable                          $date      the day
+     * @param int                                         $slotIndex the period index
+     *
+     * @return RoomAvailability the free and the occupied spaces
+     */
+    private function assemble(array $rooms, array $entries, array $lines, ApprovedPlans $plans, \DateTimeImmutable $date, int $slotIndex): RoomAvailability
+    {
         $moved = [];
         foreach ($lines as $line) {
             $sourceId = $line->getSourceEntry()?->getId();
@@ -73,12 +136,12 @@ final class RoomOccupancy
         // whole-level activity is listed once per group. Fold them into one occupation per room, or the
         // screen would report the same room twice and the free list would still be right by accident.
         $entriesByRoom = [];
-        foreach ($this->schedule->occupancyAt($year, $weekday, $slotIndex) as $entry) {
+        foreach ($entries as $entry) {
             $room = $entry->getRoom();
             if (null === $room || null === $room->getId() || isset($moved[$entry->getId()])) {
                 continue;
             }
-            if ($this->timetableReplaced($plans, $date, $slotIndex, $entry->getGroupName())) {
+            if ($plans->replaceTimetableFor($date, $slotIndex, $entry->getGroupName())) {
                 continue;
             }
 
@@ -95,39 +158,18 @@ final class RoomOccupancy
 
         $free = [];
         $occupied = [];
-        foreach ($this->rooms->findActive() as $room) {
-            $entries = $entriesByRoom[$room->getId()] ?? [];
+        foreach ($rooms as $room) {
+            $roomEntries = $entriesByRoom[$room->getId()] ?? [];
             $roomLines = $linesByRoom[$room->getId()] ?? [];
-            if ([] === $entries && [] === $roomLines) {
+            if ([] === $roomEntries && [] === $roomLines) {
                 $free[] = $room;
                 continue;
             }
 
-            $occupied[] = new RoomOccupation($room, $entries, $roomLines);
+            $occupied[] = new RoomOccupation($room, $roomEntries, $roomLines);
         }
 
         return new RoomAvailability($free, $occupied);
-    }
-
-    /**
-     * Whether some approved plan takes the given group out of the ordinary timetable at that moment.
-     *
-     * @param list<\App\Entity\SpacePlan> $plans     the approved plans covering the day
-     * @param \DateTimeImmutable          $date      the day
-     * @param int                         $slotIndex the period index
-     * @param string|null                 $groupName the group, or null for a cell with no group
-     *
-     * @return bool true when that group has no ordinary lesson then
-     */
-    private function timetableReplaced(array $plans, \DateTimeImmutable $date, int $slotIndex, ?string $groupName): bool
-    {
-        foreach ($plans as $plan) {
-            if ($plan->covers($date, $slotIndex) && $plan->replacesTimetableFor($groupName)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**

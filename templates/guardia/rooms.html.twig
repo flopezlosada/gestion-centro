@@ -6,6 +6,8 @@
 
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_index') }}">Guardias</a><span class="sep">/</span>Aulas libres{% endblock %}
 
+{% import 'space/_size.html.twig' as size %}
+
 {% block body %}
     <div class="rooms-sheet">
         <header class="page-head">
@@ -33,9 +35,14 @@
                 </div>
             </div>
         {% else %}
-            {# El aforo no es un dato del centro, es lo observado en el horario: cuántos grupos ha
-               llegado a albergar el aula a la vez. Se dice tal cual para no venderlo como capacidad. #}
-            <p class="muted rooms-sheet__note">«Hasta N grupos» = lo máximo que el horario del centro pone a la vez en esa aula. Es una prueba, no un aforo oficial.</p>
+            {# El tamaño puede venir de dos sitios y no es lo mismo: lo que ha clasificado el centro en el
+               catálogo de espacios (fiable) o lo que se deduce del horario (una prueba: «aquí han estado
+               dos grupos a la vez»). Se distinguen para no vender una deducción como un aforo. #}
+            <p class="muted rooms-sheet__note">El tamaño sale del catálogo de espacios cuando alguien lo ha rellenado; si no, de lo que hace el horario («según el horario» = lo máximo que pone a la vez en esa aula, que es una prueba y no un aforo). Solo aulas donde se puede dejar un grupo: pistas y gimnasio quedan fuera.</p>
+
+            {% if unlinkedCells > 0 %}
+                <p class="alert alert--warning">Hay {{ unlinkedCells }} clase(s) del horario en aulas que no están en el catálogo de espacios: esas aulas podrían salir aquí como libres sin estarlo. Se arregla sincronizando el catálogo desde Espacios.</p>
+            {% endif %}
 
             <div class="rooms-grid">
                 {% for slot in slots %}
@@ -47,9 +54,10 @@
                         {% else %}
                             <ul class="rooms-list">
                                 {% for r in libres %}
-                                    <li class="rooms-list__item{{ r.capacity > 1 ? ' is-large' }}">
-                                        <span class="mono">{{ r.room }}</span>
-                                        {% if r.capacity > 1 %}<span class="badge badge--accent">hasta {{ r.capacity }} grupos</span>{% endif %}
+                                    {% set grupos = r.effectiveSize ? r.effectiveSize.groups : 0 %}
+                                    <li class="rooms-list__item{{ grupos > 1 ? ' is-large' }}">
+                                        <span class="mono">{{ r.code }}</span>
+                                        {{ size.badge(r) }}
                                     </li>
                                 {% endfor %}
                             </ul>

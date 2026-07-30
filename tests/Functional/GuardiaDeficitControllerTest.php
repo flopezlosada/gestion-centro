@@ -11,12 +11,21 @@ use App\Entity\GuardiaGrouping;
 use App\Entity\GuardiaSupport;
 use App\Entity\Notification;
 use App\Entity\Role;
+use App\Entity\Room;
 use App\Entity\ScheduleEntry;
+use App\Entity\SpacePlan;
+use App\Entity\SpacePlanAssignment;
+use App\Entity\SpacePlanOption;
 use App\Entity\User;
 use App\Enum\Area;
+use App\Enum\AssignmentKind;
 use App\Enum\PermissionLevel;
+use App\Enum\ProposalStrategy;
+use App\Enum\RoomSize;
 use App\Enum\ScheduleActivityKind;
+use App\Enum\SpacePlanStatus;
 use App\Enum\Weekday;
+use App\Space\RoomSynchroniser;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -68,7 +77,7 @@ final class GuardiaDeficitControllerTest extends WebTestCase
         $this->lective($teacher, 0, '1ºA', 'A10', Weekday::MONDAY);
         $this->lective($teacher, 0, 'E4A', 'S ACTOS', Weekday::TUESDAY);
         $this->lective($teacher, 0, 'E4B', 'S ACTOS', Weekday::TUESDAY);
-        $this->em->flush();
+        $this->syncRooms();
 
         $crawler = $this->client->request('GET', '/guardias/aulas?date='.self::MONDAY);
 
@@ -76,7 +85,25 @@ final class GuardiaDeficitControllerTest extends WebTestCase
         $slot = $crawler->filter('.rooms-slot')->first();
         self::assertStringContainsString('S ACTOS', $slot->text(), 'the free big room is listed');
         self::assertStringNotContainsString('A10', $slot->text(), 'a room in use at that period is not offered');
-        self::assertStringContainsString('hasta 2 grupos', $slot->text(), 'the observed capacity is stated as what it is');
+        self::assertStringContainsString('2 grupos según el horario', $slot->text(), 'nobody has classified the room, so the sheet says where the figure comes from');
+    }
+
+    public function testFreeRoomsSheetDoesNotOfferARoomAnApprovedPlanHasTaken(): void
+    {
+        // The bug this closes: the sheet used to read the weekly grid alone, so a room an approved space
+        // plan had just filled read as free — and the coordinator sent three more groups into it.
+        $this->login();
+        $teacher = $this->user('Docente Aula', 'aula@centro.test');
+        $this->lective($teacher, 0, '1ºA', 'A10', Weekday::MONDAY);
+        $this->room('BIBL');
+        $this->syncRooms();
+        $this->planTakes('BIBL', 0, 'E4A');
+
+        $crawler = $this->client->request('GET', '/guardias/aulas?date='.self::MONDAY);
+
+        self::assertResponseIsSuccessful();
+        $slot = $crawler->filter('.rooms-slot')->first();
+        self::assertStringNotContainsString('BIBL', $slot->text(), 'the plan has that room, so it is not free');
     }
 
     public function testFreeRoomsSheetIsDeniedWithoutReadAccess(): void
@@ -244,7 +271,7 @@ final class GuardiaDeficitControllerTest extends WebTestCase
         $this->lective($this->user('Otro Docente', 'otro@centro.test'), 0, '4ºA', 'A11', Weekday::MONDAY);
         $first = $this->cover('1ºA', $this->user('Falta Uno', 'f1@centro.test'), $guardia);
         $second = $this->cover('1ºB', $this->user('Falta Dos', 'f2@centro.test'), $guardia);
-        $this->em->flush();
+        $this->syncRooms();
         [$firstId, $secondId] = [(int) $first->getId(), (int) $second->getId()];
 
         $crawler = $this->client->request('GET', '/guardias/agrupar?date='.self::MONDAY.'&slot=0');
@@ -291,7 +318,7 @@ final class GuardiaDeficitControllerTest extends WebTestCase
         $this->lective($this->user('Otro Docente', 'otro@centro.test'), 0, '4ºA', 'A11', Weekday::MONDAY);
         $first = $this->cover('1ºA', $this->user('Falta Uno', 'f1@centro.test'), $guardia);
         $second = $this->cover('1ºB', $this->user('Falta Dos', 'f2@centro.test'), $guardia);
-        $this->em->flush();
+        $this->syncRooms();
         [$firstId, $secondId] = [(int) $first->getId(), (int) $second->getId()];
 
         $this->client->request('GET', '/guardias?date='.self::MONDAY.'&slot=0');
@@ -313,6 +340,7 @@ final class GuardiaDeficitControllerTest extends WebTestCase
     public function testGroupingRefusesASingleClass(): void
     {
         $this->login();
+        $this->room('BIBL');
         $first = $this->cover('1ºA', $this->user('Falta Uno', 'f1@centro.test'));
         $this->cover('1ºB', $this->user('Falta Dos', 'f2@centro.test'));
         $this->em->flush();
@@ -335,6 +363,7 @@ final class GuardiaDeficitControllerTest extends WebTestCase
         // Posted ids are never trusted: the lines are re-read for THIS date and period, so a stale or
         // tampered id cannot drag another period's class into the room.
         $this->login();
+        $this->room('BIBL');
         $mine = $this->cover('1ºA', $this->user('Falta Uno', 'f1@centro.test'));
         $other = $this->cover('1ºB', $this->user('Falta Dos', 'f2@centro.test'), null, 3);
         $this->cover('1ºC', $this->user('Falta Tres', 'f3@centro.test'));
@@ -366,7 +395,7 @@ final class GuardiaDeficitControllerTest extends WebTestCase
             ->setDisplacedToRoom('A11');
         $this->em->persist($grouping);
         $cover = $this->cover('1ºA', $this->user('Falta Uno', 'f1@centro.test'), $guardia)->setGrouping($grouping);
-        $this->em->flush();
+        $this->syncRooms();
         [$coverId, $groupingId] = [(int) $cover->getId(), (int) $grouping->getId()];
 
         $crawler = $this->client->request('GET', '/guardias/agrupar?date='.self::MONDAY.'&slot=0');
@@ -382,6 +411,71 @@ final class GuardiaDeficitControllerTest extends WebTestCase
         self::assertNull($reloaded->getGrouping(), 'the line survives the grouping it belonged to');
         self::assertSame('A10', $reloaded->effectiveRoomName(), 'and goes back to its own room');
         self::assertCount(1, $this->notificationsFor($displaced, 'room.changed'), 'the displaced teacher is told it is off');
+    }
+
+    /**
+     * Flushes and then builds the space catalogue from the timetable, exactly as an import does
+     * ({@see RoomSynchroniser}): the free-rooms sheet and the grouping screen answer over catalogued
+     * spaces, so a test that only persists cells would be testing an empty centre.
+     */
+    private function syncRooms(): void
+    {
+        $this->em->flush();
+        self::getContainer()->get(RoomSynchroniser::class)->sync();
+    }
+
+    /**
+     * Puts an activity of an APPROVED plan into a space at a period of the test's Monday — the other half
+     * of the effective timetable, which the sheet has to respect just as much as the weekly grid.
+     *
+     * @param string $code      the space the plan takes over
+     * @param int    $slotIndex the period index
+     * @param string $group     the group the plan puts there
+     */
+    private function planTakes(string $code, int $slotIndex, string $group): void
+    {
+        $room = $this->em->getRepository(Room::class)->findOneBy(['code' => $code]);
+        self::assertInstanceOf(Room::class, $room, 'the space must be catalogued for a plan to use it');
+
+        $plan = (new SpacePlan())
+            ->setAcademicYear($this->year)
+            ->setCreatedBy($this->user('Directora', 'directora@centro.test'))
+            ->setTitle('Prueba externa')
+            ->setDateFrom(new \DateTimeImmutable(self::MONDAY))
+            ->setDateTo(new \DateTimeImmutable(self::MONDAY))
+            ->setStatus(SpacePlanStatus::APPROVED);
+        $option = (new SpacePlanOption())->setLabel('Opción A')->setStrategy(ProposalStrategy::NEAREST);
+        $plan->addOption($option);
+        $plan->setChosenOption($option);
+        $option->addAssignment((new SpacePlanAssignment())
+            ->setDate(new \DateTimeImmutable(self::MONDAY))
+            ->setSlotIndex($slotIndex)
+            ->setKind(AssignmentKind::ACTIVITY)
+            ->setRoom($room)
+            ->setGroupNames($group));
+        $this->em->persist($plan);
+        $this->em->persist($option);
+        foreach ($option->getAssignments() as $assignment) {
+            $this->em->persist($assignment);
+        }
+        $this->em->flush();
+    }
+
+    /**
+     * Persists a space card directly, for the tests that need a room to EXIST without anybody teaching in
+     * it (so that a refusal is refused for the reason under test, not for an unknown room).
+     *
+     * @param string        $code the room code
+     * @param RoomSize|null $size the size the centre confirmed, if any
+     *
+     * @return Room the persisted card
+     */
+    private function room(string $code, ?RoomSize $size = null): Room
+    {
+        $room = (new Room())->setCode($code)->setName($code)->setSize($size);
+        $this->em->persist($room);
+
+        return $room;
     }
 
     /**
