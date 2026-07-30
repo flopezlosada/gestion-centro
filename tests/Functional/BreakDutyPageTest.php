@@ -68,7 +68,7 @@ final class BreakDutyPageTest extends WebTestCase
         $teacher = $this->user('Ana Patio Ruiz', 'ana.patio@centro.test');
         $this->em->flush();
 
-        $this->post('/guardias/recreo/asignar', 'break_duty_assign', [
+        $this->post('/guardias/recreo', '/guardias/recreo/asignar', [
             'curso' => $year->getSchoolYear(),
             'teacher' => (string) $teacher->getId(),
             'zone' => (string) $zone->getId(),
@@ -99,8 +99,8 @@ final class BreakDutyPageTest extends WebTestCase
             'weekday' => (string) Weekday::MONDAY->value,
             'periods' => BreakPeriodCoverage::FIRST->value,
         ];
-        $this->post('/guardias/recreo/asignar', 'break_duty_assign', $payload);
-        $this->post('/guardias/recreo/asignar', 'break_duty_assign', ['zone' => (string) $biblioteca->getId()] + $payload);
+        $this->post('/guardias/recreo', '/guardias/recreo/asignar', $payload);
+        $this->post('/guardias/recreo', '/guardias/recreo/asignar', ['zone' => (string) $biblioteca->getId()] + $payload);
 
         // Nobody can be in two places at once: the clash is a message, not a crash.
         self::assertResponseRedirects();
@@ -118,7 +118,7 @@ final class BreakDutyPageTest extends WebTestCase
         $this->em->persist($gap);
         $this->em->flush();
 
-        $this->post('/guardias/recreo/'.$duty->getId().'/quitar', 'break_duty_remove'.$duty->getId(), []);
+        $this->post('/guardias/recreo', '/guardias/recreo/'.$duty->getId().'/quitar', []);
 
         self::assertResponseRedirects();
         self::assertSame([], $this->em->getRepository(BreakDutyAssignment::class)->findAll());
@@ -135,7 +135,7 @@ final class BreakDutyPageTest extends WebTestCase
         $volunteer = $this->user('Voluntario Solidario Paz', 'voluntario@centro.test');
         $this->em->flush();
 
-        $this->post('/guardias/recreo/huecos/'.$gap->getId(), 'break_duty_gap'.$gap->getId(), [
+        $this->post('/guardias/recreo/huecos', '/guardias/recreo/huecos/'.$gap->getId(), [
             'volunteer' => (string) $volunteer->getId(),
             'note' => 'Se ofrece él mismo',
         ]);
@@ -154,7 +154,7 @@ final class BreakDutyPageTest extends WebTestCase
         $this->zone('Patio');
         $this->em->flush();
 
-        $this->post('/guardias/recreo/zonas', 'break_zone_save', ['name' => 'Patio', 'weight' => '2', 'required' => '1']);
+        $this->post('/guardias/recreo/zonas', '/guardias/recreo/zonas', ['name' => 'Patio', 'weight' => '2', 'required' => '1']);
 
         self::assertResponseRedirects();
         self::assertCount(1, $this->em->getRepository(BreakZone::class)->findAll());
@@ -166,7 +166,7 @@ final class BreakDutyPageTest extends WebTestCase
     {
         $this->login();
 
-        $this->post('/guardias/recreo/zonas', 'break_zone_save', ['name' => 'Pistas', 'weight' => '99', 'required' => '0']);
+        $this->post('/guardias/recreo/zonas', '/guardias/recreo/zonas', ['name' => 'Pistas', 'weight' => '99', 'required' => '0']);
 
         $zones = $this->em->getRepository(BreakZone::class)->findBy(['name' => 'Pistas']);
         self::assertCount(1, $zones);
@@ -218,16 +218,23 @@ final class BreakDutyPageTest extends WebTestCase
     }
 
     /**
-     * POSTs a form with a valid CSRF token for the given token id.
+     * POSTs to a route with the CSRF token the application itself put in that form.
      *
-     * @param string                $uri     the route to post to
-     * @param string                $tokenId the CSRF token id the controller expects
+     * The token is read from the rendered page rather than asked of the container: the token storage is
+     * session-backed, so building one outside a request raises SessionNotFoundException. Same approach as
+     * {@see GuardiaPageTest}, and it also proves the form really carries the token the controller expects.
+     *
+     * @param string                $page    the page whose form to read the token from
+     * @param string                $uri     the route to post to, matching the form's action
      * @param array<string, string> $payload the form fields
      */
-    private function post(string $uri, string $tokenId, array $payload): void
+    private function post(string $page, string $uri, array $payload): void
     {
-        $token = self::getContainer()->get('security.csrf.token_manager')->getToken($tokenId)->getValue();
-        $this->client->request('POST', $uri, ['_token' => $token] + $payload);
+        $crawler = $this->client->request('GET', $page);
+        $token = $crawler->filter(sprintf('form[action="%s"] input[name="_token"]', $uri));
+        self::assertGreaterThan(0, $token->count(), sprintf('no form posting to %s was rendered on %s', $uri, $page));
+
+        $this->client->request('POST', $uri, ['_token' => (string) $token->first()->attr('value')] + $payload);
     }
 
     /**
