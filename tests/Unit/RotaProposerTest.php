@@ -181,7 +181,7 @@ final class RotaProposerTest extends TestCase
         self::assertSame(9, $reasons[RotaProposer::GAP_NOBODY_FREE], 'Monday (5) plus the rest of Tuesday (4)');
         self::assertSame(15, $reasons[RotaProposer::GAP_QUOTA_EXHAUSTED], 'Wednesday, Thursday and Friday');
         // 25 places in the week, one of them filled.
-        self::assertSame(RotaDemand::perSlot() * 5 - 1, \count($proposal->unfilled));
+        self::assertCount(RotaDemand::perSlot() * 5 - 1, $proposal->unfilled);
     }
 
     public function testTheSameInputAlwaysGivesTheSameRota(): void
