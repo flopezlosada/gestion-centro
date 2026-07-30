@@ -1,0 +1,62 @@
+{% extends 'app_shell.html.twig' %}
+
+{% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
+
+{% block title %}Aulas libres{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_index') }}">Guardias</a><span class="sep">/</span>Aulas libres{% endblock %}
+
+{% block body %}
+    <div class="rooms-sheet">
+        <header class="page-head">
+            <div>
+                <p class="eyebrow">{{ dias[date|date('N', false)] }} {{ date|date('d/m/Y', false) }}</p>
+                <h1>Aulas libres</h1>
+                <p class="lead">Qué aulas no tiene nadie ocupadas a cada hora, las más grandes primero. Para juntar varios grupos en una sola aula cuando no hay profesorado de guardia para todos.</p>
+            </div>
+            <div class="day-nav">
+                <a class="day-nav-arrow" href="{{ path('guardia_rooms', { date: date|date_modify('-1 day')|date('Y-m-d', false) }) }}" aria-label="Día anterior">‹</a>
+                <form method="get" action="{{ path('guardia_rooms') }}" class="day-nav-date">
+                    <input type="date" name="date" value="{{ date|date('Y-m-d', false) }}" onchange="this.form.submit()" aria-label="Fecha">
+                    <noscript><button type="submit" class="btn">Ir</button></noscript>
+                </form>
+                <a class="day-nav-arrow" href="{{ path('guardia_rooms', { date: date|date_modify('+1 day')|date('Y-m-d', false) }) }}" aria-label="Día siguiente">›</a>
+                <a class="btn" href="{{ path('guardia_rooms') }}">Hoy</a>
+            </div>
+        </header>
+
+        {% if slots is empty %}
+            <div class="card">
+                <div class="empty-state">
+                    <h2>No hay horario importado para el curso {{ schoolYear }}</h2>
+                    <p>Las aulas libres se deducen del horario del centro: sin horario importado no hay nada que deducir.</p>
+                </div>
+            </div>
+        {% else %}
+            {# El aforo no es un dato del centro, es lo observado en el horario: cuántos grupos ha
+               llegado a albergar el aula a la vez. Se dice tal cual para no venderlo como capacidad. #}
+            <p class="muted rooms-sheet__note">«Hasta N grupos» = lo máximo que el horario del centro pone a la vez en esa aula. Es una prueba, no un aforo oficial.</p>
+
+            <div class="rooms-grid">
+                {% for slot in slots %}
+                    {% set libres = free[slot.index] ?? [] %}
+                    <section class="card rooms-slot">
+                        <h2 class="rooms-slot__title">{{ slot.startsAt|date('H:i', false) }}–{{ slot.endsAt|date('H:i', false) }}</h2>
+                        {% if libres is empty %}
+                            <p class="muted">Todas las aulas están ocupadas a esta hora.</p>
+                        {% else %}
+                            <ul class="rooms-list">
+                                {% for r in libres %}
+                                    <li class="rooms-list__item{{ r.capacity > 1 ? ' is-large' }}">
+                                        <span class="mono">{{ r.room }}</span>
+                                        {% if r.capacity > 1 %}<span class="badge badge--accent">hasta {{ r.capacity }} grupos</span>{% endif %}
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
+                    </section>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+{% endblock %}

@@ -4,13 +4,19 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Entity\AcademicYear;
 use App\Entity\GuardiaSupport;
 use App\Entity\User;
 use App\Enum\Area;
+use App\Enum\Weekday;
+use App\Guardia\FreeRooms;
+use App\Repository\AcademicYearRepository;
 use App\Repository\GuardiaSupportRepository;
+use App\Repository\ScheduleEntryRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
 use App\Support\GuardiaDate;
+use App\Util\SchoolYear;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -19,17 +25,44 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 
 /**
- * What the coordinator does when there are not enough people: sign a colleague up as guardia support
- * for one day and period.
+ * What the coordinator does when there are not enough people: sign a colleague up as guardia support for
+ * one day and period, and look up which rooms are free to send several groups to one of them.
  *
- * A surface of its own rather than four more routes on {@see GuardiaController}, which is already the
- * longest controller in the app. Same gate as the rest of the coordinator's actions
- * ({@see AreaVoter::WRITE} on {@see Area::GUARDIAS}) and the same CSRF discipline; every action lands
- * back on the parte for the day and period it was launched from.
+ * A surface of its own rather than more routes on {@see GuardiaController}, which is already the longest
+ * controller in the app. Same gates as the rest of the coordinator's screens ({@see AreaVoter::READ} to
+ * look, {@see AreaVoter::WRITE} to change) and the same CSRF discipline; every action lands back on the
+ * parte for the day and period it was launched from.
  */
 #[Route('/guardias')]
 final class GuardiaDeficitController extends AbstractController
 {
+    /**
+     * The "aulas libres" sheet for a day: period by period, which rooms nobody is teaching in, biggest
+     * first. Printable for the noticeboard, and the same figures the grouping screen offers as options.
+     * Read access is enough — it says nothing private.
+     */
+    #[Route('/aulas', name: 'guardia_rooms', methods: ['GET'])]
+    public function rooms(Request $request, ScheduleEntryRepository $schedule, AcademicYearRepository $years, FreeRooms $freeRooms): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
+
+        $date = GuardiaDate::fromRequest($request);
+        $schoolYear = SchoolYear::current($date);
+        $year = $years->findBySchoolYear($schoolYear);
+        $weekday = Weekday::from((int) $date->format('N'));
+
+        $slots = $year instanceof AcademicYear ? $schedule->distinctSlots($year) : [];
+        $slotIndexes = array_map(static fn (array $s): int => $s['index'], $slots);
+
+        return $this->render('guardia/rooms.html.twig', [
+            'date' => $date,
+            'weekday' => $weekday,
+            'schoolYear' => $schoolYear,
+            'slots' => $slots,
+            'free' => $year instanceof AcademicYear ? $freeRooms->freeBySlot($year, $weekday, $slotIndexes) : [],
+        ]);
+    }
+
     /**
      * Signs a colleague up as guardia support for one day and period — the teacher freed by their
      * Bachillerato or CFGB group having finished lessons. Deliberately does NOT check the timetable:

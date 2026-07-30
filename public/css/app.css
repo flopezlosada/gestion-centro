@@ -2392,6 +2392,17 @@ tr.is-not-covered { background: var(--danger-weak); }
 .support-add__lead { margin: 0 0 6px; font-size: 12.5px; color: var(--text-muted); }
 .support-add__form .field-label + * { margin-bottom: 6px; }
 
+/* ── Guardias · hoja de aulas libres ────────────────────────────────────────
+   Una tarjeta por tramo en rejilla: la pregunta es "a esta hora, ¿dónde puedo meter tres grupos?",
+   así que cada hora se lee sola y las aulas grandes van arriba con su prueba de aforo. */
+.rooms-sheet__note { margin: 0 0 14px; font-size: 12.5px; }
+.rooms-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.rooms-slot { padding: 14px 16px; }
+.rooms-slot__title { font-family: var(--font-display); font-weight: 500; font-size: 17px; margin: 0 0 10px; }
+.rooms-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.rooms-list__item { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.rooms-list__item.is-large { font-weight: 600; }
+
 /* ── Guardias · navegador de días (parte) ──────────────────────────────────── */
 .day-nav { display: flex; align-items: center; gap: 8px; }
 .day-nav-date { display: inline-flex; margin: 0; }
