@@ -441,4 +441,11 @@ PDF en un minuto.
 2. **Sin capacidad ni matrícula no hay control de aforo** (decisión 1).
 3. **Varias alternativas pueden ser artificiosas** cuando solo hay una salida; la UI tiene que admitirlo.
 4. **Dos fuentes para el horario** hasta que todos los consumidores migren (§5).
-5. **PII en el enlace público** (decisión 2).
+5. **PII en el enlace público** — cerrada: el centro dijo que no, así que no existe.
+6. **Dos fuentes para "las horas del día", y no es de este módulo.** Main introdujo `TimeSlot` (el marco
+   horario importado del `<marcoHorario>`) para las guardias de recreo, porque los tramos de recreo no
+   se pueden deducir de `ScheduleEntry` — no hay ninguna actividad en ellos. Pero el resto del proyecto
+   (parte de guardias, déficit, inicio y este módulo) sigue derivando los tramos de las celdas con
+   `distinctSlots`. Aquí se mantiene `distinctSlots` **por consistencia**: usar `TimeSlot` solo en
+   espacios haría que las pestañas de "aulas libres" mostraran el recreo y las del parte no. Unificar
+   todo el proyecto sobre `TimeSlot` es un refactor propio, no de esta rama.
