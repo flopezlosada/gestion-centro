@@ -7,6 +7,7 @@ namespace App\Tests\Functional;
 use App\Entity\Absence;
 use App\Entity\AcademicYear;
 use App\Entity\GuardiaCover;
+use App\Entity\Notification;
 use App\Entity\Role;
 use App\Entity\ScheduleEntry;
 use App\Entity\User;
@@ -279,7 +280,9 @@ final class GuardiaPageTest extends WebTestCase
 
     /**
      * The coordinator overrides the assigned guardia from the modify screen, and an empty choice clears
-     * it. Every change carries a mandatory reason.
+     * it. Every change carries a mandatory reason, and clearing the assignment still tells the teacher
+     * who was covering it — the one path where nobody takes the guardia over, so the only notice sent
+     * is theirs.
      */
     public function testModifyReassignsAndClearsTheGuardia(): void
     {
@@ -303,6 +306,113 @@ final class GuardiaPageTest extends WebTestCase
         $crawler = $this->client->request('GET', $action);
         $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action), 'guardia' => '', 'motivo' => 'Se retira la asignación.']);
         self::assertNull($this->reload($id)->getAssignedGuardia());
+
+        // Nadie recoge la guardia, así que el único aviso posible es el del que la pierde: si dejara de
+        // salir, el profesor se presentaría igual a cubrir un grupo que ya no es suyo.
+        $relieved = $this->notificationFor('gp@centro.test');
+        self::assertSame('guardia.relieved', $relieved->getKind());
+        self::assertStringContainsString('Se retira la asignación.', (string) $relieved->getBody());
+    }
+
+    /**
+     * The explanation the coordinator is forced to write reaches the two people the change affects: the
+     * teacher who takes the guardia over and the one relieved of it. Without this it only landed in the
+     * audit trail, which is what made the mandatory field look like red tape to the centre.
+     */
+    public function testAChangeOfSubstituteIsExplainedToBothTeachers(): void
+    {
+        $this->login();
+        $year = $this->academicYear('2025-2026');
+        $this->em->persist($year);
+        $before = $this->user('Guardia Saliente', 'saliente@centro.test');
+        $after = $this->user('Guardia Entrante', 'entrante@centro.test');
+        $absent = $this->user('Ausente Seis', 'a6@centro.test');
+        $date = new \DateTimeImmutable('2025-11-10');
+        $this->guardiaEntry($year, $before, $date);
+        $this->guardiaEntry($year, $after, $date);
+        $cover = $this->cover($date, 0, $absent, $before);
+        $this->em->flush();
+        $action = '/guardias/'.$cover->getId().'/modificar';
+
+        $crawler = $this->client->request('GET', $action);
+        $this->client->request('POST', $action, [
+            '_token' => $this->tokenFrom($crawler, $action),
+            'guardia' => (string) $after->getId(),
+            'motivo' => 'El sustituto asignado también falta hoy.',
+        ]);
+        self::assertResponseRedirects();
+
+        $assigned = $this->notificationFor('entrante@centro.test');
+        self::assertSame('guardia.assigned', $assigned->getKind());
+        self::assertStringContainsString('El sustituto asignado también falta hoy.', (string) $assigned->getBody(), 'quien entra lee por qué le toca');
+
+        $relieved = $this->notificationFor('saliente@centro.test');
+        self::assertSame('guardia.relieved', $relieved->getKind());
+        self::assertStringContainsString('ya no tienes que hacerla', (string) $relieved->getBody());
+        self::assertStringContainsString('El sustituto asignado también falta hoy.', (string) $relieved->getBody(), 'quien sale lee por qué se la quitan');
+    }
+
+    /**
+     * Editing something that does not move the guardia (here only the task description) notifies nobody:
+     * the explanation is still recorded, but no one is told about a change that does not affect them.
+     */
+    public function testAnEditThatKeepsTheSubstituteNotifiesNobody(): void
+    {
+        $this->login();
+        $year = $this->academicYear('2025-2026');
+        $this->em->persist($year);
+        $guardia = $this->user('Guardia Fija', 'fija@centro.test');
+        $absent = $this->user('Ausente Siete', 'a7@centro.test');
+        $date = new \DateTimeImmutable('2025-11-10');
+        $this->guardiaEntry($year, $guardia, $date);
+        $cover = $this->cover($date, 0, $absent, $guardia);
+        $this->em->flush();
+        $action = '/guardias/'.$cover->getId().'/modificar';
+
+        $crawler = $this->client->request('GET', $action);
+        $this->client->request('POST', $action, [
+            '_token' => $this->tokenFrom($crawler, $action),
+            'guardia' => (string) $guardia->getId(),
+            'task_description' => 'Ejercicios 3 y 4 de la página 88.',
+            'motivo' => 'Añado la tarea que mandó el profesor.',
+        ]);
+        self::assertResponseRedirects();
+
+        self::assertNull($this->em->getRepository(Notification::class)->findOneBy(['recipient' => $guardia]), 'reelegir al mismo sustituto no genera aviso');
+    }
+
+    /**
+     * The screen names the field for what it does — no second "motivo" to confuse with the private
+     * reason of the absence, and it says out loud that the text reaches the teachers involved.
+     */
+    public function testTheChangeFieldSaysWhoReadsIt(): void
+    {
+        $this->login();
+        $absent = $this->user('Ausente Ocho', 'a8@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('2025-11-10'), 0, $absent, null);
+        $this->em->flush();
+
+        $this->client->request('GET', '/guardias/'.$cover->getId().'/modificar');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('label[for="motivo"]', '¿Por qué haces este cambio?');
+        self::assertSelectorTextContains('.field--change-note .field-help', 'al que entra y al que deja de hacerla');
+    }
+
+    /**
+     * The LAST notice a teacher received, failing loudly when none was sent. Newest-first on purpose: a
+     * teacher may already carry an earlier notice (assigned, then relieved), and taking the first one
+     * would assert against the wrong event and pass for the wrong reason.
+     */
+    private function notificationFor(string $email): Notification
+    {
+        $this->em->clear();
+        $recipient = $this->em->getRepository(User::class)->findOneBy(['email' => $email]);
+        self::assertInstanceOf(User::class, $recipient);
+        $notification = $this->em->getRepository(Notification::class)->findOneBy(['recipient' => $recipient], ['id' => 'DESC']);
+        self::assertInstanceOf(Notification::class, $notification, sprintf('%s no recibió ningún aviso', $email));
+
+        return $notification;
     }
 
     /**
@@ -524,5 +634,136 @@ final class GuardiaPageTest extends WebTestCase
         $crawler = $this->client->request('GET', $url);
         self::assertResponseIsSuccessful();
         self::assertStringNotContainsString('Cita médica confidencial.', $crawler->html());
+    }
+
+    /**
+     * El recordatorio operativo que pidió el centro: quien cubre una guardia tiene que ver SIEMPRE, en la
+     * pantalla de la guardia, el aviso de entrar en RAICES a apuntar las ausencias del alumnado.
+     */
+    public function testTheCoveringTeacherAlwaysSeesTheRaicesReminderOnTheGuardiaDetail(): void
+    {
+        $this->login(); // coordinador, para poder crear el escenario
+        $guardia = $this->user('Guardia Raices', 'graices@centro.test');
+        $absent = $this->user('Ausente Raices', 'araices@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('2025-11-10'), 0, $absent, $guardia);
+        $this->em->flush();
+
+        $this->client->loginUser($guardia);
+        $crawler = $this->client->request('GET', '/guardias/'.$cover->getId().'/ver');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(1, $crawler->filter('.raices-notice'));
+        self::assertStringContainsString('RAICES', $crawler->filter('.raices-notice')->text());
+    }
+
+    /**
+     * Pero NO con la incidencia registrada: eso significa que el de guardia no apareció, o que el ausente
+     * volvió y dio él la clase. En los dos casos quien lee la pantalla no estuvo delante, así que pedirle
+     * que apunte las ausencias de esa sesión es pedirle algo que no puede hacer. Es el mismo criterio con
+     * el que el barrido del push descarta esos covers, y tenerlo distinto en cada superficie era el bug.
+     */
+    public function testAnIncidentDropsTheRaicesReminder(): void
+    {
+        $this->login();
+        $guardia = $this->user('Guardia Inc', 'ginc@centro.test');
+        $absent = $this->user('Ausente Inc', 'ainc@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('2025-11-10'), 0, $absent, $guardia, notCovered: true);
+        $this->em->flush();
+
+        $this->client->loginUser($guardia);
+        $crawler = $this->client->request('GET', '/guardias/'.$cover->getId().'/ver');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(0, $crawler->filter('.raices-notice'));
+        self::assertSelectorTextContains('.guardia-detail-head', 'Incidencia', 'la pantalla sigue siendo la de la guardia, solo que sin el recordatorio');
+    }
+
+    /**
+     * Y en la vista del día, si TODAS las guardias de hoy acabaron en incidencia no hubo ninguna sesión de
+     * la que tomar lista, así que tampoco se encabeza con el recordatorio.
+     */
+    public function testADayWhereEveryGuardiaWasAnIncidentCarriesNoRaicesReminder(): void
+    {
+        $user = $this->login(false);
+        $absent = $this->user('Ausente Todo', 'atodo@centro.test');
+        $today = new \DateTimeImmutable('today');
+        $this->cover($today, 0, $absent, $user, notCovered: true);
+        $this->cover($today, 1, $absent, $user, notCovered: true);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/mias');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(0, $crawler->filter('.raices-line'));
+    }
+
+    /**
+     * Con una sola que sí se dé, el recordatorio del día vuelve: la incidencia de una guardia no exime de
+     * apuntar las ausencias de la otra.
+     */
+    public function testOneRealGuardiaAmongIncidentsStillCarriesTheDayReminder(): void
+    {
+        $user = $this->login(false);
+        $absent = $this->user('Ausente Mixto', 'amixto@centro.test');
+        $today = new \DateTimeImmutable('today');
+        $this->cover($today, 0, $absent, $user, notCovered: true);
+        $this->cover($today, 1, $absent, $user);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/mias');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(1, $crawler->filter('.raices-line'));
+    }
+
+    /**
+     * A la coordinación mirando la guardia de OTRA persona no se le da: ahí el aviso no es un
+     * recordatorio, es una instrucción que no le toca a quien la lee.
+     */
+    public function testTheCoordinatorLookingAtSomeoneElsesGuardiaDoesNotGetTheRaicesReminder(): void
+    {
+        $this->login(); // coordinador, y NO es quien cubre
+        $guardia = $this->user('Guardia Otra', 'gotra@centro.test');
+        $absent = $this->user('Ausente Otra', 'aotra@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('2025-11-10'), 0, $absent, $guardia);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/'.$cover->getId().'/ver');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(0, $crawler->filter('.raices-notice'));
+    }
+
+    /**
+     * En "Mis guardias" el recordatorio va UNA vez por jornada, no uno por fila: repetido en cada guardia
+     * se vuelve decoración y se deja de leer.
+     */
+    public function testMisGuardiasCarriesOneRaicesReminderForTheWholeDay(): void
+    {
+        $user = $this->login(false);
+        $absent = $this->user('Ausente Dia', 'adia@centro.test');
+        $today = new \DateTimeImmutable('today');
+        $this->cover($today, 0, $absent, $user);
+        $this->cover($today, 1, $absent, $user);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/mias');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(1, $crawler->filter('.raices-line'), 'uno por día, aunque haya dos guardias');
+        self::assertStringContainsString('RAICES', $crawler->filter('.raices-line')->text());
+    }
+
+    /**
+     * Y no aparece un aviso de "apunta las ausencias" en un día sin guardias: no hay sesión ninguna de la
+     * que tomar lista.
+     */
+    public function testMisGuardiasWithoutGuardiasTodayCarriesNoRaicesReminder(): void
+    {
+        $this->login(false);
+        $crawler = $this->client->request('GET', '/guardias/mias');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(0, $crawler->filter('.raices-line'));
     }
 }

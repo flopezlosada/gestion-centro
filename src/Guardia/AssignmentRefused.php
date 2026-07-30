@@ -15,12 +15,13 @@ use App\Entity\User;
 final class AssignmentRefused extends \RuntimeException
 {
     /**
-     * The cover already has someone assigned: changing that is an edit, and an edit records a reason.
+     * The cover already has someone assigned: changing that is an edit, and an edit is explained to the
+     * two teachers it affects.
      */
     public static function alreadyCovered(GuardiaCover $cover): self
     {
         return new self(sprintf(
-            '%s ya está cubierta por %s. Para cambiarlo usa "Modificar", que pide el motivo del cambio.',
+            '%s ya está cubierta por %s. Para cambiarlo usa "Modificar", que te pedirá explicar el cambio y avisará a los dos profesores.',
             $cover->getGroupName() ?? 'Esta ausencia',
             $cover->getAssignedGuardia()?->getFullName() ?? 'otro profesor',
         ));

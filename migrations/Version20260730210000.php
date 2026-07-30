@@ -34,7 +34,7 @@ use Doctrine\Migrations\AbstractMigration;
  * persona no puede llevarse por delante el registro de lo acordado) y ON DELETE CASCADE en las tablas
  * de pertenencia (una lista de convocados no puede apuntar a nadie).
  */
-final class Version20260730170000 extends AbstractMigration
+final class Version20260730210000 extends AbstractMigration
 {
     public function getDescription(): string
     {

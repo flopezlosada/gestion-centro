@@ -1,0 +1,42 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}{{ item.id ? 'Editar tarea del banco' : 'Añadir tarea al banco' }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('guardia_bank_index') }}">Banco de tareas</a><span class="sep">/</span>
+    {{ item.id ? 'Editar' : 'Añadir' }}
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Banco de tareas</p>
+            <h1>{{ item.id ? 'Editar tarea' : 'Añadir tarea' }}</h1>
+            <p class="lead">Trabajo listo para darle a un grupo cuando su profesor falta y no ha dejado nada. Va por nivel y materia: es lo que se usa para casarla con la clase que se pierde.</p>
+        </div>
+    </div>
+
+    <div class="card form-card">
+        {{ form_start(form, { attr: { novalidate: 'novalidate', enctype: 'multipart/form-data' } }) }}
+            {{ f.submit_error(form) }}
+            {{ form_errors(form) }}
+            {{ f.fields([form.level, form.subject, form.sections, form.department]) }}
+            {{ f.section('La tarea', [form.title, form.description, form.document]) }}
+
+            {% if item.hasDocument %}
+                <p class="help">
+                    Documento actual:
+                    <a href="{{ path('guardia_bank_download', { id: item.id }) }}">{{ item.documentName ?: 'documento' }}</a>.
+                    Sube otro para reemplazarlo.
+                </p>
+                {{ f.toggle(form.removeDocument) }}
+            {% endif %}
+
+            {{ f.section('Fotocopias y disponibilidad', [form.suggestedCopies]) }}
+            {{ f.toggle(form.active) }}
+            {{ f.actions(path('guardia_bank_index')) }}
+        {{ form_end(form) }}
+    </div>
+{% endblock %}

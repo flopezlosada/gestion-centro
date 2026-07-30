@@ -12,10 +12,27 @@ parameters:
     app.uploads_dir: '%kernel.project_dir%/%env(APP_SHARE_DIR)%'
     # "From" address for the reminder e-mails. Override per environment via MAILER_FROM.
     app.mailer_from: '%env(MAILER_FROM)%'
+    # Mailbox of the copy room, where "pedir fotocopias" orders are sent. The real address is the
+    # centre's and this repository is public, so it lives in the environment (COPY_SHOP_EMAIL), never
+    # here — same reason as app.organization_name. The placeholder default also keeps a misconfigured
+    # environment from mailing real orders to the centre by accident.
+    app.copy_shop_email: '%env(default:app_copy_shop_email_default:COPY_SHOP_EMAIL)%'
+    app_copy_shop_email_default: 'fotocopias@example.test'
+    # Buzón del equipo directivo: los encargos de fotocopias salen a su nombre y las respuestas van ahí.
+    # Sin definir = las respuestas van a quien pidió las copias. El default va por parámetro y no como
+    # "default::", que resuelve a NULL y revienta el servicio que espera una cadena.
+    app.direction_email: '%env(default:app_direction_email_default:DIRECTION_EMAIL)%'
+    app_direction_email_default: ''
     # Organisation name shown across the app. Generic by default; the centre overrides it per
     # environment via APP_ORG_NAME (kept out of the repo on purpose).
     app.organization_name: '%env(default:app_organization_name_default:APP_ORG_NAME)%'
     app_organization_name_default: 'Centro educativo'
+    # Acceso a RAICES para el recordatorio "apunta las ausencias del alumnado" que acompaña a cada
+    # guardia. VACÍO por defecto a propósito: el aviso se da igual, pero sin enlace mientras no se
+    # configure la URL real del centro (APP_RAICES_URL) — un enlace inventado en mitad de una guardia
+    # es peor que ninguno.
+    app.raices_url: '%env(default:app_raices_url_default:APP_RAICES_URL)%'
+    app_raices_url_default: ''
     # Idle-session timeout in seconds. 0 disables it (dev/test, so development sessions don't drop);
     # production overrides it in the when@prod block below.
     app.session_idle_timeout: 0

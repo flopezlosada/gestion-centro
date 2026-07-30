@@ -18,7 +18,7 @@
                         <span>{% if times %}{{ times.endsAt|date('H:i', false) }}{% endif %}</span>
                     </span>
                     <span class="upcoming__body">
-                        <span class="upcoming__where">{{ [cover.groupName, cover.roomName]|filter(v => v)|join(' · ') ?: 'Sin especificar' }}</span>
+                        <span class="upcoming__where">{{ [cover.groupName, cover.effectiveRoomName]|filter(v => v)|join(' · ') ?: 'Sin especificar' }}</span>
                         <span class="upcoming__teacher">Cubres a {{ cover.absentTeacher.fullName }}</span>
                     </span>
                     {% if cover.notCovered %}<span class="badge badge--danger" data-tone="danger">Incidencia</span>

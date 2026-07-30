@@ -8,9 +8,12 @@ namespace App\Guardia;
  * The outcome of a timetable import — or, when {@see $dryRun} is set, of the preview that runs before
  * anyone commits to it. Both the console command and the self-service admin screen report the same
  * figures from here: how many cells were built, how many were guardia/collaborator duties, how many
- * teachers were reconciled, what the import replaced, and the three things that need a human decision:
- * teachers nobody could be matched to, hand-marked guardias that were respected, and teachers who keep
- * a timetable this export no longer carries.
+ * teachers were reconciled, what the import replaced, the shape of the school day it recorded (its
+ * periods and how many of them are recreos), and the things that need a human decision: teachers nobody
+ * could be matched to, hand-marked guardias that were respected, teachers who keep a timetable this
+ * export no longer carries, and a marco horario that came out unusable (no recreo, or a period defined
+ * two different ways) — the break duty rota reads its times from there, so a silent zero would leave it
+ * unable to show a single recreo.
  *
  * Immutable value object; {@see TimetableImporter} produces it.
  */
@@ -26,6 +29,9 @@ final class TimetableImportResult
      * @param int                   $keptManual    export cells skipped because a hand-marked guardia holds that period
      * @param int                   $droppedManual hand-marked guardias removed because the new timetable teaches then
      * @param list<string>          $stale         teachers holding a timetable in this course that the export does not carry
+     * @param int                   $frameCount    periods of the marco horario the export declared (0 if it carried none)
+     * @param int                   $breakCount    how many of those are recreos, which is what the break duty rota needs
+     * @param list<int>              $frameConflicts period indices the export defined more than one way
      */
     public function __construct(
         public readonly int $entryCount,
@@ -37,6 +43,9 @@ final class TimetableImportResult
         public readonly int $keptManual = 0,
         public readonly int $droppedManual = 0,
         public readonly array $stale = [],
+        public readonly int $frameCount = 0,
+        public readonly int $breakCount = 0,
+        public readonly array $frameConflicts = [],
     ) {
     }
 
@@ -48,6 +57,7 @@ final class TimetableImportResult
      */
     public function needsAttention(): bool
     {
-        return [] !== $this->unmatched || [] !== $this->stale || $this->keptManual > 0 || $this->droppedManual > 0;
+        return [] !== $this->unmatched || [] !== $this->stale || $this->keptManual > 0 || $this->droppedManual > 0
+            || [] !== $this->frameConflicts || 0 === $this->breakCount;
     }
 }

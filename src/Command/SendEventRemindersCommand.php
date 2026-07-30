@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Command;
 
 use App\Service\EventReminderNotifier;
-use App\Service\MeetingReminderNotifier;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -13,17 +12,16 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * Pushes the reminders that have come due — the personal agenda's and the convened meetings' — meant to
- * run from cron every five minutes. Both sweeps are idempotent, so running it more often only makes the
- * reminders land closer to the antelación asked for; running it less makes them land late.
+ * Pushes the personal agenda reminders that have come due — meant to run from cron every five minutes,
+ * alongside {@see SendGuardiaRaicesRemindersCommand} and {@see SendMeetingRemindersCommand}. The sweep is
+ * idempotent, so running it more often only makes the reminders land closer to the antelación the owner
+ * asked for; running it less makes them land late.
  */
-#[AsCommand(name: 'app:events:send-reminders', description: 'Envía los avisos de agenda (eventos personales y reuniones) que tocan ahora')]
+#[AsCommand(name: 'app:events:send-reminders', description: 'Envía los avisos de eventos de la agenda personal que tocan ahora')]
 final class SendEventRemindersCommand extends Command
 {
-    public function __construct(
-        private readonly EventReminderNotifier $events,
-        private readonly MeetingReminderNotifier $meetings,
-    ) {
+    public function __construct(private readonly EventReminderNotifier $notifier)
+    {
         parent::__construct();
     }
 
@@ -31,8 +29,7 @@ final class SendEventRemindersCommand extends Command
     {
         // PHP's default time zone on purpose: it is the one Doctrine wrote remind_at in, so this is the
         // only "now" that compares correctly (see EventReminderNotifier's class doc).
-        $now = new \DateTimeImmutable('now');
-        $count = $this->events->sendDue($now) + $this->meetings->sendDue($now);
+        $count = $this->notifier->sendDue(new \DateTimeImmutable('now'));
         (new SymfonyStyle($input, $output))->success(\sprintf('%d avisos de agenda enviados.', $count));
 
         return Command::SUCCESS;

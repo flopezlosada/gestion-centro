@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Penalara;
 
 use App\Enum\ScheduleActivityKind;
+use App\Enum\TimeSlotKind;
 
 /**
  * Turns a pair of Peñalara GHC exports into a flat list of {@see ScheduleEntryDto}: the resolved
@@ -24,20 +25,59 @@ use App\Enum\ScheduleActivityKind;
 final class PenalaraTimetableParser
 {
     /**
-     * Parses the two exports into schedule-entry DTOs, exact duplicates removed.
+     * Parses the two exports into the cells teachers occupy plus the shape of the school day.
      *
      * @param string $planificadorXml the planificador export (datosGHC), the name dictionary
      * @param string $horarioXml      the resolved timetable export (SÉNECA SERVICIO)
      *
-     * @return list<ScheduleEntryDto> one DTO per timetable cell (lective, guardia or collaborator)
+     * @return PenalaraTimetable the cells (exact duplicates removed) and the marco horario
      *
      * @throws \RuntimeException if either document cannot be parsed as XML
      */
-    public function parse(string $planificadorXml, string $horarioXml): array
+    public function parse(string $planificadorXml, string $horarioXml): PenalaraTimetable
     {
         $dict = $this->buildDictionary($this->loadXml($planificadorXml, 'planificador'));
+        [$frame, $conflicts] = $this->timeFrame($dict['slots']);
 
-        return $this->parseHorario($this->loadXml($horarioXml, 'horario'), $dict);
+        return new PenalaraTimetable(
+            $this->parseHorario($this->loadXml($horarioXml, 'horario'), $dict),
+            $frame,
+            $conflicts,
+        );
+    }
+
+    /**
+     * Collapses the planificador's tramos into the day's periods: the export repeats each period once per
+     * weekday (40 rows for 8 periods over 5 days in the centre's own export), and the centre runs the same
+     * shape every day, so one row per index is what we keep.
+     *
+     * A period defined twice with different times or a different type is a shape we do not model (a
+     * submarco with, say, a shorter Friday); the first definition wins and the index is reported, so the
+     * import screen can say so instead of the difference vanishing.
+     *
+     * @param array<string, array{index: int, start: string, end: string, type: string}> $slots the tramos by clavX
+     *
+     * @return array{0: list<TimeFrameSlotDto>, 1: list<int>} the periods earliest first, and the conflicting indices
+     */
+    private function timeFrame(array $slots): array
+    {
+        $byIndex = [];
+        $conflicts = [];
+        foreach ($slots as $slot) {
+            $kind = TimeSlotKind::fromPenalaraType($slot['type']);
+            $existing = $byIndex[$slot['index']] ?? null;
+            if (null === $existing) {
+                $byIndex[$slot['index']] = new TimeFrameSlotDto($slot['index'], $slot['start'], $slot['end'], $kind);
+                continue;
+            }
+            if ($existing->startsAt !== $slot['start'] || $existing->endsAt !== $slot['end'] || $existing->kind !== $kind) {
+                $conflicts[$slot['index']] = true;
+            }
+        }
+
+        ksort($byIndex);
+
+        return [array_values($byIndex), array_map('intval', array_keys($conflicts))];
     }
 
     /**
@@ -74,7 +114,7 @@ final class PenalaraTimetableParser
      *     groups: array<string, string>,
      *     rooms: array<string, string>,
      *     subjects: array<string, string>,
-     *     slots: array<string, array{index: int, start: string, end: string}>,
+     *     slots: array<string, array{index: int, start: string, end: string, type: string}>,
      *     guardiaCodes: array<string, true>,
      *     collaboratorCodes: array<string, true>
      * } the dictionary
@@ -117,12 +157,16 @@ final class PenalaraTimetableParser
             }
         }
 
+        // The marco horario, keyed by the tramo code an activity references. Its <Tipo> is what tells a
+        // recreo from a teaching period — the only place that distinction exists, since no activity is
+        // ever scheduled during a break.
         $slots = [];
         foreach ($plan->xpath('//marcoHorario/tramo') ?: [] as $t) {
             $slots[(string) $t->clavX] = [
                 'index' => (int) $t->indice,
                 'start' => trim((string) $t->horaEntrada),
                 'end' => trim((string) $t->horaSalida),
+                'type' => trim((string) $t->Tipo),
             ];
         }
 
@@ -142,7 +186,7 @@ final class PenalaraTimetableParser
      * dictionary to name the codes and to tell guardia/collaborator duties from teaching.
      *
      * @param \SimpleXMLElement                                                                                                                                                                                                                                                       $hor  the resolved timetable root (SERVICIO)
-     * @param array{teachers: array<string, string>, groups: array<string, string>, rooms: array<string, string>, subjects: array<string, string>, slots: array<string, array{index: int, start: string, end: string}>, guardiaCodes: array<string, true>, collaboratorCodes: array<string, true>} $dict the name dictionary
+     * @param array{teachers: array<string, string>, groups: array<string, string>, rooms: array<string, string>, subjects: array<string, string>, slots: array<string, array{index: int, start: string, end: string, type: string}>, guardiaCodes: array<string, true>, collaboratorCodes: array<string, true>} $dict the name dictionary
      *
      * @return list<ScheduleEntryDto> the parsed cells, exact duplicates removed
      */
@@ -182,7 +226,7 @@ final class PenalaraTimetableParser
      * @param \SimpleXMLElement                                                                                                                                                                                                                                                       $act         the ACTIVIDAD node
      * @param string                                                                                                                                                                                                                                                                  $teacherCode the owning teacher's code
      * @param string                                                                                                                                                                                                                                                                  $teacherName the owning teacher's name
-     * @param array{teachers: array<string, string>, groups: array<string, string>, rooms: array<string, string>, subjects: array<string, string>, slots: array<string, array{index: int, start: string, end: string}>, guardiaCodes: array<string, true>, collaboratorCodes: array<string, true>} $dict        the name dictionary
+     * @param array{teachers: array<string, string>, groups: array<string, string>, rooms: array<string, string>, subjects: array<string, string>, slots: array<string, array{index: int, start: string, end: string, type: string}>, guardiaCodes: array<string, true>, collaboratorCodes: array<string, true>} $dict        the name dictionary
      *
      * @return ScheduleEntryDto|null the mapped cell, or null to skip
      */

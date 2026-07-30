@@ -104,6 +104,31 @@ class UserRepository extends ServiceEntityRepository
     }
 
     /**
+     * The equipo directivo: active users holding a centre-wide ranked role (dirección, jefatura de
+     * estudios, adjunta). Ranked-but-per-department roles are excluded on purpose — a jefe de
+     * departamento commands their own department, not the centre — which is what separates this from
+     * {@see findWithHierarchyRank()}.
+     *
+     * These are the people alerted when a recreo is left unwatched: the centre's rule is that a break
+     * duty is not re-covered, so somebody with authority over the whole centre has to look for a
+     * volunteer.
+     *
+     * @return User[] the leadership team, by full name
+     */
+    public function findLeadershipTeam(): array
+    {
+        return $this->createQueryBuilder('u')
+            ->join('u.assignedRoles', 'r')
+            ->where('r.hierarchyLevel IS NOT NULL')
+            ->andWhere('r.perDepartment = false')
+            ->andWhere('u.active = true')
+            ->orderBy('u.fullName', 'ASC')
+            ->distinct()
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * Active users belonging to any of the given units, by full name. Used to build the "assign to"
      * choices, scoped to a creator's own unit and the units below it.
      *

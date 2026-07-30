@@ -61,24 +61,26 @@
             {# Paso 2 · clases reales de ese día del profesor elegido. #}
             {% if selectedTeacher is null %}
                 <p class="muted step-hint">Elige un profesor para ver sus clases del {{ weekday.label|lower }}.</p>
-            {% elseif dayClasses is empty %}
+            {% elseif dayClasses is empty and breakDuty is null %}
                 <div class="empty-state">
                     <h2>No da clase el {{ weekday.label|lower }}</h2>
-                    <p>Ese día no tiene ninguna clase lectiva, así que no hay guardias que generar. Prueba con otro día.</p>
+                    <p>Ese día no tiene ninguna clase lectiva ni guardia de recreo, así que no hay nada que registrar. Prueba con otro día.</p>
                 </div>
             {% else %}
                 <form method="post" action="{{ path('guardia_absence_create') }}" class="absence-form" enctype="multipart/form-data" data-absence-form
-                      data-confirm="Se generarán {{ dayClasses|length }} guardia{{ dayClasses|length == 1 ? '' : 's' }} y se avisará a los profesores asignados. ¿Continuar?">
+                      data-confirm="{% if dayClasses is empty %}Se avisará al equipo directivo de que su recreo se queda sin vigilar. ¿Continuar?{% else %}Se generarán {{ dayClasses|length }} guardia{{ dayClasses|length == 1 ? '' : 's' }} y se avisará a los profesores asignados. ¿Continuar?{% endif %}">
                     <input type="hidden" name="_token" value="{{ csrf_token('guardia_absence_create') }}">
                     <input type="hidden" name="absent_teacher" value="{{ selectedTeacher }}">
                     <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
 
-                    <div class="classes-head">
-                        <h2 class="classes-head__title">Clases del {{ dias[date|date('N', false)]|lower }} {{ date|date('d/m', false) }}</h2>
-                        {# Sin JS queda el total, que es cierto de partida (todas marcadas); con JS cuenta las marcadas. #}
-                        <span class="badge badge--danger" data-absence-count aria-live="polite">falta {{ dayClasses|length }} de {{ dayClasses|length }}</span>
-                    </div>
-                    <p class="classes-help">Marcada = falta esa hora. Desmárcala si sí estará. En cada hora que falte puedes adjuntar la tarea.</p>
+                    {% if dayClasses is not empty %}
+                        <div class="classes-head">
+                            <h2 class="classes-head__title">Clases del {{ dias[date|date('N', false)]|lower }} {{ date|date('d/m', false) }}</h2>
+                            {# Sin JS queda el total, que es cierto de partida (todas marcadas); con JS cuenta las marcadas. #}
+                            <span class="badge badge--danger" data-absence-count aria-live="polite">falta {{ dayClasses|length }} de {{ dayClasses|length }}</span>
+                        </div>
+                        <p class="classes-help">Marcada = falta esa hora. Desmárcala si sí estará. En cada hora que falte puedes adjuntar la tarea.</p>
+                    {% endif %}
 
                     <ul class="classcards">
                         {% for c in dayClasses %}
@@ -119,11 +121,33 @@
                                         </label>
                                         <textarea name="description[{{ c.slotIndex }}]" rows="2" maxlength="1000"
                                                   placeholder="Descripción para {{ label }} (opcional): lo que no venga en el documento — página, ejercicios, dónde está el examen…"></textarea>
+                                        {# Las copias las sabe quien falta (conoce su grupo); conserjería no puede adivinarlas. #}
+                                        <label class="classcard__copies">
+                                            <span class="field-label">Copias que hacen falta</span>
+                                            <input type="number" name="copies[{{ c.slotIndex }}]" min="1" max="500" inputmode="numeric" placeholder="p. ej. 28">
+                                            <span class="field-help">Opcional. Se propone al mandar la tarea a fotocopias; si lo dejas vacío lo pondrá quien la pida.</span>
+                                        </label>
                                     </div>
                                 </details>
                             </li>
                         {% endfor %}
                     </ul>
+
+                    {% if breakDuty %}
+                        {# El recreo va aparte de las clases a propósito: no es una hora que nadie dé, así que
+                           no aparece en la lista de arriba, y su consecuencia es la contraria — no se genera
+                           guardia ninguna, se avisa al equipo directivo. Marcado por defecto porque si falta,
+                           falta; desmarcarlo es para el caso de que venga solo a hacer el recreo. #}
+                        <div class="form-row field--break">
+                            <label class="eyebrow">Guardia de recreo</label>
+                            <label class="choice">
+                                <input type="checkbox" name="misses_break" value="1" checked>
+                                También falta al recreo: <strong>{{ breakDuty.zone.name }}</strong>
+                                <span class="muted"> · {{ include('guardia/_break_times.html.twig', {duty: breakDuty, breakSlots: breakSlots}) }}</span>
+                            </label>
+                            <p class="field-help">Ese recreo <strong>no se reasigna</strong> (no hay personal): se avisa al equipo directivo para que busque un voluntario, y queda registrado en «Recreos sin vigilar».</p>
+                        </div>
+                    {% endif %}
 
                     <div class="form-row field--reason">
                         <label class="eyebrow" for="absence_reason">Motivo de la ausencia · privado</label>
@@ -133,7 +157,7 @@
                     </div>
 
                     <div class="stackform__foot">
-                        <button type="submit" class="btn-lg btn-lg--primary">Generar y repartir guardias</button>
+                        <button type="submit" class="btn-lg btn-lg--primary">{{ dayClasses is empty ? 'Registrar la ausencia' : 'Generar y repartir guardias' }}</button>
                     </div>
                 </form>
             {% endif %}

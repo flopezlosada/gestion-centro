@@ -359,6 +359,25 @@ class Task implements Auditable
         return null !== $this->assignedRole && $user->holdsRole($this->assignedRole);
     }
 
+    /**
+     * Whether the task CONCERNS the given user: they hold it right now ({@see isOwnedBy()}) or they are
+     * its titular assignee even after delegating it down — delegating hands over the WORK, never the
+     * accountability, so the titular keeps the say over their own task (retiring the delegation,
+     * judging what the delegatee delivered) and keeps seeing it.
+     *
+     * The distinction matters because {@see isOwnedBy()} is exclusive on purpose (only ONE person may
+     * "do" a task, so a superior cannot execute a subordinate's work). Every check that asks "is this
+     * person part of this task" — as opposed to "must this person do it" — belongs here.
+     *
+     * @param User $user the person to check
+     *
+     * @return bool true if the user holds the task or is its titular assignee
+     */
+    public function concerns(User $user): bool
+    {
+        return $this->isOwnedBy($user) || $this->assignedUser === $user;
+    }
+
     public function getUnit(): ?Department
     {
         return $this->unit;

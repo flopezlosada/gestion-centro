@@ -30,8 +30,15 @@ use App\Repository\ScheduleEntryRepository;
  */
 final class GuardiaScheduleEditor
 {
-    /** The weekdays the grid offers: a Spanish IES runs Monday to Friday. */
-    public const WEEKDAYS = [Weekday::MONDAY, Weekday::TUESDAY, Weekday::WEDNESDAY, Weekday::THURSDAY, Weekday::FRIDAY];
+    /**
+     * The weekdays the grid offers: a Spanish IES runs Monday to Friday.
+     *
+     * @return list<Weekday> the weekdays of the school week
+     */
+    public static function weekdays(): array
+    {
+        return Weekday::schoolWeek();
+    }
 
     public function __construct(
         private readonly ScheduleEntryRepository $schedule,
@@ -58,7 +65,7 @@ final class GuardiaScheduleEditor
 
         // Every weekday × period starts as a free, editable cell.
         $cells = [];
-        foreach (self::WEEKDAYS as $weekday) {
+        foreach (self::weekdays() as $weekday) {
             foreach ($slots as $slot) {
                 $cells[$weekday->value][$slot['index']] = ['lective' => false, 'value' => '', 'label' => null, 'room' => null];
             }

@@ -39,7 +39,7 @@
                             <td>{{ cover.date|date('d/m/Y', false) }}</td>
                             <td class="mono" data-sort="{{ cover.slotIndex }}">{% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}{{ cover.slotIndex + 1 }}ª{% endif %}</td>
                             <td>{{ cover.groupName ?? '—' }}</td>
-                            <td class="mono">{{ cover.roomName ?? '—' }}</td>
+                            <td class="mono">{{ cover.effectiveRoomName ?? '—' }}</td>
                             <td>{{ cover.absentTeacher.fullName }}</td>
                             <td>{% if cover.notCovered %}<span class="badge badge--danger" data-tone="danger">Incidencia</span>{% else %}<span class="badge badge--ok" data-tone="success">Cubierta</span>{% endif %}</td>
                             <td><a class="link-action" href="{{ path('guardia_cover_show', { id: cover.id }) }}">Ver</a></td>

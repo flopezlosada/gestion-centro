@@ -103,7 +103,7 @@
                     </label>
                     <button class="btn secondary" type="submit">{{ meeting.hasMinutes ? 'Sustituir por este archivo' : 'Subir un acta hecha aparte' }}</button>
                 </form>
-                <p class="help">PDF, Office, texto o imagen, hasta {{ (constant('App\\Support\\DocumentPolicy::MAX_BYTES') / 1024 / 1024)|round }} MB. Solo la puede descargar el grupo convocado y el equipo directivo.</p>
+                <p class="help">PDF, Office, texto o imagen, hasta {{ (constant('App\\Support\\DocumentUpload::MAX_BYTES') / 1024 / 1024)|round }} MB. Solo la puede descargar el grupo convocado y el equipo directivo.</p>
             {% endif %}
         </div>
         {# ---- Lo tratado: la materia prima del acta. Lo escribe quien la levanta; lo lee todo el grupo

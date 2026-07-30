@@ -18,7 +18,7 @@ use App\Service\MeetingAccess;
 use App\Service\MeetingNotifier;
 use App\Service\MinutesPdfRenderer;
 use App\Service\OrganizationHierarchy;
-use App\Support\DocumentPolicy;
+use App\Support\DocumentUpload;
 use App\Util\CalendarDate;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -44,7 +44,7 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
 #[Route('/reuniones')]
 final class MeetingController extends AbstractController
 {
-    /** Private storage subdirectory for the minutes; the accepted files are the shared {@see DocumentPolicy}. */
+    /** Private storage subdirectory for the minutes; the accepted files are the shared {@see DocumentUpload}. */
     private const string MINUTES_SUBDIR = 'meeting-minutes';
 
     /**
@@ -243,20 +243,21 @@ final class MeetingController extends AbstractController
         }
 
         $file = $request->files->get('acta');
-        if (!$file instanceof UploadedFile || \UPLOAD_ERR_NO_FILE === $file->getError()) {
+        if (!DocumentUpload::isPresent($file instanceof UploadedFile ? $file : null)) {
             $this->addFlash('error', 'Elige el archivo del acta.');
 
             return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
         }
+        \assert($file instanceof UploadedFile);
 
-        $rejection = DocumentPolicy::rejectionOf($file);
-        if (null !== $rejection) {
-            $this->addFlash('error', $rejection.' El acta no se ha subido.');
+        $problem = DocumentUpload::problem($file);
+        if (null !== $problem) {
+            $this->addFlash('error', $problem.' El acta no se ha subido.');
 
             return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
         }
 
-        $replaced = $this->keepMinutes($meeting, $uploader->upload($file, self::MINUTES_SUBDIR), DocumentPolicy::nameOf($file), $user, $entityManager, $uploader, $notifier);
+        $replaced = $this->keepMinutes($meeting, $uploader->upload($file, self::MINUTES_SUBDIR), DocumentUpload::nameOf($file), $user, $entityManager, $uploader, $notifier);
         $this->addFlash('success', $replaced ? 'Acta sustituida.' : 'Acta subida.');
 
         return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);

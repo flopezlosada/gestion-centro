@@ -19,6 +19,18 @@ enum Weekday: int
     case SUNDAY = 7;
 
     /**
+     * The days a Spanish IES actually runs, Monday to Friday — the columns of every weekly grid in the
+     * app (the manual guardia timetable, the break duty rota). Kept here so those screens agree on what
+     * a school week is instead of each one listing the days again.
+     *
+     * @return list<self> the weekdays of the school week, in order
+     */
+    public static function schoolWeek(): array
+    {
+        return [self::MONDAY, self::TUESDAY, self::WEDNESDAY, self::THURSDAY, self::FRIDAY];
+    }
+
+    /**
      * Human-facing label (Spanish).
      *
      * @return string the weekday label

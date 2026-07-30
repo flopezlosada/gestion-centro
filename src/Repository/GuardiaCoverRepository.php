@@ -46,10 +46,15 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     public function findForParte(\DateTimeImmutable $date, int $slotIndex): array
     {
         return $this->createQueryBuilder('c')
-            ->addSelect('absent', 'guardia', 'absence')
+            ->addSelect('absent', 'guardia', 'absence', 'grouping', 'bank')
             ->join('c.absentTeacher', 'absent')
             ->leftJoin('c.assignedGuardia', 'guardia')
             ->join('c.absence', 'absence')
+            // Grouping joined too: the parte reads it on every line (to say which room the class actually
+            // happens in), so lazy-loading it would be a query per line.
+            ->leftJoin('c.grouping', 'grouping')
+            // Y por lo mismo la tarea del banco: el parte pinta su título en cada línea que la tiene.
+            ->leftJoin('c.bankItem', 'bank')
             ->andWhere('c.date = :date')
             ->andWhere('c.slotIndex = :slot')
             ->setParameter('date', $date, 'date_immutable')
@@ -60,13 +65,31 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
-     * How many guardias each teacher has covered at a given period — the per-slot balance the
-     * equitable engine minimises. Counts every assigned cover with no incident (an assigned cover is
-     * done by default). Derived live (never stored), so it cannot drift out of sync.
+     * What one guardia COSTS the teacher who does it, as a DQL expression to count distinctly.
+     *
+     * A cover on its own is one guardia. Several covers folded into the same {@see GuardiaGrouping} are
+     * ALSO one guardia between them: the centre's rule (Paco, 30-07-2026) is that minding three groups
+     * together in the assembly hall is one session of work, not three — the same reasoning they applied
+     * to the two break periods counting as a single duty. Two groups the teacher has to walk between
+     * (ungrouped) do still count two: that is two places to be, and the whole point of grouping is to
+     * avoid it.
+     *
+     * Written once here and shared by every counting query, so the equitable split, the per-teacher
+     * ranking and the teacher's own tally can never disagree about what a guardia is worth. The 'g'/'c'
+     * prefixes keep the two id spaces apart (grouping 5 and cover 5 are different things); CONCAT with a
+     * NULL grouping yields NULL, which is what makes COALESCE fall through to the cover's own key.
+     */
+    private const string WORK_UNIT = "COALESCE(CONCAT('g', IDENTITY(c.grouping)), CONCAT('c', c.id))";
+
+    /**
+     * How much guardia work each teacher has done at a given period — the per-slot balance the equitable
+     * engine minimises. Counts every assigned cover with no incident (an assigned cover is done by
+     * default), with a whole grouping counting as one (see {@see self::WORK_UNIT}). Derived live (never
+     * stored), so it cannot drift out of sync.
      *
      * @param int $slotIndex the period index within the day
      *
-     * @return array<int, int> map of teacher id → cover count at that period
+     * @return array<int, int> map of teacher id → guardias done at that period
      */
     public function loadBySlot(int $slotIndex): array
     {
@@ -78,10 +101,11 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
-     * How many guardias each teacher has covered in total, across every period — the tiebreaker
-     * when two candidates are level on the per-slot balance.
+     * How much guardia work each teacher has done in total, across every period — the tiebreaker when
+     * two candidates are level on the per-slot balance. A grouping counts as one (see
+     * {@see self::WORK_UNIT}).
      *
-     * @return array<int, int> map of teacher id → total cover count
+     * @return array<int, int> map of teacher id → guardias done
      */
     public function totalLoad(): array
     {
@@ -100,8 +124,9 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     public function findAssignedTo(User $guardia, \DateTimeImmutable $date): array
     {
         return $this->createQueryBuilder('c')
-            ->addSelect('absent')
+            ->addSelect('absent', 'grouping')
             ->join('c.absentTeacher', 'absent')
+            ->leftJoin('c.grouping', 'grouping')
             ->andWhere('c.assignedGuardia = :guardia')
             ->andWhere('c.date = :date')
             ->setParameter('guardia', $guardia)
@@ -125,8 +150,9 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     public function findAssignedToBetween(User $guardia, \DateTimeImmutable $start, \DateTimeImmutable $end): array
     {
         return $this->createQueryBuilder('c')
-            ->addSelect('absent')
+            ->addSelect('absent', 'grouping')
             ->join('c.absentTeacher', 'absent')
+            ->leftJoin('c.grouping', 'grouping')
             ->andWhere('c.assignedGuardia = :guardia')
             ->andWhere('c.date BETWEEN :start AND :end')
             ->setParameter('guardia', $guardia)
@@ -151,8 +177,9 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     public function findUpcomingAssignedTo(User $guardia, \DateTimeImmutable $from): array
     {
         return $this->createQueryBuilder('c')
-            ->addSelect('absent')
+            ->addSelect('absent', 'grouping')
             ->join('c.absentTeacher', 'absent')
+            ->leftJoin('c.grouping', 'grouping')
             ->andWhere('c.assignedGuardia = :guardia')
             ->andWhere('c.date >= :from')
             ->setParameter('guardia', $guardia)
@@ -175,8 +202,9 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     public function findPastAssignedTo(User $guardia, \DateTimeImmutable $before): array
     {
         return $this->createQueryBuilder('c')
-            ->addSelect('absent')
+            ->addSelect('absent', 'grouping')
             ->join('c.absentTeacher', 'absent')
+            ->leftJoin('c.grouping', 'grouping')
             ->andWhere('c.assignedGuardia = :guardia')
             ->andWhere('c.date < :before')
             ->setParameter('guardia', $guardia)
@@ -185,6 +213,63 @@ class GuardiaCoverRepository extends ServiceEntityRepository
             ->addOrderBy('c.slotIndex', 'ASC')
             ->getQuery()
             ->getResult();
+    }
+
+    /**
+     * The covers of one day that could still get the "apunta las ausencias en RAICES" reminder: assigned
+     * to somebody, without a registered incident (nobody covered it, so there is no roll to take) and not
+     * reminded yet. WHICH of them are actually due is a matter of the clock and belongs to
+     * {@see \App\Service\GuardiaRaicesReminder} — the period times live in the timetable, not here, so
+     * this query cannot filter by hour. A day holds a couple of dozen covers at most, so fetching the
+     * day and filtering in PHP is cheaper than joining the timetable per row.
+     *
+     * The assigned teacher is eager-loaded: the sweep needs them as the recipient of every notice.
+     *
+     * @param \DateTimeImmutable $date the day to sweep
+     *
+     * @return GuardiaCover[] the candidate covers, earliest period first
+     */
+    public function findRaicesRemindableOn(\DateTimeImmutable $date): array
+    {
+        return $this->createQueryBuilder('c')
+            ->addSelect('guardia')
+            ->join('c.assignedGuardia', 'guardia')
+            ->andWhere('c.date = :date')
+            ->andWhere('c.notCovered = false')
+            ->andWhere('c.raicesReminderSentAt IS NULL')
+            ->setParameter('date', $date, 'date_immutable')
+            ->orderBy('c.slotIndex', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Stamps the RAICES reminder as sent on the given covers, in one query.
+     *
+     * Deliberately a bulk DQL update and not a change on the entities: {@see GuardiaCover} is
+     * {@see \App\Contract\Auditable}, so going through the Unit of Work would drop an authorless
+     * "modificada" entry into every guardia's history for what is machine bookkeeping — the log is
+     * there to answer "who changed this cover and why", and a reminder timestamp is neither.
+     *
+     * @param list<int>          $ids the covers to stamp
+     * @param \DateTimeImmutable $at  the instant to record
+     *
+     * @return int the number of covers stamped
+     */
+    public function markRaicesReminderSent(array $ids, \DateTimeImmutable $at): int
+    {
+        if ([] === $ids) {
+            return 0;
+        }
+
+        return (int) $this->createQueryBuilder('c')
+            ->update()
+            ->set('c.raicesReminderSentAt', ':at')
+            ->andWhere('c.id IN (:ids)')
+            ->setParameter('at', $at)
+            ->setParameter('ids', $ids)
+            ->getQuery()
+            ->execute();
     }
 
     /**
@@ -213,8 +298,9 @@ class GuardiaCoverRepository extends ServiceEntityRepository
 
     /**
      * Guardias covered per teacher across the whole course, teacher eager-loaded and ordered by count
-     * (busiest first). An assigned cover with no incident counts as done; teachers with none do not
-     * appear. Powers the coordinator's stats screen.
+     * (busiest first). An assigned cover with no incident counts as done, and a whole grouping counts as
+     * one (see {@see self::WORK_UNIT}); teachers with none do not appear. Powers the coordinator's stats
+     * screen, so this is also what the fairness reading is computed from.
      *
      * Queried from {@see User} as root: DQL forbids selecting a *joined* entity alias alongside scalars,
      * so the teacher must be the root and the covers are joined onto it.
@@ -227,7 +313,7 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     public function coveredTotalsByTeacher(?\DateTimeImmutable $from = null, ?\DateTimeImmutable $to = null): array
     {
         $qb = $this->getEntityManager()->createQueryBuilder()
-            ->select('g', 'COUNT(c.id) AS total')
+            ->select('g', 'COUNT(DISTINCT '.self::WORK_UNIT.') AS total')
             ->from(User::class, 'g')
             ->join(GuardiaCover::class, 'c', 'WITH', 'c.assignedGuardia = g')
             ->andWhere('c.notCovered = false')
@@ -246,8 +332,10 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
-     * How many guardias a single teacher has covered this course (assigned, no incident) — the counter
-     * the teacher sees on their own screen. Derived live, like every other guardia count.
+     * How many guardias a single teacher has covered this course (assigned, no incident, a grouping
+     * counting as one — see {@see self::WORK_UNIT}) — the counter the teacher sees on their own screen.
+     * Derived live, like every other guardia count, and from the same expression, so their tally and the
+     * coordinator's ranking always agree.
      *
      * @param User $teacher the guardia teacher
      *
@@ -256,7 +344,7 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     public function countCoveredForTeacher(User $teacher): int
     {
         return (int) $this->createQueryBuilder('c')
-            ->select('COUNT(c.id)')
+            ->select('COUNT(DISTINCT '.self::WORK_UNIT.')')
             ->andWhere('c.assignedGuardia = :teacher')
             ->andWhere('c.notCovered = false')
             ->setParameter('teacher', $teacher)
@@ -367,9 +455,10 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     public function history(?\DateTimeImmutable $from, ?\DateTimeImmutable $to, ?string $group, ?User $assignedTeacher, ?User $absentTeacher): array
     {
         $qb = $this->createQueryBuilder('c')
-            ->addSelect('absent', 'guardia')
+            ->addSelect('absent', 'guardia', 'grouping')
             ->join('c.absentTeacher', 'absent')
             ->leftJoin('c.assignedGuardia', 'guardia')
+            ->leftJoin('c.grouping', 'grouping')
             ->orderBy('c.date', 'DESC')
             ->addOrderBy('c.slotIndex', 'ASC')
             ->addOrderBy('absent.fullName', 'ASC');
@@ -471,17 +560,18 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
-     * Runs an incident-free, grouped-by-guardia count and returns it keyed by teacher id.
+     * Runs an incident-free count of guardia work per teacher and returns it keyed by teacher id, with a
+     * grouping counting as one (see {@see self::WORK_UNIT}).
      *
      * @param \Doctrine\ORM\QueryBuilder $qb a builder already scoped (e.g. by slot), alias {@code c}
      *
-     * @return array<int, int> map of teacher id → cover count
+     * @return array<int, int> map of teacher id → guardias done
      */
     private function countsKeyedByGuardia(\Doctrine\ORM\QueryBuilder $qb): array
     {
         /** @var list<array{id: int, total: int}> $rows */
         $rows = $qb
-            ->select('IDENTITY(c.assignedGuardia) AS id', 'COUNT(c.id) AS total')
+            ->select('IDENTITY(c.assignedGuardia) AS id', 'COUNT(DISTINCT '.self::WORK_UNIT.') AS total')
             ->andWhere('c.notCovered = false')
             ->andWhere('c.assignedGuardia IS NOT NULL')
             ->groupBy('c.assignedGuardia')

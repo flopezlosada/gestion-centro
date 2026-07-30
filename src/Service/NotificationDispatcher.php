@@ -38,10 +38,10 @@ use Symfony\Component\Mime\Email;
 final class NotificationDispatcher
 {
     /**
-     * Kinds (by prefix) delivered by push and in-app only, never by e-mail: the ones whose whole value is
-     * arriving in the next few minutes. See {@see wantsEmail()}.
+     * Kinds (by prefix) delivered by push and the in-app bell only, never by e-mail: the reminders that
+     * fire at the very moment they are about. See {@see wantsEmail()}.
      */
-    private const array PUSH_ONLY_KINDS = ['event.', 'meeting.reminder'];
+    private const array PUSH_ONLY_KINDS = ['event.', 'guardia.raices', 'meeting.reminder'];
 
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
@@ -142,10 +142,13 @@ final class NotificationDispatcher
      * {@see NotificationLink} decides the destination from it: it is a property of the KIND of notice,
      * not of whoever raises it, so every caller gets the same policy without passing a flag around.
      *
-     * The push-only kinds are the last-minute nudges ("empieza en 10 minutos"): by the time an e-mail is
-     * read the thing has started, so it would be pure noise in the inbox. Note how narrow the meeting
-     * entry is — a convocatoria, a change of time or a new acta DO go by e-mail, because those you want in
-     * writing; only the reminder does not.
+     * The exceptions are the reminders that fire AT the moment they are about: a personal agenda nudge
+     * ("empieza en 10 minutos"), the RAICES reminder sent while a guardia is under way, and the one that
+     * says a meeting is about to start. By the time an e-mail about any of them is read the moment has
+     * passed, so it would be pure noise in the inbox — whereas "te han asignado una guardia"
+     * ({@see GuardiaAssignmentNotifier}) or a convocatoria ({@see MeetingNotifier}) are about something days
+     * ahead and do warrant one. Note how narrow the meeting entry is: only the reminder is push-only, while
+     * the convocatoria, a change of time and a new acta go by e-mail, because those you want in writing.
      *
      * @param Notification $notification the notice about to be delivered
      *

@@ -32,7 +32,7 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
  * all anchored on the "fecha" (YYYY-MM-DD) parameter, with previous/next navigation per level.
  *
  * @phpstan-type DayCell array{date: \DateTimeImmutable, inMonth: bool, isToday: bool, isWeekend: bool, nonLective: ?NonLectiveDay, tasks: Task[], events: PersonalEvent[]}
- * @phpstan-type MiniCell array{day: string, date: string, inMonth: bool, isToday: bool, hasTasks: bool, hasEvents: bool, status: ?string, isNonLective: bool}
+ * @phpstan-type MiniCell array{day: string, date: string, inMonth: bool, isToday: bool, hasTasks: bool, hasEvents: bool, hasGuardias: bool, status: ?string, isNonLective: bool}
  */
 final class CalendarController extends AbstractController
 {
@@ -107,7 +107,7 @@ final class CalendarController extends AbstractController
         $model = match ($view) {
             'dia' => $this->dayModel($anchor, $today, $byDay, $eventsByDay, $guardiasByDay, $meetingsByDay, $nonLectiveByDay, $schoolCalendar),
             'semana' => $this->weekModel($anchor, $today, $byDay, $eventsByDay, $nonLectiveByDay, $schoolCalendar),
-            'anio' => $this->yearModel($anchor, $today, $byDay, $eventsByDay, $nonLectiveByDay, $schoolCalendar, $academicYears),
+            'anio' => $this->yearModel($anchor, $today, $byDay, $eventsByDay, $guardiasByDay, $nonLectiveByDay, $schoolCalendar, $academicYears),
             default => $this->monthModel($anchor, $today, $byDay, $eventsByDay, $nonLectiveByDay, $schoolCalendar),
         };
 
@@ -350,13 +350,14 @@ final class CalendarController extends AbstractController
      * @param \DateTimeImmutable                 $today           today, to flag the current day
      * @param array<string, Task[]>              $byDay           tasks indexed by deadline day
      * @param array<string, PersonalEvent[]>     $eventsByDay     personal events indexed by start day
+     * @param array<string, GuardiaCover[]>      $guardiasByDay   the user's guardias indexed by day
      * @param array<string, NonLectiveDay>       $nonLectiveByDay non-teaching days indexed by day
      * @param SchoolCalendar                     $schoolCalendar  the teaching-day calendar
      * @param AcademicYearRepository             $academicYears   the school-year structure repository
      *
      * @return array{template: string, label: string, months: list<array{name: string, date: string, term: ?int, weeks: list<list<MiniCell>>}>} the template and view data
      */
-    private function yearModel(\DateTimeImmutable $anchor, \DateTimeImmutable $today, array $byDay, array $eventsByDay, array $nonLectiveByDay, SchoolCalendar $schoolCalendar, AcademicYearRepository $academicYears): array
+    private function yearModel(\DateTimeImmutable $anchor, \DateTimeImmutable $today, array $byDay, array $eventsByDay, array $guardiasByDay, array $nonLectiveByDay, SchoolCalendar $schoolCalendar, AcademicYearRepository $academicYears): array
     {
         $start = $this->schoolYearStart($anchor);
         $startYear = (int) $start->format('Y');
@@ -368,7 +369,10 @@ final class CalendarController extends AbstractController
             $first = $start->modify(\sprintf('+%d months', $i));
             $weeks = [];
             foreach ($this->monthWeeks($first, $today, $byDay, $eventsByDay, $nonLectiveByDay, $schoolCalendar) as $week) {
-                $weeks[] = array_map($this->miniCell(...), $week);
+                $weeks[] = array_map(
+                    fn (array $cell): array => $this->miniCell($cell, $guardiasByDay),
+                    $week,
+                );
             }
             $months[] = [
                 'name' => self::MONTH_NAMES[(int) $first->format('n')],
@@ -505,19 +509,28 @@ final class CalendarController extends AbstractController
      * Reduces a full day cell to the compact shape the year view needs: the day number, whether it is
      * in its month, today, and the single representative status dot for the tasks due that day.
      *
-     * @param DayCell $cell the full day cell built by {@see self::cell()}
+     * Guardias travel as a plain flag, not as a dot: the mini cell has room for ONE dot and it belongs
+     * to the task status, so the year view marks a guardia day in a different visual channel (a rule
+     * under the number, see .cal-mini__day.has-guardia) instead of fighting over the dot — which is why
+     * they were left out of this view in the first place.
+     *
+     * @param DayCell                       $cell          the full day cell built by {@see self::cell()}
+     * @param array<string, GuardiaCover[]> $guardiasByDay the user's guardias indexed by day
      *
      * @return MiniCell the compact cell
      */
-    private function miniCell(array $cell): array
+    private function miniCell(array $cell, array $guardiasByDay): array
     {
+        $key = $cell['date']->format('Y-m-d');
+
         return [
             'day' => $cell['date']->format('j'),
-            'date' => $cell['date']->format('Y-m-d'),
+            'date' => $key,
             'inMonth' => $cell['inMonth'],
             'isToday' => $cell['isToday'],
             'hasTasks' => $cell['inMonth'] && [] !== $cell['tasks'],
             'hasEvents' => $cell['inMonth'] && [] !== $cell['events'],
+            'hasGuardias' => $cell['inMonth'] && [] !== ($guardiasByDay[$key] ?? []),
             'status' => $cell['inMonth'] ? $this->topStatus($cell['tasks']) : null,
             // Non-teaching: a weekend or a registered holiday. Both are shown muted in the year grid.
             'isNonLective' => $cell['inMonth'] && ($cell['isWeekend'] || null !== $cell['nonLective']),
