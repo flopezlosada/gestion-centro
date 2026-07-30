@@ -188,6 +188,63 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
+     * The covers of one day that could still get the "apunta las ausencias en RAICES" reminder: assigned
+     * to somebody, without a registered incident (nobody covered it, so there is no roll to take) and not
+     * reminded yet. WHICH of them are actually due is a matter of the clock and belongs to
+     * {@see \App\Service\GuardiaRaicesReminder} — the period times live in the timetable, not here, so
+     * this query cannot filter by hour. A day holds a couple of dozen covers at most, so fetching the
+     * day and filtering in PHP is cheaper than joining the timetable per row.
+     *
+     * The assigned teacher is eager-loaded: the sweep needs them as the recipient of every notice.
+     *
+     * @param \DateTimeImmutable $date the day to sweep
+     *
+     * @return GuardiaCover[] the candidate covers, earliest period first
+     */
+    public function findRaicesRemindableOn(\DateTimeImmutable $date): array
+    {
+        return $this->createQueryBuilder('c')
+            ->addSelect('guardia')
+            ->join('c.assignedGuardia', 'guardia')
+            ->andWhere('c.date = :date')
+            ->andWhere('c.notCovered = false')
+            ->andWhere('c.raicesReminderSentAt IS NULL')
+            ->setParameter('date', $date, 'date_immutable')
+            ->orderBy('c.slotIndex', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Stamps the RAICES reminder as sent on the given covers, in one query.
+     *
+     * Deliberately a bulk DQL update and not a change on the entities: {@see GuardiaCover} is
+     * {@see \App\Contract\Auditable}, so going through the Unit of Work would drop an authorless
+     * "modificada" entry into every guardia's history for what is machine bookkeeping — the log is
+     * there to answer "who changed this cover and why", and a reminder timestamp is neither.
+     *
+     * @param list<int>          $ids the covers to stamp
+     * @param \DateTimeImmutable $at  the instant to record
+     *
+     * @return int the number of covers stamped
+     */
+    public function markRaicesReminderSent(array $ids, \DateTimeImmutable $at): int
+    {
+        if ([] === $ids) {
+            return 0;
+        }
+
+        return (int) $this->createQueryBuilder('c')
+            ->update()
+            ->set('c.raicesReminderSentAt', ':at')
+            ->andWhere('c.id IN (:ids)')
+            ->setParameter('at', $at)
+            ->setParameter('ids', $ids)
+            ->getQuery()
+            ->execute();
+    }
+
+    /**
      * Ids of the teachers who are themselves absent on a date and period — they must be dropped from
      * the guardia pool (a teacher on call cannot cover while they are away).
      *

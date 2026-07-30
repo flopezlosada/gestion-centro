@@ -16,6 +16,7 @@ use App\Guardia\AbsenceRegistrationResult;
 use App\Guardia\AssignmentRefused;
 use App\Guardia\GuardiaScheduler;
 use App\Guardia\GuardiaStatistics;
+use App\Guardia\TeacherGuardiaDay;
 use App\Repository\AcademicYearRepository;
 use App\Repository\AuditLogRepository;
 use App\Repository\GuardiaCoverRepository;
@@ -129,7 +130,7 @@ final class GuardiaController extends AbstractController
      * absent teacher and any task left), plus the ones coming up on later days. Shows only their own.
      */
     #[Route('/mias', name: 'guardia_mine', methods: ['GET'])]
-    public function mine(#[CurrentUser] User $user, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
+    public function mine(#[CurrentUser] User $user, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years, TeacherGuardiaDay $day): Response
     {
         $today = new \DateTimeImmutable('today');
         $now = new \DateTimeImmutable('now');
@@ -137,61 +138,12 @@ final class GuardiaController extends AbstractController
         $slotTimes = $this->slotTimes($schedule, $year);
 
         return $this->render('guardia/mine.html.twig', [
-            'today' => $this->buildTodayView($covers->findAssignedTo($user, $today), $slotTimes, $now),
+            // El mismo view-model que usa el hero de Inicio (App\Guardia\TeacherGuardiaDay): así las dos
+            // pantallas no pueden discrepar sobre cuál es "tu próxima guardia".
+            'today' => $day->forDay($covers->findAssignedTo($user, $today), $slotTimes, $now),
             'upcoming' => $this->groupByDay($covers->findUpcomingAssignedTo($user, $today->modify('+1 day')), $today),
             'slotTimes' => $slotTimes,
         ]);
-    }
-
-    /**
-     * Turns a teacher's covers for today into the "mis guardias de hoy" view model the redesign needs:
-     * each cover flagged done/pending against the current time, the countdown to the next one still to
-     * cover (the screen's protagonist) and the day's tallies for the summary panel.
-     *
-     * A cover counts as done only when its period end time is known AND already past; with no imported
-     * timetable (unknown times) nothing can be called done, so every cover stays pending.
-     *
-     * @param GuardiaCover[]                                                   $covers    today's covers, earliest period first
-     * @param array<int, array{startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}> $slotTimes times by slot index
-     * @param \DateTimeImmutable                                               $now       the current instant
-     *
-     * @return array{items: list<array{cover: GuardiaCover, done: bool, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable, minutesUntil: ?int}>, next: ?int, counts: array{assigned: int, pending: int, withTask: int}}
-     */
-    private function buildTodayView(array $covers, array $slotTimes, \DateTimeImmutable $now): array
-    {
-        $items = [];
-        $next = null;
-        $pending = 0;
-        $withTask = 0;
-
-        foreach ($covers as $i => $cover) {
-            $times = $slotTimes[$cover->getSlotIndex()] ?? null;
-            $startsAt = $times['startsAt'] ?? null;
-            $endsAt = $times['endsAt'] ?? null;
-            $done = null !== $endsAt && $endsAt < $now;
-
-            if (!$done) {
-                ++$pending;
-                $next ??= $i; // the first cover not yet done is the protagonist ("tu próxima guardia")
-            }
-            if ($cover->hasTask()) {
-                ++$withTask;
-            }
-
-            $items[] = [
-                'cover' => $cover,
-                'done' => $done,
-                'startsAt' => $startsAt,
-                'endsAt' => $endsAt,
-                'minutesUntil' => null !== $startsAt && $startsAt > $now ? intdiv($startsAt->getTimestamp() - $now->getTimestamp(), 60) : null,
-            ];
-        }
-
-        return [
-            'items' => $items,
-            'next' => $next,
-            'counts' => ['assigned' => \count($covers), 'pending' => $pending, 'withTask' => $withTask],
-        ];
     }
 
     /**
@@ -912,6 +864,9 @@ final class GuardiaController extends AbstractController
             'slotTimes' => $this->slotTimes($schedule, $year),
             'canEdit' => $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS),
             'canSeeReason' => $canManage,
+            // Quien cubre ve el recordatorio de RAICES (apuntar las ausencias del alumnado de la sesión);
+            // la coordinación mirando la guardia de otra persona, no: no es su tarea.
+            'isAssignedGuardia' => $isOwner,
         ]);
     }
 

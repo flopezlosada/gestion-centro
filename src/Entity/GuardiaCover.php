@@ -112,6 +112,23 @@ class GuardiaCover implements Auditable
     #[ORM\Column(name: 'not_covered', type: Types::BOOLEAN)]
     private bool $notCovered = false;
 
+    /**
+     * When the "entra en RAICES y apunta las ausencias" push was sent for this cover, or null if it has
+     * not gone out. It is the sweep's idempotence key ({@see \App\Service\GuardiaRaicesReminder}): the
+     * job runs every few minutes over the covers whose period is happening NOW, and without a mark it
+     * would push the same reminder on every run for as long as the class lasts.
+     *
+     * Read-only from here on purpose, with no setter: it is written ONLY by
+     * {@see GuardiaCoverRepository::markRaicesReminderSent()}, a bulk DQL update that bypasses the Unit
+     * of Work. This entity is {@see Auditable}, so a setter would let a caller stamp it through a normal
+     * flush and drop an authorless "modificada" entry into the guardia's history for what is machine
+     * bookkeeping. No setter, no way to do it wrong.
+     *
+     * Stamped, never cleared: a reminder is only useful at its moment, so there is nothing to re-arm.
+     */
+    #[ORM\Column(name: 'raices_reminder_sent_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $raicesReminderSentAt = null;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -258,5 +275,10 @@ class GuardiaCover implements Auditable
         $this->notCovered = $notCovered;
 
         return $this;
+    }
+
+    public function getRaicesReminderSentAt(): ?\DateTimeImmutable
+    {
+        return $this->raicesReminderSentAt;
     }
 }

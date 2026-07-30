@@ -20,7 +20,10 @@ final class GuardiaAssignmentNotifier
 
     /**
      * Notifica al profesor asignado a una guardia. No hace nada si la línea no tiene guardia asignada
-     * (una asignación borrada no genera aviso). El cuerpo resume qué grupo/aula cubre y a quién sustituye.
+     * (una asignación borrada no genera aviso). El cuerpo resume qué grupo/aula cubre y a quién sustituye,
+     * y cierra con el recordatorio operativo del centro (apuntar las ausencias del alumnado en RAICES):
+     * aquí llega con antelación, así que se enuncia como parte del trabajo que se acepta, no como un
+     * "hazlo ahora" — ese lo manda {@see GuardiaRaicesReminder} durante la propia hora.
      *
      * @param GuardiaCover $cover the cover just assigned (already flushed)
      */
@@ -33,7 +36,7 @@ final class GuardiaAssignmentNotifier
 
         $title = sprintf('Nueva guardia: %s', $cover->getDate()->format('d/m/Y'));
         $body = sprintf(
-            'Te han asignado una guardia el %s para cubrir a %s%s%s.',
+            'Te han asignado una guardia el %s para cubrir a %s%s%s. Recuerda apuntar en RAICES las ausencias del alumnado de esa sesión.',
             $cover->getDate()->format('d/m/Y'),
             $cover->getAbsentTeacher()->getFullName(),
             null !== $cover->getGroupName() ? sprintf(' (grupo %s)', $cover->getGroupName()) : '',

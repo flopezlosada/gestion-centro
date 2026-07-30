@@ -7,6 +7,7 @@
 {% block bottomnav %}{% endblock %}
 
 {% block body %}
+    {% import '_macros/raices.html.twig' as raices %}
     {% set times = slotTimes[cover.slotIndex] ?? null %}
     {% set done = cover.notCovered %}
 
@@ -37,6 +38,19 @@
                 <div class="guardia-detail-head__sub">Cubres a <strong>{{ cover.absentTeacher.fullName }}</strong></div>
             </div>
         {% endif %}
+
+        {#- Recordatorio de RAICES: pegado a la cabecera, ANTES de la tarea del grupo. Va aquí porque esta
+            es la pantalla que se abre estando en el aula.
+            Dos condiciones, y las dos son de fondo, no de estilo:
+            · Solo a quien CUBRE. A la coordinación mirando la guardia de otra persona el aviso no le es un
+              recordatorio, sino una instrucción que no le toca a quien la lee.
+            · Solo si la guardia ocurrió (`not cover.notCovered`). Una incidencia significa que el de
+              guardia no apareció o que el ausente volvió y dio él la clase: en ambos casos quien lee esto
+              no estuvo delante, así que no puede apuntar unas ausencias que no ha visto. Es el MISMO
+              criterio con el que el barrido del push descarta esos covers
+              ({@see App\Repository\GuardiaCoverRepository::findRaicesRemindableOn}); tenerlo distinto en
+              cada sitio era pedirle a alguien algo imposible en una de las dos superficies. -#}
+        {% if isAssignedGuardia and not cover.notCovered %}{{ raices.notice() }}{% endif %}
 
         <div class="detail-block">
             <div class="detail-block__label">Tarea para el grupo{% if cover.hasTask %} <span class="task-note-flag">tiene tarea</span>{% endif %}</div>
