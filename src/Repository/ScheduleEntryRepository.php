@@ -344,6 +344,38 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
+     * The distinct subjects actually taught in a course, alphabetically — the centre's real subject
+     * names, spelled exactly as the parte snapshots them from the timetable.
+     *
+     * This is what the guardia task bank offers when a department labels a task: a bank task has to be
+     * of the subject the group was going to have, and two people typing "Lengua" and "Lengua Castellana"
+     * by hand would never match. Reading the list off the timetable makes the match exact by
+     * construction, with no catalogue to maintain.
+     *
+     * @param AcademicYear|null $year the course whose timetable to read, or null for none
+     *
+     * @return list<string> the subject names, alphabetically
+     */
+    public function distinctSubjects(?AcademicYear $year): array
+    {
+        if (null === $year) {
+            return [];
+        }
+
+        /** @var list<array{subject: string}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('DISTINCT s.subjectName AS subject')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.subjectName IS NOT NULL')
+            ->setParameter('year', $year)
+            ->orderBy('subject', 'ASC')
+            ->getQuery()
+            ->getResult();
+
+        return array_map(static fn (array $r): string => $r['subject'], $rows);
+    }
+
+    /**
      * The year's distinct slots reshaped by index for O(1) lookup of a slot's times:
      * [slotIndex => ['startsAt' => ..., 'endsAt' => ...]]. Shared by the parte, "mis guardias" and the
      * home hero, which all resolve a cover's times from its slot index. Empty if the year has no schedule.

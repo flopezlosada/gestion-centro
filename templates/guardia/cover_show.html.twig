@@ -8,6 +8,9 @@
 
 {% block body %}
     {% set times = slotTimes[cover.slotIndex] ?? null %}
+    {# Mismo voter que exigen las rutas: los botones que se pintan y lo que el servidor acepta no pueden
+       separarse (quien cubre, el profesor ausente o la coordinación de guardias). #}
+    {% set canWorkOnTask = is_granted(constant('App\\Security\\Voter\\GuardiaCoverVoter::WORK_ON_TASK'), cover) %}
     {% set done = cover.notCovered %}
 
     <div class="backbar">
@@ -40,7 +43,7 @@
 
         <div class="detail-block">
             <div class="detail-block__label">Tarea para el grupo{% if cover.hasTask %} <span class="task-note-flag">tiene tarea</span>{% endif %}</div>
-            {% if cover.hasTask %}
+            {% if cover.taskDescription or cover.taskDocumentPath %}
                 <div class="guardia-tasknote">
                     {% if cover.taskDescription %}<p class="detail-prose">{{ cover.taskDescription|nl2br }}</p>{% endif %}
                     {% if cover.taskDocumentPath %}
@@ -51,11 +54,50 @@
                         </a>
                     {% endif %}
                 </div>
-            {% else %}
+            {% elseif not cover.hasBankTask %}
                 <div class="guardia-empty">
                     <span class="guardia-empty__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span>
                     <div class="guardia-empty__title">El profesor no ha dejado tarea</div>
-                    <p class="guardia-empty__sub">Mantén al grupo con trabajo de repaso o estudio de su materia.</p>
+                    <p class="guardia-empty__sub">Coge una del banco de tareas: los departamentos dejan trabajo preparado por nivel.</p>
+                    {% if canWorkOnTask %}<a class="btn" href="{{ path('guardia_bank_index', { para: cover.id }) }}">Coger tarea del banco</a>{% endif %}
+                </div>
+            {% endif %}
+
+            {# Tarea sacada del banco: se presenta aparte, porque no la dejó el profesor ausente. #}
+            {% if cover.hasBankTask %}
+                {% set bank = cover.bankItem %}
+                <div class="bank-task">
+                    <div class="bank-task__head">
+                        <span class="badge badge--warning" data-tone="warning">Del banco</span>
+                        <span class="bank-task__meta">{{ bank.level.label }}{% if bank.subject %} · {{ bank.subject }}{% endif %} · {{ bank.department.name }}</span>
+                    </div>
+                    <p class="bank-task__title"><strong>{{ bank.title }}</strong></p>
+                    {% if bank.description %}<p class="detail-prose">{{ bank.description|nl2br }}</p>{% endif %}
+                    {% if bank.hasDocument %}
+                        <a class="doc-card doc-card--spaced" href="{{ path('guardia_bank_download', { id: bank.id }) }}">
+                            <span class="doc-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span>
+                            <span class="doc-card__body"><span class="doc-card__name">{{ bank.documentName ?: 'Documento de la tarea' }}</span><span class="doc-card__meta">Documento del banco</span></span>
+                            <span class="doc-card__open">Descargar</span>
+                        </a>
+                    {% endif %}
+                    {% if canWorkOnTask %}
+                        <div class="bank-task__actions">
+                            <a class="btn secondary btn-sm" href="{{ path('guardia_bank_index', { para: cover.id }) }}">Cambiar de tarea</a>
+                            <form method="post" action="{{ path('guardia_bank_detach', { cover: cover.id }) }}">
+                                <input type="hidden" name="_token" value="{{ csrf_token('guardia_bank_detach' ~ cover.id) }}">
+                                <button type="submit" class="link-danger">Quitar</button>
+                            </form>
+                        </div>
+                    {% endif %}
+                </div>
+            {% endif %}
+
+            {% if canWorkOnTask %}
+                <div class="bank-actions">
+                    <a class="btn secondary" href="{{ path('copy_request_for_cover', { cover: cover.id }) }}">Pedir fotocopias</a>
+                    {% if cover.hasTask and not cover.hasBankTask %}
+                        <a class="btn secondary" href="{{ path('guardia_bank_index', { para: cover.id }) }}">Ver banco de tareas</a>
+                    {% endif %}
                 </div>
             {% endif %}
         </div>

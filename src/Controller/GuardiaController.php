@@ -31,6 +31,7 @@ use App\Security\Voter\AreaVoter;
 use App\Service\FileUploader;
 use App\Service\GuardiaAssignmentNotifier;
 use App\Support\AuditContext;
+use App\Support\DocumentUpload;
 use App\Support\GuardiaActivityPresenter;
 use App\Support\GuardiaDate;
 use App\Util\SchoolYear;
@@ -62,18 +63,8 @@ final class GuardiaController extends AbstractController
 {
     use GuardiaParteTrait;
 
-    /** Size ceiling for an uploaded task document; larger ones are rejected with a warning. */
-    private const int MAX_TASK_DOCUMENT_BYTES = 10 * 1024 * 1024;
-
     /** Private storage subdirectory for the task documents left with an absence. */
     private const string TASK_DOCUMENT_SUBDIR = 'guardia-tasks';
-
-    /** Accepted task-document extensions (defence in depth on top of private storage + forced download). */
-    private const array ALLOWED_TASK_DOCUMENT_EXTENSIONS = [
-        'pdf', 'doc', 'docx', 'odt', 'rtf', 'txt',
-        'ppt', 'pptx', 'xls', 'xlsx', 'ods',
-        'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic',
-    ];
 
     /**
      * Shows the parte for a date and period, plus the on-call pool. Date and period come from the
@@ -837,6 +828,8 @@ final class GuardiaController extends AbstractController
         $reason = trim((string) $request->request->get('reason'));
         /** @var array<int|string, mixed> $descriptions */
         $descriptions = $request->request->all('description');
+        /** @var array<int|string, mixed> $copies */
+        $copies = $request->request->all('copies');
         /** @var array<int|string, UploadedFile|null> $files */
         $files = $request->files->all('documents');
 
@@ -845,11 +838,14 @@ final class GuardiaController extends AbstractController
             $description = trim((string) ($descriptions[$slotIndex] ?? ''));
             $document = $files[$slotIndex] ?? null;
             $stored = $document instanceof UploadedFile ? $this->storeTaskDocument($document, $uploader) : null;
+            // Las copias de esa clase, si el profesor que falta las sabe (opcional, ver la ficha de la hora).
+            $needed = (int) ($copies[$slotIndex] ?? 0);
 
             $taskBySlot[$slotIndex] = [
                 'documentPath' => $stored['path'] ?? null,
                 'documentName' => $stored['name'] ?? null,
                 'description' => '' !== $description ? $description : null,
+                'copies' => $needed > 0 ? $needed : null,
             ];
         }
 
@@ -912,9 +908,9 @@ final class GuardiaController extends AbstractController
     }
 
     /**
-     * Validates and stores one uploaded task document. Empty file fields (no file chosen) yield null
-     * silently; a failed upload or one over {@see MAX_TASK_DOCUMENT_BYTES} flashes a warning and yields
-     * null, so the rest of the absence still registers without that document.
+     * Validates and stores one uploaded task document against the shared {@see DocumentUpload} policy.
+     * Empty file fields (no file chosen) yield null silently; a rejected upload flashes the reason and
+     * yields null, so the rest of the absence still registers without that document.
      *
      * @param UploadedFile $file     the uploaded file
      * @param FileUploader $uploader the private-storage uploader
@@ -923,28 +919,18 @@ final class GuardiaController extends AbstractController
      */
     private function storeTaskDocument(UploadedFile $file, FileUploader $uploader): ?array
     {
-        if (\UPLOAD_ERR_NO_FILE === $file->getError()) {
+        if (!DocumentUpload::isPresent($file)) {
             return null;
         }
-        if (!$file->isValid()) {
-            $this->addFlash('warning', sprintf('No se pudo subir «%s»; se registró sin ese documento.', $file->getClientOriginalName()));
 
-            return null;
-        }
-        if ($file->getSize() > self::MAX_TASK_DOCUMENT_BYTES) {
-            $this->addFlash('warning', sprintf('«%s» supera los %d MB; se registró sin ese documento.', $file->getClientOriginalName(), intdiv(self::MAX_TASK_DOCUMENT_BYTES, 1024 * 1024)));
-
-            return null;
-        }
-        if (!\in_array(strtolower($file->getClientOriginalExtension()), self::ALLOWED_TASK_DOCUMENT_EXTENSIONS, true)) {
-            $this->addFlash('warning', sprintf('«%s» tiene un tipo de archivo no admitido (usa PDF, Office, texto o imagen); se registró sin ese documento.', $file->getClientOriginalName()));
+        $problem = DocumentUpload::problem($file);
+        if (null !== $problem) {
+            $this->addFlash('warning', $problem.' Se registró sin ese documento.');
 
             return null;
         }
 
-        $name = $file->getClientOriginalName();
-
-        return ['path' => $uploader->upload($file, self::TASK_DOCUMENT_SUBDIR), 'name' => '' !== $name ? $name : 'documento'];
+        return ['path' => $uploader->upload($file, self::TASK_DOCUMENT_SUBDIR), 'name' => DocumentUpload::nameOf($file)];
     }
 
     /**
@@ -1111,6 +1097,9 @@ final class GuardiaController extends AbstractController
         $cover->setNotCovered($request->request->getBoolean('not_covered'));
         // setTaskDescription normaliza cadena vacía a null, así que "borrar la descripción" queda soportado.
         $cover->setTaskDescription((string) $request->request->get('task_description'));
+        // Copias de la tarea: las deja dichas el profesor ausente al apuntar la falta, o las anota aquí
+        // la coordinación cuando la guardia es sobrevenida (setter normaliza 0/vacío a null).
+        $cover->setCopiesNeeded((int) $request->request->get('copies_needed'));
 
         // Task document: replace it with a freshly uploaded one, or drop it if "quitar" was ticked. The
         // old file is deleted only AFTER the change is committed (below), so a failed flush never leaves

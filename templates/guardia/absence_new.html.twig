@@ -121,6 +121,12 @@
                                         </label>
                                         <textarea name="description[{{ c.slotIndex }}]" rows="2" maxlength="1000"
                                                   placeholder="Descripción para {{ label }} (opcional): lo que no venga en el documento — página, ejercicios, dónde está el examen…"></textarea>
+                                        {# Las copias las sabe quien falta (conoce su grupo); conserjería no puede adivinarlas. #}
+                                        <label class="classcard__copies">
+                                            <span class="field-label">Copias que hacen falta</span>
+                                            <input type="number" name="copies[{{ c.slotIndex }}]" min="1" max="500" inputmode="numeric" placeholder="p. ej. 28">
+                                            <span class="field-help">Opcional. Se propone al mandar la tarea a fotocopias; si lo dejas vacío lo pondrá quien la pida.</span>
+                                        </label>
                                     </div>
                                 </details>
                             </li>

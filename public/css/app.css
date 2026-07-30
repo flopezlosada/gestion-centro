@@ -3291,3 +3291,34 @@ tr.is-not-covered { background: var(--danger-weak); }
 .classcard:has(input[type="checkbox"]:not(:checked)) .classcard__task { display: none; }
 
 .field--reason { margin-top: 22px; }
+
+/* ── Banco de tareas de guardia y encargos de fotocopias ────────────────────
+   Reutiliza .card, .btn y .badge; aquí solo lo propio: la barra de filtros que manda también sobre
+   el sorteo, la tarjeta de "estás eligiendo para esta guardia" y el bloque de la tarea del banco
+   dentro del detalle de una guardia (visualmente separado de la que dejó el profesor ausente). */
+.bank-picking { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: center; justify-content: space-between; }
+.bank-picking__cover { margin: 2px 0 0; font-weight: 600; font-size: 16px; }
+.bank-picking__actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+.bank-filters__row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+.bank-filters .field { display: flex; flex-direction: column; gap: 6px; min-width: 190px; flex: 1 1 190px; }
+.bank-filters .choice { flex: none; padding-bottom: 10px; }
+.bank-filters .btn { flex: none; }
+.bank-doc { display: inline-block; margin-top: 4px; font-size: 13px; }
+
+/* Retirada: sigue en la lista (para su departamento) pero se lee como apagada. */
+tr.is-retired { opacity: .6; }
+
+.bank-task { border: 1px solid var(--border); border-left: 4px solid var(--warning); border-radius: var(--radius); padding: 14px 16px; margin-top: 14px; }
+.bank-task__head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.bank-task__meta { color: var(--text-muted); font-size: 13px; }
+.bank-task__title { margin: 8px 0 4px; }
+.bank-task__actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 12px; }
+
+.bank-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.copy-context__line { margin: 4px 0 10px; font-weight: 600; font-size: 16px; }
+/* Coger tarea del banco desde la propia línea del parte: dos acciones pequeñas en la celda de tarea. */
+.bank-pick { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-left: 8px; }
+/* Copias por clase en el alta de ausencia: mismo apilado que el adjunto de al lado. */
+.classcard__copies { display: grid; gap: 5px; }
+.classcard__copies input { max-width: 160px; }

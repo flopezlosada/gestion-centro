@@ -21,9 +21,10 @@ use Doctrine\ORM\Mapping as ORM;
  *
  * The task the absent teacher leaves for the group lives in two operational fields the covering
  * guardia can see: an uploaded document ({@see $taskDocumentPath}) and/or a free-text description
- * ({@see $taskDescription}). Both are per class, because each group gets its own work. Why the
- * teacher is away is NOT here — that is the private {@see Absence::$reason}, off-limits to the
- * covering guardia.
+ * ({@see $taskDescription}). Both are per class, because each group gets its own work. When the absent
+ * teacher left nothing, the covering guardia can pull one from the departments' task bank instead
+ * ({@see $bankItem}), which then plays the same role. Why the teacher is away is NOT here — that is
+ * the private {@see Absence::$reason}, off-limits to the covering guardia.
  *
  * An assigned cover counts as done by default — the centre's rule is "the less they have to touch,
  * the better". The only human gesture is flagging an incident after the fact ({@see $notCovered}):
@@ -38,9 +39,13 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Table(name: 'guardia_cover')]
 #[ORM\Index(name: 'IDX_cover_date_slot', columns: ['cover_date', 'slot_index'])]
 #[ORM\Index(name: 'IDX_cover_assigned', columns: ['assigned_guardia_id'])]
+#[ORM\Index(name: 'IDX_guardia_cover_bank_item', columns: ['bank_item_id'])]
 #[ORM\UniqueConstraint(name: 'UNIQ_cover_absence', columns: ['absent_teacher_id', 'cover_date', 'slot_index'])]
 class GuardiaCover implements Auditable
 {
+    /** Ceiling for a copy count, mirroring the one the copy-room order validates. */
+    public const int MAX_COPIES = 500;
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
@@ -77,6 +82,28 @@ class GuardiaCover implements Auditable
     private ?string $roomName = null;
 
     /**
+     * Subject of the class left uncovered, snapshotted from the timetable. It is what the bank task has
+     * to be of — the centre's rule is that the group works on the subject it was going to have — so it
+     * is stored here, spelled exactly as the timetable spells it, and not re-derived later (a re-import
+     * could change the teacher's timetable, never what that group missed that day). Null when the
+     * timetable did not say, or for a multi-subject activity folded into one cover.
+     */
+    #[ORM\Column(name: 'subject_name', length: 128, nullable: true)]
+    private ?string $subjectName = null;
+
+    /**
+     * How many copies the task needs, when somebody said so: the absent teacher when reporting the
+     * absence, or the coordination for a task picked on the spot. Prefills the copy-room order, which
+     * still requires a number — this only saves typing it, it does not replace it.
+     *
+     * Bounded by {@see MAX_COPIES}: it reaches this entity from two plain POSTs (the absence form and
+     * "modificar guardia"), where the {@code max} attribute of the input is the only other guard, and a
+     * five-digit number would overflow the SMALLINT column and abort the whole registration.
+     */
+    #[ORM\Column(name: 'copies_needed', type: Types::SMALLINT, nullable: true)]
+    private ?int $copiesNeeded = null;
+
+    /**
      * Storage-relative path of the task document the absent teacher uploaded for this group (a PDF,
      * a scan…), as returned by {@see \App\Service\FileUploader}. Nullable — a class may carry only a
      * description, or nothing.
@@ -94,6 +121,15 @@ class GuardiaCover implements Auditable
      */
     #[ORM\Column(name: 'task_description', type: Types::TEXT, nullable: true)]
     private ?string $taskDescription = null;
+
+    /**
+     * The task pulled from the departments' bank for this group, when the absent teacher left nothing.
+     * A reference, not a copy: the group gets that very sheet, and the bank keeps the count of how often
+     * each task is used. Cleared if the bank task is deleted outright (retiring one keeps it linked).
+     */
+    #[ORM\ManyToOne(targetEntity: GuardiaTaskBankItem::class)]
+    #[ORM\JoinColumn(name: 'bank_item_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?GuardiaTaskBankItem $bankItem = null;
 
     /**
      * The guardia teacher assigned to cover. Set automatically by the equitable engine and editable
@@ -199,6 +235,32 @@ class GuardiaCover implements Auditable
         return $this;
     }
 
+    public function getSubjectName(): ?string
+    {
+        return $this->subjectName;
+    }
+
+    public function setSubjectName(?string $subjectName): static
+    {
+        $this->subjectName = null !== $subjectName && '' !== trim($subjectName) ? trim($subjectName) : null;
+
+        return $this;
+    }
+
+    public function getCopiesNeeded(): ?int
+    {
+        return $this->copiesNeeded;
+    }
+
+    public function setCopiesNeeded(?int $copiesNeeded): static
+    {
+        $this->copiesNeeded = null !== $copiesNeeded && $copiesNeeded > 0
+            ? min($copiesNeeded, self::MAX_COPIES)
+            : null;
+
+        return $this;
+    }
+
     public function getTaskDocumentPath(): ?string
     {
         return $this->taskDocumentPath;
@@ -235,15 +297,62 @@ class GuardiaCover implements Auditable
         return $this;
     }
 
+    public function getBankItem(): ?GuardiaTaskBankItem
+    {
+        return $this->bankItem;
+    }
+
+    public function setBankItem(?GuardiaTaskBankItem $bankItem): static
+    {
+        $this->bankItem = $bankItem;
+
+        return $this;
+    }
+
     /**
      * Whether this cover carries anything for the covering guardia to work with — a task document, a
-     * description, or both. Drives the "tiene tarea / sin tarea" cues across the guardia screens.
+     * description, or one taken from the bank. Drives the "tiene tarea / sin tarea" cues across the
+     * guardia screens.
      *
-     * @return bool true if there is a document or a description
+     * @return bool true if there is a document, a description or a bank task
      */
     public function hasTask(): bool
     {
-        return null !== $this->taskDocumentPath || null !== $this->taskDescription;
+        return null !== $this->taskDocumentPath || null !== $this->taskDescription || null !== $this->bankItem;
+    }
+
+    /**
+     * Whether the work the group gets came from the bank rather than from the absent teacher. Both
+     * can coexist (a task was pulled and the teacher later uploaded theirs), and the teacher's own
+     * work always takes precedence — see {@see getPrintableDocumentPath()}.
+     *
+     * @return bool true when a bank task is attached
+     */
+    public function hasBankTask(): bool
+    {
+        return null !== $this->bankItem;
+    }
+
+    /**
+     * The document to actually put in front of the group — and to send to the copy room: the one the
+     * absent teacher uploaded if they did, otherwise the bank task's. Null when neither carries a file
+     * (the work may be only a description).
+     *
+     * @return string|null the storage-relative path, or null
+     */
+    public function getPrintableDocumentPath(): ?string
+    {
+        return $this->taskDocumentPath ?? $this->bankItem?->getDocumentPath();
+    }
+
+    /**
+     * The original filename of {@see getPrintableDocumentPath()}, to serve and to name the attachment.
+     *
+     * @return string|null the filename, or null when there is no document
+     */
+    public function getPrintableDocumentName(): ?string
+    {
+        return null !== $this->taskDocumentPath ? $this->taskDocumentName : $this->bankItem?->getDocumentName();
     }
 
     public function getAssignedGuardia(): ?User
