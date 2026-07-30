@@ -27,7 +27,7 @@
                     <span class="guardia-detail-head__flag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>Incidencia</span>
                     <span class="guardia-detail-head__time">{% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}{{ cover.slotIndex + 1 }}ª hora{% endif %}</span>
                 </div>
-                <div class="guardia-detail-head__where guardia-detail-head__where--dark">{{ cover.roomName ?: 'Aula' }} · {{ cover.groupName ?: 'Grupo' }}</div>
+                <div class="guardia-detail-head__where guardia-detail-head__where--dark">{{ cover.effectiveRoomName ?: 'Aula' }} · {{ cover.groupName ?: 'Grupo' }}</div>
                 <div class="guardia-detail-head__sub guardia-detail-head__sub--dark">Debías cubrir a <strong>{{ cover.absentTeacher.fullName }}</strong></div>
             </div>
         {% else %}
@@ -36,7 +36,7 @@
                     <span class="guardia-detail-head__eyebrow"><span class="guardia-hero__pulse"></span>Tu guardia</span>
                     <span class="guardia-detail-head__time">{% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}{{ cover.slotIndex + 1 }}ª hora{% endif %}</span>
                 </div>
-                <div class="guardia-detail-head__where">{{ cover.roomName ?: 'Aula' }} · {{ cover.groupName ?: 'Grupo' }}</div>
+                <div class="guardia-detail-head__where">{{ cover.effectiveRoomName ?: 'Aula' }} · {{ cover.groupName ?: 'Grupo' }}</div>
                 <div class="guardia-detail-head__sub">Cubres a <strong>{{ cover.absentTeacher.fullName }}</strong></div>
             </div>
         {% endif %}
@@ -109,8 +109,13 @@
             <div class="detail-block__label">La clase</div>
             <dl class="meta-grid">
                 <div class="meta-grid__cell"><dt>Grupo</dt><dd>{{ cover.groupName ?: '—' }}</dd></div>
-                <div class="meta-grid__cell"><dt>Aula</dt><dd>{{ cover.roomName ?: '—' }}</dd></div>
+                <div class="meta-grid__cell"><dt>Aula</dt><dd>{{ cover.effectiveRoomName ?: '—' }}</dd></div>
             </dl>
+            {# Si la clase se ha juntado con otras, decirlo aquí y no solo cambiar el aula: quien cubre
+               necesita saber que se va a encontrar varios grupos, no solo a dónde ir. #}
+            {% if cover.grouping %}
+                <p class="help">Esta clase se junta con otros grupos en {{ cover.grouping.roomName }}{% if cover.roomName %} (su aula habitual es {{ cover.roomName }}){% endif %}.{% if cover.grouping.note %} {{ cover.grouping.note }}{% endif %}</p>
+            {% endif %}
         </div>
 
         {# El motivo de la ausencia es privado: solo coordinación (y el ausente), nunca quien cubre. #}

@@ -8,106 +8,60 @@ use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
 
 /**
- * Banco de tareas de guardia y encargos de fotocopias (petición del centro del 30-07-2026).
+ * Guardias de recreo: el cuadrante fijo de curso por zonas, y el marco horario del que salen las horas
+ * de los recreos.
  *
- * - guardia_task_bank: el trabajo que cada departamento deja preparado por curso + nivel + materia (la
- *   materia es obligatoria: el grupo trabaja la asignatura que le tocaba) y, opcionalmente, para unas
- *   letras de grupo concretas. Lleva documento y/o descripción, las copias que suele necesitar y un
- *   contador de usos. La baja es lógica (active), para que una guardia que ya la usó siga contando qué
- *   se le dio al grupo; y va atada al curso porque el centro vacía el banco cada septiembre.
- * - guardia_cover.subject_name / copies_needed: la materia que se pierde (para casar con el banco) y las
- *   copias que hagan falta, que puede dejar dichas el profe ausente al apuntar la falta.
- * - guardia_cover.bank_item_id: la tarea del banco que se le dio a ese grupo cuando el profesor ausente
- *   no dejó nada. Referencia, no copia (ON DELETE SET NULL: si se borra del banco, la guardia deja de
- *   apuntarla pero no se rompe).
- * - copy_request: el encargo enviado al correo de conserjería, con el número de copias (obligatorio),
- *   el documento que viajó adjunto y cuándo salió el correo (sent_at nulo = pendiente de reenvío).
+ * - time_slot: los tramos del día del centro (índice, horas, y si es lectivo o RECREO), importados del
+ *   <marcoHorario> del planificador de Peñalara. Hace falta porque schedule_entry solo tiene filas de
+ *   los tramos que alguien ocupa, y en los recreos no hay actividad ninguna (comprobado en el export
+ *   real del centro: cero actividades en los dos tramos de recreo), así que sin esta tabla las horas de
+ *   los recreos no existen en la aplicación.
+ * - break_zone: los sitios a vigilar (patio, pasillo, biblioteca, pistas, patio dirigido) con su PESO
+ *   —no todas cuestan igual, y el reparto equitativo suma pesos— y cuánta gente necesita cada una.
+ *   Sin curso: son sitios, y duran más que un año; la que se deja de usar se archiva, no se borra.
+ * - break_duty_assignment: una fila = UNA guardia de recreo (profesor, día, zona y qué recreos cubre).
+ *   El único índice por (curso, profesor, día) es lo que garantiza la regla del centro de que cubrir los
+ *   dos tramos cuenta como una sola guardia y que nadie esté en dos zonas a la vez.
+ * - break_duty_gap: el día en que quien tiene el recreo falta. No se reasigna (no hay personal): se
+ *   avisa al equipo directivo y se apunta aquí, con el voluntario si aparece. El único por (guardia,
+ *   día) es lo que evita avisar dos veces cuando la ausencia se registra en dos pasos.
  *
- * Sin backfill: las tres cosas nacen vacías. Nada de lo existente cambia de forma.
+ * Nada que backfillar: las cuatro tablas nacen vacías. Las zonas las siembra BreakZoneFixtures
+ * (grupo golden); el marco horario se rellena en la siguiente importación de horario del curso.
  */
 final class Version20260730120000 extends AbstractMigration
 {
     public function getDescription(): string
     {
-        return 'Banco de tareas de guardia por curso/nivel/materia y encargos de fotocopias a conserjería.';
+        return 'Guardias de recreo: marco horario (time_slot), zonas, cuadrante fijo y huecos sin vigilar.';
     }
 
     public function up(Schema $schema): void
     {
-        $this->addSql('CREATE TABLE guardia_task_bank (
-            id INT AUTO_INCREMENT NOT NULL,
-            department_id INT NOT NULL,
-            created_by_id INT DEFAULT NULL,
-            academic_year_id INT NOT NULL,
-            level VARCHAR(16) NOT NULL,
-            subject VARCHAR(128) NOT NULL,
-            sections VARCHAR(64) DEFAULT NULL,
-            title VARCHAR(160) NOT NULL,
-            description LONGTEXT DEFAULT NULL,
-            document_path VARCHAR(255) DEFAULT NULL,
-            document_name VARCHAR(255) DEFAULT NULL,
-            suggested_copies SMALLINT DEFAULT NULL,
-            active TINYINT(1) NOT NULL,
-            times_used INT DEFAULT 0 NOT NULL,
-            created_at DATETIME NOT NULL,
-            INDEX IDX_bank_year_level_active (academic_year_id, level, active),
-            INDEX IDX_bank_department (department_id),
-            INDEX IDX_bank_created_by (created_by_id),
-            PRIMARY KEY (id)
-        ) DEFAULT CHARACTER SET utf8mb4');
-        // El departamento responde de la tarea: no se borra en cascada (los departamentos se retiran,
-        // no se borran) ni se deja huérfana; borrar uno con tareas en el banco falla a propósito.
-        $this->addSql('ALTER TABLE guardia_task_bank ADD CONSTRAINT FK_bank_department FOREIGN KEY (department_id) REFERENCES org_unit (id)');
-        $this->addSql('ALTER TABLE guardia_task_bank ADD CONSTRAINT FK_bank_created_by FOREIGN KEY (created_by_id) REFERENCES app_user (id) ON DELETE SET NULL');
-        // Borrar un curso se lleva su banco: son tareas de ESE curso, como el horario.
-        $this->addSql('ALTER TABLE guardia_task_bank ADD CONSTRAINT FK_bank_year FOREIGN KEY (academic_year_id) REFERENCES academic_year (id) ON DELETE CASCADE');
+        $this->addSql('CREATE TABLE time_slot (id INT AUTO_INCREMENT NOT NULL, academic_year_id INT NOT NULL, slot_index SMALLINT NOT NULL, starts_at TIME NOT NULL, ends_at TIME NOT NULL, kind VARCHAR(16) NOT NULL, UNIQUE INDEX UNIQ_time_slot_year_index (academic_year_id, slot_index), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4');
+        $this->addSql('ALTER TABLE time_slot ADD CONSTRAINT FK_time_slot_year FOREIGN KEY (academic_year_id) REFERENCES academic_year (id) ON DELETE CASCADE');
 
-        // La materia se rellena en las ausencias NUEVAS (se toma del horario al apuntarlas); las líneas
-        // ya existentes se quedan a NULL a propósito: reconstruirla hoy sería adivinar qué daba ese
-        // profesor aquel día, y una materia inventada mandaría al grupo una tarea equivocada.
-        $this->addSql('ALTER TABLE guardia_cover ADD bank_item_id INT DEFAULT NULL, ADD subject_name VARCHAR(128) DEFAULT NULL, ADD copies_needed SMALLINT DEFAULT NULL');
-        $this->addSql('ALTER TABLE guardia_cover ADD CONSTRAINT FK_guardia_cover_bank_item FOREIGN KEY (bank_item_id) REFERENCES guardia_task_bank (id) ON DELETE SET NULL');
-        $this->addSql('CREATE INDEX IDX_guardia_cover_bank_item ON guardia_cover (bank_item_id)');
+        $this->addSql('CREATE TABLE break_zone (id INT AUTO_INCREMENT NOT NULL, name VARCHAR(80) NOT NULL, weight SMALLINT DEFAULT 1 NOT NULL, required_teachers SMALLINT DEFAULT 1 NOT NULL, sort_order SMALLINT DEFAULT 0 NOT NULL, archived TINYINT(1) DEFAULT 0 NOT NULL, UNIQUE INDEX UNIQ_break_zone_name (name), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4');
 
-        $this->addSql('CREATE TABLE copy_request (
-            id INT AUTO_INCREMENT NOT NULL,
-            cover_id INT DEFAULT NULL,
-            bank_item_id INT DEFAULT NULL,
-            requested_by_id INT DEFAULT NULL,
-            copies SMALLINT NOT NULL,
-            notes LONGTEXT DEFAULT NULL,
-            document_path VARCHAR(255) DEFAULT NULL,
-            document_name VARCHAR(255) DEFAULT NULL,
-            context VARCHAR(255) NOT NULL,
-            recipient VARCHAR(180) NOT NULL,
-            requested_at DATETIME NOT NULL,
-            sent_at DATETIME DEFAULT NULL,
-            INDEX IDX_copy_requested_at (requested_at),
-            INDEX IDX_copy_cover (cover_id),
-            INDEX IDX_copy_bank_item (bank_item_id),
-            INDEX IDX_copy_requested_by (requested_by_id),
-            PRIMARY KEY (id)
-        ) DEFAULT CHARACTER SET utf8mb4');
-        // El encargo sobrevive a lo que lo originó: es el registro de lo que se mandó a conserjería.
-        $this->addSql('ALTER TABLE copy_request ADD CONSTRAINT FK_copy_cover FOREIGN KEY (cover_id) REFERENCES guardia_cover (id) ON DELETE SET NULL');
-        $this->addSql('ALTER TABLE copy_request ADD CONSTRAINT FK_copy_bank_item FOREIGN KEY (bank_item_id) REFERENCES guardia_task_bank (id) ON DELETE SET NULL');
-        $this->addSql('ALTER TABLE copy_request ADD CONSTRAINT FK_copy_requested_by FOREIGN KEY (requested_by_id) REFERENCES app_user (id) ON DELETE SET NULL');
+        $this->addSql('CREATE TABLE break_duty_assignment (id INT AUTO_INCREMENT NOT NULL, academic_year_id INT NOT NULL, teacher_id INT NOT NULL, zone_id INT NOT NULL, weekday SMALLINT NOT NULL, periods VARCHAR(8) NOT NULL, UNIQUE INDEX UNIQ_break_duty_teacher_weekday (academic_year_id, teacher_id, weekday), INDEX IDX_break_duty_year_weekday (academic_year_id, weekday), INDEX IDX_break_duty_teacher (teacher_id), INDEX IDX_break_duty_zone (zone_id), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4');
+        $this->addSql('ALTER TABLE break_duty_assignment ADD CONSTRAINT FK_break_duty_year FOREIGN KEY (academic_year_id) REFERENCES academic_year (id) ON DELETE CASCADE');
+        $this->addSql('ALTER TABLE break_duty_assignment ADD CONSTRAINT FK_break_duty_teacher FOREIGN KEY (teacher_id) REFERENCES app_user (id) ON DELETE CASCADE');
+        // RESTRICT a propósito: una zona en uso se archiva, nunca se borra, así que ninguna guardia puede
+        // quedarse apuntando a un sitio que ya no existe.
+        $this->addSql('ALTER TABLE break_duty_assignment ADD CONSTRAINT FK_break_duty_zone FOREIGN KEY (zone_id) REFERENCES break_zone (id) ON DELETE RESTRICT');
+
+        $this->addSql('CREATE TABLE break_duty_gap (id INT AUTO_INCREMENT NOT NULL, assignment_id INT NOT NULL, volunteer_id INT DEFAULT NULL, gap_date DATE NOT NULL, note LONGTEXT DEFAULT NULL, UNIQUE INDEX UNIQ_break_gap_duty_date (assignment_id, gap_date), INDEX IDX_break_gap_date (gap_date), INDEX IDX_break_gap_volunteer (volunteer_id), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4');
+        $this->addSql('ALTER TABLE break_duty_gap ADD CONSTRAINT FK_break_gap_assignment FOREIGN KEY (assignment_id) REFERENCES break_duty_assignment (id) ON DELETE CASCADE');
+        $this->addSql('ALTER TABLE break_duty_gap ADD CONSTRAINT FK_break_gap_volunteer FOREIGN KEY (volunteer_id) REFERENCES app_user (id) ON DELETE SET NULL');
     }
 
     public function down(Schema $schema): void
     {
-        $this->addSql('ALTER TABLE copy_request DROP FOREIGN KEY FK_copy_cover');
-        $this->addSql('ALTER TABLE copy_request DROP FOREIGN KEY FK_copy_bank_item');
-        $this->addSql('ALTER TABLE copy_request DROP FOREIGN KEY FK_copy_requested_by');
-        $this->addSql('DROP TABLE copy_request');
-
-        $this->addSql('ALTER TABLE guardia_cover DROP FOREIGN KEY FK_guardia_cover_bank_item');
-        $this->addSql('DROP INDEX IDX_guardia_cover_bank_item ON guardia_cover');
-        $this->addSql('ALTER TABLE guardia_cover DROP bank_item_id, DROP subject_name, DROP copies_needed');
-
-        $this->addSql('ALTER TABLE guardia_task_bank DROP FOREIGN KEY FK_bank_department');
-        $this->addSql('ALTER TABLE guardia_task_bank DROP FOREIGN KEY FK_bank_created_by');
-        $this->addSql('ALTER TABLE guardia_task_bank DROP FOREIGN KEY FK_bank_year');
-        $this->addSql('DROP TABLE guardia_task_bank');
+        // En orden inverso a las dependencias: los huecos cuelgan del cuadrante, y el cuadrante de las
+        // zonas (con RESTRICT, así que la tabla de zonas no puede caer antes).
+        $this->addSql('DROP TABLE break_duty_gap');
+        $this->addSql('DROP TABLE break_duty_assignment');
+        $this->addSql('DROP TABLE break_zone');
+        $this->addSql('DROP TABLE time_slot');
     }
 }

@@ -47,14 +47,24 @@ final class TaskValidationGuardSubscriber
             return;
         }
 
-        // Separation of duties: you never validate/reject your own task, even if you manage its unit.
-        if ($actor === $task->getAssignedUser()) {
+        // Separation of duties: you never judge the work YOU had to do. Measured against whoever holds
+        // the task NOW ({@see Task::isOwnedBy()}), not against the titular assignee: on a delegated task
+        // the doer is the delegatee, so comparing with getAssignedUser() got it backwards both ways —
+        // it let the delegatee validate their own work and stopped the titular from judging it.
+        if ($task->isOwnedBy($actor)) {
             $event->setBlocked(true, 'No puedes validar ni devolver tu propia tarea.');
 
             return;
         }
 
         if ($this->security->isGranted('ROLE_ADMIN')) {
+            return;
+        }
+
+        // The titular who delegated the work judges what their delegatee delivered: delegating hands
+        // over the work, not the accountability. By rank alone they would never qualify (nobody
+        // outranks themselves), yet it is precisely their own task.
+        if (null !== $task->getDelegatedTo() && $actor === $task->getAssignedUser()) {
             return;
         }
 

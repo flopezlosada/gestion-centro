@@ -1,0 +1,96 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Recreos sin vigilar{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('break_duty_index') }}">Cuadrante de recreo</a><span class="sep">/</span>Sin vigilar{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Recreos sin vigilar</h1>
+            <p class="lead">Días en los que quien tiene la guardia de recreo falta. No se reasigna a nadie: hay que buscar un voluntario y apuntarlo aquí.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        <form method="get" action="{{ path('break_duty_gap_index') }}" class="inline-form">
+            <label class="field-label" for="curso">Curso</label>
+            <select id="curso" name="curso" onchange="this.form.submit()">
+                {% for c in courses %}
+                    <option value="{{ c.schoolYear }}" {{ c.schoolYear == curso ? 'selected' }}>{{ c.schoolYear }}</option>
+                {% endfor %}
+            </select>
+            <noscript><button type="submit" class="btn">Ver</button></noscript>
+        </form>
+    </div>
+
+    <dl class="cover-summary">
+        <div><dt>Recreos sin su vigilante</dt><dd><strong>{{ summary.total }}</strong> en {{ curso }}</dd></div>
+        <div><dt>Los cubrió un voluntario</dt><dd><strong>{{ summary.covered }}</strong></dd></div>
+        <div><dt>Se quedaron sin nadie</dt><dd><strong>{{ summary.total - summary.covered }}</strong></dd></div>
+    </dl>
+
+    {# Macro única para las dos listas: cambia el encabezado, no la fila. #}
+    {% macro gap_rows(gaps, teachers, canManage) %}
+        {% for gap in gaps %}
+            <tr>
+                <td>{{ gap.date|date('d/m/Y', false) }} <span class="muted">{{ gap.assignment.weekday.label }}</span></td>
+                <td><strong>{{ gap.assignment.zone.name }}</strong> <span class="muted">{{ gap.assignment.periods.shortLabel }}</span></td>
+                <td>{{ gap.assignment.teacher.fullName }}</td>
+                {% if canManage %}
+                    <td>
+                        <form method="post" action="{{ path('break_duty_gap_update', {id: gap.id}) }}" class="inline-form">
+                            <input type="hidden" name="_token" value="{{ csrf_token('break_duty_gap' ~ gap.id) }}">
+                            <label class="visually-hidden" for="volunteer-{{ gap.id }}">Voluntario para el {{ gap.date|date('d/m/Y', false) }}</label>
+                            <select id="volunteer-{{ gap.id }}" name="volunteer">
+                                <option value="">— sin voluntario —</option>
+                                {% for t in teachers %}
+                                    <option value="{{ t.id }}" {{ gap.volunteer and gap.volunteer.id == t.id ? 'selected' }}>{{ t.fullName }}</option>
+                                {% endfor %}
+                            </select>
+                            <label class="visually-hidden" for="note-{{ gap.id }}">Nota</label>
+                            <input type="text" id="note-{{ gap.id }}" name="note" value="{{ gap.note }}" placeholder="Nota (opcional)" maxlength="200">
+                            <button type="submit" class="btn btn-sm">Guardar</button>
+                        </form>
+                    </td>
+                {% else %}
+                    <td>
+                        {% if gap.covered %}
+                            <span class="badge badge--ok">{{ gap.volunteer.fullName }}</span>
+                        {% else %}
+                            <span class="badge badge--warning">Sin voluntario</span>
+                        {% endif %}
+                        {% if gap.note %}<span class="muted"> · {{ gap.note }}</span>{% endif %}
+                    </td>
+                {% endif %}
+            </tr>
+        {% endfor %}
+    {% endmacro %}
+
+    <div class="card">
+        <h2>Por resolver</h2>
+        {% if pending is empty %}
+            <p class="muted">Ningún recreo pendiente. Todo lo que viene tiene a su vigilante.</p>
+        {% else %}
+            <table class="worklist">
+                <thead>
+                    <tr><th scope="col">Día</th><th scope="col">Zona</th><th scope="col">Falta</th><th scope="col">{{ canManage ? 'Voluntario' : 'Estado' }}</th></tr>
+                </thead>
+                <tbody>{{ _self.gap_rows(pending, teachers, canManage) }}</tbody>
+            </table>
+        {% endif %}
+    </div>
+
+    {% if past is not empty %}
+        <div class="card">
+            <h2>Ya pasados</h2>
+            <table class="worklist">
+                <thead>
+                    <tr><th scope="col">Día</th><th scope="col">Zona</th><th scope="col">Faltó</th><th scope="col">{{ canManage ? 'Voluntario' : 'Estado' }}</th></tr>
+                </thead>
+                <tbody>{{ _self.gap_rows(past, teachers, canManage) }}</tbody>
+            </table>
+            <p class="help">No se borran: que un recreo se quedara sin vigilar es justo lo que el centro quiere poder consultar después.</p>
+        </div>
+    {% endif %}
+{% endblock %}

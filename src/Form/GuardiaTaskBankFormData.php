@@ -31,7 +31,7 @@ final class GuardiaTaskBankFormData
      */
     #[Assert\NotBlank(message: 'Elige la materia: la tarea tiene que ser de la asignatura que le tocaba al grupo.')]
     #[Assert\Length(max: 128)]
-    public string $subject = '';
+    public ?string $subject = null;
 
     /**
      * Section letters the task is limited to ("A" or "A, C"), or blank for the whole level + subject.
@@ -97,7 +97,7 @@ final class GuardiaTaskBankFormData
         }
 
         $item->setLevel($this->level)
-            ->setSubject($this->subject)
+            ->setSubject((string) $this->subject)
             ->setSections($this->sections)
             ->setDepartment($this->department)
             ->setTitle($this->title)

@@ -41,6 +41,10 @@ final class NotificationLink
             // A guardia notice (assigned/reassigned) opens the teacher's own "mis guardias", where they
             // see the guardia they were just assigned.
             str_starts_with($notification->getKind(), 'guardia.') => $this->urlGenerator->generate('guardia_mine'),
+            // An unwatched recreo opens the gaps screen, which lists today's and the coming ones: that is
+            // where the equipo directivo notes down whoever volunteers. The notice cannot carry the day
+            // itself (only tasks are deep-linked), and that screen starts on the pending ones anyway.
+            str_starts_with($notification->getKind(), 'break_duty.') => $this->urlGenerator->generate('break_duty_gap_index'),
             // An agenda reminder opens Inicio, which carries every event it can be about: it only fires
             // for a TIMED event (an all-day entry drops its reminder, see PersonalEvent::setAllDay) and
             // at most a day ahead (see EventReminderOffset), so the event is either in today's "Con

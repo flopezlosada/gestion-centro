@@ -25,6 +25,10 @@ use Doctrine\ORM\EntityManagerInterface;
  * This is the single entry point behind both the coordinator's "apuntar ausencia" screen and a
  * teacher self-reporting their own absence, so the "register → auto-assign → notify" flow lives in
  * one place.
+ *
+ * A recreo the absence leaves unwatched is handled apart, through {@see BreakDutyGapRegistrar}: break
+ * duties are not periods anybody teaches and the centre's rule is that they are NOT re-covered, so
+ * instead of joining the split they are recorded and the equipo directivo is alerted.
  */
 final class AbsenceRegistrar
 {
@@ -33,6 +37,7 @@ final class AbsenceRegistrar
         private readonly GuardiaCoverRepository $covers,
         private readonly AbsenceRepository $absences,
         private readonly GuardiaScheduler $scheduler,
+        private readonly BreakDutyGapRegistrar $breakGaps,
         private readonly EntityManagerInterface $em,
     ) {
     }
@@ -50,10 +55,13 @@ final class AbsenceRegistrar
      *                                         per-period task (slot index → the group's document and/or
      *                                         description, plus the copies it needs); each period/group
      *                                         carries its own work
+     * @param bool               $missesBreakDuty whether the absence also covers the recreo: told, not
+     *                                         inferred, because a recreo is nobody's teaching period and
+     *                                         so cannot be read off the periods ticked
      *
      * @return AbsenceRegistrationResult what was created and what was skipped
      */
-    public function register(AcademicYear $year, User $teacher, \DateTimeImmutable $date, ?array $slotIndexes, ?string $reason, array $taskBySlot = []): AbsenceRegistrationResult
+    public function register(AcademicYear $year, User $teacher, \DateTimeImmutable $date, ?array $slotIndexes, ?string $reason, array $taskBySlot = [], bool $missesBreakDuty = false): AbsenceRegistrationResult
     {
         $weekday = Weekday::from((int) $date->format('N'));
         $slots = $slotIndexes ?? $this->schedule->lectiveSlotsFor($year, $teacher, $weekday);
@@ -119,7 +127,12 @@ final class AbsenceRegistrar
             $this->scheduler->autoAssign($year, $date, $slotIndex);
         }
 
-        return new AbsenceRegistrationResult($createdSlots, $skippedFree, $skippedExisting);
+        // The recreo is a separate consequence of the same absence: it is never re-covered, only recorded
+        // and alerted. It stands on its own — a teacher whose day holds no lesson at all (so no cover was
+        // created) still leaves their zone unwatched.
+        $breakGap = $missesBreakDuty ? $this->breakGaps->register($year, $teacher, $date) : null;
+
+        return new AbsenceRegistrationResult($createdSlots, $skippedFree, $skippedExisting, $breakGap);
     }
 
     /**

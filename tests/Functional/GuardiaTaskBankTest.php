@@ -146,6 +146,22 @@ final class GuardiaTaskBankTest extends WebTestCase
         return $cover;
     }
 
+    /**
+     * The CSRF token the bank picker renders for one cover's "coger del banco" form. Read from the
+     * HTML on purpose: asking the token manager outside a request has no session to store it in.
+     *
+     * @param int $coverId the parte line the form acts on
+     *
+     * @return string the token to post back
+     */
+    private function applyToken(int $coverId): string
+    {
+        $crawler = $this->client->request('GET', '/guardias/banco?para='.$coverId);
+        self::assertResponseIsSuccessful();
+
+        return (string) $crawler->filter('form[action="/guardias/banco/asignar/'.$coverId.'"] input[name="_token"]')->first()->attr('value');
+    }
+
     private function reloadCover(int $id): GuardiaCover
     {
         $this->em->clear();
@@ -411,7 +427,7 @@ final class GuardiaTaskBankTest extends WebTestCase
 
         $this->client->request('POST', '/guardias/banco/asignar/'.$coverId, [
             'volver' => 'parte',
-            '_token' => (string) static::getContainer()->get('security.csrf.token_manager')->getToken('guardia_bank_apply'.$coverId),
+            '_token' => $this->applyToken($coverId),
         ]);
 
         // Back to the parte on the cover's own day and period, not to the guardia's detail.
@@ -439,9 +455,7 @@ final class GuardiaTaskBankTest extends WebTestCase
         $this->em->flush();
         $coverId = (int) $cover->getId();
 
-        $this->client->request('POST', '/guardias/banco/asignar/'.$coverId, [
-            '_token' => (string) static::getContainer()->get('security.csrf.token_manager')->getToken('guardia_bank_apply'.$coverId),
-        ]);
+        $this->client->request('POST', '/guardias/banco/asignar/'.$coverId, ['_token' => $this->applyToken($coverId)]);
 
         self::assertResponseRedirects();
         self::assertSame($valid->getId(), $this->reloadCover($coverId)->getBankItem()?->getId());
@@ -463,7 +477,7 @@ final class GuardiaTaskBankTest extends WebTestCase
 
         $this->client->request('POST', '/guardias/banco/asignar/'.$coverId, [
             'item' => (string) $old->getId(),
-            '_token' => (string) static::getContainer()->get('security.csrf.token_manager')->getToken('guardia_bank_apply'.$coverId),
+            '_token' => $this->applyToken($coverId),
         ]);
 
         self::assertResponseRedirects();
@@ -503,15 +517,13 @@ final class GuardiaTaskBankTest extends WebTestCase
         // A teacher with nothing to do with that guardia (and no coordination role).
         $this->login('curioso@centro.test');
 
+        // El GET es lo que prueba el permiso sin ruido: no lleva CSRF de por medio, así que un 403 aquí
+        // solo puede venir del voter. (Un POST no sirve para eso: este usuario no puede obtener un token
+        // válido, porque el token vive en la pantalla que se le niega.)
         $this->client->request('GET', '/guardias/banco?para='.$coverId);
         self::assertResponseStatusCodeSame(403);
 
-        // Token VÁLIDO a propósito: con uno inválido el 403 lo daría el CSRF y este test seguiría verde
-        // aunque el control de acceso desapareciera.
-        $this->client->request('POST', '/guardias/banco/asignar/'.$coverId, [
-            'item' => (string) $item->getId(),
-            '_token' => (string) static::getContainer()->get('security.csrf.token_manager')->getToken('guardia_bank_apply'.$coverId),
-        ]);
+        $this->client->request('POST', '/guardias/banco/asignar/'.$coverId, ['item' => (string) $item->getId(), '_token' => 'sin-token-valido']);
         self::assertResponseStatusCodeSame(403);
         self::assertNull($this->reloadCover($coverId)->getBankItem(), 'la guardia ajena queda intacta');
     }

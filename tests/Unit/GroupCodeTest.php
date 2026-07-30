@@ -90,8 +90,10 @@ final class GroupCodeTest extends TestCase
 
     public function testParsesTypedLettersIntoTheCanonicalList(): void
     {
-        self::assertSame(['A', 'C'], GroupCode::parseSections('c, a'));
-        self::assertSame(['A'], GroupCode::parseSections('A y A'));
+        self::assertSame(['A', 'C'], GroupCode::parseSections('c, a'), 'ordenadas y en mayúscula');
+        self::assertSame(['A', 'C'], GroupCode::parseSections('A/C'), 'cualquier separador vale');
+        self::assertSame(['A'], GroupCode::parseSections('A, A'), 'sin repetidas');
+        // Una palabra no es una letra de grupo: se ignora en vez de crear una sección inventada.
         self::assertSame([], GroupCode::parseSections('todos'));
         self::assertSame([], GroupCode::parseSections(null));
     }
