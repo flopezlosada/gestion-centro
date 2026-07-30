@@ -113,6 +113,9 @@ final class GuardiaRoomChangeNotifier
      */
     public function notifyGrouped(GuardiaGrouping $grouping, array $covers, ?string $timeLabel): int
     {
+        // Los grupos se LISTAN, no se cuentan: una línea del parte puede llevar varios grupos (actividad
+        // multigrupo en el salón de actos, cuyo snapshot es «E2B, E2C»), así que un contador de líneas
+        // diría «2 grupos» delante de una lista de tres nombres. La lista es la verdad.
         $allGroups = array_values(array_filter(array_map(static fn (GuardiaCover $c): ?string => $c->getGroupName(), $covers)));
 
         /** @var array<int, array{teacher: User, groups: list<string>}> $byTeacher */
@@ -134,11 +137,10 @@ final class GuardiaRoomChangeNotifier
                 'guardia.grouped',
                 sprintf('Guardia agrupada en %s: %s', $grouping->getRoomName(), $grouping->getDate()->format('d/m/Y')),
                 sprintf(
-                    'El %s%s tu guardia se hace en %s, con %d grupo(s) juntos: %s.%s',
+                    'El %s%s tu guardia se hace en %s, con estos grupos juntos: %s.%s',
                     $grouping->getDate()->format('d/m/Y'),
                     $this->at($timeLabel),
                     $grouping->getRoomName(),
-                    \count($allGroups),
                     implode(', ', $allGroups),
                     $this->noteSuffix($grouping),
                 ),
