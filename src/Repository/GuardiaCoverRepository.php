@@ -46,10 +46,13 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     public function findForParte(\DateTimeImmutable $date, int $slotIndex): array
     {
         return $this->createQueryBuilder('c')
-            ->addSelect('absent', 'guardia', 'absence')
+            ->addSelect('absent', 'guardia', 'absence', 'bank')
             ->join('c.absentTeacher', 'absent')
             ->leftJoin('c.assignedGuardia', 'guardia')
             ->join('c.absence', 'absence')
+            // El parte pinta el título de la tarea del banco por línea: sin este join sería un SELECT
+            // por fila con tarea.
+            ->leftJoin('c.bankItem', 'bank')
             ->andWhere('c.date = :date')
             ->andWhere('c.slotIndex = :slot')
             ->setParameter('date', $date, 'date_immutable')
