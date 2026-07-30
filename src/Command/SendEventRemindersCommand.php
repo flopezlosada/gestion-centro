@@ -12,9 +12,10 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * Pushes the personal agenda reminders that have come due — meant to run from cron every five minutes.
- * The sweep is idempotent, so running it more often only makes the reminders land closer to the
- * antelación the owner asked for; running it less makes them land late.
+ * Pushes the personal agenda reminders that have come due — meant to run from cron every five minutes,
+ * alongside {@see SendGuardiaRaicesRemindersCommand} and {@see SendMeetingRemindersCommand}. The sweep is
+ * idempotent, so running it more often only makes the reminders land closer to the antelación the owner
+ * asked for; running it less makes them land late.
  */
 #[AsCommand(name: 'app:events:send-reminders', description: 'Envía los avisos de eventos de la agenda personal que tocan ahora')]
 final class SendEventRemindersCommand extends Command

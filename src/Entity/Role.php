@@ -92,6 +92,19 @@ class Role implements Auditable
     #[ORM\Column(name: 'hierarchy_level', nullable: true)]
     private ?int $hierarchyLevel = null;
 
+    /**
+     * Whether holding this role lets you convene meetings ({@see \App\Entity\Meeting}). The centre's rule
+     * is "todos los cargos convocan": jefaturas, tutorías, TIC, secretaría, coordinaciones… everybody
+     * except a plain docente, who gets convened.
+     *
+     * A flag on the role and not a hard-coded list of codes, for the same reason {@see $admin} is one: it
+     * is an auditable checkbox the centre can move when a new cargo appears, instead of a rule buried in
+     * PHP. It is NOT in the {@see $permissions} matrix because that matrix is read/write over a whole
+     * module, and meetings are not gated that way — everybody reads the ones they are called to.
+     */
+    #[ORM\Column(name: 'can_convene', options: ['default' => false])]
+    private bool $canConvene = false;
+
     /** @var Collection<int, User> */
     #[ORM\ManyToMany(targetEntity: User::class, mappedBy: 'assignedRoles')]
     private Collection $users;
@@ -162,6 +175,23 @@ class Role implements Auditable
     public function setPerDepartment(bool $perDepartment): static
     {
         $this->perDepartment = $perDepartment;
+
+        return $this;
+    }
+
+    /**
+     * Whether this role may convene meetings.
+     *
+     * @return bool true if its holders convene
+     */
+    public function canConvene(): bool
+    {
+        return $this->canConvene;
+    }
+
+    public function setCanConvene(bool $canConvene): static
+    {
+        $this->canConvene = $canConvene;
 
         return $this;
     }

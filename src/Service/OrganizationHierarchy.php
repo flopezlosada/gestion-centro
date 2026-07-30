@@ -8,6 +8,7 @@ use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\Department;
 use App\Entity\User;
+use App\Repository\DepartmentRepository;
 use App\Repository\UserRepository;
 
 /**
@@ -23,16 +24,19 @@ use App\Repository\UserRepository;
  * validation and escalation): you command a task only if your rank is strictly above the task's
  * responsibility role rank, in scope.
  *
- * {@see outranks()} and the "commands" helpers are pure (they read only the actor's roles). Only
- * {@see managersAbove()} — which must find OTHER people to escalate to — hits the database.
+ * {@see outranks()}, {@see commandsWholeSchool()} and {@see commandedDepartment()} are pure (they read
+ * only the actor's roles). The ones that must find OTHER people or departments — {@see managersAbove()},
+ * {@see commandedDepartments()} and {@see commandedPeople()} — hit the database.
  */
 final class OrganizationHierarchy
 {
     /** @var list<User>|null the ranked users, resolved once per request (memoised for escalation) */
     private ?array $rankedUsers = null;
 
-    public function __construct(private readonly UserRepository $users)
-    {
+    public function __construct(
+        private readonly UserRepository $users,
+        private readonly DepartmentRepository $departments,
+    ) {
     }
 
     /**
@@ -148,6 +152,51 @@ final class OrganizationHierarchy
         }
 
         return null;
+    }
+
+    /**
+     * The departments the actor commands: every one for a whole-school superior (dirección, jefatura de
+     * estudios), just their own for a jefe de departamento, none for a plain member. Derived from the
+     * actor's ranked roles, never from a unit's manager.
+     *
+     * Lives here (and not in a controller) because "sobre qué manda esta persona" is a question about the
+     * chain of command, and more than one feature asks it: creating tasks and convening meetings.
+     *
+     * @param User $actor the user
+     *
+     * @return list<Department> the commanded departments
+     */
+    public function commandedDepartments(User $actor): array
+    {
+        if ($this->commandsWholeSchool($actor)) {
+            return $this->departments->findActiveDepartments();
+        }
+
+        $department = $this->commandedDepartment($actor);
+
+        return null !== $department ? [$department] : [];
+    }
+
+    /**
+     * The active people in the departments the actor commands — "a quién mandas". Excludes the actor:
+     * callers decide whether to add themselves (assigning a task to yourself is allowed; convening
+     * yourself is implicit).
+     *
+     * @param User $actor the user
+     *
+     * @return list<User> the people under the actor's command
+     */
+    public function commandedPeople(User $actor): array
+    {
+        $departments = $this->commandedDepartments($actor);
+        if ([] === $departments) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            $this->users->findActiveInUnits($departments),
+            static fn (User $person): bool => $person !== $actor,
+        ));
     }
 
     /**

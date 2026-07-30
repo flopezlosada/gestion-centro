@@ -1,0 +1,74 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}{{ project.name }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('admin_project_index') }}">Proyectos</a><span class="sep">/</span>
+    {{ project.name }}
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Proyectos</p>
+            <h1>{{ project.name }}</h1>
+            <p class="lead">Coordina: {{ project.coordinator ? project.coordinator.fullName : '— sin coordinación —' }} <span class="help">(quien coordina convoca las reuniones del proyecto y levanta sus actas)</span></p>
+        </div>
+        <a class="btn secondary" href="{{ path('admin_project_edit', { id: project.id }) }}">Editar</a>
+    </div>
+
+    {% if project.description %}
+        <div class="card"><p class="detail-prose">{{ project.description|nl2br }}</p></div>
+    {% endif %}
+
+    <div class="card">
+        <div class="page-head"><div><h2>Profesorado del proyecto</h2></div></div>
+        {% if project.members is empty %}
+            <div class="empty-state">
+                <p>Todavía no hay profesorado en el proyecto. Se añade desde «Editar».</p>
+            </div>
+        {% else %}
+            <table>
+                <thead><tr><th>Nombre</th><th>Departamento</th></tr></thead>
+                <tbody>
+                    {% for member in project.members %}
+                        <tr>
+                            <td><a href="{{ path('admin_user_show', { id: member.id }) }}">{{ member.fullName }}</a>{% if project.isCoordinatedBy(member) %} <span class="badge">Coordina</span>{% endif %}</td>
+                            <td>{{ member.unit ? member.unit.name : '—' }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <div class="page-head"><div><h2>Reuniones y actas</h2></div></div>
+        {% if meetings is empty %}
+            <div class="empty-state">
+                <p>El proyecto no ha tenido reuniones todavía.</p>
+            </div>
+        {% else %}
+            <table>
+                <thead><tr><th>Reunión</th><th>Cuándo</th><th>Convoca</th><th>Acta</th></tr></thead>
+                <tbody>
+                    {% for meeting in meetings %}
+                        <tr>
+                            <td><a href="{{ path('meeting_show', { id: meeting.id }) }}">{{ meeting.title }}</a></td>
+                            <td>{{ meeting.startAt|date('d/m/Y H:i') }}</td>
+                            <td>{{ meeting.convener ? meeting.convener.fullName : '—' }}</td>
+                            <td>
+                                {% if meeting.hasMinutes %}
+                                    <a href="{{ path('meeting_minutes_download', { id: meeting.id }) }}">Descargar</a>
+                                {% else %}
+                                    <span class="help">Sin acta</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}

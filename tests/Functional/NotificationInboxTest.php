@@ -54,6 +54,22 @@ final class NotificationInboxTest extends WebTestCase
         self::assertResponseRedirects('/');
     }
 
+    public function testAMeetingNoticeOpensTheMeetingsPage(): void
+    {
+        // Una convocatoria (o el acta, o un cambio de hora) lleva a "Mis reuniones", que es el único
+        // sitio con las dos mitades: lo que viene y el archivo de actas. Un aviso NO puede apuntar a la
+        // reunión concreta: la entidad Notification solo sabe señalar tareas.
+        $user = $this->loggedInUser();
+        $notification = new Notification($user, 'meeting.convened', 'Reunión: claustro', 'Es el 15/09/2026 a las 12:00.');
+        $this->em->persist($notification);
+        $this->em->flush();
+        $this->client->loginUser($user);
+
+        $this->client->request('GET', '/avisos/'.$notification->getId());
+
+        self::assertResponseRedirects('/reuniones');
+    }
+
     public function testANoticeWithNoBetterDestinationStillOpensAndReturnsToTheInbox(): void
     {
         $user = $this->loggedInUser();

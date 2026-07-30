@@ -127,6 +127,34 @@
 {% endmacro %}
 
 {#
+   Una lista de casillas como TARJETAS, para elegir varias entidades de un catálogo (los roles de una
+   persona, los convocados de una reunión, el profesorado de un proyecto). Un `<select multiple>` nativo
+   exige ctrl-clic, que en el móvil es inservible y en escritorio es una trampa conocida; y una columna
+   de casillas desnudas no deja sitio para explicar cada opción.
+
+   La casilla nativa sigue siendo el control real (va dentro del <label>), así que funciona sin JS y sin
+   `:has`. Si la opción trae `data-description` (inyectada con `choice_attr` en el FormType), se pinta
+   como subtítulo. `emptyText` es lo que se dice cuando el catálogo está vacío — nunca una lista muda.
+#}
+{% macro pick_list(field, emptyText = 'No hay nada que elegir todavía.') %}
+    <div class="pick-list">
+        {% for child in field %}
+            <label class="pick-option">
+                {{ form_widget(child, { attr: { class: 'pick-option__input' } }) }}
+                <span class="pick-option__body">
+                    <span class="pick-option__name">{{ child.vars.label }}</span>
+                    {% if child.vars.attr['data-description'] is defined and child.vars.attr['data-description'] %}
+                        <span class="pick-option__desc">{{ child.vars.attr['data-description'] }}</span>
+                    {% endif %}
+                </span>
+            </label>
+        {% else %}
+            <p class="muted">{{ emptyText }}</p>
+        {% endfor %}
+    </div>
+{% endmacro %}
+
+{#
    Barra de acciones del formulario: el botón primario de envío y un enlace de cancelar.
    cancelUrl: destino del enlace "Cancelar". submitLabel: texto del botón (por defecto "Guardar").
 #}

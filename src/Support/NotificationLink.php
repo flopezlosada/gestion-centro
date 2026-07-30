@@ -53,6 +53,11 @@ final class NotificationLink
             // A space notice (a room change that affects you) opens the teacher's own list of changes,
             // which shows every one in force — not just the plan that happened to trigger this notice.
             str_starts_with($notification->getKind(), 'space.') => $this->urlGenerator->generate('space_mine'),
+            // A meeting notice (convocatoria, cambio de hora, acta) opens "Mis reuniones", which carries
+            // both what is coming and the archive of minutes. The notice cannot deep-link to the meeting
+            // itself: a Notification only knows how to point at a Task, and widening that schema for
+            // every module would mean a column per feature.
+            str_starts_with($notification->getKind(), 'meeting.') => $this->urlGenerator->generate('meeting_index'),
             // Anything else has nowhere better to go than the inbox itself.
             default => $this->urlGenerator->generate('notification_index'),
         };
