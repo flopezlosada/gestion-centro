@@ -45,7 +45,7 @@
                             <span>{% if nextDay.isTomorrow %}mañana{% else %}{{ nextDay.date|date('d/m', false) }}{% endif %}</span>
                         </span>
                         <span class="next-preview__place">
-                            <span class="next-preview__where">{{ [sc.groupName, sc.roomName]|filter(v => v)|join(' · ') ?: 'Sin especificar' }}</span>
+                            <span class="next-preview__where">{{ [sc.groupName, sc.effectiveRoomName]|filter(v => v)|join(' · ') ?: 'Sin especificar' }}</span>
                             <span class="next-preview__teacher">Cubres a {{ sc.absentTeacher.fullName }}</span>
                         </span>
                         {% if sc.hasTask %}<span class="badge badge--warning" data-tone="warning">Tarea</span>{% endif %}
@@ -83,7 +83,7 @@
                             </span>
                             <span class="today-row__place">
                                 {% if isNext %}<span class="today-row__eyebrow mono">Próxima{% if item.minutesUntil is not null %} · {{ fmt.countdown(item.minutesUntil) }}{% endif %}</span>{% endif %}
-                                <span class="today-row__where">{{ [cover.roomName, cover.groupName]|filter(v => v)|join(' · ') ?: 'Sin especificar' }}</span>
+                                <span class="today-row__where">{{ [cover.effectiveRoomName, cover.groupName]|filter(v => v)|join(' · ') ?: 'Sin especificar' }}</span>
                                 <span class="today-row__teacher">{% if item.done %}Cubriste{% else %}Cubres{% endif %} a {% if isNext %}<strong>{{ cover.absentTeacher.fullName }}</strong>{% else %}{{ cover.absentTeacher.fullName }}{% endif %}</span>
                             </span>
                             {% if cover.notCovered %}<span class="badge badge--danger" data-tone="danger">Incidencia</span>
@@ -110,7 +110,7 @@
                         </span>
                         {% if nextItem.endsAt %}<span class="hero-guardia__ends mono">termina {{ nextItem.endsAt|date('H:i', false) }}</span>{% endif %}
                         <span class="hero-guardia__sep" aria-hidden="true"></span>
-                        <span class="hero-guardia__place">{{ [cover.roomName, cover.groupName]|filter(v => v)|join(' · ') ?: 'Sin especificar' }}</span>
+                        <span class="hero-guardia__place">{{ [cover.effectiveRoomName, cover.groupName]|filter(v => v)|join(' · ') ?: 'Sin especificar' }}</span>
                         <span class="hero-guardia__teacher">Cubres a <strong>{{ cover.absentTeacher.fullName }}</strong></span>
                         {% if cover.notCovered %}<span class="hero-guardia__badge hero-guardia__badge--danger">Incidencia</span>
                         {% elseif cover.hasTask %}<span class="hero-guardia__badge hero-guardia__badge--task">Tiene tarea</span>{% endif %}

@@ -49,7 +49,7 @@
                             <td>{{ cover.date|date('d/m/Y', false) }}</td>
                             <td data-sort="{{ cover.slotIndex }}">{% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}{{ cover.slotIndex + 1 }}ª{% endif %}</td>
                             <td>{{ cover.groupName ?? '—' }}</td>
-                            <td class="mono">{{ cover.roomName ?? '—' }}</td>
+                            <td class="mono">{{ cover.effectiveRoomName ?? '—' }}</td>
                             <td>{{ cover.absentTeacher.fullName }}</td>
                             <td>{{ cover.assignedGuardia ? cover.assignedGuardia.fullName : '—' }}</td>
                             <td>

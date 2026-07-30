@@ -6,6 +6,7 @@ namespace App\Entity;
 
 use App\Contract\Auditable;
 use App\Repository\GuardiaSupportRepository;
+use App\Util\Excerpt;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
@@ -108,9 +109,17 @@ class GuardiaSupport implements Auditable
         return $this->note;
     }
 
+    /**
+     * Sets the note, normalising blank to null and clamping it to what the column holds. Clamped here
+     * rather than trusted from the form: a value over 255 characters would otherwise surface as a 500
+     * instead of as a saved note.
+     *
+     * @param string|null $note why the teacher is free, or null/blank for none
+     */
     public function setNote(?string $note): static
     {
-        $this->note = null !== $note && '' !== trim($note) ? trim($note) : null;
+        $clamped = Excerpt::of($note, 255);
+        $this->note = '' !== $clamped ? $clamped : null;
 
         return $this;
     }

@@ -1,0 +1,123 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Juntar grupos en un aula{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_index') }}">Guardias</a><span class="sep">/</span>Juntar grupos{% endblock %}
+
+{# Pantalla empujada: fuera la barra inferior, la salida es "Cancelar" (mismo patrón que apuntar ausencia). #}
+{% block bottomnav %}{% endblock %}
+
+{% block body %}
+    {% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
+    {% set volver = path('guardia_index', { date: date|date('Y-m-d', false), slot: slotIndex }) %}
+
+    <div class="formtop">
+        <a class="formtop__cancel" href="{{ volver }}">Cancelar</a>
+        <span class="formtop__title">Juntar grupos en un aula</span>
+        <span class="formtop__spacer"></span>
+    </div>
+
+    <div class="formscreen">
+        <p class="muted step-hint">{{ dias[date|date('N', false)] }} {{ date|date('d/m/Y', false) }}{% if slotLabel %} · {{ slotLabel }}{% endif %}</p>
+
+        {# Agrupaciones que ya existen en este tramo: se muestran para poder deshacerlas, no para editarlas
+           (una agrupación se deshace y se vuelve a hacer, así cada cambio de aula genera un aviso claro). #}
+        {% if groupings is not empty %}
+            <section class="card grouping-existing">
+                <h2 class="grouping-existing__title">Ya juntados a esta hora</h2>
+                {% for g in groupings %}
+                    {% set suyos = grouped|filter(c => c.grouping.id == g.id) %}
+                    <div class="grouping-existing__row">
+                        <div>
+                            <strong class="mono">{{ g.roomName }}</strong>
+                            <span class="muted"> · {{ suyos|map(c => c.groupName ?? '—')|join(', ') }}</span>
+                            {% if g.displacedToRoom %}<span class="badge badge--warning">clase desplazada a {{ g.displacedToRoom }}</span>{% endif %}
+                            {% if g.note %}<p class="muted">{{ g.note }}</p>{% endif %}
+                        </div>
+                        <form method="post" action="{{ path('guardia_grouping_undo', { id: g.id }) }}"
+                              data-confirm="¿Deshacer la agrupación de {{ g.roomName }}? Cada grupo vuelve a su aula y se avisará del cambio a quien corresponda.">
+                            <input type="hidden" name="_token" value="{{ csrf_token('guardia_grouping_undo' ~ g.id) }}">
+                            <button type="submit" class="link-danger">Deshacer</button>
+                        </form>
+                    </div>
+                {% endfor %}
+            </section>
+        {% endif %}
+
+        {% if covers|length < 2 %}
+            <div class="empty-state">
+                <h2>No hay grupos que juntar a esta hora</h2>
+                <p>Hacen falta al menos dos clases sin agrupar en el mismo tramo. {% if covers|length == 1 %}Aquí solo queda una.{% endif %}</p>
+                <p><a class="btn" href="{{ volver }}">Volver al parte</a></p>
+            </div>
+        {% else %}
+            <form method="post" action="{{ path('guardia_grouping_create') }}" class="grouping-form">
+                <input type="hidden" name="_token" value="{{ csrf_token('guardia_grouping_create') }}">
+                <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
+                <input type="hidden" name="slot" value="{{ slotIndex }}">
+
+                <h2 class="classes-head__title">Qué grupos van juntos</h2>
+                <p class="classes-help">Marca los grupos que se reúnen en la misma aula. Cada uno mantiene su tarea y su profesor de guardia asignado: lo único que cambia es dónde se juntan.</p>
+
+                <ul class="classcards">
+                    {% for c in covers %}
+                        <li class="classcard">
+                            <label class="classcard__pick">
+                                <input type="checkbox" name="covers[]" value="{{ c.id }}">
+                                <span class="classcard__box" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-11"/></svg>
+                                </span>
+                                <span class="classcard__what">
+                                    <span class="classcard__group">
+                                        <strong>{{ c.groupName ?? '—' }}</strong>
+                                        {% if c.roomName %}<span class="muted mono"> · aula {{ c.roomName }}</span>{% endif %}
+                                    </span>
+                                    <span class="classcard__state">
+                                        <span class="muted">Falta {{ c.absentTeacher.fullName }}
+                                            {%- if c.assignedGuardia %} · cubre {{ c.assignedGuardia.fullName }}
+                                            {%- else %} · <span class="badge badge--warning">sin cubrir</span>{% endif %}
+                                        </span>
+                                    </span>
+                                </span>
+                            </label>
+                        </li>
+                    {% endfor %}
+                </ul>
+
+                <div class="form-row">
+                    <label class="eyebrow" for="room">Aula donde se juntan</label>
+                    <select id="room" name="room" required>
+                        <option value="">Elige un aula…</option>
+                        {% for r in rooms %}
+                            <option value="{{ r.room }}">
+                                {{ r.room }}{% if r.capacity > 1 %} — hasta {{ r.capacity }} grupos{% endif %}
+                                {%- if not r.free %} — OCUPADA por {{ r.classes|map(cl => (cl.group ?? '—') ~ ' (' ~ cl.teacher.fullName ~ ')')|join('; ') }}{% endif %}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <p class="field-help">Las más grandes primero: «hasta N grupos» es lo máximo que el horario del centro pone a la vez en esa aula. Las ocupadas también se pueden elegir — es lo normal con la biblioteca o el salón de actos — y se avisará al docente al que se le quita.</p>
+                </div>
+
+                <div class="form-row">
+                    <label class="eyebrow" for="displaced_to">Si el aula está ocupada, ¿a dónde pasa esa clase?</label>
+                    <select id="displaced_to" name="displaced_to">
+                        <option value="">Sin decidir todavía</option>
+                        {% for r in rooms|filter(r => r.free) %}
+                            <option value="{{ r.room }}">{{ r.room }}{% if r.capacity > 1 %} — hasta {{ r.capacity }} grupos{% endif %}</option>
+                        {% endfor %}
+                    </select>
+                    <p class="field-help">Solo aulas libres a esta hora. Si lo dejas sin decidir, el aviso dirá que la coordinación le indicará dónde — evita mandarlo sin decirle a dónde va.</p>
+                </div>
+
+                <div class="form-row">
+                    <label class="eyebrow" for="note">Nota para los avisos <span class="muted">(opcional)</span></label>
+                    <input type="text" id="note" name="note" maxlength="255" placeholder="Se juntan en el salón de actos con la película de 1º.">
+                </div>
+
+                <div class="stackform__foot">
+                    <button type="submit" class="btn-lg btn-lg--primary">Juntar y avisar</button>
+                </div>
+            </form>
+        {% endif %}
+    </div>
+{% endblock %}

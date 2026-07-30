@@ -46,10 +46,13 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     public function findForParte(\DateTimeImmutable $date, int $slotIndex): array
     {
         return $this->createQueryBuilder('c')
-            ->addSelect('absent', 'guardia', 'absence')
+            ->addSelect('absent', 'guardia', 'absence', 'grouping')
             ->join('c.absentTeacher', 'absent')
             ->leftJoin('c.assignedGuardia', 'guardia')
             ->join('c.absence', 'absence')
+            // Grouping joined too: the parte reads it on every line (to say which room the class actually
+            // happens in), so lazy-loading it would be a query per line.
+            ->leftJoin('c.grouping', 'grouping')
             ->andWhere('c.date = :date')
             ->andWhere('c.slotIndex = :slot')
             ->setParameter('date', $date, 'date_immutable')
@@ -100,8 +103,9 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     public function findAssignedTo(User $guardia, \DateTimeImmutable $date): array
     {
         return $this->createQueryBuilder('c')
-            ->addSelect('absent')
+            ->addSelect('absent', 'grouping')
             ->join('c.absentTeacher', 'absent')
+            ->leftJoin('c.grouping', 'grouping')
             ->andWhere('c.assignedGuardia = :guardia')
             ->andWhere('c.date = :date')
             ->setParameter('guardia', $guardia)
@@ -125,8 +129,9 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     public function findAssignedToBetween(User $guardia, \DateTimeImmutable $start, \DateTimeImmutable $end): array
     {
         return $this->createQueryBuilder('c')
-            ->addSelect('absent')
+            ->addSelect('absent', 'grouping')
             ->join('c.absentTeacher', 'absent')
+            ->leftJoin('c.grouping', 'grouping')
             ->andWhere('c.assignedGuardia = :guardia')
             ->andWhere('c.date BETWEEN :start AND :end')
             ->setParameter('guardia', $guardia)
@@ -151,8 +156,9 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     public function findUpcomingAssignedTo(User $guardia, \DateTimeImmutable $from): array
     {
         return $this->createQueryBuilder('c')
-            ->addSelect('absent')
+            ->addSelect('absent', 'grouping')
             ->join('c.absentTeacher', 'absent')
+            ->leftJoin('c.grouping', 'grouping')
             ->andWhere('c.assignedGuardia = :guardia')
             ->andWhere('c.date >= :from')
             ->setParameter('guardia', $guardia)
@@ -175,8 +181,9 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     public function findPastAssignedTo(User $guardia, \DateTimeImmutable $before): array
     {
         return $this->createQueryBuilder('c')
-            ->addSelect('absent')
+            ->addSelect('absent', 'grouping')
             ->join('c.absentTeacher', 'absent')
+            ->leftJoin('c.grouping', 'grouping')
             ->andWhere('c.assignedGuardia = :guardia')
             ->andWhere('c.date < :before')
             ->setParameter('guardia', $guardia)
@@ -367,9 +374,10 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     public function history(?\DateTimeImmutable $from, ?\DateTimeImmutable $to, ?string $group, ?User $assignedTeacher, ?User $absentTeacher): array
     {
         $qb = $this->createQueryBuilder('c')
-            ->addSelect('absent', 'guardia')
+            ->addSelect('absent', 'guardia', 'grouping')
             ->join('c.absentTeacher', 'absent')
             ->leftJoin('c.assignedGuardia', 'guardia')
+            ->leftJoin('c.grouping', 'grouping')
             ->orderBy('c.date', 'DESC')
             ->addOrderBy('c.slotIndex', 'ASC')
             ->addOrderBy('absent.fullName', 'ASC');

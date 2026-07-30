@@ -132,6 +132,7 @@
                     </div>
                     {% if canWrite %}
                         <div class="parte-deficit__actions">
+                            <a class="btn" href="{{ path('guardia_grouping_new', { date: date|date('Y-m-d', false), slot: slotIndex }) }}">Juntar grupos en un aula</a>
                             <a class="btn btn--ghost" href="#pool">Añadir apoyo puntual</a>
                         </div>
                     {% endif %}
@@ -153,6 +154,11 @@
                     {% if canWrite %}
                         <div class="parte-panel__actions">
                             <a class="btn btn--ghost" href="{{ path('guardia_absence_new', { date: date|date('Y-m-d', false) }) }}">+ Apuntar ausencia</a>
+                            {# Camino permanente a las agrupaciones (el aviso de déficit también lleva
+                               aquí, pero desaparece en cuanto cuadra y hay que poder deshacerlas). #}
+                            {% if covers|length > 1 %}
+                                <a class="btn btn--ghost" href="{{ path('guardia_grouping_new', { date: date|date('Y-m-d', false), slot: slotIndex }) }}">Juntar grupos</a>
+                            {% endif %}
                             {% if uncovered > 0 %}
                                 <form method="post" action="{{ path('guardia_auto_assign') }}" class="inline-form">
                                     <input type="hidden" name="_token" value="{{ csrf_token('guardia_auto_assign') }}">
@@ -186,7 +192,11 @@
                                 <div class="parte-card__top">
                                     <div class="parte-card__what">
                                         <span class="parte-card__group">{{ cover.groupName ?? '—' }}</span>
-                                        {% if cover.roomName %}<span class="parte-card__room">· {{ cover.roomName }}</span>{% endif %}
+                                        {% if cover.grouping %}
+                                            <span class="badge badge--accent">→ {{ cover.grouping.roomName }}</span>
+                                        {% elseif cover.roomName %}
+                                            <span class="parte-card__room">· {{ cover.roomName }}</span>
+                                        {% endif %}
                                         <div class="parte-card__absent">Falta: {{ cover.absentTeacher.fullName }}</div>
                                     </div>
                                     {% if cover.notCovered %}
@@ -237,7 +247,13 @@
                                 <tr class="{{ cover.notCovered ? 'is-not-covered' }}{{ cover.assignedGuardia is null ? ' is-uncovered' }}">
                                     <td>
                                         <strong>{{ cover.groupName ?? '—' }}</strong>
-                                        {% if cover.roomName %}<span class="muted mono"> · {{ cover.roomName }}</span>{% endif %}
+                                        {% if cover.grouping %}
+                                            {# El aula de la agrupación manda sobre la del horario: es donde
+                                               la clase ocurre de verdad, y es lo que hay que leer aquí. #}
+                                            <span class="badge badge--accent" title="Junto con otros grupos en {{ cover.grouping.roomName }}">→ {{ cover.grouping.roomName }}</span>
+                                        {% elseif cover.roomName %}
+                                            <span class="muted mono"> · {{ cover.roomName }}</span>
+                                        {% endif %}
                                     </td>
                                     <td>
                                         {{ cover.absentTeacher.fullName }}

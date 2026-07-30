@@ -2392,6 +2392,14 @@ tr.is-not-covered { background: var(--danger-weak); }
 .support-add__lead { margin: 0 0 6px; font-size: 12.5px; color: var(--text-muted); }
 .support-add__form .field-label + * { margin-bottom: 6px; }
 
+/* ── Guardias · agrupaciones ya hechas en el tramo ──────────────────────────── */
+.grouping-existing { padding: 14px 16px; margin-bottom: 18px; }
+.grouping-existing__title { font-family: var(--font-display); font-weight: 500; font-size: 17px; margin: 0 0 10px; }
+.grouping-existing__row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 8px 0; }
+.grouping-existing__row + .grouping-existing__row { border-top: 1px solid var(--border); }
+.grouping-existing__row p { margin: 4px 0 0; font-size: 12.5px; }
+.grouping-form .form-row { margin-top: 18px; }
+
 /* ── Guardias · hoja de aulas libres ────────────────────────────────────────
    Una tarjeta por tramo en rejilla: la pregunta es "a esta hora, ¿dónde puedo meter tres grupos?",
    así que cada hora se lee sola y las aulas grandes van arriba con su prueba de aforo. */
