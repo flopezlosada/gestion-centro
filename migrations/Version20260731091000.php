@@ -23,7 +23,7 @@ use Doctrine\Migrations\AbstractMigration;
  * Nada de esto altera el horario por sí solo: solo la opción elegida de un plan en estado 'approved'
  * entra en la rejilla efectiva.
  */
-final class Version20260730160000 extends AbstractMigration
+final class Version20260731091000 extends AbstractMigration
 {
     public function getDescription(): string
     {

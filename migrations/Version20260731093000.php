@@ -17,7 +17,7 @@ use Doctrine\Migrations\AbstractMigration;
  *
  * NULL = sin tope, que es lo razonable para un plan que no sea una jornada de talleres.
  */
-final class Version20260730210000 extends AbstractMigration
+final class Version20260731093000 extends AbstractMigration
 {
     public function getDescription(): string
     {

@@ -18,7 +18,7 @@ use Doctrine\Migrations\AbstractMigration;
  *
  * Nace a NULL en todas las fichas: es justo lo que el centro tiene que rellenar.
  */
-final class Version20260730190000 extends AbstractMigration
+final class Version20260731092000 extends AbstractMigration
 {
     public function getDescription(): string
     {

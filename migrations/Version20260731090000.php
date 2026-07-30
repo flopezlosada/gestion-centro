@@ -23,7 +23,7 @@ use Doctrine\Migrations\AbstractMigration;
  * ejecutar `app:sync-rooms` (o pulsar "Sincronizar con el horario" en /espacios/catalogo); mientras no
  * se haga, la pantalla de aulas libres avisa de cuántas celdas quedan sin espacio catalogado.
  */
-final class Version20260730120000 extends AbstractMigration
+final class Version20260731090000 extends AbstractMigration
 {
     public function getDescription(): string
     {
