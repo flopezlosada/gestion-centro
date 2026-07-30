@@ -7,6 +7,7 @@ namespace App\Tests\Functional;
 use App\Entity\Absence;
 use App\Entity\AcademicYear;
 use App\Entity\GuardiaCover;
+use App\Entity\Notification;
 use App\Entity\Role;
 use App\Entity\ScheduleEntry;
 use App\Entity\User;
@@ -303,6 +304,105 @@ final class GuardiaPageTest extends WebTestCase
         $crawler = $this->client->request('GET', $action);
         $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action), 'guardia' => '', 'motivo' => 'Se retira la asignación.']);
         self::assertNull($this->reload($id)->getAssignedGuardia());
+    }
+
+    /**
+     * The explanation the coordinator is forced to write reaches the two people the change affects: the
+     * teacher who takes the guardia over and the one relieved of it. Without this it only landed in the
+     * audit trail, which is what made the mandatory field look like red tape to the centre.
+     */
+    public function testAChangeOfSubstituteIsExplainedToBothTeachers(): void
+    {
+        $this->login();
+        $year = $this->academicYear('2025-2026');
+        $this->em->persist($year);
+        $before = $this->user('Guardia Saliente', 'saliente@centro.test');
+        $after = $this->user('Guardia Entrante', 'entrante@centro.test');
+        $absent = $this->user('Ausente Seis', 'a6@centro.test');
+        $date = new \DateTimeImmutable('2025-11-10');
+        $this->guardiaEntry($year, $before, $date);
+        $this->guardiaEntry($year, $after, $date);
+        $cover = $this->cover($date, 0, $absent, $before);
+        $this->em->flush();
+        $action = '/guardias/'.$cover->getId().'/modificar';
+
+        $crawler = $this->client->request('GET', $action);
+        $this->client->request('POST', $action, [
+            '_token' => $this->tokenFrom($crawler, $action),
+            'guardia' => (string) $after->getId(),
+            'motivo' => 'El sustituto asignado también falta hoy.',
+        ]);
+        self::assertResponseRedirects();
+
+        $assigned = $this->notificationFor('entrante@centro.test');
+        self::assertSame('guardia.assigned', $assigned->getKind());
+        self::assertStringContainsString('El sustituto asignado también falta hoy.', (string) $assigned->getBody(), 'quien entra lee por qué le toca');
+
+        $relieved = $this->notificationFor('saliente@centro.test');
+        self::assertSame('guardia.relieved', $relieved->getKind());
+        self::assertStringContainsString('ya no tienes que hacerla', (string) $relieved->getBody());
+        self::assertStringContainsString('El sustituto asignado también falta hoy.', (string) $relieved->getBody(), 'quien sale lee por qué se la quitan');
+    }
+
+    /**
+     * Editing something that does not move the guardia (here only the task description) notifies nobody:
+     * the explanation is still recorded, but no one is told about a change that does not affect them.
+     */
+    public function testAnEditThatKeepsTheSubstituteNotifiesNobody(): void
+    {
+        $this->login();
+        $year = $this->academicYear('2025-2026');
+        $this->em->persist($year);
+        $guardia = $this->user('Guardia Fija', 'fija@centro.test');
+        $absent = $this->user('Ausente Siete', 'a7@centro.test');
+        $date = new \DateTimeImmutable('2025-11-10');
+        $this->guardiaEntry($year, $guardia, $date);
+        $cover = $this->cover($date, 0, $absent, $guardia);
+        $this->em->flush();
+        $action = '/guardias/'.$cover->getId().'/modificar';
+
+        $crawler = $this->client->request('GET', $action);
+        $this->client->request('POST', $action, [
+            '_token' => $this->tokenFrom($crawler, $action),
+            'guardia' => (string) $guardia->getId(),
+            'task_description' => 'Ejercicios 3 y 4 de la página 88.',
+            'motivo' => 'Añado la tarea que mandó el profesor.',
+        ]);
+        self::assertResponseRedirects();
+
+        self::assertNull($this->em->getRepository(Notification::class)->findOneBy(['recipient' => $guardia]), 'reelegir al mismo sustituto no genera aviso');
+    }
+
+    /**
+     * The screen names the field for what it does — no second "motivo" to confuse with the private
+     * reason of the absence, and it says out loud that the text reaches the teachers involved.
+     */
+    public function testTheChangeFieldSaysWhoReadsIt(): void
+    {
+        $this->login();
+        $absent = $this->user('Ausente Ocho', 'a8@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('2025-11-10'), 0, $absent, null);
+        $this->em->flush();
+
+        $this->client->request('GET', '/guardias/'.$cover->getId().'/modificar');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('label[for="motivo"]', '¿Por qué haces este cambio?');
+        self::assertSelectorTextContains('.field--change-note .field-help', 'al que entra y al que deja de hacerla');
+    }
+
+    /**
+     * The notice a teacher received, failing loudly when none was sent.
+     */
+    private function notificationFor(string $email): Notification
+    {
+        $this->em->clear();
+        $recipient = $this->em->getRepository(User::class)->findOneBy(['email' => $email]);
+        self::assertInstanceOf(User::class, $recipient);
+        $notification = $this->em->getRepository(Notification::class)->findOneBy(['recipient' => $recipient]);
+        self::assertInstanceOf(Notification::class, $notification, sprintf('%s no recibió ningún aviso', $email));
+
+        return $notification;
     }
 
     /**

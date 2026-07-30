@@ -940,8 +940,9 @@ final class GuardiaController extends AbstractController
 
     /**
      * Applies a manual change to a cover: reassigns the substitute (empty clears it) and/or toggles the
-     * "did not happen" flag, with a mandatory reason recorded in the event log ({@see AuditContext}).
-     * Notifies the substitute when it actually changes.
+     * "did not happen" flag, with a mandatory explanation recorded in the event log ({@see AuditContext}).
+     * When the substitute actually changes, that explanation is sent to both people it affects — the one
+     * who takes the guardia over and the one relieved of it.
      */
     #[Route('/{id}/modificar', name: 'guardia_cover_update', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function updateCover(GuardiaCover $cover, Request $request, UserRepository $users, EntityManagerInterface $em, GuardiaAssignmentNotifier $notifier, AuditContext $audit, FileUploader $uploader): Response
@@ -951,7 +952,7 @@ final class GuardiaController extends AbstractController
 
         $reason = trim((string) $request->request->get('motivo'));
         if ('' === $reason) {
-            $this->addFlash('error', 'Indica el motivo del cambio: queda registrado en el histórico de la guardia.');
+            $this->addFlash('error', 'Explica por qué cambias esta guardia: se lo contamos a los profesores afectados y queda en el histórico.');
 
             return $this->redirectToRoute('guardia_cover_edit', ['id' => $cover->getId()]);
         }
@@ -993,10 +994,20 @@ final class GuardiaController extends AbstractController
         }
 
         // Notify only when the substitute actually changes (reselecting the same one does not notify).
-        if ($cover->getAssignedGuardia() !== $previous) {
-            $notifier->notifyAssigned($cover);
+        // Both sides hear about it, with the coordinator's explanation: whoever takes the guardia over
+        // and whoever is relieved of it — otherwise the relieved teacher would still turn up to a group
+        // that is no longer theirs, and the mandatory explanation would die unread in the audit trail.
+        $substituteChanged = $cover->getAssignedGuardia() !== $previous;
+        if ($substituteChanged) {
+            $notifier->notifyAssigned($cover, $reason);
+            if (null !== $previous) {
+                $notifier->notifyRelieved($cover, $previous, $reason);
+            }
         }
-        $this->addFlash('success', 'Guardia modificada y registrada en el histórico.');
+        // El acuse dice la verdad: solo promete avisos cuando de verdad los ha habido.
+        $this->addFlash('success', $substituteChanged
+            ? 'Guardia modificada. Hemos avisado a los profesores afectados y queda en el histórico.'
+            : 'Guardia modificada y registrada en el histórico.');
 
         return $this->backToParte($cover->getDate(), $cover->getSlotIndex());
     }

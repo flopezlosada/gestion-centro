@@ -2368,6 +2368,23 @@ tr.is-not-covered { background: var(--danger-weak); }
 .cover-summary dd { margin: 0; }
 .req { color: var(--danger-text); }
 
+/* Explicación del cambio: el campo que de verdad viaja a los afectados, así que se marca como el
+   paso importante del formulario y no como un trámite más de la lista. */
+.field--change-note { border-left: 3px solid var(--accent); padding-left: 12px; }
+.change-note__presets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 2px; }
+/* Sin esto el display:flex de arriba gana al [hidden] del navegador (misma especificidad, va después)
+   y los atajos se verían aunque el JS no los haya activado. */
+.change-note__presets[hidden] { display: none; }
+/* La pista va inline con los atajos, no como rótulo de sección: un segundo eyebrow bajo el label
+   competía con él y la pantalla parecía tener dos títulos para un solo campo. */
+.change-note__presets > span { font-size: 13px; }
+.change-note__presets button {
+    padding: 5px 11px; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--surface); color: var(--text-muted); font: inherit; font-size: 13px; cursor: pointer;
+}
+.change-note__presets button:hover { border-color: var(--accent); background: var(--accent-weak); color: var(--text); }
+.change-note__presets button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
 /* ── Guardias · panel de profes (estado de reparto) ──────────────────────────
    La leyenda .pool-legend se retiró: el panel ahora explica los estados en una frase y los chips
    se leen solos, así que la lista de leyenda quedó sin uso. */
