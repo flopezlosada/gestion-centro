@@ -76,12 +76,14 @@ final class BreakDutyController extends AbstractController
     /**
      * Adds one duty to the rota: a teacher, a weekday, a zone and which recreos it spans.
      *
-     * The clash the unique key guards (one duty per teacher and weekday) is caught rather than
-     * pre-checked: two people editing the September rota at once is exactly the situation, and a check
-     * before the insert would still lose that race.
+     * The clash the unique key guards — one duty per teacher and weekday, because nobody can watch two
+     * zones at once — is resolved twice on purpose. It is looked up first, so the ordinary case (somebody
+     * assigning a person who already has that day) gets a plain message on a healthy connection; and the
+     * insert is still guarded, because two people drawing up the September rota at the same time is a real
+     * race a pre-check cannot win.
      */
     #[Route('/asignar', name: 'break_duty_assign', methods: ['POST'])]
-    public function assign(Request $request, AcademicYearRepository $years, UserRepository $users, BreakZoneRepository $zones, EntityManagerInterface $em): Response
+    public function assign(Request $request, AcademicYearRepository $years, UserRepository $users, BreakZoneRepository $zones, BreakDutyAssignmentRepository $duties, EntityManagerInterface $em): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $this->assertCsrf($request, 'break_duty_assign');
@@ -99,6 +101,12 @@ final class BreakDutyController extends AbstractController
             return $this->redirectToRoute('break_duty_index', ['curso' => $curso]);
         }
 
+        if (null !== $duties->findForTeacherAndWeekday($year, $teacher, $weekday)) {
+            $this->addFlash('error', $this->clashMessage($teacher, $weekday));
+
+            return $this->redirectToRoute('break_duty_index', ['curso' => $curso]);
+        }
+
         $duty = (new BreakDutyAssignment())
             ->setAcademicYear($year)
             ->setTeacher($teacher)
@@ -110,7 +118,9 @@ final class BreakDutyController extends AbstractController
             $em->persist($duty);
             $em->flush();
         } catch (UniqueConstraintViolationException) {
-            $this->addFlash('error', sprintf('%s ya tiene una guardia de recreo el %s. Edítala o cámbiala de día: una persona no puede estar en dos zonas a la vez.', $teacher->getFullName(), mb_strtolower($weekday->label())));
+            // Somebody else added that same person on that same weekday between the check above and this
+            // insert. Same message; nothing else is touched, so the redirect is safe on a closed manager.
+            $this->addFlash('error', $this->clashMessage($teacher, $weekday));
 
             return $this->redirectToRoute('break_duty_index', ['curso' => $curso]);
         }
@@ -249,6 +259,15 @@ final class BreakDutyController extends AbstractController
             return $this->redirectToRoute('break_zone_index');
         }
 
+        // Same two-step guard as the rota: the ordinary "that name is taken" answer comes from a lookup,
+        // and the unique index still backs it up against a simultaneous save.
+        $clash = $zones->findOneBy(['name' => $name]);
+        if (null !== $clash && $clash->getId() !== $zone->getId()) {
+            $this->addFlash('error', sprintf('Ya existe una zona llamada «%s».', $name));
+
+            return $this->redirectToRoute('break_zone_index');
+        }
+
         $isNew = null === $zone->getId();
         $zone->setName($name)
             ->setWeight(max(BreakZone::MIN_WEIGHT, min(BreakZone::MAX_WEIGHT, (int) $request->request->get('weight', 1))))
@@ -270,6 +289,24 @@ final class BreakDutyController extends AbstractController
         $this->addFlash('success', $isNew ? sprintf('Zona «%s» añadida.', $zone->getName()) : sprintf('Zona «%s» actualizada.', $zone->getName()));
 
         return $this->redirectToRoute('break_zone_index');
+    }
+
+    /**
+     * The message for a teacher who already holds a recreo that weekday, shared by the pre-check and the
+     * race guard so both tell the person the same thing.
+     *
+     * @param User    $teacher the teacher being assigned
+     * @param Weekday $weekday the weekday of the clash
+     *
+     * @return string the message to flash
+     */
+    private function clashMessage(User $teacher, Weekday $weekday): string
+    {
+        return sprintf(
+            '%s ya tiene una guardia de recreo el %s. Edítala o cámbiala de día: una persona no puede estar en dos zonas a la vez.',
+            $teacher->getFullName(),
+            mb_strtolower($weekday->label()),
+        );
     }
 
     /**
