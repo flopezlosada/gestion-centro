@@ -46,6 +46,9 @@ final class NotificationLink
             // at most a day ahead (see EventReminderOffset), so the event is either in today's "Con
             // hora" block or in "Próximos 7 días".
             str_starts_with($notification->getKind(), 'event.') => $this->urlGenerator->generate('app_homepage'),
+            // A space notice (a room change that affects you) opens the teacher's own list of changes,
+            // which shows every one in force — not just the plan that happened to trigger this notice.
+            str_starts_with($notification->getKind(), 'space.') => $this->urlGenerator->generate('space_mine'),
             // Anything else has nowhere better to go than the inbox itself.
             default => $this->urlGenerator->generate('notification_index'),
         };

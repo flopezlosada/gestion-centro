@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Entity\User;
 use App\Enum\Area;
 use App\Repository\AcademicYearRepository;
 use App\Repository\ScheduleEntryRepository;
+use App\Repository\SpacePlanAssignmentRepository;
 use App\Security\Voter\AreaVoter;
 use App\Service\SchoolCalendar;
 use App\Space\RoomOccupancy;
@@ -17,6 +19,7 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\CurrentUser;
 
 /**
  * "Aulas libres según el horario": for a chosen day and period, which spaces the timetable puts nobody
@@ -76,6 +79,32 @@ final class SpaceController extends AbstractController
             // which would report that room as free. Surface it instead of letting it be discovered as
             // two groups sent to the same place.
             'unlinkedCells' => $synchroniser->unlinkedCells(),
+        ]);
+    }
+
+    /**
+     * "Mis cambios de aula": the room changes in force that concern the person looking.
+     *
+     * Open to any signed-in user and scoped to themselves — like "mis guardias", and for the same
+     * reason: it is where the notice about a change lands, so gating it behind the Espacios area would
+     * send the affected teacher to a 403.
+     */
+    #[Route('/mis-cambios', name: 'space_mine', methods: ['GET'])]
+    public function mine(
+        #[CurrentUser] User $user,
+        AcademicYearRepository $years,
+        ScheduleEntryRepository $schedule,
+        SpacePlanAssignmentRepository $assignments,
+    ): Response {
+        $today = new \DateTimeImmutable('today');
+        $year = $years->findBySchoolYear(SchoolYear::current($today));
+
+        // From today on: what already happened is of no use to somebody asking where their next class is.
+        $horizon = null !== $year ? $year->getYearEnd() : $today->modify('+1 year');
+
+        return $this->render('space/mine.html.twig', [
+            'lines' => $assignments->inForceForTeacher($user, $today, $horizon),
+            'slotTimes' => $schedule->slotTimes($year),
         ]);
     }
 }

@@ -19,6 +19,7 @@ use App\Repository\RoomRepository;
 use App\Repository\ScheduleEntryRepository;
 use App\Repository\SpacePlanRepository;
 use App\Security\Voter\AreaVoter;
+use App\Space\SpacePlanNotifier;
 use App\Space\SpacePlanWorkflow;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
@@ -127,6 +128,58 @@ final class SpacePlanController extends AbstractController
             // while they can still fix it.
             'clashes' => null !== $shown && $plan->getStatus()->isEditable() ? $workflow->clashes($plan, $shown) : [],
         ]);
+    }
+
+    /**
+     * The publishable document: the approved plan laid out to be read on paper, in the three ways the
+     * centre actually needs it — by group (for the students), by space (for the doors and conserjería)
+     * and by teacher (for the staff room).
+     *
+     * Open to any signed-in user, deliberately: this is the digital version of the notice board, and it
+     * is where the notice each affected teacher receives points. Gating it behind the Espacios area
+     * would send them to a 403. Only the equipo directivo may look at one that is not approved yet.
+     */
+    #[Route('/{id}/documento', name: 'space_plan_document', requirements: ['id' => '\d+'], methods: ['GET'])]
+    public function document(SpacePlan $plan, Request $request, ScheduleEntryRepository $schedule): Response
+    {
+        if (!$plan->getStatus()->isInForce() && !$this->isGranted(AreaVoter::WRITE, Area::ESPACIOS)) {
+            throw $this->createNotFoundException('Ese plan todavía no está aprobado.');
+        }
+
+        $view = $request->query->getString('vista');
+        $view = \in_array($view, ['grupo', 'espacio', 'docente'], true) ? $view : 'grupo';
+        $option = $plan->getChosenOption() ?? ($plan->getOptions()->toArray()[0] ?? null);
+
+        return $this->render('space/plan/document.html.twig', [
+            'plan' => $plan,
+            'option' => $option,
+            'view' => $view,
+            'sections' => null !== $option ? $this->group($option->getAssignments()->toArray(), $view) : [],
+            'slotTimes' => $schedule->slotTimes($plan->getAcademicYear()),
+        ]);
+    }
+
+    #[Route('/{id}/avisar', name: 'space_plan_notify', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function notify(SpacePlan $plan, Request $request, SpacePlanNotifier $notifier): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ESPACIOS);
+        $this->assertCsrf($request, 'space_plan_notify'.$plan->getId());
+
+        try {
+            $told = $notifier->notify($plan);
+        } catch (\LogicException $e) {
+            $this->addFlash('error', $e->getMessage());
+
+            return $this->redirectToRoute('space_plan_show', ['id' => $plan->getId()]);
+        }
+
+        $this->addFlash('success', match ($told) {
+            0 => 'No había a quién avisar: ninguna línea tiene un profesor asociado.',
+            1 => 'Avisada 1 persona (aviso en la aplicación, correo y móvil).',
+            default => sprintf('Avisadas %d personas (aviso en la aplicación, correo y móvil).', $told),
+        });
+
+        return $this->redirectToRoute('space_plan_show', ['id' => $plan->getId()]);
     }
 
     #[Route('/{id}/generar', name: 'space_plan_generate', requirements: ['id' => '\d+'], methods: ['POST'])]
@@ -304,6 +357,55 @@ final class SpacePlanController extends AbstractController
             'form' => $form,
             'plan' => $plan,
         ]);
+    }
+
+    /**
+     * Groups a plan's lines the way one of the three document views reads them: by group, by space or by
+     * teacher, each section ordered by day and period.
+     *
+     * A line with several groups ("E1A, E1B", a split period) appears under EACH of them in the "by
+     * group" view: a student looking for their own group must find it, whoever else shares the room.
+     *
+     * @param list<SpacePlanAssignment> $assignments the lines
+     * @param string                    $view        'grupo', 'espacio' or 'docente'
+     *
+     * @return array<string, list<SpacePlanAssignment>> heading → its lines
+     */
+    private function group(array $assignments, string $view): array
+    {
+        $sections = [];
+        foreach ($assignments as $assignment) {
+            foreach ($this->headingsFor($assignment, $view) as $heading) {
+                $sections[$heading][] = $assignment;
+            }
+        }
+
+        ksort($sections, \SORT_NATURAL | \SORT_FLAG_CASE);
+        foreach ($sections as &$lines) {
+            usort($lines, static fn (SpacePlanAssignment $a, SpacePlanAssignment $b): int => [$a->getDate(), $a->getSlotIndex()] <=> [$b->getDate(), $b->getSlotIndex()]);
+        }
+
+        return $sections;
+    }
+
+    /**
+     * The headings one line belongs under in a given view.
+     *
+     * @param SpacePlanAssignment $assignment the line
+     * @param string              $view       'grupo', 'espacio' or 'docente'
+     *
+     * @return list<string> its headings (several only in the "by group" view)
+     */
+    private function headingsFor(SpacePlanAssignment $assignment, string $view): array
+    {
+        return match ($view) {
+            'espacio' => [$assignment->getRoom()?->getCode() ?? 'Sin aula asignada'],
+            'docente' => [$assignment->getTeacher()?->getFullName() ?? 'Sin profesor asignado'],
+            default => array_map(
+                static fn (string $g): string => trim($g),
+                explode(',', $assignment->getGroupNames() ?? ($assignment->getActivityTitle() ?? 'Sin grupo')),
+            ),
+        };
     }
 
     /**

@@ -1,9 +1,9 @@
 # Gestión de espacios — plan y modelo de datos
 
 > Diseño del apartado **C** del volcado de requisitos del centro (30-07-2026): puntos 11, 12, 13 y 14.
-> **Estado: fases 1 y 2 implementadas** (catálogo de espacios, "aulas libres", planes con propuestas,
-> edición manual y aprobación); de la 3 en adelante esto sigue siendo diseño. Las decisiones que quedan
-> abiertas están en §9.
+> **Estado: fases 1, 2 y 3 implementadas** (catálogo de espacios, "aulas libres", planes con propuestas,
+> edición manual, aprobación, aviso a los afectados y documento imprimible); de la 4 en adelante esto
+> sigue siendo diseño. Las decisiones que quedan abiertas están en §9.
 
 ---
 
@@ -358,7 +358,7 @@ Cada fase entrega valor por sí sola y se puede parar ahí.
 |---|---|---|
 | **F1 — Catálogo y ocupación** ✅ **HECHA** | `Room` + FK en `ScheduleEntry` + `RoomSynchroniser` (+ `app:sync-rooms`) + catálogo en `/espacios/catalogo` + `RoomOccupancy` + pantalla **"Aulas libres"** en `/espacios` + área `ESPACIOS` en la matriz de roles | Valor inmediato **sin ningún motor**: resuelve el punto A.2 (agrupar guardias en un aula grande) y es la base de todo lo demás |
 | **F2 — Plan de cambio de aula** ✅ **HECHA** | `SpacePlan`, `SpacePlanActivity`, `SpacePlanOption`, `SpacePlanAssignment` + `RelocationSolver` (puro) + `RelocationProposer` + `SpacePlanWorkflow` + pantallas de crear/comparar/editar/aprobar; la rejilla efectiva vive dentro de `RoomOccupancy` | El punto 11 completo |
-| **F3 — Aviso y documento** | Notificación a afectados + documento imprimible + enlace público | El punto 12. A partir de aquí el módulo es usable de verdad |
+| **F3 — Aviso y documento** ✅ **HECHA** (sin el enlace público) | `SpacePlanNotifier` (un aviso por persona con SUS líneas) + `/espacios/mis-cambios` para el docente + documento imprimible en tres vistas (por grupo, por espacio, por profesor) con su CSS de impresión | El punto 12. El enlace público sin login espera la respuesta del centro (§9.2); mientras tanto se imprime a PDF desde el navegador y lo sube quien quiera |
 | **F4 — Semana de exámenes** | Preset `EXAM_PERIOD` + `substitution_scope = GROUPS` + estrategia `STABLE_ROOM` | El punto 13. Casi todo es configuración de lo ya hecho |
 | **F5 — Jornadas culturales** | `SpacePlanAssignmentStaff` + `WorkshopProposer` + cupos por docente | El punto 14 |
 | **F6 — Integración con guardias** | El parte lee el aula efectiva; crear un plan desde el parte de guardias | Cierra los puntos A.2 y A.3 y elimina la desincronización del §5 |

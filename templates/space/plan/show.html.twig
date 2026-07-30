@@ -30,6 +30,13 @@
             {% if plan.publicReason %}<p class="muted">{{ plan.publicReason }}</p>{% endif %}
         </div>
         <div class="parte-panel__actions">
+            {% if plan.status.isInForce %}
+                <a class="btn secondary" href="{{ path('space_plan_document', { id: plan.id }) }}">Ver documento</a>
+                <form method="post" action="{{ path('space_plan_notify', { id: plan.id }) }}" class="inline-form"{% if plan.notifiedAt %} data-confirm="Ya se avisó el {{ plan.notifiedAt|date('d/m/Y', false) }}. ¿Volver a avisar a todos los afectados?"{% endif %}>
+                    <input type="hidden" name="_token" value="{{ csrf_token('space_plan_notify' ~ plan.id) }}">
+                    <button type="submit" class="btn">{{ plan.notifiedAt ? 'Volver a avisar' : 'Avisar a los afectados' }}</button>
+                </form>
+            {% endif %}
             {% if editable %}
                 <a class="btn secondary" href="{{ path('space_plan_edit', { id: plan.id }) }}">Editar datos</a>
                 <form method="post" action="{{ path('space_plan_generate', { id: plan.id }) }}" class="inline-form">
@@ -50,7 +57,9 @@
         <div class="callout" role="note">
             <p><strong>Aprobado{% if plan.approvedBy %} por {{ plan.approvedBy.fullName }}{% endif %}{% if plan.approvedAt %} el {{ plan.approvedAt|date('d/m/Y', false) }}{% endif %}.</strong> Manda sobre el horario en esas fechas: quien consulte las aulas libres verá estos cambios.</p>
             {% if plan.notifiedAt is null %}
-                <p>Todavía <strong>no se ha avisado</strong> a las personas afectadas.</p>
+                <p>Todavía <strong>no se ha avisado</strong> a las personas afectadas. Cada una recibirá un solo aviso con las líneas que le tocan a ella.</p>
+            {% else %}
+                <p>Avisado el {{ plan.notifiedAt|date('d/m/Y', false) }} a las {{ plan.notifiedAt|date('H:i', false) }}.</p>
             {% endif %}
         </div>
     {% endif %}

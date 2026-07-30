@@ -80,6 +80,52 @@ final class SpacePlanPageTest extends WebTestCase
         self::assertSame(403, $this->client->getResponse()->getStatusCode());
     }
 
+    public function testTheDocumentOfAnApprovedPlanIsOpenToAnybodySignedIn(): void
+    {
+        // It is the digital notice board, and it is where the notice sent to each affected teacher
+        // points: gating it behind the area would send them to a 403.
+        $author = $this->login(PermissionLevel::WRITE);
+        $plan = $this->plan($author, SpacePlanStatus::APPROVED);
+
+        $plain = (new User())->setFullName('Docente Sin Permisos')->setEmail('profe@centro.test');
+        $this->em->persist($plain);
+        $this->em->flush();
+        $this->client->loginUser($plain);
+
+        $this->client->request('GET', '/espacios/planes/'.$plan->getId().'/documento');
+
+        self::assertResponseIsSuccessful();
+    }
+
+    public function testTheDocumentOfAPlanThatIsNotApprovedIsHiddenFromEverybodyElse(): void
+    {
+        $author = $this->login(PermissionLevel::WRITE);
+        $plan = $this->plan($author, SpacePlanStatus::DRAFT);
+
+        $plain = (new User())->setFullName('Docente Sin Permisos')->setEmail('profe@centro.test');
+        $this->em->persist($plain);
+        $this->em->flush();
+        $this->client->loginUser($plain);
+
+        $this->client->request('GET', '/espacios/planes/'.$plan->getId().'/documento');
+
+        self::assertSame(404, $this->client->getResponse()->getStatusCode(), 'an undecided plan is nobody else\'s business');
+    }
+
+    public function testAPlanThatIsNotApprovedCannotBeAnnounced(): void
+    {
+        $author = $this->login(PermissionLevel::WRITE);
+        $plan = $this->plan($author, SpacePlanStatus::PROPOSED);
+
+        $this->client->request('POST', '/espacios/planes/'.$plan->getId().'/avisar', [
+            '_token' => (string) self::getContainer()->get('security.csrf.token_manager')->getToken('space_plan_notify'.$plan->getId()),
+        ]);
+
+        self::assertResponseRedirects('/espacios/planes/'.$plan->getId());
+        $this->em->clear();
+        self::assertNull($this->em->getRepository(SpacePlan::class)->find($plan->getId())?->getNotifiedAt());
+    }
+
     /**
      * Logs in a user with the given level on the Espacios area.
      *
