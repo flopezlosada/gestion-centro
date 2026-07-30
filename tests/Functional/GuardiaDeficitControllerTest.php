@@ -97,6 +97,34 @@ final class GuardiaDeficitControllerTest extends WebTestCase
         self::assertResponseStatusCodeSame(403);
     }
 
+    public function testEveryMutationIsDeniedWithoutWriteAccess(): void
+    {
+        // The gate is checked BEFORE the CSRF token on purpose, so a teacher without write access is
+        // refused whatever they post. Pinned for all four mutations at once: a future reordering that put
+        // the CSRF check first would turn these into 403s for the wrong reason, and one that dropped the
+        // gate would let a plain teacher rearrange the centre's rooms.
+        $this->login(coordinator: false);
+        $support = (new GuardiaSupport())->setTeacher($this->user('Zoe Liberada', 'zoe@centro.test'))->setDate(new \DateTimeImmutable(self::MONDAY))->setSlotIndex(0);
+        $grouping = (new GuardiaGrouping())->setDate(new \DateTimeImmutable(self::MONDAY))->setSlotIndex(0)->setRoomName('BIBL');
+        $this->em->persist($support);
+        $this->em->persist($grouping);
+        $this->em->flush();
+
+        foreach ([
+            '/guardias/apoyo',
+            '/guardias/apoyo/'.$support->getId().'/quitar',
+            '/guardias/agrupar',
+            '/guardias/agrupacion/'.$grouping->getId().'/deshacer',
+        ] as $action) {
+            $this->client->request('POST', $action, ['date' => self::MONDAY, 'slot' => '0']);
+            self::assertResponseStatusCodeSame(403, $action.' debe exigir escritura en el área de guardias');
+        }
+
+        $this->em->clear();
+        self::assertNotNull($this->em->getRepository(GuardiaSupport::class)->find((int) $support->getId()), 'nothing was removed');
+        self::assertNotNull($this->em->getRepository(GuardiaGrouping::class)->find((int) $grouping->getId()));
+    }
+
     public function testSigningUpSupportMakesTheColleagueAvailableForThatPeriodOnly(): void
     {
         $this->login();

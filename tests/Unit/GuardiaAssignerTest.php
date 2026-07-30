@@ -139,6 +139,24 @@ final class GuardiaAssignerTest extends TestCase
         );
     }
 
+    public function testSequenceCyclesThroughTheFreeAndTheAlreadyBusyAlike(): void
+    {
+        // The least obvious path, and the one the real deficit produces: prioritise() hands back the free
+        // teacher followed by the ones already carrying something, and the cycle then walks the WHOLE list
+        // again — the free one does not get a third before the busy ones get their extra.
+        $candidates = [
+            $this->guardia('Ana', 0, 0),
+            $this->doubling('Bea', hereLoad: 1),
+            $this->doubling('Carlos', hereLoad: 2),
+        ];
+
+        self::assertSame(
+            ['Ana', 'Bea', 'Carlos', 'Ana'],
+            $this->names($this->assigner->sequence(4, $candidates)),
+            'four groups over one free teacher and two already busy: least burdened first, then round again',
+        );
+    }
+
     public function testSequenceMatchesPrioritiseWhenThereIsNoDeficit(): void
     {
         $candidates = [$this->guardia('Ana', 0, 0), $this->guardia('Bea', 0, 0), $this->collaborator('Convivencia', 0, 0)];

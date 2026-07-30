@@ -36,7 +36,7 @@
                         <span class="assignsheet__load" title="{{ c.slotLoad }} guardia(s) en este tramo">{{ c.slotLoad }}</span>
                         <span class="assignsheet__name">{{ c.teacher.fullName }}
                             {% if c.band.label %}<span class="badge badge--accent" title="{{ c.band.hint }}">{{ c.band.label }}</span>{% endif %}
-                            {% if c.doublingUp %}<span class="badge badge--warning" title="Ya cubre {{ (assignedHere[c.teacher.id] ?? [])|join(', ') }} a esta hora">Ya cubre {{ c.hereLoad }}</span>{% endif %}
+                            {% if c.doublingUp %}<span class="badge badge--warning" title="Ya cubre {{ (assignedHere[c.teacher.id] ?? [])|join(', ') }} a esta hora">Ya lleva {{ c.hereLoad }} guardia{{ c.hereLoad == 1 ? '' : 's' }}</span>{% endif %}
                         </span>
                         <button type="submit" class="btn btn-sm{{ (c.doublingUp or c.slotLoad > 0) ? ' secondary' : '' }}">{{ c.doublingUp ? 'Doblar' : 'Asignar' }}</button>
                     </form>
@@ -224,11 +224,10 @@
                                 {% if sinCubrir and canWrite %}
                                     {{ parte.assign_sheet(cover, candidates, pool, assignedHere, slotLabel) }}
                                 {% elseif cover.assignedGuardia %}
-                                    {% set aQue = assignedHere[cover.assignedGuardia.id] ?? [] %}
                                     <div class="parte-card__foot">
                                         <span class="parte-card__avatar" aria-hidden="true">{{ cover.assignedGuardia.fullName|initials }}</span>
                                         <span class="parte-card__covers">Cubre <b>{{ cover.assignedGuardia.fullName }}</b></span>
-                                        {% if (workUnits[cover.assignedGuardia.id] ?? 1) > 1 and not cover.grouping %}<span class="badge badge--warning" title="Cubre {{ aQue|join(', ') }} a esta hora en sitios distintos">×{{ aQue|length }}</span>{% endif %}
+                                        {% if (workUnits[cover.assignedGuardia.id] ?? 1) > 1 and not cover.grouping %}<span class="badge badge--warning" title="Lleva {{ workUnits[cover.assignedGuardia.id] }} guardias a esta hora en sitios distintos">×{{ workUnits[cover.assignedGuardia.id] }}</span>{% endif %}
                                         {% if canWrite %}<a class="parte-card__change" href="{{ path('guardia_cover_edit', { id: cover.id }) }}">Cambiar</a>{% endif %}
                                     </div>
                                 {% endif %}
@@ -273,8 +272,7 @@
                                             <span class="badge badge--danger">No se cubrió</span>
                                             {% if cover.assignedGuardia %}<span class="muted"> · {{ cover.assignedGuardia.fullName }}</span>{% endif %}
                                         {% elseif cover.assignedGuardia %}
-                                            {% set aQue = assignedHere[cover.assignedGuardia.id] ?? [] %}
-                                            <span class="parte-who">
+                                                    <span class="parte-who">
                                                 <span class="parte-who__avatar" aria-hidden="true">{{ cover.assignedGuardia.fullName|initials }}</span>{{ cover.assignedGuardia.fullName }}
                                             </span>
                                             {# El ámbar señala la fila que hay que resolver: este profesor lleva
@@ -282,7 +280,9 @@
                                                una fila ya agrupada el «→ aula» cuenta la historia y el aviso
                                                solo invitaría a agrupar lo que ya está agrupado. #}
                                             {% if (workUnits[cover.assignedGuardia.id] ?? 1) > 1 and not cover.grouping %}
-                                                <span class="badge badge--warning" title="Cubre {{ aQue|join(', ') }} a esta hora en sitios distintos: júntalos en un aula y contará como una guardia">Doble guardia</span>
+                                                {# «{{ n }} guardias», no la lista de grupos: si algunos ya van
+                                                   juntos, enumerarlos como «sitios distintos» sería falso. #}
+                                                <span class="badge badge--warning" title="Lleva {{ workUnits[cover.assignedGuardia.id] }} guardias a esta hora en sitios distintos; esta clase va aparte. Júntala con otra en un aula y contarán como una.">Doble guardia</span>
                                             {% endif %}
                                         {% elseif canWrite %}
                                             {# La misma hoja que en móvil: asignar sin salir del parte es

@@ -41,6 +41,8 @@ use Symfony\Component\Routing\Attribute\Route;
 #[Route('/guardias')]
 final class GuardiaDeficitController extends AbstractController
 {
+    use GuardiaParteTrait;
+
     /**
      * The "aulas libres" sheet for a day: period by period, which rooms nobody is teaching in, biggest
      * first. Printable for the noticeboard, and the same figures the grouping screen offers as options.
@@ -374,29 +376,4 @@ final class GuardiaDeficitController extends AbstractController
         return $this->redirectToRoute('guardia_grouping_new', ['date' => $date->format('Y-m-d'), 'slot' => $slotIndex]);
     }
 
-    /**
-     * Validates the CSRF token for an action or denies access.
-     *
-     * @param Request $request the current request
-     * @param string  $id      the CSRF token id
-     */
-    private function assertCsrf(Request $request, string $id): void
-    {
-        if (!$this->isCsrfTokenValid($id, (string) $request->request->get('_token'))) {
-            throw $this->createAccessDeniedException('Token CSRF inválido.');
-        }
-    }
-
-    /**
-     * Redirects back to the parte for a date and period.
-     *
-     * @param \DateTimeImmutable $date      the day
-     * @param int                $slotIndex the period index
-     *
-     * @return Response the redirect
-     */
-    private function backToParte(\DateTimeImmutable $date, int $slotIndex): Response
-    {
-        return $this->redirectToRoute('guardia_index', ['date' => $date->format('Y-m-d'), 'slot' => $slotIndex]);
-    }
 }

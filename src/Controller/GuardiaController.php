@@ -57,6 +57,8 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
 #[Route('/guardias')]
 final class GuardiaController extends AbstractController
 {
+    use GuardiaParteTrait;
+
     /** Size ceiling for an uploaded task document; larger ones are rejected with a warning. */
     private const int MAX_TASK_DOCUMENT_BYTES = 10 * 1024 * 1024;
 
@@ -1190,29 +1192,4 @@ final class GuardiaController extends AbstractController
         return $schedule->slotTimes($year);
     }
 
-    /**
-     * Validates the CSRF token for an action or denies access.
-     *
-     * @param Request $request the current request
-     * @param string  $id      the CSRF token id
-     */
-    private function assertCsrf(Request $request, string $id): void
-    {
-        if (!$this->isCsrfTokenValid($id, (string) $request->request->get('_token'))) {
-            throw $this->createAccessDeniedException('Token CSRF inválido.');
-        }
-    }
-
-    /**
-     * Redirects back to the parte for a date and period.
-     *
-     * @param \DateTimeImmutable $date      the day
-     * @param int                $slotIndex the period index
-     *
-     * @return Response the redirect
-     */
-    private function backToParte(\DateTimeImmutable $date, int $slotIndex): Response
-    {
-        return $this->redirectToRoute('guardia_index', ['date' => $date->format('Y-m-d'), 'slot' => $slotIndex]);
-    }
 }
