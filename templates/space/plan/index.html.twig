@@ -1,0 +1,62 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Planes de espacios{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('space_index') }}">Espacios</a><span class="sep">/</span>Planes{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Espacios</p>
+            <h1>Planes de espacios</h1>
+            <p class="lead">Cambios de aula por talleres, pruebas externas o exámenes. El programa propone, tú decides, y solo lo aprobado cambia el horario.</p>
+        </div>
+        <a class="btn" href="{{ path('space_plan_new') }}">+ Nuevo plan</a>
+    </div>
+
+    {% if year is null %}
+        <div class="callout callout--warning" role="alert">
+            <p>No hay estructura de curso para hoy: créala en <a href="{{ path('admin_academic_year_index') }}">Años escolares</a> antes de planificar.</p>
+        </div>
+    {% endif %}
+
+    <div class="card">
+        {% if plans is empty %}
+            <div class="empty-state">
+                <h2>Todavía no hay ningún plan</h2>
+                <p>Un plan es cualquier cosa que mueva a los grupos de sitio: un taller que ocupa aulas, una prueba externa, la semana de exámenes.</p>
+                <a class="btn" href="{{ path('space_plan_new') }}">Crear el primero</a>
+            </div>
+        {% else %}
+            <table data-list-tools>
+                <thead>
+                    <tr><th>Plan</th><th>Fechas</th><th>Tipo</th><th>Estado</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for plan in plans %}
+                        <tr>
+                            <td>
+                                <a href="{{ path('space_plan_show', { id: plan.id }) }}"><strong>{{ plan.title }}</strong></a>
+                                {% if plan.publicReason %}<div class="muted">{{ plan.publicReason }}</div>{% endif %}
+                            </td>
+                            <td>
+                                {{ plan.dateFrom|date('d/m/Y', false) }}
+                                {%- if plan.dateTo != plan.dateFrom %} – {{ plan.dateTo|date('d/m/Y', false) }}{% endif %}
+                            </td>
+                            <td class="muted">{{ plan.kind.label }}</td>
+                            <td>
+                                <span class="badge {{ plan.status.badgeClass }}">{{ plan.status.label }}</span>
+                                {% if plan.status.isInForce and plan.notifiedAt is null %}
+                                    <span class="badge badge--warning" title="Aprobado pero nadie lo sabe todavía">Sin avisar</span>
+                                {% endif %}
+                            </td>
+                            <td class="row-actions">
+                                <a href="{{ path('space_plan_show', { id: plan.id }) }}">Ver</a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}

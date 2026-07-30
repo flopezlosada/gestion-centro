@@ -1,0 +1,125 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Tests\Functional;
+
+use App\Entity\AcademicYear;
+use App\Entity\Role;
+use App\Entity\SpacePlan;
+use App\Entity\User;
+use App\Enum\Area;
+use App\Enum\PermissionLevel;
+use App\Enum\SpacePlanStatus;
+use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Bundle\FrameworkBundle\KernelBrowser;
+use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+
+/**
+ * Who may touch a plan, and what an approved plan refuses to let anybody do.
+ *
+ * A plan decides where groups go, so the whole workflow needs WRITE on {@see Area::ESPACIOS} — read
+ * access to the free-rooms consultation is not enough. And once approved, a plan is what the centre is
+ * doing: editing it silently would leave the notices and the printed boards saying something else.
+ */
+final class SpacePlanPageTest extends WebTestCase
+{
+    private KernelBrowser $client;
+    private EntityManagerInterface $em;
+
+    protected function setUp(): void
+    {
+        $this->client = static::createClient();
+        $this->em = self::getContainer()->get(EntityManagerInterface::class);
+    }
+
+    public function testReadAccessIsNotEnoughToSeeThePlans(): void
+    {
+        $this->login(PermissionLevel::READ);
+        $this->client->request('GET', '/espacios/planes');
+
+        self::assertSame(403, $this->client->getResponse()->getStatusCode());
+    }
+
+    public function testWriteAccessSeesTheList(): void
+    {
+        $this->login(PermissionLevel::WRITE);
+        $this->client->request('GET', '/espacios/planes');
+
+        self::assertResponseIsSuccessful();
+    }
+
+    public function testAnApprovedPlanCannotBeEdited(): void
+    {
+        $user = $this->login(PermissionLevel::WRITE);
+        $plan = $this->plan($user, SpacePlanStatus::APPROVED);
+
+        $this->client->request('GET', '/espacios/planes/'.$plan->getId().'/editar');
+
+        self::assertSame(403, $this->client->getResponse()->getStatusCode(), 'what the centre is doing is not a draft');
+    }
+
+    public function testADraftPlanShowsItsPageWithNoOptionsYet(): void
+    {
+        $user = $this->login(PermissionLevel::WRITE);
+        $plan = $this->plan($user, SpacePlanStatus::DRAFT);
+
+        $crawler = $this->client->request('GET', '/espacios/planes/'.$plan->getId());
+
+        self::assertResponseIsSuccessful();
+        self::assertStringContainsString('Sin propuestas todavía', $crawler->filter('body')->text());
+    }
+
+    public function testGeneratingWithABadCsrfTokenIsRejected(): void
+    {
+        $user = $this->login(PermissionLevel::WRITE);
+        $plan = $this->plan($user, SpacePlanStatus::DRAFT);
+
+        $this->client->request('POST', '/espacios/planes/'.$plan->getId().'/generar', ['_token' => 'no']);
+
+        self::assertSame(403, $this->client->getResponse()->getStatusCode());
+    }
+
+    /**
+     * Logs in a user with the given level on the Espacios area.
+     *
+     * @param PermissionLevel $level the level to grant
+     */
+    private function login(PermissionLevel $level): User
+    {
+        $role = (new Role())->setCode('espacios_test')->setName('Prueba de espacios')->setLevel(Area::ESPACIOS, $level);
+        $this->em->persist($role);
+        $user = (new User())->setFullName('Directora Test')->setEmail('direccion@centro.test');
+        $user->addAssignedRole($role);
+        $this->em->persist($user);
+        $this->em->flush();
+        $this->client->loginUser($user);
+
+        return $user;
+    }
+
+    private function plan(User $user, SpacePlanStatus $status): SpacePlan
+    {
+        $year = (new AcademicYear())
+            ->setSchoolYear('2025-2026')
+            ->setTerm1Start(new \DateTimeImmutable('2025-09-15'))
+            ->setTerm1End(new \DateTimeImmutable('2025-12-22'))
+            ->setTerm2Start(new \DateTimeImmutable('2026-01-08'))
+            ->setTerm2End(new \DateTimeImmutable('2026-03-27'))
+            ->setTerm3Start(new \DateTimeImmutable('2026-04-07'))
+            ->setTerm3End(new \DateTimeImmutable('2026-06-22'));
+        $this->em->persist($year);
+
+        $plan = (new SpacePlan())
+            ->setAcademicYear($year)
+            ->setCreatedBy($user)
+            ->setTitle('Talleres de prueba')
+            ->setDateFrom(new \DateTimeImmutable('2026-01-12'))
+            ->setDateTo(new \DateTimeImmutable('2026-01-12'))
+            ->setStatus($status);
+        $this->em->persist($plan);
+        $this->em->flush();
+
+        return $plan;
+    }
+}

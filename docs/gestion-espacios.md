@@ -1,8 +1,9 @@
 # Gestión de espacios — plan y modelo de datos
 
 > Diseño del apartado **C** del volcado de requisitos del centro (30-07-2026): puntos 11, 12, 13 y 14.
-> **Estado: la fase 1 (catálogo de espacios + "aulas libres") está implementada** (§8); de la 2 en
-> adelante esto sigue siendo diseño. Las decisiones que quedan abiertas están en §9.
+> **Estado: fases 1 y 2 implementadas** (catálogo de espacios, "aulas libres", planes con propuestas,
+> edición manual y aprobación); de la 3 en adelante esto sigue siendo diseño. Las decisiones que quedan
+> abiertas están en §9.
 
 ---
 
@@ -217,18 +218,16 @@ La unidad común a los tres casos. Es lo que se imprime, lo que se notifica y lo
 las tres alternativas. Son decenas de filas; a cambio, **una alternativa es autocontenida**: el
 documento y la rejilla efectiva leen un solo sitio en vez de unir enunciado + variación.
 
-### 4.6 `SpacePlanAssignmentStaff` — quién está en cada línea (tabla `space_plan_assignment_staff`)
+### 4.6 ~~`SpacePlanAssignmentStaff`~~ — **descartada al implementar**
 
-| Columna | Tipo | Notas |
-|---|---|---|
-| `assignment_id` | FK, PK compuesta | |
-| `user_id` | FK, PK compuesta | |
-| `role` | enum | `RESPONSIBLE` \| `SUPPORT` |
+El diseño original preveía una tabla de unión línea↔docente para poder contar cuántas sesiones cubre
+cada profe en unas jornadas culturales. Al implementar la fase 2 quedó claro que **una FK
+`SpacePlanAssignment.teacher` (nullable) basta hoy**: en un cambio de aula el afectado es el docente de
+la clase movida, y una sesión de taller tiene un responsable. La tabla de unión resuelve un problema que
+todavía no existe (talleres con dos docentes) y complica el aviso, que es lo que sí existe.
 
-*Por qué una tabla y no una FK en la línea*: el centro pide explícitamente **contar cuántas sesiones
-cubre cada profe** ("dos sesiones y dos guardias, o cuatro guardias y una sesión") y avisar a cada uno.
-Con una sola FK, un taller con dos docentes no se puede contar ni avisar bien. El coste es una tabla de
-unión trivial; el beneficio es que el reparto equitativo es contable con un `GROUP BY`.
+Si en la fase 5 el centro confirma que un taller lleva más de un docente, se añade entonces — con el
+dato real delante en vez de la especulación.
 
 ---
 
@@ -358,7 +357,7 @@ Cada fase entrega valor por sí sola y se puede parar ahí.
 | Fase | Qué entra | Qué desbloquea |
 |---|---|---|
 | **F1 — Catálogo y ocupación** ✅ **HECHA** | `Room` + FK en `ScheduleEntry` + `RoomSynchroniser` (+ `app:sync-rooms`) + catálogo en `/espacios/catalogo` + `RoomOccupancy` + pantalla **"Aulas libres"** en `/espacios` + área `ESPACIOS` en la matriz de roles | Valor inmediato **sin ningún motor**: resuelve el punto A.2 (agrupar guardias en un aula grande) y es la base de todo lo demás |
-| **F2 — Plan de cambio de aula** | `SpacePlan`, `SpacePlanActivity`, `SpacePlanOption`, `SpacePlanAssignment` + `RelocationProposer` + pantallas de crear/comparar/editar/aprobar + `EffectiveTimetable` | El punto 11 completo |
+| **F2 — Plan de cambio de aula** ✅ **HECHA** | `SpacePlan`, `SpacePlanActivity`, `SpacePlanOption`, `SpacePlanAssignment` + `RelocationSolver` (puro) + `RelocationProposer` + `SpacePlanWorkflow` + pantallas de crear/comparar/editar/aprobar; la rejilla efectiva vive dentro de `RoomOccupancy` | El punto 11 completo |
 | **F3 — Aviso y documento** | Notificación a afectados + documento imprimible + enlace público | El punto 12. A partir de aquí el módulo es usable de verdad |
 | **F4 — Semana de exámenes** | Preset `EXAM_PERIOD` + `substitution_scope = GROUPS` + estrategia `STABLE_ROOM` | El punto 13. Casi todo es configuración de lo ya hecho |
 | **F5 — Jornadas culturales** | `SpacePlanAssignmentStaff` + `WorkshopProposer` + cupos por docente | El punto 14 |

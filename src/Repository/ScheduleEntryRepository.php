@@ -408,6 +408,31 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
+     * The groups a course's timetable knows about, alphabetically — what a plan offers when it asks
+     * "whose timetable does this replace?". Offered as a list rather than typed in because a group name
+     * that does not match the timetable exactly would silently replace nobody.
+     *
+     * @param AcademicYear $year the course whose timetable to read
+     *
+     * @return list<string> the group names
+     */
+    public function distinctGroupNames(AcademicYear $year): array
+    {
+        /** @var list<array{groupName: string}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('DISTINCT s.groupName AS groupName')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.groupName IS NOT NULL')
+            ->andWhere("TRIM(s.groupName) <> ''")
+            ->setParameter('year', $year)
+            ->orderBy('s.groupName', 'ASC')
+            ->getQuery()
+            ->getResult();
+
+        return array_map(static fn (array $r): string => $r['groupName'], $rows);
+    }
+
+    /**
      * How many timetable cells reference a space. Guards the catalogue's delete action: a room the
      * timetable uses may only be deactivated, never removed, or its cells would silently stop counting
      * as occupied.

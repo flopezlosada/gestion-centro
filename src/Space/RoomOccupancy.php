@@ -9,6 +9,8 @@ use App\Entity\Room;
 use App\Enum\Weekday;
 use App\Repository\RoomRepository;
 use App\Repository\ScheduleEntryRepository;
+use App\Repository\SpacePlanAssignmentRepository;
+use App\Repository\SpacePlanRepository;
 
 /**
  * Who is in which space at a given moment, and therefore which spaces are free.
@@ -18,20 +20,25 @@ use App\Repository\ScheduleEntryRepository;
  * merge groups into, and — from the next phase on — the engine that proposes where a displaced group
  * can go.
  *
- * ONE LIMITATION, STATED UP FRONT: this reads the timetable, and the timetable only knows about
- * lessons. A meeting, a rehearsal or a talk booked verbally occupies a room that this service will
- * report as free. That is why the screen is called "aulas libres SEGÚN EL HORARIO" and why a room can
- * be marked non-assignable ({@see Room::isAssignable()}) — the honest answer is "the timetable puts
- * nobody here", not "this room is free".
+ * It answers on the EFFECTIVE timetable, not the ordinary one: the weekly grid imported from Peñalara
+ * plus whatever the approved {@see \App\Entity\SpacePlan}s say about that particular day. A relocated
+ * lesson frees the room it came from and takes the one it went to; a group whose timetable a plan
+ * replaces (2º de Bachillerato during exam week) is in none. A plan that is not approved changes
+ * nothing here — that is the whole meaning of approving one.
  *
- * The date, not the weekday, is the input: a later phase adds the approved space plans that alter a
- * concrete day, and every caller already asking "on this date" will pick them up without changing.
+ * ONE LIMITATION, STATED UP FRONT: the ordinary half of that answer is the timetable, and the timetable
+ * only knows about lessons. A meeting, a rehearsal or a talk booked verbally occupies a room that this
+ * service will report as free. That is why the screen is called "aulas libres SEGÚN EL HORARIO" and why
+ * a room can be marked non-assignable ({@see Room::isAssignable()}) — the honest answer is "the
+ * timetable puts nobody here", not "this room is free".
  */
 final class RoomOccupancy
 {
     public function __construct(
         private readonly RoomRepository $rooms,
         private readonly ScheduleEntryRepository $schedule,
+        private readonly SpacePlanAssignmentRepository $assignments,
+        private readonly SpacePlanRepository $plans,
     ) {
     }
 
@@ -48,32 +55,79 @@ final class RoomOccupancy
     {
         $weekday = Weekday::from((int) $date->format('N'));
 
-        // Several cells can share one room in the same period: a split group (desdoble) or a whole-level
-        // activity is listed once per group. Fold them into one occupation per room, or the screen would
-        // report the same room twice and the free list would still be right by accident.
-        $occupations = [];
+        // What the approved plans say about this moment, read before the ordinary timetable because they
+        // override it: a moved lesson no longer occupies the room it came from, and a group whose
+        // timetable a plan replaces (2º de Bachillerato during exam week) is not in a classroom at all.
+        $lines = $this->assignments->inForceAt($date, $slotIndex);
+        $plans = $this->plans->approvedCovering($date);
+
+        $moved = [];
+        foreach ($lines as $line) {
+            $sourceId = $line->getSourceEntry()?->getId();
+            if (null !== $sourceId) {
+                $moved[$sourceId] = true;
+            }
+        }
+
+        // Several occupants can share one room in the same period: a split group (desdoble) or a
+        // whole-level activity is listed once per group. Fold them into one occupation per room, or the
+        // screen would report the same room twice and the free list would still be right by accident.
+        $entriesByRoom = [];
         foreach ($this->schedule->occupancyAt($year, $weekday, $slotIndex) as $entry) {
             $room = $entry->getRoom();
-            if (null === $room || null === $room->getId()) {
+            if (null === $room || null === $room->getId() || isset($moved[$entry->getId()])) {
+                continue;
+            }
+            if ($this->timetableReplaced($plans, $date, $slotIndex, $entry->getGroupName())) {
                 continue;
             }
 
-            $occupations[$room->getId()][] = $entry;
+            $entriesByRoom[$room->getId()][] = $entry;
+        }
+
+        $linesByRoom = [];
+        foreach ($lines as $line) {
+            $roomId = $line->getRoom()?->getId();
+            if (null !== $roomId) {
+                $linesByRoom[$roomId][] = $line;
+            }
         }
 
         $free = [];
         $occupied = [];
         foreach ($this->rooms->findActive() as $room) {
-            $entries = $occupations[$room->getId()] ?? [];
-            if ([] === $entries) {
+            $entries = $entriesByRoom[$room->getId()] ?? [];
+            $roomLines = $linesByRoom[$room->getId()] ?? [];
+            if ([] === $entries && [] === $roomLines) {
                 $free[] = $room;
                 continue;
             }
 
-            $occupied[] = new RoomOccupation($room, $entries);
+            $occupied[] = new RoomOccupation($room, $entries, $roomLines);
         }
 
         return new RoomAvailability($free, $occupied);
+    }
+
+    /**
+     * Whether some approved plan takes the given group out of the ordinary timetable at that moment.
+     *
+     * @param list<\App\Entity\SpacePlan> $plans     the approved plans covering the day
+     * @param \DateTimeImmutable          $date      the day
+     * @param int                         $slotIndex the period index
+     * @param string|null                 $groupName the group, or null for a cell with no group
+     *
+     * @return bool true when that group has no ordinary lesson then
+     */
+    private function timetableReplaced(array $plans, \DateTimeImmutable $date, int $slotIndex, ?string $groupName): bool
+    {
+        foreach ($plans as $plan) {
+            if ($plan->covers($date, $slotIndex) && $plan->replacesTimetableFor($groupName)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
