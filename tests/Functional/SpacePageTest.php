@@ -18,6 +18,7 @@ use App\Space\RoomSynchroniser;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\DomCrawler\Crawler;
 
 /**
  * The space module is gated by the {@see Area::ESPACIOS} matrix in two tiers: the free-rooms
@@ -109,7 +110,7 @@ final class SpacePageTest extends WebTestCase
         $roomId = $room->getId();
 
         $this->client->request('POST', '/espacios/catalogo/'.$roomId.'/borrar', [
-            '_token' => $this->csrf('space_room_delete'.$roomId),
+            '_token' => $this->tokenFrom('/espacios/catalogo/'.$roomId.'/borrar'),
         ]);
 
         self::assertResponseRedirects('/espacios/catalogo');
@@ -125,7 +126,7 @@ final class SpacePageTest extends WebTestCase
         $roomId = $room->getId();
 
         $this->client->request('POST', '/espacios/catalogo/'.$roomId.'/borrar', [
-            '_token' => $this->csrf('space_room_delete'.$roomId),
+            '_token' => $this->tokenFrom('/espacios/catalogo/'.$roomId.'/borrar'),
         ]);
 
         self::assertResponseRedirects('/espacios/catalogo');
@@ -156,7 +157,7 @@ final class SpacePageTest extends WebTestCase
         $this->lective($year, $teacher, Weekday::MONDAY, 0, '2IN5');
         $this->em->flush();
 
-        $this->client->request('POST', '/espacios/catalogo/sincronizar', ['_token' => $this->csrf('space_room_sync')]);
+        $this->client->request('POST', '/espacios/catalogo/sincronizar', ['_token' => $this->tokenFrom('/espacios/catalogo/sincronizar')]);
 
         self::assertResponseRedirects('/espacios/catalogo');
         $this->em->clear();
@@ -186,21 +187,35 @@ final class SpacePageTest extends WebTestCase
     }
 
     /**
-     * A CSRF token valid for the current session.
+     * The CSRF token the catalogue rendered for a given form.
      *
-     * The token manager stores tokens in the session, and outside a request there is none — asking it
-     * cold throws SessionNotFoundException. A GET first both starts the session and is what a person
-     * would have done anyway before pressing the button.
+     * Read from the page rather than asked of the token manager: tokens live in the session, and the
+     * test client reboots the kernel between requests, so a token minted outside a request either
+     * throws or belongs to a session the next request will not have. Same approach as
+     * {@see GuardiaPageTest}.
      *
-     * @param string $id the token id
+     * @param string $action the form's action attribute
      *
      * @return string the token value
      */
-    private function csrf(string $id): string
+    private function tokenFrom(string $action): string
     {
-        $this->client->request('GET', '/espacios/catalogo');
+        $crawler = $this->client->request('GET', '/espacios/catalogo');
 
-        return (string) self::getContainer()->get('security.csrf.token_manager')->getToken($id);
+        return $this->tokenIn($crawler, $action);
+    }
+
+    /**
+     * The token inside an already-rendered page.
+     *
+     * @param Crawler $crawler the rendered page
+     * @param string  $action  the form's action attribute
+     *
+     * @return string the token value
+     */
+    private function tokenIn(Crawler $crawler, string $action): string
+    {
+        return (string) $crawler->filter('form[action="'.$action.'"] input[name="_token"]')->attr('value');
     }
 
     private function academicYear(string $schoolYear): AcademicYear
