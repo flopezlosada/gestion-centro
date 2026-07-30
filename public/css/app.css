@@ -2399,6 +2399,37 @@ tr.is-not-covered { background: var(--danger-weak); }
     display: inline-flex; align-items: center; justify-content: center;
     border-radius: 999px; background: var(--surface-sunken); color: var(--text-muted);
 }
+/* Por qué un compañero figura como apoyo puntual: sin esto, el próximo coordinador no distingue un
+   arreglo deliberado de un error. */
+.mini-card-note { margin: 0; font-size: 12.5px; color: var(--text-faint); }
+
+/* ── Guardias · alta de apoyo puntual (dentro del panel de disponibles) ─────── */
+.support-add { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+.support-add__toggle { cursor: pointer; font-weight: 600; font-size: 13.5px; }
+.support-add__toggle:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-sm); }
+.support-add__form { display: flex; flex-direction: column; gap: 6px; max-width: 560px; margin-top: 10px; }
+.support-add__form button { align-self: flex-start; margin-top: 8px; }
+.support-add__lead { margin: 0 0 6px; font-size: 12.5px; color: var(--text-muted); }
+.support-add__form .field-label + * { margin-bottom: 6px; }
+
+/* ── Guardias · agrupaciones ya hechas en el tramo ──────────────────────────── */
+.grouping-existing { padding: 14px 16px; margin-bottom: 18px; }
+.grouping-existing__title { font-family: var(--font-display); font-weight: 500; font-size: 17px; margin: 0 0 10px; }
+.grouping-existing__row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 8px 0; }
+.grouping-existing__row + .grouping-existing__row { border-top: 1px solid var(--border); }
+.grouping-existing__row p { margin: 4px 0 0; font-size: 12.5px; }
+.grouping-form .form-row { margin-top: 18px; }
+
+/* ── Guardias · hoja de aulas libres ────────────────────────────────────────
+   Una tarjeta por tramo en rejilla: la pregunta es "a esta hora, ¿dónde puedo meter tres grupos?",
+   así que cada hora se lee sola y las aulas grandes van arriba con su prueba de aforo. */
+.rooms-sheet__note { margin: 0 0 14px; font-size: 12.5px; }
+.rooms-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.rooms-slot { padding: 14px 16px; }
+.rooms-slot__title { font-family: var(--font-display); font-weight: 500; font-size: 17px; margin: 0 0 10px; }
+.rooms-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.rooms-list__item { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.rooms-list__item.is-large { font-weight: 600; }
 
 /* ── Guardias · navegador de días (parte) ──────────────────────────────────── */
 .day-nav { display: flex; align-items: center; gap: 8px; }
@@ -3115,6 +3146,9 @@ tr.is-not-covered { background: var(--danger-weak); }
     border: 1px solid var(--border); border-radius: 13px; padding: 9px 11px;
 }
 .assignsheet__row.is-off { background: var(--surface-sunken); opacity: .68; }
+/* Doblar a alguien es la última opción: se ofrece, pero sin el mismo peso visual que a quien está
+   libre (borde de aviso en vez de fondo neutro), para que no se pulse por inercia. */
+.assignsheet__row.is-doubling { border-color: var(--warning); background: var(--warning-weak); }
 .assignsheet__load {
     flex: none; width: 30px; height: 30px; border-radius: 999px; background: var(--accent-weak);
     color: var(--accent); display: grid; place-items: center;
@@ -3127,6 +3161,11 @@ tr.is-not-covered { background: var(--danger-weak); }
 
 .parte-empty { padding: 6px 18px 20px; color: var(--text-muted); font-size: 13.5px; }
 .parte-empty p { margin: 0; }
+
+/* ---- Aviso de déficit de personal: texto a la izquierda, salidas a la derecha ---- */
+.parte-deficit { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: flex-start; justify-content: space-between; }
+.parte-deficit p { margin: 4px 0 0; }
+.parte-deficit__actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* ---- Quién está de guardia: referencia plegable ---- */
 .parte-pool { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }

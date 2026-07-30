@@ -112,6 +112,16 @@ class GuardiaCover implements Auditable
     #[ORM\Column(name: 'not_covered', type: Types::BOOLEAN)]
     private bool $notCovered = false;
 
+    /**
+     * The grouping this class was folded into, when several groups of the same period were sent to one
+     * room so a single teacher could mind them all. Null in the ordinary case — the group stays in its
+     * own room. Purely additive: {@see $roomName} still holds where the class WOULD have been, so undoing
+     * the grouping ({@code ON DELETE SET NULL}) loses nothing.
+     */
+    #[ORM\ManyToOne(targetEntity: GuardiaGrouping::class)]
+    #[ORM\JoinColumn(name: 'grouping_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?GuardiaGrouping $grouping = null;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -258,5 +268,29 @@ class GuardiaCover implements Auditable
         $this->notCovered = $notCovered;
 
         return $this;
+    }
+
+    public function getGrouping(): ?GuardiaGrouping
+    {
+        return $this->grouping;
+    }
+
+    public function setGrouping(?GuardiaGrouping $grouping): static
+    {
+        $this->grouping = $grouping;
+
+        return $this;
+    }
+
+    /**
+     * Where the class actually happens: the grouping's room when it was folded into one, otherwise the
+     * room from its own timetable. The single answer to "where do I go?", so no screen has to work it out
+     * again — and none of them can disagree.
+     *
+     * @return string|null the room short name, or null when the timetable had none
+     */
+    public function effectiveRoomName(): ?string
+    {
+        return $this->grouping?->getRoomName() ?? $this->roomName;
     }
 }

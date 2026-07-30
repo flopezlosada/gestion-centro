@@ -29,6 +29,7 @@
                     <span class="nav-section-title">Guardias</span>
                     <div class="nav-group">
                         <a href="{{ path('guardia_index') }}" class="{{ (route == 'guardia_index' or route starts with 'guardia_absence') ? 'is-active' }}">Parte del día</a>
+                        <a href="{{ path('guardia_rooms') }}" class="{{ route == 'guardia_rooms' ? 'is-active' }}">Aulas libres</a>
                         <a href="{{ path('guardia_history') }}" class="{{ route == 'guardia_history' ? 'is-active' }}">Histórico</a>
                         <a href="{{ path('guardia_stats') }}" class="{{ route == 'guardia_stats' ? 'is-active' }}">Estadísticas</a>
                         {# El recreo es otro carril: cuadrante fijo de curso y, cuando alguien falta, un
