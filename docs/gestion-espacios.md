@@ -369,24 +369,31 @@ Cada fase entrega valor por sí sola y se puede parar ahí.
 
 ## 9. Decisiones abiertas
 
-### Para el centro
+### Para el centro — ✅ TODAS RESPONDIDAS el 2026-07-30
 
-1. **Capacidad de las aulas y matrícula de los grupos.** Peñalara no exporta ninguna de las dos
-   (verificado sobre el planificador real). Sin capacidad, el motor no puede validar aforo: solo puede
-   ordenar por tamaño y dejar que el humano decida. ¿Rellenan la capacidad de las ~40 aulas en uso?
-   ¿Y la matrícula de los 39 grupos? Con las dos, el sistema avisa de "no cabe"; con una, orienta; sin
-   ninguna, solo propone.
-2. **Enlace público sin login.** ¿Aceptan que el documento sea accesible por URL secreta (con nombres de
-   docentes y grupos), o prefieren descargarlo y subirlo ellos a la web del centro?
-3. **Jornadas culturales: ¿el alumnado va por grupo o se inscribe individualmente a los talleres?** Si
-   hay inscripción individual, hace falta modelo de alumnado, que hoy **no existe** en la aplicación:
-   eso es otro módulo, no un campo más.
-4. **Semana de exámenes: ¿el sistema debe generar el calendario de exámenes** (qué materia, qué día, qué
-   hora) o solo reubicar los espacios que los exámenes desalojan? Lo segundo es esta fase; lo primero es
-   un módulo aparte con su propio conjunto de restricciones.
-5. **¿Quién aprueba un plan?** ¿Solo dirección y jefatura de estudios, o también coordinación?
-6. **¿Qué pasa con las clases ordinarias de un grupo que está de exámenes?** ¿Se dan igual o el nivel
-   entero queda fuera del horario ordinario esa semana? De esto depende `substitution_scope`.
+1. ~~Capacidad de las aulas y matrícula de los grupos~~ → **el centro mide en GRUPOS, no en alumnos.**
+   Respuesta literal: "aulas normales, aulas específicas de pequeño tamaño (para 15 alumnos/as), aulas
+   grandes de gran tamaño (para dos grupos, para más de tres grupos)". De ahí sale {@see RoomSize}, que
+   es ahora el criterio principal de tamaño; `capacity` en personas queda como dato opcional. Además:
+   **las pistas y el gimnasio no se usan para recolocar** aunque Peñalara los llame aulas → `assignable`
+   a false. La matrícula por grupo sigue sin existir y ya no hace falta para reubicar.
+2. ~~Enlace público sin login~~ → **NO.** Se imprime a PDF desde el navegador y lo suben ellos.
+3. ~~Jornadas culturales: ¿por grupo o inscripción individual?~~ → **grupo entero**, y a veces varios
+   grupos en el mismo taller y la misma aula. **No hace falta modelo de alumnado.** Además el equipo
+   directivo trae el calendario de talleres YA HECHO, así que el motor no tiene que repartir grupos:
+   solo asignar aula y profesorado (ver §6.2, que se simplifica).
+4. ~~Semana de exámenes: ¿generar el calendario?~~ → **no, solo recolocar aulas.** El calendario lo
+   hacen ellos.
+5. ~~¿Quién aprueba un plan?~~ → no preguntado: por defecto, quien tiene escritura en Administración.
+6. ~~¿Las clases ordinarias de un grupo en exámenes?~~ → **desaparecen**: "en los huecos entre exámenes
+   el alumnado de 2º de Bachillerato no tiene clase". Los exámenes duran **4 días**. Es exactamente
+   `substitution_scope = GROUPS`.
+
+⚠️ **Lo que NO se acepta de las respuestas:** el centro dice dos veces "te doy el calendario en PDF"
+(exámenes y talleres). El programa **no lee PDF** y no debe hacerlo: un PDF no es un formato de datos, y
+un parser se rompe en silencio en cuanto cambie el formato. Lo que hay es un formulario de **ocupación
+en bloque** (varias aulas × rango de días × horas), con el que la semana de exámenes se transcribe del
+PDF en un minuto.
 
 ### Para Paco (técnicas)
 

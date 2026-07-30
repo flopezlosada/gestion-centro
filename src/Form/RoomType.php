@@ -6,6 +6,7 @@ namespace App\Form;
 
 use App\Entity\Room;
 use App\Enum\RoomKind;
+use App\Enum\RoomSize;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\EnumType;
@@ -40,10 +41,19 @@ final class RoomType extends AbstractType
                 'choices' => RoomKind::inDisplayOrder(),
                 'choice_label' => static fn (RoomKind $kind): string => $kind->label(),
             ])
-            ->add('capacity', IntegerType::class, [
-                'label' => 'Capacidad',
+            ->add('size', EnumType::class, [
+                'label' => 'Tamaño',
+                'class' => RoomSize::class,
+                'choices' => RoomSize::inDisplayOrder(),
+                'choice_label' => static fn (RoomSize $s): string => $s->label(),
                 'required' => false,
-                'help' => 'Cuántas personas caben. Déjalo vacío si no lo sabes: el programa no la inventa, pero sin ella no puede avisar de que un grupo no cabe.',
+                'placeholder' => 'Sin indicar',
+                'help' => 'Cuántos grupos caben. Es lo que usa el programa para recolocar: sin esto no puede avisar de que un grupo no cabe.',
+            ])
+            ->add('capacity', IntegerType::class, [
+                'label' => 'Plazas (opcional)',
+                'required' => false,
+                'help' => 'Solo si necesitáis el número exacto de personas (aulas pequeñas específicas, encargos de fotocopias).',
             ])
             ->add('building', TextType::class, [
                 'label' => 'Edificio o ala',
@@ -58,7 +68,7 @@ final class RoomType extends AbstractType
             ->add('assignable', CheckboxType::class, [
                 'label' => 'Se le pueden enviar grupos',
                 'required' => false,
-                'help' => 'Desmárcalo para espacios que no pueden acoger una clase (pistas, almacenes) o que el centro reserva.',
+                'help' => 'Desmárcalo para espacios donde no se puede recolocar un grupo: pistas y gimnasio (que Peñalara sí llama aulas), almacenes, o los que el centro reserve.',
             ])
             ->add('active', CheckboxType::class, [
                 'label' => 'En uso',

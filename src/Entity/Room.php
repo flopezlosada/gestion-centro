@@ -6,6 +6,7 @@ namespace App\Entity;
 
 use App\Contract\Auditable;
 use App\Enum\RoomKind;
+use App\Enum\RoomSize;
 use App\Repository\RoomRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
@@ -62,8 +63,17 @@ class Room implements Auditable
     private RoomKind $kind = RoomKind::OTHER;
 
     /**
-     * How many people fit. Null means UNKNOWN, not zero: the export does not carry it, so until a
-     * person fills it in the module can only order rooms by size, never rule one out for not fitting.
+     * How much fits, in GROUPS — the centre's own unit (see {@see RoomSize}). This is the size criterion
+     * the relocation engine uses: null means nobody has classified the room yet, and then it is offered
+     * rather than hidden.
+     */
+    #[ORM\Column(name: 'room_size', length: 16, enumType: RoomSize::class, nullable: true)]
+    private ?RoomSize $size = null;
+
+    /**
+     * How many people fit, when a headcount is what matters (a 15-seat specific room, ordering copies).
+     * Secondary to {@see $size}: the export does not carry it and nobody at the centre knows the
+     * enrolment of each group, so it stays null far more often than not.
      */
     #[ORM\Column(type: Types::SMALLINT, nullable: true)]
     #[Assert\Positive(message: 'La capacidad debe ser un número mayor que cero.')]
@@ -157,6 +167,18 @@ class Room implements Auditable
         return $this;
     }
 
+    public function getSize(): ?RoomSize
+    {
+        return $this->size;
+    }
+
+    public function setSize(?RoomSize $size): static
+    {
+        $this->size = $size;
+
+        return $this;
+    }
+
     public function getCapacity(): ?int
     {
         return $this->capacity;
@@ -230,7 +252,7 @@ class Room implements Auditable
     }
 
     /**
-     * Whether the card still lacks the data a person has to supply — today, its capacity and a type.
+     * Whether the card still lacks the data a person has to supply — its size (in groups) and a type.
      * Drives the "sin completar" marker in the catalogue: an auto-created stub is useful (it makes the
      * room exist) but it cannot inform a decision until somebody finishes it.
      *
@@ -238,7 +260,7 @@ class Room implements Auditable
      */
     public function needsReview(): bool
     {
-        return null === $this->capacity || RoomKind::OTHER === $this->kind;
+        return null === $this->size || RoomKind::OTHER === $this->kind;
     }
 
     /**

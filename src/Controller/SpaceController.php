@@ -61,9 +61,9 @@ final class SpaceController extends AbstractController
         $slotIndex = SchedulePicker::slot($request, $slots);
         $availability = null !== $year ? $occupancy->at($year, $date, $slotIndex) : null;
 
-        // How many people must fit, when the person asking knows: it filters the candidate list but
-        // never hides a room whose capacity nobody has filled in yet.
-        $forPeople = max(0, $request->query->getInt('personas')) ?: null;
+        // How many whole groups must fit — the question the guardia coordinator actually asks when
+        // several groups have to be merged into one big room. Never hides a room nobody has classified.
+        $forGroups = max(0, min(4, $request->query->getInt('grupos'))) ?: null;
 
         return $this->render('space/index.html.twig', [
             'date' => $date,
@@ -71,9 +71,9 @@ final class SpaceController extends AbstractController
             'slots' => $slots,
             'slotIndex' => $slotIndex,
             'availability' => $availability,
-            'candidates' => null !== $availability ? $availability->candidates($forPeople) : [],
-            'otherFree' => null !== $availability ? $availability->otherFree($forPeople) : [],
-            'forPeople' => $forPeople,
+            'candidates' => null !== $availability ? $availability->candidates($forGroups) : [],
+            'otherFree' => null !== $availability ? $availability->otherFree($forGroups) : [],
+            'forGroups' => $forGroups,
             'isLective' => $calendar->isLective($date),
             // A cell naming a room with no catalogued card is invisible to the occupancy calculation,
             // which would report that room as free. Surface it instead of letting it be discovered as

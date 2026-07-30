@@ -88,11 +88,15 @@ final class RelocationSolver
 
     /**
      * The rooms this displacement could go to: free at that moment, not already taken by an earlier
-     * placement, and big enough when both sizes are known.
+     * placement, and big enough when the sizes are known.
      *
-     * Capacity only filters when it can. The centre fills capacities in by hand and most cards start
-     * empty, so an unknown capacity offers the room rather than hiding it — with no enrolment data,
-     * refusing to propose anything would be worse than proposing something a person then rejects.
+     * Size is measured in GROUPS ({@see \App\Enum\RoomSize}), the centre's own unit: a group thrown out
+     * of an ordinary classroom does not fit in a desdoble room. The seat count filters too when both
+     * rooms carry one, which is rare.
+     *
+     * Neither filters when it cannot. The centre classifies rooms by hand and every card starts blank,
+     * so an unclassified room is offered rather than hidden — refusing to propose anything until the
+     * catalogue is complete would be worse than proposing something a person then rejects.
      *
      * @param Displacement              $displacement what has to move
      * @param array<string, list<Room>> $freeByMoment candidate rooms by moment
@@ -102,13 +106,15 @@ final class RelocationSolver
      */
     private function candidatesFor(Displacement $displacement, array $freeByMoment, array $taken): array
     {
-        $needed = $displacement->seatsNeeded();
+        $size = $displacement->sizeNeeded();
+        $seats = $displacement->seatsNeeded();
         $moment = $displacement->moment();
 
         return array_values(array_filter(
             $freeByMoment[$moment] ?? [],
             static fn (Room $room): bool => !isset($taken[$moment.'|'.$room->getId()])
-                && (null === $needed || null === $room->getCapacity() || $room->getCapacity() >= $needed),
+                && (null === $size || null === $room->getSize() || $room->getSize()->fits($size))
+                && (null === $seats || null === $room->getCapacity() || $room->getCapacity() >= $seats),
         ));
     }
 
@@ -158,8 +164,11 @@ final class RelocationSolver
     {
         $specialised = $room->getKind()->isSpecialised() ? 1 : 0;
         $distance = $this->distance($room, $displacement->originRoom);
-        // Prefer the tightest room that still fits, so the big ones stay available for whoever needs them.
-        $slack = null === $room->getCapacity() ? 999 : $room->getCapacity() - ($displacement->seatsNeeded() ?? 0);
+        // Prefer the tightest room that still fits, so the big ones stay free for whoever needs them —
+        // sending one group to the assembly hall because it happened to be nearest is a bad plan.
+        $slack = null === $room->getSize()
+            ? 9
+            : $room->getSize()->groups() - ($displacement->sizeNeeded()?->groups() ?? 0);
 
         return match ($strategy) {
             ProposalStrategy::PRESERVE_SPECIALISED => [$specialised * 10, $distance, $slack, $room->getCode()],

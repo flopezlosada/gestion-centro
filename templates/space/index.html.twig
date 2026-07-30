@@ -20,7 +20,8 @@
             {% if room.kind.specialised %}<span class="badge badge--muted">{{ room.kind.label }}</span>{% endif %}
         </div>
         <div class="mini-card-status">
-            {% if room.capacity %}{{ room.capacity }} plazas{% else %}<span class="muted">capacidad sin indicar</span>{% endif %}
+            {% if room.size %}{{ room.size.label }}{% else %}<span class="muted">tamaño sin indicar</span>{% endif %}
+            {% if room.capacity %} · {{ room.capacity }} plazas{% endif %}
             {% if room.building %} · {{ room.building }}{% endif %}
             {% if room.floor is not null %} · planta {{ room.floor }}{% endif %}
             {% if not room.assignable %} · <span class="muted">no se le asignan grupos</span>{% endif %}
@@ -40,14 +41,14 @@
                 <p class="lead">Qué espacios quedan libres <strong>según el horario</strong> a una hora concreta, y quién ocupa el resto.</p>
             </div>
             <div class="day-nav">
-                <a class="day-nav-arrow" href="{{ path('space_index', { date: date|date_modify('-1 day')|date('Y-m-d', false), slot: slotIndex, personas: forPeople }) }}" aria-label="Día anterior">‹</a>
+                <a class="day-nav-arrow" href="{{ path('space_index', { date: date|date_modify('-1 day')|date('Y-m-d', false), slot: slotIndex, grupos: forGroups }) }}" aria-label="Día anterior">‹</a>
                 <form method="get" action="{{ path('space_index') }}" class="day-nav-date">
                     <input type="date" name="date" value="{{ date|date('Y-m-d', false) }}" onchange="this.form.submit()" aria-label="Fecha a consultar">
                     <input type="hidden" name="slot" value="{{ slotIndex }}">
-                    {% if forPeople %}<input type="hidden" name="personas" value="{{ forPeople }}">{% endif %}
+                    {% if forGroups %}<input type="hidden" name="grupos" value="{{ forGroups }}">{% endif %}
                     <noscript><button type="submit" class="btn">Ir</button></noscript>
                 </form>
-                <a class="day-nav-arrow" href="{{ path('space_index', { date: date|date_modify('+1 day')|date('Y-m-d', false), slot: slotIndex, personas: forPeople }) }}" aria-label="Día siguiente">›</a>
+                <a class="day-nav-arrow" href="{{ path('space_index', { date: date|date_modify('+1 day')|date('Y-m-d', false), slot: slotIndex, grupos: forGroups }) }}" aria-label="Día siguiente">›</a>
                 <a class="btn" href="{{ path('space_index', { slot: slotIndex }) }}">Hoy</a>
             </div>
         </header>
@@ -87,7 +88,7 @@
             <nav class="slotchips" aria-label="Tramo horario">
                 {% for slot in slots %}
                     <a class="slotchip {{ slot.index == slotIndex ? 'is-active' }}"
-                       href="{{ path('space_index', { date: date|date('Y-m-d', false), slot: slot.index, personas: forPeople }) }}">
+                       href="{{ path('space_index', { date: date|date('Y-m-d', false), slot: slot.index, grupos: forGroups }) }}">
                         {{ slot.startsAt|date('H:i', false) }}–{{ slot.endsAt|date('H:i', false) }}
                     </a>
                 {% endfor %}
@@ -104,14 +105,19 @@
                     <form method="get" action="{{ path('space_index') }}" class="inline-form">
                         <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
                         <input type="hidden" name="slot" value="{{ slotIndex }}">
-                        <label class="field-label" for="personas">Para cuántas personas</label>
-                        <input type="number" id="personas" name="personas" min="1" max="500" value="{{ forPeople }}" placeholder="p. ej. 60">
+                        <label class="field-label" for="grupos">Para cuántos grupos</label>
+                        <select id="grupos" name="grupos">
+                            <option value="">Cualquiera</option>
+                            <option value="1"{{ forGroups == 1 ? ' selected' }}>1 grupo</option>
+                            <option value="2"{{ forGroups == 2 ? ' selected' }}>2 grupos</option>
+                            <option value="3"{{ forGroups == 3 ? ' selected' }}>3 o más</option>
+                        </select>
                         <button type="submit" class="btn btn-sm">Filtrar</button>
                     </form>
                 </div>
 
                 {% if candidates is empty %}
-                    <p class="muted">No queda ningún espacio libre al que se pueda enviar un grupo a esta hora{% if forPeople %} con capacidad para {{ forPeople }} personas{% endif %}.</p>
+                    <p class="muted">No queda ningún espacio libre al que se pueda enviar un grupo a esta hora{% if forGroups %} donde quepan {{ forGroups }} grupo{{ forGroups == 1 ? '' : 's' }}{% endif %}.</p>
                 {% else %}
                     <div class="card-grid">
                         {% for room in candidates %}{{ sp.room_card(room) }}{% endfor %}
@@ -121,7 +127,7 @@
                 {% if otherFree is not empty %}
                     <details class="callout__more">
                         <summary>Otros {{ otherFree|length }} espacio(s) libres que no se ofrecen</summary>
-                        <p class="muted">Libres a esta hora, pero no se proponen: o no se les asignan grupos (pistas, almacenes) o su capacidad no llega a la pedida.</p>
+                        <p class="muted">Libres a esta hora, pero no se proponen: o no se les asignan grupos (pistas, gimnasio, almacenes) o son demasiado pequeñas para lo que has pedido.</p>
                         <div class="card-grid">
                             {% for room in otherFree %}{{ sp.room_card(room, true) }}{% endfor %}
                         </div>

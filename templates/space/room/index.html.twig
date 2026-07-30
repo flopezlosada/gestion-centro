@@ -9,7 +9,7 @@
         <div>
             <p class="eyebrow">Espacios</p>
             <h1>Catálogo de espacios</h1>
-            <p class="lead">Las aulas, laboratorios y demás espacios del centro. El horario de Peñalara los nombra pero no dice ni cuántas personas caben ni de qué tipo son: eso se completa aquí.</p>
+            <p class="lead">Las aulas, laboratorios y demás espacios del centro. El horario de Peñalara los nombra pero no dice ni cuántos grupos caben ni de qué tipo son: eso se completa aquí.</p>
         </div>
         <a class="btn" href="{{ path('space_room_new') }}">+ Nuevo espacio</a>
     </div>
@@ -37,7 +37,7 @@
         {% else %}
             <table data-list-tools>
                 <thead>
-                    <tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Capacidad</th><th>Dónde</th><th>Estado</th><th></th></tr>
+                    <tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Tamaño</th><th>Dónde</th><th>Estado</th><th></th></tr>
                 </thead>
                 <tbody>
                     {% for room in rooms %}
@@ -45,7 +45,7 @@
                             <td><strong>{{ room.code }}</strong></td>
                             <td>{{ room.name != room.code ? room.name : '—' }}</td>
                             <td>{{ room.kind.label }}</td>
-                            <td>{{ room.capacity ?? '—' }}</td>
+                            <td>{{ room.size ? room.size.label : '—' }}{% if room.capacity %} <span class="muted">({{ room.capacity }})</span>{% endif %}</td>
                             <td class="muted">
                                 {%- if room.building %}{{ room.building }}{% endif -%}
                                 {%- if room.floor is not null %}{{ room.building ? ', ' }}planta {{ room.floor }}{% endif -%}

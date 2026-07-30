@@ -20,7 +20,7 @@
             {{ f.submit_error(form) }}
             {{ form_errors(form) }}
             {{ f.section('Identificación', [form.code, form.name, form.kind]) }}
-            {{ f.section('Datos para reubicar grupos', [form.capacity, form.building, form.floor]) }}
+            {{ f.section('Datos para reubicar grupos', [form.size, form.capacity, form.building, form.floor]) }}
             <fieldset class="form-section">
                 <legend class="form-section-title">Uso</legend>
                 {{ f.toggles([form.assignable, form.active]) }}

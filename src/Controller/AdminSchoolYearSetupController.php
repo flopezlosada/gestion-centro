@@ -239,9 +239,9 @@ final class AdminSchoolYearSetupController extends AbstractController
                 default => 'ok',
             },
             'detail' => match (true) {
-                [] === $catalogue => 'Sin fichas de aula. Se crean solas al importar el horario, o con el botón «Sincronizar».',
+                [] === $catalogue => 'Sin fichas de aula. Se crean solas al importar el horario, o con el botón «Sincronizar»; luego hay que decir de qué tipo y de qué tamaño es cada una.',
                 $unlinked > 0 => sprintf('%d clases nombran un aula sin ficha: esas aulas se contarán como libres.', $unlinked),
-                $pendingCards > 0 => sprintf('%d de %d fichas sin capacidad o sin tipo: sin eso no se puede avisar de que un grupo no cabe.', $pendingCards, \count($catalogue)),
+                $pendingCards > 0 => sprintf('%d de %d fichas sin tamaño o sin tipo: sin saber cuántos grupos caben, el programa no puede avisar de que un grupo no cabe.', $pendingCards, \count($catalogue)),
                 default => sprintf('%d espacios catalogados y completos.', \count($catalogue)),
             },
             'route' => 'space_room_index',

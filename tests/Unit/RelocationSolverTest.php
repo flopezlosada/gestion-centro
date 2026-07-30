@@ -7,6 +7,7 @@ namespace App\Tests\Unit;
 use App\Entity\Room;
 use App\Enum\ProposalStrategy;
 use App\Enum\RoomKind;
+use App\Enum\RoomSize;
 use App\Space\Displacement;
 use App\Space\RelocationSolver;
 use PHPUnit\Framework\TestCase;
@@ -105,6 +106,47 @@ final class RelocationSolverTest extends TestCase
         self::assertSame('2IN5', $placements[0]->room?->getCode());
     }
 
+    public function testAWholeGroupDoesNotFitInADesdobleRoom(): void
+    {
+        // The centre's own unit: "aulas específicas de pequeño tamaño (para 15 alumnos)". A group thrown
+        // out of an ordinary classroom cannot go there, whatever else is free.
+        $origin = $this->sized($this->room(1, '0LC1', RoomKind::CLASSROOM, null), RoomSize::ONE_GROUP);
+        $displacement = $this->displacement($origin, 'E1A');
+        $small = $this->sized($this->room(2, 'DESD1', RoomKind::CLASSROOM, null), RoomSize::SMALL);
+        $normal = $this->sized($this->room(3, '0LC7', RoomKind::CLASSROOM, null), RoomSize::ONE_GROUP);
+
+        $placements = $this->solver->solve([$displacement], [$displacement->moment() => [$small, $normal]], ProposalStrategy::NEAREST);
+
+        self::assertSame('0LC7', $placements[0]->room?->getCode());
+    }
+
+    public function testPrefersTheTightestRoomSoTheBigOnesStayFree(): void
+    {
+        // Sending one group to the assembly hall because it happened to be nearest is a bad plan: the
+        // hall is what somebody else will need for three groups.
+        $origin = $this->sized($this->room(1, '0LC1', RoomKind::CLASSROOM, null), RoomSize::ONE_GROUP);
+        $displacement = $this->displacement($origin, 'E1A');
+        $hall = $this->sized($this->room(2, 'S ACTOS', RoomKind::CLASSROOM, null), RoomSize::MANY_GROUPS);
+        $normal = $this->sized($this->room(3, '0LC7', RoomKind::CLASSROOM, null), RoomSize::ONE_GROUP);
+
+        $placements = $this->solver->solve([$displacement], [$displacement->moment() => [$hall, $normal]], ProposalStrategy::NEAREST);
+
+        self::assertSame('0LC7', $placements[0]->room?->getCode());
+    }
+
+    public function testAnUnclassifiedRoomIsStillOfferedWhenNothingElseFits(): void
+    {
+        // Every card starts blank: refusing to propose anything until the catalogue is complete would
+        // leave the engine mute on a freshly imported timetable.
+        $origin = $this->sized($this->room(1, '0LC1', RoomKind::CLASSROOM, null), RoomSize::ONE_GROUP);
+        $displacement = $this->displacement($origin, 'E1A');
+        $unclassified = $this->room(2, '2IN5', RoomKind::OTHER, null);
+
+        $placements = $this->solver->solve([$displacement], [$displacement->moment() => [$unclassified]], ProposalStrategy::NEAREST);
+
+        self::assertSame('2IN5', $placements[0]->room?->getCode());
+    }
+
     public function testNearestPrefersTheSameFloorOfTheSameBuilding(): void
     {
         $origin = $this->room(1, '2IN5', RoomKind::CLASSROOM, 30, 'A', 1);
@@ -192,6 +234,19 @@ final class RelocationSolverTest extends TestCase
         $reflection->setValue($room, $id);
 
         return $room;
+    }
+
+    /**
+     * Gives a room a size in groups.
+     *
+     * @param Room     $room the room
+     * @param RoomSize $size how many groups fit
+     *
+     * @return Room the same room
+     */
+    private function sized(Room $room, RoomSize $size): Room
+    {
+        return $room->setSize($size);
     }
 
     /**

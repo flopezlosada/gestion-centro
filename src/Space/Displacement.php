@@ -7,6 +7,7 @@ namespace App\Space;
 use App\Entity\Room;
 use App\Entity\ScheduleEntry;
 use App\Entity\User;
+use App\Enum\RoomSize;
 
 /**
  * A lesson that has to go somewhere else: what the event threw out of its room, at one moment.
@@ -48,11 +49,23 @@ final readonly class Displacement
     }
 
     /**
-     * How many people have to fit, inferred from the capacity of the room they are being thrown out of.
+     * How big the destination has to be, taken from the room they are being thrown out of: whatever
+     * fitted there has to fit where they go.
      *
-     * The centre has no enrolment data (Peñalara exports none), so this is the only honest proxy
-     * available: a group that fits in a 30-seat room needs about 30 seats. Null when the origin room's
-     * capacity has not been filled in either — and then capacity cannot rule anything out.
+     * The centre measures rooms in GROUPS, not seats — nobody knows the enrolment of each group — so
+     * this is the size criterion. Null when nobody has classified the origin room yet, and then size
+     * rules nothing out.
+     *
+     * @return RoomSize|null the size needed, or null when unknown
+     */
+    public function sizeNeeded(): ?RoomSize
+    {
+        return $this->originRoom->getSize();
+    }
+
+    /**
+     * How many people have to fit, when the origin room carries a headcount. Secondary to
+     * {@see sizeNeeded()}: most rooms have no capacity filled in.
      *
      * @return int|null the seats needed, or null when unknown
      */

@@ -12,13 +12,14 @@ use App\Entity\SpacePlanAssignment;
 use App\Entity\SpacePlanOption;
 use App\Entity\User;
 use App\Enum\Area;
-use App\Form\SpacePlanActivityType;
+use App\Form\SpaceOccupationBlockType;
 use App\Form\SpacePlanType;
 use App\Repository\AcademicYearRepository;
 use App\Repository\RoomRepository;
 use App\Repository\ScheduleEntryRepository;
 use App\Repository\SpacePlanRepository;
 use App\Security\Voter\AreaVoter;
+use App\Service\SchoolCalendar;
 use App\Space\SpacePlanNotifier;
 use App\Space\SpacePlanWorkflow;
 use App\Util\SchoolYear;
@@ -120,7 +121,7 @@ final class SpacePlanController extends AbstractController
             'shown' => $shown,
             'slotTimes' => $schedule->slotTimes($plan->getAcademicYear()),
             'rooms' => $rooms->findActive(),
-            'activityForm' => $this->createForm(SpacePlanActivityType::class, new SpacePlanActivity(), [
+            'activityForm' => $this->createForm(SpaceOccupationBlockType::class, null, [
                 'slot_choices' => $this->slotChoices($schedule, $plan->getAcademicYear()),
                 'action' => $this->generateUrl('space_plan_activity_add', ['id' => $plan->getId()]),
             ]),
@@ -249,29 +250,62 @@ final class SpacePlanController extends AbstractController
     }
 
     /**
-     * Adds something the event occupies. Kept on the plan's own page rather than a screen of its own:
-     * writing the enunciado and reading what it displaces is one task.
+     * Adds what the event occupies, as a block: several rooms, over a range of days, at several periods.
+     *
+     * One form instead of one per room and day. The centre's exam week takes four rooms for four days,
+     * which stated one at a time is sixteen identical forms — and the person filling in the sixteenth
+     * makes mistakes. Non-teaching days inside the range are skipped: an occupation on a Saturday would
+     * quietly widen every count without changing anything.
      */
     #[Route('/{id}/actividad', name: 'space_plan_activity_add', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function addActivity(SpacePlan $plan, Request $request, ScheduleEntryRepository $schedule, EntityManagerInterface $em): Response
-    {
+    public function addActivity(
+        SpacePlan $plan,
+        Request $request,
+        ScheduleEntryRepository $schedule,
+        SchoolCalendar $calendar,
+        EntityManagerInterface $em,
+    ): Response {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ESPACIOS);
         $this->assertEditable($plan);
 
-        $activity = new SpacePlanActivity();
-        $form = $this->createForm(SpacePlanActivityType::class, $activity, ['slot_choices' => $this->slotChoices($schedule, $plan->getAcademicYear())]);
+        $form = $this->createForm(SpaceOccupationBlockType::class, null, ['slot_choices' => $this->slotChoices($schedule, $plan->getAcademicYear())]);
         $form->handleRequest($request);
 
         if (!$form->isSubmitted() || !$form->isValid()) {
-            $this->addFlash('error', 'Revisa los datos de la actividad.');
+            $this->addFlash('error', 'Revisa los datos: hacen falta un nombre, al menos un aula, las fechas y al menos una hora.');
 
             return $this->redirectToRoute('space_plan_show', ['id' => $plan->getId()]);
         }
 
-        $plan->addActivity($activity);
-        $em->persist($activity);
+        /** @var array{title: string, rooms: iterable<Room>, from: \DateTimeImmutable, to: \DateTimeImmutable, slots: list<int>} $data */
+        $data = $form->getData();
+
+        $created = 0;
+        $skippedDays = 0;
+        for ($date = $data['from']; $date <= $data['to']; $date = $date->modify('+1 day')) {
+            if (!$calendar->isLective($date)) {
+                ++$skippedDays;
+                continue;
+            }
+
+            foreach ($data['rooms'] as $room) {
+                $activity = (new SpacePlanActivity())
+                    ->setTitle($data['title'])
+                    ->setRoom($room)
+                    ->setFixedDate($date)
+                    ->setFixedSlots($data['slots']);
+                $plan->addActivity($activity);
+                $em->persist($activity);
+                ++$created;
+            }
+        }
+
         $em->flush();
-        $this->addFlash('success', 'Actividad añadida. Vuelve a generar las propuestas para tenerla en cuenta.');
+        $this->addFlash('success', sprintf(
+            '%d ocupación(es) añadida(s)%s. Vuelve a generar las propuestas para tenerlas en cuenta.',
+            $created,
+            $skippedDays > 0 ? sprintf(' (%d día(s) no lectivo(s) saltado(s))', $skippedDays) : '',
+        ));
 
         return $this->redirectToRoute('space_plan_show', ['id' => $plan->getId()]);
     }

@@ -138,12 +138,12 @@ final class RoomOccupancy
      * @param AcademicYear       $year      the course the date falls into
      * @param \DateTimeImmutable $date      the day
      * @param int                $slotIndex the period index within the day
-     * @param int|null           $forPeople how many people must fit, or null if unknown
+     * @param int|null           $forGroups how many whole groups must fit, or null if it does not matter
      *
      * @return list<Room> the candidate spaces, least disruptive first
      */
-    public function candidatesAt(AcademicYear $year, \DateTimeImmutable $date, int $slotIndex, ?int $forPeople = null): array
+    public function candidatesAt(AcademicYear $year, \DateTimeImmutable $date, int $slotIndex, ?int $forGroups = null): array
     {
-        return $this->at($year, $date, $slotIndex)->candidates($forPeople);
+        return $this->at($year, $date, $slotIndex)->candidates($forGroups);
     }
 }
