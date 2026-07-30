@@ -47,6 +47,35 @@ class SpacePlanAssignmentRepository extends ServiceEntityRepository
     }
 
     /**
+     * The same as {@see inForceAt()} for a whole day, in ONE query, grouped by period — what the "aulas
+     * libres" sheet for the noticeboard needs, which asks about every period of a day at once and would
+     * otherwise ask the database six times over.
+     *
+     * @param \DateTimeImmutable $date the day
+     *
+     * @return array<int, list<SpacePlanAssignment>> period index → the lines in force then
+     */
+    public function inForceBySlotOn(\DateTimeImmutable $date): array
+    {
+        /** @var list<SpacePlanAssignment> $lines */
+        $lines = $this->inForceQuery()
+            ->addSelect('r', 'src')
+            ->leftJoin('a.room', 'r')
+            ->leftJoin('a.sourceEntry', 'src')
+            ->andWhere('a.date = :date')
+            ->setParameter('date', $date)
+            ->getQuery()
+            ->getResult();
+
+        $bySlot = [];
+        foreach ($lines as $line) {
+            $bySlot[$line->getSlotIndex()][] = $line;
+        }
+
+        return $bySlot;
+    }
+
+    /**
      * The lines in force between two dates that concern a teacher — their own agenda of "where am I this
      * week", and what a notice about a change has to list.
      *

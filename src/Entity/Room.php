@@ -23,7 +23,9 @@ use Symfony\Component\Validator\Constraints as Assert;
  * only completes what the export cannot know. Verified against the centre's real planificador: its
  * {@code <aula>} elements carry a name and an export code and nothing else — no capacity, no type. So
  * {@see $capacity} and {@see $kind} are centre-supplied and {@see $capacity} stays null until somebody
- * fills it, never guessed.
+ * fills it, never guessed. The one exception is {@see $observedGroups}: not centre data at all, but a
+ * figure read back from the timetable, which is how a room whose card nobody has completed still has a
+ * usable size ({@see effectiveSize()}).
  *
  * A room is never deleted once the timetable references it (that would silently drop the cells that
  * point at it from every occupancy calculation): it is deactivated instead, see {@see $active}.
@@ -69,6 +71,22 @@ class Room implements Auditable
      */
     #[ORM\Column(name: 'room_size', length: 16, enumType: RoomSize::class, nullable: true)]
     private ?RoomSize $size = null;
+
+    /**
+     * How many groups the timetable has been seen putting in this space AT ONCE — evidence, not opinion,
+     * and the only size figure nobody has to type in. Recomputed from the cells by
+     * {@see \App\Space\RoomSynchroniser} on every import.
+     *
+     * It is a LOWER BOUND, and treating it as anything else is the trap: three groups in here once proves
+     * three fit; one group proves nothing about the second. So it proposes a size ({@see observedSize()})
+     * and orders the "aulas libres" lists, but it never rules a room out — only a size a person confirmed
+     * ({@see $size}) does that.
+     *
+     * System-owned, unlike every other column here: {@see \App\Space\RoomSynchroniser} overwrites it,
+     * which is safe precisely because no one edits it by hand.
+     */
+    #[ORM\Column(name: 'observed_groups', type: Types::SMALLINT, nullable: true)]
+    private ?int $observedGroups = null;
 
     /**
      * How many people fit, when a headcount is what matters (a 15-seat specific room, ordering copies).
@@ -177,6 +195,61 @@ class Room implements Auditable
         $this->size = $size;
 
         return $this;
+    }
+
+    public function getObservedGroups(): ?int
+    {
+        return $this->observedGroups;
+    }
+
+    /**
+     * Records the evidence. Only {@see \App\Space\RoomSynchroniser} calls this — a person classifies a
+     * room through {@see setSize()}, and having two ways to say the same thing is how they end up
+     * disagreeing.
+     *
+     * @param int|null $observedGroups the most groups the timetable puts here at once, or null if it puts none
+     */
+    public function setObservedGroups(?int $observedGroups): static
+    {
+        $this->observedGroups = $observedGroups;
+
+        return $this;
+    }
+
+    /**
+     * The size the timetable's evidence suggests, or null when there is no evidence (nobody teaches here).
+     *
+     * @return RoomSize|null the suggested size
+     */
+    public function observedSize(): ?RoomSize
+    {
+        return null !== $this->observedGroups ? RoomSize::forGroups($this->observedGroups) : null;
+    }
+
+    /**
+     * The size to reason with: what the centre confirmed, and failing that what the timetable has shown.
+     *
+     * The single answer to "how big is this room", so that no screen can accidentally read the raw
+     * {@see getSize()} and report a room as unclassified when the timetable already proved three groups
+     * fit in it. Null only when neither a person nor the timetable says anything.
+     *
+     * @return RoomSize|null the effective size
+     */
+    public function effectiveSize(): ?RoomSize
+    {
+        return $this->size ?? $this->observedSize();
+    }
+
+    /**
+     * Whether the size is a person's answer rather than an inference. What lets a screen show "grande"
+     * plainly for a confirmed room and "según el horario" for a deduced one — the honesty that makes the
+     * list trustworthy.
+     *
+     * @return bool true when somebody classified the room
+     */
+    public function isSizeConfirmed(): bool
+    {
+        return null !== $this->size;
     }
 
     public function getCapacity(): ?int

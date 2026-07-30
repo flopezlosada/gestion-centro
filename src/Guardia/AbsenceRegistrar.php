@@ -7,20 +7,26 @@ namespace App\Guardia;
 use App\Entity\Absence;
 use App\Entity\AcademicYear;
 use App\Entity\GuardiaCover;
-use App\Entity\ScheduleEntry;
 use App\Entity\User;
 use App\Enum\Weekday;
 use App\Repository\AbsenceRepository;
 use App\Repository\GuardiaCoverRepository;
 use App\Repository\ScheduleEntryRepository;
+use App\Space\EffectiveLesson;
+use App\Space\EffectiveTimetable;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
  * Registers a teacher's absence in one step and lets the equitable engine take over: given the day
  * (and either specific periods or the teacher's whole teaching day), it creates a parte line for
  * each period the teacher actually teaches — a free period or a duty needs no cover — snapshotting
- * the uncovered group and room from the timetable, and then runs {@see GuardiaScheduler} for each
- * affected period (which assigns a guardia and notifies them).
+ * the uncovered group and room, and then runs {@see GuardiaScheduler} for each affected period (which
+ * assigns a guardia and notifies them).
+ *
+ * What it teaches is read off the EFFECTIVE timetable ({@see EffectiveTimetable}), not the weekly grid: an
+ * approved space plan can have moved the lesson to another room (the parte has to send the covering
+ * teacher to the right door) or replaced the group's timetable altogether that day (exam week), in which
+ * case there is no lesson to cover and no task to leave.
  *
  * This is the single entry point behind both the coordinator's "apuntar ausencia" screen and a
  * teacher self-reporting their own absence, so the "register → auto-assign → notify" flow lives in
@@ -34,6 +40,7 @@ final class AbsenceRegistrar
 {
     public function __construct(
         private readonly ScheduleEntryRepository $schedule,
+        private readonly EffectiveTimetable $timetable,
         private readonly GuardiaCoverRepository $covers,
         private readonly AbsenceRepository $absences,
         private readonly GuardiaScheduler $scheduler,
@@ -59,7 +66,10 @@ final class AbsenceRegistrar
      *                                         inferred, because a recreo is nobody's teaching period and
      *                                         so cannot be read off the periods ticked
      *
-     * @return AbsenceRegistrationResult what was created and what was skipped
+     * @return AbsenceRegistrationResult what was created and what was skipped — a period counts as
+     *                                   skipped-free both when the timetable leaves it free and when an
+     *                                   approved plan has taken the lesson away, because either way there
+     *                                   is nothing to cover
      */
     public function register(AcademicYear $year, User $teacher, \DateTimeImmutable $date, ?array $slotIndexes, ?string $reason, array $taskBySlot = [], bool $missesBreakDuty = false): AbsenceRegistrationResult
     {
@@ -81,8 +91,8 @@ final class AbsenceRegistrar
         foreach (array_values(array_unique($slots)) as $slotIndex) {
             // A period may hold several classes at once (a multi-group activity in the assembly hall);
             // it is still ONE guardia to cover, so all its groups/rooms fold into a single cover.
-            $entries = $this->schedule->lectiveEntriesAt($year, $teacher, $weekday, $slotIndex);
-            if ([] === $entries) {
+            $lessons = $this->timetable->forTeacherAt($year, $teacher, $date, $slotIndex);
+            if ([] === $lessons) {
                 ++$skippedFree;
                 continue;
             }
@@ -102,11 +112,13 @@ final class AbsenceRegistrar
                 ->setDate($date)
                 ->setSlotIndex($slotIndex)
                 ->setAbsentTeacher($teacher)
-                ->setGroupName(self::snapshot(array_map(static fn (ScheduleEntry $e): ?string => $e->getGroupName(), $entries)))
-                ->setRoomName(self::snapshot(array_map(static fn (ScheduleEntry $e): ?string => $e->getRoomName(), $entries)))
+                ->setGroupName(self::snapshot(array_map(static fn (EffectiveLesson $l): ?string => $l->entry->getGroupName(), $lessons)))
+                // El aula, de la rejilla efectiva: si un plan aprobado ha movido esa clase, el parte manda
+                // al profe de guardia al aula NUEVA. Con el aula del horario iría a una vacía.
+                ->setRoomName(self::snapshot(array_map(static fn (EffectiveLesson $l): ?string => $l->roomName(), $lessons)))
                 // La materia se congela aquí porque es con lo que se casa el banco de tareas: el grupo
                 // trabaja la asignatura que le tocaba, y eso no puede depender de un reimport posterior.
-                ->setSubjectName(self::onlySubject($entries))
+                ->setSubjectName(self::onlySubject($lessons))
                 ->setTaskDocumentPath($task['documentPath'] ?? null)
                 ->setTaskDocumentName($task['documentName'] ?? null)
                 ->setTaskDescription($task['description'] ?? null)
@@ -141,14 +153,14 @@ final class AbsenceRegistrar
      * subject exactly, so "Matemáticas, Física" would match nothing and the covering teacher would be
      * told the bank is empty instead of being asked to pick by hand — which is what null does.
      *
-     * @param list<ScheduleEntry> $entries the period's classes
+     * @param list<EffectiveLesson> $lessons the period's classes
      *
      * @return string|null the single subject, or null when there is none or more than one
      */
-    private static function onlySubject(array $entries): ?string
+    private static function onlySubject(array $lessons): ?string
     {
         $subjects = array_values(array_unique(array_filter(
-            array_map(static fn (ScheduleEntry $e): string => trim((string) $e->getSubjectName()), $entries),
+            array_map(static fn (EffectiveLesson $l): string => trim((string) $l->entry->getSubjectName()), $lessons),
             static fn (string $s): bool => '' !== $s,
         )));
 
