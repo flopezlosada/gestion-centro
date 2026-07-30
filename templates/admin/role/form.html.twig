@@ -20,6 +20,11 @@
             {{ form_errors(form) }}
             {{ f.fields([form.code, form.name, form.description]) }}
 
+            {# Convocar reuniones NO va en la matriz de áreas: esa matriz es lectura/escritura sobre un
+               módulo entero, y las reuniones no se gatean así (cualquiera lee las suyas). Es una capacidad
+               del cargo, como el interruptor de administrador. #}
+            {{ f.toggle(form.canConvene) }}
+
             <h2 style="font-size: 20px; margin: 24px 0 4px;">Permisos por área</h2>
             <p class="muted" style="margin-top: 0;">Define el acceso de este rol a cada área. La escritura incluye la lectura.</p>
 

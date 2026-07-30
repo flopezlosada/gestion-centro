@@ -11,10 +11,12 @@ use App\Enum\Area;
 use App\Form\MeetingFormData;
 use App\Form\MeetingFormType;
 use App\Repository\MeetingRepository;
+use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
 use App\Service\FileUploader;
 use App\Service\MeetingAccess;
 use App\Service\MeetingNotifier;
+use App\Service\OrganizationHierarchy;
 use App\Support\DocumentPolicy;
 use App\Util\CalendarDate;
 use Doctrine\ORM\EntityManagerInterface;
@@ -30,9 +32,9 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
  *
  * The page is open to any authenticated user, but every screen is scoped to the meetings that CONCERN
  * them ({@see Meeting::concerns()}): a teacher never sees one they were not called to, and the acta is
- * served only inside that group. Who may convene and who may change a meeting is decided once, in
- * {@see MeetingAccess} — the templates ask the same service, so a button is never offered for an action
- * the controller will refuse.
+ * served only inside that group (the leadership team aside). Who convenes, who changes a meeting and who
+ * keeps its acta are three different answers, decided once in {@see MeetingAccess} — the templates ask the
+ * same service, so a button is never offered for an action the controller will refuse.
  *
  * The acta is stored as a FILE (unlike a task's deliverable, which is a link): the centre asked to keep
  * the institutional record in the app. It lives in private storage, is renamed to a random UUID and is
@@ -59,6 +61,8 @@ final class MeetingController extends AbstractController
             'upcoming' => $meetings->findUpcomingFor($user, $now),
             'past' => $meetings->findPastFor($user, $now),
             'canConvene' => $access->canConvene($user, $isAdmin),
+            // El atajo de "mi departamento" solo si tiene departamento y hay a quién convocar en él.
+            'ownDepartment' => $user->getUnit(),
             // One shortcut per project you coordinate: convening from here brings its teachers already
             // ticked, which is what "cada proyecto lleva por defecto a sus profes" means in practice.
             'projects' => $access->convenableProjects($user, $isAdmin),
@@ -66,12 +70,12 @@ final class MeetingController extends AbstractController
     }
 
     /**
-     * Convenes a meeting. Only for whoever may convene at all (a project coordinator, or somebody who
-     * commands a department by rank); the people offered are only those they may convene, re-checked on
-     * submit by the form's own choice list.
+     * Convenes a meeting. Only for whoever holds a cargo that convenes (or coordinates a project, or is an
+     * admin): a plain docente gets convened, not the other way round.
      *
-     * Arriving with ?proyecto=<id> preselects that project AND ticks its teachers: the default attendee
-     * list is resolved on the SERVER, so it works with no JavaScript at all.
+     * Two shortcuts fill the convened list, both resolved on the SERVER so they work with no JavaScript at
+     * all: ?proyecto=<id> ticks that project's teachers, and ?departamento=mi ticks the person's own
+     * department — the two meetings a centre holds most.
      */
     #[Route('/nueva', name: 'meeting_new', methods: ['GET', 'POST'])]
     public function new(Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, MeetingNotifier $notifier): Response
@@ -82,7 +86,7 @@ final class MeetingController extends AbstractController
         }
 
         $projects = $access->convenableProjects($user, $isAdmin);
-        $people = $access->convenablePeople($user, $isAdmin);
+        $people = $access->convenablePeople($user);
 
         $data = new MeetingFormData();
         // Prefill from the shortcut of a project (its people come ticked) and from the calendar's date.
@@ -96,6 +100,14 @@ final class MeetingController extends AbstractController
             $data->attendees = array_values(array_filter(
                 $people,
                 static fn (User $candidate): bool => \in_array($candidate, $projectPeople, true),
+            ));
+        }
+        // "Mi departamento": el otro atajo. Solo el propio, no un id cualquiera — no hay nada que ganar
+        // permitiendo pedir el de otra persona y sí una comprobación de más que mantener.
+        if ('mi' === $request->query->getString('departamento') && null !== $user->getUnit()) {
+            $data->attendees = array_values(array_filter(
+                $people,
+                static fn (User $candidate): bool => $candidate->getUnit() === $user->getUnit(),
             ));
         }
         $data->day = CalendarDate::parse($request->query->getString('fecha'), new \DateTimeZone(date_default_timezone_get()));
@@ -124,20 +136,26 @@ final class MeetingController extends AbstractController
     }
 
     /**
-     * The convocatoria: what it is about, when and where, who is called, and the acta once it exists.
-     * Readable by the people the meeting concerns, plus whoever reads the centre's records
-     * ({@see readsEverything()}) — nobody else.
+     * The convocatoria: what it is about, when and where, who is called, the acta once it exists, and — once
+     * the meeting has been held — the roll. Readable by the people the meeting concerns plus the leadership
+     * team ({@see isLeadership()}); nobody else.
      */
     #[Route('/{id}', name: 'meeting_show', requirements: ['id' => '\d+'], methods: ['GET'])]
-    public function show(Meeting $meeting, #[CurrentUser] User $user, MeetingAccess $access): Response
+    public function show(Meeting $meeting, #[CurrentUser] User $user, MeetingAccess $access, OrganizationHierarchy $hierarchy): Response
     {
-        if (!$access->canSee($meeting, $user, $this->readsEverything())) {
+        $isAdmin = $this->isGranted('ROLE_ADMIN');
+        if (!$access->canSee($meeting, $user, $this->isLeadership($user, $hierarchy))) {
             throw $this->createAccessDeniedException('No estás convocado a esta reunión.');
         }
 
         return $this->render('meeting/show.html.twig', [
             'meeting' => $meeting,
-            'canManage' => $access->canManage($meeting, $user, $this->isGranted('ROLE_ADMIN')),
+            'canManage' => $access->canManage($meeting, $user, $isAdmin),
+            // Quien levanta el acta: no siempre quien convoca. Es quien sube el acta, pasa lista y la da
+            // por aprobada.
+            'keepsMinutes' => $access->canKeepMinutes($meeting, $user, $isAdmin),
+            // Pasar lista solo tiene sentido cuando la reunión ya ha empezado: antes no hay nada que contar.
+            'isHeld' => $meeting->isPast(new \DateTimeImmutable()),
         ]);
     }
 
@@ -162,7 +180,7 @@ final class MeetingController extends AbstractController
             $projects[] = $current;
         }
         // Same for the people already convened: they must stay ticked even if they left the project.
-        $people = $access->convenablePeople($user, $isAdmin);
+        $people = $access->convenablePeople($user);
         foreach ($meeting->getAttendees() as $attendee) {
             if (!\in_array($attendee, $people, true)) {
                 $people[] = $attendee;
@@ -218,8 +236,8 @@ final class MeetingController extends AbstractController
         if (!$this->isCsrfTokenValid('meeting_minutes'.$meeting->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
-        if (!$access->canManage($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
-            throw $this->createAccessDeniedException('Solo quien convoca la reunión sube su acta.');
+        if (!$access->canKeepMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
+            throw $this->createAccessDeniedException('El acta la sube quien la levanta.');
         }
 
         $file = $request->files->get('acta');
@@ -254,14 +272,75 @@ final class MeetingController extends AbstractController
     }
 
     /**
+     * Records the roll: who of the expected people actually attended. Kept by whoever levanta el acta, and
+     * only once the meeting has started — before that there is nothing to count. Posting nobody is a valid
+     * answer ("no vino nadie"), which is why the timestamp, not the list, is what says the roll was taken.
+     */
+    #[Route('/{id}/asistencia', name: 'meeting_attendance', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function recordAttendance(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, UserRepository $users, EntityManagerInterface $entityManager): Response
+    {
+        if (!$this->isCsrfTokenValid('meeting_attendance'.$meeting->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+        if (!$access->canKeepMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
+            throw $this->createAccessDeniedException('La asistencia la registra quien levanta el acta.');
+        }
+        if (!$meeting->isPast(new \DateTimeImmutable())) {
+            throw $this->createAccessDeniedException('La reunión todavía no ha empezado.');
+        }
+
+        /** @var list<string> $ids */
+        $ids = array_values($request->request->all('asistentes'));
+        $present = [] !== $ids ? $users->findBy(['id' => array_map('intval', $ids)]) : [];
+        // La entidad se queda solo con quien estaba convocado, así que un id colado en el POST no puede
+        // aparecer como asistente.
+        $meeting->recordAttendance($present, new \DateTimeImmutable());
+        $entityManager->flush();
+
+        $this->addFlash('success', \sprintf('Asistencia registrada: %d de %d.', \count($meeting->getAttended()), \count($meeting->people())));
+
+        return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
+    }
+
+    /**
+     * Records that the body approved the acta (the "lectura y aprobación del acta anterior" of the following
+     * meeting). Only for the meetings whose acta needs approval — a CCP or a department meeting — and only
+     * once there IS an acta to approve.
+     */
+    #[Route('/{id}/acta/aprobar', name: 'meeting_minutes_approve', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function approveMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager): Response
+    {
+        if (!$this->isCsrfTokenValid('meeting_minutes'.$meeting->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+        if (!$access->canKeepMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
+            throw $this->createAccessDeniedException('El acta la gestiona quien la levanta.');
+        }
+        if (!$meeting->minutesApprovalRequired()) {
+            throw $this->createNotFoundException('El acta de esta reunión no necesita aprobación.');
+        }
+        if (!$meeting->hasMinutes()) {
+            $this->addFlash('error', 'Sube primero el acta: no se puede aprobar lo que no está.');
+
+            return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
+        }
+
+        $meeting->approveMinutes($user, new \DateTimeImmutable());
+        $entityManager->flush();
+        $this->addFlash('success', 'Acta aprobada.');
+
+        return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
+    }
+
+    /**
      * Serves the acta as a download, named after the original upload. Only for the people the meeting
      * concerns (and admins): an acta records decisions, sometimes about people, so it never leaves the
      * group that was called.
      */
     #[Route('/{id}/acta/descargar', name: 'meeting_minutes_download', requirements: ['id' => '\d+'], methods: ['GET'])]
-    public function downloadMinutes(Meeting $meeting, #[CurrentUser] User $user, MeetingAccess $access, FileUploader $uploader): Response
+    public function downloadMinutes(Meeting $meeting, #[CurrentUser] User $user, MeetingAccess $access, OrganizationHierarchy $hierarchy, FileUploader $uploader): Response
     {
-        if (!$access->canSee($meeting, $user, $this->readsEverything())) {
+        if (!$access->canSee($meeting, $user, $this->isLeadership($user, $hierarchy))) {
             throw $this->createAccessDeniedException('No estás convocado a esta reunión.');
         }
 
@@ -288,8 +367,8 @@ final class MeetingController extends AbstractController
         if (!$this->isCsrfTokenValid('meeting_minutes'.$meeting->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
-        if (!$access->canManage($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
-            throw $this->createAccessDeniedException('Solo quien convoca la reunión gestiona su acta.');
+        if (!$access->canKeepMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
+            throw $this->createAccessDeniedException('El acta la gestiona quien la levanta.');
         }
 
         $removed = $meeting->clearMinutes();
@@ -351,22 +430,29 @@ final class MeetingController extends AbstractController
             // Después del posible setStartAt del llamante: el instante del aviso se deriva de la hora de
             // inicio, y ponerlo antes lo calcularía sobre la hora vieja.
             ->setReminder($data->reminder)
+            ->setMinutesTakenBy($data->minutesTakenBy ?? $meeting->getConvener())
+            ->setMinutesApprovalRequired($data->minutesApprovalRequired)
             ->setProject($data->project);
 
         return $meeting->syncAttendees($data->attendees);
     }
 
     /**
-     * Whether the current user reads the centre's records: an admin (by bypass) or whoever has read access
-     * to the administration area (dirección). Widens ONLY what can be read — see
-     * {@see MeetingAccess::canSee()} — so the /admin project record can link straight to a meeting and its
-     * acta without opening the door to editing somebody else's.
+     * Whether the current user is on the leadership team, which the centre says reads every acta. Derived
+     * from the model instead of a list of names: a centre-wide ranked role (dirección, jefatura de estudios
+     * and its adjunta), or read access to the administration area (how secretaría gets it), or the admin
+     * flag. Widens ONLY what can be READ — see {@see MeetingAccess::canSee()}.
+     *
+     * @param User                  $user      the current user
+     * @param OrganizationHierarchy $hierarchy the chain-of-command service
      *
      * @return bool true if they may read any meeting
      */
-    private function readsEverything(): bool
+    private function isLeadership(User $user, OrganizationHierarchy $hierarchy): bool
     {
-        return $this->isGranted('ROLE_ADMIN') || $this->isGranted(AreaVoter::READ, Area::ADMINISTRATION);
+        return $this->isGranted('ROLE_ADMIN')
+            || $hierarchy->commandsWholeSchool($user)
+            || $this->isGranted(AreaVoter::READ, Area::ADMINISTRATION);
     }
 
     /**

@@ -50,6 +50,19 @@ final class MeetingFormData
      */
     public ?EventReminderOffset $reminder = EventReminderOffset::TEN_MINUTES;
 
+    /**
+     * Who keeps the minutes. Null means "quien convoca", which is the default the entity applies: in a
+     * department meeting or a project one that is the usual answer, and in a collegiate body (CCP, claustro)
+     * the convener picks the secretary here.
+     */
+    public ?User $minutesTakenBy = null;
+
+    /**
+     * Whether the acta of this meeting has to be approved at the following one. The centre's rule: yes for a
+     * CCP and for a department meeting, no for the rest — so it is off by default and ticked when it applies.
+     */
+    public bool $minutesApprovalRequired = false;
+
     /** The project this meeting belongs to, or null when it is not a project meeting. */
     public ?Project $project = null;
 
@@ -101,6 +114,8 @@ final class MeetingFormData
         $data->endTime = $meeting->getEndAt();
         // Whatever the meeting actually has, including "sin aviso" — the default only applies to a new one.
         $data->reminder = $meeting->getReminder();
+        $data->minutesTakenBy = $meeting->getMinutesTakenBy();
+        $data->minutesApprovalRequired = $meeting->minutesApprovalRequired();
         $data->project = $meeting->getProject();
         $data->attendees = array_values($meeting->getAttendees()->toArray());
 

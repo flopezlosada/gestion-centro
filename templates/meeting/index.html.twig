@@ -10,21 +10,26 @@
         <div>
             <p class="eyebrow">Reuniones</p>
             <h1>Mis reuniones</h1>
-            <p class="lead">Las reuniones a las que estás convocado y las que convocas tú. Cuando termina una, su acta se queda aquí.</p>
+            <p class="lead">Las reuniones a las que te convocan y las que convocas tú. Cuando termina una, su acta se queda aquí.</p>
         </div>
         {% if canConvene %}<a class="btn" href="{{ path('meeting_new') }}">+ Convocar reunión</a>{% endif %}
     </div>
 
-    {# Atajo por proyecto: convocar desde aquí trae ya marcados a los profes del proyecto (lo resuelve
-       el servidor con ?proyecto=, así que funciona sin JS). #}
-    {% if projects is not empty %}
+    {# Atajos: convocar desde aquí trae ya marcado al profesorado del proyecto o del departamento (lo
+       resuelve el servidor con ?proyecto= / ?departamento=mi, así que funciona sin JS). Sin ellos, con el
+       claustro entero como candidatos, convocar una reunión de departamento sería marcar doce casillas. #}
+    {% if canConvene and (projects is not empty or ownDepartment) %}
         <div class="card">
-            <div class="detail-block__label">Proyectos que coordinas</div>
+            <div class="detail-block__label">Atajos</div>
             <div class="form-actions">
+                {% if ownDepartment %}
+                    <a class="btn secondary" href="{{ path('meeting_new', { departamento: 'mi' }) }}">Convocar a {{ ownDepartment.name }}</a>
+                {% endif %}
                 {% for project in projects %}
                     <a class="btn secondary" href="{{ path('meeting_new', { proyecto: project.id }) }}">Convocar reunión de {{ project.name }}</a>
                 {% endfor %}
             </div>
+            <p class="help">Traen la lista de convocatoria ya marcada; puedes quitar o añadir a quien quieras antes de convocar.</p>
         </div>
     {% endif %}
 

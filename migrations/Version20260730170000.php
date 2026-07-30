@@ -18,7 +18,11 @@ use Doctrine\Migrations\AbstractMigration;
  *   push va materializado igual que en `personal_event`: la antelación que eligió quien convoca
  *   (`reminder_minutes`), el instante DERIVADO en que toca avisar (`remind_at`, indexado junto a
  *   `reminder_sent_at` porque el barrido corre cada pocos minutos sobre toda la tabla) y la marca de
- *   enviado, una sola para toda la reunión (se avisa a todos en la misma pasada).
+ *   enviado, una sola para toda la reunión (se avisa a todos en la misma pasada). Lleva además quién
+ *   levanta el acta (`minutes_taken_by_id`, que NO siempre es quien convoca), si esa acta se aprueba en la
+ *   reunión siguiente (`minutes_approval_required` + `minutes_approved_*`) y la asistencia real
+ *   (`meeting_attendance` + `attendance_taken_at`, que distingue "no vino nadie" de "no se pasó lista").
+ * - `role.can_convene`: qué cargos convocan reuniones. Regla del centro: todos menos el docente raso.
  * - Rol `project_coordinator` ("Coordinación de proyectos"): sin rango y sin permisos de área — el
  *   alcance vive en `project.coordinator_id`. Se inserta aquí (y no solo en las fixtures) porque en
  *   producción el catálogo de roles ya existe y nadie vuelve a cargar fixtures; `INSERT ... SELECT`
@@ -44,18 +48,30 @@ final class Version20260730170000 extends AbstractMigration
         $this->addSql('ALTER TABLE project_member ADD CONSTRAINT FK_project_member_project FOREIGN KEY (project_id) REFERENCES project (id) ON DELETE CASCADE');
         $this->addSql('ALTER TABLE project_member ADD CONSTRAINT FK_project_member_user FOREIGN KEY (user_id) REFERENCES app_user (id) ON DELETE CASCADE');
 
-        $this->addSql('CREATE TABLE meeting (id INT AUTO_INCREMENT NOT NULL, convener_id INT DEFAULT NULL, project_id INT DEFAULT NULL, minutes_uploaded_by_id INT DEFAULT NULL, title VARCHAR(200) NOT NULL, agenda LONGTEXT DEFAULT NULL, place VARCHAR(120) DEFAULT NULL, start_at DATETIME NOT NULL, end_at DATETIME DEFAULT NULL, minutes_path VARCHAR(255) DEFAULT NULL, minutes_name VARCHAR(255) DEFAULT NULL, minutes_uploaded_at DATETIME DEFAULT NULL, reminder_minutes INT DEFAULT NULL, remind_at DATETIME DEFAULT NULL, reminder_sent_at DATETIME DEFAULT NULL, created_at DATETIME NOT NULL, INDEX idx_meeting_start (start_at), INDEX idx_meeting_remind (remind_at, reminder_sent_at), INDEX IDX_meeting_convener (convener_id), INDEX IDX_meeting_project (project_id), INDEX IDX_meeting_minutes_by (minutes_uploaded_by_id), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4');
+        $this->addSql('CREATE TABLE meeting (id INT AUTO_INCREMENT NOT NULL, convener_id INT DEFAULT NULL, project_id INT DEFAULT NULL, minutes_uploaded_by_id INT DEFAULT NULL, title VARCHAR(200) NOT NULL, agenda LONGTEXT DEFAULT NULL, place VARCHAR(120) DEFAULT NULL, start_at DATETIME NOT NULL, end_at DATETIME DEFAULT NULL, minutes_path VARCHAR(255) DEFAULT NULL, minutes_name VARCHAR(255) DEFAULT NULL, minutes_uploaded_at DATETIME DEFAULT NULL, minutes_taken_by_id INT DEFAULT NULL, minutes_approval_required TINYINT(1) DEFAULT 0 NOT NULL, minutes_approved_at DATETIME DEFAULT NULL, minutes_approved_by_id INT DEFAULT NULL, attendance_taken_at DATETIME DEFAULT NULL, reminder_minutes INT DEFAULT NULL, remind_at DATETIME DEFAULT NULL, reminder_sent_at DATETIME DEFAULT NULL, created_at DATETIME NOT NULL, INDEX idx_meeting_start (start_at), INDEX idx_meeting_remind (remind_at, reminder_sent_at), INDEX IDX_meeting_convener (convener_id), INDEX IDX_meeting_project (project_id), INDEX IDX_meeting_minutes_by (minutes_uploaded_by_id), INDEX IDX_meeting_minutes_taken_by (minutes_taken_by_id), INDEX IDX_meeting_minutes_approved_by (minutes_approved_by_id), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4');
         $this->addSql('ALTER TABLE meeting ADD CONSTRAINT FK_meeting_convener FOREIGN KEY (convener_id) REFERENCES app_user (id) ON DELETE SET NULL');
         $this->addSql('ALTER TABLE meeting ADD CONSTRAINT FK_meeting_project FOREIGN KEY (project_id) REFERENCES project (id) ON DELETE SET NULL');
         $this->addSql('ALTER TABLE meeting ADD CONSTRAINT FK_meeting_minutes_by FOREIGN KEY (minutes_uploaded_by_id) REFERENCES app_user (id) ON DELETE SET NULL');
+        $this->addSql('ALTER TABLE meeting ADD CONSTRAINT FK_meeting_minutes_taken_by FOREIGN KEY (minutes_taken_by_id) REFERENCES app_user (id) ON DELETE SET NULL');
+        $this->addSql('ALTER TABLE meeting ADD CONSTRAINT FK_meeting_minutes_approved_by FOREIGN KEY (minutes_approved_by_id) REFERENCES app_user (id) ON DELETE SET NULL');
 
         $this->addSql('CREATE TABLE meeting_attendee (meeting_id INT NOT NULL, user_id INT NOT NULL, INDEX IDX_meeting_attendee_meeting (meeting_id), INDEX IDX_meeting_attendee_user (user_id), PRIMARY KEY (meeting_id, user_id)) DEFAULT CHARACTER SET utf8mb4');
         $this->addSql('ALTER TABLE meeting_attendee ADD CONSTRAINT FK_meeting_attendee_meeting FOREIGN KEY (meeting_id) REFERENCES meeting (id) ON DELETE CASCADE');
         $this->addSql('ALTER TABLE meeting_attendee ADD CONSTRAINT FK_meeting_attendee_user FOREIGN KEY (user_id) REFERENCES app_user (id) ON DELETE CASCADE');
 
+        $this->addSql('CREATE TABLE meeting_attendance (meeting_id INT NOT NULL, user_id INT NOT NULL, INDEX IDX_meeting_attendance_meeting (meeting_id), INDEX IDX_meeting_attendance_user (user_id), PRIMARY KEY (meeting_id, user_id)) DEFAULT CHARACTER SET utf8mb4');
+        $this->addSql('ALTER TABLE meeting_attendance ADD CONSTRAINT FK_meeting_attendance_meeting FOREIGN KEY (meeting_id) REFERENCES meeting (id) ON DELETE CASCADE');
+        $this->addSql('ALTER TABLE meeting_attendance ADD CONSTRAINT FK_meeting_attendance_user FOREIGN KEY (user_id) REFERENCES app_user (id) ON DELETE CASCADE');
+
+        // Quién convoca reuniones, como bandera del rol: "todos los cargos convocan" (regla del centro),
+        // o sea todo el catálogo MENOS el rol de docente raso, que es a quien se convoca. Se aplica a las
+        // filas que ya existen para que el catálogo real del centro quede bien sin tocarlo a mano.
+        $this->addSql("ALTER TABLE role ADD can_convene TINYINT(1) DEFAULT 0 NOT NULL");
+        $this->addSql("UPDATE role SET can_convene = 1 WHERE code <> 'teacher'");
+
         // El rol nuevo del catálogo. Sin rango (hierarchy_level NULL), sin área (permissions {}) y de
         // centro (per_department 0). Idempotente: no hace nada si el código ya existe.
-        $this->addSql("INSERT INTO role (code, name, description, permissions, admin, per_department, hierarchy_level) SELECT 'project_coordinator', 'Coordinación de proyectos', NULL, '{}', 0, 0, NULL FROM (SELECT 1) AS placeholder WHERE NOT EXISTS (SELECT 1 FROM role WHERE code = 'project_coordinator')");
+        $this->addSql("INSERT INTO role (code, name, description, permissions, admin, per_department, hierarchy_level, can_convene) SELECT 'project_coordinator', 'Coordinación de proyectos', NULL, '{}', 0, 0, NULL, 1 FROM (SELECT 1) AS placeholder WHERE NOT EXISTS (SELECT 1 FROM role WHERE code = 'project_coordinator')");
     }
 
     public function down(Schema $schema): void
@@ -64,6 +80,12 @@ final class Version20260730170000 extends AbstractMigration
         // perder un dato que la migración no creó.
         $this->addSql("DELETE FROM role WHERE code = 'project_coordinator' AND id NOT IN (SELECT role_id FROM user_role)");
 
+        $this->addSql('ALTER TABLE role DROP can_convene');
+
+        $this->addSql('ALTER TABLE meeting_attendance DROP FOREIGN KEY FK_meeting_attendance_meeting');
+        $this->addSql('ALTER TABLE meeting_attendance DROP FOREIGN KEY FK_meeting_attendance_user');
+        $this->addSql('DROP TABLE meeting_attendance');
+
         $this->addSql('ALTER TABLE meeting_attendee DROP FOREIGN KEY FK_meeting_attendee_meeting');
         $this->addSql('ALTER TABLE meeting_attendee DROP FOREIGN KEY FK_meeting_attendee_user');
         $this->addSql('DROP TABLE meeting_attendee');
@@ -71,6 +93,8 @@ final class Version20260730170000 extends AbstractMigration
         $this->addSql('ALTER TABLE meeting DROP FOREIGN KEY FK_meeting_convener');
         $this->addSql('ALTER TABLE meeting DROP FOREIGN KEY FK_meeting_project');
         $this->addSql('ALTER TABLE meeting DROP FOREIGN KEY FK_meeting_minutes_by');
+        $this->addSql('ALTER TABLE meeting DROP FOREIGN KEY FK_meeting_minutes_taken_by');
+        $this->addSql('ALTER TABLE meeting DROP FOREIGN KEY FK_meeting_minutes_approved_by');
         $this->addSql('DROP TABLE meeting');
 
         $this->addSql('ALTER TABLE project_member DROP FOREIGN KEY FK_project_member_project');

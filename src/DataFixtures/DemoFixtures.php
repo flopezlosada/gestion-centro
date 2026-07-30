@@ -173,7 +173,10 @@ final class DemoFixtures extends AbstractDemoFixture implements DependentFixture
         $manager->persist($upcomingMeeting);
 
         $heldMeeting = new Meeting($mathsHead, 'Reunión de departamento de Matemáticas', $today->modify('-7 days')->setTime(12, 30));
-        $heldMeeting->setPlace('Aula 12')->setAgenda("1. Resultados del trimestre.\n2. Criterios de recuperación.");
+        // El acta de una reunión de departamento se aprueba en la siguiente (regla del centro), y la levanta
+        // la jefatura del departamento, que es quien convoca.
+        $heldMeeting->setPlace('Aula 12')->setMinutesApprovalRequired(true)
+            ->setAgenda("1. Resultados del trimestre.\n2. Criterios de recuperación.");
         array_map($heldMeeting->addAttendee(...), [$teacher, ...$mathsTeachers]);
         $manager->persist($heldMeeting);
 

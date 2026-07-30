@@ -33,7 +33,7 @@ A diferencia de un gestor de tareas genérico, el modelo está construido sobre 
 - **Avisos in-app** + motor de recordatorios (15/7 días antes) y escalado de vencidas.
 - **Trazabilidad**: cada cambio de una entidad se audita (actor + diff) y se ve en su ficha.
 - **Módulo de guardias**: reparto y cobertura de guardias del profesorado, con import desde Peñalara.
-- **Reuniones y proyectos**: convocatoria con día, hora, lugar, orden del día y convocados; su **acta** se sube a la ficha de la reunión. Los **proyectos** del centro (agrupación de profesorado con coordinación, distinta de un departamento) aportan por defecto sus profes al convocar.
+- **Reuniones y proyectos**: convocatoria con día, hora, lugar, orden del día y convocados; su **acta** se sube a la ficha de la reunión. Los **proyectos y coordinaciones** del centro (agrupación de profesorado con una coordinación, distinta de un departamento) aportan por defecto su profesorado al convocar.
 - Datos del claustro con origen en el PDF público de docentes del centro; los datos reales (PII) nunca viven en git.
 
 ## Capabilities and Constraints

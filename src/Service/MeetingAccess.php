@@ -6,6 +6,7 @@ namespace App\Service;
 
 use App\Entity\Meeting;
 use App\Entity\Project;
+use App\Entity\Role;
 use App\Entity\User;
 use App\Repository\ProjectRepository;
 use App\Repository\UserRepository;
@@ -14,28 +15,27 @@ use App\Repository\UserRepository;
  * Who may do what with a meeting. The SINGLE place that answers it, so the screen that offers an action
  * and the controller that performs it can never disagree.
  *
- * Two different powers, from two different places, on purpose:
- *  - convening a PROJECT meeting comes from {@see Project::getCoordinator()} — the scope is the project,
- *    not a rank: coordinating a project gives you no command over anybody, and coordinating project A
- *    must not let you convene project B;
- *  - convening any other meeting comes from RANK ({@see OrganizationHierarchy}): a jefe de departamento
- *    convenes their department, dirección/jefatura the whole centre. Same rule that decides who may
- *    hand out a task, so the people you may convene are the people you already command.
+ * Three different powers on purpose, because the centre keeps them apart:
+ *  - **convocar**: any cargo does it ({@see Role::canConvene()}: jefaturas, tutorías, TIC, secretaría,
+ *    coordinaciones…), plus whoever coordinates a project. A plain docente does not convene: they get
+ *    convened. It is a flag on the role, so the centre can move it without a code change;
+ *  - **gestionar** la reunión (moverla, cambiar la convocatoria, cancelarla): only whoever convened it;
+ *  - **el acta** (subirla, pasar lista, darla por aprobada): whoever LEVANTA EL ACTA, who is not always
+ *    the convener — in a collegiate body it is the secretary. See {@see Meeting::minutesKeeper()}.
  *
- * The admin flag ({@see \App\Entity\Role::isAdmin()}) bypasses both, as it does everywhere else.
+ * The admin flag ({@see Role::isAdmin()}) bypasses all three, as it does everywhere else.
  */
 final readonly class MeetingAccess
 {
     public function __construct(
         private ProjectRepository $projects,
         private UserRepository $users,
-        private OrganizationHierarchy $hierarchy,
     ) {
     }
 
     /**
-     * Whether the person may convene meetings at all: they coordinate a live project, they command a
-     * department by rank, or they are an admin. A plain docente convenes nothing — they get convened.
+     * Whether the person may convene meetings at all: they hold a cargo that convenes, they coordinate a
+     * live project, or they are an admin.
      *
      * @param User $user    the person
      * @param bool $isAdmin whether they hold an admin role
@@ -44,16 +44,26 @@ final readonly class MeetingAccess
      */
     public function canConvene(User $user, bool $isAdmin): bool
     {
-        return $isAdmin
-            || [] !== $this->projects->findActiveCoordinatedBy($user)
-            || [] !== $this->hierarchy->commandedDepartments($user);
+        if ($isAdmin) {
+            return true;
+        }
+
+        foreach ($user->getAssignedRoles() as $role) {
+            if ($role->canConvene()) {
+                return true;
+            }
+        }
+
+        // Coordinating a project convenes even if the role catalogue was never told so: the coordination
+        // IS the cargo, and it lives in the project (see Project).
+        return [] !== $this->projects->findActiveCoordinatedBy($user);
     }
 
     /**
-     * Whether the person may change a meeting: move it, edit its agenda, upload or replace its minutes,
-     * delete it. Only whoever convened it (or an admin): a superior by rank supervises the centre's
-     * tasks, but somebody else's meeting is not theirs to rewrite — and the acta is signed by the person
-     * who ran the meeting.
+     * Whether the person may change the convocatoria: move it, edit the agenda, cancel it. Only whoever
+     * convened it (or an admin) — a superior by rank supervises the centre's tasks, but somebody else's
+     * meeting is not theirs to rewrite. Whoever convenes can hand the acta to somebody else
+     * ({@see Meeting::getMinutesTakenBy()}), which is the clean way out when the person changes.
      *
      * @param Meeting $meeting the meeting
      * @param User    $user    the person
@@ -67,31 +77,50 @@ final readonly class MeetingAccess
     }
 
     /**
-     * Whether the person may open the meeting and read its minutes: it concerns them (they convened it or
-     * were convened), or they read the centre's records. A meeting is not public — an acta may record
-     * decisions about people, so it never leaves the group that was called, with one deliberate exception:
-     * whoever runs the back-office (dirección, by read access to {@see \App\Enum\Area::ADMINISTRATION}, or
-     * an admin by bypass) reaches every acta, because the project record in /admin lists them and because
-     * the acta IS an institutional document of the centre they are responsible for.
+     * Whether the person is in charge of the acta: uploading or replacing it, taking the roll and recording
+     * its approval. That is whoever levanta el acta — the secretary in a collegiate body, the jefatura in a
+     * department meeting, the coordination in a project one — NOT necessarily the convener.
      *
-     * Note that this is READING only: {@see canManage()} stays with whoever convened the meeting, so
-     * nobody else rewrites or deletes somebody else's acta.
+     * @param Meeting $meeting the meeting
+     * @param User    $user    the person
+     * @param bool    $isAdmin whether they hold an admin role
      *
-     * @param Meeting $meeting         the meeting
-     * @param User    $user            the person
-     * @param bool    $readsEverything whether they read the centre's records (admin flag or read access to
-     *                                 the administration area)
-     *
-     * @return bool true if they may see the meeting
+     * @return bool true if they keep this meeting's acta
      */
-    public function canSee(Meeting $meeting, User $user, bool $readsEverything): bool
+    public function canKeepMinutes(Meeting $meeting, User $user, bool $isAdmin): bool
     {
-        return $readsEverything || $meeting->concerns($user);
+        return $isAdmin || $meeting->minutesKeeper() === $user;
     }
 
     /**
-     * The projects the person may convene a meeting for: the live ones they coordinate (every live one
-     * for an admin). Empty means "you convene, but not on behalf of a project".
+     * Whether the person may open the meeting and read its minutes: it concerns them (they convened it or
+     * were convened), or they are on the leadership team. A meeting is not public — an acta may record
+     * decisions about people, so it stays inside the group that was called, with one deliberate exception
+     * the centre asked for: the **equipo directivo** reads every acta, because they answer for the centre's
+     * records and the project detail in /admin lists them.
+     *
+     * "Equipo directivo" is read from the model, not from a list of names: a centre-wide ranked role
+     * (dirección, jefatura de estudios and its adjunta) or read access to the administration area (which is
+     * how secretaría gets it), or the admin flag.
+     *
+     * Note this is READING only: {@see canManage()} and {@see canKeepMinutes()} stay with the people of the
+     * meeting, so nobody else rewrites or deletes somebody else's acta.
+     *
+     * @param Meeting $meeting     the meeting
+     * @param User    $user        the person
+     * @param bool    $isLeadership whether they are on the leadership team (see the class doc)
+     *
+     * @return bool true if they may see the meeting
+     */
+    public function canSee(Meeting $meeting, User $user, bool $isLeadership): bool
+    {
+        return $isLeadership || $meeting->concerns($user);
+    }
+
+    /**
+     * The projects the person may convene a meeting for: the live ones they coordinate (every live one for
+     * an admin). Only used to offer the shortcut that brings a project's teachers already ticked — anybody
+     * who convenes may convene anyone, so this never limits WHO can be called.
      *
      * @param User $user    the person
      * @param bool $isAdmin whether they hold an admin role
@@ -106,65 +135,23 @@ final readonly class MeetingAccess
     }
 
     /**
-     * The people the person may convene: everyone in their live projects, plus everyone they command by
-     * rank (every active person for an admin). Excludes the convener themselves — they are on the
-     * meeting by convening it, so offering to "convene yourself" would only invite a duplicate.
+     * The people that may be convened: everybody still on the staff, minus the convener (who is at the
+     * meeting by convening it).
      *
-     * Deduplicated by identity, and ordered by name so the list reads the same on every screen.
+     * Deliberately NOT narrowed to "the people you command", which is how tasks work: a tutoría convenes
+     * the equipo docente of its group and commands nobody, and the same goes for TIC or biblioteca. Since
+     * a meeting only exists for the people called to it, the risk of a wide list is a long list — not a
+     * leak — and that is what the project/department shortcuts are for.
      *
-     * @param User $user    the person convening
-     * @param bool $isAdmin whether they hold an admin role
+     * @param User $user the person convening
      *
      * @return list<User> the people they may convene
      */
-    public function convenablePeople(User $user, bool $isAdmin): array
+    public function convenablePeople(User $user): array
     {
-        $candidates = $isAdmin ? $this->users->findActive() : $this->hierarchy->commandedPeople($user);
-
-        foreach ($this->convenableProjects($user, $isAdmin) as $project) {
-            foreach ($project->people() as $member) {
-                // Solo quien sigue de alta: a alguien que ya no está en el centro no se le convoca, y su
-                // pertenencia al proyecto se conserva por historia (no se borra al darle de baja).
-                if ($member->isActive()) {
-                    $candidates[] = $member;
-                }
-            }
-        }
-
-        $unique = [];
-        foreach ($candidates as $candidate) {
-            if ($candidate !== $user) {
-                $unique[spl_object_id($candidate)] = $candidate;
-            }
-        }
-        $people = array_values($unique);
-        usort($people, static fn (User $a, User $b): int => self::sortKey($a->getFullName()) <=> self::sortKey($b->getFullName()));
-
-        return $people;
-    }
-
-    /**
-     * Sort key for a person's name: lower-case and with Spanish accents folded, so "Álvarez" sits between
-     * "Alonso" and "Amaya" instead of after "Zorrilla" — which is where a plain byte comparison puts every
-     * accented name, and this is a staff list full of them.
-     *
-     * Folded with a fixed map instead of a collator: ext-intl is not a declared dependency of the project,
-     * and a sort order that changes with the deployment's extensions is worse than a simple one.
-     *
-     * @param string $name the full name
-     *
-     * @return string the comparable key
-     */
-    private static function sortKey(string $name): string
-    {
-        return strtr(mb_strtolower($name), [
-            'á' => 'a', 'à' => 'a', 'ä' => 'a', 'â' => 'a',
-            'é' => 'e', 'è' => 'e', 'ë' => 'e', 'ê' => 'e',
-            'í' => 'i', 'ì' => 'i', 'ï' => 'i', 'î' => 'i',
-            'ó' => 'o', 'ò' => 'o', 'ö' => 'o', 'ô' => 'o',
-            'ú' => 'u', 'ù' => 'u', 'ü' => 'u', 'û' => 'u',
-            // La ñ va justo detrás de la n en español, que es lo que consigue plegarla a "n".
-            'ñ' => 'n', 'ç' => 'c',
-        ]);
+        return array_values(array_filter(
+            $this->users->findActive(),
+            static fn (User $candidate): bool => $candidate !== $user,
+        ));
     }
 }

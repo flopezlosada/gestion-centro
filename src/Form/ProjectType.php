@@ -36,7 +36,7 @@ final class ProjectType extends AbstractType
         $builder
             ->add('name', TextType::class, [
                 'label' => 'Nombre',
-                'help' => 'Por ejemplo: «Erasmus+», «Huerto escolar», «Plan digital».',
+                'help' => 'Por ejemplo: «Erasmus+», «Huerto escolar», «Plan digital», «Biblioteca».',
             ])
             ->add('description', TextareaType::class, [
                 'label' => 'Descripción',
@@ -48,8 +48,8 @@ final class ProjectType extends AbstractType
                 'choices' => $people,
                 'choice_label' => 'fullName',
                 'required' => false,
-                'placeholder' => '— Sin coordinador —',
-                'help' => 'Quien puede convocar las reuniones del proyecto y subir sus actas. Sin coordinador, nadie convoca por el proyecto.',
+                'placeholder' => '— Sin coordinación —',
+                'help' => 'Quien convoca las reuniones del proyecto y levanta sus actas. Sin coordinación, nadie convoca en su nombre.',
             ])
             ->add('members', EntityType::class, [
                 'label' => 'Profesorado del proyecto',
@@ -64,7 +64,7 @@ final class ProjectType extends AbstractType
                 'choice_attr' => static fn (User $person): array => [
                     'data-description' => $person->getUnit()?->getName() ?? 'Sin departamento',
                 ],
-                'help' => 'Vienen convocados por defecto a las reuniones del proyecto.',
+                'help' => 'Se convoca a estas personas por defecto en las reuniones del proyecto.',
             ])
             ->add('active', CheckboxType::class, [
                 'label' => 'Proyecto en marcha',

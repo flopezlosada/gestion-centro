@@ -13,7 +13,7 @@
         <div>
             <p class="eyebrow">Proyectos</p>
             <h1>{{ project.name }}</h1>
-            <p class="lead">Coordina: {{ project.coordinator ? project.coordinator.fullName : '— sin coordinador —' }} <span class="help">(quien coordina convoca las reuniones del proyecto y sube sus actas)</span></p>
+            <p class="lead">Coordina: {{ project.coordinator ? project.coordinator.fullName : '— sin coordinación —' }} <span class="help">(quien coordina convoca las reuniones del proyecto y levanta sus actas)</span></p>
         </div>
         <a class="btn secondary" href="{{ path('admin_project_edit', { id: project.id }) }}">Editar</a>
     </div>

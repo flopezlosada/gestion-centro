@@ -19,7 +19,7 @@
         <div>
             <p class="eyebrow">Reuniones</p>
             <h1>{{ editing ? 'Editar reunión' : 'Convocar reunión' }}</h1>
-            <p class="lead">Los convocados reciben un aviso con el día, la hora y el lugar. Si cambias el cuándo o el dónde, se les vuelve a avisar.</p>
+            <p class="lead">Quien esté convocado recibe un aviso con el día, la hora y el lugar. Si cambias el cuándo o el dónde, se avisa otra vez.</p>
         </div>
     </div>
 
@@ -29,6 +29,8 @@
             {{ form_errors(form) }}
             {{ f.section('Qué y cuándo', [form.title, form.day, form.startTime, form.endTime, form.place, form.reminder]) }}
             {{ f.section('Orden del día', [form.agenda]) }}
+            {{ f.section('El acta', [form.minutesTakenBy]) }}
+            {{ f.toggle(form.minutesApprovalRequired) }}
             <fieldset class="form-section">
                 <legend class="form-section-title">Quién</legend>
                 {{ f.field(form.project) }}

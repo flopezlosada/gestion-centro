@@ -96,6 +96,53 @@ class Meeting implements Auditable
     private Collection $attendees;
 
     /**
+     * Who actually attended, recorded after the meeting. A subset of {@see people()} — enforced by
+     * {@see recordAttendance()}, the only way in — so "asistió alguien que no estaba convocado" is not
+     * representable. Empty is ambiguous on its own, which is why {@see $attendanceTakenAt} exists: no
+     * timestamp means nobody took the roll, not that nobody came.
+     *
+     * @var Collection<int, User>
+     */
+    #[ORM\ManyToMany(targetEntity: User::class)]
+    #[ORM\JoinTable(name: 'meeting_attendance')]
+    private Collection $attended;
+
+    /** When the roll was taken, or null while nobody has. Distinguishes "nadie vino" from "no se pasó lista". */
+    #[ORM\Column(name: 'attendance_taken_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $attendanceTakenAt = null;
+
+    /**
+     * Who keeps the minutes ("quien levanta el acta"), which the centre says is NOT always whoever
+     * convened: in a collegiate body (CCP, claustro) it is the secretary, in a department meeting the
+     * jefatura, in a project one the coordination or the leadership team. So it is a field, not a
+     * derivation — the app has no way to know which body a meeting belongs to.
+     *
+     * Defaults to the convener in the constructor; nullable only so removing a person does not take the
+     * meeting with them ({@see minutesKeeper()} falls back to the convener then).
+     */
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'minutes_taken_by_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?User $minutesTakenBy;
+
+    /**
+     * Whether this meeting's acta has to be approved (read and approved at the following meeting). True
+     * for a CCP or a department meeting, false for the rest — per the centre. A flag per meeting rather
+     * than derived from a "kind of meeting" enum: the app does not know what a CCP is, and inventing four
+     * kinds only to feed one default would be modelling for its own sake.
+     */
+    #[ORM\Column(name: 'minutes_approval_required', options: ['default' => false])]
+    private bool $minutesApprovalRequired = false;
+
+    /** When the acta was approved, or null while it is not (or does not need to be). */
+    #[ORM\Column(name: 'minutes_approved_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $minutesApprovedAt = null;
+
+    /** Who recorded the approval (a historical fact). */
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'minutes_approved_by_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?User $minutesApprovedBy = null;
+
+    /**
      * Storage-relative path of the minutes file, as returned by {@see \App\Service\FileUploader}. Always
      * set together with {@see $minutesName}, {@see $minutesUploadedAt} and {@see $minutesUploadedBy}
      * through {@see attachMinutes()}: a path without a name (an undownloadable file) is not
@@ -150,6 +197,10 @@ class Meeting implements Auditable
         $this->title = $title;
         $this->startAt = $startAt;
         $this->attendees = new ArrayCollection();
+        $this->attended = new ArrayCollection();
+        // Quien convoca levanta el acta salvo que se diga otra cosa: así una reunión recién creada nunca
+        // está sin nadie a cargo del acta.
+        $this->minutesTakenBy = $convener;
         $this->createdAt = new \DateTimeImmutable();
     }
 
@@ -394,6 +445,136 @@ class Meeting implements Auditable
         }
 
         return array_values($people);
+    }
+
+    public function getMinutesTakenBy(): ?User
+    {
+        return $this->minutesTakenBy;
+    }
+
+    public function setMinutesTakenBy(?User $minutesTakenBy): static
+    {
+        $this->minutesTakenBy = $minutesTakenBy;
+
+        return $this;
+    }
+
+    /**
+     * Who is on the hook for the acta right now: whoever was named, or the convener when nobody is (the
+     * person named was removed from the centre). The single definition used by the access check and by the
+     * detail screen, so what the app offers and what it accepts cannot drift.
+     *
+     * @return User|null the minutes keeper, or null when even the convener is gone
+     */
+    public function minutesKeeper(): ?User
+    {
+        return $this->minutesTakenBy ?? $this->convener;
+    }
+
+    public function minutesApprovalRequired(): bool
+    {
+        return $this->minutesApprovalRequired;
+    }
+
+    public function setMinutesApprovalRequired(bool $required): static
+    {
+        $this->minutesApprovalRequired = $required;
+
+        return $this;
+    }
+
+    public function getMinutesApprovedAt(): ?\DateTimeImmutable
+    {
+        return $this->minutesApprovedAt;
+    }
+
+    public function getMinutesApprovedBy(): ?User
+    {
+        return $this->minutesApprovedBy;
+    }
+
+    /**
+     * Whether the acta is approved. Only meaningful when {@see minutesApprovalRequired()} is true; for a
+     * meeting whose acta needs no approval this stays false forever and nothing reads it.
+     *
+     * @return bool true once the approval was recorded
+     */
+    public function areMinutesApproved(): bool
+    {
+        return null !== $this->minutesApprovedAt;
+    }
+
+    /**
+     * Records that the body approved the acta (typically at the following meeting).
+     *
+     * @param User               $by who recorded it
+     * @param \DateTimeImmutable $at when
+     */
+    public function approveMinutes(User $by, \DateTimeImmutable $at): static
+    {
+        $this->minutesApprovedBy = $by;
+        $this->minutesApprovedAt = $at;
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, User> the people who actually attended
+     */
+    public function getAttended(): Collection
+    {
+        return $this->attended;
+    }
+
+    public function getAttendanceTakenAt(): ?\DateTimeImmutable
+    {
+        return $this->attendanceTakenAt;
+    }
+
+    /**
+     * Whether the roll has been taken. Reading the timestamp and not the list: an empty list is a legitimate
+     * answer ("no vino nadie") and must not read as "sin datos".
+     *
+     * @return bool true once somebody recorded who attended
+     */
+    public function isAttendanceTaken(): bool
+    {
+        return null !== $this->attendanceTakenAt;
+    }
+
+    /**
+     * Records who attended, from the people expected ({@see people()}); anybody else in the list is
+     * ignored, so "asistió quien no estaba convocado" cannot be stored whatever the form posts.
+     *
+     * @param list<User>         $present the people who came
+     * @param \DateTimeImmutable $at      when the roll was taken
+     */
+    public function recordAttendance(array $present, \DateTimeImmutable $at): static
+    {
+        $expected = $this->people();
+        $this->attended->clear();
+        foreach ($present as $person) {
+            if (\in_array($person, $expected, true) && !$this->attended->contains($person)) {
+                $this->attended->add($person);
+            }
+        }
+        $this->attendanceTakenAt = $at;
+
+        return $this;
+    }
+
+    /**
+     * Who was expected and did not come. Derived instead of stored, so it can never contradict the
+     * attendance list.
+     *
+     * @return list<User> the absentees
+     */
+    public function absentees(): array
+    {
+        return array_values(array_filter(
+            $this->people(),
+            fn (User $person): bool => !$this->attended->contains($person),
+        ));
     }
 
     public function getMinutesPath(): ?string

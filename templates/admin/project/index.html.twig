@@ -8,8 +8,8 @@
     <div class="page-head">
         <div>
             <p class="eyebrow">Administración</p>
-            <h1>Proyectos</h1>
-            <p class="lead">Los proyectos del centro (Erasmus+, huerto, plan digital…) y quién los coordina. Un proyecto NO es un departamento: es un grupo de profesores que trabajan juntos en algo, y su coordinación no manda en nadie — solo puede convocar sus reuniones y subir sus actas.</p>
+            <h1>Proyectos y coordinaciones</h1>
+            <p class="lead">Los proyectos y coordinaciones del centro (Erasmus+, huerto, plan digital, biblioteca, igualdad…) y quién los coordina. Un proyecto NO es un departamento: es un grupo de profesorado que trabaja junto en algo, y su coordinación no manda en nadie — solo convoca sus reuniones y sube sus actas.</p>
         </div>
         <a class="btn" href="{{ path('admin_project_new') }}">+ Nuevo proyecto</a>
     </div>
@@ -17,7 +17,7 @@
     <div class="card">
         {% if projects is empty %}
             <div class="empty-state">
-                <h2>No hay proyectos todavía</h2>
+                <h2>No hay proyectos ni coordinaciones todavía</h2>
                 <p>Crea el primero y dile quién lo coordina.</p>
                 <a class="btn" href="{{ path('admin_project_new') }}">Nuevo proyecto</a>
             </div>
@@ -30,7 +30,7 @@
                     {% for project in projects %}
                         <tr>
                             <td><a href="{{ path('admin_project_show', { id: project.id }) }}">{{ project.name }}</a></td>
-                            <td>{{ project.coordinator ? project.coordinator.fullName : '— sin coordinador —' }}</td>
+                            <td>{{ project.coordinator ? project.coordinator.fullName : '— sin coordinación —' }}</td>
                             <td>{{ project.members|length }}</td>
                             <td>{{ project.active ? 'En marcha' : 'Terminado' }}</td>
                             <td class="row-actions">

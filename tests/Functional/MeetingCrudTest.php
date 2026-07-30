@@ -280,6 +280,84 @@ final class MeetingCrudTest extends WebTestCase
         self::assertSame(1, $this->noticesOf($this->em->getRepository(User::class)->find($attendee->getId()), 'meeting.cancelled'));
     }
 
+    public function testTheNamedMinutesKeeperUploadsTheActaAndTheConvenerDoesNot(): void
+    {
+        // Caso real del centro: en la CCP convoca la dirección y el acta la levanta la secretaría.
+        $convener = $this->user('Ana Directora', 'ana.meet@centro.test');
+        $secretary = $this->user('Sara Secretaría', 'sara.meet@centro.test');
+        $meeting = $this->meeting($convener, $secretary);
+        $meeting->setMinutesTakenBy($secretary);
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+        $uploadUrl = '/reuniones/'.$id.'/acta';
+
+        // A quien convoca ya no se le ofrece el acta: la ha delegado.
+        $this->client->loginUser($convener);
+        $this->client->request('GET', '/reuniones/'.$id);
+        self::assertSelectorNotExists('input[type="file"][name="acta"]');
+
+        $this->client->loginUser($secretary);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        self::assertSelectorTextContains('body', 'Levanta el acta');
+        $token = (string) $crawler->filter('form[action="'.$uploadUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $uploadUrl, ['_token' => $token], ['acta' => $this->actaFile()]);
+
+        self::assertResponseRedirects();
+        $this->em->clear();
+        $stored = $this->em->getRepository(Meeting::class)->find($id);
+        self::assertInstanceOf(Meeting::class, $stored);
+        self::assertTrue($stored->hasMinutes());
+        self::assertSame('sara.meet@centro.test', $stored->getMinutesUploadedBy()?->getEmail());
+
+        self::getContainer()->get(FileUploader::class)->remove((string) $stored->getMinutesPath());
+    }
+
+    public function testTheRollIsTakenAfterTheMeetingAndOnlyAmongThePeopleExpected(): void
+    {
+        $convener = $this->user('Lucía Coordina', 'lucia7.meet@centro.test');
+        $came = $this->user('Pedro Vino', 'pedro9.meet@centro.test');
+        $missed = $this->user('Ana Faltó', 'ana2.meet@centro.test');
+        $stranger = $this->user('Ajena Nada', 'ajena3.meet@centro.test');
+        // Ya celebrada: antes de empezar no hay nada que contar y la acción se niega.
+        $meeting = new Meeting($convener, 'Reunión de departamento', (new \DateTimeImmutable('-2 hours')));
+        $meeting->addAttendee($came)->addAttendee($missed);
+        $this->em->persist($meeting);
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+        $action = '/reuniones/'.$id.'/asistencia';
+
+        $this->client->loginUser($convener);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $token = (string) $crawler->filter('form[action="'.$action.'"] input[name="_token"]')->attr('value');
+        // Se cuela alguien que no estaba convocado: la entidad lo descarta.
+        $this->client->request('POST', $action, ['_token' => $token, 'asistentes' => [(string) $came->getId(), (string) $stranger->getId()]]);
+
+        self::assertResponseRedirects();
+        $this->em->clear();
+        $stored = $this->em->getRepository(Meeting::class)->find($id);
+        self::assertInstanceOf(Meeting::class, $stored);
+        self::assertTrue($stored->isAttendanceTaken());
+        self::assertSame(['Pedro Vino'], array_map(static fn (User $u): string => $u->getFullName(), $stored->getAttended()->toArray()));
+        self::assertSame(['Ana Faltó', 'Lucía Coordina'], array_map(static fn (User $u): string => $u->getFullName(), $stored->absentees()));
+    }
+
+    public function testAttendanceCannotBeTakenBeforeTheMeetingHappens(): void
+    {
+        $convener = $this->user('Lucía Coordina', 'lucia8.meet@centro.test');
+        $attendee = $this->user('Pedro Convocado', 'pedro10.meet@centro.test');
+        $meeting = $this->meeting($convener, $attendee);
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+
+        $this->client->loginUser($convener);
+        // La ficha no ofrece el formulario…
+        $this->client->request('GET', '/reuniones/'.$id);
+        self::assertSelectorNotExists('form[action="/reuniones/'.$id.'/asistencia"]');
+        // …y el POST a pelo tampoco vale.
+        $this->client->request('POST', '/reuniones/'.$id.'/asistencia', ['_token' => 'irrelevante', 'asistentes' => []]);
+        self::assertResponseStatusCodeSame(403);
+    }
+
     /**
      * A small real file to upload as the acta. Written to the system temp dir and handed over as a test
      * upload (no is_uploaded_file check), which is what lets the controller store it for real.

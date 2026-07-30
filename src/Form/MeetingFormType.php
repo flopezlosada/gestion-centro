@@ -9,6 +9,7 @@ use App\Entity\User;
 use App\Enum\EventReminderOffset;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
+use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
 use Symfony\Component\Form\Extension\Core\Type\EnumType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
@@ -91,10 +92,24 @@ final class MeetingFormType extends AbstractType
                 'choice_label' => 'name',
                 'required' => false,
                 'placeholder' => '— No es de un proyecto —',
-                'help' => 'Solo los proyectos que coordinas. Al convocar desde un proyecto, sus profes vienen ya marcados.',
+                'help' => 'Solo los proyectos y coordinaciones que llevas. Al convocar desde uno, su profesorado viene ya marcado.',
+            ])
+            ->add('minutesTakenBy', EntityType::class, [
+                'label' => 'Levanta el acta',
+                'class' => User::class,
+                'choices' => $options['attendee_choices'],
+                'choice_label' => 'fullName',
+                'required' => false,
+                'placeholder' => 'Quien convoca (tú)',
+                'help' => 'En un órgano colegiado (CCP, claustro) es la secretaría; en un departamento, su jefatura; en un proyecto, su coordinación. Quien levanta el acta es quien la sube, pasa lista y la da por aprobada.',
+            ])
+            ->add('minutesApprovalRequired', CheckboxType::class, [
+                'label' => 'El acta se aprueba en la reunión siguiente',
+                'required' => false,
+                'help' => 'Márcalo en la CCP y en las reuniones de departamento. En el resto no hace falta.',
             ])
             ->add('attendees', EntityType::class, [
-                'label' => 'Convocados',
+                'label' => 'Personas convocadas',
                 'class' => User::class,
                 'choices' => $options['attendee_choices'],
                 'choice_label' => 'fullName',
@@ -105,7 +120,7 @@ final class MeetingFormType extends AbstractType
                 'choice_attr' => static fn (User $person): array => [
                     'data-description' => $person->getUnit()?->getName() ?? 'Sin departamento',
                 ],
-                'help' => 'Recibirán un aviso con el día, la hora y el lugar. Tú cuentas como convocante, no hace falta marcarte.',
+                'help' => 'Quien esté en la lista recibe un aviso con el día, la hora y el lugar. Tú convocas, así que no hace falta marcarte.',
             ]);
     }
 
