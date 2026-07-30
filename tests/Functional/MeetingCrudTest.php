@@ -341,6 +341,80 @@ final class MeetingCrudTest extends WebTestCase
         self::assertSame(['Ana Faltó', 'Lucía Coordina'], array_map(static fn (User $u): string => $u->getFullName(), $stored->absentees()));
     }
 
+    public function testWhatWasDiscussedBecomesTheGeneratedPdfActa(): void
+    {
+        $convener = $this->user('Lucía Coordina', 'lucia9.meet@centro.test');
+        $attendee = $this->user('Pedro Convocado', 'pedro11.meet@centro.test');
+        $meeting = new Meeting($convener, 'Reunión de departamento', new \DateTimeImmutable('-2 hours'));
+        $meeting->addAttendee($attendee);
+        $this->em->persist($meeting);
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+
+        // 1. Se recoge lo tratado.
+        $this->client->loginUser($convener);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $discussionAction = '/reuniones/'.$id.'/tratado';
+        $token = (string) $crawler->filter('form[action="'.$discussionAction.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $discussionAction, ['_token' => $token, 'tratado' => "1. Se aprueba la programación.\n2. Se acuerda repetir en mayo."]);
+        self::assertResponseRedirects();
+
+        // 2. Se pide el acta en PDF: no es automática, sale de lo recogido.
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $generateAction = '/reuniones/'.$id.'/acta/generar';
+        $token = (string) $crawler->filter('form[action="'.$generateAction.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $generateAction, ['_token' => $token]);
+        self::assertResponseRedirects();
+
+        $this->em->clear();
+        $stored = $this->em->getRepository(Meeting::class)->find($id);
+        self::assertInstanceOf(Meeting::class, $stored);
+        self::assertStringContainsString('Se aprueba la programación', (string) $stored->getDiscussion());
+        self::assertTrue($stored->hasMinutes(), 'el acta generada ES el acta de la reunión');
+        self::assertStringEndsWith('.pdf', (string) $stored->getMinutesName());
+
+        // 3. Quien está convocado se la puede descargar.
+        $this->client->loginUser($attendee);
+        $this->client->request('GET', '/reuniones/'.$id.'/acta/descargar');
+        self::assertResponseIsSuccessful();
+        self::assertStringContainsString('.pdf', (string) $this->client->getResponse()->headers->get('content-disposition'));
+
+        self::getContainer()->get(FileUploader::class)->remove((string) $stored->getMinutesPath());
+    }
+
+    public function testOnlyTheMinutesKeeperRecordsWhatWasDiscussedOrGeneratesTheActa(): void
+    {
+        $convener = $this->user('Lucía Coordina', 'lucia10.meet@centro.test');
+        $attendee = $this->user('Pedro Convocado', 'pedro12.meet@centro.test');
+        $meeting = new Meeting($convener, 'Reunión de departamento', new \DateTimeImmutable('-2 hours'));
+        $meeting->addAttendee($attendee);
+        $this->em->persist($meeting);
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+
+        $this->client->loginUser($attendee);
+        $this->client->request('GET', '/reuniones/'.$id);
+        self::assertSelectorNotExists('textarea[name="tratado"]', 'a quien solo asiste no se le ofrece escribir el acta');
+        $this->client->request('POST', '/reuniones/'.$id.'/tratado', ['_token' => 'irrelevante', 'tratado' => 'Lo que me apetezca.']);
+        self::assertResponseStatusCodeSame(403);
+        $this->client->request('POST', '/reuniones/'.$id.'/acta/generar', ['_token' => 'irrelevante']);
+        self::assertResponseStatusCodeSame(403);
+    }
+
+    public function testTheActaCannotBeGeneratedBeforeTheMeetingHappens(): void
+    {
+        $convener = $this->user('Lucía Coordina', 'lucia11.meet@centro.test');
+        $meeting = $this->meeting($convener, $this->user('Pedro Convocado', 'pedro13.meet@centro.test'));
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+
+        $this->client->loginUser($convener);
+        $this->client->request('GET', '/reuniones/'.$id);
+        self::assertSelectorNotExists('form[action="/reuniones/'.$id.'/acta/generar"]');
+        $this->client->request('POST', '/reuniones/'.$id.'/acta/generar', ['_token' => 'irrelevante']);
+        self::assertResponseStatusCodeSame(403);
+    }
+
     public function testAttendanceCannotBeTakenBeforeTheMeetingHappens(): void
     {
         $convener = $this->user('Lucía Coordina', 'lucia8.meet@centro.test');

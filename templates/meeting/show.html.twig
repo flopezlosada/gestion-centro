@@ -81,19 +81,55 @@
                 <p class="help">Todavía no hay acta de esta reunión.</p>
             {% endif %}
 
+            {% if keepsMinutes and isHeld %}
+                {#- Generar el acta: NO es automático (no todas las reuniones necesitan PDF), se hace cuando
+                    alguien la pide. Sale del orden del día, la asistencia y lo tratado, y pasa a ser EL acta
+                    de la reunión. -#}
+                <form method="post" action="{{ path('meeting_minutes_generate', { id: meeting.id }) }}" class="deliverable-form"{% if meeting.hasMinutes %} data-confirm="Ya hay un acta guardada. ¿Generarla de nuevo y sustituir la anterior?"{% endif %}>
+                    <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
+                    <button class="btn" type="submit">{{ meeting.hasMinutes ? 'Volver a generar el acta en PDF' : 'Generar el acta en PDF' }}</button>
+                </form>
+                <p class="help">Se genera con el orden del día, la asistencia y lo tratado. Puedes generarla otra vez si corriges algo.</p>
+            {% endif %}
+
             {% if keepsMinutes %}
-                {# Sustituir vale para corregir un acta equivocada: el fichero anterior se borra del disco. #}
+                {# O subir un fichero propio, para un acta escrita fuera. Sustituir vale para corregir una
+                   equivocada: el fichero anterior se borra del disco. #}
                 <form method="post" action="{{ path('meeting_minutes_upload', { id: meeting.id }) }}" enctype="multipart/form-data" class="deliverable-form">
                     <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
                     <label class="classcard__file">
                         <span class="visually-hidden">Archivo del acta</span>
                         <input type="file" name="acta" required>
                     </label>
-                    <button class="btn" type="submit">{{ meeting.hasMinutes ? 'Sustituir el acta' : 'Subir el acta' }}</button>
+                    <button class="btn secondary" type="submit">{{ meeting.hasMinutes ? 'Sustituir por este archivo' : 'Subir un acta hecha aparte' }}</button>
                 </form>
                 <p class="help">PDF, Office, texto o imagen, hasta {{ (constant('App\\Support\\DocumentPolicy::MAX_BYTES') / 1024 / 1024)|round }} MB. Solo la puede descargar el grupo convocado y el equipo directivo.</p>
             {% endif %}
         </div>
+        {# ---- Lo tratado: la materia prima del acta. Lo escribe quien la levanta; lo lee todo el grupo
+               convocado, que así se entera de lo acordado aunque nadie genere el PDF. ---- #}
+        {% if isHeld %}
+            <div class="detail-block">
+                <div class="detail-block__label">Lo tratado y los acuerdos</div>
+                {% if keepsMinutes %}
+                    <form method="post" action="{{ path('meeting_discussion', { id: meeting.id }) }}">
+                        <input type="hidden" name="_token" value="{{ csrf_token('meeting_discussion' ~ meeting.id) }}">
+                        <div class="form-row">
+                            <label class="visually-hidden" for="tratado">Lo tratado y los acuerdos</label>
+                            <textarea id="tratado" name="tratado" rows="10" placeholder="1. Se aprueba…&#10;2. Se acuerda…">{{ meeting.discussion }}</textarea>
+                        </div>
+                        <div class="form-actions">
+                            <button class="btn" type="submit">Guardar lo tratado</button>
+                        </div>
+                    </form>
+                {% elseif meeting.discussion %}
+                    <p class="detail-prose">{{ meeting.discussion|nl2br }}</p>
+                {% else %}
+                    <p class="help">Todavía no se ha recogido lo tratado.</p>
+                {% endif %}
+            </div>
+        {% endif %}
+
         {# ---- Asistencia: se pasa lista DESPUÉS de la reunión, y es parte del acta. Un acta formal dice
                quién asistió y quién no. ---- #}
         {% if isHeld %}

@@ -16,6 +16,7 @@ use App\Security\Voter\AreaVoter;
 use App\Service\FileUploader;
 use App\Service\MeetingAccess;
 use App\Service\MeetingNotifier;
+use App\Service\MinutesPdfRenderer;
 use App\Service\OrganizationHierarchy;
 use App\Support\DocumentPolicy;
 use App\Util\CalendarDate;
@@ -226,9 +227,10 @@ final class MeetingController extends AbstractController
     }
 
     /**
-     * Uploads (or replaces) the acta. Only whoever convened the meeting or an admin: the acta is signed
-     * off by whoever ran it. The file it replaces is deleted only AFTER the change is committed, so a
-     * failed flush never leaves the meeting pointing at a file already gone.
+     * Uploads (or replaces) the acta with a file of your own — the other way in is generating it from what
+     * was recorded ({@see generateMinutes()}). Only whoever keeps the minutes. The file it replaces is
+     * deleted only AFTER the change is committed, so a failed flush never leaves the meeting pointing at a
+     * file already gone.
      */
     #[Route('/{id}/acta', name: 'meeting_minutes_upload', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function uploadMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, FileUploader $uploader, MeetingNotifier $notifier): Response
@@ -254,19 +256,60 @@ final class MeetingController extends AbstractController
             return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
         }
 
-        $replaced = $meeting->attachMinutes(
-            $uploader->upload($file, self::MINUTES_SUBDIR),
-            DocumentPolicy::nameOf($file),
-            $user,
-            new \DateTimeImmutable(),
-        );
-        $entityManager->flush();
-        if (null !== $replaced) {
-            $uploader->remove($replaced);
+        $replaced = $this->keepMinutes($meeting, $uploader->upload($file, self::MINUTES_SUBDIR), DocumentPolicy::nameOf($file), $user, $entityManager, $uploader, $notifier);
+        $this->addFlash('success', $replaced ? 'Acta sustituida.' : 'Acta subida.');
+
+        return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
+    }
+
+    /**
+     * Records what was discussed and agreed ("lo tratado"), which is what the acta is made of. Written by
+     * whoever keeps the minutes, and only once the meeting has been held — there is nothing to record about
+     * a meeting that has not happened.
+     */
+    #[Route('/{id}/tratado', name: 'meeting_discussion', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function recordDiscussion(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager): Response
+    {
+        if (!$this->isCsrfTokenValid('meeting_discussion'.$meeting->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+        if (!$access->canKeepMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
+            throw $this->createAccessDeniedException('Lo tratado lo recoge quien levanta el acta.');
+        }
+        if (!$meeting->isPast(new \DateTimeImmutable())) {
+            throw $this->createAccessDeniedException('La reunión todavía no ha empezado.');
         }
 
-        $notifier->notifyMinutes($meeting, array_values($meeting->getAttendees()->toArray()));
-        $this->addFlash('success', null !== $replaced ? 'Acta sustituida.' : 'Acta subida.');
+        $discussion = trim((string) $request->request->get('tratado'));
+        $meeting->setDiscussion('' !== $discussion ? $discussion : null);
+        $entityManager->flush();
+        $this->addFlash('success', 'Guardado lo tratado.');
+
+        return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
+    }
+
+    /**
+     * Generates the acta as a PDF from what the app already knows: the convocatoria, the roll, the agenda and
+     * what was recorded. It is NOT automatic — the centre was explicit that not every meeting needs a PDF —
+     * so it happens when somebody asks for it by pressing the button, and the result becomes THE acta of the
+     * meeting (replacing a previous file, uploaded or generated).
+     */
+    #[Route('/{id}/acta/generar', name: 'meeting_minutes_generate', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function generateMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, FileUploader $uploader, MinutesPdfRenderer $renderer, MeetingNotifier $notifier): Response
+    {
+        if (!$this->isCsrfTokenValid('meeting_minutes'.$meeting->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+        if (!$access->canKeepMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
+            throw $this->createAccessDeniedException('El acta la genera quien la levanta.');
+        }
+        if (!$meeting->isPast(new \DateTimeImmutable())) {
+            throw $this->createAccessDeniedException('La reunión todavía no se ha celebrado.');
+        }
+
+        $path = $uploader->store($renderer->render($meeting), self::MINUTES_SUBDIR, 'pdf');
+        $replaced = $this->keepMinutes($meeting, $path, $renderer->fileNameFor($meeting), $user, $entityManager, $uploader, $notifier);
+        $this->addFlash('success', $replaced ? 'Acta generada; sustituye a la anterior.' : 'Acta generada en PDF.');
 
         return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
     }
@@ -435,6 +478,37 @@ final class MeetingController extends AbstractController
             ->setProject($data->project);
 
         return $meeting->syncAttendees($data->attendees);
+    }
+
+    /**
+     * Attaches a stored file as the acta, deletes the one it replaced and tells the people convened. Shared
+     * by the two ways an acta arrives — uploaded by hand and generated as PDF — so the notice, the flush
+     * order and the orphan-file cleanup cannot differ between them.
+     *
+     * The old file is removed only AFTER the flush: a failed flush must never leave the meeting pointing at
+     * a file already gone from disk.
+     *
+     * @param Meeting                $meeting       the meeting
+     * @param string                 $path          storage-relative path of the new acta
+     * @param string                 $name          the name to serve it as
+     * @param User                   $by            who put it there
+     * @param EntityManagerInterface $entityManager the entity manager
+     * @param FileUploader           $uploader      the private-storage uploader
+     * @param MeetingNotifier        $notifier      the meeting notifier
+     *
+     * @return bool true when it replaced a previous acta
+     */
+    private function keepMinutes(Meeting $meeting, string $path, string $name, User $by, EntityManagerInterface $entityManager, FileUploader $uploader, MeetingNotifier $notifier): bool
+    {
+        $replaced = $meeting->attachMinutes($path, $name, $by, new \DateTimeImmutable());
+        $entityManager->flush();
+        if (null !== $replaced) {
+            $uploader->remove($replaced);
+        }
+
+        $notifier->notifyMinutes($meeting, array_values($meeting->getAttendees()->toArray()));
+
+        return null !== $replaced;
     }
 
     /**

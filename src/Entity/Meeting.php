@@ -62,6 +62,15 @@ class Meeting implements Auditable
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $agenda = null;
 
+    /**
+     * What was actually discussed and agreed, written in the app after the meeting ("recoger lo tratado").
+     * It is the RAW MATERIAL of the acta: from it (plus the roll and the agenda) the app can generate the
+     * acta as a PDF on demand. Free text and one single field on purpose — an acta is prose, and splitting
+     * it into "tratado"/"acuerdos"/"varios" would impose a structure the centre never asked for.
+     */
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    private ?string $discussion = null;
+
     /** Where it takes place ("sala de profesores", "aula 12", "videollamada"). Optional. */
     #[ORM\Column(length: 120, nullable: true)]
     #[Assert\Length(max: 120)]
@@ -234,6 +243,18 @@ class Meeting implements Auditable
     public function setAgenda(?string $agenda): static
     {
         $this->agenda = $agenda;
+
+        return $this;
+    }
+
+    public function getDiscussion(): ?string
+    {
+        return $this->discussion;
+    }
+
+    public function setDiscussion(?string $discussion): static
+    {
+        $this->discussion = $discussion;
 
         return $this;
     }
