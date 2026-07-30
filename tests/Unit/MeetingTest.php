@@ -171,6 +171,38 @@ final class MeetingTest extends TestCase
         self::assertSame([$convener], $meeting->people());
     }
 
+    public function testTheRollKeepsOnlyThePeopleExpectedAndDerivesTheAbsentees(): void
+    {
+        $convener = $this->user('Coordina');
+        $came = $this->user('Vino');
+        $missed = $this->user('Falto');
+        $stranger = $this->user('Ajeno');
+        $meeting = $this->meeting($convener)->addAttendee($came)->addAttendee($missed);
+
+        $meeting->recordAttendance([$came, $stranger], new \DateTimeImmutable('2026-09-15 15:00'));
+
+        self::assertTrue($meeting->isAttendanceTaken());
+        // El de fuera se descarta aunque venga en el POST, y el orden es el de la convocatoria.
+        self::assertSame([$came], $meeting->getAttended()->toArray());
+        self::assertSame([$missed, $convener], $meeting->absentees());
+    }
+
+    public function testTheRollCanBeCorrectedToNobody(): void
+    {
+        // Lista vacía es una respuesta VÁLIDA ("no vino nadie"), distinta de no haber pasado lista; y al
+        // corregirla hay que retirar de verdad a quien ya estaba apuntado.
+        $convener = $this->user('Coordina');
+        $came = $this->user('Vino');
+        $meeting = $this->meeting($convener)->addAttendee($came);
+        $meeting->recordAttendance([$came], new \DateTimeImmutable('2026-09-15 15:00'));
+
+        $meeting->recordAttendance([], new \DateTimeImmutable('2026-09-15 15:10'));
+
+        self::assertCount(0, $meeting->getAttended());
+        self::assertTrue($meeting->isAttendanceTaken(), 'sigue constando que se pasó lista');
+        self::assertSame([$came, $convener], $meeting->absentees());
+    }
+
     public function testIsPastComparesAgainstTheStart(): void
     {
         $meeting = $this->meeting($this->user('Coordina'));

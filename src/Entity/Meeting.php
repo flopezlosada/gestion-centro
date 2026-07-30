@@ -572,13 +572,29 @@ class Meeting implements Auditable
      */
     public function recordAttendance(array $present, \DateTimeImmutable $at): static
     {
-        $expected = $this->people();
-        $this->attended->clear();
-        foreach ($present as $person) {
-            if (\in_array($person, $expected, true) && !$this->attended->contains($person)) {
+        // Quien de verdad se apunta: los esperados que estén en la lista. Se recorre `people()` y no
+        // `$present`, así el orden guardado es el de la convocatoria y no el que traiga el formulario.
+        $keep = array_values(array_filter(
+            $this->people(),
+            static fn (User $person): bool => \in_array($person, $present, true),
+        ));
+
+        // Se quita uno a uno lo que ya no está y se añade lo que falta, en vez de vaciar con clear() y
+        // volver a añadir. Sobre una colección PEREZOSA, clear() hace que Doctrine programe el borrado
+        // ENTERO de la tabla de unión y los add() del mismo flush se pierden: comprobado en el barrido de
+        // esta rama — se guardaba la marca de "lista pasada" y la asistencia quedaba vacía. Recorrer
+        // toArray() la inicializa, que es lo que la mantiene en el camino normal de cambios sucios.
+        foreach ($this->attended->toArray() as $current) {
+            if (!\in_array($current, $keep, true)) {
+                $this->attended->removeElement($current);
+            }
+        }
+        foreach ($keep as $person) {
+            if (!$this->attended->contains($person)) {
                 $this->attended->add($person);
             }
         }
+
         $this->attendanceTakenAt = $at;
 
         return $this;
