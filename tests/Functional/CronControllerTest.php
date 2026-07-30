@@ -78,7 +78,9 @@ final class CronControllerTest extends WebTestCase
         $this->client->request('GET', '/cron/event-reminders?token='.self::SECRET);
 
         self::assertResponseIsSuccessful();
-        self::assertStringContainsString('1 avisos de agenda enviados.', (string) $this->client->getResponse()->getContent());
+        // El endpoint lleva DOS barridos de la misma cadencia (agenda y RAICES), así que informa de los
+        // dos. Aquí no hay ninguna guardia en curso, de ahí el 0.
+        self::assertStringContainsString('1 avisos de agenda y 0 de RAICES enviados.', (string) $this->client->getResponse()->getContent());
         $this->em->clear();
         self::assertNotNull($this->em->getRepository(PersonalEvent::class)->find($id)?->getReminderSentAt());
     }
