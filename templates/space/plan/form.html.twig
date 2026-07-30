@@ -1,0 +1,30 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}{{ plan.id ? 'Editar plan' : 'Nuevo plan de espacios' }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('space_plan_index') }}">Planes de espacios</a><span class="sep">/</span>
+    {{ plan.id ? 'Editar' : 'Nuevo' }}
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <p class="eyebrow">Planes de espacios</p>
+        <h1>{{ plan.id ? 'Editar plan' : 'Nuevo plan de espacios' }}</h1>
+    </div>
+
+    <div class="card form-card">
+        {{ form_start(form, { 'attr': { 'novalidate': 'novalidate' } }) }}
+            {{ f.submit_error(form) }}
+            {{ form_errors(form) }}
+            {{ f.section('Qué es', [form.title, form.kind, form.publicReason]) }}
+            {{ f.section('Cuándo', [form.dateFrom, form.dateTo, form.slotFrom, form.slotTo]) }}
+            {{ f.section('Horario ordinario', [form.substitutionScope, form.scopeGroupNames]) }}
+            {{ f.section('Reparto del profesorado', [form.staffQuota]) }}
+            {{ f.fields([form.internalNotes]) }}
+            {{ f.actions(plan.id ? path('space_plan_show', { id: plan.id }) : path('space_plan_index')) }}
+        {{ form_end(form) }}
+    </div>
+{% endblock %}

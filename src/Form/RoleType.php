@@ -46,7 +46,12 @@ final class RoleType extends AbstractType
                 'help' => 'Identificador corto y estable, p. ej. "direccion" o "secretaria".',
             ])
             ->add('name', TextType::class, ['label' => 'Nombre'])
-            ->add('description', TextareaType::class, ['label' => 'Descripción', 'required' => false]);
+            ->add('description', TextareaType::class, ['label' => 'Descripción', 'required' => false])
+            ->add('canConvene', CheckboxType::class, [
+                'label' => 'Convoca reuniones',
+                'required' => false,
+                'help' => 'Los cargos convocan reuniones y levantan sus actas (jefaturas, tutorías, TIC, secretaría, coordinaciones…). El docente sin cargo no convoca: se le convoca.',
+            ]);
 
         // The superuser flag is only editable by a superuser; for anyone else the field does not exist
         // at all, so a role can never be promoted to admin from the administration area (see class doc).

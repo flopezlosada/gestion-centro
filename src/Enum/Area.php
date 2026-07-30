@@ -11,13 +11,15 @@ namespace App\Enum;
  * This catalog only lists areas that gate a real, permissioned module. It deliberately excludes
  * Tasks and the calendar: those are universally accessible and scoped by the organisation chart
  * instead (see {@see \App\Service\TaskVisibility}), not by this matrix. Matrix-gated areas today are
- * the administration back-office and the guardia coordination screen (managing the daily parte); the
- * enum is kept ready to grow as future modules appear.
+ * the administration back-office, the guardia coordination screen (managing the daily parte) and the
+ * space management module (the room catalogue and, from there on, room changes); the enum is kept
+ * ready to grow as future modules appear.
  */
 enum Area: string
 {
     case ADMINISTRATION = 'administration';
     case GUARDIAS = 'guardias';
+    case ESPACIOS = 'espacios';
 
     /**
      * Human-facing area name (Spanish), used in the permissions matrix.
@@ -29,6 +31,7 @@ enum Area: string
         return match ($this) {
             self::ADMINISTRATION => 'Administración',
             self::GUARDIAS => 'Guardias',
+            self::ESPACIOS => 'Espacios',
         };
     }
 
@@ -45,6 +48,7 @@ enum Area: string
         return match ($this) {
             self::ADMINISTRATION => 'admin_user_index',
             self::GUARDIAS => 'guardia_index',
+            self::ESPACIOS => 'space_index',
         };
     }
 
@@ -55,6 +59,6 @@ enum Area: string
      */
     public static function inDisplayOrder(): array
     {
-        return [self::ADMINISTRATION, self::GUARDIAS];
+        return [self::ADMINISTRATION, self::GUARDIAS, self::ESPACIOS];
     }
 }

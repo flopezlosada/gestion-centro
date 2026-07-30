@@ -1,0 +1,91 @@
+{#
+   El acta en PDF. NO extiende el shell de la aplicación: Dompdf entiende un subconjunto pequeño de CSS y
+   no tiene navegación, así que este documento se maqueta solo, con estilos en línea y sin depender de
+   public/css/app.css (que usa variables y grid, que Dompdf no soporta).
+
+   Fuente DejaVu Sans porque es la única de las que trae Dompdf que lleva tildes y ñ (ver MinutesPdfRenderer).
+   Nada de imágenes: el logo pediría ext-gd en el servidor y un acta no lo necesita para tener valor.
+#}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <title>Acta · {{ meeting.title }}</title>
+    <style>
+        @page { margin: 2.2cm 2cm; }
+        body { font-family: "DejaVu Sans", sans-serif; font-size: 10.5pt; color: #1a1a1a; line-height: 1.45; }
+        .centre { font-size: 9pt; letter-spacing: .06em; text-transform: uppercase; color: #555; }
+        h1 { font-size: 15pt; margin: 2pt 0 10pt; }
+        h2 { font-size: 11pt; margin: 16pt 0 4pt; border-bottom: .6pt solid #bbb; padding-bottom: 2pt; }
+        table.data { width: 100%; border-collapse: collapse; margin-top: 4pt; }
+        table.data td { padding: 2pt 0; vertical-align: top; }
+        table.data td.k { width: 32%; color: #555; }
+        p { margin: 4pt 0; }
+        .prose { white-space: pre-wrap; }
+        .none { color: #777; font-style: italic; }
+        .sign { margin-top: 34pt; }
+        .sign td { width: 50%; padding-top: 34pt; font-size: 9.5pt; color: #555; }
+    </style>
+</head>
+<body>
+    <div class="centre">{{ app_organization_name }}</div>
+    <h1>Acta · {{ meeting.title }}</h1>
+
+    <table class="data">
+        <tr><td class="k">Fecha y hora</td><td>{{ meeting.startAt|date('d/m/Y') }}, {{ meeting.startAt|date('H:i') }}{% if meeting.endAt %} a {{ meeting.endAt|date('H:i') }}{% endif %}</td></tr>
+        <tr><td class="k">Lugar</td><td>{{ meeting.place ?: '—' }}</td></tr>
+        {% if meeting.project %}<tr><td class="k">Proyecto o coordinación</td><td>{{ meeting.project.name }}</td></tr>{% endif %}
+        <tr><td class="k">Convoca</td><td>{{ meeting.convener ? meeting.convener.fullName : '—' }}</td></tr>
+        <tr><td class="k">Levanta el acta</td><td>{{ meeting.minutesKeeper ? meeting.minutesKeeper.fullName : '—' }}</td></tr>
+    </table>
+
+    <h2>Asistencia</h2>
+    {% if meeting.attendanceTaken %}
+        <p><strong>Asisten</strong> ({{ meeting.attended|length }}):
+            {% for person in meeting.attended %}{{ person.fullName }}{% if not loop.last %}; {% endif %}{% else %}<span class="none">nadie</span>{% endfor %}
+        </p>
+        {% if meeting.absentees is not empty %}
+            <p><strong>No asisten</strong> ({{ meeting.absentees|length }}):
+                {% for person in meeting.absentees %}{{ person.fullName }}{% if not loop.last %}; {% endif %}{% endfor %}
+            </p>
+        {% endif %}
+    {% else %}
+        {# Sin lista pasada se dice quién estaba convocado, y se dice claramente que no consta la asistencia:
+           un acta que da por asistente a todo el convocado sería falsa. #}
+        <p><strong>Convocadas</strong> ({{ meeting.people|length }}):
+            {% for person in meeting.people %}{{ person.fullName }}{% if not loop.last %}; {% endif %}{% endfor %}
+        </p>
+        <p class="none">No consta la asistencia: no se pasó lista.</p>
+    {% endif %}
+
+    <h2>Orden del día</h2>
+    {% if meeting.agenda %}
+        <div class="prose">{{ meeting.agenda }}</div>
+    {% else %}
+        <p class="none">No se fijó orden del día.</p>
+    {% endif %}
+
+    <h2>Desarrollo y acuerdos</h2>
+    {% if meeting.discussion %}
+        <div class="prose">{{ meeting.discussion }}</div>
+    {% else %}
+        <p class="none">No se recogió lo tratado.</p>
+    {% endif %}
+
+    {% if meeting.minutesApprovalRequired %}
+        <h2>Aprobación</h2>
+        {% if meeting.areMinutesApproved %}
+            <p>Acta aprobada el {{ meeting.minutesApprovedAt|date('d/m/Y') }}.</p>
+        {% else %}
+            <p class="none">Pendiente de lectura y aprobación en la reunión siguiente.</p>
+        {% endif %}
+    {% endif %}
+
+    <table class="sign">
+        <tr>
+            <td>Firma de quien levanta el acta</td>
+            <td>Visto bueno de quien convoca</td>
+        </tr>
+    </table>
+</body>
+</html>

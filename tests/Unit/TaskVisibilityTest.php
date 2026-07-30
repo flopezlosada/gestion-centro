@@ -10,6 +10,7 @@ use App\Entity\TaskResponsibility;
 use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
+use App\Repository\DepartmentRepository;
 use App\Repository\UserRepository;
 use App\Service\OrganizationHierarchy;
 use App\Service\TaskVisibility;
@@ -74,7 +75,7 @@ final class TaskVisibilityTest extends TestCase
         $dept = $this->task($maths, $head, new TaskResponsibility($headDept, $maths));
         $top = $this->task(null, $director, new TaskResponsibility($direction, null));
 
-        $hierarchy = new OrganizationHierarchy($this->createMock(UserRepository::class));
+        $hierarchy = new OrganizationHierarchy($this->createMock(UserRepository::class), $this->createMock(DepartmentRepository::class));
 
         return [
             new TaskVisibility($hierarchy),

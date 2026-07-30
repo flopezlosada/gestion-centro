@@ -6,6 +6,7 @@ namespace App\Controller;
 
 use App\Service\EventReminderNotifier;
 use App\Service\GuardiaRaicesReminder;
+use App\Service\MeetingReminderNotifier;
 use App\Service\TaskReminderNotifier;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -19,8 +20,10 @@ use Symfony\Component\Routing\Attribute\Route;
  * authenticated by the same shared secret in constant time and fails closed (an empty CRON_SECRET
  * disables them all). GET is safe to call repeatedly because both sweeps are idempotent.
  *
- * The two jobs run at very different rates, hence two endpoints: task reminders once a day, agenda
- * reminders every five minutes (they are the ones that carry a minute-level antelación).
+ * The jobs run at very different rates, hence two endpoints: task reminders once a day, and the
+ * minute-level ones every five minutes. The second endpoint sweeps BOTH the personal agenda and the
+ * convened meetings — they share the same antelación problem, and asking the deployment for a third cron
+ * entry (one more thing to forget when moving hosts) buys nothing.
  */
 final class CronController extends AbstractController
 {
@@ -46,21 +49,21 @@ final class CronController extends AbstractController
     }
 
     /**
-     * Every few minutes: the two sweeps that carry a minute-level antelación — push reminders for personal
-     * agenda events about to start, and the "apunta las ausencias en RAICES" reminder for the guardias
-     * being covered right now.
+     * Every few minutes: the three sweeps that carry a minute-level antelación — push reminders for
+     * personal agenda events about to start, the "apunta las ausencias en RAICES" reminder for the guardias
+     * being covered right now, and the reminder for a meeting about to begin.
      *
-     * They share ONE endpoint on purpose. Both want the same cadence, and splitting them would make the
-     * new one depend on somebody remembering to add a second entry to the host's cron table — a silent
-     * "no reminders ever" if they do not. One URL, one schedule, both sweeps.
+     * They share ONE endpoint on purpose. All of them want the same cadence, and splitting them would make
+     * each new one depend on somebody remembering to add another entry to the host's cron table — a silent
+     * "no reminders ever" if they do not. One URL, one schedule, every sweep.
      *
-     * They also run unguarded, so a failure in the first stops the second this tick. That is deliberate:
+     * They also run unguarded, so a failure in the first stops the rest this tick. That is deliberate:
      * catching would turn a persistent breakage into a 200 with a half-done sweep, which no cron monitor
-     * would flag, and both sweeps are already best-effort per recipient ({@see NotificationDispatcher})
-     * and retried five minutes later. Better both fail loudly together than one fail quietly alone.
+     * would flag, and every sweep is already best-effort per recipient ({@see NotificationDispatcher})
+     * and retried five minutes later. Better all fail loudly together than one fail quietly alone.
      */
     #[Route('/cron/event-reminders', name: 'cron_event_reminders', methods: ['GET'])]
-    public function eventReminders(Request $request, EventReminderNotifier $notifier, GuardiaRaicesReminder $raices): Response
+    public function eventReminders(Request $request, EventReminderNotifier $notifier, GuardiaRaicesReminder $raices, MeetingReminderNotifier $meetings): Response
     {
         $this->denyUnlessCronToken($request);
 
@@ -69,8 +72,9 @@ final class CronController extends AbstractController
         $now = new \DateTimeImmutable('now');
         $events = $notifier->sendDue($now);
         $guardias = $raices->sendDue($now);
+        $meetingCount = $meetings->sendDue($now);
 
-        return new Response(\sprintf('%d avisos de agenda y %d de RAICES enviados.', $events, $guardias));
+        return new Response(\sprintf('%d avisos de agenda, %d de RAICES y %d de reuniones enviados.', $events, $guardias, $meetingCount));
     }
 
     /**

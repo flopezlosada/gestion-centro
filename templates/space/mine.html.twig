@@ -1,0 +1,55 @@
+{% extends 'app_shell.html.twig' %}
+
+{% set dias = ['', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'] %}
+
+{% block title %}Mis cambios de aula{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Mis cambios de aula{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Espacios</p>
+            <h1>Mis cambios de aula</h1>
+            <p class="lead">Dónde te toca dar clase cuando no es donde siempre. Solo lo aprobado y de hoy en adelante.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        {% if lines is empty %}
+            <div class="empty-state">
+                <h2>Ningún cambio a la vista</h2>
+                <p>Cuando el equipo directivo apruebe un cambio que te afecte, aparecerá aquí y recibirás un aviso.</p>
+            </div>
+        {% else %}
+            <table data-list-tools>
+                <thead>
+                    <tr><th>Día</th><th>Hora</th><th>Qué</th><th>Aula</th><th>Motivo</th></tr>
+                </thead>
+                <tbody>
+                    {% for line in lines %}
+                        {% set t = slotTimes[line.slotIndex] ?? null %}
+                        <tr>
+                            <td>{{ dias[line.date|date('N', false)] }} {{ line.date|date('d/m', false) }}</td>
+                            <td>{% if t %}{{ t.startsAt|date('H:i', false) }}–{{ t.endsAt|date('H:i', false) }}{% else %}{{ line.slotIndex + 1 }}.ª{% endif %}</td>
+                            <td>
+                                <strong>{{ line.label }}</strong>
+                                {% if line.subjectName %}<div class="muted">{{ line.subjectName }}</div>{% endif %}
+                                {% if line.originRoomName %}<div class="muted">en vez de {{ line.originRoomName }}</div>{% endif %}
+                            </td>
+                            <td>
+                                {% if line.room %}
+                                    <strong>{{ line.room.code }}</strong>
+                                    {% if line.room.name != line.room.code %}<div class="muted">{{ line.room.name }}</div>{% endif %}
+                                {% else %}
+                                    <span class="badge badge--warning">sin aula</span>
+                                {% endif %}
+                            </td>
+                            <td class="muted">{{ line.option.plan.publicReason ?? line.option.plan.title }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}

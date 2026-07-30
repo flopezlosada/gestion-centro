@@ -1,0 +1,81 @@
+{% extends 'base.html.twig' %}
+
+{% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
+
+{% block title %}{{ plan.title }} · {{ app_organization_name }}{% endblock %}
+
+{#
+   El documento para el tablón. No extiende el shell a propósito: una página con menú, barra inferior y
+   botones no se imprime bien por mucho CSS de impresión que se le eche, y esta hoja tiene un único
+   trabajo — leerse en la pared. Los controles (elegir vista, imprimir) llevan .doc-noprint y
+   desaparecen en papel.
+#}
+{% block shell %}
+    <div class="doc">
+        <div class="doc-controls doc-noprint">
+            <nav class="tabs" aria-label="Cómo ordenar el documento">
+                <a class="{{ view == 'grupo' ? 'is-active' }}" href="{{ path('space_plan_document', { id: plan.id, vista: 'grupo' }) }}">Por grupo</a>
+                <a class="{{ view == 'espacio' ? 'is-active' }}" href="{{ path('space_plan_document', { id: plan.id, vista: 'espacio' }) }}">Por espacio</a>
+                <a class="{{ view == 'docente' ? 'is-active' }}" href="{{ path('space_plan_document', { id: plan.id, vista: 'docente' }) }}">Por profesor</a>
+            </nav>
+            <div>
+                <button type="button" class="btn" onclick="window.print()">Imprimir</button>
+                <a class="btn secondary" href="{{ path('space_plan_show', { id: plan.id }) }}">Volver</a>
+            </div>
+        </div>
+
+        <header class="doc-head">
+            <p class="doc-centre">{{ app_organization_name }}</p>
+            <h1>{{ plan.title }}</h1>
+            <p class="doc-dates">
+                {{ plan.dateFrom|date('d/m/Y', false) }}{% if plan.dateTo != plan.dateFrom %} – {{ plan.dateTo|date('d/m/Y', false) }}{% endif %}
+                · {{ view == 'grupo' ? 'Por grupo' : (view == 'espacio' ? 'Por espacio' : 'Por profesor') }}
+            </p>
+            {% if plan.publicReason %}<p class="doc-reason">{{ plan.publicReason }}</p>{% endif %}
+            {% if not plan.status.isInForce %}
+                <p class="doc-draft doc-noprint">BORRADOR — este plan todavía no está aprobado.</p>
+            {% endif %}
+        </header>
+
+        {% if sections is empty %}
+            <p>Este plan no mueve nada de sitio.</p>
+        {% else %}
+            {% for heading, lines in sections %}
+                <section class="doc-section">
+                    <h2>{{ heading }}</h2>
+                    <table class="doc-table">
+                        <thead>
+                            <tr><th>Día</th><th>Hora</th><th>Aula</th><th>Qué</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for line in lines %}
+                                {% set t = slotTimes[line.slotIndex] ?? null %}
+                                <tr>
+                                    <td>{{ dias[line.date|date('N', false)] }} {{ line.date|date('d/m', false) }}</td>
+                                    <td>{% if t %}{{ t.startsAt|date('H:i', false) }}–{{ t.endsAt|date('H:i', false) }}{% else %}{{ line.slotIndex + 1 }}.ª{% endif %}</td>
+                                    <td>
+                                        <strong>{{ line.room ? line.room.code : 'SIN AULA' }}</strong>
+                                        {% if line.originRoomName and view != 'espacio' %}<span class="doc-from">(antes {{ line.originRoomName }})</span>{% endif %}
+                                    </td>
+                                    <td>
+                                        {% if view != 'grupo' and line.groupNames %}{{ line.groupNames }}{% endif %}
+                                        {% if line.activityTitle %}{{ line.activityTitle }}{% elseif line.subjectName %}<span class="doc-subject">{{ line.subjectName }}</span>{% endif %}
+                                        {% if view != 'docente' and line.teacher %}<span class="doc-teacher">{{ line.teacher.fullName }}</span>{% endif %}
+                                        {% if line.note %}<span class="doc-note">{{ line.note }}</span>{% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </section>
+            {% endfor %}
+        {% endif %}
+
+        <footer class="doc-foot">
+            {% if plan.approvedBy and plan.approvedAt %}
+                <p>Aprobado por {{ plan.approvedBy.fullName }} el {{ plan.approvedAt|date('d/m/Y', false) }}.</p>
+            {% endif %}
+            <p>Generado el {{ 'now'|date('d/m/Y H:i', false) }} · {{ app_organization_name }}</p>
+        </footer>
+    </div>
+{% endblock %}

@@ -1786,9 +1786,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .perm-group:first-child .perm-group__head { border-top: 0; padding-top: 4px; }
 .perm-group__code { color: var(--text-faint); margin-right: 4px; }
 
-/* --- Asignación de roles al usuario: tarjeta por rol con nombre + descripción --- */
-.role-picker { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
-.role-option {
+/* --- Lista de casillas como tarjetas (elegir varias entidades): roles de una persona,
+   convocados de una reunión, profesorado de un proyecto. Una sola pinta para el mismo problema. --- */
+.pick-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.pick-option {
     display: flex;
     align-items: flex-start;
     gap: 12px;
@@ -1799,13 +1800,13 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
     cursor: pointer;
     transition: border-color .12s ease, background .12s ease;
 }
-.role-option:hover { border-color: var(--accent); }
-.role-option__input { margin-top: 2px; flex: 0 0 auto; accent-color: var(--accent); }
-.role-option__body { display: flex; flex-direction: column; gap: 2px; }
-.role-option__name { font-weight: 500; color: var(--text); line-height: 1.3; }
-.role-option__desc { font-size: 13px; color: var(--text-muted); line-height: 1.35; }
+.pick-option:hover { border-color: var(--accent); }
+.pick-option__input { margin-top: 2px; flex: 0 0 auto; accent-color: var(--accent); }
+.pick-option__body { display: flex; flex-direction: column; gap: 2px; }
+.pick-option__name { font-weight: 500; color: var(--text); line-height: 1.3; }
+.pick-option__desc { font-size: 13px; color: var(--text-muted); line-height: 1.35; }
 /* Estado seleccionado: la casilla nativa es el control real; :has solo lo refuerza. */
-.role-option:has(.role-option__input:checked) { border-color: var(--accent); background: var(--accent-weak); }
+.pick-option:has(.pick-option__input:checked) { border-color: var(--accent); background: var(--accent-weak); }
 
 /* =============================================================================
    Calendario anual de obligaciones (obligation_calendar)
@@ -1914,6 +1915,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .agenda-guardia-marker { flex: none; width: 22px; height: 22px; margin-top: 1px; display: grid; place-items: center; color: var(--accent); }
 .agenda-guardia-marker svg { width: 20px; height: 20px; }
 .agenda-item--guardia .agenda-title { font-weight: 600; }
+/* Reunión convocada en la agenda del día: marcador PERSONAS, otra forma distinta (no es tuya sola, hay
+   gente convocada). Mismo tamaño que el escudo para que la columna de marcadores quede alineada. */
+.agenda-meeting-marker { flex: none; width: 22px; height: 22px; margin-top: 1px; display: grid; place-items: center; color: var(--text-muted); }
+.agenda-meeting-marker svg { width: 20px; height: 20px; }
+.agenda-item--meeting .agenda-title { font-weight: 600; }
 /* Campanita de "este evento avisa": va dentro de .agenda-meta, así que hereda su color apagado; solo
    necesita alinearse ópticamente con el texto de la línea. */
 .agenda-bell { display: inline-flex; vertical-align: -2px; }
@@ -3348,6 +3354,46 @@ tr.is-not-covered { background: var(--danger-weak); }
 
 .field--reason { margin-top: 22px; }
 
+/* ============================================================================
+   DOCUMENTO PUBLICABLE DE ESPACIOS
+   La hoja que se cuelga en el tablón. Vive fuera del shell (sin menú ni barra
+   inferior) porque su único trabajo es leerse en la pared: pelearse con el
+   layout de la aplicación a base de reglas de impresión sale peor que darle su
+   propia página. En papel desaparecen los controles (.doc-noprint) y el color
+   pasa a negro sobre blanco, que es como imprime bien cualquier fotocopiadora.
+   ============================================================================ */
+.doc { max-width: 900px; margin: 0 auto; padding: 24px 20px 60px; }
+.doc-controls { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+.doc-head { border-bottom: 2px solid var(--border-strong); padding-bottom: 14px; margin-bottom: 24px; }
+.doc-centre { font: 500 13px var(--font-body); letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 4px; }
+.doc-head h1 { font: 600 30px/1.15 var(--font-display); margin: 0 0 6px; }
+.doc-dates { font: 500 15px var(--font-body); color: var(--text-muted); margin: 0; }
+.doc-reason { font: 400 15px var(--font-body); margin: 8px 0 0; }
+.doc-draft { font: 600 13px var(--font-body); color: var(--warning-text); background: var(--warning-weak); border: 1px solid var(--warning); border-radius: var(--radius-sm); padding: 6px 10px; margin: 12px 0 0; display: inline-block; }
+.doc-section { margin-bottom: 26px; break-inside: avoid; }
+.doc-section h2 { font: 600 19px var(--font-display); margin: 0 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--separator); }
+.doc-table { width: 100%; border-collapse: collapse; font: 400 14px var(--font-body); }
+.doc-table th { text-align: left; font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 4px 8px 4px 0; }
+.doc-table td { padding: 6px 8px 6px 0; border-top: 1px solid var(--separator); vertical-align: top; }
+.doc-from, .doc-subject, .doc-teacher, .doc-note { color: var(--text-muted); font-size: 13px; }
+.doc-from { margin-left: 6px; }
+.doc-subject, .doc-teacher, .doc-note { display: block; }
+.doc-foot { margin-top: 32px; padding-top: 10px; border-top: 1px solid var(--separator); font: 400 12.5px var(--font-body); color: var(--text-muted); }
+.doc-foot p { margin: 2px 0; }
+
+@media print {
+    /* Negro sobre blanco: los tokens cálidos de la aplicación salen grises y sucios en fotocopia. */
+    .doc { max-width: none; padding: 0; color: #000; }
+    .doc-noprint { display: none !important; }
+    .doc-head { border-bottom-color: #000; }
+    .doc-centre, .doc-dates, .doc-from, .doc-subject, .doc-teacher, .doc-note, .doc-foot { color: #333; }
+    .doc-section h2 { border-bottom-color: #999; }
+    .doc-table td { border-top-color: #ccc; }
+    /* Una sección no se parte entre páginas si cabe entera: un grupo a caballo de dos folios se lee mal
+       en un tablón, donde solo se cuelga la primera hoja. */
+    .doc-section, .doc-table tr { break-inside: avoid; }
+    @page { margin: 14mm; }
+}
 /* ── Banco de tareas de guardia y encargos de fotocopias ────────────────────
    Reutiliza .card, .btn y .badge; aquí solo lo propio: la barra de filtros que manda también sobre
    el sorteo, la tarjeta de "estás eligiendo para esta guardia" y el bloque de la tarea del banco

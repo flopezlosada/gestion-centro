@@ -5,34 +5,38 @@ declare(strict_types=1);
 namespace App\Agenda;
 
 use App\Entity\GuardiaCover;
+use App\Entity\Meeting;
 use App\Entity\PersonalEvent;
 use App\Entity\Task;
 
 /**
  * A single line of the personal agenda, wrapping an institutional {@see Task}, a private
- * {@see PersonalEvent} or a {@see GuardiaCover} behind a common sort/bucket key ({@see $date}) and done
- * flag. It deliberately does NOT flatten them into one shape — a task carries a workflow and a role, an
- * event does not, a guardia is imposed by the centre and cannot be ticked off — so the template keeps
- * rendering each with its own marker; this only unifies the ordering and the "which time bucket"
- * decision that the agenda needs across the three kinds. The three shapes match the three markers the
- * calendar already uses: círculo = tarea, cuadrado = evento, escudo = guardia.
+ * {@see PersonalEvent}, a {@see GuardiaCover} or a convened {@see Meeting} behind a common sort/bucket key
+ * ({@see $date}) and done flag. It deliberately does NOT flatten them into one shape — a task carries a
+ * workflow and a role, an event does not, a guardia is imposed by the centre and cannot be ticked off, a
+ * meeting has other people convened to it — so the template keeps rendering each with its own marker; this
+ * only unifies the ordering and the "which time bucket" decision that the agenda needs across the four
+ * kinds. The shapes match the markers the calendar already uses: círculo = tarea, cuadrado = evento,
+ * escudo = guardia, personas = reunión.
  */
 final readonly class AgendaEntry
 {
     public const string KIND_TASK = 'task';
     public const string KIND_EVENT = 'event';
     public const string KIND_GUARDIA = 'guardia';
+    public const string KIND_MEETING = 'meeting';
 
     private function __construct(
-        // self::KIND_TASK, self::KIND_EVENT or self::KIND_GUARDIA.
+        // One of the self::KIND_* constants.
         public string $kind,
-        // The instant this entry sorts and buckets by: a task's deadline, an event's start or a
-        // guardia's period start.
+        // The instant this entry sorts and buckets by: a task's deadline, an event's start, a guardia's
+        // period start or a meeting's start.
         public \DateTimeImmutable $date,
         public bool $done,
         public ?Task $task,
         public ?PersonalEvent $event,
         public ?GuardiaCover $guardia = null,
+        public ?Meeting $meeting = null,
     ) {
     }
 
@@ -84,5 +88,21 @@ final readonly class AgendaEntry
     public static function fromGuardia(GuardiaCover $cover, ?\DateTimeImmutable $startsAt): self
     {
         return new self(self::KIND_GUARDIA, $startsAt ?? $cover->getDate(), false, null, null, $cover);
+    }
+
+    /**
+     * Wraps a convened meeting, keyed by when it starts. NEVER "done", for the same reason a guardia is
+     * not: a meeting is not something you tick off — you either turn up or you do not — so it has no
+     * checkbox anywhere in the agenda. It also never needs one: only meetings from today onwards reach the
+     * agenda ({@see PersonalAgenda::bucketsFor()}), so a past meeting cannot linger as if it were pending;
+     * its record (and its acta) lives in "Mis reuniones".
+     *
+     * @param Meeting $meeting the meeting to wrap
+     *
+     * @return self the agenda entry
+     */
+    public static function fromMeeting(Meeting $meeting): self
+    {
+        return new self(self::KIND_MEETING, $meeting->getStartAt(), false, null, null, null, $meeting);
     }
 }
