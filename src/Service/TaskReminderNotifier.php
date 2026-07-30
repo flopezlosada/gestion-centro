@@ -7,6 +7,7 @@ namespace App\Service;
 use App\Entity\Notification;
 use App\Entity\Task;
 use App\Entity\User;
+use App\Repository\NotificationRepository;
 use App\Repository\TaskRepository;
 use App\Repository\UserRepository;
 
@@ -36,12 +37,118 @@ final class TaskReminderNotifier
     /** Days after the deadline to escalate up the chain. */
     private const array ESCALATE_AFTER_DAYS = [1, 7];
 
+    /** The kind shared by the nightly reminder and the manual nudge (see {@see nudge()}). */
+    public const string REMINDER_KIND = 'task.reminder';
+
     public function __construct(
         private readonly TaskRepository $tasks,
         private readonly UserRepository $users,
         private readonly OrganizationHierarchy $hierarchy,
         private readonly NotificationDispatcher $dispatcher,
+        private readonly NotificationRepository $notifications,
     ) {
+    }
+
+    /**
+     * Nudges whoever has to do the task, on demand ("Recordar" on the task page), with the same notice
+     * the nightly engine sends. It exists because the automatic reminders only fire on four exact days
+     * (15 and 7 before the deadline, then escalation to the superiors 1 and 7 after): once a task is
+     * overdue — or was created with less than a week of margin — the person responsible never hears
+     * about it again, and there was no way to tell them.
+     *
+     * AT MOST ONE per person and day, counting the automatic ones too (both share
+     * {@see REMINDER_KIND}): a button that can be pressed ten times is ten e-mails and ten push
+     * notifications to the same person, which stops being a reminder.
+     *
+     * @param Task               $task the task to nudge about
+     * @param \DateTimeImmutable $now  the current moment (the day of it is what caps the nudge)
+     *
+     * @return list<User> the people actually notified — empty when everyone was already told today,
+     *                    or when the task has nobody to nudge
+     */
+    public function nudge(Task $task, \DateTimeImmutable $now): array
+    {
+        // Nadie tiene que hacer una tarea ya cerrada. Se comprueba AQUÍ y no solo en el controlador para
+        // que el servicio no dependa de que su llamador se acuerde.
+        if ($task->isClosed()) {
+            return [];
+        }
+
+        $notifications = [];
+        $notified = [];
+        foreach ($this->assigneeRecipients($task) as $recipient) {
+            if (null !== $this->lastRemindedAt($task, $recipient, $now)) {
+                continue;
+            }
+            $notifications[] = $this->dispatcher->record(
+                $recipient,
+                self::REMINDER_KIND,
+                sprintf('Recordatorio: %s', $task->getTitle()),
+                sprintf('Sigue pendiente y vencía el %s.', $task->getDueDate()->format('d/m/Y')),
+                $task,
+            );
+            $notified[] = $recipient;
+        }
+        if ([] === $notifications) {
+            return []; // sin nada que mandar, ni un flush
+        }
+        $this->dispatcher->flushAndSend($notifications);
+
+        return $notified;
+    }
+
+    /**
+     * When the person was last reminded about the task ON the given day, or null if not yet today. Lets
+     * the task page show "Avisado hoy a las 13:40" instead of a button that would do nothing.
+     *
+     * @param Task               $task      the task
+     * @param User               $recipient the person
+     * @param \DateTimeImmutable $day       any moment of the day to look at
+     *
+     * @return \DateTimeImmutable|null the moment of the last reminder that day, or null
+     */
+    public function lastRemindedAt(Task $task, User $recipient, \DateTimeImmutable $day): ?\DateTimeImmutable
+    {
+        $sentAt = $this->notifications->findLatestAbout($recipient, $task, self::REMINDER_KIND)?->getCreatedAt();
+
+        return null !== $sentAt && $sentAt->format('Y-m-d') === $day->format('Y-m-d') ? $sentAt : null;
+    }
+
+    /**
+     * The people a manual nudge would reach: whoever has to do the task right now.
+     *
+     * @param Task $task the task
+     *
+     * @return list<User> the recipients (empty when the task has no one to do it)
+     */
+    public function nudgeRecipients(Task $task): array
+    {
+        return $this->assigneeRecipients($task);
+    }
+
+    /**
+     * When the task's people were already reminded today — that is, when a nudge would reach NOBODY new.
+     * Null while there is still someone to tell (or nobody to tell at all). The task page uses it to
+     * replace the button with "Avisado hoy a las 13:40", so what it offers matches what the endpoint
+     * would actually do.
+     *
+     * @param Task               $task the task
+     * @param \DateTimeImmutable $now  the current moment
+     *
+     * @return \DateTimeImmutable|null the latest reminder of the day, or null if a nudge would still reach someone
+     */
+    public function nudgedTodayAt(Task $task, \DateTimeImmutable $now): ?\DateTimeImmutable
+    {
+        $sent = [];
+        foreach ($this->assigneeRecipients($task) as $recipient) {
+            $at = $this->lastRemindedAt($task, $recipient, $now);
+            if (null === $at) {
+                return null; // someone has not been told yet: the button stays live
+            }
+            $sent[] = $at;
+        }
+
+        return [] !== $sent ? max($sent) : null;
     }
 
     /**
@@ -65,7 +172,7 @@ final class TaskReminderNotifier
                 foreach ($this->assigneeRecipients($task) as $recipient) {
                     $notifications[] = $this->dispatcher->record(
                         $recipient,
-                        'task.reminder',
+                        self::REMINDER_KIND,
                         sprintf('Tarea próxima: %s', $task->getTitle()),
                         sprintf('Vence el %s (en %d días).', $task->getDueDate()->format('d/m/Y'), $days),
                         $task,
@@ -104,6 +211,12 @@ final class TaskReminderNotifier
      */
     private function assigneeRecipients(Task $task): array
     {
+        // A delegated task is the DELEGATEE's to do: reminding the titular who handed it over (what
+        // getAssignedUser() returns) told the wrong person their deadline was coming.
+        if (null !== $task->getDelegatedTo()) {
+            return [$task->getDelegatedTo()];
+        }
+
         if (null !== $task->getAssignedUser()) {
             return [$task->getAssignedUser()];
         }
@@ -127,8 +240,10 @@ final class TaskReminderNotifier
     private function escalationRecipients(Task $task, int $days): array
     {
         $chain = $this->hierarchy->managersAbove($task);
-        // Escalating a task to its own assignee is pointless (they are the one who is late).
-        $chain = array_values(array_filter($chain, static fn (User $m): bool => $m !== $task->getAssignedUser()));
+        // Escalating a task to whoever has to do it is pointless (they are the one who is late). Uses
+        // isOwnedBy, so on a delegated task the escalation reaches the titular who delegated it — they
+        // stay accountable — but not the delegatee who is already late.
+        $chain = array_values(array_filter($chain, static fn (User $m): bool => !$task->isOwnedBy($m)));
 
         return $days >= 7 ? $chain : \array_slice($chain, 0, 1);
     }

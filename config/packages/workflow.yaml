@@ -25,8 +25,12 @@ framework:
                 submit:
                     from: pending
                     to: submitted
+                # También desde Pendiente ("Dar por finalizada"): sin esa salida, una tarea que el titular
+                # no entrega —está de baja, la hizo fuera de la app— se quedaba pendiente para siempre y
+                # al superior solo le quedaba Cancelar, que en el histórico miente ("anulada") y es
+                # terminal. Sigue siendo cosa del superior: el guard no ha cambiado.
                 validate:
-                    from: submitted
+                    from: [pending, submitted]
                     to: validated
                 reject:
                     from: submitted
