@@ -311,6 +311,50 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
+     * How many teaching periods a week each teacher has in a course, keyed by teacher id.
+     *
+     * The quota screen shows it beside the quota box: whoever decides that a colleague takes on three
+     * guardias and another one takes on one is really comparing teaching loads, and having to open the
+     * timetable in another tab to do it is how quotas end up typed at random.
+     *
+     * Periods are counted, not rows: Peñalara lists a teacher once per group when several share a slot
+     * (the Salón de Actos activities), and counting rows would make those teachers look twice as busy as
+     * they are.
+     *
+     * @param AcademicYear $year the course whose timetable to read
+     *
+     * @return array<int, int> teacher id → teaching periods a week
+     */
+    public function lectiveHoursByTeacher(AcademicYear $year): array
+    {
+        // One row per occupied (teacher, weekday, slot) and the tally done here, rather than a
+        // COUNT(DISTINCT <expression>) that would need CONCAT or arithmetic over an enumType column to
+        // fold the pair into one value. The grouped read is a few hundred rows of three small integers,
+        // and it behaves the same on every engine — this repository has already been bitten twice by
+        // DQL that looked right and hydrated wrong (see distinctSlots() and its MIN()).
+        /** @var list<array{teacher: string|int}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('IDENTITY(s.teacher) AS teacher')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.kind = :lective')
+            ->setParameter('year', $year)
+            ->setParameter('lective', ScheduleActivityKind::LECTIVE)
+            ->groupBy('s.teacher')
+            ->addGroupBy('s.weekday')
+            ->addGroupBy('s.slotIndex')
+            ->getQuery()
+            ->getResult();
+
+        $hours = [];
+        foreach ($rows as $row) {
+            $teacherId = (int) $row['teacher'];
+            $hours[$teacherId] = ($hours[$teacherId] ?? 0) + 1;
+        }
+
+        return $hours;
+    }
+
+    /**
      * The distinct time slots present in a course's imported timetable, ordered by start time — the
      * periods the "Parte de guardias" screen offers as tabs. Each row is {@code [index, startsAt, endsAt]}.
      *
