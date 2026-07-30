@@ -2969,7 +2969,9 @@ tr.is-not-covered { background: var(--danger-weak); }
 .notice__head { display: flex; align-items: center; gap: 8px; }
 .notice__title { font-size: 14px; color: var(--text); font-weight: 600; }
 .notice__new { font-family: var(--font-mono); font-size: 8.5px; font-weight: 600; color: var(--danger-text); background: var(--danger-weak); border: 1px solid var(--danger-border); padding: 2px 6px; border-radius: 999px; text-transform: uppercase; }
-.notice__text { font-size: 12.5px; color: var(--text-muted); line-height: 1.45; margin: 3px 0 0; }
+/* pre-line: el cuerpo de un aviso puede traer párrafos (p. ej. el motivo de un cambio de guardia, que
+   va aparte del resto). El email y el push los respetan; sin esto la bandeja los aplastaba en una línea. */
+.notice__text { font-size: 12.5px; color: var(--text-muted); line-height: 1.45; margin: 3px 0 0; white-space: pre-line; }
 .notice__time { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-tenue); margin-top: 6px; }
 
 /* =============================================================================

@@ -994,20 +994,28 @@ final class GuardiaController extends AbstractController
         }
 
         // Notify only when the substitute actually changes (reselecting the same one does not notify).
-        // Both sides hear about it, with the coordinator's explanation: whoever takes the guardia over
-        // and whoever is relieved of it — otherwise the relieved teacher would still turn up to a group
-        // that is no longer theirs, and the mandatory explanation would die unread in the audit trail.
-        $substituteChanged = $cover->getAssignedGuardia() !== $previous;
+        // Everyone the change affects hears about it with the coordinator's explanation: whoever takes
+        // the guardia over and whoever is relieved of it — otherwise the relieved teacher would still
+        // turn up to a group that is no longer theirs, and the mandatory explanation would die unread
+        // in the audit trail.
+        $incoming = $cover->getAssignedGuardia();
+        $substituteChanged = $incoming !== $previous;
         if ($substituteChanged) {
+            // notifyAssigned no hace nada si el hueco se ha dejado vacío, así que no hace falta guardarlo.
             $notifier->notifyAssigned($cover, $reason);
             if (null !== $previous) {
                 $notifier->notifyRelieved($cover, $previous, $reason);
             }
         }
-        // El acuse dice la verdad: solo promete avisos cuando de verdad los ha habido.
-        $this->addFlash('success', $substituteChanged
-            ? 'Guardia modificada. Hemos avisado a los profesores afectados y queda en el histórico.'
-            : 'Guardia modificada y registrada en el histórico.');
+
+        // El acuse dice la verdad, y dice CUÁNTOS avisos han salido: cubrir un hueco vacío (o dejarlo
+        // vacío) afecta a una sola persona, así que el plural sería mentira en la mitad de los casos.
+        $notified = $substituteChanged ? (int) (null !== $incoming) + (int) (null !== $previous) : 0;
+        $this->addFlash('success', match ($notified) {
+            2 => 'Guardia modificada. Hemos avisado a los dos profesores y queda en el histórico.',
+            1 => 'Guardia modificada. Hemos avisado al profesor afectado y queda en el histórico.',
+            default => 'Guardia modificada y registrada en el histórico.',
+        });
 
         return $this->backToParte($cover->getDate(), $cover->getSlotIndex());
     }

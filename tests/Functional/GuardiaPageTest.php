@@ -280,7 +280,9 @@ final class GuardiaPageTest extends WebTestCase
 
     /**
      * The coordinator overrides the assigned guardia from the modify screen, and an empty choice clears
-     * it. Every change carries a mandatory reason.
+     * it. Every change carries a mandatory reason, and clearing the assignment still tells the teacher
+     * who was covering it — the one path where nobody takes the guardia over, so the only notice sent
+     * is theirs.
      */
     public function testModifyReassignsAndClearsTheGuardia(): void
     {
@@ -304,6 +306,12 @@ final class GuardiaPageTest extends WebTestCase
         $crawler = $this->client->request('GET', $action);
         $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action), 'guardia' => '', 'motivo' => 'Se retira la asignación.']);
         self::assertNull($this->reload($id)->getAssignedGuardia());
+
+        // Nadie recoge la guardia, así que el único aviso posible es el del que la pierde: si dejara de
+        // salir, el profesor se presentaría igual a cubrir un grupo que ya no es suyo.
+        $relieved = $this->notificationFor('gp@centro.test');
+        self::assertSame('guardia.relieved', $relieved->getKind());
+        self::assertStringContainsString('Se retira la asignación.', (string) $relieved->getBody());
     }
 
     /**
@@ -392,14 +400,16 @@ final class GuardiaPageTest extends WebTestCase
     }
 
     /**
-     * The notice a teacher received, failing loudly when none was sent.
+     * The LAST notice a teacher received, failing loudly when none was sent. Newest-first on purpose: a
+     * teacher may already carry an earlier notice (assigned, then relieved), and taking the first one
+     * would assert against the wrong event and pass for the wrong reason.
      */
     private function notificationFor(string $email): Notification
     {
         $this->em->clear();
         $recipient = $this->em->getRepository(User::class)->findOneBy(['email' => $email]);
         self::assertInstanceOf(User::class, $recipient);
-        $notification = $this->em->getRepository(Notification::class)->findOneBy(['recipient' => $recipient]);
+        $notification = $this->em->getRepository(Notification::class)->findOneBy(['recipient' => $recipient], ['id' => 'DESC']);
         self::assertInstanceOf(Notification::class, $notification, sprintf('%s no recibió ningún aviso', $email));
 
         return $notification;
