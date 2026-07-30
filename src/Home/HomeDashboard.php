@@ -55,6 +55,7 @@ final readonly class HomeDashboard
      *     nextGuardia: array{cover: GuardiaCover, startsAt: ?\DateTimeImmutable, minutesUntil: ?int}|null,
      *     upcomingGuardia: array{cover: GuardiaCover, startsAt: ?\DateTimeImmutable}|null,
      *     timedToday: AgendaEntry[],
+     *     meetingsToday: AgendaEntry[],
      *     todos: AgendaEntry[],
      *     upcoming: AgendaEntry[]
      * }
@@ -68,15 +69,25 @@ final readonly class HomeDashboard
         $isTimedEvent = static fn (AgendaEntry $e): bool => AgendaEntry::KIND_EVENT === $e->kind && null !== $e->event && !$e->event->isAllDay();
         // Un "por hacer": una tarea del centro (fecha límite) o un recordatorio personal sin hora.
         $isTodo = static fn (AgendaEntry $e): bool => $isTask($e) || (AgendaEntry::KIND_EVENT === $e->kind && null !== $e->event && $e->event->isAllDay());
+        $isMeeting = static fn (AgendaEntry $e): bool => AgendaEntry::KIND_MEETING === $e->kind;
 
         // "Con hora": tu horario de HOY — las citas con hora, en orden de reloj (los buckets ya vienen
         // ordenados por su instante). Una cita no se "hace con casilla"; se cumple estando.
         $timedToday = array_values(array_filter($buckets['today'], $isTimedEvent));
 
+        // Las reuniones convocadas de HOY van aparte, no dentro de "Con hora": esa caja significa
+        // PRIVADO en el sistema de diseño (candado, malva) y una convocatoria del centro no lo es.
+        $meetingsToday = array_values(array_filter($buckets['today'], $isMeeting));
+
         // "Por hacer": lo pendiente en tu plato hoy, como checklist — vencidas (de cualquier tipo) primero,
         // luego las tareas de hoy y los recordatorios sin hora. Las citas con hora NO entran aquí.
+        //
+        // Las reuniones se excluyen EXPLÍCITAMENTE de las vencidas, aunque hoy la agenda no traiga
+        // ninguna pasada: una reunión no es un pendiente que se arrastre (no puedes ir ya) y la checklist
+        // no sabe pintarla, así que si alguien amplía la consulta hacia atrás debe verlo aquí y no en un
+        // error de plantilla.
         $todos = \array_slice([
-            ...$buckets['overdue'],
+            ...array_values(array_filter($buckets['overdue'], static fn (AgendaEntry $e): bool => !$isMeeting($e))),
             ...array_values(array_filter($buckets['today'], $isTodo)),
         ], 0, 8);
 
@@ -90,6 +101,7 @@ final readonly class HomeDashboard
             'nextGuardia' => $next,
             'upcomingGuardia' => $upcomingGuardia,
             'timedToday' => $timedToday,
+            'meetingsToday' => $meetingsToday,
             'todos' => $todos,
             'upcoming' => $upcoming,
             'roleSubtitle' => $this->roleSubtitle($user),

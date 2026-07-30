@@ -1,0 +1,49 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Proyectos{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Proyectos{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Administración</p>
+            <h1>Proyectos</h1>
+            <p class="lead">Los proyectos del centro (Erasmus+, huerto, plan digital…) y quién los coordina. Un proyecto NO es un departamento: es un grupo de profesores que trabajan juntos en algo, y su coordinación no manda en nadie — solo puede convocar sus reuniones y subir sus actas.</p>
+        </div>
+        <a class="btn" href="{{ path('admin_project_new') }}">+ Nuevo proyecto</a>
+    </div>
+
+    <div class="card">
+        {% if projects is empty %}
+            <div class="empty-state">
+                <h2>No hay proyectos todavía</h2>
+                <p>Crea el primero y dile quién lo coordina.</p>
+                <a class="btn" href="{{ path('admin_project_new') }}">Nuevo proyecto</a>
+            </div>
+        {% else %}
+            <table data-list-tools>
+                <thead>
+                    <tr><th>Nombre</th><th>Coordina</th><th>Profesorado</th><th data-filter>Estado</th><th data-nosort></th></tr>
+                </thead>
+                <tbody>
+                    {% for project in projects %}
+                        <tr>
+                            <td><a href="{{ path('admin_project_show', { id: project.id }) }}">{{ project.name }}</a></td>
+                            <td>{{ project.coordinator ? project.coordinator.fullName : '— sin coordinador —' }}</td>
+                            <td>{{ project.members|length }}</td>
+                            <td>{{ project.active ? 'En marcha' : 'Terminado' }}</td>
+                            <td class="row-actions">
+                                <a href="{{ path('admin_project_edit', { id: project.id }) }}">Editar</a>
+                                <form method="post" action="{{ path('admin_project_delete', { id: project.id }) }}" data-confirm="¿Borrar el proyecto «{{ project.name }}»? Sus reuniones y actas se conservan, pero dejan de estar asociadas a él. Para conservarlo, mejor márcalo como terminado.">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('project_delete' ~ project.id) }}">
+                                    <button type="submit" class="link-danger">Borrar</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}

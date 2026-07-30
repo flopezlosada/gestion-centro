@@ -1,0 +1,118 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}{{ meeting.title }} · {{ app_organization_name }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('meeting_index') }}">Reuniones</a><span class="sep">/</span>
+    Reunión
+{% endblock %}
+
+{# Pantalla empujada. #}
+{% block bottomnav %}{% endblock %}
+
+{% block body %}
+    <div class="backbar">
+        <a class="backbar__back" href="{{ path('meeting_index') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>Reuniones</a>
+        {% if canManage %}<a class="backbar__edit" href="{{ path('meeting_edit', { id: meeting.id }) }}">Modificar</a>{% endif %}
+    </div>
+
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">{% if meeting.project %}{{ meeting.project.name }}{% else %}Reunión{% endif %}</p>
+            <h1>{{ meeting.title }}</h1>
+            <p class="lead">
+                {{ meeting.startAt|date('d/m/Y') }} · {{ meeting.startAt|date('H:i') }}{% if meeting.endAt %}–{{ meeting.endAt|date('H:i') }}{% endif %}
+                {%- if meeting.place %} · {{ meeting.place }}{% endif %}
+            </p>
+        </div>
+    </div>
+
+    <div class="detail-cols">
+      <div class="detail-main">
+        <div class="detail-block">
+            <div class="detail-block__label">Orden del día</div>
+            {% if meeting.agenda %}
+                <p class="detail-prose">{{ meeting.agenda|nl2br }}</p>
+            {% else %}
+                <p class="help">Sin orden del día.</p>
+            {% endif %}
+        </div>
+
+        {# ---- Acta: el registro de lo acordado. La sube quien convoca; la leen los convocados. ---- #}
+        <div class="detail-block">
+            <div class="detail-block__label">Acta</div>
+            {% if meeting.hasMinutes %}
+                <a class="doc-card" href="{{ path('meeting_minutes_download', { id: meeting.id }) }}">
+                    <span class="doc-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span>
+                    <span class="doc-card__body">
+                        <span class="doc-card__name">{{ meeting.minutesName ?: 'Acta de la reunión' }}</span>
+                        <span class="doc-card__meta">
+                            Subida{% if meeting.minutesUploadedAt %} el {{ meeting.minutesUploadedAt|date('d/m/Y') }}{% endif %}
+                            {%- if meeting.minutesUploadedBy %} por {{ meeting.minutesUploadedBy.fullName }}{% endif %}
+                        </span>
+                    </span>
+                    <span class="doc-card__open">Descargar</span>
+                </a>
+                {% if canManage %}
+                    <div class="deliverable-form">
+                        <form method="post" action="{{ path('meeting_minutes_delete', { id: meeting.id }) }}" data-confirm="¿Quitar el acta de esta reunión?">
+                            <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
+                            <button type="submit" class="link-danger">Quitar el acta</button>
+                        </form>
+                    </div>
+                {% endif %}
+            {% else %}
+                <p class="help">Todavía no hay acta de esta reunión.</p>
+            {% endif %}
+
+            {% if canManage %}
+                {# Sustituir vale para corregir un acta equivocada: el fichero anterior se borra del disco. #}
+                <form method="post" action="{{ path('meeting_minutes_upload', { id: meeting.id }) }}" enctype="multipart/form-data" class="deliverable-form">
+                    <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
+                    <label class="classcard__file">
+                        <span class="visually-hidden">Archivo del acta</span>
+                        <input type="file" name="acta" required>
+                    </label>
+                    <button class="btn" type="submit">{{ meeting.hasMinutes ? 'Sustituir el acta' : 'Subir el acta' }}</button>
+                </form>
+                <p class="help">PDF, Office, texto o imagen, hasta {{ (constant('App\\Support\\DocumentPolicy::MAX_BYTES') / 1024 / 1024)|round }} MB. Solo la pueden descargar los convocados.</p>
+            {% endif %}
+        </div>
+      </div>{# /detail-main #}
+
+      <aside class="detail-aside">
+        <div class="detail-block">
+            <div class="detail-block__label">La convocatoria</div>
+            <dl class="meta-grid">
+                <div class="meta-grid__cell"><dt>Convoca</dt><dd>{{ meeting.convener ? meeting.convener.fullName : '—' }}</dd></div>
+                <div class="meta-grid__cell"><dt>Cuándo</dt><dd>{{ meeting.startAt|date('d/m/Y H:i') }}</dd></div>
+                <div class="meta-grid__cell"><dt>Lugar</dt><dd>{{ meeting.place ?: '—' }}</dd></div>
+                <div class="meta-grid__cell"><dt>Proyecto</dt><dd>{{ meeting.project ? meeting.project.name : '—' }}</dd></div>
+            </dl>
+        </div>
+
+        <div class="detail-block">
+            <div class="detail-block__label">Convocados · {{ meeting.attendees|length }}</div>
+            {% if meeting.attendees is empty %}
+                <p class="help">Nadie más está convocado.</p>
+            {% else %}
+                {#- Como prosa separada por puntos, no como lista: en la columna estrecha del aside una
+                    lista de una línea por nombre ocupa media pantalla y no aporta nada. -#}
+                <p class="detail-prose">{% for attendee in meeting.attendees %}{{ attendee.fullName }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+            {% endif %}
+        </div>
+
+        {% if canManage %}
+            <div class="detail-block">
+                <div class="detail-block__label">Cancelar</div>
+                <form method="post" action="{{ path('meeting_delete', { id: meeting.id }) }}" data-confirm="¿Cancelar la reunión «{{ meeting.title }}»? Se borra también su acta.">
+                    <input type="hidden" name="_token" value="{{ csrf_token('meeting_delete' ~ meeting.id) }}">
+                    <button type="submit" class="link-danger">Cancelar la reunión</button>
+                </form>
+                <p class="help">Los convocados reciben un aviso de que la reunión se ha cancelado.</p>
+            </div>
+        {% endif %}
+      </aside>{# /detail-aside #}
+    </div>{# /detail-cols #}
+{% endblock %}

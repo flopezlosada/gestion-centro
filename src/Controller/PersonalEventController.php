@@ -197,25 +197,10 @@ final class PersonalEventController extends AbstractController
             return;
         }
 
-        $event->setStartAt($this->at($day, $data->startTime))
-            ->setEndAt(null !== $data->endTime ? $this->at($day, $data->endTime) : null)
+        $event->setStartAt(CalendarDate::at($day, $data->startTime))
+            ->setEndAt(null !== $data->endTime ? CalendarDate::at($day, $data->endTime) : null)
             ->setAllDay(false)
             ->setReminder($data->reminder);
-    }
-
-    /**
-     * The given day at the given time of day. Only the hour and minute of $time are read: the time
-     * field carries a whole instant, but its date part is meaningless here (see
-     * {@see PersonalEventFormData::$startTime}) — the day always comes from $day.
-     *
-     * @param \DateTimeImmutable $day  the day (its time part is ignored)
-     * @param \DateTimeImmutable $time the time of day (its date part is ignored)
-     *
-     * @return \DateTimeImmutable the day at that time
-     */
-    private function at(\DateTimeImmutable $day, \DateTimeImmutable $time): \DateTimeImmutable
-    {
-        return $day->setTime((int) $time->format('G'), (int) $time->format('i'));
     }
 
     /**

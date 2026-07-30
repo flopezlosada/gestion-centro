@@ -170,7 +170,35 @@
             {% endif %}
         </section>
 
-        {# ---- Próximos 7 días: anticipo compacto y tipado (tareas y eventos juntos por día). El marcador
+        {# ---- Reuniones de hoy: convocatorias del centro (no son privadas, así que NO van en la caja
+               malva "Con hora"; y no son un "por hacer", así que no llevan casilla). Solo aparece la
+               sección si hay alguna: una sección vacía todos los días enseña a ignorarla. ---- #}
+        {% if meetingsToday is not empty %}
+        <section class="home-section">
+            <div class="home-section__head">
+                <h2 class="home-section__title">Reuniones de hoy</h2>
+                <a class="home-section__more" href="{{ path('meeting_index') }}">Ver reuniones</a>
+            </div>
+            <ul class="tasklist">
+                {% for entry in meetingsToday %}
+                    {% set m = entry.meeting %}
+                    <li class="tasklist__item upcoming-item">
+                        <a class="tasklist__body" href="{{ path('meeting_show', { id: m.id }) }}">
+                            <span class="tasklist__title">{{ m.title }}</span>
+                            <span class="tasklist__meta">
+                                {{- m.startAt|date('H:i') -}}
+                                {%- if m.place %} · {{ m.place }}{% endif -%}
+                                {%- if m.project %} · {{ m.project.name }}{% endif -%}
+                            </span>
+                        </a>
+                        <span class="tasklist__go" aria-hidden="true">›</span>
+                    </li>
+                {% endfor %}
+            </ul>
+        </section>
+        {% endif %}
+
+        {# ---- Próximos 7 días: anticipo compacto y tipado (tareas, eventos y reuniones juntos por día). El marcador
                es estático (no accionable): es un vistazo, no el trabajo de hoy. Lo más lejano vive en el
                Calendario, a un clic desde el pie. Reutiliza la checklist (.tasklist). ---- #}
         {% if upcoming is not empty %}
@@ -187,6 +215,14 @@
                             <a class="tasklist__body" href="{{ path('task_show', { id: t.id }) }}">
                                 <span class="tasklist__title">{{ t.title }}</span>
                                 <span class="tasklist__meta">{{ dias[t.dueDate|date('N')]|slice(0, 3) }} {{ t.dueDate|date('d/m') }} · tarea{% if t.unit %} · {{ t.unit.name }}{% endif %}</span>
+                            </a>
+                        </li>
+                    {% elseif entry.kind == 'meeting' %}
+                        {% set m = entry.meeting %}
+                        <li class="tasklist__item upcoming-item">
+                            <a class="tasklist__body" href="{{ path('meeting_show', { id: m.id }) }}">
+                                <span class="tasklist__title">{{ m.title }}</span>
+                                <span class="tasklist__meta">{{ dias[m.startAt|date('N')]|slice(0, 3) }} {{ m.startAt|date('d/m') }} · {{ m.startAt|date('H:i') }} · reunión{% if m.place %} · {{ m.place }}{% endif %}</span>
                             </a>
                         </li>
                     {% else %}

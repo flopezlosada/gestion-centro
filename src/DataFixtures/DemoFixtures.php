@@ -7,11 +7,13 @@ namespace App\DataFixtures;
 use App\Entity\AcademicYear;
 use App\Entity\NonLectiveDay;
 use App\Entity\Notification;
+use App\Entity\Project;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskResponsibility;
 use App\Entity\TaskTemplate;
 use App\Entity\Department;
+use App\Entity\Meeting;
 use App\Entity\User;
 use App\Enum\TaskType;
 use App\Service\SchoolCalendar;
@@ -148,6 +150,30 @@ final class DemoFixtures extends AbstractDemoFixture implements DependentFixture
         $withDeliverable->setDescription('Memoria anual del departamento con resultados y propuestas para el curso que viene.')
             ->setUnit($maths)->setAssignedUser($teacher)->setResponsibility(new TaskResponsibility($this->role('teacher'), $maths))->setStatus('submitted')->setDeliverableReference('https://cloud.educa.madrid.org/memoria-mates')->setCreatedBy($director);
         $manager->persist($withDeliverable);
+
+        // A project with its coordinator and teachers, plus two meetings: one coming up (so the agenda,
+        // the calendar and "Mis reuniones" have something to show) and one already held with its acta
+        // pending. The coordinator is a plain docente — coordinating a project grants no rank.
+        $projectCoordinator = $mathsTeachers[0];
+        $projectCoordinator->addAssignedRole($this->role('project_coordinator'));
+        $project = (new Project())->setName('Erasmus+')
+            ->setDescription('Movilidad de alumnado y profesorado con centros europeos.')
+            ->setCoordinator($projectCoordinator);
+        array_map($project->addMember(...), [$teacher, $mathsTeachers[1], $mathsTeachers[2]]);
+        $manager->persist($project);
+
+        $upcomingMeeting = new Meeting($projectCoordinator, 'Reunión de seguimiento de Erasmus+', $today->modify('+2 days')->setTime(14, 0));
+        $upcomingMeeting->setPlace('Sala de profesores')
+            ->setAgenda("1. Estado de las movilidades del segundo trimestre.\n2. Reparto de tareas de difusión.\n3. Presupuesto pendiente.")
+            ->setEndAt($today->modify('+2 days')->setTime(15, 0))
+            ->setProject($project);
+        array_map($upcomingMeeting->addAttendee(...), $project->getMembers()->toArray());
+        $manager->persist($upcomingMeeting);
+
+        $heldMeeting = new Meeting($mathsHead, 'Reunión de departamento de Matemáticas', $today->modify('-7 days')->setTime(12, 30));
+        $heldMeeting->setPlace('Aula 12')->setAgenda("1. Resultados del trimestre.\n2. Criterios de recuperación.");
+        array_map($heldMeeting->addAttendee(...), [$teacher, ...$mathsTeachers]);
+        $manager->persist($heldMeeting);
 
         // A couple of demo notices for the teacher so the inbox and its badge are not empty.
         $pinned = $teacherTasks[0];

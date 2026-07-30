@@ -26,13 +26,14 @@ A diferencia de un gestor de tareas genérico, el modelo está construido sobre 
 
 ## Operating Context
 
-- **Fase 1 (sin datos de alumnado):** los entregables de una tarea son **referencias/enlaces** a la nube del centro; la app nunca guarda su contenido.
+- **Fase 1 (sin datos de alumnado):** el **entregable de una tarea** es una **referencia/enlace** a la nube del centro; la app nunca guarda su contenido. Excepción acotada y deliberada: los **documentos de coordinación** que el centro pidió tener dentro (la tarea que el profesor ausente deja para su grupo y el **acta de una reunión**) se guardan como fichero en almacenamiento **privado** (fuera del web root, con nombre aleatorio) y solo se sirven a quien tiene por qué leerlos.
 - **Uso diario y móvil**: consulta rápida "qué me toca hoy" (agenda personal en dos bloques: Con hora = tus citas de hoy, Por hacer = tareas del centro vencidas o de hoy + recordatorios sin hora, con casilla de hecho de 1 clic), más un anticipo de los próximos 7 días; cualquier otro día se consulta en el Calendario.
 - **Ciclo de vida de tarea** por máquina de estados (Symfony Workflow): Pendiente → Entregada → Finalizada + Cancelada; Devolver → Pendiente.
 - **Calendario del curso** mensual, con días no lectivos que condicionan las fechas límite.
 - **Avisos in-app** + motor de recordatorios (15/7 días antes) y escalado de vencidas.
 - **Trazabilidad**: cada cambio de una entidad se audita (actor + diff) y se ve en su ficha.
 - **Módulo de guardias**: reparto y cobertura de guardias del profesorado, con import desde Peñalara.
+- **Reuniones y proyectos**: convocatoria con día, hora, lugar, orden del día y convocados; su **acta** se sube a la ficha de la reunión. Los **proyectos** del centro (agrupación de profesorado con coordinación, distinta de un departamento) aportan por defecto sus profes al convocar.
 - Datos del claustro con origen en el PDF público de docentes del centro; los datos reales (PII) nunca viven en git.
 
 ## Capabilities and Constraints
@@ -41,7 +42,7 @@ A diferencia de un gestor de tareas genérico, el modelo está construido sobre 
 - **Autenticación passwordless**: magic-link por correo + SSO Google/Educamadrid. Sin contraseñas.
 - **Modelo de organización (cerrado)**: departamento (no "unit"), todo es Role, algunos con rango jerárquico; superioridad contextual por (rol, departamento). Es la base de todo el dominio.
 - **Acciones por rol**: el superior solo supervisa (validar/devolver), no ejecuta ni delega la tarea de otro; delegar es potestad del titular. Los roles asignables al crear una tarea se filtran por jerarquía.
-- **Terminología**: "departamento", "rol", "guardia", "plan del curso", "entregable" (= enlace, no fichero).
+- **Terminología**: "departamento", "rol", "guardia", "plan del curso", "entregable" (= enlace, no fichero), "reunión", "convocar", "acta" (= fichero), "proyecto" (≠ departamento).
 - **Sin build de assets**: cualquier trabajo de diseño se sirve con CSS/JS vanilla desde `public/`, sin bundler.
 
 ## Brand Commitments
@@ -62,7 +63,7 @@ A diferencia de un gestor de tareas genérico, el modelo está construido sobre 
 
 1. **"Qué me toca hoy" primero**: la fricción de consultar y marcar hecho debe ser mínima, pensada para el móvil entre clases.
 2. **La jerarquía docente es el modelo, no un adorno**: asignación, escalado y validación siguen la cadena de mando real (rol/departamento contextual).
-3. **La app no es el archivo del centro**: guarda referencias y coordinación, nunca el contenido de los entregables (Fase 1).
+3. **La app no es el archivo del centro**: guarda coordinación y referencias, no el contenido de los entregables (Fase 1). Lo único que custodia son los documentos que la propia coordinación necesita a mano —el acta de una reunión, la tarea dejada para una guardia—, y siempre en almacenamiento privado y con el acceso acotado a su grupo.
 4. **Nada importante se pierde**: recordatorios, escalado de vencidas y trazabilidad son parte del contrato, no extras.
 5. **A medida hoy, sin cerrar la generalización**: decisiones de diseño válidas para La Cabrera pero que no impidan servir a otros centros.
 

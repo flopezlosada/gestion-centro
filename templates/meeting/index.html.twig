@@ -1,0 +1,87 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Reuniones · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Reuniones{% endblock %}
+
+{% block body %}
+    {% set dias = ['', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'] %}
+
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Reuniones</p>
+            <h1>Mis reuniones</h1>
+            <p class="lead">Las reuniones a las que estás convocado y las que convocas tú. Cuando termina una, su acta se queda aquí.</p>
+        </div>
+        {% if canConvene %}<a class="btn" href="{{ path('meeting_new') }}">+ Convocar reunión</a>{% endif %}
+    </div>
+
+    {# Atajo por proyecto: convocar desde aquí trae ya marcados a los profes del proyecto (lo resuelve
+       el servidor con ?proyecto=, así que funciona sin JS). #}
+    {% if projects is not empty %}
+        <div class="card">
+            <div class="detail-block__label">Proyectos que coordinas</div>
+            <div class="form-actions">
+                {% for project in projects %}
+                    <a class="btn secondary" href="{{ path('meeting_new', { proyecto: project.id }) }}">Convocar reunión de {{ project.name }}</a>
+                {% endfor %}
+            </div>
+        </div>
+    {% endif %}
+
+    <section class="home-section">
+        <div class="home-section__head">
+            <h2 class="home-section__title">Próximas</h2>
+        </div>
+        {% if upcoming is empty %}
+            <p class="home-empty">No tienes ninguna reunión convocada.</p>
+        {% else %}
+            <ul class="tasklist">
+                {% for meeting in upcoming %}
+                    <li class="tasklist__item upcoming-item">
+                        <a class="tasklist__body" href="{{ path('meeting_show', { id: meeting.id }) }}">
+                            <span class="tasklist__title">{{ meeting.title }}</span>
+                            <span class="tasklist__meta">
+                                {{- dias[meeting.startAt|date('N')] }} {{ meeting.startAt|date('d/m') }} · {{ meeting.startAt|date('H:i') -}}
+                                {%- if meeting.place %} · {{ meeting.place }}{% endif -%}
+                                {%- if meeting.project %} · {{ meeting.project.name }}{% endif -%}
+                            </span>
+                        </a>
+                        <span class="tasklist__go" aria-hidden="true">›</span>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    </section>
+
+    <section class="home-section">
+        <div class="home-section__head">
+            <h2 class="home-section__title">Celebradas</h2>
+        </div>
+        {% if past is empty %}
+            <p class="home-empty">Aquí aparecerán las reuniones ya celebradas, con su acta.</p>
+        {% else %}
+            <div class="card">
+                <table>
+                    <thead>
+                        <tr><th>Reunión</th><th>Cuándo</th><th>Acta</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for meeting in past %}
+                            <tr>
+                                <td><a href="{{ path('meeting_show', { id: meeting.id }) }}">{{ meeting.title }}</a>{% if meeting.project %} <span class="help">{{ meeting.project.name }}</span>{% endif %}</td>
+                                <td>{{ meeting.startAt|date('d/m/Y') }} · {{ meeting.startAt|date('H:i') }}</td>
+                                <td>
+                                    {% if meeting.hasMinutes %}
+                                        <a href="{{ path('meeting_minutes_download', { id: meeting.id }) }}">Descargar acta</a>
+                                    {% else %}
+                                        <span class="help">Sin acta todavía</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+    </section>
+{% endblock %}

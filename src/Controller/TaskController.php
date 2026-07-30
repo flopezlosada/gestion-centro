@@ -15,7 +15,6 @@ use App\Form\TaskFormType;
 use App\Repository\AuditLogRepository;
 use App\Repository\RoleRepository;
 use App\Repository\TaskRepository;
-use App\Repository\DepartmentRepository;
 use App\Repository\UserRepository;
 use App\Service\OrganizationHierarchy;
 use App\Service\TaskAssignmentNotifier;
@@ -317,11 +316,11 @@ final class TaskController extends AbstractController
      * limited to that set and re-checked on submit.
      */
     #[Route('/tareas/nueva', name: 'task_new', methods: ['GET', 'POST'])]
-    public function new(Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, UserRepository $users, DepartmentRepository $unitRepository, EntityManagerInterface $entityManager, TaskAssignmentNotifier $assignmentNotifier): Response
+    public function new(Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, EntityManagerInterface $entityManager, TaskAssignmentNotifier $assignmentNotifier): Response
     {
-        $units = $this->assignableDepartments($user, $hierarchy, $unitRepository);
+        $units = $this->assignableDepartments($user, $hierarchy);
         $roleChoices = $this->assignableRoles($user, $roles->findAllOrdered(), $hierarchy);
-        $userChoices = $this->assignableUsers($user, $hierarchy, $users, $unitRepository);
+        $userChoices = $this->assignableUsers($user, $hierarchy);
 
         $data = new TaskFormData();
         // Prefill the deadline when arriving from the calendar's "+ Nueva tarea" (?fecha=YYYY-MM-DD).
@@ -365,13 +364,13 @@ final class TaskController extends AbstractController
      * not editable (it governs the lifecycle already in progress).
      */
     #[Route('/tareas/{id}/editar', name: 'task_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
-    public function edit(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, UserRepository $users, DepartmentRepository $unitRepository, EntityManagerInterface $entityManager): Response
+    public function edit(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, EntityManagerInterface $entityManager): Response
     {
         if (!$this->canManage($task, $user, $hierarchy)) {
             throw $this->createAccessDeniedException('No puedes editar esta tarea.');
         }
 
-        $units = $this->assignableDepartments($user, $hierarchy, $unitRepository);
+        $units = $this->assignableDepartments($user, $hierarchy);
         // Keep the task's current department as a valid choice even if now outside the scope.
         $currentUnit = $task->getResponsibility()?->getUnit();
         if (null !== $currentUnit && !\in_array($currentUnit, $units, true)) {
@@ -383,7 +382,7 @@ final class TaskController extends AbstractController
         if (null !== $currentRole && !\in_array($currentRole, $roleChoices, true)) {
             $roleChoices[] = $currentRole;
         }
-        $userChoices = $this->assignableUsers($user, $hierarchy, $users, $unitRepository);
+        $userChoices = $this->assignableUsers($user, $hierarchy);
         // Keep the task's current assignee as a valid choice even if now outside the scope.
         $currentAssignee = $task->getAssignedUser();
         if (null !== $currentAssignee && !\in_array($currentAssignee, $userChoices, true)) {
@@ -440,8 +439,6 @@ final class TaskController extends AbstractController
         AuditLogRepository $auditLog,
         TaskVisibility $visibility,
         OrganizationHierarchy $hierarchy,
-        UserRepository $users,
-        DepartmentRepository $unitRepository,
         TaskWorkflow $workflows,
         TaskActivityPresenter $activity,
     ): Response {
@@ -468,7 +465,7 @@ final class TaskController extends AbstractController
         // de titular (reasignarla reescribiría quién la hizo).
         $canDelegate = ($isAdmin || $task->isOwnedBy($user)) && $task->isPending();
         $delegatable = $canDelegate
-            ? array_values(array_filter($this->assignableUsers($user, $hierarchy, $users, $unitRepository), static fn (User $u): bool => $u !== $user))
+            ? array_values(array_filter($this->assignableUsers($user, $hierarchy), static fn (User $u): bool => $u !== $user))
             : [];
 
         return $this->render('task/show.html.twig', [
@@ -501,7 +498,7 @@ final class TaskController extends AbstractController
      * (supervisa, no reasigna); y solo se delega en alguien a quien se manda.
      */
     #[Route('/tareas/{id}/delegar', name: 'task_delegate', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function delegate(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, UserRepository $users, DepartmentRepository $unitRepository, EntityManagerInterface $entityManager): Response
+    public function delegate(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, UserRepository $users, EntityManagerInterface $entityManager): Response
     {
         if (!$this->isCsrfTokenValid('task_delegate'.$task->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
@@ -519,7 +516,7 @@ final class TaskController extends AbstractController
             $task->setDelegatedTo(null);
         } else {
             $delegatee = $users->find((int) $delegateeId);
-            if (null === $delegatee || $delegatee === $user || !\in_array($delegatee, $this->assignableUsers($user, $hierarchy, $users, $unitRepository), true)) {
+            if (null === $delegatee || $delegatee === $user || !\in_array($delegatee, $this->assignableUsers($user, $hierarchy), true)) {
                 throw $this->createAccessDeniedException('No puedes delegar en esa persona.');
             }
             $task->setDelegatedTo($delegatee);
@@ -740,9 +737,9 @@ final class TaskController extends AbstractController
      *
      * @return list<Department> the assignable departments
      */
-    private function assignableDepartments(User $user, OrganizationHierarchy $hierarchy, DepartmentRepository $units): array
+    private function assignableDepartments(User $user, OrganizationHierarchy $hierarchy): array
     {
-        $departments = $this->commandedDepartments($user, $hierarchy, $units);
+        $departments = $hierarchy->commandedDepartments($user);
         // Plus the user's own department, so a plain member can still set a task for themselves in it.
         $own = $user->getUnit();
         if (null !== $own && !\in_array($own, $departments, true)) {
@@ -757,14 +754,9 @@ final class TaskController extends AbstractController
      *
      * @return list<User> the assignable users
      */
-    private function assignableUsers(User $user, OrganizationHierarchy $hierarchy, UserRepository $users, DepartmentRepository $units): array
+    private function assignableUsers(User $user, OrganizationHierarchy $hierarchy): array
     {
-        $list = $users->findActiveInUnits($this->commandedDepartments($user, $hierarchy, $units));
-        if (!\in_array($user, $list, true)) {
-            $list[] = $user;
-        }
-
-        return $list;
+        return [...$hierarchy->commandedPeople($user), $user];
     }
 
     /**
@@ -805,24 +797,6 @@ final class TaskController extends AbstractController
         $scope = $role->isPerDepartment() ? $user->getUnit() : null;
 
         return $hierarchy->outranks($user, $role, $scope);
-    }
-
-    /**
-     * The departments a user commands: all of them for a whole-school superior (dirección, jefatura de
-     * estudios), just their own for a jefe de departamento, none for a plain member. Derived from the
-     * user's ranked roles, never from a unit's manager.
-     *
-     * @return list<Department> the commanded departments
-     */
-    private function commandedDepartments(User $user, OrganizationHierarchy $hierarchy, DepartmentRepository $units): array
-    {
-        if ($hierarchy->commandsWholeSchool($user)) {
-            return $units->findActiveDepartments();
-        }
-
-        $department = $hierarchy->commandedDepartment($user);
-
-        return null !== $department ? [$department] : [];
     }
 
     /**

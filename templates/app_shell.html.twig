@@ -20,6 +20,9 @@
                 <a href="{{ path('app_homepage') }}" class="{{ route == 'app_homepage' ? 'is-active' }}">Inicio</a>
                 <a href="{{ path('task_index') }}" class="{{ route starts with 'task_' ? 'is-active' }}">Tareas</a>
                 <a href="{{ path('guardia_mine') }}" class="{{ route == 'guardia_mine' ? 'is-active' }}">Mis guardias</a>
+                {# Reuniones: destino primario porque es donde viven las actas (el histórico de lo
+                   acordado), no solo lo que viene — eso ya lo anticipa Inicio. #}
+                <a href="{{ path('meeting_index') }}" class="{{ route starts with 'meeting_' ? 'is-active' }}">Reuniones</a>
                 <a href="{{ path('calendar_index') }}" class="{{ route starts with 'calendar_' ? 'is-active' }}">Calendario</a>
 
                 {# Gestión de guardias: solo para quien coordina (lectura en el área Guardias; el flag de
@@ -46,6 +49,7 @@
                         <a href="{{ path('admin_user_index') }}" class="{{ route starts with 'admin_user_' ? 'is-active' }}">Usuarios</a>
                         <a href="{{ path('admin_role_index') }}" class="{{ route starts with 'admin_role_' ? 'is-active' }}">Roles y permisos</a>
                         <a href="{{ path('admin_department_index') }}" class="{{ route starts with 'admin_department_' ? 'is-active' }}">Departamentos</a>
+                        <a href="{{ path('admin_project_index') }}" class="{{ route starts with 'admin_project_' ? 'is-active' }}">Proyectos</a>
                         <a href="{{ path('admin_task_template_index') }}" class="{{ route starts with 'admin_task_template_' ? 'is-active' }}">Catálogo de tareas</a>
                         <a href="{{ path('admin_academic_year_index') }}" class="{{ route starts with 'admin_academic_year_' ? 'is-active' }}">Años escolares</a>
                         <a href="{{ path('admin_timetable_import') }}" class="{{ route starts with 'admin_timetable_' ? 'is-active' }}">Horario (Peñalara)</a>

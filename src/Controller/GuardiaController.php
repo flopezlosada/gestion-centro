@@ -25,6 +25,7 @@ use App\Security\Voter\AreaVoter;
 use App\Service\FileUploader;
 use App\Service\GuardiaAssignmentNotifier;
 use App\Support\AuditContext;
+use App\Support\DocumentPolicy;
 use App\Support\GuardiaActivityPresenter;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
@@ -53,18 +54,11 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
 #[Route('/guardias')]
 final class GuardiaController extends AbstractController
 {
-    /** Size ceiling for an uploaded task document; larger ones are rejected with a warning. */
-    private const int MAX_TASK_DOCUMENT_BYTES = 10 * 1024 * 1024;
-
-    /** Private storage subdirectory for the task documents left with an absence. */
+    /**
+     * Private storage subdirectory for the task documents left with an absence. What counts as an
+     * acceptable upload (size, extensions) is the shared {@see DocumentPolicy}.
+     */
     private const string TASK_DOCUMENT_SUBDIR = 'guardia-tasks';
-
-    /** Accepted task-document extensions (defence in depth on top of private storage + forced download). */
-    private const array ALLOWED_TASK_DOCUMENT_EXTENSIONS = [
-        'pdf', 'doc', 'docx', 'odt', 'rtf', 'txt',
-        'ppt', 'pptx', 'xls', 'xlsx', 'ods',
-        'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic',
-    ];
 
     /**
      * Shows the parte for a date and period, plus the on-call pool. Date and period come from the
@@ -765,8 +759,8 @@ final class GuardiaController extends AbstractController
 
     /**
      * Validates and stores one uploaded task document. Empty file fields (no file chosen) yield null
-     * silently; a failed upload or one over {@see MAX_TASK_DOCUMENT_BYTES} flashes a warning and yields
-     * null, so the rest of the absence still registers without that document.
+     * silently; a file the shared {@see DocumentPolicy} rejects flashes a warning and yields null, so the
+     * rest of the absence still registers without that document.
      *
      * @param UploadedFile $file     the uploaded file
      * @param FileUploader $uploader the private-storage uploader
@@ -778,25 +772,15 @@ final class GuardiaController extends AbstractController
         if (\UPLOAD_ERR_NO_FILE === $file->getError()) {
             return null;
         }
-        if (!$file->isValid()) {
-            $this->addFlash('warning', sprintf('No se pudo subir «%s»; se registró sin ese documento.', $file->getClientOriginalName()));
 
-            return null;
-        }
-        if ($file->getSize() > self::MAX_TASK_DOCUMENT_BYTES) {
-            $this->addFlash('warning', sprintf('«%s» supera los %d MB; se registró sin ese documento.', $file->getClientOriginalName(), intdiv(self::MAX_TASK_DOCUMENT_BYTES, 1024 * 1024)));
-
-            return null;
-        }
-        if (!\in_array(strtolower($file->getClientOriginalExtension()), self::ALLOWED_TASK_DOCUMENT_EXTENSIONS, true)) {
-            $this->addFlash('warning', sprintf('«%s» tiene un tipo de archivo no admitido (usa PDF, Office, texto o imagen); se registró sin ese documento.', $file->getClientOriginalName()));
+        $rejection = DocumentPolicy::rejectionOf($file);
+        if (null !== $rejection) {
+            $this->addFlash('warning', $rejection.' Se registró sin ese documento.');
 
             return null;
         }
 
-        $name = $file->getClientOriginalName();
-
-        return ['path' => $uploader->upload($file, self::TASK_DOCUMENT_SUBDIR), 'name' => '' !== $name ? $name : 'documento'];
+        return ['path' => $uploader->upload($file, self::TASK_DOCUMENT_SUBDIR), 'name' => DocumentPolicy::nameOf($file)];
     }
 
     /**

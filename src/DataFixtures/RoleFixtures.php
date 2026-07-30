@@ -53,6 +53,11 @@ final class RoleFixtures extends AbstractGoldenFixture
             // incidents, history and stats). A functional permission role, not a rank — it commands
             // nobody. Any role can be granted this same access from the roles matrix (Guardias = escritura).
             (new Role())->setCode('guardias')->setName('Coordinación de guardias')->setLevel(Area::GUARDIAS, PermissionLevel::WRITE),
+            // Project coordination: convenes the meetings of the projects it coordinates and uploads their
+            // minutes. NO rank (commands nobody) and NO area in the matrix, on purpose: the power is scoped
+            // to a project, and that scope lives in Project.coordinator — not in this role, which would
+            // otherwise reach every project at once. This entry is the catalogue label of the job.
+            (new Role())->setCode('project_coordinator')->setName('Coordinación de proyectos'),
             // Per-department roles: a holder is "X of a given department", so a task's responsibility on
             // one of these also needs the department (resolved live to whoever holds it there).
             (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10),
