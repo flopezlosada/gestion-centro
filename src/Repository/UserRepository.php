@@ -51,6 +51,21 @@ class UserRepository extends ServiceEntityRepository
     }
 
     /**
+     * Every active person, by full name. The widest people list an admin may pick from (e.g. who to
+     * convene to a meeting); the scoped screens use {@see findActiveInUnits()} instead.
+     *
+     * @return User[] the active users, ordered by name
+     */
+    public function findActive(): array
+    {
+        return $this->createQueryBuilder('u')
+            ->andWhere('u.active = true')
+            ->orderBy('u.fullName', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * The active users who hold the given role — the people behind a responsibility, who receive
      * its obligation reminders (several co-responsibles are allowed).
      *

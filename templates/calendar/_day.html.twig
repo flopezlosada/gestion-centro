@@ -17,9 +17,10 @@
     {% endif %}
 
     {% set guardias = day.guardias ?? [] %}
-    {% if day.tasks is empty and day.events is empty and guardias is empty %}
+    {% set meetings = day.meetings ?? [] %}
+    {% if day.tasks is empty and day.events is empty and guardias is empty and meetings is empty %}
         <div class="empty-state">
-            <p>No hay guardias, tareas ni eventos este día.</p>
+            <p>No hay guardias, reuniones, tareas ni eventos este día.</p>
         </div>
     {% else %}
         <ol class="agenda-list">
@@ -34,6 +35,20 @@
                     <div class="agenda-body">
                         <a href="{{ path('guardia_cover_show', { id: g.id }) }}" class="agenda-title">Guardia{% if g.effectiveRoomName %} · {{ g.effectiveRoomName }}{% endif %}</a>
                         <span class="agenda-meta">Cubres a {{ g.absentTeacher.fullName }}{% if g.groupName %} · {{ g.groupName }}{% endif %}</span>
+                    </div>
+                </li>
+            {% endfor %}
+            {# Reuniones convocadas: marcador PERSONAS, otra forma más (escudo=guardia, círculo=tarea,
+               cuadrado=evento). Solo llegan las que conciernen al usuario. Con hora, que es lo que hay
+               que saber para no llegar tarde. #}
+            {% for m in meetings %}
+                <li class="agenda-item agenda-item--meeting">
+                    <span class="agenda-meeting-marker" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 19v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1"/><circle cx="9" cy="7" r="3"/><path d="M22 19v-1a4 4 0 0 0-3-3.87"/><path d="M16 3.13A4 4 0 0 1 19 7a4 4 0 0 1-.75 2.33"/></svg>
+                    </span>
+                    <div class="agenda-body">
+                        <a href="{{ path('meeting_show', { id: m.id }) }}" class="agenda-title">{{ m.startAt|date('H:i') }} · {{ m.title }}</a>
+                        <span class="agenda-meta">Reunión{% if m.place %} · {{ m.place }}{% endif %}{% if m.project %} · {{ m.project.name }}{% endif %}</span>
                     </div>
                 </li>
             {% endfor %}

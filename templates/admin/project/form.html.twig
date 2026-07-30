@@ -1,0 +1,33 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}{{ project.id ? 'Editar proyecto' : 'Nuevo proyecto' }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('admin_project_index') }}">Proyectos</a><span class="sep">/</span>
+    {{ project.id ? 'Editar' : 'Nuevo' }}
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <p class="eyebrow">Proyectos</p>
+        <h1>{{ project.id ? 'Editar proyecto' : 'Nuevo proyecto' }}</h1>
+    </div>
+
+    <div class="card form-card">
+        {{ form_start(form, { attr: { novalidate: 'novalidate' } }) }}
+            {{ f.submit_error(form) }}
+            {{ form_errors(form) }}
+            {{ f.fields([form.name, form.description, form.coordinator]) }}
+            <fieldset class="form-section">
+                <legend class="form-section-title">Profesorado del proyecto</legend>
+                {% if form.members.vars.help %}<p class="help">{{ form.members.vars.help }}</p>{% endif %}
+                {{ f.pick_list(form.members, 'No hay personas de alta todavía.') }}
+                {{ form_errors(form.members) }}
+            </fieldset>
+            {{ f.toggle(form.active) }}
+            {{ f.actions(path('admin_project_index')) }}
+        {{ form_end(form) }}
+    </div>
+{% endblock %}

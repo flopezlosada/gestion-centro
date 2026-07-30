@@ -10,6 +10,7 @@ use App\Entity\TaskResponsibility;
 use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
+use App\Repository\DepartmentRepository;
 use App\Repository\UserRepository;
 use App\Service\OrganizationHierarchy;
 use PHPUnit\Framework\TestCase;
@@ -62,7 +63,7 @@ final class OrganizationHierarchyTest extends TestCase
         $users = $this->createMock(UserRepository::class);
         $users->method('findWithHierarchyRank')->willReturn($rankedUsers);
 
-        return new OrganizationHierarchy($users);
+        return new OrganizationHierarchy($users, $this->createMock(DepartmentRepository::class));
     }
 
     public function testDepartmentHeadCommandsOnlyItsOwnDepartment(): void

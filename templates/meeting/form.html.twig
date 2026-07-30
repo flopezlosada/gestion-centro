@@ -1,0 +1,47 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% set editing = meeting is not null %}
+
+{% block title %}{{ editing ? 'Editar reunión' : 'Convocar reunión' }} · {{ app_organization_name }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('meeting_index') }}">Reuniones</a><span class="sep">/</span>
+    {{ editing ? 'Editar' : 'Convocar' }}
+{% endblock %}
+
+{# Pantalla empujada: manda la barra de acciones del formulario. #}
+{% block bottomnav %}{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Reuniones</p>
+            <h1>{{ editing ? 'Editar reunión' : 'Convocar reunión' }}</h1>
+            <p class="lead">Quien esté convocado recibe un aviso con el día, la hora y el lugar. Si cambias el cuándo o el dónde, se avisa otra vez.</p>
+        </div>
+    </div>
+
+    <div class="card form-card">
+        {{ form_start(form, { attr: { novalidate: 'novalidate' } }) }}
+            {{ f.submit_error(form) }}
+            {{ form_errors(form) }}
+            {{ f.section('Qué y cuándo', [form.title, form.day, form.startTime, form.endTime, form.place, form.reminder]) }}
+            {{ f.section('Orden del día', [form.agenda]) }}
+            {{ f.section('El acta', [form.minutesTakenBy]) }}
+            {{ f.toggle(form.minutesApprovalRequired) }}
+            <fieldset class="form-section">
+                <legend class="form-section-title">Quién</legend>
+                {{ f.field(form.project) }}
+                <div class="form-row">
+                    {{ form_label(form.attendees) }}
+                    {% if form.attendees.vars.help %}<p class="help">{{ form.attendees.vars.help }}</p>{% endif %}
+                    {{ f.pick_list(form.attendees, 'No hay nadie a quien puedas convocar: pídele a dirección que te ponga el profesorado del proyecto.') }}
+                    {{ form_errors(form.attendees) }}
+                </div>
+            </fieldset>
+            {{ f.actions(editing ? path('meeting_show', { id: meeting.id }) : path('meeting_index'), editing ? 'Guardar' : 'Convocar') }}
+        {{ form_end(form) }}
+    </div>
+{% endblock %}

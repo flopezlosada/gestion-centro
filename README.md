@@ -17,6 +17,11 @@ tiene que hacer hoy**; la dirección coordina el plan del centro.
 - **CRUD de tareas** por jerarquía: cada quien crea/asigna para sí y para sus inferiores en la cadena de
   mando (organigrama de unidades + responsable).
 - **Calendario** mensual del plan.
+- **Reuniones**: convocar (día, hora, lugar, orden del día y personas convocadas), aviso a quien se
+  convoca (con recordatorio antes de empezar), **acta** subida a la ficha, asistencia y aprobación del
+  acta cuando toca. Convoca cualquier **cargo** (jefaturas, tutorías, TIC, secretaría, coordinaciones) y
+  quien coordina un proyecto; el docente sin cargo es a quien se convoca. Los **proyectos y
+  coordinaciones** se gestionan en Administración y aportan por defecto su profesorado al convocar.
 - **Avisos** in-app + motor de recordatorios (15/7 días antes) y escalado de vencidas.
 - **Administración**: usuarios, roles/permisos y organigrama de unidades.
 - **Trazabilidad**: cada cambio de una entidad se registra (actor + diff) y se ve en su ficha.

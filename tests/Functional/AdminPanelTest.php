@@ -302,8 +302,15 @@ final class AdminPanelTest extends WebTestCase
             'user[active]' => true,
         ]);
         // Tick the superuser role: the controller must reject this self-escalation attempt.
-        $form['user[assignedRoles]'] = [(string) $adminRole->getId()];
-        $this->client->submit($form);
+        //
+        // Posted through getPhpValues() and NOT with $form['user[assignedRoles]'] = [...]: the expanded
+        // checkboxes all share the name "user[assignedRoles][]", so DomCrawler indexes them by POSITION and
+        // that assignment only ever hits the FIRST one — it passed while the role catalogue happened to be
+        // empty before the test, and broke as soon as a migration started shipping one (the project
+        // coordination role). This posts exactly what a browser would, whatever else is in the catalogue.
+        $values = $form->getPhpValues();
+        $values['user']['assignedRoles'] = [(string) $adminRole->getId()];
+        $this->client->request('POST', $form->getUri(), $values);
 
         self::assertResponseStatusCodeSame(403);
         self::assertNull($this->em->getRepository(User::class)->findOneBy(['email' => 'aspirante@centro.test']));

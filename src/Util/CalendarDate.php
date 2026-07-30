@@ -32,4 +32,22 @@ final class CalendarDate
 
         return null;
     }
+
+    /**
+     * The given day at the given time of day. Only the hour and minute of $time are read: a form's time
+     * field hands over a whole instant whose date part is meaningless (it may be today, or the epoch),
+     * so the day always comes from $day.
+     *
+     * Shared by every screen that composes "a day" + "a time" into an instant (personal events,
+     * meetings), so they can never disagree about which part of each value counts.
+     *
+     * @param \DateTimeImmutable $day  the day (its time part is ignored)
+     * @param \DateTimeImmutable $time the time of day (its date part is ignored)
+     *
+     * @return \DateTimeImmutable the day at that time
+     */
+    public static function at(\DateTimeImmutable $day, \DateTimeImmutable $time): \DateTimeImmutable
+    {
+        return $day->setTime((int) $time->format('G'), (int) $time->format('i'));
+    }
 }

@@ -38,25 +38,36 @@ final class RoleFixtures extends AbstractGoldenFixture
         // flag: it reaches /admin but is not ROLE_ADMIN. TIC is the actual superuser. The rest are
         // responsibility markers used for assignment, hierarchy and the leadership privilege.
         //
+        // canConvene = convoca reuniones. Regla del centro: TODOS los cargos convocan; el docente sin cargo
+        // es a quien se convoca. Bandera del rol y no una lista de códigos en PHP, para que el centro la
+        // mueva cuando aparezca un cargo nuevo.
+        //
         // hierarchyLevel = rank in the chain of command (higher = more senior); null = no hierarchy
         // (functional/permission role only). The leadership team is centre-wide; jefatura de departamento
         // is per-department (commands only its own department). TIC, secretaría, tutor and docente carry
         // no rank — they grant feature access but command nobody.
-        $direction = (new Role())->setCode('direction')->setName('Dirección')->setLevel(Area::ADMINISTRATION, PermissionLevel::WRITE)->setHierarchyLevel(40);
+        $direction = (new Role())->setCode('direction')->setName('Dirección')->setLevel(Area::ADMINISTRATION, PermissionLevel::WRITE)->setHierarchyLevel(40)->setCanConvene(true);
         $catalog = [
             $direction,
-            (new Role())->setCode('tic')->setName('TIC')->setAdmin(true),
-            (new Role())->setCode('head_of_studies')->setName('Jefatura de estudios')->setHierarchyLevel(30),
-            (new Role())->setCode('head_of_studies_deputy')->setName('Jefatura de estudios adjunta')->setHierarchyLevel(20),
-            (new Role())->setCode('secretary')->setName('Secretaría'),
+            (new Role())->setCode('tic')->setName('TIC')->setAdmin(true)->setCanConvene(true),
+            (new Role())->setCode('head_of_studies')->setName('Jefatura de estudios')->setHierarchyLevel(30)->setCanConvene(true),
+            (new Role())->setCode('head_of_studies_deputy')->setName('Jefatura de estudios adjunta')->setHierarchyLevel(20)->setCanConvene(true),
+            (new Role())->setCode('secretary')->setName('Secretaría')->setCanConvene(true),
             // Guardia coordinator: manages the daily parte (register absences, assign covers, mark
             // incidents, history and stats). A functional permission role, not a rank — it commands
             // nobody. Any role can be granted this same access from the roles matrix (Guardias = escritura).
-            (new Role())->setCode('guardias')->setName('Coordinación de guardias')->setLevel(Area::GUARDIAS, PermissionLevel::WRITE),
+            (new Role())->setCode('guardias')->setName('Coordinación de guardias')->setLevel(Area::GUARDIAS, PermissionLevel::WRITE)->setCanConvene(true),
+            // Project coordination: convenes the meetings of the projects it coordinates and uploads their
+            // minutes. NO rank (commands nobody) and NO area in the matrix, on purpose: the power is scoped
+            // to a project, and that scope lives in Project.coordinator — not in this role, which would
+            // otherwise reach every project at once. This entry is the catalogue label of the job.
+            (new Role())->setCode('project_coordinator')->setName('Coordinación de proyectos')->setCanConvene(true),
             // Per-department roles: a holder is "X of a given department", so a task's responsibility on
             // one of these also needs the department (resolved live to whoever holds it there).
-            (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10),
-            (new Role())->setCode('tutor')->setName('Tutor/a')->setPerDepartment(true),
+            (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10)->setCanConvene(true),
+            // La tutoría convoca (a su equipo docente) aunque no manda en nadie: convocar es de los CARGOS,
+            // no del rango.
+            (new Role())->setCode('tutor')->setName('Tutor/a')->setPerDepartment(true)->setCanConvene(true),
             (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true),
         ];
 
