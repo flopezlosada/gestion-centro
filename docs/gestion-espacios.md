@@ -442,7 +442,19 @@ PDF en un minuto.
 3. **Varias alternativas pueden ser artificiosas** cuando solo hay una salida; la UI tiene que admitirlo.
 4. **Dos fuentes para el horario** hasta que todos los consumidores migren (§5).
 5. **PII en el enlace público** — cerrada: el centro dijo que no, así que no existe.
-6. **Dos fuentes para "las horas del día", y no es de este módulo.** Main introdujo `TimeSlot` (el marco
+6. **DOS "aulas libres" en la aplicación, con dos filosofías distintas.** Mientras esta rama construía
+   el catálogo de espacios, main resolvió el mismo punto A.2 por otro camino: `App\Guardia\FreeRooms`
+   deduce el tamaño de un aula de la EVIDENCIA (`observedRoomCapacity`: si el horario ha metido tres
+   grupos ahí alguna vez, caben tres), con el argumento —bueno— de que una capacidad tecleada a mano se
+   queda obsoleta y hay que mantenerla. Este módulo la toma del catálogo que rellena el centro
+   ({@see RoomSize}), con el argumento —también bueno— de que el propio centro se ofreció a darla y de
+   que la evidencia **no puede** distinguir un aula pequeña de desdoble de un aula normal: ninguna de
+   las dos ha tenido nunca dos grupos.
+   Los dos enfoques son complementarios y hoy conviven duplicados: `/espacios` (este módulo) y la hoja
+   de aulas libres del déficit de guardias. Unificarlos —probablemente usando la evidencia como valor
+   propuesto y el catálogo como corrección humana— es un trabajo propio, con las dos partes ya en main.
+
+7. **Dos fuentes para "las horas del día", y no es de este módulo.** Main introdujo `TimeSlot` (el marco
    horario importado del `<marcoHorario>`) para las guardias de recreo, porque los tramos de recreo no
    se pueden deducir de `ScheduleEntry` — no hay ninguna actividad en ellos. Pero el resto del proyecto
    (parte de guardias, déficit, inicio y este módulo) sigue derivando los tramos de las celdas con
