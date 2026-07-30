@@ -22,19 +22,6 @@ use App\Enum\Weekday;
 final class GuardiaQuotaBalance
 {
     /**
-     * Teachers on guardia in each teaching period. The centre's figure ("tiene que haber 3 profes de
-     * guardia", 30/07/2026).
-     */
-    public const GUARDIAS_PER_SLOT = 3;
-
-    /**
-     * Teachers on standby in each teaching period — "2 de guardia de apoyo que solo hacen guardias si no
-     * hay suficiente profesorado para cubrir esa hora". They occupy a placement even on the quiet weeks:
-     * being available is the duty.
-     */
-    public const SUPPORT_PER_SLOT = 2;
-
-    /**
      * The week's balance sheet.
      *
      * The three states of a teacher are kept apart on purpose, because two of them look identical if you
@@ -56,7 +43,9 @@ final class GuardiaQuotaBalance
     public function summarise(int $lectiveSlots, array $quotas): array
     {
         $days = \count(Weekday::schoolWeek());
-        $perSlot = self::GUARDIAS_PER_SLOT + self::SUPPORT_PER_SLOT;
+        // The same figures the engine places against: a screen claiming the week needs 150 while the
+        // engine fills 120 would be worse than either being wrong on its own.
+        $perSlot = RotaDemand::perSlot();
         $needed = $lectiveSlots * $days * $perSlot;
 
         $pledged = 0;

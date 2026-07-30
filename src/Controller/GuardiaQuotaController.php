@@ -9,6 +9,7 @@ use App\Entity\GuardiaQuota;
 use App\Entity\User;
 use App\Enum\Area;
 use App\Guardia\GuardiaQuotaBalance;
+use App\Guardia\RotaDemand;
 use App\Repository\AcademicYearRepository;
 use App\Repository\GuardiaQuotaRepository;
 use App\Repository\ScheduleEntryRepository;
@@ -77,8 +78,8 @@ final class GuardiaQuotaController extends AbstractController
             'summary' => $summary,
             'lectiveSlots' => $lectiveSlots,
             'max' => GuardiaQuota::MAX,
-            'guardiasPerSlot' => GuardiaQuotaBalance::GUARDIAS_PER_SLOT,
-            'supportPerSlot' => GuardiaQuotaBalance::SUPPORT_PER_SLOT,
+            'guardiasPerSlot' => RotaDemand::GUARDIAS_PER_SLOT,
+            'supportPerSlot' => RotaDemand::SUPPORT_PER_SLOT,
         ]);
     }
 
