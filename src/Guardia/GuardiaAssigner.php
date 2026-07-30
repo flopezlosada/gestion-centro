@@ -26,9 +26,6 @@ use App\Enum\GuardiaDutyBand;
  */
 final class GuardiaAssigner
 {
-    /** The bands in the order they are opened. */
-    private const array BANDS = [GuardiaDutyBand::GUARDIA, GuardiaDutyBand::COLLABORATOR, GuardiaDutyBand::SUPPORT];
-
     /**
      * Orders the candidates into the sequence teachers should be assigned in, without repetitions: the
      * available ones band by band, and — only if those cannot cover every group — the ones already
@@ -96,7 +93,7 @@ final class GuardiaAssigner
     private function byBands(int $coversNeeded, array $available): array
     {
         $ordered = [];
-        foreach (self::BANDS as $band) {
+        foreach (GuardiaDutyBand::inPriorityOrder() as $band) {
             if (\count($ordered) >= $coversNeeded) {
                 break;
             }

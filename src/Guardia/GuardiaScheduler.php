@@ -6,11 +6,13 @@ namespace App\Guardia;
 
 use App\Entity\AcademicYear;
 use App\Entity\GuardiaCover;
+use App\Entity\GuardiaSupport;
 use App\Entity\User;
 use App\Enum\GuardiaDutyBand;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use App\Repository\GuardiaCoverRepository;
+use App\Repository\GuardiaSupportRepository;
 use App\Repository\ScheduleEntryRepository;
 use App\Service\GuardiaAssignmentNotifier;
 use Doctrine\ORM\EntityManagerInterface;
@@ -31,6 +33,7 @@ final class GuardiaScheduler
     public function __construct(
         private readonly ScheduleEntryRepository $schedule,
         private readonly GuardiaCoverRepository $covers,
+        private readonly GuardiaSupportRepository $support,
         private readonly GuardiaAssigner $assigner,
         private readonly EntityManagerInterface $em,
         private readonly GuardiaAssignmentNotifier $notifier,
@@ -145,8 +148,9 @@ final class GuardiaScheduler
 
     /**
      * Builds the pool of candidates for a period: the guardia and collaborator duty holders in the given
-     * course, minus anyone absent that period, each with their cover balance and with how many groups
-     * they are already covering right there.
+     * course plus the colleagues signed up by hand for that very day ({@see GuardiaSupport}), minus
+     * anyone absent that period, each with their cover balance and with how many groups they are already
+     * covering right there.
      *
      * Whoever is already covering a group is NOT dropped here: they are handed over carrying their
      * {@code hereLoad} so the assigner can leave them out while there is anybody else, and reach for
@@ -166,17 +170,30 @@ final class GuardiaScheduler
         $slotLoad = $this->covers->loadBySlot($slotIndex);
         $totalLoad = $this->covers->totalLoad();
 
-        $candidates = [];
-        $seen = [];
+        // Teacher id → band, rota first: somebody who is both on the rota that hour and signed up as
+        // support is a guardia, not a favour, so the weekly duty wins the label.
+        $bands = [];
+        foreach ($this->support->findForSlot($date, $slotIndex) as $entry) {
+            $bands[(int) $entry->getTeacher()->getId()] = [$entry->getTeacher(), GuardiaDutyBand::SUPPORT];
+        }
         foreach ($this->schedule->dutyPoolAt($year, $weekday, $slotIndex) as $entry) {
-            $teacherId = $entry->getTeacher()->getId();
-            if (null === $teacherId || \in_array($teacherId, $absentIds, true) || isset($seen[$teacherId])) {
+            $teacherId = (int) $entry->getTeacher()->getId();
+            $band = ScheduleActivityKind::COLLABORATOR === $entry->getKind() ? GuardiaDutyBand::COLLABORATOR : GuardiaDutyBand::GUARDIA;
+            // A teacher with both a guardia and a collaborator cell that hour counts as a guardia.
+            if (GuardiaDutyBand::GUARDIA === ($bands[$teacherId][1] ?? null)) {
                 continue;
             }
-            $seen[$teacherId] = true;
+            $bands[$teacherId] = [$entry->getTeacher(), $band];
+        }
+
+        $candidates = [];
+        foreach ($bands as $teacherId => [$teacher, $band]) {
+            if (0 === $teacherId || \in_array($teacherId, $absentIds, true)) {
+                continue;
+            }
             $candidates[] = new GuardiaCandidate(
-                $entry->getTeacher(),
-                ScheduleActivityKind::COLLABORATOR === $entry->getKind() ? GuardiaDutyBand::COLLABORATOR : GuardiaDutyBand::GUARDIA,
+                $teacher,
+                $band,
                 $slotLoad[$teacherId] ?? 0,
                 $totalLoad[$teacherId] ?? 0,
                 $hereLoad[$teacherId] ?? 0,

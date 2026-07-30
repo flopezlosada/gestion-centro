@@ -1,6 +1,5 @@
 {% extends 'app_shell.html.twig' %}
 
-{% set ck = constant('App\\Enum\\ScheduleActivityKind::COLLABORATOR') %}
 {% set canWrite = is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::GUARDIAS')) %}
 {% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
 
@@ -17,7 +16,7 @@
    final, marcados, y el botón dice «Doblar» en vez de «Asignar» — que quede claro que asignarlos es
    ponerles un segundo grupo, no darles trabajo nuevo.
 #}
-{% macro assign_sheet(cover, libres, pool, absentIds, assignedHere, slotLoad, slotLabel) %}
+{% macro assign_sheet(cover, libres, pool, assignedHere, slotLabel) %}
     <details class="assignsheet">
         <summary class="assignsheet__toggle">Asignar profesor</summary>
         <div class="assignsheet__panel">
@@ -48,19 +47,18 @@
                 {# No disponibles: del pool del tramo, quien falta hoy o ya cubre otro grupo y NO se
                    ofrece arriba (en déficit los que doblan sí se ofrecen, así que no se repiten aquí). #}
                 {% set ofrecidos = libres|map(c => c.teacher.id) %}
-                {% set ocupados = pool|filter(e => (e.teacher.id in absentIds or assignedHere[e.teacher.id] is defined) and e.teacher.id not in ofrecidos) %}
+                {% set ocupados = pool|filter(p => (p.absent or p.groups) and p.teacher.id not in ofrecidos) %}
                 {% if ocupados is not empty %}
                     <div class="assignsheet__sep"></div>
                     <div class="eyebrow assignsheet__seplabel">No disponibles</div>
-                    {% for entry in ocupados %}
-                        {% set tid = entry.teacher.id %}
+                    {% for p in ocupados %}
                         <div class="assignsheet__row is-off">
-                            <span class="assignsheet__load">{{ slotLoad[tid] ?? 0 }}</span>
-                            <span class="assignsheet__name">{{ entry.teacher.fullName }}</span>
-                            {% if tid in absentIds %}
+                            <span class="assignsheet__load">{{ p.load }}</span>
+                            <span class="assignsheet__name">{{ p.teacher.fullName }}</span>
+                            {% if p.absent %}
                                 <span class="badge badge--danger">Ausente</span>
                             {% else %}
-                                <span class="badge badge--muted">→ {{ assignedHere[tid]|join(', ') }}</span>
+                                <span class="badge badge--muted">→ {{ p.groups|join(', ') }}</span>
                             {% endif %}
                         </div>
                     {% endfor %}
@@ -132,6 +130,11 @@
                         </p>
                         <p class="muted">El reparto da varios grupos al mismo profesor cuando no queda nadie libre, empezando por quien menos lleva. Para que sea viable, júntalos en un aula grande o da de alta apoyo puntual.</p>
                     </div>
+                    {% if canWrite %}
+                        <div class="parte-deficit__actions">
+                            <a class="btn btn--ghost" href="#pool">Añadir apoyo puntual</a>
+                        </div>
+                    {% endif %}
                 </div>
             {% endif %}
 
@@ -209,7 +212,7 @@
                                 {% endif %}
 
                                 {% if sinCubrir and canWrite %}
-                                    {{ parte.assign_sheet(cover, candidates, pool, absentIds, assignedHere, slotLoad, slotLabel) }}
+                                    {{ parte.assign_sheet(cover, candidates, pool, assignedHere, slotLabel) }}
                                 {% elseif cover.assignedGuardia %}
                                     {% set aQue = assignedHere[cover.assignedGuardia.id] ?? [] %}
                                     <div class="parte-card__foot">
@@ -264,7 +267,7 @@
                                         {% elseif canWrite %}
                                             {# La misma hoja que en móvil: asignar sin salir del parte es
                                                justamente lo que más se usa desde el escritorio. #}
-                                            {{ parte.assign_sheet(cover, candidates, pool, absentIds, assignedHere, slotLoad, slotLabel) }}
+                                            {{ parte.assign_sheet(cover, candidates, pool, assignedHere, slotLabel) }}
                                         {% else %}
                                             <span class="badge badge--warning">Sin asignar</span>
                                         {% endif %}
@@ -287,10 +290,12 @@
                 {% endif %}
             </section>
 
-            {# ---- Quién está de guardia a esta hora: referencia del reparto (escritorio) ---- #}
-            <details class="parte-pool"{{ covers is empty ? ' open' : '' }}>
+            {# ---- Quién puede cubrir a esta hora: referencia del reparto (escritorio) ----
+               Una sola lista con las tres procedencias (guardia, colaborador y apoyo puntual dado de
+               alta a mano para hoy), porque la pregunta del coordinador es una sola: quién hay. #}
+            <details class="parte-pool" id="pool"{{ covers is empty ? ' open' : '' }}>
                 <summary class="parte-pool__toggle">
-                    Profesores de guardia a esta hora
+                    Profesores disponibles a esta hora
                     <span class="parte-pool__count">{{ pool|length }}</span>
                 </summary>
                 <div class="parte-pool__body">
@@ -299,30 +304,60 @@
                     {% else %}
                         <p class="parte-pool__lead">Quién puede cubrir según el horario. El número es lo que ya lleva en este tramo: el reparto asigna primero al que menos tiene.</p>
                         <div class="card-grid">
-                            {% for entry in pool %}
-                                {% set tid = entry.teacher.id %}
-                                {% set absent = tid in absentIds %}
-                                {% set coveringGroups = assignedHere[tid] ?? [] %}
-                                <div class="mini-card {{ absent ? 'is-absent' : (coveringGroups ? 'is-busy' : 'is-free') }}">
+                            {% for p in pool %}
+                                <div class="mini-card {{ p.absent ? 'is-absent' : (p.groups ? 'is-busy' : 'is-free') }}">
                                     <div class="mini-card-head">
-                                        <strong>{{ entry.teacher.fullName }}</strong>
-                                        {% if entry.kind == ck %}<span class="badge badge--accent" title="Colaborador: solo entra si no llegan los profesores de guardia">Colaborador</span>{% endif %}
+                                        <strong>{{ p.teacher.fullName }}</strong>
+                                        {% if p.band.label %}<span class="badge badge--accent" title="{{ p.band.hint }}">{{ p.band.label }}</span>{% endif %}
                                     </div>
+                                    {% if p.note %}<p class="mini-card-note">{{ p.note }}</p>{% endif %}
                                     <div class="mini-card-status">
-                                        {% if absent %}
+                                        {% if p.absent %}
                                             <span class="badge badge--danger">Ausente</span>
-                                        {% elseif coveringGroups|length > 1 %}
-                                            <span class="badge badge--warning" title="Cubre {{ coveringGroups|join(', ') }} a esta hora">→ {{ coveringGroups|length }} grupos</span>
-                                        {% elseif coveringGroups %}
-                                            <span class="badge badge--muted">→ {{ coveringGroups|join(', ') }}</span>
+                                        {% elseif p.groups|length > 1 %}
+                                            <span class="badge badge--warning" title="Cubre {{ p.groups|join(', ') }} a esta hora">→ {{ p.groups|length }} grupos</span>
+                                        {% elseif p.groups %}
+                                            <span class="badge badge--muted">→ {{ p.groups|join(', ') }}</span>
                                         {% else %}
                                             <span class="badge badge--ok">Disponible</span>
                                         {% endif %}
-                                        <span class="load-count" title="{{ slotLoad[tid] ?? 0 }} guardia(s) en este tramo. El reparto elige primero al que menos tiene.">{{ slotLoad[tid] ?? 0 }}</span>
+                                        <span class="load-count" title="{{ p.load }} guardia(s) en este tramo. El reparto elige primero al que menos tiene.">{{ p.load }}</span>
+                                        {% if p.supportId and canWrite %}
+                                            <form method="post" action="{{ path('guardia_support_remove', { id: p.supportId }) }}" data-confirm="¿Quitar a {{ p.teacher.fullName }} del apoyo de esta hora? Las guardias que ya tenga asignadas se mantienen.">
+                                                <input type="hidden" name="_token" value="{{ csrf_token('guardia_support_remove' ~ p.supportId) }}">
+                                                <button type="submit" class="link-danger">Quitar</button>
+                                            </form>
+                                        {% endif %}
                                     </div>
                                 </div>
                             {% endfor %}
                         </div>
+                    {% endif %}
+
+                    {# ---- Alta de apoyo puntual ----
+                       Aquí y no en el aviso de déficit: el aviso desaparece cuando cuadra, y esto se
+                       prepara antes (se sabe con días de antelación que un viernes va justo). #}
+                    {% if canWrite %}
+                        <details class="support-add">
+                            <summary class="support-add__toggle">+ Añadir apoyo puntual a esta hora</summary>
+                            <form method="post" action="{{ path('guardia_support_add') }}" class="support-add__form">
+                                <input type="hidden" name="_token" value="{{ csrf_token('guardia_support_add') }}">
+                                <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
+                                <input type="hidden" name="slot" value="{{ slotIndex }}">
+                                <p class="support-add__lead">Para compañeros que hoy están libres a esta hora aunque su horario diga otra cosa (2º de Bachillerato o CFGB ya han terminado las clases). Vale solo para este día y esta hora.</p>
+                                <label class="field-label" for="support-teacher">Profesor</label>
+                                <select id="support-teacher" name="teacher" required>
+                                    <option value="">— Elige —</option>
+                                    {% for u in supportPicker %}
+                                        {% set daClase = teachingHere[u.id] ?? [] %}
+                                        <option value="{{ u.id }}">{{ u.fullName }}{% if daClase %} — según el horario da clase a {{ daClase|join(', ') }}{% endif %}</option>
+                                    {% endfor %}
+                                </select>
+                                <label class="field-label" for="support-note">Por qué está libre <span class="muted">(opcional)</span></label>
+                                <input type="text" id="support-note" name="note" maxlength="255" placeholder="2º de Bach ha terminado las clases">
+                                <button type="submit" class="btn">Añadir como apoyo</button>
+                            </form>
+                        </details>
                     {% endif %}
                 </div>
             </details>

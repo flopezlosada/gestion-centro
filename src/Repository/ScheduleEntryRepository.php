@@ -54,6 +54,42 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
+     * Who is teaching at a weekday and period, and what — teacher id → the group names they have then.
+     * Read to warn before signing somebody up as guardia support ({@see \App\Entity\GuardiaSupport}): the
+     * normal case is precisely that the timetable says they are teaching and reality says otherwise
+     * (their Bachillerato group has finished lessons), so this is a warning to a human, never a filter.
+     *
+     * @param AcademicYear $year      the course whose timetable to read
+     * @param Weekday      $weekday   the weekday
+     * @param int          $slotIndex the period index within the day
+     *
+     * @return array<int, list<string>> teacher id → the groups they teach then (never empty per key)
+     */
+    public function lectiveGroupsByTeacherAt(AcademicYear $year, Weekday $weekday, int $slotIndex): array
+    {
+        /** @var list<array{teacherId: int, groupName: string|null}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('IDENTITY(s.teacher) AS teacherId', 's.groupName AS groupName')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.weekday = :weekday')
+            ->andWhere('s.slotIndex = :slot')
+            ->andWhere('s.kind = :lective')
+            ->setParameter('year', $year)
+            ->setParameter('weekday', $weekday)
+            ->setParameter('slot', $slotIndex)
+            ->setParameter('lective', ScheduleActivityKind::LECTIVE)
+            ->getQuery()
+            ->getResult();
+
+        $byTeacher = [];
+        foreach ($rows as $row) {
+            $byTeacher[(int) $row['teacherId']][] = $row['groupName'] ?? 'sin grupo';
+        }
+
+        return $byTeacher;
+    }
+
+    /**
      * The teaching cells a teacher has on a weekday at a given period of a course — usually one, but
      * several when the period is a multi-group activity (Peñalara lists the teacher against every
      * group at once, e.g. a whole-level session in the assembly hall). Empty when they are free then.

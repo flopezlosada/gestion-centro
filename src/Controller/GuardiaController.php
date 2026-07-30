@@ -6,9 +6,11 @@ namespace App\Controller;
 
 use App\Entity\AcademicYear;
 use App\Entity\GuardiaCover;
+use App\Entity\GuardiaSupport;
 use App\Entity\ScheduleEntry;
 use App\Entity\User;
 use App\Enum\Area;
+use App\Enum\GuardiaDutyBand;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use App\Guardia\AbsenceRegistrar;
@@ -19,6 +21,7 @@ use App\Guardia\GuardiaStatistics;
 use App\Repository\AcademicYearRepository;
 use App\Repository\AuditLogRepository;
 use App\Repository\GuardiaCoverRepository;
+use App\Repository\GuardiaSupportRepository;
 use App\Repository\ScheduleEntryRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
@@ -26,6 +29,7 @@ use App\Service\FileUploader;
 use App\Service\GuardiaAssignmentNotifier;
 use App\Support\AuditContext;
 use App\Support\GuardiaActivityPresenter;
+use App\Support\GuardiaDate;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -72,7 +76,7 @@ final class GuardiaController extends AbstractController
      * first — they are the ones that need action — and the coverage figures head the panel.
      */
     #[Route('', name: 'guardia_index', methods: ['GET'])]
-    public function index(Request $request, ScheduleEntryRepository $schedule, GuardiaCoverRepository $covers, AcademicYearRepository $years, GuardiaScheduler $scheduler): Response
+    public function index(Request $request, ScheduleEntryRepository $schedule, GuardiaCoverRepository $covers, GuardiaSupportRepository $support, AcademicYearRepository $years, UserRepository $users, GuardiaScheduler $scheduler): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
@@ -107,6 +111,7 @@ final class GuardiaController extends AbstractController
 
         $uncovered = \count(array_filter($parte, static fn (GuardiaCover $c): bool => null === $c->getAssignedGuardia()));
         $absentIds = $covers->absentTeacherIdsAt($date, $slotIndex);
+        $poolView = $this->poolView($pool, $support->findForSlot($date, $slotIndex), $absentIds, $assignedHere, $covers->loadBySlot($slotIndex));
 
         return $this->render('guardia/index.html.twig', [
             'date' => $date,
@@ -115,55 +120,97 @@ final class GuardiaController extends AbstractController
             'slots' => $slots,
             'slotIndex' => $slotIndex,
             'covers' => $ordered,
-            'pool' => $pool,
-            'slotLoad' => $covers->loadBySlot($slotIndex),
-            'absentIds' => $absentIds,
+            'pool' => $poolView,
             'assignedHere' => $assignedHere,
             'uncovered' => $uncovered,
             'covered' => \count($parte) - $uncovered,
             // Who the split would pick, least loaded first: feeds the per-cover assignment sheet. With
             // nothing left to cover no sheet is rendered, so the pool queries are not worth running.
             'candidates' => ($uncovered > 0 && $year instanceof AcademicYear) ? $scheduler->availableFor($year, $date, $slotIndex, $parte) : [],
-            'deficit' => $this->deficitSummary($pool, $absentIds, $assignedHere, $uncovered),
+            'deficit' => $this->deficitSummary($poolView, $assignedHere, $uncovered),
+            // Everyone, to sign up a colleague as support; flagged with the class the timetable says
+            // they are teaching that hour, because that clash is the normal case and only a human can
+            // judge it (their Bachillerato group has finished lessons — the timetable does not know).
+            'supportPicker' => $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS) ? $users->findBy([], ['fullName' => 'ASC']) : [],
+            'teachingHere' => $year instanceof AcademicYear ? $schedule->lectiveGroupsByTeacherAt($year, $weekday, $slotIndex) : [],
         ]);
     }
 
     /**
+     * One row per person who could cover this period, whatever brings them here: the weekly rota, a
+     * collaborator slot, or a hand-added support arrangement for that very day. Same shape for all three
+     * so the pool panel and the assignment sheet read one list instead of stitching two together, and so
+     * a support teacher is visible exactly where a coordinator looks for "who can cover this hour".
+     *
+     * A teacher on the rota who is ALSO signed up as support keeps the rota label (a duty, not a favour)
+     * and appears once — the same precedence {@see GuardiaScheduler} applies when building candidates.
+     *
+     * @param ScheduleEntry[]          $pool         the period's duty entries (a teacher may appear twice)
+     * @param GuardiaSupport[]         $support      the hand-added arrangements for that date and period
+     * @param list<int>                $absentIds    ids of teachers themselves absent that period
+     * @param array<int, list<string>> $assignedHere teacher id → groups they already cover that period
+     * @param array<int, int>          $slotLoad     teacher id → guardias done at this period, all course
+     *
+     * @return list<array{teacher: User, band: GuardiaDutyBand, note: ?string, supportId: ?int, absent: bool, groups: list<string>, load: int}> the rows, rota first then by name
+     */
+    private function poolView(array $pool, array $support, array $absentIds, array $assignedHere, array $slotLoad): array
+    {
+        $rows = [];
+        foreach ($support as $entry) {
+            $id = (int) $entry->getTeacher()->getId();
+            $rows[$id] = ['teacher' => $entry->getTeacher(), 'band' => GuardiaDutyBand::SUPPORT, 'note' => $entry->getNote(), 'supportId' => $entry->getId()];
+        }
+        foreach ($pool as $entry) {
+            $id = (int) $entry->getTeacher()->getId();
+            $band = ScheduleActivityKind::COLLABORATOR === $entry->getKind() ? GuardiaDutyBand::COLLABORATOR : GuardiaDutyBand::GUARDIA;
+            if (GuardiaDutyBand::GUARDIA === ($rows[$id]['band'] ?? null)) {
+                continue;
+            }
+            $rows[$id] = ['teacher' => $entry->getTeacher(), 'band' => $band, 'note' => null, 'supportId' => null];
+        }
+
+        $view = [];
+        foreach ($rows as $id => $row) {
+            $view[] = $row + [
+                'absent' => \in_array($id, $absentIds, true),
+                'groups' => $assignedHere[$id] ?? [],
+                'load' => $slotLoad[$id] ?? 0,
+            ];
+        }
+        usort($view, static fn (array $a, array $b): int => $a['band']->rank() <=> $b['band']->rank()
+            ?: strcasecmp($a['teacher']->getFullName(), $b['teacher']->getFullName()));
+
+        return $view;
+    }
+
+    /**
      * The staffing arithmetic of one period, so the parte can say out loud when there are more absences
-     * than people to cover them instead of quietly doubling somebody up: how many on-call teachers are
-     * actually free, how many groups are still open, how many of those can only be covered by giving a
-     * colleague a second group, and how many second groups are already handed out.
+     * than people to cover them instead of quietly doubling somebody up: how many people are actually
+     * free, how many groups are still open, how many of those can only be covered by giving a colleague
+     * a second group, and how many second groups are already handed out.
      *
      * {@code doubled} matters as much as {@code missing}: once the split has run, nothing is left
      * uncovered and the shortfall reads as zero, yet three teachers may be minding two groups each. The
      * warning has to survive the split, or the screen hides exactly what it is there to show.
      *
-     * @param ScheduleEntry[]          $pool         the period's duty entries (a teacher may appear twice)
-     * @param list<int>                $absentIds    ids of teachers themselves absent that period
-     * @param array<int, list<string>> $assignedHere teacher id → groups they already cover that period
-     * @param int                      $uncovered    groups still without a substitute
+     * @param list<array{teacher: User, band: GuardiaDutyBand, note: ?string, supportId: ?int, absent: bool, groups: list<string>, load: int}> $poolView who could cover this period
+     * @param array<int, list<string>>                                                                                                        $assignedHere teacher id → groups they already cover
+     * @param int                                                                                                                             $uncovered    groups still without a substitute
      *
-     * @return array{free: int, uncovered: int, missing: int, doubled: int, extra: int} free teachers, open
+     * @return array{free: int, uncovered: int, missing: int, doubled: int, extra: int} free people, open
      *                                                                                 groups, shortfall,
      *                                                                                 teachers doubling up
      *                                                                                 and extra groups they carry
      */
-    private function deficitSummary(array $pool, array $absentIds, array $assignedHere, int $uncovered): array
+    private function deficitSummary(array $poolView, array $assignedHere, int $uncovered): array
     {
-        $free = [];
-        foreach ($pool as $entry) {
-            $id = $entry->getTeacher()->getId();
-            if (null !== $id && !\in_array($id, $absentIds, true) && !isset($assignedHere[$id])) {
-                $free[$id] = true;
-            }
-        }
-
+        $free = \count(array_filter($poolView, static fn (array $row): bool => !$row['absent'] && [] === $row['groups']));
         $doubling = array_filter($assignedHere, static fn (array $groups): bool => \count($groups) > 1);
 
         return [
-            'free' => \count($free),
+            'free' => $free,
             'uncovered' => $uncovered,
-            'missing' => max(0, $uncovered - \count($free)),
+            'missing' => max(0, $uncovered - $free),
             'doubled' => \count($doubling),
             'extra' => array_sum(array_map(static fn (array $groups): int => \count($groups) - 1, $doubling)),
         ];
@@ -1087,7 +1134,7 @@ final class GuardiaController extends AbstractController
 
     /**
      * Reads the requested date from the query/post ("Y-m-d"), falling back to today on absence or a
-     * bad value.
+     * bad value. Delegates to {@see GuardiaDate}, shared with the rest of the module's controllers.
      *
      * @param Request $request the current request
      *
@@ -1095,10 +1142,7 @@ final class GuardiaController extends AbstractController
      */
     private function dateFromRequest(Request $request): \DateTimeImmutable
     {
-        $raw = (string) ($request->query->get('date') ?? $request->request->get('date'));
-        $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $raw);
-
-        return false !== $date ? $date : new \DateTimeImmutable('today');
+        return GuardiaDate::fromRequest($request);
     }
 
     /**

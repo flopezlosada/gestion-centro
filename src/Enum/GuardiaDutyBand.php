@@ -26,6 +26,28 @@ enum GuardiaDutyBand: string
     case SUPPORT = 'support';
 
     /**
+     * The bands in the order they are used up: the rota, then collaborators, then hand-added support.
+     * The single source of that order — the assignment engine opens bands in this sequence and the parte
+     * lists people in it, so neither can drift from the other.
+     *
+     * @return list<self> the bands, most preferred first
+     */
+    public static function inPriorityOrder(): array
+    {
+        return [self::GUARDIA, self::COLLABORATOR, self::SUPPORT];
+    }
+
+    /**
+     * This band's place in {@see inPriorityOrder()}, for sorting mixed lists of people.
+     *
+     * @return int the 0-based rank, lowest first
+     */
+    public function rank(): int
+    {
+        return (int) array_search($this, self::inPriorityOrder(), true);
+    }
+
+    /**
      * Badge text for the candidate lists, or null for the ordinary rota — a "Guardia" badge next to
      * every name in a list of guardia teachers would be noise. Kept here so the parte and the
      * assignment sheet label a band the same way without repeating the condition.
