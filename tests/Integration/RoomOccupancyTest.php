@@ -9,6 +9,7 @@ use App\Entity\Room;
 use App\Entity\ScheduleEntry;
 use App\Entity\User;
 use App\Enum\RoomKind;
+use App\Enum\RoomSize;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use App\Space\RoomOccupancy;
@@ -141,27 +142,27 @@ final class RoomOccupancyTest extends KernelTestCase
         self::assertSame(['0LC1'], $this->codes($availability->assignable()), 'only one can host a group');
     }
 
-    public function testCandidatesPreferOrdinaryClassroomsAndRespectTheSizeAsked(): void
+    public function testCandidatesPreferOrdinaryClassroomsAndTheTightestFit(): void
     {
-        $this->room('LABQ', RoomKind::LAB, 40);
-        $this->room('0LC1', RoomKind::CLASSROOM, 30);
-        $this->room('0LC7', RoomKind::CLASSROOM, 60);
+        $this->room('LABQ', RoomKind::LAB, 40)->setSize(RoomSize::TWO_GROUPS);
+        $this->room('0LC1', RoomKind::CLASSROOM, 30)->setSize(RoomSize::ONE_GROUP);
+        $this->room('0LC7', RoomKind::CLASSROOM, 60)->setSize(RoomSize::TWO_GROUPS);
         $this->em->flush();
 
-        // Ordinary rooms first, and within each band the biggest first.
-        self::assertSame(['0LC7', '0LC1', 'LABQ'], $this->codes($this->occupancy->candidatesAt($this->year, $this->monday, 0)));
+        // Ordinary rooms before specialised ones, and the tightest fit first so the big rooms stay free.
+        self::assertSame(['0LC1', '0LC7', 'LABQ'], $this->codes($this->occupancy->candidatesAt($this->year, $this->monday, 0)));
 
-        // Asking for 45 people rules out the small classroom, not the lab.
-        self::assertSame(['0LC7', 'LABQ'], $this->codes($this->occupancy->candidatesAt($this->year, $this->monday, 0, 45)));
+        // Asking for two whole groups rules out the one-group classroom, not the lab.
+        self::assertSame(['0LC7', 'LABQ'], $this->codes($this->occupancy->candidatesAt($this->year, $this->monday, 0, 2)));
     }
 
-    public function testARoomWithoutCapacityIsStillOfferedRatherThanSilentlyDropped(): void
+    public function testARoomWithoutASizeIsStillOfferedRatherThanSilentlyDropped(): void
     {
-        // The export carries no capacity, so an incomplete card is the normal case, not an error.
+        // Every card starts unclassified, so an incomplete one is the normal case, not an error.
         $this->room('2IN5', RoomKind::OTHER, null);
         $this->em->flush();
 
-        self::assertSame(['2IN5'], $this->codes($this->occupancy->candidatesAt($this->year, $this->monday, 0, 60)));
+        self::assertSame(['2IN5'], $this->codes($this->occupancy->candidatesAt($this->year, $this->monday, 0, 3)));
     }
 
     /**

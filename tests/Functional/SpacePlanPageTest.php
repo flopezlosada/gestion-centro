@@ -117,9 +117,11 @@ final class SpacePlanPageTest extends WebTestCase
         $author = $this->login(PermissionLevel::WRITE);
         $plan = $this->plan($author, SpacePlanStatus::PROPOSED);
 
-        $this->client->request('POST', '/espacios/planes/'.$plan->getId().'/avisar', [
-            '_token' => (string) self::getContainer()->get('security.csrf.token_manager')->getToken('space_plan_notify'.$plan->getId()),
-        ]);
+        // A GET first: the CSRF token lives in the session, and outside a request there is none.
+        $this->client->request('GET', '/espacios/planes/'.$plan->getId());
+        $token = (string) self::getContainer()->get('security.csrf.token_manager')->getToken('space_plan_notify'.$plan->getId());
+
+        $this->client->request('POST', '/espacios/planes/'.$plan->getId().'/avisar', ['_token' => $token]);
 
         self::assertResponseRedirects('/espacios/planes/'.$plan->getId());
         $this->em->clear();

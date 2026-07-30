@@ -6,6 +6,8 @@ namespace App\Tests\Unit;
 
 use App\Entity\Room;
 use App\Enum\RoomKind;
+use App\Enum\RoomSize;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -26,9 +28,7 @@ final class RoomCardTest extends TestCase
         yield 'tab as separator' => ["PIST\tROJ", 'PIST ROJ'];
     }
 
-    /**
-     * @dataProvider codes
-     */
+    #[DataProvider('codes')]
     public function testCodeIsStoredNormalised(string $raw, string $expected): void
     {
         self::assertSame($expected, (new Room())->setCode($raw)->getCode());
@@ -43,16 +43,16 @@ final class RoomCardTest extends TestCase
         );
     }
 
-    public function testAFreshCardNeedsReviewUntilItHasKindAndCapacity(): void
+    public function testAFreshCardNeedsReviewUntilItHasKindAndSize(): void
     {
         $room = (new Room())->setCode('2IN5')->setName('2IN5');
         self::assertTrue($room->needsReview(), 'a stub the synchroniser created is incomplete');
 
         $room->setKind(RoomKind::CLASSROOM);
-        self::assertTrue($room->needsReview(), 'a kind alone is not enough: capacity is still unknown');
+        self::assertTrue($room->needsReview(), 'a kind alone is not enough: how many groups fit is unknown');
 
-        $room->setCapacity(30);
-        self::assertFalse($room->needsReview());
+        $room->setSize(RoomSize::ONE_GROUP);
+        self::assertFalse($room->needsReview(), 'seats are optional; the size in groups is what decides');
     }
 
     public function testLabelFallsBackToTheCodeWhileNobodyHasNamedIt(): void

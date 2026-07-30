@@ -188,12 +188,18 @@ final class SpacePageTest extends WebTestCase
     /**
      * A CSRF token valid for the current session.
      *
+     * The token manager stores tokens in the session, and outside a request there is none — asking it
+     * cold throws SessionNotFoundException. A GET first both starts the session and is what a person
+     * would have done anyway before pressing the button.
+     *
      * @param string $id the token id
      *
      * @return string the token value
      */
     private function csrf(string $id): string
     {
+        $this->client->request('GET', '/espacios/catalogo');
+
         return (string) self::getContainer()->get('security.csrf.token_manager')->getToken($id);
     }
 
