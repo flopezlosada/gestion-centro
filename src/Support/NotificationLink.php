@@ -50,6 +50,9 @@ final class NotificationLink
             // at most a day ahead (see EventReminderOffset), so the event is either in today's "Con
             // hora" block or in "Próximos 7 días".
             str_starts_with($notification->getKind(), 'event.') => $this->urlGenerator->generate('app_homepage'),
+            // A space notice (a room change that affects you) opens the teacher's own list of changes,
+            // which shows every one in force — not just the plan that happened to trigger this notice.
+            str_starts_with($notification->getKind(), 'space.') => $this->urlGenerator->generate('space_mine'),
             // A meeting notice (convocatoria, cambio de hora, acta) opens "Mis reuniones", which carries
             // both what is coming and the archive of minutes. The notice cannot deep-link to the meeting
             // itself: a Notification only knows how to point at a Task, and widening that schema for

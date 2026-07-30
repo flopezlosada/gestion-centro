@@ -46,7 +46,13 @@ final class RoleFixtures extends AbstractGoldenFixture
         // (functional/permission role only). The leadership team is centre-wide; jefatura de departamento
         // is per-department (commands only its own department). TIC, secretaría, tutor and docente carry
         // no rank — they grant feature access but command nobody.
-        $direction = (new Role())->setCode('direction')->setName('Dirección')->setLevel(Area::ADMINISTRATION, PermissionLevel::WRITE)->setHierarchyLevel(40)->setCanConvene(true);
+        $direction = (new Role())->setCode('direction')->setName('Dirección')
+            ->setLevel(Area::ADMINISTRATION, PermissionLevel::WRITE)
+            // Espacios: the equipo directivo is who decides where a group goes and who completes the
+            // room catalogue (size, type), so it is the one role that writes here by default.
+            ->setLevel(Area::ESPACIOS, PermissionLevel::WRITE)
+            ->setHierarchyLevel(40)
+            ->setCanConvene(true);
         $catalog = [
             $direction,
             (new Role())->setCode('tic')->setName('TIC')->setAdmin(true)->setCanConvene(true),
@@ -56,7 +62,12 @@ final class RoleFixtures extends AbstractGoldenFixture
             // Guardia coordinator: manages the daily parte (register absences, assign covers, mark
             // incidents, history and stats). A functional permission role, not a rank — it commands
             // nobody. Any role can be granted this same access from the roles matrix (Guardias = escritura).
-            (new Role())->setCode('guardias')->setName('Coordinación de guardias')->setLevel(Area::GUARDIAS, PermissionLevel::WRITE)->setCanConvene(true),
+            (new Role())->setCode('guardias')->setName('Coordinación de guardias')
+                ->setLevel(Area::GUARDIAS, PermissionLevel::WRITE)
+                // Read on Espacios so the coordinator can find a big free room to merge groups into when
+                // there are more absences than teachers on call — that consultation is why it exists.
+                ->setLevel(Area::ESPACIOS, PermissionLevel::READ)
+                ->setCanConvene(true),
             // Project coordination: convenes the meetings of the projects it coordinates and uploads their
             // minutes. NO rank (commands nobody) and NO area in the matrix, on purpose: the power is scoped
             // to a project, and that scope lives in Project.coordinator — not in this role, which would

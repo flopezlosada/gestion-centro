@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repository;
 
 use App\Entity\AcademicYear;
+use App\Entity\Room;
 use App\Entity\ScheduleEntry;
 use App\Entity\User;
 use App\Enum\ScheduleActivityKind;
@@ -503,6 +504,218 @@ class ScheduleEntryRepository extends ServiceEntityRepository
             ->orderBy('t.fullName', 'ASC')
             ->getQuery()
             ->getResult();
+    }
+
+    /**
+     * The cells that name a room but point at no catalogued space, as {@code [id, roomName]} pairs —
+     * everything the synchroniser needs to know which cards are missing and which rows to link.
+     *
+     * Deliberately returns the RAW names and leaves the comparison to PHP: matching a room by SQL
+     * equality would make the result depend on the database collation (MySQL 8 here, MariaDB on the
+     * server) and would still miss "S  ACTOS" against "S ACTOS". Normalising in one place —
+     * {@see Room::normaliseCode()} — is the only way both halves agree.
+     *
+     * @return list<array{id: int, roomName: string}> the unlinked cells
+     */
+    public function unlinkedRoomCells(): array
+    {
+        /** @var list<array{id: int, roomName: string}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('s.id AS id', 's.roomName AS roomName')
+            ->andWhere('s.room IS NULL')
+            ->andWhere('s.roomName IS NOT NULL')
+            ->andWhere("TRIM(s.roomName) <> ''")
+            ->getQuery()
+            ->getResult();
+
+        return array_map(static fn (array $r): array => ['id' => (int) $r['id'], 'roomName' => $r['roomName']], $rows);
+    }
+
+    /**
+     * Points the given cells at a space, by id. The ids come from {@see unlinkedRoomCells()}, already
+     * matched in PHP, so this never re-derives which cells belong to which room.
+     *
+     * @param Room      $room the space to link to
+     * @param list<int> $ids  the cells to link
+     *
+     * @return int how many cells were linked
+     */
+    public function linkCells(Room $room, array $ids): int
+    {
+        if ([] === $ids) {
+            return 0;
+        }
+
+        return (int) $this->createQueryBuilder('s')
+            ->update()
+            ->set('s.room', ':room')
+            ->where('s.id IN (:ids)')
+            ->setParameter('room', $room)
+            ->setParameter('ids', $ids)
+            ->getQuery()
+            ->execute();
+    }
+
+    /**
+     * How many cells name a room but point at no catalogued space — always zero right after a sync.
+     * A non-zero count means the occupancy calculation is blind to those cells, so it is surfaced
+     * rather than left to be discovered as "that room looked free".
+     *
+     * @return int the number of unlinked cells
+     */
+    public function countCellsWithoutRoom(): int
+    {
+        return (int) $this->createQueryBuilder('s')
+            ->select('COUNT(s.id)')
+            ->andWhere('s.room IS NULL')
+            ->andWhere('s.roomName IS NOT NULL')
+            ->andWhere("TRIM(s.roomName) <> ''")
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    /**
+     * Who is in which space at one period of one weekday: every lective cell of that course, period and
+     * weekday that has a catalogued room, with its teacher joined so the screen can name them without a
+     * query per row.
+     *
+     * This is the raw occupancy the space module reads. Guardia and collaborator cells are excluded —
+     * they occupy nobody's room — and so are cells with no catalogued space, which is why the sync has
+     * to have run (see {@see countCellsWithoutRoom()}).
+     *
+     * @param AcademicYear $year      the course whose timetable to read
+     * @param Weekday      $weekday   the weekday
+     * @param int          $slotIndex the period index within the day
+     *
+     * @return ScheduleEntry[] the occupying lessons, teachers joined
+     */
+    public function occupancyAt(AcademicYear $year, Weekday $weekday, int $slotIndex): array
+    {
+        return $this->createQueryBuilder('s')
+            ->addSelect('t', 'r')
+            ->join('s.teacher', 't')
+            ->join('s.room', 'r')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.weekday = :weekday')
+            ->andWhere('s.slotIndex = :slot')
+            ->andWhere('s.kind = :lective')
+            ->setParameter('year', $year)
+            ->setParameter('weekday', $weekday)
+            ->setParameter('slot', $slotIndex)
+            ->setParameter('lective', ScheduleActivityKind::LECTIVE)
+            ->orderBy('r.code', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * What a course's timetable holds, in one query: how many cells, how many of them are guardia or
+     * collaborator duty, and how many teachers it covers. Drives the "arranque de curso" checklist,
+     * which has to say at a glance whether the timetable is loaded and whether it brought the guardias
+     * (an export taken from the wrong Peñalara menu carries lessons but no duty slots).
+     *
+     * @param AcademicYear $year the course whose timetable to summarise
+     *
+     * @return array{cells: int, duty: int, teachers: int} the figures
+     */
+    public function summaryFor(AcademicYear $year): array
+    {
+        /** @var array{cells: int|string, duty: int|string, teachers: int|string} $row */
+        $row = $this->createQueryBuilder('s')
+            ->select(
+                'COUNT(s.id) AS cells',
+                'SUM(CASE WHEN s.kind IN (:duty) THEN 1 ELSE 0 END) AS duty',
+                'COUNT(DISTINCT IDENTITY(s.teacher)) AS teachers',
+            )
+            ->andWhere('s.academicYear = :year')
+            ->setParameter('year', $year)
+            ->setParameter('duty', [ScheduleActivityKind::GUARDIA, ScheduleActivityKind::COLLABORATOR])
+            ->getQuery()
+            ->getSingleResult();
+
+        return ['cells' => (int) $row['cells'], 'duty' => (int) $row['duty'], 'teachers' => (int) $row['teachers']];
+    }
+
+    /**
+     * When each teacher is IN THE CENTRE on a weekday, as the first and last period they teach.
+     *
+     * This is the centre's own rule for a cultural day, in their words: "el programa preasigna al
+     * profesorado respetando su horario habitual (si su docencia empieza a las 9:20, su participación
+     * empieza en torno a esa hora)". Somebody whose teaching starts at third period is not in the
+     * building at first, whatever the alternative timetable says.
+     *
+     * Only teaching cells count. A guardia slot says the person is on call, not that they came in early.
+     *
+     * @param AcademicYear $year    the course whose timetable to read
+     * @param Weekday      $weekday the weekday
+     *
+     * @return array<int, array{from: int, to: int}> teacher id → first and last period they teach
+     */
+    public function teachingDayBounds(AcademicYear $year, Weekday $weekday): array
+    {
+        /** @var list<array{teacherId: int|string, firstSlot: int|string, lastSlot: int|string}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('IDENTITY(s.teacher) AS teacherId', 'MIN(s.slotIndex) AS firstSlot', 'MAX(s.slotIndex) AS lastSlot')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.weekday = :weekday')
+            ->andWhere('s.kind = :lective')
+            ->setParameter('year', $year)
+            ->setParameter('weekday', $weekday)
+            ->setParameter('lective', ScheduleActivityKind::LECTIVE)
+            ->groupBy('s.teacher')
+            ->getQuery()
+            ->getResult();
+
+        $bounds = [];
+        foreach ($rows as $row) {
+            $bounds[(int) $row['teacherId']] = ['from' => (int) $row['firstSlot'], 'to' => (int) $row['lastSlot']];
+        }
+
+        return $bounds;
+    }
+
+    /**
+     * The groups a course's timetable knows about, alphabetically — what a plan offers when it asks
+     * "whose timetable does this replace?". Offered as a list rather than typed in because a group name
+     * that does not match the timetable exactly would silently replace nobody.
+     *
+     * @param AcademicYear $year the course whose timetable to read
+     *
+     * @return list<string> the group names
+     */
+    public function distinctGroupNames(AcademicYear $year): array
+    {
+        /** @var list<array{groupName: string}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('DISTINCT s.groupName AS groupName')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.groupName IS NOT NULL')
+            ->andWhere("TRIM(s.groupName) <> ''")
+            ->setParameter('year', $year)
+            ->orderBy('s.groupName', 'ASC')
+            ->getQuery()
+            ->getResult();
+
+        return array_map(static fn (array $r): string => $r['groupName'], $rows);
+    }
+
+    /**
+     * How many timetable cells reference a space. Guards the catalogue's delete action: a room the
+     * timetable uses may only be deactivated, never removed, or its cells would silently stop counting
+     * as occupied.
+     *
+     * @param Room $room the space to count uses of
+     *
+     * @return int the number of cells pointing at it
+     */
+    public function countByRoom(Room $room): int
+    {
+        return (int) $this->createQueryBuilder('s')
+            ->select('COUNT(s.id)')
+            ->andWhere('s.room = :room')
+            ->setParameter('room', $room)
+            ->getQuery()
+            ->getSingleScalarResult();
     }
 
     /**

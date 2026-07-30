@@ -31,7 +31,8 @@ final class TimetableImportResult
      * @param list<string>          $stale         teachers holding a timetable in this course that the export does not carry
      * @param int                   $frameCount    periods of the marco horario the export declared (0 if it carried none)
      * @param int                   $breakCount    how many of those are recreos, which is what the break duty rota needs
-     * @param list<int>              $frameConflicts period indices the export defined more than one way
+     * @param list<int>             $frameConflicts period indices the export defined more than one way
+     * @param list<string>          $newRooms      space cards the import had to create for rooms the timetable names
      */
     public function __construct(
         public readonly int $entryCount,
@@ -46,6 +47,7 @@ final class TimetableImportResult
         public readonly int $frameCount = 0,
         public readonly int $breakCount = 0,
         public readonly array $frameConflicts = [],
+        public readonly array $newRooms = [],
     ) {
     }
 

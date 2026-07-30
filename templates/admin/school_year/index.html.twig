@@ -1,0 +1,93 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Arranque de curso{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Arranque de curso{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Administración</p>
+            <h1>Arranque de curso {{ schoolYear }}</h1>
+            <p class="lead">Lo que la aplicación necesita tener cargado, en el orden en que hay que cargarlo. Cada punto se comprueba contra los datos reales, no contra lo que creamos recordar.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        <table>
+            <thead><tr><th>Qué</th><th>Cómo está</th><th></th></tr></thead>
+            <tbody>
+                {% for step in steps %}
+                    <tr>
+                        <td>
+                            <strong>{{ step.title }}</strong>
+                            {% if step.state == 'ok' %}<span class="badge badge--ok">Listo</span>
+                            {% elseif step.state == 'warn' %}<span class="badge badge--warning">Revisar</span>
+                            {% else %}<span class="badge badge--danger">Falta</span>{% endif %}
+                        </td>
+                        <td class="muted">{{ step.detail }}</td>
+                        <td class="row-actions"><a href="{{ path(step.route) }}">{{ step.action }}</a></td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {# ---- Claustro: el único paso que no tenía pantalla propia (solo línea de comandos) ---- #}
+    <section class="parte-panel">
+        <div class="parte-panel__head">
+            <div class="parte-panel__titles">
+                <h2 class="parte-panel__title">Subir el claustro</h2>
+            </div>
+        </div>
+
+        {% if pendingRosterError %}
+            <div class="callout callout--warning" role="alert">
+                <p><strong>No se puede leer ese fichero:</strong> {{ pendingRosterError }}</p>
+                <form method="post" action="{{ path('admin_roster_discard') }}" class="inline-form">
+                    <input type="hidden" name="_token" value="{{ csrf_token('admin_roster_discard') }}">
+                    <button type="submit" class="btn secondary">Descartar</button>
+                </form>
+            </div>
+        {% elseif pendingRoster %}
+            <div class="callout" role="note">
+                <p><strong>Esto es lo que haría — todavía no se ha escrito nada:</strong></p>
+                <ul>
+                    <li><strong>{{ pendingRoster.rowCount }}</strong> personas en el fichero.</li>
+                    <li><strong>{{ pendingRoster.created|length }}</strong> se darían de alta{% if pendingRoster.created is not empty %}: {{ pendingRoster.created|slice(0, 8)|join(', ') }}{% if pendingRoster.created|length > 8 %} y {{ pendingRoster.created|length - 8 }} más{% endif %}{% endif %}.</li>
+                    <li><strong>{{ pendingRoster.updated }}</strong> ya existen y se actualizarían.</li>
+                    <li><strong>{{ pendingRoster.departments|length }}</strong> departamentos.</li>
+                </ul>
+                {% if pendingRoster.skipped is not empty %}
+                    <p><strong>{{ pendingRoster.skipped|length }} línea(s) no se pueden leer y se quedarían fuera:</strong></p>
+                    <ul>{% for problem in pendingRoster.skipped|slice(0, 5) %}<li>{{ problem }}</li>{% endfor %}</ul>
+                {% endif %}
+            </div>
+            <div class="form-actions">
+                <form method="post" action="{{ path('admin_roster_confirm') }}" class="inline-form">
+                    <input type="hidden" name="_token" value="{{ csrf_token('admin_roster_confirm') }}">
+                    <button type="submit" class="btn">Importar ahora</button>
+                </form>
+                <form method="post" action="{{ path('admin_roster_discard') }}" class="inline-form">
+                    <input type="hidden" name="_token" value="{{ csrf_token('admin_roster_discard') }}">
+                    <button type="submit" class="btn secondary">Descartar</button>
+                </form>
+            </div>
+        {% else %}
+            <p class="muted">Un CSV con la cabecera exacta <code>full_name,email,department,cargo</code>, una línea por docente. Las personas se reconocen por el correo, así que subirlo de nuevo a mitad de curso actualiza en vez de duplicar.</p>
+            <form method="post" action="{{ path('admin_roster_upload') }}" enctype="multipart/form-data" class="stack-form">
+                <input type="hidden" name="_token" value="{{ csrf_token('admin_roster_upload') }}">
+                <div class="form-row">
+                    <label class="field-label" for="roster">Fichero del claustro (CSV)</label>
+                    <input type="file" id="roster" name="roster" accept=".csv,text/csv" required>
+                    <p class="help">Verás lo que haría antes de que se escriba nada.</p>
+                </div>
+                <div class="form-actions"><button type="submit" class="btn">Ver qué haría</button></div>
+            </form>
+        {% endif %}
+    </section>
+
+    <div class="callout" role="note">
+        <p><strong>Lo que NO hace falta subir:</strong> las aulas ocupadas y las libres no se cargan, se calculan del horario. Si se subieran aparte, en cuanto cambiara una clase habría dos versiones distintas de la verdad y ninguna forma de saber cuál vale.</p>
+    </div>
+{% endblock %}

@@ -3347,6 +3347,46 @@ tr.is-not-covered { background: var(--danger-weak); }
 
 .field--reason { margin-top: 22px; }
 
+/* ============================================================================
+   DOCUMENTO PUBLICABLE DE ESPACIOS
+   La hoja que se cuelga en el tablón. Vive fuera del shell (sin menú ni barra
+   inferior) porque su único trabajo es leerse en la pared: pelearse con el
+   layout de la aplicación a base de reglas de impresión sale peor que darle su
+   propia página. En papel desaparecen los controles (.doc-noprint) y el color
+   pasa a negro sobre blanco, que es como imprime bien cualquier fotocopiadora.
+   ============================================================================ */
+.doc { max-width: 900px; margin: 0 auto; padding: 24px 20px 60px; }
+.doc-controls { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+.doc-head { border-bottom: 2px solid var(--border-strong); padding-bottom: 14px; margin-bottom: 24px; }
+.doc-centre { font: 500 13px var(--font-body); letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 4px; }
+.doc-head h1 { font: 600 30px/1.15 var(--font-display); margin: 0 0 6px; }
+.doc-dates { font: 500 15px var(--font-body); color: var(--text-muted); margin: 0; }
+.doc-reason { font: 400 15px var(--font-body); margin: 8px 0 0; }
+.doc-draft { font: 600 13px var(--font-body); color: var(--warning-text); background: var(--warning-weak); border: 1px solid var(--warning); border-radius: var(--radius-sm); padding: 6px 10px; margin: 12px 0 0; display: inline-block; }
+.doc-section { margin-bottom: 26px; break-inside: avoid; }
+.doc-section h2 { font: 600 19px var(--font-display); margin: 0 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--separator); }
+.doc-table { width: 100%; border-collapse: collapse; font: 400 14px var(--font-body); }
+.doc-table th { text-align: left; font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 4px 8px 4px 0; }
+.doc-table td { padding: 6px 8px 6px 0; border-top: 1px solid var(--separator); vertical-align: top; }
+.doc-from, .doc-subject, .doc-teacher, .doc-note { color: var(--text-muted); font-size: 13px; }
+.doc-from { margin-left: 6px; }
+.doc-subject, .doc-teacher, .doc-note { display: block; }
+.doc-foot { margin-top: 32px; padding-top: 10px; border-top: 1px solid var(--separator); font: 400 12.5px var(--font-body); color: var(--text-muted); }
+.doc-foot p { margin: 2px 0; }
+
+@media print {
+    /* Negro sobre blanco: los tokens cálidos de la aplicación salen grises y sucios en fotocopia. */
+    .doc { max-width: none; padding: 0; color: #000; }
+    .doc-noprint { display: none !important; }
+    .doc-head { border-bottom-color: #000; }
+    .doc-centre, .doc-dates, .doc-from, .doc-subject, .doc-teacher, .doc-note, .doc-foot { color: #333; }
+    .doc-section h2 { border-bottom-color: #999; }
+    .doc-table td { border-top-color: #ccc; }
+    /* Una sección no se parte entre páginas si cabe entera: un grupo a caballo de dos folios se lee mal
+       en un tablón, donde solo se cuelga la primera hoja. */
+    .doc-section, .doc-table tr { break-inside: avoid; }
+    @page { margin: 14mm; }
+}
 /* ── Banco de tareas de guardia y encargos de fotocopias ────────────────────
    Reutiliza .card, .btn y .badge; aquí solo lo propio: la barra de filtros que manda también sobre
    el sorteo, la tarjeta de "estás eligiendo para esta guardia" y el bloque de la tarea del banco

@@ -1,0 +1,257 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}{{ plan.title }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('space_plan_index') }}">Planes de espacios</a><span class="sep">/</span>
+    {{ plan.title }}
+{% endblock %}
+
+{# La hora de un tramo, o su ordinal si el curso no tiene ese tramo en el horario importado. #}
+{% macro hora(slotTimes, index) %}
+    {%- set t = slotTimes[index] ?? null -%}
+    {%- if t %}{{ t.startsAt|date('H:i', false) }}–{{ t.endsAt|date('H:i', false) }}{% else %}{{ index + 1 }}.ª hora{% endif -%}
+{% endmacro %}
+
+{% block body %}
+    {% import _self as sp %}
+    {% set editable = plan.status.isEditable %}
+
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">{{ plan.kind.label }}</p>
+            <h1>{{ plan.title }}</h1>
+            <p class="lead">
+                {{ plan.dateFrom|date('d/m/Y', false) }}{% if plan.dateTo != plan.dateFrom %} – {{ plan.dateTo|date('d/m/Y', false) }}{% endif %}
+                · <span class="badge {{ plan.status.badgeClass }}">{{ plan.status.label }}</span>
+            </p>
+            {% if plan.publicReason %}<p class="muted">{{ plan.publicReason }}</p>{% endif %}
+        </div>
+        <div class="parte-panel__actions">
+            {% if plan.status.isInForce %}
+                <a class="btn secondary" href="{{ path('space_plan_document', { id: plan.id }) }}">Ver documento</a>
+                <form method="post" action="{{ path('space_plan_notify', { id: plan.id }) }}" class="inline-form"{% if plan.notifiedAt %} data-confirm="Ya se avisó el {{ plan.notifiedAt|date('d/m/Y', false) }}. ¿Volver a avisar a todos los afectados?"{% endif %}>
+                    <input type="hidden" name="_token" value="{{ csrf_token('space_plan_notify' ~ plan.id) }}">
+                    <button type="submit" class="btn">{{ plan.notifiedAt ? 'Volver a avisar' : 'Avisar a los afectados' }}</button>
+                </form>
+            {% endif %}
+            {% if editable %}
+                <a class="btn secondary" href="{{ path('space_plan_edit', { id: plan.id }) }}">Editar datos</a>
+                <form method="post" action="{{ path('space_plan_generate', { id: plan.id }) }}" class="inline-form">
+                    <input type="hidden" name="_token" value="{{ csrf_token('space_plan_generate' ~ plan.id) }}">
+                    <button type="submit" class="btn">{{ plan.options is empty ? 'Generar propuestas' : 'Volver a generar' }}</button>
+                </form>
+            {% endif %}
+            {% if plan.status.value != 'cancelled' %}
+                <form method="post" action="{{ path('space_plan_cancel', { id: plan.id }) }}" class="inline-form" data-confirm="¿Anular «{{ plan.title }}»? Dejará de afectar al horario.">
+                    <input type="hidden" name="_token" value="{{ csrf_token('space_plan_cancel' ~ plan.id) }}">
+                    <button type="submit" class="link-danger">Anular</button>
+                </form>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if plan.status.isInForce %}
+        <div class="callout" role="note">
+            <p><strong>Aprobado{% if plan.approvedBy %} por {{ plan.approvedBy.fullName }}{% endif %}{% if plan.approvedAt %} el {{ plan.approvedAt|date('d/m/Y', false) }}{% endif %}.</strong> Manda sobre el horario en esas fechas: quien consulte las aulas libres verá estos cambios.</p>
+            {% if plan.notifiedAt is null %}
+                <p>Todavía <strong>no se ha avisado</strong> a las personas afectadas. Cada una recibirá un solo aviso con las líneas que le tocan a ella.</p>
+            {% else %}
+                <p>Avisado el {{ plan.notifiedAt|date('d/m/Y', false) }} a las {{ plan.notifiedAt|date('H:i', false) }}.</p>
+            {% endif %}
+        </div>
+    {% endif %}
+
+    {% if clashes is not empty %}
+        <div class="callout callout--warning" role="alert">
+            <p><strong>Esta propuesta choca con otro plan ya aprobado:</strong></p>
+            <ul>{% for clash in clashes %}<li>{{ clash }}</li>{% endfor %}</ul>
+            <p>Cambia esas líneas a mano (columna «Aula») o anula el otro plan antes de aprobar.</p>
+        </div>
+    {% endif %}
+
+    {# ---- Enunciado: lo que el evento mete en el centro ---- #}
+    <section class="parte-panel">
+        <div class="parte-panel__head">
+            <div class="parte-panel__titles">
+                <h2 class="parte-panel__title">Lo que ocupa el evento</h2>
+            </div>
+        </div>
+
+        {% if plan.activities is empty %}
+            <p class="muted">Nada todavía. Añade lo que ocupa el evento (una prueba, un taller) para que el programa sepa qué aulas quedan tomadas.</p>
+        {% else %}
+            <table>
+                <thead><tr><th>Qué</th><th>Dónde</th><th>Cuándo</th><th></th></tr></thead>
+                <tbody>
+                    {% for activity in plan.activities %}
+                        <tr>
+                            <td><strong>{{ activity.title }}</strong></td>
+                            <td>
+                                {{ activity.room ? activity.room.label : '<span class="muted">que lo decida el programa</span>'|raw }}
+                                {% if activity.targetGroupNames is not empty %}<div class="muted">{{ activity.targetGroupNames|join(', ') }}</div>{% endif %}
+                            </td>
+                            <td>
+                                {% if activity.fixedDate %}{{ activity.fixedDate|date('d/m/Y', false) }}{% else %}<span class="muted">sin día fijo</span>{% endif %}
+                                {% if activity.fixedSlots is not empty %}
+                                    · {% for slot in activity.fixedSlots %}{{ sp.hora(slotTimes, slot) }}{% if not loop.last %}, {% endif %}{% endfor %}
+                                {% endif %}
+                            </td>
+                            <td class="row-actions">
+                                {% if editable %}
+                                    <form method="post" action="{{ path('space_plan_activity_delete', { id: plan.id, activityId: activity.id }) }}" data-confirm="¿Quitar «{{ activity.title }}»?">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('space_plan_activity_delete' ~ activity.id) }}">
+                                        <button type="submit" class="link-danger">Quitar</button>
+                                    </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+
+        {% if editable %}
+            <details class="callout__more">
+                <summary>Añadir lo que ocupa el evento</summary>
+                <div class="form-card">
+                    <p class="help">Varias aulas y varios días de una vez. <strong>Semana de exámenes:</strong> marca las aulas donde se examina, el rango de días y las horas. <strong>Taller de jornadas culturales:</strong> deja las aulas vacías, marca los grupos que van, y el programa le busca aula del tamaño que haga falta. Los días no lectivos se saltan solos.</p>
+                    {{ form_start(activityForm, { 'attr': { 'novalidate': 'novalidate' } }) }}
+                        {{ form_errors(activityForm) }}
+                        {{ f.fields([activityForm.title, activityForm.rooms, activityForm.groups, activityForm.from, activityForm.to]) }}
+                        <div class="form-row">
+                            {{ form_label(activityForm.slots) }}
+                            <div class="slot-checks">{{ form_widget(activityForm.slots) }}</div>
+                            {{ form_errors(activityForm.slots) }}
+                        </div>
+                        <div class="form-actions"><button class="btn" type="submit">Añadir</button></div>
+                    {{ form_end(activityForm) }}
+                </div>
+            </details>
+        {% endif %}
+    </section>
+
+    {# ---- Las alternativas, con sus cifras: lo único que las hace comparables ---- #}
+    <section class="parte-panel">
+        <div class="parte-panel__head">
+            <div class="parte-panel__titles">
+                <h2 class="parte-panel__title">Propuestas</h2>
+            </div>
+        </div>
+
+        {% if options is empty %}
+            <p class="muted">Sin propuestas todavía. Pulsa «Generar propuestas» cuando hayas dicho qué ocupa el evento.</p>
+        {% else %}
+            <form method="post" action="{{ path('space_plan_approve', { id: plan.id }) }}">
+                <input type="hidden" name="_token" value="{{ csrf_token('space_plan_approve' ~ plan.id) }}">
+                <div class="card-grid">
+                    {% for option in options %}
+                        <div class="mini-card{{ shown and option.id == shown.id ? ' is-free' }}">
+                            <div class="mini-card-head">
+                                {% if editable %}
+                                    <label class="choice">
+                                        <input type="radio" name="option" value="{{ option.id }}"{{ shown and option.id == shown.id ? ' checked' }}>
+                                        <strong>{{ option.label }}</strong>
+                                    </label>
+                                {% else %}
+                                    <strong>{{ option.label }}</strong>
+                                {% endif %}
+                                {% if plan.chosenOption and plan.chosenOption.id == option.id %}<span class="badge badge--ok">Elegida</span>{% endif %}
+                                {% if option.edited %}<span class="badge badge--muted" title="Alguien ha cambiado alguna línea">Retocada a mano</span>{% endif %}
+                                {% if option.hasUnresolved %}<span class="badge badge--warning">{{ option.metric('unresolved') }} sin aula</span>{% endif %}
+                            </div>
+                            <div class="mini-card-status">{{ option.strategy.label }}</div>
+                            <p class="muted">{{ option.rationale }}</p>
+                            <ul class="muted">
+                                <li>{{ option.metric('movedClasses') }} clase(s) movidas · {{ option.metric('affectedGroups') }} grupo(s) · {{ option.metric('affectedTeachers') }} profesor(es) avisados</li>
+                                <li>{{ option.metric('specialisedRoomsUsed') }} espacio(s) especializado(s) ocupados</li>
+                            </ul>
+                            <a href="{{ path('space_plan_show', { id: plan.id, opcion: option.id }) }}">Ver sus líneas</a>
+                        </div>
+                    {% endfor %}
+                </div>
+
+                {% if editable %}
+                    <div class="form-actions">
+                        <button class="btn" type="submit">Aprobar la propuesta marcada</button>
+                        <span class="help">Al aprobar, el plan pasa a mandar sobre el horario en esas fechas.</span>
+                    </div>
+                {% endif %}
+            </form>
+
+            {# El reparto de profesorado solo tiene sentido cuando hay actividades (talleres, guardias de
+               la jornada): una reubicación ya lleva al docente de la clase que se mueve. #}
+            {% if editable and shown and shown.assignments|filter(a => a.kind.value == 'activity')|length > 0 %}
+                <form method="post" action="{{ path('space_plan_staff', { id: plan.id }) }}" class="inline-form">
+                    <input type="hidden" name="_token" value="{{ csrf_token('space_plan_staff' ~ plan.id) }}">
+                    <input type="hidden" name="option" value="{{ shown.id }}">
+                    <button type="submit" class="btn secondary">Repartir el profesorado de {{ shown.label }}</button>
+                    <label class="choice"><input type="checkbox" name="startOver" value="1"> Empezar de cero</label>
+                    <span class="help">Solo a quien ese día tenga clase a esa hora, y repartido a partes iguales{% if plan.staffQuota %} (máximo {{ plan.staffQuota }} por persona){% endif %}.</span>
+                </form>
+            {% endif %}
+        {% endif %}
+    </section>
+
+    {# ---- Las líneas de la opción que se está mirando ---- #}
+    {% if shown %}
+        <section class="parte-panel">
+            <div class="parte-panel__head">
+                <div class="parte-panel__titles">
+                    <h2 class="parte-panel__title">Qué dice {{ shown.label }}</h2>
+                    <div class="coverage"><span class="badge badge--muted">{{ shown.assignments|length }} línea(s)</span></div>
+                </div>
+            </div>
+
+            {% if shown.assignments is empty %}
+                <p class="muted">Esta propuesta no mueve nada.</p>
+            {% else %}
+                <table data-list-tools>
+                    <thead>
+                        <tr><th>Día</th><th>Hora</th><th>Qué</th><th>De</th><th>Aula</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        {% for line in shown.assignments %}
+                            <tr>
+                                <td>{{ line.date|date('d/m/Y', false) }}</td>
+                                <td>{{ sp.hora(slotTimes, line.slotIndex) }}</td>
+                                <td>
+                                    <strong>{{ line.label }}</strong>
+                                    {% if line.subjectName %}<div class="muted">{{ line.subjectName }}</div>{% endif %}
+                                    {% if line.teacher %}<div class="muted">{{ line.teacher.fullName }}</div>
+                                    {% elseif line.kind.value == 'activity' %}<span class="badge badge--warning">sin profesor</span>{% endif %}
+                                    {% if line.manuallyEdited %}<span class="badge badge--muted">a mano</span>{% endif %}
+                                </td>
+                                <td class="muted">{{ line.originRoomName ?? '—' }}</td>
+                                <td>
+                                    {% if line.room %}
+                                        <strong>{{ line.room.code }}</strong>
+                                    {% else %}
+                                        <span class="badge badge--warning">sin aula</span>
+                                    {% endif %}
+                                </td>
+                                <td class="row-actions">
+                                    {% if editable %}
+                                        <form method="post" action="{{ path('space_plan_line_edit', { id: plan.id, assignmentId: line.id }) }}" class="inline-form">
+                                            <input type="hidden" name="_token" value="{{ csrf_token('space_plan_line_edit' ~ line.id) }}">
+                                            <select name="room" aria-label="Aula para {{ line.label }}">
+                                                <option value="0">— sin aula —</option>
+                                                {% for room in rooms %}
+                                                    <option value="{{ room.id }}"{{ line.room and line.room.id == room.id ? ' selected' }}>{{ room.code }}</option>
+                                                {% endfor %}
+                                            </select>
+                                            <button type="submit" class="btn btn-sm secondary">Cambiar</button>
+                                        </form>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <p class="help">Cambiar un aula a mano no se pierde: al volver a generar propuestas, esta opción se respeta tal cual.</p>
+            {% endif %}
+        </section>
+    {% endif %}
+{% endblock %}
