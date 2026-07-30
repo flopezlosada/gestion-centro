@@ -43,7 +43,11 @@ use App\Enum\Weekday;
  */
 final class RotaProposer
 {
-    /** No candidate was free in that period at all — the timetable itself is the constraint. */
+    /**
+     * Nobody was left to take that place: either no candidate is free in the period, or the only ones
+     * who are already hold a place in it. Both are the timetable talking, not the quotas — raising a
+     * quota cannot conjure up a person who is teaching, nor put the same one in the period twice.
+     */
     public const GAP_NOBODY_FREE = 'nobody-free';
 
     /** People were free, but every one of them had already used up their quota. */
@@ -256,8 +260,11 @@ final class RotaProposer
 
     /**
      * Tells apart the two ways a place can go unfilled, because they call for opposite responses: a
-     * period nobody is free in is a timetable problem, and a period where everybody free is already at
-     * their quota is fixed by raising a quota.
+     * period where somebody free still has quota left cannot happen (it would have been filled), so a
+     * gap is either quota — fixed by raising one — or the timetable, fixed by nothing this screen offers.
+     *
+     * Somebody free who already holds a place in this period counts as the timetable: they cannot be put
+     * in it twice, and no amount of quota changes that.
      *
      * @param list<RotaCandidate> $candidates the eligible teachers
      * @param int                 $weekday    the weekday

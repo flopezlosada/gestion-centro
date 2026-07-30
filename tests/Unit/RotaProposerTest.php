@@ -169,16 +169,19 @@ final class RotaProposerTest extends TestCase
 
     public function testAGapSaysWhetherNobodyWasFreeOrEverybodyWasOutOfQuota(): void
     {
-        // Ana is the only candidate and she teaches Monday first period, so Monday is "nobody free"
-        // while the other days run her quota out.
+        // Ana is the only candidate and she teaches Monday first period. Monday's five places are then
+        // "nobody free" outright; Tuesday takes her single guardia and its remaining four are "nobody
+        // free" too — she is already in that period and cannot be put in it twice, which no quota
+        // change would fix. The rest of the week is quota: she is free there and simply has none left.
         $ana = new RotaCandidate(1, 'Ana', 1, [1 => [0]]);
 
         $proposal = $this->proposer->propose([0], [$ana]);
         $reasons = $proposal->gapsByReason();
 
-        self::assertArrayHasKey(RotaProposer::GAP_NOBODY_FREE, $reasons);
-        self::assertSame(RotaDemand::perSlot(), $reasons[RotaProposer::GAP_NOBODY_FREE], 'Monday should be short for lack of anybody free');
-        self::assertArrayHasKey(RotaProposer::GAP_QUOTA_EXHAUSTED, $reasons);
+        self::assertSame(9, $reasons[RotaProposer::GAP_NOBODY_FREE], 'Monday (5) plus the rest of Tuesday (4)');
+        self::assertSame(15, $reasons[RotaProposer::GAP_QUOTA_EXHAUSTED], 'Wednesday, Thursday and Friday');
+        // 25 places in the week, one of them filled.
+        self::assertSame(RotaDemand::perSlot() * 5 - 1, \count($proposal->unfilled));
     }
 
     public function testTheSameInputAlwaysGivesTheSameRota(): void

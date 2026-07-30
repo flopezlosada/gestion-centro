@@ -71,7 +71,7 @@
                         <strong>{{ gaps['quota-exhausted'] }}</strong> plazas se quedan sin nadie porque todo el mundo ha llegado a su cupo: para cubrirlas hay que <a href="{{ path('guardia_quota_index', {curso: curso}) }}">subir cupos</a>.
                     {% endif %}
                     {% if gaps['nobody-free'] is defined %}
-                        <strong>{{ gaps['nobody-free'] }}</strong> se quedan sin nadie porque a esa hora no hay ningún docente libre: eso no se arregla con cupos, es el horario.
+                        <strong>{{ gaps['nobody-free'] }}</strong> se quedan sin nadie porque a esa hora ya no queda ningún docente libre sin guardia: eso no se arregla con cupos, es el horario.
                     {% endif %}
                     Las plazas que faltan son siempre de <strong>apoyo</strong>: los tres profesores de guardia de cada hora se completan primero.
                 {% endif %}
