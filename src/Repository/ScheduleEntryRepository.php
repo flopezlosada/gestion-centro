@@ -408,6 +408,34 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
+     * What a course's timetable holds, in one query: how many cells, how many of them are guardia or
+     * collaborator duty, and how many teachers it covers. Drives the "arranque de curso" checklist,
+     * which has to say at a glance whether the timetable is loaded and whether it brought the guardias
+     * (an export taken from the wrong Peñalara menu carries lessons but no duty slots).
+     *
+     * @param AcademicYear $year the course whose timetable to summarise
+     *
+     * @return array{cells: int, duty: int, teachers: int} the figures
+     */
+    public function summaryFor(AcademicYear $year): array
+    {
+        /** @var array{cells: int|string, duty: int|string, teachers: int|string} $row */
+        $row = $this->createQueryBuilder('s')
+            ->select(
+                'COUNT(s.id) AS cells',
+                'SUM(CASE WHEN s.kind IN (:duty) THEN 1 ELSE 0 END) AS duty',
+                'COUNT(DISTINCT IDENTITY(s.teacher)) AS teachers',
+            )
+            ->andWhere('s.academicYear = :year')
+            ->setParameter('year', $year)
+            ->setParameter('duty', [ScheduleActivityKind::GUARDIA, ScheduleActivityKind::COLLABORATOR])
+            ->getQuery()
+            ->getSingleResult();
+
+        return ['cells' => (int) $row['cells'], 'duty' => (int) $row['duty'], 'teachers' => (int) $row['teachers']];
+    }
+
+    /**
      * The groups a course's timetable knows about, alphabetically — what a plan offers when it asks
      * "whose timetable does this replace?". Offered as a list rather than typed in because a group name
      * that does not match the timetable exactly would silently replace nobody.
