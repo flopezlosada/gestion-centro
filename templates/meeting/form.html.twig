@@ -27,7 +27,7 @@
         {{ form_start(form, { attr: { novalidate: 'novalidate' } }) }}
             {{ f.submit_error(form) }}
             {{ form_errors(form) }}
-            {{ f.section('Qué y cuándo', [form.title, form.day, form.startTime, form.endTime, form.place]) }}
+            {{ f.section('Qué y cuándo', [form.title, form.day, form.startTime, form.endTime, form.place, form.reminder]) }}
             {{ f.section('Orden del día', [form.agenda]) }}
             <fieldset class="form-section">
                 <legend class="form-section-title">Quién</legend>

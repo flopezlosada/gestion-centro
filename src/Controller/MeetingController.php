@@ -348,6 +348,9 @@ final class MeetingController extends AbstractController
             ->setAgenda($data->agenda)
             ->setPlace($data->place)
             ->setEndAt(null !== $data->endTime ? CalendarDate::at($data->day, $data->endTime) : null)
+            // Después del posible setStartAt del llamante: el instante del aviso se deriva de la hora de
+            // inicio, y ponerlo antes lo calcularía sobre la hora vieja.
+            ->setReminder($data->reminder)
             ->setProject($data->project);
 
         return $meeting->syncAttendees($data->attendees);

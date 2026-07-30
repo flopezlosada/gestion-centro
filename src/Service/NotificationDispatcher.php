@@ -37,6 +37,12 @@ use Symfony\Component\Mime\Email;
  */
 final class NotificationDispatcher
 {
+    /**
+     * Kinds (by prefix) delivered by push and in-app only, never by e-mail: the ones whose whole value is
+     * arriving in the next few minutes. See {@see wantsEmail()}.
+     */
+    private const array PUSH_ONLY_KINDS = ['event.', 'meeting.reminder'];
+
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly MailerInterface $mailer,
@@ -136,8 +142,10 @@ final class NotificationDispatcher
      * {@see NotificationLink} decides the destination from it: it is a property of the KIND of notice,
      * not of whoever raises it, so every caller gets the same policy without passing a flag around.
      *
-     * A personal agenda reminder ("empieza en 10 minutos") is deliberately push-only: by the time an
-     * e-mail is read the event has started, so it would be pure noise in the inbox.
+     * The push-only kinds are the last-minute nudges ("empieza en 10 minutos"): by the time an e-mail is
+     * read the thing has started, so it would be pure noise in the inbox. Note how narrow the meeting
+     * entry is — a convocatoria, a change of time or a new acta DO go by e-mail, because those you want in
+     * writing; only the reminder does not.
      *
      * @param Notification $notification the notice about to be delivered
      *
@@ -145,7 +153,13 @@ final class NotificationDispatcher
      */
     private function wantsEmail(Notification $notification): bool
     {
-        return !str_starts_with($notification->getKind(), 'event.');
+        foreach (self::PUSH_ONLY_KINDS as $prefix) {
+            if (str_starts_with($notification->getKind(), $prefix)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

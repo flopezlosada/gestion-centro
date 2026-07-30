@@ -6,6 +6,7 @@ namespace App\Tests\Unit;
 
 use App\Entity\Meeting;
 use App\Entity\User;
+use App\Enum\EventReminderOffset;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -109,6 +110,65 @@ final class MeetingTest extends TestCase
         self::assertNull($meeting->getMinutesUploadedBy());
         self::assertNull($meeting->getMinutesUploadedAt());
         self::assertNull($meeting->clearMinutes(), 'quitar dos veces no devuelve nada que borrar');
+    }
+
+    public function testAMeetingWithoutAReminderHasNoInstantToFireAt(): void
+    {
+        self::assertNull($this->meeting($this->user('Coordina'))->getRemindAt());
+    }
+
+    public function testTheReminderInstantIsDerivedFromTheStart(): void
+    {
+        $meeting = $this->meeting($this->user('Coordina'))->setReminder(EventReminderOffset::TEN_MINUTES);
+
+        self::assertSame('2026-09-15 13:50', $meeting->getRemindAt()?->format('Y-m-d H:i'));
+    }
+
+    public function testMovingTheMeetingMovesTheReminderAndReArmsIt(): void
+    {
+        $meeting = $this->meeting($this->user('Coordina'))->setReminder(EventReminderOffset::TEN_MINUTES);
+        $meeting->markReminderSent(new \DateTimeImmutable('2026-09-15 13:50'));
+
+        $meeting->setStartAt(new \DateTimeImmutable('2026-09-15 17:00'));
+
+        self::assertSame('2026-09-15 16:50', $meeting->getRemindAt()?->format('Y-m-d H:i'));
+        self::assertNull($meeting->getReminderSentAt(), 'la reunión se movió: hay que volver a avisar');
+    }
+
+    public function testRewritingTheSameScheduleDoesNotAnnounceItAgain(): void
+    {
+        // El formulario de edición reescribe SIEMPRE hora y antelación, aunque solo cambies el orden del
+        // día. Si eso re-armara el aviso, tocar una coma volvería a pitarle el móvil a todo el mundo.
+        $meeting = $this->meeting($this->user('Coordina'))->setReminder(EventReminderOffset::TEN_MINUTES);
+        $meeting->markReminderSent(new \DateTimeImmutable('2026-09-15 13:50'));
+
+        $meeting->setStartAt(new \DateTimeImmutable('2026-09-15 14:00'))->setReminder(EventReminderOffset::TEN_MINUTES);
+
+        self::assertNotNull($meeting->getReminderSentAt());
+    }
+
+    public function testClearingTheReminderClearsTheInstant(): void
+    {
+        $meeting = $this->meeting($this->user('Coordina'))->setReminder(EventReminderOffset::ONE_HOUR)->setReminder(null);
+
+        self::assertNull($meeting->getRemindAt());
+    }
+
+    public function testThePeopleExpectedAreTheConvenedPlusTheConvener(): void
+    {
+        $convener = $this->user('Coordina');
+        $attendee = $this->user('Convocado');
+        $meeting = $this->meeting($convener)->addAttendee($attendee);
+
+        self::assertSame([$attendee, $convener], $meeting->people());
+    }
+
+    public function testTheConvenerIsNotCountedTwiceWhenAlsoConvened(): void
+    {
+        $convener = $this->user('Coordina');
+        $meeting = $this->meeting($convener)->addAttendee($convener);
+
+        self::assertSame([$convener], $meeting->people());
     }
 
     public function testIsPastComparesAgainstTheStart(): void

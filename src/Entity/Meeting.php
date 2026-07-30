@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Contract\Auditable;
+use App\Enum\EventReminderOffset;
 use App\Repository\MeetingRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
@@ -32,6 +33,9 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Table(name: 'meeting')]
 // Serves the "meetings in a time window" queries (the agenda, the calendar, the list) directly.
 #[ORM\Index(name: 'idx_meeting_start', columns: ['start_at'])]
+// Serves the reminder sweep, which runs every few minutes across EVERY meeting: the due ones are the
+// narrow slice with a remind_at already past and nothing sent yet.
+#[ORM\Index(name: 'idx_meeting_remind', columns: ['remind_at', 'reminder_sent_at'])]
 class Meeting implements Auditable
 {
     #[ORM\Id]
@@ -113,6 +117,30 @@ class Meeting implements Auditable
     #[ORM\JoinColumn(name: 'minutes_uploaded_by_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
     private ?User $minutesUploadedBy = null;
 
+    /**
+     * How long before the start everyone convened gets a push reminder, or null for none. Chosen by the
+     * convener (not per person): they are the one who knows whether this is a "sal ya" ten minutes or a
+     * claustro you have to prepare a day ahead.
+     */
+    #[ORM\Column(name: 'reminder_minutes', type: Types::INTEGER, nullable: true, enumType: EventReminderOffset::class)]
+    private ?EventReminderOffset $reminder = null;
+
+    /**
+     * The instant the reminder is due, DERIVED from the start and the offset — never set from outside.
+     * Materialised (instead of computing "start - offset" in the query) so the sweep, which runs every few
+     * minutes over the whole table, stays an indexed range scan. Same idiom as {@see PersonalEvent}.
+     */
+    #[ORM\Column(name: 'remind_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $remindAt = null;
+
+    /**
+     * When the reminder was pushed, or null if still pending. ONE flag for the whole meeting, not one per
+     * attendee: the sweep notifies everybody convened in the same pass, so a single mark is what makes it
+     * idempotent.
+     */
+    #[ORM\Column(name: 'reminder_sent_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $reminderSentAt = null;
+
     #[ORM\Column(name: 'created_at', type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
 
@@ -179,8 +207,69 @@ class Meeting implements Auditable
     public function setStartAt(\DateTimeImmutable $startAt): static
     {
         $this->startAt = $startAt;
+        $this->recomputeRemindAt();
 
         return $this;
+    }
+
+    public function getReminder(): ?EventReminderOffset
+    {
+        return $this->reminder;
+    }
+
+    /**
+     * Sets (or clears) the push reminder for everybody convened.
+     *
+     * @param EventReminderOffset|null $reminder how long before the start to notify, or null for none
+     */
+    public function setReminder(?EventReminderOffset $reminder): static
+    {
+        $this->reminder = $reminder;
+        $this->recomputeRemindAt();
+
+        return $this;
+    }
+
+    public function getRemindAt(): ?\DateTimeImmutable
+    {
+        return $this->remindAt;
+    }
+
+    public function getReminderSentAt(): ?\DateTimeImmutable
+    {
+        return $this->reminderSentAt;
+    }
+
+    /**
+     * Marks the reminder as delivered, so the sweep never pushes it twice.
+     *
+     * @param \DateTimeImmutable $at when it was sent
+     */
+    public function markReminderSent(\DateTimeImmutable $at): static
+    {
+        $this->reminderSentAt = $at;
+
+        return $this;
+    }
+
+    /**
+     * Recomputes the derived reminder instant after anything it depends on changed (the start or the
+     * offset). Re-arms an already-sent reminder ONLY when the instant actually moved, so re-saving a
+     * meeting after editing just its agenda does not push the same reminder to everybody again — the edit
+     * form always rewrites the schedule, even when nothing about it changed.
+     */
+    private function recomputeRemindAt(): void
+    {
+        $remindAt = null === $this->reminder
+            ? null
+            : $this->startAt->modify(\sprintf('-%d minutes', $this->reminder->value));
+
+        // Loose compare: two DateTimeImmutable are equal when they point at the same instant, and it also
+        // handles the null/instant transitions.
+        if ($remindAt != $this->remindAt) {
+            $this->remindAt = $remindAt;
+            $this->reminderSentAt = null;
+        }
     }
 
     public function getEndAt(): ?\DateTimeImmutable
@@ -287,6 +376,24 @@ class Meeting implements Auditable
     public function concerns(User $user): bool
     {
         return $this->convener === $user || $this->isAttendee($user);
+    }
+
+    /**
+     * Everybody who has to be at the meeting: whoever convened it plus the convened, deduplicated. Unlike
+     * {@see concerns()} (a predicate about one person), this is the LIST — and it is what the reminder
+     * notifies: the convener has to turn up too, so leaving them out of a "empieza en 10 minutos" would be
+     * the one notice they actually need.
+     *
+     * @return list<User> the people expected at the meeting
+     */
+    public function people(): array
+    {
+        $people = $this->attendees->toArray();
+        if (null !== $this->convener && !\in_array($this->convener, $people, true)) {
+            $people[] = $this->convener;
+        }
+
+        return array_values($people);
     }
 
     public function getMinutesPath(): ?string

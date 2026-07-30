@@ -6,9 +6,11 @@ namespace App\Form;
 
 use App\Entity\Project;
 use App\Entity\User;
+use App\Enum\EventReminderOffset;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
+use Symfony\Component\Form\Extension\Core\Type\EnumType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\Extension\Core\Type\TimeType;
@@ -68,6 +70,14 @@ final class MeetingFormType extends AbstractType
                 'label' => 'Lugar',
                 'required' => false,
                 'help' => 'Sala de profesores, aula 12, videollamada…',
+            ])
+            ->add('reminder', EnumType::class, [
+                'label' => 'Avisar antes',
+                'class' => EventReminderOffset::class,
+                'choice_label' => static fn (EventReminderOffset $offset): string => $offset->label(),
+                'required' => false,
+                'placeholder' => '— Sin aviso —',
+                'help' => 'Aviso al móvil para todos los convocados (tú incluida) cuando se acerque la hora. Requiere tener los avisos activados en el dispositivo.',
             ])
             ->add('agenda', TextareaType::class, [
                 'label' => 'Orden del día',

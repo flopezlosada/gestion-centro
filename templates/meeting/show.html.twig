@@ -89,6 +89,9 @@
                 <div class="meta-grid__cell"><dt>Cuándo</dt><dd>{{ meeting.startAt|date('d/m/Y H:i') }}</dd></div>
                 <div class="meta-grid__cell"><dt>Lugar</dt><dd>{{ meeting.place ?: '—' }}</dd></div>
                 <div class="meta-grid__cell"><dt>Proyecto</dt><dd>{{ meeting.project ? meeting.project.name : '—' }}</dd></div>
+                {#- Se enseña a todos, no solo a quien convoca: saber si vas a recibir el aviso (o si te
+                    tienes que acordar tú) es justo lo que uno quiere comprobar al leer la convocatoria. -#}
+                <div class="meta-grid__cell"><dt>Aviso</dt><dd>{{ meeting.reminder ? meeting.reminder.label : 'Sin aviso' }}</dd></div>
             </dl>
         </div>
 

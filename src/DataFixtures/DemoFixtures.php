@@ -15,6 +15,7 @@ use App\Entity\TaskTemplate;
 use App\Entity\Department;
 use App\Entity\Meeting;
 use App\Entity\User;
+use App\Enum\EventReminderOffset;
 use App\Enum\TaskType;
 use App\Service\SchoolCalendar;
 use App\Util\SchoolYear;
@@ -163,7 +164,8 @@ final class DemoFixtures extends AbstractDemoFixture implements DependentFixture
         $manager->persist($project);
 
         $upcomingMeeting = new Meeting($projectCoordinator, 'Reunión de seguimiento de Erasmus+', $today->modify('+2 days')->setTime(14, 0));
-        $upcomingMeeting->setPlace('Sala de profesores')
+        $upcomingMeeting->setReminder(EventReminderOffset::TEN_MINUTES)
+            ->setPlace('Sala de profesores')
             ->setAgenda("1. Estado de las movilidades del segundo trimestre.\n2. Reparto de tareas de difusión.\n3. Presupuesto pendiente.")
             ->setEndAt($today->modify('+2 days')->setTime(15, 0))
             ->setProject($project);

@@ -14,7 +14,11 @@ use Doctrine\Migrations\AbstractMigration;
  *   (`coordinator_id`) y su profesorado (`project_member`). NO es un departamento: la pertenencia es
  *   muchos-a-muchos y la coordinación no da rango jerárquico.
  * - `meeting`: una reunión convocada (día y HORA, lugar, orden del día) con sus convocados
- *   (`meeting_attendee`) y su acta (`minutes_*`), que aquí sí se guarda como fichero.
+ *   (`meeting_attendee`) y su acta (`minutes_*`), que aquí sí se guarda como fichero. El recordatorio
+ *   push va materializado igual que en `personal_event`: la antelación que eligió quien convoca
+ *   (`reminder_minutes`), el instante DERIVADO en que toca avisar (`remind_at`, indexado junto a
+ *   `reminder_sent_at` porque el barrido corre cada pocos minutos sobre toda la tabla) y la marca de
+ *   enviado, una sola para toda la reunión (se avisa a todos en la misma pasada).
  * - Rol `project_coordinator` ("Coordinación de proyectos"): sin rango y sin permisos de área — el
  *   alcance vive en `project.coordinator_id`. Se inserta aquí (y no solo en las fixtures) porque en
  *   producción el catálogo de roles ya existe y nadie vuelve a cargar fixtures; `INSERT ... SELECT`
@@ -40,7 +44,7 @@ final class Version20260730170000 extends AbstractMigration
         $this->addSql('ALTER TABLE project_member ADD CONSTRAINT FK_project_member_project FOREIGN KEY (project_id) REFERENCES project (id) ON DELETE CASCADE');
         $this->addSql('ALTER TABLE project_member ADD CONSTRAINT FK_project_member_user FOREIGN KEY (user_id) REFERENCES app_user (id) ON DELETE CASCADE');
 
-        $this->addSql('CREATE TABLE meeting (id INT AUTO_INCREMENT NOT NULL, convener_id INT DEFAULT NULL, project_id INT DEFAULT NULL, minutes_uploaded_by_id INT DEFAULT NULL, title VARCHAR(200) NOT NULL, agenda LONGTEXT DEFAULT NULL, place VARCHAR(120) DEFAULT NULL, start_at DATETIME NOT NULL, end_at DATETIME DEFAULT NULL, minutes_path VARCHAR(255) DEFAULT NULL, minutes_name VARCHAR(255) DEFAULT NULL, minutes_uploaded_at DATETIME DEFAULT NULL, created_at DATETIME NOT NULL, INDEX idx_meeting_start (start_at), INDEX IDX_meeting_convener (convener_id), INDEX IDX_meeting_project (project_id), INDEX IDX_meeting_minutes_by (minutes_uploaded_by_id), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4');
+        $this->addSql('CREATE TABLE meeting (id INT AUTO_INCREMENT NOT NULL, convener_id INT DEFAULT NULL, project_id INT DEFAULT NULL, minutes_uploaded_by_id INT DEFAULT NULL, title VARCHAR(200) NOT NULL, agenda LONGTEXT DEFAULT NULL, place VARCHAR(120) DEFAULT NULL, start_at DATETIME NOT NULL, end_at DATETIME DEFAULT NULL, minutes_path VARCHAR(255) DEFAULT NULL, minutes_name VARCHAR(255) DEFAULT NULL, minutes_uploaded_at DATETIME DEFAULT NULL, reminder_minutes INT DEFAULT NULL, remind_at DATETIME DEFAULT NULL, reminder_sent_at DATETIME DEFAULT NULL, created_at DATETIME NOT NULL, INDEX idx_meeting_start (start_at), INDEX idx_meeting_remind (remind_at, reminder_sent_at), INDEX IDX_meeting_convener (convener_id), INDEX IDX_meeting_project (project_id), INDEX IDX_meeting_minutes_by (minutes_uploaded_by_id), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4');
         $this->addSql('ALTER TABLE meeting ADD CONSTRAINT FK_meeting_convener FOREIGN KEY (convener_id) REFERENCES app_user (id) ON DELETE SET NULL');
         $this->addSql('ALTER TABLE meeting ADD CONSTRAINT FK_meeting_project FOREIGN KEY (project_id) REFERENCES project (id) ON DELETE SET NULL');
         $this->addSql('ALTER TABLE meeting ADD CONSTRAINT FK_meeting_minutes_by FOREIGN KEY (minutes_uploaded_by_id) REFERENCES app_user (id) ON DELETE SET NULL');

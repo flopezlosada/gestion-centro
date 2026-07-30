@@ -108,6 +108,33 @@ class MeetingRepository extends ServiceEntityRepository
     }
 
     /**
+     * The meetings whose push reminder is due: the instant has arrived, nothing was sent yet and the
+     * meeting has NOT started. Deliberately NOT scoped to a person — this is the only query in the class
+     * that is not, and it exists to notify each meeting's own people ({@see Meeting::people()}), never to
+     * show one to anybody else.
+     *
+     * Skipping meetings already under way is what makes a late run harmless: after an outage the sweep
+     * catches up on what is still ahead instead of pushing "empieza en 10 minutos" about a meeting that
+     * started an hour ago.
+     *
+     * @param \DateTimeImmutable $now the sweep instant
+     *
+     * @return list<Meeting> the meetings to remind about, earliest first
+     */
+    public function findDueReminders(\DateTimeImmutable $now): array
+    {
+        return $this->createQueryBuilder('m')
+            ->andWhere('m.remindAt IS NOT NULL')
+            ->andWhere('m.remindAt <= :now')
+            ->andWhere('m.reminderSentAt IS NULL')
+            ->andWhere('m.startAt >= :now')
+            ->setParameter('now', $now)
+            ->orderBy('m.startAt', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * Base query for "the meetings this person is part of": convened by them or with them on the list.
      * The join is only a filter, so the result is DISTINCT — otherwise a meeting would come back once
      * per attendee row it matched.

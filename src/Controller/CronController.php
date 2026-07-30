@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Service\EventReminderNotifier;
+use App\Service\MeetingReminderNotifier;
 use App\Service\TaskReminderNotifier;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -18,8 +19,10 @@ use Symfony\Component\Routing\Attribute\Route;
  * authenticated by the same shared secret in constant time and fails closed (an empty CRON_SECRET
  * disables them all). GET is safe to call repeatedly because both sweeps are idempotent.
  *
- * The two jobs run at very different rates, hence two endpoints: task reminders once a day, agenda
- * reminders every five minutes (they are the ones that carry a minute-level antelación).
+ * The jobs run at very different rates, hence two endpoints: task reminders once a day, and the
+ * minute-level ones every five minutes. The second endpoint sweeps BOTH the personal agenda and the
+ * convened meetings — they share the same antelación problem, and asking the deployment for a third cron
+ * entry (one more thing to forget when moving hosts) buys nothing.
  */
 final class CronController extends AbstractController
 {
@@ -45,16 +48,18 @@ final class CronController extends AbstractController
     }
 
     /**
-     * Every few minutes: push reminders for personal agenda events that are about to start.
+     * Every few minutes: push reminders for what is about to start — personal agenda events and convened
+     * meetings. The route keeps its name so an already-configured cron does not have to be touched.
      */
     #[Route('/cron/event-reminders', name: 'cron_event_reminders', methods: ['GET'])]
-    public function eventReminders(Request $request, EventReminderNotifier $notifier): Response
+    public function eventReminders(Request $request, EventReminderNotifier $events, MeetingReminderNotifier $meetings): Response
     {
         $this->denyUnlessCronToken($request);
 
-        // PHP's default time zone, unlike the daily job above: this sweep compares clock times against
+        // PHP's default time zone, unlike the daily job above: these sweeps compare clock times against
         // the instants Doctrine wrote (see EventReminderNotifier's class doc).
-        $count = $notifier->sendDue(new \DateTimeImmutable('now'));
+        $now = new \DateTimeImmutable('now');
+        $count = $events->sendDue($now) + $meetings->sendDue($now);
 
         return new Response(\sprintf('%d avisos de agenda enviados.', $count));
     }

@@ -7,6 +7,7 @@ namespace App\Form;
 use App\Entity\Meeting;
 use App\Entity\Project;
 use App\Entity\User;
+use App\Enum\EventReminderOffset;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
@@ -41,6 +42,13 @@ final class MeetingFormData
 
     /** End time, or null when the meeting has no announced end. */
     public ?\DateTimeImmutable $endTime = null;
+
+    /**
+     * How long before the start everybody convened gets a push reminder, or null for none. Defaults to ten
+     * minutes because the centre asked for meetings to remind: a convocatoria you agreed to in September
+     * and forget in November is exactly the failure this fixes.
+     */
+    public ?EventReminderOffset $reminder = EventReminderOffset::TEN_MINUTES;
 
     /** The project this meeting belongs to, or null when it is not a project meeting. */
     public ?Project $project = null;
@@ -91,6 +99,8 @@ final class MeetingFormData
         // The instants go in whole: the time field renders only their "HH:MM".
         $data->startTime = $meeting->getStartAt();
         $data->endTime = $meeting->getEndAt();
+        // Whatever the meeting actually has, including "sin aviso" — the default only applies to a new one.
+        $data->reminder = $meeting->getReminder();
         $data->project = $meeting->getProject();
         $data->attendees = array_values($meeting->getAttendees()->toArray());
 
