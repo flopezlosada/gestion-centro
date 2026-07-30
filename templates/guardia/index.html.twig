@@ -126,9 +126,9 @@
                         <p>
                             {{ deficit.uncovered }} ausencia{{ deficit.uncovered == 1 ? '' : 's' }} sin cubrir ·
                             {{ deficit.free }} profesor{{ deficit.free == 1 ? '' : 'es' }} libre{{ deficit.free == 1 ? '' : 's' }}
-                            {%- if deficit.doubled > 0 %} · {{ deficit.doubled }} profesor{{ deficit.doubled == 1 ? '' : 'es' }} con {{ deficit.extra }} grupo{{ deficit.extra == 1 ? '' : 's' }} de más{% endif %}
+                            {%- if deficit.doubled > 0 %} · {{ deficit.doubled }} profesor{{ deficit.doubled == 1 ? '' : 'es' }} con {{ deficit.extra }} guardia{{ deficit.extra == 1 ? '' : 's' }} de más{% endif %}
                         </p>
-                        <p class="muted">El reparto da varios grupos al mismo profesor cuando no queda nadie libre, empezando por quien menos lleva. Para que sea viable, júntalos en un aula grande o da de alta apoyo puntual.</p>
+                        <p class="muted">El reparto da varios grupos al mismo profesor cuando no queda nadie libre, empezando por quien menos lleva. Júntalos en un aula grande —así cuenta como una sola guardia— o da de alta apoyo puntual.</p>
                     </div>
                     {% if canWrite %}
                         <div class="parte-deficit__actions">
@@ -228,7 +228,7 @@
                                     <div class="parte-card__foot">
                                         <span class="parte-card__avatar" aria-hidden="true">{{ cover.assignedGuardia.fullName|initials }}</span>
                                         <span class="parte-card__covers">Cubre <b>{{ cover.assignedGuardia.fullName }}</b></span>
-                                        {% if aQue|length > 1 %}<span class="badge badge--warning" title="Cubre {{ aQue|join(', ') }} a esta hora">×{{ aQue|length }}</span>{% endif %}
+                                        {% if (workUnits[cover.assignedGuardia.id] ?? 1) > 1 and not cover.grouping %}<span class="badge badge--warning" title="Cubre {{ aQue|join(', ') }} a esta hora en sitios distintos">×{{ aQue|length }}</span>{% endif %}
                                         {% if canWrite %}<a class="parte-card__change" href="{{ path('guardia_cover_edit', { id: cover.id }) }}">Cambiar</a>{% endif %}
                                     </div>
                                 {% endif %}
@@ -277,8 +277,12 @@
                                             <span class="parte-who">
                                                 <span class="parte-who__avatar" aria-hidden="true">{{ cover.assignedGuardia.fullName|initials }}</span>{{ cover.assignedGuardia.fullName }}
                                             </span>
-                                            {% if aQue|length > 1 %}
-                                                <span class="badge badge--warning" title="Cubre {{ aQue|join(', ') }} a esta hora: agrúpalos en un aula para que sea viable">Doble guardia</span>
+                                            {# El ámbar señala la fila que hay que resolver: este profesor lleva
+                                               más de una guardia a esta hora Y esta clase todavía va aparte. En
+                                               una fila ya agrupada el «→ aula» cuenta la historia y el aviso
+                                               solo invitaría a agrupar lo que ya está agrupado. #}
+                                            {% if (workUnits[cover.assignedGuardia.id] ?? 1) > 1 and not cover.grouping %}
+                                                <span class="badge badge--warning" title="Cubre {{ aQue|join(', ') }} a esta hora en sitios distintos: júntalos en un aula y contará como una guardia">Doble guardia</span>
                                             {% endif %}
                                         {% elseif canWrite %}
                                             {# La misma hoja que en móvil: asignar sin salir del parte es
@@ -331,7 +335,8 @@
                                         {% if p.absent %}
                                             <span class="badge badge--danger">Ausente</span>
                                         {% elseif p.groups|length > 1 %}
-                                            <span class="badge badge--warning" title="Cubre {{ p.groups|join(', ') }} a esta hora">→ {{ p.groups|length }} grupos</span>
+                                            {# Ámbar solo si son sitios distintos; ya juntos en un aula es una guardia. #}
+                                            <span class="badge {{ (workUnits[p.teacher.id] ?? 1) > 1 ? 'badge--warning' : 'badge--muted' }}" title="Cubre {{ p.groups|join(', ') }} a esta hora">→ {{ p.groups|length }} grupos</span>
                                         {% elseif p.groups %}
                                             <span class="badge badge--muted">→ {{ p.groups|join(', ') }}</span>
                                         {% else %}

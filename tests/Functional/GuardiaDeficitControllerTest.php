@@ -253,6 +253,35 @@ final class GuardiaDeficitControllerTest extends WebTestCase
         self::assertCount(0, $this->notificationsFor($coordinator, 'room.changed'), 'nobody else is bothered');
     }
 
+    public function testTheDeficitWarningClearsOnceTheGroupsAreTogether(): void
+    {
+        // The warning exists to be acted on: while a teacher carries two guardias it shows, and once the
+        // classes are together in one room — which the centre counts as a single guardia — it goes.
+        $this->login();
+        $guardia = $this->user('Ana Guardia', 'ana@centro.test');
+        $this->guardiaEntry($guardia, 0);
+        $this->lective($this->user('Otro Docente', 'otro@centro.test'), 0, '4ºA', 'A11', Weekday::MONDAY);
+        $first = $this->cover('1ºA', $this->user('Falta Uno', 'f1@centro.test'), $guardia);
+        $second = $this->cover('1ºB', $this->user('Falta Dos', 'f2@centro.test'), $guardia);
+        $this->em->flush();
+        [$firstId, $secondId] = [(int) $first->getId(), (int) $second->getId()];
+
+        $this->client->request('GET', '/guardias?date='.self::MONDAY.'&slot=0');
+        self::assertSelectorExists('.parte-deficit', 'two guardias for one teacher is a shortfall worth saying');
+
+        $crawler = $this->client->request('GET', '/guardias/agrupar?date='.self::MONDAY.'&slot=0');
+        $this->client->request('POST', '/guardias/agrupar', [
+            '_token' => $this->tokenFrom($crawler, '/guardias/agrupar'),
+            'date' => self::MONDAY,
+            'slot' => '0',
+            'covers' => [(string) $firstId, (string) $secondId],
+            'room' => 'A11',
+        ]);
+
+        $this->client->request('GET', '/guardias?date='.self::MONDAY.'&slot=0');
+        self::assertSelectorNotExists('.parte-deficit', 'grouped together they are one guardia, so there is nothing left to warn about');
+    }
+
     public function testGroupingRefusesASingleClass(): void
     {
         $this->login();

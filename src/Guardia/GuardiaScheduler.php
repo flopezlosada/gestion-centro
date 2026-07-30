@@ -204,24 +204,30 @@ final class GuardiaScheduler
     }
 
     /**
-     * How many groups each teacher is already covering in the given parte lines — 1 for the ordinary
-     * case, more when they have already been doubled up. Read from the lines in memory, not from a
-     * query: the caller has them loaded and they are the truth about this date and period.
+     * How many guardias each teacher is already doing in the given parte lines — 1 for the ordinary case,
+     * more when they have already been doubled up. Counted in guardias, not in groups: classes folded
+     * into the same grouping are one guardia between them (the centre's rule, mirrored in
+     * {@see GuardiaCoverRepository::WORK_UNIT}), so somebody minding three groups together in the
+     * assembly hall is less burdened than somebody walking between two rooms — and gets offered first.
+     *
+     * Read from the lines in memory, not from a query: the caller has them loaded and they are the truth
+     * about this date and period.
      *
      * @param list<GuardiaCover> $parte the parte lines
      *
-     * @return array<int, int> teacher id → groups they already cover at that date and period
+     * @return array<int, int> teacher id → guardias they already do at that date and period
      */
     private function hereLoadByTeacher(array $parte): array
     {
-        $load = [];
+        $units = [];
         foreach ($parte as $cover) {
             $teacher = $cover->getAssignedGuardia();
             if (null !== $teacher && null !== $teacher->getId()) {
-                $load[$teacher->getId()] = ($load[$teacher->getId()] ?? 0) + 1;
+                $grouping = $cover->getGrouping();
+                $units[$teacher->getId()][null !== $grouping ? 'g'.$grouping->getId() : 'c'.$cover->getId()] = true;
             }
         }
 
-        return $load;
+        return array_map(\count(...), $units);
     }
 }

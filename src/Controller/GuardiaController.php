@@ -96,13 +96,22 @@ final class GuardiaController extends AbstractController
         // who is busy from who is still free at a glance. A LIST per teacher, not a single name: in
         // deficit the same teacher minds several groups, and keeping only the last one would report
         // the parte wrongly on the very screen meant to expose the overload.
+        //
+        // Alongside it, how many guardias that actually COSTS them: several groups folded into one
+        // grouping are one guardia between them (the centre's rule, mirrored in
+        // GuardiaCoverRepository::WORK_UNIT), so once they are together in a room the overload is
+        // resolved and must stop being flagged as one.
         $assignedHere = [];
+        $workUnits = [];
         foreach ($parte as $cover) {
             $guardia = $cover->getAssignedGuardia();
             if (null !== $guardia && null !== $guardia->getId()) {
                 $assignedHere[$guardia->getId()][] = $cover->getGroupName() ?? 'un grupo';
+                $unit = null !== $cover->getGrouping() ? 'g'.$cover->getGrouping()->getId() : 'c'.$cover->getId();
+                $workUnits[$guardia->getId()][$unit] = true;
             }
         }
+        $workUnits = array_map(\count(...), $workUnits);
 
         // Uncovered first, keeping the repository's alphabetical order within each group: what needs
         // assigning must not be buried under what is already sorted out.
@@ -122,12 +131,13 @@ final class GuardiaController extends AbstractController
             'covers' => $ordered,
             'pool' => $poolView,
             'assignedHere' => $assignedHere,
+            'workUnits' => $workUnits,
             'uncovered' => $uncovered,
             'covered' => \count($parte) - $uncovered,
             // Who the split would pick, least loaded first: feeds the per-cover assignment sheet. With
             // nothing left to cover no sheet is rendered, so the pool queries are not worth running.
             'candidates' => ($uncovered > 0 && $year instanceof AcademicYear) ? $scheduler->availableFor($year, $date, $slotIndex, $parte) : [],
-            'deficit' => $this->deficitSummary($poolView, $assignedHere, $uncovered),
+            'deficit' => $this->deficitSummary($poolView, $workUnits, $uncovered),
             // Everyone, to sign up a colleague as support; flagged with the class the timetable says
             // they are teaching that hour, because that clash is the normal case and only a human can
             // judge it (their Bachillerato group has finished lessons — the timetable does not know).
@@ -187,32 +197,35 @@ final class GuardiaController extends AbstractController
      * The staffing arithmetic of one period, so the parte can say out loud when there are more absences
      * than people to cover them instead of quietly doubling somebody up: how many people are actually
      * free, how many groups are still open, how many of those can only be covered by giving a colleague
-     * a second group, and how many second groups are already handed out.
+     * a second guardia, and how many second guardias are already handed out.
      *
      * {@code doubled} matters as much as {@code missing}: once the split has run, nothing is left
-     * uncovered and the shortfall reads as zero, yet three teachers may be minding two groups each. The
+     * uncovered and the shortfall reads as zero, yet three teachers may be minding two guardias each. The
      * warning has to survive the split, or the screen hides exactly what it is there to show.
      *
+     * It is counted in guardias, not in groups, so grouping several classes into one room CLEARS it —
+     * which is the point of the warning: it is there to be acted on, not to nag for ever.
+     *
      * @param list<array{teacher: User, band: GuardiaDutyBand, note: ?string, supportId: ?int, absent: bool, groups: list<string>, load: int}> $poolView who could cover this period
-     * @param array<int, list<string>>                                                                                                        $assignedHere teacher id → groups they already cover
-     * @param int                                                                                                                             $uncovered    groups still without a substitute
+     * @param array<int, int>                                                                                                                 $workUnits teacher id → guardias it costs them here
+     * @param int                                                                                                                             $uncovered groups still without a substitute
      *
      * @return array{free: int, uncovered: int, missing: int, doubled: int, extra: int} free people, open
      *                                                                                 groups, shortfall,
      *                                                                                 teachers doubling up
-     *                                                                                 and extra groups they carry
+     *                                                                                 and extra guardias they carry
      */
-    private function deficitSummary(array $poolView, array $assignedHere, int $uncovered): array
+    private function deficitSummary(array $poolView, array $workUnits, int $uncovered): array
     {
         $free = \count(array_filter($poolView, static fn (array $row): bool => !$row['absent'] && [] === $row['groups']));
-        $doubling = array_filter($assignedHere, static fn (array $groups): bool => \count($groups) > 1);
+        $doubling = array_filter($workUnits, static fn (int $units): bool => $units > 1);
 
         return [
             'free' => $free,
             'uncovered' => $uncovered,
             'missing' => max(0, $uncovered - $free),
             'doubled' => \count($doubling),
-            'extra' => array_sum(array_map(static fn (array $groups): int => \count($groups) - 1, $doubling)),
+            'extra' => array_sum(array_map(static fn (int $units): int => $units - 1, $doubling)),
         ];
     }
 

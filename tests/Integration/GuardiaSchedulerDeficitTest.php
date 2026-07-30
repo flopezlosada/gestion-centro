@@ -7,12 +7,14 @@ namespace App\Tests\Integration;
 use App\Entity\Absence;
 use App\Entity\AcademicYear;
 use App\Entity\GuardiaCover;
+use App\Entity\GuardiaGrouping;
 use App\Entity\GuardiaSupport;
 use App\Entity\ScheduleEntry;
 use App\Entity\User;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use App\Guardia\GuardiaScheduler;
+use App\Repository\GuardiaCoverRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
@@ -173,6 +175,59 @@ final class GuardiaSchedulerDeficitTest extends KernelTestCase
         $this->scheduler->autoAssign($this->year, new \DateTimeImmutable(self::MONDAY), self::SLOT);
 
         self::assertSame($only->getId(), $second->getAssignedGuardia()?->getId(), 'the second absence doubles him up');
+    }
+
+    public function testAGroupedGuardiaCostsOneHoweverManyGroupsItHolds(): void
+    {
+        // The centre's rule (Paco, 30-07-2026): minding three groups together in one room is ONE session
+        // of work. Two groups in two rooms still cost two — that is two places to be.
+        $teacher = $this->user('Ana Guardia', 'a@educa.madrid.org');
+        $this->duty($teacher, ScheduleActivityKind::GUARDIA);
+        $grouping = (new GuardiaGrouping())
+            ->setDate(new \DateTimeImmutable(self::MONDAY))
+            ->setSlotIndex(self::SLOT)
+            ->setRoomName('S ACTOS');
+        $this->em->persist($grouping);
+        foreach (['1ºA', '1ºB', '1ºC'] as $group) {
+            $this->cover($group)->setAssignedGuardia($teacher)->setGrouping($grouping);
+        }
+        $this->cover('1ºD')->setAssignedGuardia($teacher);
+        $this->em->flush();
+
+        $covers = self::getContainer()->get(GuardiaCoverRepository::class);
+        $teacherId = (int) $teacher->getId();
+
+        self::assertSame(2, $covers->loadBySlot(self::SLOT)[$teacherId], 'the grouping counts once, plus the loose group');
+        self::assertSame(2, $covers->totalLoad()[$teacherId]);
+        self::assertSame(2, $covers->countCoveredForTeacher($teacher), 'and the teacher sees the same figure as the coordinator');
+        self::assertSame(2, $covers->coveredTotalsByTeacher()[0]['total'], 'as does the fairness ranking');
+    }
+
+    public function testGroupingSomebodyUpMakesThemEligibleAgainBeforeAColleagueWalkingBetweenRooms(): void
+    {
+        // Consequence of the rule above, and the reason it lives in one expression: whoever is minding
+        // three groups TOGETHER carries one guardia, so the split offers them before a colleague already
+        // walking between two rooms.
+        $grouped = $this->user('Ana Agrupada', 'a@educa.madrid.org');
+        $split = $this->user('Bea Repartida', 'b@educa.madrid.org');
+        $this->duty($grouped, ScheduleActivityKind::GUARDIA);
+        $this->duty($split, ScheduleActivityKind::GUARDIA);
+        $grouping = (new GuardiaGrouping())
+            ->setDate(new \DateTimeImmutable(self::MONDAY))
+            ->setSlotIndex(self::SLOT)
+            ->setRoomName('S ACTOS');
+        $this->em->persist($grouping);
+        foreach (['1ºA', '1ºB', '1ºC'] as $group) {
+            $this->cover($group)->setAssignedGuardia($grouped)->setGrouping($grouping);
+        }
+        $this->cover('1ºD')->setAssignedGuardia($split);
+        $this->cover('1ºE')->setAssignedGuardia($split);
+        $newOne = $this->cover('1ºF');
+        $this->em->flush();
+
+        $this->scheduler->autoAssign($this->year, new \DateTimeImmutable(self::MONDAY), self::SLOT);
+
+        self::assertSame($grouped->getId(), $newOne->getAssignedGuardia()?->getId(), 'one guardia beats two');
     }
 
     /**

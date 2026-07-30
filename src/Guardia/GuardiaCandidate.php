@@ -10,7 +10,7 @@ use App\Enum\GuardiaDutyBand;
 /**
  * A teacher who can cover a guardia at one period, with everything the equitable engine ranks on:
  * which band they come from ({@see $band} — the ordinary rota, a collaborator or hand-added support),
- * how many groups they are ALREADY covering at this very date and period ({@see $hereLoad}) and their
+ * how many guardias they are ALREADY doing at this very date and period ({@see $hereLoad}) and their
  * historical balance at this period ({@see $slotLoad}) and overall ({@see $totalLoad}).
  *
  * {@see $hereLoad} and {@see $slotLoad} are easy to confuse and mean opposite things: the first is
