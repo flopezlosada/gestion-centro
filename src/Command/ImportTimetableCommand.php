@@ -116,6 +116,15 @@ final class ImportTimetableCommand extends Command
             $result->dryRun ? ' [dry-run: nada escrito]' : '',
         ));
 
+        $io->text(sprintf('Horario del día: %d tramos, %d de recreo.', $result->frameCount, $result->breakCount));
+        if (0 === $result->breakCount) {
+            $io->warning('El planificador no marca ningún tramo como recreo: el cuadrante de recreo se quedará sin horas que mostrar.');
+        }
+
+        if ([] !== $result->frameConflicts) {
+            $io->note(sprintf('Tramos definidos de más de una forma (se guarda la primera definición de cada uno): %s.', implode(', ', $result->frameConflicts)));
+        }
+
         if ($result->keptManual > 0) {
             $io->note(sprintf('%d guardias marcadas a mano se han respetado: el fichero traía guardia a esa hora, pero manda lo marcado en "Horario de guardias".', $result->keptManual));
         }

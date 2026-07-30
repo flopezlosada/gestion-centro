@@ -228,7 +228,8 @@
                                         <span class="parte-card__avatar" aria-hidden="true">{{ cover.assignedGuardia.fullName|initials }}</span>
                                         <span class="parte-card__covers">Cubre <b>{{ cover.assignedGuardia.fullName }}</b></span>
                                         {% if (workUnits[cover.assignedGuardia.id] ?? 1) > 1 and not cover.grouping %}<span class="badge badge--warning" title="Lleva {{ workUnits[cover.assignedGuardia.id] }} guardias a esta hora en sitios distintos">×{{ workUnits[cover.assignedGuardia.id] }}</span>{% endif %}
-                                        {% if canWrite %}<a class="parte-card__change" href="{{ path('guardia_cover_edit', { id: cover.id }) }}">Cambiar</a>{% endif %}
+                                        {# Mismo verbo que en la tabla de escritorio: dos nombres para la misma pantalla despistaban. #}
+                                        {% if canWrite %}<a class="parte-card__change" href="{{ path('guardia_cover_edit', { id: cover.id }) }}">Modificar</a>{% endif %}
                                     </div>
                                 {% endif %}
                             </article>

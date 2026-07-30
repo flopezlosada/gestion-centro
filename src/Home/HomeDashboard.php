@@ -141,7 +141,7 @@ final readonly class HomeDashboard
             // propia tarea, así que colaba.
             $toValidate = array_values(array_filter(
                 $deptTasks,
-                fn (Task $t): bool => TaskStatus::SUBMITTED === $t->getStatus() && $this->workflows->for($t)->can($t, 'validate'),
+                fn (Task $t): bool => $this->workflows->isAwaitingVerdict($t),
             ));
             $modules['department'] = [
                 'dept' => $dept,

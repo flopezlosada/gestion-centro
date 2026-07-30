@@ -9,7 +9,7 @@
     <div class="page-head">
         <div>
             <h1>Modificar guardia</h1>
-            <p class="lead">Todo cambio manual queda registrado con su motivo en el histórico de esta guardia. El reparto es automático: usa esto solo cuando algo se sale de lo normal.</p>
+            <p class="lead">El reparto es automático: usa esto solo cuando algo se sale de lo normal. Si cambias de sustituto avisamos a los dos profesores con tu explicación, y todo queda en el histórico.</p>
         </div>
     </div>
 
@@ -67,10 +67,21 @@
                 <p class="field-help">Márcalo si al final nadie cubrió la guardia (el sustituto no vino, o el profesor ausente sí apareció). No cuenta para el reparto equitativo.</p>
             </div>
 
-            <div class="field">
-                <label for="motivo">Motivo del cambio <span class="req">*</span></label>
-                <textarea id="motivo" name="motivo" rows="3" maxlength="500" required placeholder="Ej.: el sustituto asignado también falta hoy; lo cubre otro compañero."></textarea>
-                <p class="field-help">Obligatorio. Queda en el histórico de esta guardia para dejar constancia de qué cambió y por qué.</p>
+            {# La única palabra "Motivo" que queda arriba es la de la ausencia (privada). Este campo no la
+               usa a propósito: tener dos "motivos" en la misma pantalla era lo que despistaba al centro. #}
+            <div class="field field--change-note">
+                <label for="motivo">¿Por qué haces este cambio? <span class="req">*</span></label>
+                {# Atajos: rellenan el campo de un clic y siguen siendo editables. Ocultos sin JS (no harían
+                   nada), y el campo se escribe a mano igual: mejora progresiva, no requisito. #}
+                <div class="change-note__presets" data-change-note-presets hidden role="group" aria-labelledby="change-note-presets-label">
+                    <span class="muted" id="change-note-presets-label">Casos habituales:</span>
+                    <button type="button">El sustituto asignado también falta hoy</button>
+                    <button type="button">Cambio acordado entre compañeros</button>
+                    <button type="button">Corrijo un error del reparto</button>
+                    <button type="button">Al final no se cubrió</button>
+                </div>
+                <textarea id="motivo" name="motivo" rows="3" maxlength="500" required placeholder="Ej.: lo cubre otro compañero porque el asignado tiene una reunión fuera del centro."></textarea>
+                <p class="field-help">Obligatorio. Si cambias de sustituto se lo contamos a los dos: al que entra y al que deja de hacerla. Siempre queda en el histórico de esta guardia.</p>
             </div>
 
             <div class="form-actions">
@@ -110,4 +121,8 @@
             </ol>
         {% endif %}
     </div>
+{% endblock %}
+
+{% block page_scripts %}
+    <script src="{{ asset_ver('/js/change-note-presets.js') }}"></script>
 {% endblock %}

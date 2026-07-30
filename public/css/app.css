@@ -1068,6 +1068,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 }
 .flash.success { background: var(--success-weak); color: var(--success-text); border-color: var(--success); }
 .flash.error   { background: var(--danger-weak);  color: var(--danger-text);  border-color: var(--danger); }
+/* La acción salió adelante, pero con una salvedad que hay que leer (un documento que no se pudo subir,
+   un recreo que se queda sin vigilar): ni verde ni rojo. */
+.flash.warning { background: var(--warning-weak); color: var(--warning-text); border-color: var(--warning-border); }
 
 /* ---- Toast de "hecho", con deshacer --------------------------------------
    Distinto de .flash a propósito: un flash es un cartel en el flujo de la página que informa de algo
@@ -2368,6 +2371,23 @@ tr.is-not-covered { background: var(--danger-weak); }
 .cover-summary dd { margin: 0; }
 .req { color: var(--danger-text); }
 
+/* Explicación del cambio: el campo que de verdad viaja a los afectados, así que se marca como el
+   paso importante del formulario y no como un trámite más de la lista. */
+.field--change-note { border-left: 3px solid var(--accent); padding-left: 12px; }
+.change-note__presets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 2px; }
+/* Sin esto el display:flex de arriba gana al [hidden] del navegador (misma especificidad, va después)
+   y los atajos se verían aunque el JS no los haya activado. */
+.change-note__presets[hidden] { display: none; }
+/* La pista va inline con los atajos, no como rótulo de sección: un segundo eyebrow bajo el label
+   competía con él y la pantalla parecía tener dos títulos para un solo campo. */
+.change-note__presets > span { font-size: 13px; }
+.change-note__presets button {
+    padding: 5px 11px; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--surface); color: var(--text-muted); font: inherit; font-size: 13px; cursor: pointer;
+}
+.change-note__presets button:hover { border-color: var(--accent); background: var(--accent-weak); color: var(--text); }
+.change-note__presets button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
 /* ── Guardias · panel de profes (estado de reparto) ──────────────────────────
    La leyenda .pool-legend se retiró: el panel ahora explica los estados en una frase y los chips
    se leen solos, así que la lista de leyenda quedó sin uso. */
@@ -2432,6 +2452,29 @@ tr.is-not-covered { background: var(--danger-weak); }
 .tt-lective { background: var(--surface-sunken); color: var(--text-muted); }
 .tt-lective-label { font-size: .8rem; }
 .tt-duty { background: var(--accent-weak, color-mix(in srgb, var(--accent) 14%, transparent)); }
+
+/* ── Guardias · cuadrante de recreo ────────────────────────────────────────────
+   La misma rejilla (zonas × días), pero sus celdas no llevan un desplegable: llevan las personas
+   asignadas, que son varias por celda cuando la zona necesita más de una. De ahí el chip: cada
+   nombre es una unidad con su propia acción de quitar, en lugar de una lista suelta donde no se
+   sabe a quién quita la × que tienes al lado. */
+.duty-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin: 2px; padding: 3px 4px 3px 9px;
+    border: 1px solid var(--border); border-radius: 999px;
+    background: var(--surface); font-size: 12.5px; white-space: nowrap;
+}
+.duty-chip .muted { font-size: 11.5px; }
+.duty-chip__remove { display: inline; }
+.chip-x {
+    border: 0; background: transparent; cursor: pointer;
+    color: var(--text-faint); font-size: 15px; line-height: 1; padding: 0 4px;
+    border-radius: 999px;
+}
+.chip-x:hover { color: var(--danger-text); background: var(--danger-weak); }
+/* Falta gente en esa zona ese día. Naranja de "sin cubrir", el mismo que el parte usa para lo que
+   aún no está resuelto — no rojo: un cuadrante a medio hacer en septiembre no es un error. */
+.tt-cell--short { background: var(--warning-weak); }
 
 /* =============================================================================
    Inicio ("qué me toca hoy") — rediseño handoff. Lista abierta sobre el fondo con
@@ -2983,7 +3026,9 @@ tr.is-not-covered { background: var(--danger-weak); }
 .notice__head { display: flex; align-items: center; gap: 8px; }
 .notice__title { font-size: 14px; color: var(--text); font-weight: 600; }
 .notice__new { font-family: var(--font-mono); font-size: 8.5px; font-weight: 600; color: var(--danger-text); background: var(--danger-weak); border: 1px solid var(--danger-border); padding: 2px 6px; border-radius: 999px; text-transform: uppercase; }
-.notice__text { font-size: 12.5px; color: var(--text-muted); line-height: 1.45; margin: 3px 0 0; }
+/* pre-line: el cuerpo de un aviso puede traer párrafos (p. ej. el motivo de un cambio de guardia, que
+   va aparte del resto). El email y el push los respetan; sin esto la bandeja los aplastaba en una línea. */
+.notice__text { font-size: 12.5px; color: var(--text-muted); line-height: 1.45; margin: 3px 0 0; white-space: pre-line; }
 .notice__time { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-tenue); margin-top: 6px; }
 
 /* =============================================================================

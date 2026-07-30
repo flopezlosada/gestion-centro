@@ -51,7 +51,7 @@ final class GuardiaScheduleController extends AbstractController
             'hasYear' => $year instanceof AcademicYear,
             'teachers' => $users->findBy([], ['fullName' => 'ASC']),
             'selectedTeacher' => $teacher,
-            'weekdays' => GuardiaScheduleEditor::WEEKDAYS,
+            'weekdays' => GuardiaScheduleEditor::weekdays(),
             'grid' => $grid,
         ]);
     }

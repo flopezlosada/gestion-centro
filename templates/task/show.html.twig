@@ -115,6 +115,25 @@
             </div>
         {% endif %}
 
+        {# Recordar: acción de SUPERVISIÓN (quien responde de la tarea sin tener que hacerla), fuera de la
+           barra de acciones porque no cambia el estado de nada — y fuera de su `if`, porque sobre una
+           Pendiente que no es tuya puede ser lo ÚNICO que puedas hacer. #}
+        {% if canRemind %}
+            <div class="detail-block">
+                <div class="detail-block__label">Recordatorio</div>
+                {% if remindedAt %}
+                    {# El tope es del servidor: ofrecer el botón otra vez solo daría un "ya se avisó hoy". #}
+                    <p class="muted" style="margin-top:0">Avisado hoy a las {{ remindedAt|date('H:i', false) }}. Se puede volver a avisar mañana.</p>
+                {% else %}
+                    <p class="muted" style="margin-top:0">Avisa a quien tiene que hacerla, en la app, por correo y en el móvil. Un aviso al día como máximo.</p>
+                    <form method="post" action="{{ path('task_remind', { id: task.id }) }}">
+                        <input type="hidden" name="_token" value="{{ csrf_token('task_remind' ~ task.id) }}">
+                        <button class="btn btn-secondary" type="submit">Recordar</button>
+                    </form>
+                {% endif %}
+            </div>
+        {% endif %}
+
         {# Actividad real (histórico ya humanizado) — la "línea de estado" del diseño #}
         {% if canSeeHistory %}
             <div class="detail-block">
@@ -125,7 +144,10 @@
 
         {# Barra de acciones (fija abajo en móvil, en el aside en escritorio). Conserva formularios y guards. #}
         {% if actions is not empty %}
-        {% set labels = { 'submit': 'Entregar tarea', 'validate': 'Validar', 'reject': 'Devolver', 'cancel': 'Cancelar' } %}
+        {# "Validar" juzga algo ENTREGADO; sobre una Pendiente el mismo cierre es "Dar por finalizada"
+           (el superior da por hecho lo que le consta, sin que nadie haya entregado). Mismo verbo del
+           workflow, dos nombres, porque para quien mira son dos gestos distintos. #}
+        {% set labels = { 'submit': 'Entregar tarea', 'validate': task.pending ? 'Dar por finalizada' : 'Validar', 'reject': 'Devolver', 'cancel': 'Cancelar' } %}
         <div class="actionbar">
             {% for name in actions %}
                 <form method="post" action="{{ path('task_transition', { id: task.id, transition: name }) }}" class="actionbar__form actionbar__form--{{ name }}"{% if name == 'cancel' %} data-confirm="¿Cancelar esta tarea? Quedará anulada."{% endif %}>
