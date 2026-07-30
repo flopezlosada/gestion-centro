@@ -171,7 +171,8 @@ Al aprobar, esas celdas deben quedar a salvo del siguiente import de Peñalara. 
 | --- | --- | --- |
 | F1 ✅  | Cupos: entidad, pantalla y balance en vivo  | Sí — el equipo directivo ya puede fijar y ver el desajuste  |
 | F2  | `TimeSlot` manual (7.ª hora) + respetar plazas fijadas  | Sí — desbloquea R8  |
-| F3  | Motor de guardias lectivas + propuesta editable + informe  | Sí — el grueso del encargo  |
+| F3a ✅  | Motor de guardias lectivas (puro) + informe  | Sí — el corazón del encargo  |
+| F3b  | Propuesta editable en pantalla  | Sí — lo hace usable  |
 | F4  | Modelo de recreo: partir la plaza, demanda por celda, migración  | No — habilita F5  |
 | F5  | Motor de recreos con emparejado grande + corto  | Sí  |
 | F6  | Aprobar y publicar + avisos  | Sí — cierra el círculo  |
@@ -200,3 +201,23 @@ Tres cosas que solo aparecieron al ejecutarlo, y que valen para las fases siguie
 - **`select-menu.js` realza todos los `<select>` del documento y no tiene opt-out**, así que 58 filas × 2 desplegables habrían sido 116 listbox sintéticos. Los cupos se pican con `input type="number"`, como ya hace la pantalla de zonas.
 
 Diferido a propósito: la carrera al crear cupos a la vez (el UNIQUE la corta, sin `try/catch` como sí hace `BreakDutyController`), y **3+2 son constantes de clase**, no configurables — parametrizarlas es trivial y no bloquea nada.
+
+---
+
+## 9. F3a — el motor, y lo que midió
+
+`RotaProposer` (puro), `RotaCandidate`, `RotaProposal` y `RotaDemand` — las cifras 3+2 viven ahí y las consume también el balance de cupos, para que la pantalla y el motor no puedan discrepar. Los "2 de apoyo" se proponen como `ScheduleActivityKind::COLLABORATOR`, que ya existía con esa semántica exacta.
+
+**El hallazgo que cambió el algoritmo.** La primera versión llenaba periodo a periodo: las cinco plazas de una hora antes de pasar a la siguiente. Medido contra el export real dio **19 colocaciones el lunes contra 26 el jueves**, y dejaba horas sin sus tres guardias mientras otras tenían las cinco — justo lo contrario de lo que dice §4.2. Ahora se llena **por rondas sobre toda la semana**: todas las primeras guardias, luego las segundas, y el apoyo al final. Resultado: los 30 tramos conservan sus tres guardias, el déficit cae **entero** en el apoyo, y la carga por día queda en 22/23/23/24/24.
+
+**Medido sobre el horario real** (58 docentes, 6 tramos, 150 plazas):
+
+| Escenario | Cupo total | Colocadas | Huecos | Cupo sin usar |
+| --- | --- | --- | --- | --- |
+| 2 a todo el mundo  | 116  | 116  | 34, todos de apoyo  | **0**  |
+| 3 a todo el mundo  | 174  | **150**  | 0  | 24  |
+| 3 con ~1 de cada 7 exento  | 141  | 141  | 9, todos de apoyo  | **0**  |
+
+Invariantes a cero en todos: nadie de guardia mientras da clase, nadie dos veces en un tramo, nadie por encima de su cupo. Entre 2 y 7 ms.
+
+**Por eso no hay pase de intercambios.** El plan de §4.4 lo contemplaba, pero con el cupo sin usar en 0 no hay nada que un reequilibrado pueda recuperar: el greedy ya exprime el cupo al máximo. Se descarta con datos, no por comodidad — y si un centro con otro horario deja cupo sin gastar, ahí sí habrá algo que ganar.
