@@ -144,6 +144,19 @@ class SpacePlan implements Auditable
     #[ORM\Column(name: 'approved_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $approvedAt = null;
 
+    /**
+     * The most sessions one person may be given in this plan, or null for no cap.
+     *
+     * The centre asked to "especificar cuántas sesiones cubre cada profe" ("dos sesiones y dos guardias,
+     * o cuatro guardias y una sesión"). This is one number for everybody rather than a quota per person:
+     * a screen with a box for each of eighty teachers is a screen nobody fills in, and the rota shares
+     * the load evenly anyway. Anything that needs to be different is changed line by line, which is
+     * where the real exceptions live.
+     */
+    #[ORM\Column(name: 'staff_quota', type: Types::SMALLINT, nullable: true)]
+    #[Assert\Positive(message: 'El máximo de sesiones por persona debe ser mayor que cero.')]
+    private ?int $staffQuota = null;
+
     /** When the affected people were told. Null means nobody knows yet. */
     #[ORM\Column(name: 'notified_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $notifiedAt = null;
@@ -434,6 +447,18 @@ class SpacePlan implements Auditable
     public function setApprovedAt(?\DateTimeImmutable $approvedAt): static
     {
         $this->approvedAt = $approvedAt;
+
+        return $this;
+    }
+
+    public function getStaffQuota(): ?int
+    {
+        return $this->staffQuota;
+    }
+
+    public function setStaffQuota(?int $staffQuota): static
+    {
+        $this->staffQuota = $staffQuota;
 
         return $this;
     }

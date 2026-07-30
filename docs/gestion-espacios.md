@@ -1,9 +1,10 @@
 # Gestión de espacios — plan y modelo de datos
 
 > Diseño del apartado **C** del volcado de requisitos del centro (30-07-2026): puntos 11, 12, 13 y 14.
-> **Estado: fases 1, 2 y 3 implementadas** (catálogo de espacios, "aulas libres", planes con propuestas,
-> edición manual, aprobación, aviso a los afectados y documento imprimible); de la 4 en adelante esto
-> sigue siendo diseño. Las decisiones que quedan abiertas están en §9.
+> **Estado: implementado de la fase 1 a la 5** — catálogo de espacios, "aulas libres", planes con
+> propuestas, edición manual, aprobación, aviso a los afectados, documento imprimible, semana de
+> exámenes y jornadas culturales (aulas y profesorado). Lo que queda son las respuestas del centro ya
+> incorporadas en §9 y la deuda de §11.
 
 ---
 
@@ -289,10 +290,18 @@ aulas y 6 tramos esto se resuelve en milisegundos.
 lo mismo. La UI debe decir *"solo hay una opción viable"* o *"B y C son equivalentes"* en vez de
 maquillar tres tarjetas iguales.
 
-### 6.2 `WorkshopProposer` — jornadas culturales
+### 6.2 Jornadas culturales — **simplificado tras la respuesta del centro**
 
-Entrada: actividades con `sessions`, franjas del día, profesorado con docencia ese día, cupo por
-persona (sesiones y guardias).
+El diseño original preveía un motor que repartiese grupos entre talleres. **No hace falta**: el centro
+trae el cuadrante hecho ("2-3 talleres por nivel, de 1º a 4º", el grupo entero va a un taller). Lo que
+falta cuando llega ese cuadrante son dos cosas, y las dos están hechas:
+
+- **El aula de cada sesión**: un taller sin aula es un `Displacement` más para el mismo solver, con el
+  tamaño deducido de cuántos grupos van. Un taller y una clase desalojada son el mismo problema.
+- **Quién lo da**: `StaffAssigner`, con las reglas de abajo.
+
+Entrada del reparto de profesorado: sesiones a cubrir, profesorado con docencia ese día, tope por
+persona.
 
 - **"Respetando su horario habitual"** (petición literal del centro) sale de `ScheduleEntry`: la
   participación de cada docente se limita a `[primera hora lectiva, última hora lectiva]` de su horario
@@ -359,8 +368,8 @@ Cada fase entrega valor por sí sola y se puede parar ahí.
 | **F1 — Catálogo y ocupación** ✅ **HECHA** | `Room` + FK en `ScheduleEntry` + `RoomSynchroniser` (+ `app:sync-rooms`) + catálogo en `/espacios/catalogo` + `RoomOccupancy` + pantalla **"Aulas libres"** en `/espacios` + área `ESPACIOS` en la matriz de roles | Valor inmediato **sin ningún motor**: resuelve el punto A.2 (agrupar guardias en un aula grande) y es la base de todo lo demás |
 | **F2 — Plan de cambio de aula** ✅ **HECHA** | `SpacePlan`, `SpacePlanActivity`, `SpacePlanOption`, `SpacePlanAssignment` + `RelocationSolver` (puro) + `RelocationProposer` + `SpacePlanWorkflow` + pantallas de crear/comparar/editar/aprobar; la rejilla efectiva vive dentro de `RoomOccupancy` | El punto 11 completo |
 | **F3 — Aviso y documento** ✅ **HECHA** (sin el enlace público) | `SpacePlanNotifier` (un aviso por persona con SUS líneas) + `/espacios/mis-cambios` para el docente + documento imprimible en tres vistas (por grupo, por espacio, por profesor) con su CSS de impresión | El punto 12. El enlace público sin login espera la respuesta del centro (§9.2); mientras tanto se imprime a PDF desde el navegador y lo sube quien quiera |
-| **F4 — Semana de exámenes** | Preset `EXAM_PERIOD` + `substitution_scope = GROUPS` + estrategia `STABLE_ROOM` | El punto 13. Casi todo es configuración de lo ya hecho |
-| **F5 — Jornadas culturales** | `SpacePlanAssignmentStaff` + `WorkshopProposer` + cupos por docente | El punto 14 |
+| **F4 — Semana de exámenes** ✅ **HECHA** | Nada específico: es un plan con `substitution_scope = GROUPS`, 4 días y una ocupación en bloque de las aulas de Inglés. Que no hiciera falta código propio es la prueba de que el mecanismo único funciona | El punto 13 |
+| **F5 — Jornadas culturales** ✅ **HECHA** | El cuadrante lo trae el centro, así que no hay motor que reparta grupos: los talleres se meten como actividades SIN aula y el mismo solver les busca una. `StaffAssigner` (puro) + `StaffScheduler` reparten el profesorado respetando su jornada, con tope por persona (`SpacePlan.staffQuota`) | El punto 14 |
 | **F6 — Integración con guardias** | El parte lee el aula efectiva; crear un plan desde el parte de guardias | Cierra los puntos A.2 y A.3 y elimina la desincronización del §5 |
 
 **F1 antes que nada.** Es la única fase que no depende de decisiones abiertas y la que más se reutiliza.

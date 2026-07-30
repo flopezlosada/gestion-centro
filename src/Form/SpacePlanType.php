@@ -11,6 +11,7 @@ use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
 use Symfony\Component\Form\Extension\Core\Type\EnumType;
+use Symfony\Component\Form\Extension\Core\Type\IntegerType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
@@ -81,6 +82,11 @@ final class SpacePlanType extends AbstractType
                 'expanded' => false,
                 'required' => false,
                 'help' => 'Solo si has elegido "solo los grupos que indique".',
+            ])
+            ->add('staffQuota', IntegerType::class, [
+                'label' => 'Máximo de sesiones por persona',
+                'required' => false,
+                'help' => 'Solo para jornadas con talleres: cuántas sesiones cubre como mucho cada docente. Déjalo vacío si no quieres tope.',
             ])
             ->add('publicReason', TextType::class, [
                 'label' => 'Motivo (se publica)',

@@ -180,6 +180,18 @@
                     </div>
                 {% endif %}
             </form>
+
+            {# El reparto de profesorado solo tiene sentido cuando hay actividades (talleres, guardias de
+               la jornada): una reubicación ya lleva al docente de la clase que se mueve. #}
+            {% if editable and shown and shown.assignments|filter(a => a.kind.value == 'activity')|length > 0 %}
+                <form method="post" action="{{ path('space_plan_staff', { id: plan.id }) }}" class="inline-form">
+                    <input type="hidden" name="_token" value="{{ csrf_token('space_plan_staff' ~ plan.id) }}">
+                    <input type="hidden" name="option" value="{{ shown.id }}">
+                    <button type="submit" class="btn secondary">Repartir el profesorado de {{ shown.label }}</button>
+                    <label class="choice"><input type="checkbox" name="startOver" value="1"> Empezar de cero</label>
+                    <span class="help">Solo a quien ese día tenga clase a esa hora, y repartido a partes iguales{% if plan.staffQuota %} (máximo {{ plan.staffQuota }} por persona){% endif %}.</span>
+                </form>
+            {% endif %}
         {% endif %}
     </section>
 
@@ -208,7 +220,8 @@
                                 <td>
                                     <strong>{{ line.label }}</strong>
                                     {% if line.subjectName %}<div class="muted">{{ line.subjectName }}</div>{% endif %}
-                                    {% if line.teacher %}<div class="muted">{{ line.teacher.fullName }}</div>{% endif %}
+                                    {% if line.teacher %}<div class="muted">{{ line.teacher.fullName }}</div>
+                                    {% elseif line.kind.value == 'activity' %}<span class="badge badge--warning">sin profesor</span>{% endif %}
                                     {% if line.manuallyEdited %}<span class="badge badge--muted">a mano</span>{% endif %}
                                 </td>
                                 <td class="muted">{{ line.originRoomName ?? '—' }}</td>

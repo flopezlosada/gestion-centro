@@ -436,6 +436,44 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
+     * When each teacher is IN THE CENTRE on a weekday, as the first and last period they teach.
+     *
+     * This is the centre's own rule for a cultural day, in their words: "el programa preasigna al
+     * profesorado respetando su horario habitual (si su docencia empieza a las 9:20, su participación
+     * empieza en torno a esa hora)". Somebody whose teaching starts at third period is not in the
+     * building at first, whatever the alternative timetable says.
+     *
+     * Only teaching cells count. A guardia slot says the person is on call, not that they came in early.
+     *
+     * @param AcademicYear $year    the course whose timetable to read
+     * @param Weekday      $weekday the weekday
+     *
+     * @return array<int, array{from: int, to: int}> teacher id → first and last period they teach
+     */
+    public function teachingDayBounds(AcademicYear $year, Weekday $weekday): array
+    {
+        /** @var list<array{teacherId: int|string, firstSlot: int|string, lastSlot: int|string}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('IDENTITY(s.teacher) AS teacherId', 'MIN(s.slotIndex) AS firstSlot', 'MAX(s.slotIndex) AS lastSlot')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.weekday = :weekday')
+            ->andWhere('s.kind = :lective')
+            ->setParameter('year', $year)
+            ->setParameter('weekday', $weekday)
+            ->setParameter('lective', ScheduleActivityKind::LECTIVE)
+            ->groupBy('s.teacher')
+            ->getQuery()
+            ->getResult();
+
+        $bounds = [];
+        foreach ($rows as $row) {
+            $bounds[(int) $row['teacherId']] = ['from' => (int) $row['firstSlot'], 'to' => (int) $row['lastSlot']];
+        }
+
+        return $bounds;
+    }
+
+    /**
      * The groups a course's timetable knows about, alphabetically — what a plan offers when it asks
      * "whose timetable does this replace?". Offered as a list rather than typed in because a group name
      * that does not match the timetable exactly would silently replace nobody.

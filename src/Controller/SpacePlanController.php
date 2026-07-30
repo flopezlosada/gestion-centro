@@ -22,6 +22,7 @@ use App\Security\Voter\AreaVoter;
 use App\Service\SchoolCalendar;
 use App\Space\SpacePlanNotifier;
 use App\Space\SpacePlanWorkflow;
+use App\Space\StaffScheduler;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -205,6 +206,43 @@ final class SpacePlanController extends AbstractController
         });
 
         return $this->redirectToRoute('space_plan_show', ['id' => $plan->getId()]);
+    }
+
+    /**
+     * Shares out who runs each session of a special day, over the alternative being looked at.
+     *
+     * Only sessions with nobody yet, unless asked to start over: somebody who decided by hand that a
+     * workshop is run by a particular person has made a decision, and re-running the rota is no reason
+     * to undo it.
+     */
+    #[Route('/{id}/profesorado', name: 'space_plan_staff', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function shareStaff(SpacePlan $plan, Request $request, StaffScheduler $staff, EntityManagerInterface $em): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ESPACIOS);
+        $this->assertEditable($plan);
+        $this->assertCsrf($request, 'space_plan_staff'.$plan->getId());
+
+        $option = $em->find(SpacePlanOption::class, $request->request->getInt('option'));
+        if (null === $option || $option->getPlan() !== $plan) {
+            $this->addFlash('error', 'Elige primero la propuesta sobre la que repartir.');
+
+            return $this->redirectToRoute('space_plan_show', ['id' => $plan->getId()]);
+        }
+
+        $result = $staff->share($plan, $option, $request->request->getBoolean('startOver'));
+
+        $this->addFlash(0 === $result['assigned'] ? 'warning' : 'success', match (true) {
+            0 === $result['assigned'] && 0 === $result['uncovered'] => 'No hay sesiones que repartir: esta propuesta no tiene actividades sin profesor.',
+            0 === $result['assigned'] => 'No se ha podido cubrir ninguna sesión: a esas horas no hay nadie cuyo horario lo permita.',
+            default => sprintf(
+                '%d sesión(es) repartida(s) entre %d persona(s)%s.',
+                $result['assigned'],
+                $result['people'],
+                $result['uncovered'] > 0 ? sprintf('; %d se quedan sin nadie disponible', $result['uncovered']) : '',
+            ),
+        });
+
+        return $this->redirectToRoute('space_plan_show', ['id' => $plan->getId(), 'opcion' => $option->getId()]);
     }
 
     #[Route('/{id}/aprobar', name: 'space_plan_approve', requirements: ['id' => '\d+'], methods: ['POST'])]

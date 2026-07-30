@@ -22,6 +22,7 @@
             {{ f.section('Qué es', [form.title, form.kind, form.publicReason]) }}
             {{ f.section('Cuándo', [form.dateFrom, form.dateTo, form.slotFrom, form.slotTo]) }}
             {{ f.section('Horario ordinario', [form.substitutionScope, form.scopeGroupNames]) }}
+            {{ f.section('Reparto del profesorado', [form.staffQuota]) }}
             {{ f.fields([form.internalNotes]) }}
             {{ f.actions(plan.id ? path('space_plan_show', { id: plan.id }) : path('space_plan_index')) }}
         {{ form_end(form) }}
