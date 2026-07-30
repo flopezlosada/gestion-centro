@@ -441,6 +441,93 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
+     * The teaching periods of a course as teacher id → weekday → period indexes, which is the shape the
+     * rota engine needs to know who is free when.
+     *
+     * Grouped rather than counted, so a teacher listed once per group in the same period (the Salón de
+     * Actos activities Peñalara exports that way) appears once.
+     *
+     * @param AcademicYear $year the course whose timetable to read
+     *
+     * @return array<int, array<int, list<int>>> teacher id → weekday → the period indexes they teach
+     */
+    public function lectiveSlotsByTeacher(AcademicYear $year): array
+    {
+        /** @var list<array{teacher: string|int, weekday: Weekday, slotIndex: int}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('IDENTITY(s.teacher) AS teacher', 's.weekday AS weekday', 's.slotIndex AS slotIndex')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.kind = :lective')
+            ->setParameter('year', $year)
+            ->setParameter('lective', ScheduleActivityKind::LECTIVE)
+            ->groupBy('s.teacher')
+            ->addGroupBy('s.weekday')
+            ->addGroupBy('s.slotIndex')
+            ->getQuery()
+            ->getResult();
+
+        $byTeacher = [];
+        foreach ($rows as $row) {
+            // A scalar select hydrates an enumType column into its enum, so weekday arrives as a Weekday.
+            $byTeacher[(int) $row['teacher']][$row['weekday']->value][] = (int) $row['slotIndex'];
+        }
+
+        return $byTeacher;
+    }
+
+    /**
+     * Replaces every duty cell the proposal engine owns in a course with a fresh set, in one transaction.
+     *
+     * Only its own: cells a person marked by hand and cells from the export are left untouched, which is
+     * what lets a rota be re-proposed without undoing somebody's retouch.
+     *
+     * @param AcademicYear       $year    the course being redrawn
+     * @param list<ScheduleEntry> $entries the fresh duty cells to persist
+     */
+    public function replaceEngineDutyCells(AcademicYear $year, array $entries): void
+    {
+        $em = $this->getEntityManager();
+        $em->wrapInTransaction(function () use ($em, $year, $entries): void {
+            $this->createQueryBuilder('s')
+                ->delete()
+                ->where('s.academicYear = :year')
+                ->andWhere('s.source = :engine')
+                ->setParameter('year', $year)
+                ->setParameter('engine', ScheduleEntrySource::ENGINE)
+                ->getQuery()
+                ->execute();
+            foreach ($entries as $entry) {
+                $em->persist($entry);
+            }
+            $em->flush();
+        });
+    }
+
+    /**
+     * Every duty cell of a course — the current rota — with its teacher joined so a grid can print the
+     * names without a query per cell.
+     *
+     * @param AcademicYear $year the course whose rota to read
+     *
+     * @return ScheduleEntry[] the duty cells, in reading order
+     */
+    public function findDutyCells(AcademicYear $year): array
+    {
+        return $this->createQueryBuilder('s')
+            ->addSelect('t')
+            ->join('s.teacher', 't')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.kind IN (:kinds)')
+            ->setParameter('year', $year)
+            ->setParameter('kinds', [ScheduleActivityKind::GUARDIA, ScheduleActivityKind::COLLABORATOR])
+            ->orderBy('s.weekday', 'ASC')
+            ->addOrderBy('s.slotIndex', 'ASC')
+            ->addOrderBy('t.fullName', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * Every timetable cell a teacher has in a course, of any kind, ordered by weekday then period —
      * the data behind the manual "horario de guardias" grid, which shows the imported lective cells as
      * read-only context and lets the duty cells be edited.
@@ -464,17 +551,21 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
-     * The hand-marked duty cells of a course, indexed for the importer as teacher id → "weekday:slot" →
-     * row id. Read in one query (never one per teacher) so the import can tell, for every cell it is
-     * about to write, whether a person already owns that period: a duty cell is then skipped (nobody
-     * ends up in the guardia pool twice) and a lesson wins, dropping the hand-marked guardia by id.
-     * Empty when every cell in the course came from an export.
+     * The duty cells of a course an import must not overwrite — the ones a person marked by hand and the
+     * ones the proposal engine placed ({@see ScheduleEntrySource::protectedFromImport()}) — indexed for
+     * the importer as teacher id → "weekday:slot" → row id.
+     *
+     * Read in one query (never one per teacher) so the import can tell, for every cell it is about to
+     * write, whether one of them already owns that period: a duty cell is then skipped (nobody ends up in
+     * the guardia pool twice) and a lesson wins, dropping the protected guardia by id — otherwise the
+     * teacher would be left on guardia in a period they now teach. Empty when every cell in the course
+     * came from an export.
      *
      * @param AcademicYear $year the course whose timetable to read
      *
      * @return array<int, array<string, int>> teacher id → "weekday:slotIndex" → schedule entry id
      */
-    public function manualDutyCells(AcademicYear $year): array
+    public function protectedDutyCells(AcademicYear $year): array
     {
         // A scalar select still hydrates an enumType column into its enum (unlike MIN() in distinctSlots,
         // which bypasses the field type), so weekday arrives as a Weekday — read its ISO value.
@@ -482,9 +573,9 @@ class ScheduleEntryRepository extends ServiceEntityRepository
         $rows = $this->createQueryBuilder('s')
             ->select('s.id AS id', 'IDENTITY(s.teacher) AS teacherId', 's.weekday AS weekday', 's.slotIndex AS slotIndex')
             ->andWhere('s.academicYear = :year')
-            ->andWhere('s.source = :manual')
+            ->andWhere('s.source IN (:protected)')
             ->setParameter('year', $year)
-            ->setParameter('manual', ScheduleEntrySource::MANUAL)
+            ->setParameter('protected', ScheduleEntrySource::protectedFromImport())
             ->getQuery()
             ->getResult();
 
