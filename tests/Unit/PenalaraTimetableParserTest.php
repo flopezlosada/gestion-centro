@@ -5,14 +5,20 @@ declare(strict_types=1);
 namespace App\Tests\Unit;
 
 use App\Enum\ScheduleActivityKind;
+use App\Enum\TimeSlotKind;
 use App\Penalara\PenalaraTimetableParser;
 use App\Penalara\ScheduleEntryDto;
+use App\Penalara\TimeFrameSlotDto;
 use PHPUnit\Framework\TestCase;
 
 /**
  * The parser turns a Peñalara planificador (the name dictionary) plus a resolved timetable (SÉNECA)
  * into schedule DTOs: teaching cells named from the dictionary, guardia/collaborator duties detected
  * by their <tarea> code, other complementary activities dropped, and exact duplicates removed.
+ *
+ * It also reads the marco horario — the shape of the school day — which is the only place the recreos
+ * appear at all: no activity is ever scheduled during a break, so a period nobody occupies would be
+ * invisible to a parser that only looked at the resolved timetable.
  */
 final class PenalaraTimetableParserTest extends TestCase
 {
@@ -121,7 +127,7 @@ final class PenalaraTimetableParserTest extends TestCase
 
     public function testParsesLectiveGuardiaAndCollaboratorAndDropsTheRest(): void
     {
-        $entries = (new PenalaraTimetableParser())->parse(self::PLANIFICADOR, self::HORARIO);
+        $entries = (new PenalaraTimetableParser())->parse(self::PLANIFICADOR, self::HORARIO)->entries;
 
         // Lective + guardia + collaborator = 3; the meeting (code 90) is dropped, the duplicate merged.
         self::assertCount(3, $entries);
@@ -133,7 +139,7 @@ final class PenalaraTimetableParserTest extends TestCase
 
     public function testLectiveEntryResolvesNamesFromDictionary(): void
     {
-        $entries = (new PenalaraTimetableParser())->parse(self::PLANIFICADOR, self::HORARIO);
+        $entries = (new PenalaraTimetableParser())->parse(self::PLANIFICADOR, self::HORARIO)->entries;
         $lective = $this->ofKind($entries, ScheduleActivityKind::LECTIVE);
 
         self::assertSame('Doe Smith, Jane', $lective->teacherName);
@@ -148,7 +154,7 @@ final class PenalaraTimetableParserTest extends TestCase
 
     public function testGuardiaEntryHasNoGroupRoomOrSubject(): void
     {
-        $entries = (new PenalaraTimetableParser())->parse(self::PLANIFICADOR, self::HORARIO);
+        $entries = (new PenalaraTimetableParser())->parse(self::PLANIFICADOR, self::HORARIO)->entries;
         $guardia = $this->ofKind($entries, ScheduleActivityKind::GUARDIA);
 
         self::assertSame(3, $guardia->weekday);
@@ -161,13 +167,84 @@ final class PenalaraTimetableParserTest extends TestCase
     public function testEmptyHorarioYieldsNoEntries(): void
     {
         $empty = '<?xml version="1.0" encoding="UTF-8"?><SERVICIO><BLOQUE_DATOS/></SERVICIO>';
-        self::assertSame([], (new PenalaraTimetableParser())->parse(self::PLANIFICADOR, $empty));
+        self::assertSame([], (new PenalaraTimetableParser())->parse(self::PLANIFICADOR, $empty)->entries);
     }
 
     public function testMalformedXmlThrows(): void
     {
         $this->expectException(\RuntimeException::class);
         (new PenalaraTimetableParser())->parse('<not-closed', self::HORARIO);
+    }
+
+    public function testTimeFrameCollapsesTheWeekIntoOnePeriodPerIndex(): void
+    {
+        // The export repeats every period once per weekday; two weekdays of two periods must still yield
+        // two periods, not four.
+        $frame = (new PenalaraTimetableParser())->parse(self::PLANIFICADOR, self::HORARIO)->frame;
+
+        self::assertCount(2, $frame);
+        self::assertSame([0, 1], array_map(static fn (TimeFrameSlotDto $s): int => $s->index, $frame));
+        self::assertSame('08:25:00', $frame[0]->startsAt);
+        self::assertSame('09:20:00', $frame[0]->endsAt);
+    }
+
+    public function testBreakPeriodsAreRecognisedFromTheirType(): void
+    {
+        // The whole point of reading the frame: the recreo is a period NOBODY has an activity in, so it
+        // exists only here. Times and type mirror the centre's real export (11:10–11:35).
+        $frame = (new PenalaraTimetableParser())->parse($this->planificadorWithBreak('recreo'), self::HORARIO)->frame;
+
+        $breaks = array_values(array_filter($frame, static fn (TimeFrameSlotDto $s): bool => TimeSlotKind::BREAK_TIME === $s->kind));
+        self::assertCount(1, $breaks);
+        self::assertSame(2, $breaks[0]->index);
+        self::assertSame('11:10:00', $breaks[0]->startsAt);
+        self::assertSame('11:35:00', $breaks[0]->endsAt);
+    }
+
+    public function testAnUnknownPeriodTypeIsTreatedAsTeachingTime(): void
+    {
+        // Never the other way round: a period we cannot classify must not silently become a recreo and
+        // start demanding a zone rota.
+        $frame = (new PenalaraTimetableParser())->parse($this->planificadorWithBreak('complementario'), self::HORARIO)->frame;
+
+        foreach ($frame as $slot) {
+            self::assertSame(TimeSlotKind::LECTIVE, $slot->kind);
+        }
+    }
+
+    public function testAPeriodDefinedTwoWaysIsReportedInsteadOfSilentlyPickingOne(): void
+    {
+        // Same index, different times on another weekday: the first definition is kept and the index is
+        // reported, so the import screen can say so.
+        $plan = str_replace(
+            '<tramo><submarco>A</submarco><dia>0</dia><indice>1</indice><horaEntrada>09:20:00</horaEntrada><horaSalida>10:15:00</horaSalida><Tipo>lectivo</Tipo><clavX>1001</clavX></tramo>',
+            '<tramo><submarco>A</submarco><dia>0</dia><indice>1</indice><horaEntrada>09:20:00</horaEntrada><horaSalida>10:15:00</horaSalida><Tipo>lectivo</Tipo><clavX>1001</clavX></tramo>'
+            .'<tramo><submarco>A</submarco><dia>4</dia><indice>1</indice><horaEntrada>09:30:00</horaEntrada><horaSalida>10:15:00</horaSalida><Tipo>lectivo</Tipo><clavX>1002</clavX></tramo>',
+            self::PLANIFICADOR,
+        );
+
+        $parsed = (new PenalaraTimetableParser())->parse($plan, self::HORARIO);
+
+        self::assertSame([1], $parsed->frameConflicts);
+        self::assertCount(2, $parsed->frame);
+        self::assertSame('09:20:00', $parsed->frame[1]->startsAt);
+    }
+
+    /**
+     * The planificador with a third period carrying the given Peñalara type, to exercise the recreo
+     * detection without touching the shared fixture.
+     *
+     * @param string $type the raw {@code <Tipo>} of the extra period
+     *
+     * @return string the planificador XML
+     */
+    private function planificadorWithBreak(string $type): string
+    {
+        return str_replace(
+            '</marcoHorario>',
+            sprintf('<tramo><submarco>A</submarco><dia>0</dia><indice>2</indice><horaEntrada>11:10:00</horaEntrada><horaSalida>11:35:00</horaSalida><Tipo>%s</Tipo><clavX>1002</clavX></tramo></marcoHorario>', $type),
+            self::PLANIFICADOR,
+        );
     }
 
     /**

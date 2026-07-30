@@ -55,6 +55,10 @@
                     <dt>Sustituyen a</dt>
                     <dd><strong>{{ preview.replacedCount }}</strong> celdas ya importadas</dd>
                 </div>
+                <div>
+                    <dt>Horario del día</dt>
+                    <dd><strong>{{ preview.frameCount }}</strong> tramos, {{ preview.breakCount }} de recreo</dd>
+                </div>
             </dl>
 
             {% if preview.entryCount == 0 %}
@@ -91,6 +95,23 @@
                         {% endif %}
                         {% if preview.droppedManual > 0 %}
                             <li>Se quitarán <strong>{{ preview.droppedManual }}</strong>: el horario nuevo pone clase a esa hora, así que esa persona ya no puede estar de guardia.</li>
+                        {% endif %}
+                    </ul>
+                </div>
+            {% endif %}
+
+            {% if preview.breakCount == 0 or preview.frameConflicts is not empty %}
+                {# Sin los tramos de recreo del planificador no hay horas que enseñar en el cuadrante de
+                   recreo: el resto del horario se importa igual, pero conviene decirlo aquí y no dejar
+                   que se descubra con una pantalla vacía. #}
+                <div class="callout callout--warning" role="note">
+                    <p><strong>Tramos de recreo</strong></p>
+                    <ul>
+                        {% if preview.breakCount == 0 %}
+                            <li>El planificador no marca ningún tramo como recreo, así que el <a href="{{ path('break_duty_index') }}">cuadrante de recreo</a> se quedará sin horas que mostrar. El resto del horario se importa con normalidad.</li>
+                        {% endif %}
+                        {% if preview.frameConflicts is not empty %}
+                            <li>{{ preview.frameConflicts|length }} tramo(s) vienen definidos de más de una forma (horas o tipo distintos según el día): {{ preview.frameConflicts|join(', ') }}. Se guardará la primera definición de cada uno.</li>
                         {% endif %}
                     </ul>
                 </div>

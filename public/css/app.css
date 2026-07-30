@@ -1068,6 +1068,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 }
 .flash.success { background: var(--success-weak); color: var(--success-text); border-color: var(--success); }
 .flash.error   { background: var(--danger-weak);  color: var(--danger-text);  border-color: var(--danger); }
+/* La acción salió adelante, pero con una salvedad que hay que leer (un documento que no se pudo subir,
+   un recreo que se queda sin vigilar): ni verde ni rojo. */
+.flash.warning { background: var(--warning-weak); color: var(--warning-text); border-color: var(--warning-border); }
 
 /* ---- Toast de "hecho", con deshacer --------------------------------------
    Distinto de .flash a propósito: un flash es un cartel en el flujo de la página que informa de algo
@@ -2401,6 +2404,29 @@ tr.is-not-covered { background: var(--danger-weak); }
 .tt-lective { background: var(--surface-sunken); color: var(--text-muted); }
 .tt-lective-label { font-size: .8rem; }
 .tt-duty { background: var(--accent-weak, color-mix(in srgb, var(--accent) 14%, transparent)); }
+
+/* ── Guardias · cuadrante de recreo ────────────────────────────────────────────
+   La misma rejilla (zonas × días), pero sus celdas no llevan un desplegable: llevan las personas
+   asignadas, que son varias por celda cuando la zona necesita más de una. De ahí el chip: cada
+   nombre es una unidad con su propia acción de quitar, en lugar de una lista suelta donde no se
+   sabe a quién quita la × que tienes al lado. */
+.duty-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin: 2px; padding: 3px 4px 3px 9px;
+    border: 1px solid var(--border); border-radius: 999px;
+    background: var(--surface); font-size: 12.5px; white-space: nowrap;
+}
+.duty-chip .muted { font-size: 11.5px; }
+.duty-chip__remove { display: inline; }
+.chip-x {
+    border: 0; background: transparent; cursor: pointer;
+    color: var(--text-faint); font-size: 15px; line-height: 1; padding: 0 4px;
+    border-radius: 999px;
+}
+.chip-x:hover { color: var(--danger-text); background: var(--danger-weak); }
+/* Falta gente en esa zona ese día. Naranja de "sin cubrir", el mismo que el parte usa para lo que
+   aún no está resuelto — no rojo: un cuadrante a medio hacer en septiembre no es un error. */
+.tt-cell--short { background: var(--warning-weak); }
 
 /* =============================================================================
    Inicio ("qué me toca hoy") — rediseño handoff. Lista abierta sobre el fondo con

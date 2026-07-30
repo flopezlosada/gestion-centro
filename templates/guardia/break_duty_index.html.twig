@@ -1,0 +1,197 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Cuadrante de recreo{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Cuadrante de recreo{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Cuadrante de recreo</h1>
+            <p class="lead">Quién vigila cada zona en los recreos. Se hace <strong>una vez por curso</strong> y vale todo el año: cada profesor tiene su día fijo. Si alguien falta, el recreo <strong>no se reasigna</strong>: salta un aviso al equipo directivo para buscar un voluntario.</p>
+        </div>
+        {% if canManage %}
+            <div class="inline-form"><a class="btn secondary" href="{{ path('break_zone_index') }}">Zonas y pesos</a></div>
+        {% endif %}
+    </div>
+
+    {# Selector de curso (GET, auto-envío): el cuadrante es de un curso concreto. #}
+    <div class="card">
+        <form method="get" action="{{ path('break_duty_index') }}" class="inline-form">
+            <label class="field-label" for="curso">Curso</label>
+            <select id="curso" name="curso" onchange="this.form.submit()">
+                {% for c in courses %}
+                    <option value="{{ c.schoolYear }}" {{ c.schoolYear == curso ? 'selected' }}>{{ c.schoolYear }}</option>
+                {% endfor %}
+            </select>
+            <noscript><button type="submit" class="btn">Ver</button></noscript>
+        </form>
+    </div>
+
+    {% if grid is null %}
+        <div class="card">
+            <div class="empty-state">
+                <h2>No hay curso {{ curso }} dado de alta</h2>
+                <p>Crea el curso en <a href="{{ path('admin_academic_year_index') }}">Trimestres</a> e importa su horario: de ahí salen las horas de los recreos.</p>
+            </div>
+        </div>
+    {% else %}
+        {% if grid.breaks is empty %}
+            {# El cuadrante se puede montar igual (día + zona no dependen de la hora), pero sin los tramos
+               importados no podemos decir a qué hora es cada recreo, así que se avisa en vez de mostrar
+               una tabla que parece completa. #}
+            <div class="callout callout--warning" role="note">
+                No hay tramos de recreo importados para {{ curso }}, así que no podemos mostrar las horas. Importa el horario de Peñalara de este curso: el planificador marca cuáles de sus tramos son recreo.
+            </div>
+        {% else %}
+            <p class="help">
+                Recreos de {{ curso }}:
+                {% for slot in grid.breaks %}
+                    <strong>{{ loop.index }}.º</strong> {{ slot.startsAt|date('H:i', false) }}–{{ slot.endsAt|date('H:i', false) }}{{ not loop.last ? ' · ' }}
+                {% endfor %}
+                · Cubrir los dos cuenta como <strong>una sola</strong> guardia.
+            </p>
+        {% endif %}
+
+        {% if todayGaps is not empty %}
+            <div class="callout callout--warning" role="alert">
+                <p><strong>Hoy hay {{ todayGaps|length }} recreo(s) sin vigilar.</strong></p>
+                <ul>
+                    {% for gap in todayGaps %}
+                        <li>{{ gap.assignment.zone.name }} — falta {{ gap.assignment.teacher.fullName }}{% if gap.covered %}, lo cubre {{ gap.volunteer.fullName }}{% endif %}</li>
+                    {% endfor %}
+                </ul>
+                <p><a href="{{ path('break_duty_gap_index', {curso: curso}) }}">Ver y apuntar voluntarios</a></p>
+            </div>
+        {% endif %}
+
+        {# La rejilla: zonas en filas, días en columnas, como el cuadrante de papel del centro. #}
+        <div class="card">
+            <div class="page-head">
+                <div><h2>Cuadrante de {{ curso }}</h2></div>
+                {% if grid.missing > 0 %}
+                    <div><span class="badge badge--warning">Faltan {{ grid.missing }} puesto(s)</span></div>
+                {% else %}
+                    <div><span class="badge badge--ok">Cuadrante completo</span></div>
+                {% endif %}
+            </div>
+
+            {% if grid.zones is empty %}
+                <div class="empty-state">
+                    <h3>Todavía no hay zonas</h3>
+                    <p>Las zonas son los sitios que hay que vigilar (patio, pasillo, biblioteca, pistas, patio dirigido). Cada una lleva un peso, y el reparto equitativo lo tiene en cuenta.</p>
+                    {% if canManage %}<p><a class="btn" href="{{ path('break_zone_index') }}">Configurar zonas</a></p>{% endif %}
+                </div>
+            {% else %}
+                <div class="tt-scroll">
+                    <table class="tt-grid">
+                        <thead>
+                            <tr>
+                                <th scope="col">Zona</th>
+                                {% for wd in grid.weekdays %}<th scope="col">{{ wd.label }}</th>{% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for zone in grid.zones %}
+                                <tr>
+                                    <th scope="row">
+                                        {{ zone.name }}
+                                        <span class="muted"> · peso {{ zone.weight }}{% if zone.requiredTeachers > 1 %} · {{ zone.requiredTeachers }} pers.{% endif %}</span>
+                                    </th>
+                                    {% for wd in grid.weekdays %}
+                                        {% set duties = grid.cells[wd.value][zone.id] %}
+                                        {% set short = grid.shortfall[wd.value][zone.id] %}
+                                        <td class="tt-cell {{ short > 0 ? 'tt-cell--short' }}">
+                                            {% for duty in duties %}
+                                                <span class="duty-chip">
+                                                    {{ duty.teacher.fullName }}
+                                                    <span class="muted">{{ duty.periods.shortLabel }}</span>
+                                                    {% if canManage %}
+                                                        <form method="post" action="{{ path('break_duty_remove', {id: duty.id}) }}" class="duty-chip__remove">
+                                                            <input type="hidden" name="_token" value="{{ csrf_token('break_duty_remove' ~ duty.id) }}">
+                                                            <button type="submit" class="chip-x" title="Quitar a {{ duty.teacher.fullName }} de {{ zone.name }} los {{ wd.label|lower }}" aria-label="Quitar a {{ duty.teacher.fullName }} de {{ zone.name }} los {{ wd.label|lower }}">×</button>
+                                                        </form>
+                                                    {% endif %}
+                                                </span>
+                                            {% endfor %}
+                                            {% if short > 0 %}
+                                                <span class="muted">Falta{{ short > 1 ? 'n' }} {{ short }}</span>
+                                            {% endif %}
+                                        </td>
+                                    {% endfor %}
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% endif %}
+        </div>
+
+        {% if canManage and grid.zones is not empty %}
+            <div class="card">
+                <h2>Añadir al cuadrante</h2>
+                <form method="post" action="{{ path('break_duty_assign') }}" class="inline-form">
+                    <input type="hidden" name="_token" value="{{ csrf_token('break_duty_assign') }}">
+                    <input type="hidden" name="curso" value="{{ curso }}">
+
+                    <label class="field-label" for="teacher">Profesor</label>
+                    <select id="teacher" name="teacher" required>
+                        <option value="">— elige —</option>
+                        {% for t in teachers %}<option value="{{ t.id }}">{{ t.fullName }}</option>{% endfor %}
+                    </select>
+
+                    <label class="field-label" for="weekday">Día</label>
+                    <select id="weekday" name="weekday" required>
+                        {% for wd in weekdays %}<option value="{{ wd.value }}">{{ wd.label }}</option>{% endfor %}
+                    </select>
+
+                    <label class="field-label" for="zone">Zona</label>
+                    <select id="zone" name="zone" required>
+                        {% for z in zones %}<option value="{{ z.id }}">{{ z.name }}</option>{% endfor %}
+                    </select>
+
+                    <label class="field-label" for="periods">Recreos</label>
+                    <select id="periods" name="periods" required>
+                        {% for c in coverages %}<option value="{{ c.value }}" {{ c.value == 'both' ? 'selected' }}>{{ c.label }}</option>{% endfor %}
+                    </select>
+
+                    <button type="submit" class="btn">Añadir</button>
+                </form>
+                <p class="help">Cada profesor puede tener <strong>una</strong> zona por día: no puede estar en dos sitios a la vez. Cubrir los dos recreos del día cuenta como una guardia, no como dos.</p>
+            </div>
+        {% endif %}
+
+        {# Reparto: la carga se mide en PESO, no en número de turnos, porque el centro dijo que no todas
+           las zonas cuestan igual. #}
+        <div class="card">
+            <h2>Reparto entre el profesorado</h2>
+            {% if equity.rows is empty %}
+                <p class="muted">Nadie tiene guardia de recreo en {{ curso }} todavía.</p>
+            {% else %}
+                <dl class="cover-summary">
+                    <div><dt>Profesores en el cuadrante</dt><dd><strong>{{ equity.equity.count }}</strong></dd></div>
+                    <div><dt>Carga media</dt><dd><strong>{{ equity.equity.mean }}</strong> de peso</dd></div>
+                    <div><dt>De {{ equity.equity.min }} a {{ equity.equity.max }}</dt><dd>{{ equity.equity.spread }} de diferencia</dd></div>
+                    <div><dt>Equilibrio</dt><dd><strong>{{ equity.equity.label }}</strong></dd></div>
+                </dl>
+
+                <table class="worklist">
+                    <thead>
+                        <tr><th scope="col">Profesor</th><th scope="col">Guardias</th><th scope="col">Peso</th><th scope="col">Zonas</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for row in equity.rows %}
+                            <tr>
+                                <td>{{ row.teacher.fullName }}</td>
+                                <td>{{ row.duties }}</td>
+                                <td><strong>{{ row.load }}</strong></td>
+                                <td class="muted">{{ row.zones|join(', ') }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <p class="help">El peso suma la exigencia de cada zona y cuenta <strong>una vez</strong> por día, aunque se cubran los dos recreos. Los pesos se ajustan en <a href="{{ path('break_zone_index') }}">Zonas y pesos</a>.</p>
+            {% endif %}
+        </div>
+    {% endif %}
+{% endblock %}
