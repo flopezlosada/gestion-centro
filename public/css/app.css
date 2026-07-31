@@ -3595,21 +3595,240 @@ tr.is-not-covered { background: var(--danger-weak); }
     @page { margin: 14mm; }
 }
 /* ── Banco de tareas de guardia y encargos de fotocopias ────────────────────
-   Reutiliza .card, .btn y .badge; aquí solo lo propio: la barra de filtros que manda también sobre
-   el sorteo, la tarjeta de "estás eligiendo para esta guardia" y el bloque de la tarea del banco
-   dentro del detalle de una guardia (visualmente separado de la que dejó el profesor ausente). */
-.bank-picking { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: center; justify-content: space-between; }
-.bank-picking__cover { margin: 2px 0 0; font-weight: 600; font-size: 16px; }
-.bank-picking__actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+   Reutiliza .card, .btn y .badge; aquí solo lo propio: el ancla de "estás eligiendo para ESTA
+   guardia", los chips de filtro, la tarjeta de ficha y el bloque de la tarea del banco dentro del
+   detalle de una guardia (visualmente separado de la que dejó el profesor ausente).
 
-.bank-filters__row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
-.bank-filters .field { display: flex; flex-direction: column; gap: 6px; min-width: 190px; flex: 1 1 190px; }
-.bank-filters .choice { flex: none; padding-bottom: 10px; }
-.bank-filters .btn { flex: none; }
-.bank-doc { display: inline-block; margin-top: 4px; font-size: 13px; }
+   El listado son TARJETAS y no una tabla: la pantalla se usa a mitad de una guardia, casi siempre
+   con una sola materia y un solo nivel en pantalla, así que las 8 columnas eran ancho gastado en
+   repetir el filtro. De paso gana la vista de móvil, que la tabla no tenía. */
 
-/* Retirada: sigue en la lista (para su departamento) pero se lee como apagada. */
-tr.is-retired { opacity: .6; }
+/* ---- Ancla: la guardia para la que se elige --------------------------------
+   A sangre y pegada arriba (sticky) a propósito: es parte del MARCO, no del contenido. El dato que
+   decide qué fichas valen —materia y nivel del grupo— tiene que seguir visible mientras se recorren
+   las tarjetas, que es justo lo que no pasaba con una caja más en la pila. Los márgenes negativos
+   son el padding de .page (42/56 en escritorio, 22/16 en móvil). */
+.bank-anchor {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px 24px;
+    margin: -42px -56px 26px; padding: 16px 56px;
+    background: var(--accent-deep); color: var(--on-accent-deep);
+    /* Los tres pesos de tinta sobre el tostado, derivados de UNA: secundaria, terciaria y filete. */
+    --anchor-soft: color-mix(in srgb, var(--on-accent-deep) 80%, transparent);
+    --anchor-faint: color-mix(in srgb, var(--on-accent-deep) 62%, transparent);
+    --anchor-hair: color-mix(in srgb, var(--on-accent-deep) 40%, transparent);
+}
+.bank-anchor__what { min-width: 0; }
+.bank-anchor__eyebrow {
+    display: inline-flex; align-items: center; gap: 7px; margin: 0;
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--anchor-faint);
+}
+.bank-anchor__dot {
+    flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.bank-anchor__row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-top: 7px; }
+.bank-anchor__cover { font-family: var(--font-display); font-weight: 500; font-size: 21px; }
+.bank-anchor__when { font-family: var(--font-mono); font-size: 12.5px; color: var(--anchor-faint); }
+.bank-anchor__rule { font-size: 12.5px; color: var(--anchor-soft); }
+.bank-anchor__rule strong { color: var(--on-accent-deep); font-weight: 600; }
+.bank-anchor__warn { margin: 8px 0 0; max-width: 70ch; font-size: 12.5px; line-height: 1.5; color: var(--anchor-soft); }
+.bank-anchor__actions { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.bank-anchor__ghost {
+    display: inline-flex; align-items: center; padding: 10px 16px;
+    border: 1.5px solid var(--anchor-hair); border-radius: var(--radius);
+    font: 600 13.5px var(--font-body); color: var(--anchor-soft); text-decoration: none;
+}
+.bank-anchor__ghost:hover { border-color: var(--on-accent-deep); color: var(--on-accent-deep); }
+.bank-anchor__dice svg { width: 16px; height: 16px; }
+
+/* ---- Filtros: chips que aplican al elegir (cada opción es un enlace) -------
+   Sin botón de aplicar y sin caja alrededor: el estado va escrito en el propio chip, que es lo que
+   antes se perdía entre dos desplegables y una casilla. */
+.bank-filters {
+    display: flex; align-items: center; gap: 10px;
+    padding-bottom: 14px; border-bottom: 1px solid var(--border); margin-bottom: 18px;
+}
+.bank-filters__chips { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-width: 0; }
+.bank-chip {
+    display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px;
+    border: 1px solid var(--border); border-radius: 999px;
+    background: var(--surface); color: var(--text-muted);
+    font: 500 13px var(--font-body); text-decoration: none; white-space: nowrap; cursor: pointer;
+    list-style: none;
+}
+.bank-chip::-webkit-details-marker { display: none; }
+.bank-chip::marker { content: ""; }
+.bank-chip:hover { border-color: var(--border-strong); color: var(--text); }
+.bank-chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.bank-chip.is-active, .bank-chip.is-locked {
+    background: var(--accent-weak); border-color: var(--accent-weak-border);
+    color: var(--accent-ink); font-weight: 600;
+}
+/* Bloqueado, no desactivado: eligiendo para una clase la materia la fija la guardia (el grupo trabaja
+   la asignatura que le tocaba), así que se muestra para explicar el filtro, no para cambiarlo. */
+.bank-chip.is-locked { cursor: default; }
+.bank-chip svg { flex: none; width: 12px; height: 12px; }
+.bank-chip.is-locked svg { width: 13px; height: 13px; }
+.bank-drop { position: relative; }
+.bank-drop__panel {
+    position: absolute; z-index: 40; top: calc(100% + 5px); left: 0;
+    min-width: 210px; max-width: 300px; max-height: 320px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 2px; padding: 5px;
+    background: var(--surface); border: 1px solid var(--border-strong);
+    border-radius: var(--radius); box-shadow: var(--shadow-card);
+}
+.bank-drop__opt {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 8px 10px; border-radius: var(--radius-sm);
+    font-size: 13.5px; color: var(--text); text-decoration: none;
+}
+.bank-drop__opt:hover { background: var(--accent-weak); color: var(--text); }
+.bank-drop__opt.is-on { font-weight: 600; color: var(--accent-ink); }
+.bank-drop__count { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
+.bank-count { flex: none; margin: 0 0 0 auto; font-family: var(--font-mono); font-size: 12px; color: var(--text-faint); }
+
+/* Las reglas del banco, plegadas: eran tres párrafos fijos que empujaban los resultados fuera de la
+   pantalla en el momento en que menos se leen (a mitad de una guardia). Cerrado va EN LA MISMA LÍNEA
+   que la entradilla (una línea de ayuda, no un bloque); abierto pasa a ocupar su propia línea. */
+.bank-intro { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.bank-intro .lead { margin: 0; }
+.bank-how { min-width: 0; }
+.bank-how[open] { flex: 1 0 100%; margin-top: 4px; }
+.bank-how > summary { display: inline-block; font-size: 13px; font-weight: 600; color: var(--accent-ink); cursor: pointer; }
+.bank-how > summary:hover { color: var(--text); }
+.bank-how > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-sm); }
+.bank-how p { margin: 8px 0 0; max-width: 72ch; font-size: 13px; line-height: 1.55; color: var(--text-muted); }
+
+/* ---- Tarjeta de ficha ------------------------------------------------------ */
+.bank-grid { display: grid; gap: 14px; }
+.bank-card {
+    display: flex; flex-direction: column;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 18px 20px;
+}
+.bank-card:hover { border-color: var(--border-strong); }
+/* Una sola acción plena por pantalla: la sugerida. El realce es del contenedor, no del botón, para
+   que se lea como "esta es la que te propongo" y no como "esta es más importante". */
+.bank-card.is-suggested { border: 1.5px solid var(--accent); box-shadow: var(--shadow-hero); }
+.bank-card.is-retired { opacity: .62; }
+.bank-card__top { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 28px; margin-bottom: 8px; }
+.bank-card__origin { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.bank-card__from { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
+.bank-card__flag {
+    font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: .08em;
+    text-transform: uppercase; padding: 3px 9px; border-radius: 999px;
+    color: var(--accent-ink); background: var(--accent-weak); border: 1px solid var(--accent-weak-border);
+}
+.bank-card__flag--muted { color: var(--text-muted); background: var(--surface-sunken); border-color: var(--border); }
+.bank-card__title { font-family: var(--font-display); font-weight: 500; font-size: 20px; line-height: 1.25; margin: 0; }
+.bank-card__desc { margin: 7px 0 0; font-size: 13.5px; line-height: 1.55; color: var(--text); }
+/* margin-top:auto en el pie (y no flex:1 en la descripción): alinea los pies de las tarjetas de una
+   misma fila TAMBIÉN cuando alguna no tiene descripción. */
+.bank-card__foot {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    margin-top: auto; padding-top: 13px; border-top: 1px solid var(--separator);
+}
+.bank-card__meta { margin: 0; font-family: var(--font-mono); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--text-faint); }
+.bank-card__use { flex: none; }
+/* "Usar esta" del resto: acento como TEXTO, no como relleno. Misma acción, un peso menos. */
+.bank-use--soft { background: transparent; color: var(--accent-ink); border-color: var(--accent-weak-border); }
+.bank-use--soft:hover { background: var(--accent-weak); border-color: var(--accent); color: var(--accent-ink); }
+
+/* Adjunto: la ficha que se va a repartir en el aula, con su enlace de "Ver". Sin ficha se dice
+   explícitamente (y que no hace falta pasar por fotocopias), en vez de dejar un hueco. */
+.bank-doc {
+    display: flex; align-items: center; gap: 11px; margin-top: 13px; padding: 10px 12px;
+    background: var(--surface-alt); border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text); text-decoration: none;
+}
+.bank-doc:hover { border-color: var(--accent-weak-border); color: var(--text); }
+.bank-doc__icon {
+    flex: none; display: flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; border-radius: var(--radius-sm);
+    background: var(--accent-weak); color: var(--accent-ink);
+}
+.bank-doc__icon svg { width: 15px; height: 15px; }
+.bank-doc__body { flex: 1; min-width: 0; }
+.bank-doc__name { display: block; font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bank-doc__kind { display: block; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint); }
+.bank-doc__cta { flex: none; font-size: 12px; font-weight: 600; color: var(--accent-ink); }
+.bank-nodoc {
+    display: flex; align-items: center; gap: 9px; margin: 13px 0 0; padding: 10px 12px;
+    background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--radius);
+    font-size: 12.5px; color: var(--text-muted);
+}
+.bank-nodoc svg { flex: none; width: 15px; height: 15px; }
+
+/* Menú de la ficha: lo destructivo deja de estar a un clic (estaba junto a "Usar esta", en rojo) y
+   pasa al final de un menú, separado. Mismo patrón <details> del "+" del calendario: sin JS. */
+.bank-menu { position: relative; flex: none; margin-right: -6px; }
+.bank-menu__btn {
+    display: flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+    border-radius: 8px; color: var(--text-faint); cursor: pointer; list-style: none;
+}
+.bank-menu__btn::-webkit-details-marker { display: none; }
+.bank-menu__btn::marker { content: ""; }
+.bank-menu__btn:hover { background: var(--surface-sunken); color: var(--text); }
+.bank-menu__btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.bank-menu__btn svg { width: 17px; height: 17px; }
+.bank-menu__panel {
+    position: absolute; top: 100%; right: 0; z-index: 40; min-width: 178px; margin-top: 4px; padding: 4px;
+    display: flex; flex-direction: column; gap: 2px;
+    background: var(--surface); border: 1px solid var(--border-strong);
+    border-radius: var(--radius); box-shadow: var(--shadow-card);
+}
+.bank-menu__item {
+    display: block; width: 100%; text-align: left; padding: 8px 10px;
+    border: 0; background: transparent; border-radius: var(--radius-sm);
+    font: 400 13px var(--font-body); color: var(--text); text-decoration: none; white-space: nowrap; cursor: pointer;
+}
+.bank-menu__item:hover { background: var(--surface-sunken); color: var(--text); }
+.bank-menu__item--danger { color: var(--danger-text); }
+.bank-menu__item--danger:hover { background: var(--danger-weak); }
+/* Borrar, apartado del resto: es el único que pierde la referencia de las guardias que la usaron. */
+.bank-menu__panel > form:last-child { margin-top: 2px; padding-top: 2px; border-top: 1px solid var(--separator); }
+
+/* Estado vacío que nombra el caso concreto ("Música de 3º de ESO no tiene fichas todavía"): "no hay
+   resultados" no dice a quién le falta subir qué. */
+.bank-empty { display: flex; flex-direction: column; align-items: center; padding: 44px 30px; }
+.bank-empty__icon {
+    display: flex; align-items: center; justify-content: center; width: 62px; height: 62px;
+    margin-bottom: 20px; border-radius: 17px; background: var(--surface-sunken); color: var(--text-faint);
+}
+.bank-empty__icon svg { width: 28px; height: 28px; }
+.bank-empty h2 { font-family: var(--font-display); font-weight: 500; font-size: 24px; color: var(--text); }
+.bank-empty p { max-width: 48ch; font-size: 14.5px; line-height: 1.55; }
+.bank-empty__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.bank-empty__escape { margin-top: 18px; font-size: 13px; font-weight: 600; }
+
+/* Dos columnas solo cuando la tarjeta no se estrecha: por debajo, una sola. */
+@media (min-width: 900px) {
+    .bank-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+    .bank-anchor { margin: -22px -16px 18px; padding: 12px 20px 16px; flex-direction: column; align-items: stretch; }
+    .bank-anchor__cover { font-size: 20px; }
+    .bank-anchor__actions { justify-content: space-between; }
+    .bank-anchor__dice { flex: 1; }
+    /* Chips en una tira con scroll lateral, como los tramos del parte. El recorte se levanta cuando
+       hay un desplegable abierto: si no, el panel quedaría cortado por el propio overflow. */
+    .bank-filters { flex-direction: column; align-items: stretch; gap: 8px; }
+    .bank-filters__chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+    .bank-filters__chips::-webkit-scrollbar { height: 0; }
+    .bank-filters__chips:has(details[open]) { flex-wrap: wrap; overflow: visible; }
+    .bank-count { margin-left: 0; }
+    /* Eligiendo desde el móvil, "+ Añadir tarea" no es lo que se ha venido a hacer y se comía una línea
+       entera entre la entradilla y los filtros. Sigue a un toque desde el banco por el menú. */
+    .page-head__actions--aside { display: none; }
+    .bank-card { padding: 16px 17px; }
+    .bank-card__title { font-size: 19px; }
+    /* La acción a ancho completo y por debajo de la meta: objetivo de pulgar de 44px. */
+    .bank-card__foot { flex-direction: column; align-items: stretch; gap: 12px; }
+    .bank-card__use, .bank-card__use .btn { width: 100%; }
+    .bank-card__use .btn { padding: 13px; font-size: 14.5px; }
+}
 
 /* La tarea del banco es una tarjeta normal, no un aviso: llevaba filete rojo y la etiqueta "Del banco" en
    rojo teja —el color de "sin cubrir"— y con eso la ficha de repaso del departamento parecía un problema.
