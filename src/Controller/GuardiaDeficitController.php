@@ -9,8 +9,10 @@ use App\Entity\GuardiaCover;
 use App\Entity\GuardiaGrouping;
 use App\Entity\GuardiaSupport;
 use App\Entity\Room;
+use App\Entity\TimeSlot;
 use App\Entity\User;
 use App\Enum\Area;
+use App\Enum\TimeSlotKind;
 use App\Enum\Weekday;
 use App\Repository\AbsenceRepository;
 use App\Repository\AcademicYearRepository;
@@ -19,9 +21,11 @@ use App\Repository\GuardiaGroupingRepository;
 use App\Repository\GuardiaSupportRepository;
 use App\Repository\RoomRepository;
 use App\Repository\ScheduleEntryRepository;
+use App\Repository\TimeSlotRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
 use App\Service\GuardiaRoomChangeNotifier;
+use App\Space\FreeRoomsDay;
 use App\Space\RoomAvailability;
 use App\Space\RoomOccupancy;
 use App\Space\RoomOccupation;
@@ -50,9 +54,14 @@ final class GuardiaDeficitController extends AbstractController
     use GuardiaParteTrait;
 
     /**
-     * The "aulas libres" sheet for a day: period by period, which spaces nobody is using, biggest first.
-     * Printable for the noticeboard, and the same figures the grouping screen offers as options. Read
-     * access is enough — it says nothing private.
+     * The "aulas libres" sheet: for ONE period of a day, which spaces nobody is using, grouped by how many
+     * groups they hold. Read access is enough — it says nothing private.
+     *
+     * One period at a time and not the whole day at once ({@see FreeRoomsDay} says why), which is also why
+     * the day's frame is read from the marco horario ({@see TimeSlot}) instead of from the timetable: the
+     * selector has to offer the recreos too, and no lesson is timetabled in those, so a period list derived
+     * from lessons cannot see them. A course imported before the frame existed still has lessons, hence the
+     * fallback — an old import loses the recreos from the selector, not the screen.
      *
      * Answers on the EFFECTIVE timetable ({@see RoomOccupancy}), the same service the Espacios module
      * uses: a room an approved space plan has just taken must not appear here as free, or two groups end
@@ -60,7 +69,7 @@ final class GuardiaDeficitController extends AbstractController
      * sheet and they may well have no permission on the spaces module.
      */
     #[Route('/aulas', name: 'guardia_rooms', methods: ['GET'])]
-    public function rooms(Request $request, ScheduleEntryRepository $schedule, AcademicYearRepository $years, RoomOccupancy $occupancy, RoomSynchroniser $synchroniser): Response
+    public function rooms(Request $request, ScheduleEntryRepository $schedule, TimeSlotRepository $frames, AcademicYearRepository $years, RoomOccupancy $occupancy, RoomSynchroniser $synchroniser): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
@@ -68,20 +77,54 @@ final class GuardiaDeficitController extends AbstractController
         $schoolYear = SchoolYear::current($date);
         $year = $years->findBySchoolYear($schoolYear);
 
-        $slots = $year instanceof AcademicYear ? $schedule->distinctSlots($year) : [];
-        $slotIndexes = array_map(static fn (array $s): int => $s['index'], $slots);
+        $frame = $year instanceof AcademicYear ? $this->dayFrame($frames, $schedule, $year) : [];
+        $slotIndexes = array_map(static fn (array $s): int => $s['index'], $frame);
         $availability = $year instanceof AcademicYear ? $occupancy->forDay($year, $date, $slotIndexes) : [];
+
+        $today = new \DateTimeImmutable('now');
+        $day = FreeRoomsDay::of(
+            $frame,
+            $availability,
+            $request->query->has('slot') ? (int) $request->query->get('slot') : null,
+            // The clock only picks the period when the sheet is on today; on any other day "the hour we
+            // are living" means nothing and the sheet opens on first period.
+            $date->format('Y-m-d') === $today->format('Y-m-d') ? $today : null,
+        );
 
         return $this->render('guardia/rooms.html.twig', [
             'date' => $date,
             'schoolYear' => $schoolYear,
-            'slots' => $slots,
-            'free' => array_map(static fn (RoomAvailability $a): array => $a->largestFirst(), $availability),
+            'day' => $day,
             // A timetable cell naming a room with no catalogued card is invisible to the calculation,
             // which would report that room as free. Say so instead of letting it be found out as two
             // groups sent to the same place.
             'unlinkedCells' => $synchroniser->unlinkedCells(),
         ]);
+    }
+
+    /**
+     * The shape of the school day for the sheet's selector: the marco horario when the course has one, and
+     * the periods the lessons themselves reveal when it does not.
+     *
+     * @param TimeSlotRepository      $frames   the marco horario repository
+     * @param ScheduleEntryRepository $schedule the timetable repository (the fallback)
+     * @param AcademicYear            $year     the course whose day to read
+     *
+     * @return list<array{index: int, startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable, isBreak: bool}> the periods, earliest first
+     */
+    private function dayFrame(TimeSlotRepository $frames, ScheduleEntryRepository $schedule, AcademicYear $year): array
+    {
+        $slots = $frames->findByYear($year);
+        if ([] !== $slots) {
+            return array_map(static fn (TimeSlot $s): array => [
+                'index' => $s->getSlotIndex(),
+                'startsAt' => $s->getStartsAt(),
+                'endsAt' => $s->getEndsAt(),
+                'isBreak' => TimeSlotKind::BREAK_TIME === $s->getKind(),
+            ], $slots);
+        }
+
+        return array_map(static fn (array $s): array => $s + ['isBreak' => false], $schedule->distinctSlots($year));
     }
 
     /**
@@ -169,6 +212,10 @@ final class GuardiaDeficitController extends AbstractController
      * The "agrupar en un aula" screen: pick which of the period's classes go together, and where. Offers
      * every space with its state ({@see RoomOccupancy}) — including the taken ones, because freeing up the
      * library or the assembly hall is the whole point — plus somewhere to send the class being displaced.
+     *
+     * Takes an optional {@code ?room=CODE} so the aulas libres sheet can hand over the room somebody just
+     * picked there. Only a preselection in the dropdown: the room still has to survive the same validation
+     * on POST, so a code that is stale or was typed by hand changes nothing.
      */
     #[Route('/agrupar', name: 'guardia_grouping_new', methods: ['GET'])]
     public function newGrouping(Request $request, GuardiaCoverRepository $covers, GuardiaGroupingRepository $groupings, ScheduleEntryRepository $schedule, AcademicYearRepository $years, RoomOccupancy $occupancy): Response
@@ -187,6 +234,7 @@ final class GuardiaDeficitController extends AbstractController
             'schoolYear' => $schoolYear,
             'slotIndex' => $slotIndex,
             'slotLabel' => $this->slotLabel($schedule, $year, $slotIndex),
+            'preselectedRoom' => trim((string) $request->query->get('room')),
             // Only the ungrouped lines can be picked; the ones already sorted out are listed apart with
             // their room, so the screen never offers to put the same class in two rooms at once.
             'covers' => array_values(array_filter($parte, static fn (GuardiaCover $c): bool => null === $c->getGrouping())),

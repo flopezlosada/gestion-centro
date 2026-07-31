@@ -104,9 +104,14 @@ final readonly class RoomAvailability
     }
 
     /**
-     * Orders two spaces roomiest first, on three keys: known size before unknown, then most groups first,
-     * then code. The unknown ones cannot ride along with the big rooms just because "unknown" happens to
-     * be a high number — the top of this list is where somebody looks for a room that holds three groups.
+     * Orders two spaces roomiest first, on four keys: known size before unknown, then most groups first,
+     * then what the centre CONFIRMED before what the timetable merely suggests, then code. The unknown ones
+     * cannot ride along with the big rooms just because "unknown" happens to be a high number — the top of
+     * this list is where somebody looks for a room that holds three groups.
+     *
+     * Confirmed before observed matters at the top of each size: "the centre says three groups fit" and
+     * "three groups have happened to be in here" are the same number and not the same promise, so the
+     * answer somebody can rely on is offered first.
      *
      * @param Room $a the first space
      * @param Room $b the second space
@@ -118,8 +123,8 @@ final readonly class RoomAvailability
         $groupsA = $a->effectiveSize()?->groups();
         $groupsB = $b->effectiveSize()?->groups();
 
-        return [null === $groupsA, -($groupsA ?? 0), $a->getCode()]
-            <=> [null === $groupsB, -($groupsB ?? 0), $b->getCode()];
+        return [null === $groupsA, -($groupsA ?? 0), !$a->isSizeConfirmed(), $a->getCode()]
+            <=> [null === $groupsB, -($groupsB ?? 0), !$b->isSizeConfirmed(), $b->getCode()];
     }
 
     /**

@@ -68,7 +68,7 @@ final class GuardiaDeficitControllerTest extends WebTestCase
         $this->em->persist($this->year);
     }
 
-    public function testFreeRoomsSheetListsTheRoomsNobodyIsUsingBiggestFirst(): void
+    public function testFreeRoomsSheetGroupsTheRoomsNobodyIsUsingByHowManyGroupsFit(): void
     {
         $this->login();
         $teacher = $this->user('Docente Aula', 'aula@centro.test');
@@ -82,10 +82,14 @@ final class GuardiaDeficitControllerTest extends WebTestCase
         $crawler = $this->client->request('GET', '/guardias/aulas?date='.self::MONDAY);
 
         self::assertResponseIsSuccessful();
-        $slot = $crawler->filter('.rooms-slot')->first();
-        self::assertStringContainsString('S ACTOS', $slot->text(), 'the free big room is listed');
-        self::assertStringNotContainsString('A10', $slot->text(), 'a room in use at that period is not offered');
-        self::assertStringContainsString('2 grupos según el horario', $slot->text(), 'nobody has classified the room, so the sheet says where the figure comes from');
+        $libres = $crawler->filter('.rooms-tiers');
+        self::assertStringContainsString('S ACTOS', $libres->text(), 'the free big room is listed');
+        self::assertStringNotContainsString('A10', $libres->text(), 'a room in use at that period is not offered');
+        self::assertStringContainsString('Caben 2 grupos', $libres->text(), 'the rooms are grouped by how many groups fit');
+        // The figure's provenance is carried by the SHAPE of the capacity box, so the only text saying it
+        // is the box's accessible name. Asserted on that, not on the class, because it is what a person
+        // using a screen reader gets — and the whole point of the box is not to repeat it in every line.
+        self::assertStringContainsString('estimado por el horario', $libres->text(), 'nobody has classified the room, so the sheet says the figure is a guess');
     }
 
     public function testFreeRoomsSheetDoesNotOfferARoomAnApprovedPlanHasTaken(): void
@@ -95,6 +99,9 @@ final class GuardiaDeficitControllerTest extends WebTestCase
         $this->login();
         $teacher = $this->user('Docente Aula', 'aula@centro.test');
         $this->lective($teacher, 0, '1ºA', 'A10', Weekday::MONDAY);
+        // S ACTOS is free on Monday and has to be there: without a room to list, the screen would show its
+        // empty state and "BIBL is not offered" would pass for the wrong reason.
+        $this->lective($teacher, 0, 'E4A', 'S ACTOS', Weekday::TUESDAY);
         $this->room('BIBL');
         $this->syncRooms();
         $this->planTakes('BIBL', 0, 'E4A');
@@ -102,8 +109,50 @@ final class GuardiaDeficitControllerTest extends WebTestCase
         $crawler = $this->client->request('GET', '/guardias/aulas?date='.self::MONDAY);
 
         self::assertResponseIsSuccessful();
-        $slot = $crawler->filter('.rooms-slot')->first();
-        self::assertStringNotContainsString('BIBL', $slot->text(), 'the plan has that room, so it is not free');
+        $libres = $crawler->filter('.rooms-tiers')->text();
+        self::assertStringContainsString('S ACTOS', $libres, 'the room nobody has taken is offered');
+        self::assertStringNotContainsString('BIBL', $libres, 'the plan has that room, so it is not free');
+    }
+
+    public function testFreeRoomsSheetOffersTheNextPeriodWhenNothingIsFree(): void
+    {
+        // With prisa an empty screen is useless: when the hour asked for has nothing, the sheet has to
+        // point at an hour that does.
+        $this->login();
+        $teacher = $this->user('Docente Aula', 'aula@centro.test');
+        // The only catalogued room is taken at period 0. Period 1 exists in the day because somebody is on
+        // guardia duty then — an entry with no room, so it leaves A10 free and the sheet has an hour to
+        // point at.
+        $this->lective($teacher, 0, '1ºA', 'A10', Weekday::MONDAY);
+        $this->guardiaEntry($teacher, 1);
+        $this->syncRooms();
+
+        $crawler = $this->client->request('GET', '/guardias/aulas?date='.self::MONDAY.'&slot=0');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(0, $crawler->filter('.rooms-tiers'), 'with nothing free there is no list to show');
+        $salida = $crawler->filter('.rooms-empty .btn-lg--primary');
+        self::assertCount(1, $salida, 'the empty state offers the next period with rooms');
+        self::assertStringContainsString('slot=1', (string) $salida->attr('href'), 'and it points at that period');
+    }
+
+    public function testFreeRoomsCardCarriesTheRoomOverToTheGroupingScreen(): void
+    {
+        // Picking a room on the sheet is what somebody came to do: the card is the way into "juntar
+        // grupos" with that room already chosen, so the choice is not made twice.
+        $this->login();
+        $teacher = $this->user('Docente Aula', 'aula@centro.test');
+        $this->lective($teacher, 0, '1ºA', 'A10', Weekday::MONDAY);
+        $this->lective($teacher, 0, 'E4A', 'S ACTOS', Weekday::TUESDAY);
+        $this->syncRooms();
+
+        $crawler = $this->client->request('GET', '/guardias/aulas?date='.self::MONDAY.'&slot=0');
+
+        self::assertResponseIsSuccessful();
+        // Decoded, so the assertion does not depend on how the generator escapes the space in the code.
+        $href = urldecode((string) $crawler->filter('.roomcard[href]')->first()->attr('href'));
+        self::assertStringContainsString('/guardias/agrupar', $href, 'the card leads to the grouping screen');
+        self::assertStringContainsString('room=S ACTOS', $href, 'with the room already chosen');
     }
 
     public function testFreeRoomsSheetIsDeniedWithoutReadAccess(): void
