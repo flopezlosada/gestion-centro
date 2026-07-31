@@ -911,7 +911,9 @@ input[type="file"]::file-selector-button:hover { background: var(--surface-sunke
 .form-row input[type="time"],
 .form-row select,
 .form-row textarea,
-input[type="email"], input[type="text"], select, textarea {
+/* `url` va con los demás: el enlace del entregable se escribía en un input sin estilo del sistema
+   (llevaba su propia clase suelta), y era el único campo de la app con el aspecto del navegador. */
+input[type="email"], input[type="text"], input[type="url"], select, textarea {
     width: 100%;
     padding: 10px 12px;
     border: 1px solid var(--border-strong);
@@ -2002,11 +2004,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 /* Tareas que no se cierran por casilla (p. ej. por entregable): marcador estático, no interactivo. */
 .checkbox.is-static { border-style: dashed; border-color: var(--border); cursor: default; }
 
-/* ---- Puesto de trabajo de la tarea (detalle): siguiente paso + acciones del ciclo ---- */
-.task-workbench { display: flex; flex-direction: column; gap: 14px; }
-.task-nextstep { margin: 0; font-size: 15px; color: var(--text); }
-/* La barra de acciones del detalle es .actionbar desde el rediseño; .task-actions quedó sin uso. */
-.deliverable-form { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+/* El detalle de la tarea vive más abajo, en su propio bloque: `.task-workbench`, `.task-nextstep` y
+   `.actionbar` murieron con el rediseño de la ficha (ahora manda la tarjeta de decisión) y se retiran
+   aquí en vez de dejar reglas que nadie casa. `.deliverable-input` sigue, la usa el corregir-enlace. */
 .deliverable-input { flex: 1 1 320px; min-width: 0; }
 
 .agenda-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-top: 1px; }
@@ -3129,7 +3129,9 @@ tr.is-not-covered { background: var(--danger-weak); }
 .task-pill--is-pending { background: var(--separator); color: var(--text-muted); border-color: var(--border-strong); }
 .task-pill--is-muted   { background: var(--separator); color: var(--text-faint); border-color: var(--border-strong); }
 .task-pill--is-amber   { background: var(--amber-weak); color: var(--amber-text); border-color: var(--amber-border); }
-.task-pill--is-success { background: var(--accent-weak); color: var(--success); border-color: var(--accent-weak-border); }
+/* "Finalizada" en el verde de hecho, fondo incluido: llevaba tinte NARANJA (el de la marca) con letra
+   verde, y una tarea cerrada quedaba pintada con el color de lo que reclama atención. */
+.task-pill--is-success { background: var(--success-weak); color: var(--success-text); border-color: color-mix(in srgb, var(--success) 35%, transparent); }
 /* "En revisión": devuelta con correcciones. Azul pizarra, ni el ámbar de lo entregado (que espera un
    veredicto) ni el rojo de lo que se ha pasado de fecha: hay trabajo que hacer, pero nada va mal. */
 .task-pill--is-review  { background: var(--review-weak); color: var(--review-text); border-color: var(--review); }
@@ -3196,34 +3198,103 @@ tr.is-not-covered { background: var(--danger-weak); }
 
 .task-detail { max-width: 600px; }
 .status-pill {
-    display: inline-flex; align-items: center; gap: 5px; margin-right: 6px;
+    display: inline-flex; align-items: center; gap: 5px;
     font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
     padding: 5px 11px; border-radius: 999px; border: 1px solid transparent;
 }
+.status-pill svg { width: 11px; height: 11px; }
+/* Los chips en una fila propia y con hueco entre ellos: una tarea puede llevar tres a la vez (estado +
+   fuera de plazo + delegada por ti) y con el margen derecho de antes se pegaban al envolver. */
+.task-detail__pills { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
 .task-detail__title { font-family: var(--font-display); font-weight: 500; font-size: 24px; line-height: 1.2; margin: 14px 0 0; }
+/* "Fuera de plazo · N días" acompaña al estado, no lo sustituye: el rojo teja de --warning es el de la
+   urgencia en toda la app, y por eso no se mezcla con el azul de "devuelta" ni con el ámbar de "entregada". */
+.task-pill--is-late { background: var(--warning-weak); color: var(--warning-text); border-color: var(--warning-border); }
+/* "Delegada por ti": un dato de la tarea, en tinte de marca — no una alarma. */
+.task-pill--is-accent { background: var(--accent-weak); color: var(--accent-ink); border-color: var(--accent-weak-border); }
 
-.meta-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin: 18px 0 0;
-    background: var(--border); border: 1px solid var(--border); border-radius: 16px; overflow: hidden;
+/* Quién la lleva AHORA (delegada): la persona es el dato, así que va con cara y nombre en el cuerpo, no
+   en un desplegable del lateral. El botón abre el mismo selector de siempre. */
+.doer { display: flex; align-items: center; flex-wrap: wrap; gap: 13px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; margin-top: 18px; }
+.doer__avatar {
+    flex: none; width: 36px; height: 36px; border-radius: 999px;
+    background: var(--accent-weak); color: var(--accent-ink);
+    display: grid; place-items: center; font-size: 11px; font-weight: 700;
 }
-.meta-grid__cell { background: var(--surface); padding: 13px 15px; }
+.doer__avatar--sm { width: 20px; height: 20px; font-size: 9px; }
+.doer__body { flex: 1; min-width: 0; }
+.doer__name { font-size: 14px; color: var(--text); font-weight: 600; }
+.doer__meta { font-size: 12.5px; color: var(--text-faint); margin-top: 1px; }
+.doer__change { flex: none; }
+.doer__change > summary { list-style: none; cursor: pointer; }
+.doer__change > summary::-webkit-details-marker { display: none; }
+.doer__change[open] { flex-basis: 100%; }
+
+/* Las líneas las dibuja CADA celda por dentro (box-shadow inset), no el fondo del contenedor asomando
+   por un gap: al mostrar solo las celdas que aplican, la última fila casi nunca está completa y el hueco
+   se pintaba del color de las líneas — un bloque gris que parecía un dato que no había cargado. */
+.meta-grid {
+    display: grid; grid-template-columns: 1fr 1fr; margin: 18px 0 0;
+    background: var(--surface); border-radius: 16px; overflow: hidden;
+}
+.meta-grid__cell { background: var(--surface); padding: 13px 15px; box-shadow: inset 0 0 0 .5px var(--border); }
 .meta-grid__cell dt { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); }
 .meta-grid__cell dd { margin: 4px 0 0; font-size: 14px; color: var(--text); }
 .meta-grid__cell dd.mono { font-family: var(--font-mono); font-weight: 600; font-size: 15px; }
 .meta-grid__cell dd.is-overdue { color: var(--danger-text); }
+.meta-grid__cell dd.is-closed { color: var(--success-text); }
+.meta-grid__who { display: flex; align-items: center; gap: 7px; font-size: 13.5px; }
+/* Tres columnas en escritorio: con las celdas que aplican (y ninguna con "—") caben seis datos en dos
+   filas limpias. En móvil siguen siendo dos, que es lo que entra sin partir un nombre. */
+@media (min-width: 900px) {
+    .meta-grid--three { grid-template-columns: 1fr 1fr 1fr; }
+}
 
 .detail-block { margin-top: 22px; }
 .detail-block__label { font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 8px; }
 .detail-prose { font-size: 14px; line-height: 1.6; color: var(--text); margin: 0; }
+/* Lo que no llegó a escribirse (una tarea sin instrucciones): en gris y en cursiva, para que se lea como
+   una ausencia y no como el texto de la tarea. */
+.detail-prose--absent { color: var(--text-faint); font-style: italic; }
 
-.doc-notice { display: flex; align-items: center; gap: 12px; background: var(--warning-weak); border: 1px solid var(--warning-border); border-radius: 14px; padding: 13px 15px; margin-top: 18px; }
-.doc-notice__icon { flex: none; width: 32px; height: 32px; border-radius: 9px; background: color-mix(in srgb, var(--warning) 22%, var(--surface)); color: var(--warning-text); display: grid; place-items: center; }
-.doc-notice__icon svg { width: 16px; height: 16px; }
-.doc-notice__title { font-size: 13.5px; color: var(--text); font-weight: 500; }
-.doc-notice__sub { font-size: 12px; color: var(--warning-text); }
+/* Por qué volvió: lo primero del contenido cuando la tarea está devuelta. Azul pizarra y no rojo, el mismo
+   de "en revisión" en el listado y en el hilo: hay trabajo que hacer, pero nada ha ido mal — y el rojo ya
+   significa "fuera de plazo", que puede estar pasando a la vez en esta misma pantalla. */
+.returned { position: relative; background: var(--review-weak); border: 1px solid var(--review); border-radius: 14px; padding: 15px 17px 15px 19px; margin-top: 18px; }
+.returned::before { content: ""; position: absolute; left: 0; top: 13px; bottom: 13px; width: 4px; border-radius: 999px; background: var(--review); }
+.returned__head { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; }
+.returned__avatar { flex: none; width: 22px; height: 22px; border-radius: 999px; background: color-mix(in srgb, var(--review) 26%, var(--surface)); color: var(--review-text); display: grid; place-items: center; font-size: 9px; font-weight: 700; }
+.returned__who { font-size: 12.5px; color: var(--review-text); }
+.returned__who strong { color: var(--text); }
+/* Sin `white-space: pre-line`: el motivo ya viene con `|nl2br`, que deja el `<br>` Y el salto original —
+   con las dos cosas, un motivo de dos párrafos se separaba con el doble de aire. (`.notice__text` sí lo
+   lleva, porque allí el texto va en crudo.) */
+.returned__body { margin: 0; font-size: 14px; line-height: 1.55; color: var(--text); }
+
+/* Algo que alguien escribió y que aquí es contenido, no conversación: la nota de la entrega y el
+   comentario de cierre. */
+.quote-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; font-size: 13.5px; line-height: 1.55; color: var(--text); }
+.quote-card--quoted { margin-top: 4px; font-size: 13px; }
+.quote-card--quoted::before { content: "«"; }
+.quote-card--quoted::after { content: "»"; }
+
+/* Con qué se entrega: un DATO, en fila neutra. Iba en el rosa de aviso (--warning), así que una tarea
+   recién creada parecía tener un problema, y seguía ahí cuando ya estaba entregada. */
+.handin { display: flex; align-items: center; gap: 11px; background: var(--surface); border: 1px solid var(--border); border-radius: 13px; padding: 12px 15px; margin-top: 16px; }
+.handin__icon { flex: none; width: 30px; height: 30px; border-radius: 8px; background: var(--surface-sunken); color: var(--text-muted); display: grid; place-items: center; }
+.handin__icon svg { width: 15px; height: 15px; }
+.handin__title { font-size: 13.5px; color: var(--text); font-weight: 500; }
+.handin__sub { font-size: 12px; color: var(--text-faint); margin-top: 1px; }
 
 .doc-card { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 13px 15px; text-decoration: none; color: inherit; }
 .doc-card:hover { border-color: var(--border-strong); }
+/* Lo entregado que ESPERA una decisión se ofrece a abrirlo (es el primer gesto de quien valida); lo ya
+   devuelto se atenúa (es la entrega vieja, no la que cuenta) y lo cerrado va en verde de "hecho". */
+.doc-card--offered { border-width: 1.5px; border-color: var(--accent-weak-border); }
+.doc-card--offered:hover { border-color: var(--accent); }
+.doc-card--faded { opacity: .8; }
+.doc-card--faded .doc-card__icon { background: var(--surface-sunken); color: var(--text-muted); }
+.doc-card--closed .doc-card__icon { background: var(--success-weak); color: var(--success-text); }
 .doc-card__icon { flex: none; width: 36px; height: 36px; border-radius: 9px; background: var(--accent-weak); color: var(--accent-ink); display: grid; place-items: center; }
 .doc-card__icon svg { width: 18px; height: 18px; }
 .doc-card__body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -3265,16 +3336,55 @@ tr.is-not-covered { background: var(--danger-weak); }
 .thread__form { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .thread__form textarea { width: 100%; padding: 11px 14px; border: 1px solid var(--border-strong); border-radius: var(--radius); font: 400 14px var(--font-body); background: var(--surface); color: var(--text); resize: vertical; }
 
-/* Barra de acciones */
-.actionbar { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 24px; max-width: 600px; }
-.actionbar__form { flex: 1; display: flex; margin: 0; }
-/* Las acciones que llevan campos ocupan la fila entera y apilan; las de un solo botón siguen en línea. */
-.actionbar__form--submit,
-.actionbar__form--review,
-.actionbar__form--validate { flex-basis: 100%; flex-direction: column; gap: 10px; }
-.actionbar__input { width: 100%; padding: 13px 15px; border: 1px solid var(--border-strong); border-radius: 14px; font: 400 14px var(--font-body); background: var(--surface); color: var(--text); }
-.actionbar__file { width: 100%; font: 400 13px var(--font-body); color: var(--text-muted); }
-.actionbar__note { width: 100%; padding: 11px 15px; border: 1px solid var(--border-strong); border-radius: 14px; font: 400 14px var(--font-body); background: var(--surface); color: var(--text); resize: vertical; }
+/* ---- La decisión, arriba del lateral (handoff catalogo/handoff_detalle_tarea) ----------------
+   Una sola pieza con dos presentaciones: tarjeta en la columna lateral en escritorio y barra fija
+   inferior en móvil (al ir anclada abajo, el panel de campos se abre HACIA ARRIBA y hace de hoja).
+   Reemplaza a la vieja `.actionbar`, que caía al final de un cajón con el recordatorio y el histórico
+   por delante: la acción quedaba por debajo del historial y había que buscarla. */
+.decision { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 9px; }
+/* Solo cuando te TOCA actuar: borde de acento y sombra cálida. La de seguimiento va sin ellos a
+   propósito — si todo destaca, nada destaca. */
+.decision--mine { border-width: 1.5px; border-color: var(--accent-weak-border); box-shadow: var(--shadow-card); }
+.decision__label { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent-ink); }
+.decision:not(.decision--mine) .decision__label { color: var(--text-faint); }
+.decision__intro { font-size: 13px; line-height: 1.5; color: var(--text-muted); margin: -3px 0 5px; }
+.decision__hint { font-size: 11.5px; line-height: 1.45; color: var(--text-faint); margin: 0; text-align: center; }
+.decision__sep { height: 1px; background: var(--separator); margin: 5px 0; }
+.decision__minor { display: flex; flex-wrap: wrap; gap: 8px; }
+/* `:not(:has(*))` y no `:empty`: la fila la escribe una plantilla, así que aunque no salga ningún botón
+   sigue llevando dentro los saltos de línea de la indentación — con `:empty` no casaba nunca y la tarjeta
+   se quedaba con el hueco de una fila que no existe. */
+.decision__minor:not(:has(*)) { display: none; }
+.decision__delegate > summary { list-style: none; cursor: pointer; }
+.decision__delegate > summary::-webkit-details-marker { display: none; }
+/* Abierto, el selector de personas necesita la fila entera (dentro de `__minor`, que va en línea). */
+.decision__delegate[open] { flex-basis: 100%; }
+/* Cerrada: gris cálido y check verde. No es una tarjeta de decisión, es el recibo de que no hay nada
+   que decidir. */
+.decision--closed { background: var(--surface-sunken); border-color: var(--border); }
+.decision__closed-head { display: flex; align-items: center; gap: 9px; }
+.decision__check { flex: none; width: 26px; height: 26px; border-radius: 999px; background: var(--success-weak); color: var(--success-text); display: grid; place-items: center; }
+.decision__check--off { background: var(--separator); color: var(--text-faint); }
+.decision__check svg { width: 15px; height: 15px; }
+.decision__closed-title { font-size: 13.5px; color: var(--text); font-weight: 600; }
+
+/* Una acción del ciclo: el botón, y sus campos SOLO cuando se pulsa. */
+.taskact { margin: 0; display: flex; flex-direction: column; }
+/* El summary ES el botón: `display:flex` para que ocupe el ancho de la tarjeta como cualquier primario
+   (de inline-flex se encogía al texto y dejaba de parecer el gesto principal). */
+.taskact__panel > summary { display: flex; list-style: none; }
+.taskact__panel > summary::-webkit-details-marker { display: none; }
+.taskact__panel > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.taskact__fields { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+/* Abierto el panel, el botón de arriba deja de ser la llamada de atención (ya no abre nada: el gesto se
+   remata abajo) y pasa a ser el "cerrar" del panel. */
+.taskact__panel[open] > summary { background: transparent; color: var(--text-faint); border-color: var(--border-strong); box-shadow: none; font-size: 13px; padding: 10px; }
+.taskact__panel[open] > summary:hover { color: var(--text); }
+.taskact__shown { display: none; }
+.taskact__shut { display: inline-flex; align-items: center; gap: 7px; }
+.taskact__panel[open] > summary .taskact__shut { display: none; }
+.taskact__panel[open] > summary .taskact__shown { display: inline; }
+
 .btn-lg {
     flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
     padding: 15px; border-radius: 15px; font: 600 15px var(--font-body); cursor: pointer; border: 1.5px solid transparent;
@@ -3283,23 +3393,77 @@ tr.is-not-covered { background: var(--danger-weak); }
 .btn-lg:active { transform: scale(.99); }
 .btn-lg--primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .btn-lg--primary:hover { background: var(--accent-hover); }
-.btn-lg--danger { background: transparent; color: var(--danger-text); border-color: var(--danger-border); }
-.btn-lg--danger:hover { background: var(--danger-weak); border-color: var(--danger); }
+/* "Devolver para revisar" comparte color con el estado que produce (azul pizarra), no con el rojo de lo
+   destructivo: devolver no destruye nada, abre otra vuelta. */
+.btn-lg--review { background: transparent; color: var(--review-text); border-color: var(--review); }
+.btn-lg--review:hover { background: var(--review-weak); }
+.btn-lg--accent { background: transparent; color: var(--accent-ink); border-color: var(--accent-weak-border); }
+.btn-lg--accent:hover { background: var(--accent-weak); border-color: var(--accent); }
 .btn-lg--muted { background: transparent; color: var(--text-muted); border-color: var(--border-strong); }
 .btn-lg--muted:hover { background: var(--surface-sunken); color: var(--text); }
+/* Las salidas de emergencia (cancelar, reabrir) en discreto y con menos peso: tienen que estar a mano y
+   no pueden parecer el paso siguiente. */
+.btn-lg--quiet { background: transparent; color: var(--text-faint); border-color: transparent; font-size: 13px; padding: 10px; }
+.btn-lg--quiet:hover { color: var(--danger-text); background: var(--danger-weak); }
 
-@media (max-width: 760px) {
-    /* En móvil no hay breadcrumb (topbar oculta): la barra de volver es la salida. Deja hueco para
-       la barra de acciones fija. */
+/* Corregir el enlace ya entregado: una reparación, plegada. */
+.fix-link { margin-top: 10px; }
+.fix-link__toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font: 600 12.5px var(--font-body); color: var(--accent-ink); }
+.fix-link__toggle::-webkit-details-marker { display: none; }
+.fix-link__toggle:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: var(--radius-sm); }
+
+/* El histórico campo a campo, plegado y al final: es para auditar, no para saber dónde está la tarea. */
+.task-history > summary { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; font: 600 12.5px var(--font-body); color: var(--text-faint); list-style: none; }
+.task-history > summary::-webkit-details-marker { display: none; }
+.task-history > summary:hover { color: var(--text); }
+.task-history > summary svg { width: 15px; height: 15px; }
+.task-history > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: var(--radius-sm); }
+
+/* ---- Ciclo de vida: los últimos hitos, dónde está y lo que falta -----------------------------
+   Sustituye al log de texto que ocupaba el lateral. La guía y los puntos van en ::before/::after para
+   que la lista siga siendo una <ol> legible sin CSS. */
+.lifecycle { list-style: none; margin: 4px 0 0; padding: 0 0 0 24px; position: relative; }
+.lifecycle::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: 14px; width: 2px; background: var(--border-strong); opacity: .55; }
+.lifecycle__step { position: relative; display: flex; flex-direction: column; gap: 2px; }
+.lifecycle__step + .lifecycle__step { margin-top: 14px; }
+.lifecycle__dot { position: absolute; left: -24px; top: 3px; width: 12px; height: 12px; border-radius: 999px; background: var(--success); box-shadow: 0 0 0 2px var(--surface); }
+.lifecycle__label { font-size: 13px; color: var(--text); font-weight: 500; }
+.lifecycle__meta, .lifecycle__note { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
+/* Dónde está AHORA: anillo naranja hueco, el único punto que no está resuelto ni apagado. */
+.lifecycle__step--current .lifecycle__dot { background: var(--surface); border: 3px solid var(--accent); box-shadow: none; }
+.lifecycle__step--current .lifecycle__label { font-weight: 600; }
+.lifecycle__step--current .lifecycle__note { color: var(--warning-text); }
+/* La vuelta atrás (devuelta/cancelada) en el azul del estado; lo que aún no ha pasado, apagado. */
+.lifecycle__step--returned .lifecycle__dot { background: var(--review); }
+.lifecycle__step--future { opacity: .5; }
+.lifecycle__step--future .lifecycle__dot { background: var(--surface); border: 2px solid var(--border-strong); box-shadow: none; }
+.lifecycle__step--future .lifecycle__label { color: var(--text-faint); font-weight: 400; }
+.lifecycle__step--closed .lifecycle__label { font-weight: 600; }
+
+/* Dos umbrales, y no por capricho: la tarjeta de decisión se convierte en barra a 899px, donde el layout
+   deja de tener columna lateral (si no, la acción cae al final del scroll); la barra de volver depende de
+   otra cosa — de que la topbar con su breadcrumb siga estando, y esa se oculta a 760px. */
+@media (max-width: 899px) {
     .task-detail, .detail-cols { padding-bottom: 40px; }
-    .actionbar {
-        position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; margin: 0; max-width: none;
-        background: var(--surface); border-top: 1px solid var(--border);
-        padding: 12px 22px calc(14px + env(safe-area-inset-bottom, 14px));
+    /* Hueco para que la barra fija no tape el final del contenido (cabe el primario y una fila de
+       secundarias, que es lo más alto que llega a medir). */
+    .detail-cols--task { padding-bottom: 150px; }
+    .decision:not(.decision--closed) {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; gap: 8px;
+        border-radius: 0; border-left: 0; border-right: 0; border-bottom: 0; box-shadow: var(--shadow-sheet);
+        padding: 12px 20px calc(14px + env(safe-area-inset-bottom, 14px));
+        max-height: 82vh; overflow-y: auto;
     }
+    /* En la barra solo cabe lo que se hace: el rótulo y la explicación son del escritorio. Las
+       advertencias (`__hint`) sí se quedan — dicen lo que va a pasar al pulsar. */
+    .decision:not(.decision--closed) .decision__label,
+    .decision:not(.decision--closed) .decision__intro { display: none; }
+    /* Lo secundario ENCIMA del primario: así el botón grande queda pegado al borde inferior, donde llega
+       el pulgar, y no hay que pasar por encima de él para tocar lo demás. */
+    .decision:not(.decision--closed) .decision__minor { order: -1; justify-content: center; }
 }
 @media (min-width: 761px) {
-    /* En escritorio el breadcrumb de la topbar ya sitúa; la barra de volver sobra. */
+    /* Con la topbar en pantalla, su breadcrumb ya sitúa: la barra de volver sobra. */
     .backbar { display: none; }
 }
 
