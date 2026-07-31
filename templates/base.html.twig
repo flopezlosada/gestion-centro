@@ -4,13 +4,15 @@
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>{% block title %}{{ app_organization_name }}{% endblock %}</title>
-        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+        {# El logo real del centro, no una marca inventada: el mismo fichero en la pestaña, en la barra
+           lateral, en el login y en el icono que queda en la pantalla del móvil. #}
+        <link rel="icon" href="{{ asset_ver('/icons/icon-192.png') }}" type="image/png">
 
         {# PWA: instalable (necesario para que el push funcione en iOS ≥16.4, que exige la web añadida a
            la pantalla de inicio) y notificaciones push por web. #}
         <link rel="manifest" href="/manifest.webmanifest">
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-        <meta name="theme-color" content="#1E4A3D">
+        <meta name="theme-color" content="#FF9E00">
         {% if app.user and app_vapid_public_key is not empty %}
             <meta name="vapid-public-key" content="{{ app_vapid_public_key }}">
             <meta name="push-csrf" content="{{ csrf_token('push') }}">
@@ -36,7 +38,10 @@
             <link rel="stylesheet" href="{{ asset_ver('/css/app.css') }}">
         {% endblock %}
     </head>
-    <body>
+    {# data-unread alimenta el contador del icono de la aplicación instalada (js/app-badge.js). Se pone
+       aquí, y no en el shell, porque el login también extiende esta plantilla: sin sesión vale 0 y la
+       marca se limpia. #}
+    <body data-unread="{{ unread_notifications() }}">
         {% block shell %}{% endblock %}
 
         {% block javascripts %}
@@ -54,6 +59,7 @@
             <script src="{{ asset_ver('/js/calendar-filter.js') }}"></script>
             <script src="{{ asset_ver('/js/day-add.js') }}"></script>
             <script src="{{ asset_ver('/js/absence-form.js') }}"></script>
+            <script src="{{ asset_ver('/js/app-badge.js') }}"></script>
             {% if app.user and app_vapid_public_key is not empty %}
                 <script src="{{ asset_ver('/js/push.js') }}" defer></script>
             {% endif %}

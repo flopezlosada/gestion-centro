@@ -1,7 +1,17 @@
-{# Marca del gestor del centro: un check dentro de una casilla redondeada (tarea hecha / agenda).
-   Hereda el color del contenedor vía currentColor, así sigue al tema (claro/oscuro) cuando el
-   contenedor usa `color: var(--accent)`. Parámetro opcional `size` (px). #}
-<svg class="brand-mark-svg" width="{{ size|default(48) }}" height="{{ size|default(48) }}" viewBox="0 0 48 48" role="img" aria-label="Gestión del centro">
-    <rect x="6" y="6" width="36" height="36" rx="10" fill="none" stroke="currentColor" stroke-width="2.6"/>
-    <path d="M15.5 24.5 l5.5 5.5 L33 17.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
+{# Marca del centro: el LOGO REAL (catalogo/logo_ies.png), no un símbolo inventado.
+
+   Dos ficheros y no uno porque el logo lleva el nombre del centro incorporado y a 30 px ese texto es
+   un borrón: en la barra lateral se usa solo el símbolo (`logo-ies-simbolo.png`, el mismo dibujo
+   recortado por encima del rótulo) y el logo entero se reserva para donde hay sitio de verdad —el
+   login—, pasando `wordmark: true`.
+
+   Va a color fijo, no con `currentColor`: un logo institucional no se recolorea con el tema.
+
+   Parámetros: `size` (alto en px, 48 por defecto) y `wordmark` (incluir el rótulo, false por defecto).
+#}
+{% set wordmark = wordmark|default(false) %}
+{% set src = wordmark ? '/img/logo-ies.png' : '/img/logo-ies-simbolo.png' %}
+{# Alto/ancho reales del fichero, para reservar el hueco exacto y que la página no salte al cargar. #}
+{% set ratio = wordmark ? 392 / 436 : 392 / 386 %}
+<img class="brand-mark-img" src="{{ asset_ver(src) }}" alt="{{ app_organization_name }}"
+     height="{{ size|default(48) }}" width="{{ (size|default(48) * ratio)|round }}">
