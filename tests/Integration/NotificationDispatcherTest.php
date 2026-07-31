@@ -6,6 +6,8 @@ namespace App\Tests\Integration;
 
 use App\Entity\Notification;
 use App\Entity\User;
+use App\Enum\NotificationChannel;
+use App\Enum\NotificationTopic;
 use App\Service\AppSettings;
 use App\Service\NotificationDispatcher;
 use Doctrine\ORM\EntityManagerInterface;
@@ -16,6 +18,9 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  * they cannot sign into. The in-app notice is written either way, so it is waiting for them the day
  * their access opens instead of being lost — the reminder engine fires each reminder on one exact
  * day and never again.
+ *
+ * And, past that door, delivery follows what each person chose per section
+ * ({@see \App\Enum\NotificationTopic}): the phone, the e-mail or both.
  */
 final class NotificationDispatcherTest extends KernelTestCase
 {
@@ -67,6 +72,63 @@ final class NotificationDispatcherTest extends KernelTestCase
         $this->em->flush();
 
         $this->dispatcher->dispatch($user, 'task.reminder', 'Tarea próxima');
+
+        self::assertEmailCount(1);
+    }
+
+    /**
+     * The centre's actual complaint: "activo los avisos del móvil y me siguen llegando al correo".
+     * Choosing the phone for a section has to STOP the e-mails of that section, or it is not a setting.
+     */
+    public function testChoosingThePhoneStopsTheEmailsOfThatSection(): void
+    {
+        $user = $this->user('movil@centro.test');
+        $user->setChannelFor(NotificationTopic::GUARDIA, NotificationChannel::PUSH);
+        $this->em->flush();
+
+        $this->dispatcher->dispatch($user, 'guardia.assigned', 'Nueva guardia');
+
+        self::assertEmailCount(0);
+    }
+
+    /**
+     * And the other way round: asking for e-mail wins even over the app's own "this one is too
+     * last-minute for an inbox" rule (an agenda nudge fires minutes before the event). It is an
+     * explicit instruction from the person, so the app does not get to overrule it.
+     */
+    public function testChoosingEmailWinsOverThePushOnlyDefault(): void
+    {
+        $user = $this->user('correo@centro.test');
+        $user->setChannelFor(NotificationTopic::AGENDA, NotificationChannel::EMAIL);
+        $this->em->flush();
+
+        $this->dispatcher->dispatch($user, 'event.reminder', 'Empieza en 10 minutos');
+
+        self::assertEmailCount(1, 'sin elegir, un aviso de agenda no lleva correo: elegirlo lo cambia');
+    }
+
+    /** Each section is set on its own: silencing the guardias must not silence the tasks. */
+    public function testEachSectionIsIndependent(): void
+    {
+        $user = $this->user('mixto@centro.test');
+        $user->setChannelFor(NotificationTopic::GUARDIA, NotificationChannel::PUSH);
+        $user->setChannelFor(NotificationTopic::TASK, NotificationChannel::EMAIL);
+        $this->em->flush();
+
+        $this->dispatcher->dispatch($user, 'guardia.assigned', 'Nueva guardia');
+        $this->dispatcher->dispatch($user, 'task.reminder', 'Tarea próxima');
+
+        self::assertEmailCount(1, 'solo la tarea manda correo');
+    }
+
+    /** An unclassified kind keeps the app's default instead of falling into somebody's "solo móvil". */
+    public function testAKindOutsideEverySectionKeepsTheDefault(): void
+    {
+        $user = $this->user('otros@centro.test');
+        $user->setChannelFor(NotificationTopic::TASK, NotificationChannel::PUSH);
+        $this->em->flush();
+
+        $this->dispatcher->dispatch($user, 'sistema.aviso', 'Algo que no es de ninguna sección');
 
         self::assertEmailCount(1);
     }

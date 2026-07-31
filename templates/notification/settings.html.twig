@@ -1,0 +1,60 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Cómo quieres los avisos · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('notification_index') }}">Avisos</a><span class="sep">/</span>Ajustes{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Avisos</p>
+            <h1>Cómo quieres que te avisemos</h1>
+            <p class="lead">Cada sección por separado: puedes querer las guardias en el móvil, porque son para ya, y las tareas en el correo, porque quieres tenerlas por escrito.</p>
+        </div>
+    </div>
+
+    {# El aviso dentro de la app NO se elige: siempre queda en esta bandeja. Decirlo aquí evita la
+       pregunta obvia ("¿y si no elijo ninguno me quedo sin enterarme?"). #}
+    <div class="callout">
+        <p>Elijas lo que elijas, <strong>todos los avisos se guardan aquí</strong>, en <a href="{{ path('notification_index') }}">Avisos</a>. Esto solo decide por dónde te llega el aviso.</p>
+    </div>
+
+    <form method="post" action="{{ path('notification_settings') }}" class="card stack-form">
+        <input type="hidden" name="_token" value="{{ csrf_token('notification_settings') }}">
+
+        {% for topic in topics %}
+            {% set chosen = app.user.channelFor(topic) %}
+            <fieldset class="field notif-topic">
+                <legend class="notif-topic__name">{{ topic.label }}</legend>
+                <p class="field-help">{{ topic.description }}</p>
+                <div class="pick-list">
+                    {% for channel in channels %}
+                        <label class="pick-option">
+                            <input class="pick-option__input" type="radio" name="canal_{{ topic.value }}" value="{{ channel.value }}"{{ chosen == channel ? ' checked' : '' }}>
+                            <span class="pick-option__body"><span class="pick-option__name">{{ channel.label }}</span></span>
+                        </label>
+                    {% endfor %}
+                    {# "Como lo tenga la aplicación" no es un cuarto canal: es no elegir, y deja mandar a
+                       la aplicación (que, por ejemplo, no manda al correo un recordatorio de algo que
+                       empieza en 10 minutos). Sin esta opción, quien elige una vez no puede volver atrás. #}
+                    <label class="pick-option">
+                        <input class="pick-option__input" type="radio" name="canal_{{ topic.value }}" value=""{{ chosen is null ? ' checked' : '' }}>
+                        <span class="pick-option__body">
+                            <span class="pick-option__name">Como lo tenga la aplicación</span>
+                            <span class="pick-option__desc">Al móvil y al correo, salvo los recordatorios de última hora, que solo van al móvil.</span>
+                        </span>
+                    </label>
+                </div>
+            </fieldset>
+        {% endfor %}
+
+        <div class="form-actions">
+            <button type="submit" class="btn">Guardar</button>
+            <a class="btn secondary" href="{{ path('notification_index') }}">Volver a los avisos</a>
+        </div>
+    </form>
+
+    <div class="card">
+        <h2>¿Y el móvil?</h2>
+        <p class="muted">Para que lleguen al móvil hay que activarlos una vez en cada aparato, desde <a href="{{ path('notification_index') }}">Avisos</a>. Si aquí eliges «solo al móvil» y no los has activado, no te llegará nada fuera de la aplicación.</p>
+    </div>
+{% endblock %}

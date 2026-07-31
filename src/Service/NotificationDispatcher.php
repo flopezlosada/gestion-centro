@@ -7,6 +7,8 @@ namespace App\Service;
 use App\Entity\Notification;
 use App\Entity\Task;
 use App\Entity\User;
+use App\Enum\NotificationChannel;
+use App\Enum\NotificationTopic;
 use App\Security\AccessGate;
 use App\Support\NotificationLink;
 use Doctrine\ORM\EntityManagerInterface;
@@ -17,9 +19,9 @@ use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Email;
 
 /**
- * The single place that materialises "notify a person": it persists the in-app notice and then sends
- * it as a Web Push notification and, for the kinds that warrant one ({@see wantsEmail()}), an e-mail.
- * Every notifier ({@see GuardiaAssignmentNotifier}, {@see TaskAssignmentNotifier},
+ * The single place that materialises "notify a person": it persists the in-app notice and then delivers
+ * it through the channels that notice deserves for that recipient ({@see channelFor()}) — the phone
+ * (Web Push), e-mail, or both. Every notifier ({@see GuardiaAssignmentNotifier}, {@see TaskAssignmentNotifier},
  * {@see TaskReminderNotifier}, {@see EventReminderNotifier}) decides WHO to notify and WHAT to say and
  * delegates the delivery here, so the delivery channels live in one spot.
  *
@@ -38,8 +40,9 @@ use Symfony\Component\Mime\Email;
 final class NotificationDispatcher
 {
     /**
-     * Kinds (by prefix) delivered by push and the in-app bell only, never by e-mail: the reminders that
-     * fire at the very moment they are about. See {@see wantsEmail()}.
+     * Kinds (by prefix) the app delivers by push and the in-app bell only, never by e-mail: the
+     * reminders that fire at the very moment they are about. This is the DEFAULT, not the rule — a
+     * person who explicitly asks for e-mail in that section gets it. See {@see channelFor()}.
      */
     private const array PUSH_ONLY_KINDS = ['event.', 'guardia.raices', 'meeting.reminder'];
 
@@ -96,8 +99,8 @@ final class NotificationDispatcher
     }
 
     /**
-     * Flushes any pending in-app notices, then delivers each over Web Push and — when the kind calls
-     * for it ({@see wantsEmail()}) — e-mail. A failure on a single recipient/channel is logged and
+     * Flushes any pending in-app notices, then delivers each through the channels the recipient wants
+     * for that section ({@see channelFor()}). A failure on a single recipient/channel is logged and
      * skipped so it never aborts the rest of a batch.
      *
      * Recipients who cannot sign in are written but not delivered to. The notice is deliberately
@@ -124,45 +127,59 @@ final class NotificationDispatcher
                 continue;
             }
 
-            if ($this->wantsEmail($notification)) {
+            $channel = $this->channelFor($notification);
+
+            if ($channel->sendsEmail()) {
                 $this->email($notification);
             }
 
-            $this->webPush->sendToUser(
-                $recipient,
-                $notification->getTitle(),
-                $notification->getBody(),
-                $this->link->pathFor($notification),
-            );
+            if ($channel->sendsPush()) {
+                $this->webPush->sendToUser(
+                    $recipient,
+                    $notification->getTitle(),
+                    $notification->getBody(),
+                    $this->link->pathFor($notification),
+                );
+            }
         }
     }
 
     /**
-     * Whether a notice also deserves an e-mail. Decided here, from the kind, for the same reason
-     * {@see NotificationLink} decides the destination from it: it is a property of the KIND of notice,
-     * not of whoever raises it, so every caller gets the same policy without passing a flag around.
+     * By which way to deliver a notice: what the recipient chose for that section of the app, and only
+     * failing that the app's own default for that kind.
      *
-     * The exceptions are the reminders that fire AT the moment they are about: a personal agenda nudge
-     * ("empieza en 10 minutos"), the RAICES reminder sent while a guardia is under way, and the one that
-     * says a meeting is about to start. By the time an e-mail about any of them is read the moment has
-     * passed, so it would be pure noise in the inbox — whereas "te han asignado una guardia"
-     * ({@see GuardiaAssignmentNotifier}) or a convocatoria ({@see MeetingNotifier}) are about something days
-     * ahead and do warrant one. Note how narrow the meeting entry is: only the reminder is push-only, while
-     * the convocatoria, a change of time and a new acta go by e-mail, because those you want in writing.
+     * The person's choice comes FIRST and wins outright ({@see \App\Entity\User::channelFor()}): the
+     * centre's complaint was precisely that turning on the phone did not stop the e-mails, so a setting
+     * the app can quietly overrule is not a setting. If somebody asks for their agenda nudges by e-mail
+     * knowing they arrive as the event starts, that is their call to make.
+     *
+     * The default, for whoever has not chosen, is the policy this class always had: both channels,
+     * except the reminders that fire AT the moment they are about — a personal agenda nudge ("empieza en
+     * 10 minutos"), the RAICES reminder sent while a guardia is under way, and the one that says a
+     * meeting is about to start. By the time an e-mail about any of those is read the moment has passed.
+     * Note how narrow the meeting entry is: only the reminder, while a convocatoria, a change of time and
+     * a new acta do go by e-mail, because those you want in writing.
      *
      * @param Notification $notification the notice about to be delivered
      *
-     * @return bool true when it should also go out by e-mail
+     * @return NotificationChannel the channel to deliver it through
      */
-    private function wantsEmail(Notification $notification): bool
+    private function channelFor(Notification $notification): NotificationChannel
     {
+        $kind = $notification->getKind();
+        $topic = NotificationTopic::fromKind($kind);
+        $chosen = null !== $topic ? $notification->getRecipient()->channelFor($topic) : null;
+        if (null !== $chosen) {
+            return $chosen;
+        }
+
         foreach (self::PUSH_ONLY_KINDS as $prefix) {
-            if (str_starts_with($notification->getKind(), $prefix)) {
-                return false;
+            if (str_starts_with($kind, $prefix)) {
+                return NotificationChannel::PUSH;
             }
         }
 
-        return true;
+        return NotificationChannel::BOTH;
     }
 
     /**
