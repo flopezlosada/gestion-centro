@@ -109,7 +109,7 @@ final class NotificationDispatcherTest extends KernelTestCase
 
         $this->dispatcher->dispatch($user, 'event.reminder', 'Empieza en 10 minutos');
 
-        self::assertEmailCount(1, 'sin elegir, un aviso de agenda no lleva correo: elegirlo lo cambia');
+        self::assertEmailCount(1, null, 'sin elegir, un aviso de agenda no lleva correo: elegirlo lo cambia');
     }
 
     /** Each section is set on its own: silencing the guardias must not silence the tasks. */
@@ -123,7 +123,7 @@ final class NotificationDispatcherTest extends KernelTestCase
         $this->dispatcher->dispatch($user, 'guardia.assigned', 'Nueva guardia');
         $this->dispatcher->dispatch($user, 'task.reminder', 'Tarea próxima');
 
-        self::assertEmailCount(1, 'solo la tarea manda correo');
+        self::assertEmailCount(1, null, 'solo la tarea manda correo');
     }
 
     /** An unclassified kind keeps the app's default instead of falling into somebody's "solo móvil". */

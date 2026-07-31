@@ -367,7 +367,7 @@ final class MeetingCrudTest extends WebTestCase
         $token = (string) $crawler->filter('form[action="'.$uploadUrl.'"] input[name="_token"]')->attr('value');
         $this->client->request('POST', $uploadUrl, ['_token' => $token], ['acta' => $this->actaFile()]);
         self::assertResponseRedirects();
-        self::assertEmailCount(0, 'un borrador no se manda a nadie');
+        self::assertEmailCount(0, null, 'un borrador no se manda a nadie');
 
         // 2. Se publica: ahí sí.
         $crawler = $this->client->request('GET', '/reuniones/'.$id);
