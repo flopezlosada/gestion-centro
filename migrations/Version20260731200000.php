@@ -81,10 +81,8 @@ final class Version20260731200000 extends AbstractMigration
         $this->addSql("ALTER TABLE break_duty_assignment ADD periods VARCHAR(8) DEFAULT 'both' NOT NULL");
         $this->addSql('UPDATE break_duty_assignment SET periods = period');
 
-        // Deshacer el reparto: donde la misma persona tenga las dos plazas del mismo día y la misma zona,
-        // vuelve a ser una fila 'both' y se borra la del recreo corto. Una pareja en zonas DISTINTAS no
-        // cabía en el modelo viejo, así que se conserva la del recreo grande y se pierde la otra: es la
-        // única pérdida posible, y solo afecta a lo que se creó con el modelo nuevo.
+        // Deshacer el reparto. Donde la misma persona tenga las dos plazas del mismo día Y la misma zona,
+        // vuelven a plegarse en una fila 'both' y sobra la del recreo corto.
         $this->addSql(<<<'SQL'
             UPDATE break_duty_assignment a
             JOIN break_duty_assignment b
@@ -93,7 +91,33 @@ final class Version20260731200000 extends AbstractMigration
             SET a.periods = 'both'
             WHERE a.period = 'first'
             SQL);
-        $this->addSql("DELETE FROM break_duty_assignment WHERE period = 'second'");
+        $this->addSql(<<<'SQL'
+            DELETE b FROM break_duty_assignment b
+            JOIN break_duty_assignment a
+              ON a.academic_year_id = b.academic_year_id AND a.teacher_id = b.teacher_id
+             AND a.weekday = b.weekday AND a.zone_id = b.zone_id AND a.period = 'first'
+            WHERE b.period = 'second'
+            SQL);
+
+        // Lo que NO forma pareja del mismo día y zona se queda como una fila 'second' suelta, que el
+        // modelo viejo admitía perfectamente. Borrarlas sería tirar datos: incluye tanto las que ya
+        // existían antes de esta migración como las parejas en días o zonas distintas, que es
+        // precisamente lo que el modelo nuevo permite crear y el viejo no sabía representar.
+        //
+        // Aviso honesto de lo que SÍ se pierde al bajar: una pareja repartida entre dos días o dos zonas
+        // deja de contar como una guardia y pasa a ser dos filas sueltas. El dato sigue ahí; la relación
+        // entre ellas, no — el modelo viejo no tenía dónde guardarla.
+        $this->addSql("UPDATE break_duty_assignment SET periods = 'second' WHERE period = 'second'");
+
+        // El único que sí estorba: el índice viejo prohíbe dos filas de la misma persona el mismo día, así
+        // que si quedan sueltas de los dos recreos hay que dejar una. Se conserva la del recreo grande.
+        $this->addSql(<<<'SQL'
+            DELETE b FROM break_duty_assignment b
+            JOIN break_duty_assignment a
+              ON a.academic_year_id = b.academic_year_id AND a.teacher_id = b.teacher_id
+             AND a.weekday = b.weekday AND a.id <> b.id
+            WHERE b.period = 'second' AND a.period = 'first'
+            SQL);
 
         $this->addSql('DROP INDEX UNIQ_break_duty_teacher_period ON break_duty_assignment');
         $this->addSql('CREATE UNIQUE INDEX UNIQ_break_duty_teacher_weekday ON break_duty_assignment (academic_year_id, teacher_id, weekday)');

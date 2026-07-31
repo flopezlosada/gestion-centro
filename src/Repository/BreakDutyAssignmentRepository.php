@@ -95,31 +95,61 @@ class BreakDutyAssignmentRepository extends ServiceEntityRepository
     }
 
     /**
-     * Replaces every place the proposal engine owns in a course with a fresh set, in one transaction.
+     * Brings the engine's places in a course into line with a fresh set, in one transaction.
      *
-     * Only its own: places somebody added by hand — the patios dirigidos the equipo directivo organises
-     * by day — are left alone, which is what lets a rota be re-proposed without undoing their work.
+     * A DIFF, not a wipe-and-rewrite, and that is not an optimisation. Every {@see BreakDutyGap} hangs off
+     * its place with {@code ON DELETE CASCADE}, so deleting a place takes with it the record of every day
+     * that recreo went unwatched — and those pile up over the course on perfectly ordinary engine places.
+     * Re-publishing after nudging a quota in January would have quietly erased months of that history.
+     * Places that come out of the new proposal unchanged are therefore left exactly where they are, with
+     * their gaps; only the ones that really disappear are deleted.
+     *
+     * Places somebody added by hand are never touched either way.
      *
      * @param AcademicYear              $year   the course being redrawn
-     * @param list<BreakDutyAssignment> $places the fresh places to persist
+     * @param list<BreakDutyAssignment> $wanted the places the new proposal asks for
+     *
+     * @return array{kept: int, added: int, removed: int} what the sync did
      */
-    public function replaceEnginePlaces(AcademicYear $year, array $places): void
+    public function syncEnginePlaces(AcademicYear $year, array $wanted): array
     {
         $em = $this->getEntityManager();
-        $em->wrapInTransaction(function () use ($em, $year, $places): void {
-            $this->createQueryBuilder('a')
-                ->delete()
-                ->where('a.academicYear = :year')
-                ->andWhere('a.source = :engine')
-                ->setParameter('year', $year)
-                ->setParameter('engine', BreakDutySource::ENGINE)
-                ->getQuery()
-                ->execute();
-            foreach ($places as $place) {
-                $em->persist($place);
+        $key = static fn (BreakDutyAssignment $p): string => $p->getTeacher()->getId().':'.$p->getWeekday()->value.':'.$p->getPeriod()->value.':'.$p->getZone()->getId();
+
+        $current = [];
+        foreach ($this->findByYear($year) as $place) {
+            if (BreakDutySource::ENGINE === $place->getSource()) {
+                $current[$key($place)] = $place;
             }
+        }
+
+        $kept = 0;
+        $added = 0;
+        $seen = [];
+        foreach ($wanted as $place) {
+            $k = $key($place);
+            $seen[$k] = true;
+            if (isset($current[$k])) {
+                ++$kept;
+                continue;
+            }
+            $em->persist($place);
+            ++$added;
+        }
+
+        $removed = 0;
+        foreach ($current as $k => $place) {
+            if (!isset($seen[$k])) {
+                $em->remove($place);
+                ++$removed;
+            }
+        }
+
+        $em->wrapInTransaction(static function () use ($em): void {
             $em->flush();
         });
+
+        return ['kept' => $kept, 'added' => $added, 'removed' => $removed];
     }
 
     /**

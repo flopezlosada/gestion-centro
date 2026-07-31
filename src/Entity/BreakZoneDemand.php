@@ -32,6 +32,14 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\UniqueConstraint(name: 'UNIQ_break_demand_cell', columns: ['zone_id', 'weekday', 'period'])]
 class BreakZoneDemand implements Auditable
 {
+    /**
+     * El máximo que se puede pedir en una casilla. No es cosmético: esta cifra la EXPANDE el motor en una
+     * plaza por persona ({@see \App\Guardia\BreakRotaPlanner::places()}), así que un número absurdo
+     * tecleado por error construiría un array enorme en cada carga del cuadrante. El `max` del formulario
+     * no protege al servidor; esto sí.
+     */
+    public const MAX_REQUIRED = 20;
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
@@ -101,14 +109,15 @@ class BreakZoneDemand implements Auditable
     }
 
     /**
-     * Sets how many people the cell needs, floored at zero: a negative demand is not a thing, and
-     * letting one through would make every shortfall calculation lie.
+     * Sets how many people the cell needs, clamped to 0..{@see self::MAX_REQUIRED}: a negative demand is
+     * not a thing and would make every shortfall calculation lie, and an absurd one is expanded into that
+     * many places by the engine.
      *
      * @param int $requiredTeachers the people needed
      */
     public function setRequiredTeachers(int $requiredTeachers): static
     {
-        $this->requiredTeachers = max(0, $requiredTeachers);
+        $this->requiredTeachers = max(0, min(self::MAX_REQUIRED, $requiredTeachers));
 
         return $this;
     }

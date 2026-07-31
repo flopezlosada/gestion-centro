@@ -99,7 +99,7 @@
                                             {% set key = zone.id ~ ':' ~ wd.value ~ ':' ~ period.value %}
                                             <td class="tt-cell{{ overridden[period.value][wd.value][zone.id] ? ' tt-cell--short' }}">
                                                 <label class="visually-hidden" for="need-{{ key }}">{{ zone.name }}, {{ wd.label|lower }}, {{ period.label|lower }}</label>
-                                                <input type="number" id="need-{{ key }}" name="need[{{ key }}]" value="{{ needed[period.value][wd.value][zone.id] }}" min="0" max="20" step="1">
+                                                <input type="number" id="need-{{ key }}" name="need[{{ key }}]" value="{{ needed[period.value][wd.value][zone.id] }}" min="0" max="{{ maxRequired }}" step="1">
                                             </td>
                                         {% endfor %}
                                     </tr>

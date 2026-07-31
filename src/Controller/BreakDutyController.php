@@ -66,7 +66,11 @@ final class BreakDutyController extends AbstractController
         // La propuesta se pide con ?propuesta=1 y NO se guarda en ningún sitio: el motor es determinista,
         // así que el borrador se reconstruye idéntico en vez de aparcarlo en una tabla o en la sesión.
         // Mismo trato que el cuadrante lectivo.
-        $draft = $request->query->getBoolean('propuesta');
+        // El gate de la pantalla es READ, pero proponer es una acción de gestión: sin esta comprobación,
+        // añadir ?propuesta=1 a la URL hacía correr el motor entero a quien solo puede mirar. La plantilla
+        // ya lo ocultaba, y ocultar no es permitir.
+        $canManage = $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS);
+        $draft = $canManage && $request->query->getBoolean('propuesta');
         $proposal = ($draft && $year instanceof AcademicYear) ? $planner->propose($year) : null;
 
         return $this->render('guardia/break_duty_index.html.twig', [
@@ -80,7 +84,7 @@ final class BreakDutyController extends AbstractController
             'weekdays' => Weekday::schoolWeek(),
             'periods' => BreakPeriod::inDayOrder(),
             'todayGaps' => $gaps->findByDate($today),
-            'canManage' => $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS),
+            'canManage' => $canManage,
             'proposal' => $proposal,
             'proposalGrid' => null !== $proposal ? $this->proposalGrid($proposal) : null,
             'summary' => $proposal?->summary(),
@@ -326,6 +330,7 @@ final class BreakDutyController extends AbstractController
             'needed' => $needed,
             'overridden' => $overridden,
             'weekly' => $demand->weeklyTotals($active),
+            'maxRequired' => BreakZoneDemand::MAX_REQUIRED,
         ]);
     }
 
@@ -358,7 +363,7 @@ final class BreakDutyController extends AbstractController
                     if (!is_numeric($raw)) {
                         continue;
                     }
-                    $want = max(0, (int) $raw);
+                    $want = max(0, min(BreakZoneDemand::MAX_REQUIRED, (int) $raw));
                     $row = $existing[$key] ?? null;
 
                     if ($want === $zone->getRequiredTeachers()) {

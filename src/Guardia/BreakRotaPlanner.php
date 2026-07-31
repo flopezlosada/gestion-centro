@@ -92,9 +92,11 @@ final class BreakRotaPlanner
                 ->setSource(BreakDutySource::ENGINE);
         }
 
-        $this->duties->replaceEnginePlaces($year, $rows);
+        // A diff, so a place that survives the new proposal keeps the record of the days its recreo went
+        // unwatched — those cascade away with the row ({@see BreakDutyAssignmentRepository::syncEnginePlaces}).
+        $sync = $this->duties->syncEnginePlaces($year, $rows);
 
-        return \count($rows);
+        return $sync['kept'] + $sync['added'];
     }
 
     /**
@@ -107,10 +109,13 @@ final class BreakRotaPlanner
      */
     public function places(): array
     {
+        // Las zonas, UNA vez: dentro del doble bucle eran diez consultas idénticas por carga de pantalla.
+        $zones = $this->zones->findActiveOrdered();
+
         $places = [];
         foreach (BreakPeriod::inDayOrder() as $period) {
             foreach (Weekday::schoolWeek() as $weekday) {
-                foreach ($this->zones->findActiveOrdered() as $zone) {
+                foreach ($zones as $zone) {
                     $needed = $this->demand->required($zone, $weekday, $period);
                     for ($i = 0; $i < $needed; ++$i) {
                         $places[] = [
