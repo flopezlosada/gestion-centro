@@ -198,21 +198,26 @@
             {# MÓVIL: tarjetas agrupadas por urgencia. La agrupación es invariante: también al acotar. #}
             <div class="tasks-mobile">
                 {% if grouped %}
+                    {#- Grupos PLEGABLES con <details> nativo: sin JavaScript, con teclado, y el navegador
+                        se encarga del estado. Nace plegado cuando la cola es larga (más de
+                        `collapseFrom`): con 39 fuera de plazo había que recorrer toda la página para
+                        llegar a lo que viene después, que es justo lo que hay que atender. -#}
+                    {% set collapseFrom = 8 %}
                     {% if overdueTasks is not empty %}
-                        <div class="tasks-group">
-                            <h2 class="tasks-group__head is-warning"><span class="tasks-group__dot"></span>Fuera de plazo · {{ overdueTasks|length }}</h2>
+                        <details class="tasks-group"{{ overdueTasks|length <= collapseFrom ? ' open' : '' }}>
+                            <summary class="tasks-group__head is-warning"><span class="tasks-group__dot"></span>Fuera de plazo · {{ overdueTasks|length }}</summary>
                             <div class="tasks-cards">
                                 {% for t in overdueTasks %}{{ ui.task_card(t, todayStr) }}{% endfor %}
                             </div>
-                        </div>
+                        </details>
                     {% endif %}
                     {% if upcomingTasks is not empty %}
-                        <div class="tasks-group">
-                            <h2 class="tasks-group__head"><span class="tasks-group__dot"></span>Pendientes de realizar · {{ upcomingTasks|length }}</h2>
+                        <details class="tasks-group" open>
+                            <summary class="tasks-group__head"><span class="tasks-group__dot"></span>Pendientes de realizar · {{ upcomingTasks|length }}</summary>
                             <div class="tasks-cards">
                                 {% for t in upcomingTasks %}{{ ui.task_card(t, todayStr) }}{% endfor %}
                             </div>
-                        </div>
+                        </details>
                     {% endif %}
                 {% else %}
                     <div class="tasks-cards">
@@ -227,13 +232,18 @@
                     <span>Tarea</span><span>Departamento</span><span>Responsable</span><span>Fecha límite</span><span>Estado</span>
                 </div>
                 {% if grouped %}
+                    {% set collapseFrom = 8 %}
                     {% if overdueTasks is not empty %}
-                        <h2 class="trow trow--group is-warning">Fuera de plazo · {{ overdueTasks|length }}</h2>
-                        {% for t in overdueTasks %}{{ ui.task_row(t, todayStr) }}{% endfor %}
+                        <details class="trow-group"{{ overdueTasks|length <= collapseFrom ? ' open' : '' }}>
+                            <summary class="trow trow--group is-warning">Fuera de plazo · {{ overdueTasks|length }}</summary>
+                            {% for t in overdueTasks %}{{ ui.task_row(t, todayStr) }}{% endfor %}
+                        </details>
                     {% endif %}
                     {% if upcomingTasks is not empty %}
-                        <h2 class="trow trow--group">Pendientes de realizar · {{ upcomingTasks|length }}</h2>
-                        {% for t in upcomingTasks %}{{ ui.task_row(t, todayStr) }}{% endfor %}
+                        <details class="trow-group" open>
+                            <summary class="trow trow--group">Pendientes de realizar · {{ upcomingTasks|length }}</summary>
+                            {% for t in upcomingTasks %}{{ ui.task_row(t, todayStr) }}{% endfor %}
+                        </details>
                     {% endif %}
                 {% else %}
                     {% for t in tasks %}{{ ui.task_row(t, todayStr) }}{% endfor %}

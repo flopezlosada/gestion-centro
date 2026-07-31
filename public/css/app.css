@@ -3630,3 +3630,22 @@ tr.is-retired { opacity: .6; }
 /* Copias por clase en el alta de ausencia: mismo apilado que el adjunto de al lado. */
 .classcard__copies { display: grid; gap: 5px; }
 .classcard__copies input { max-width: 160px; }
+
+/* Grupos plegables de la lista de tareas (<details> nativo). El summary ES la cabecera del grupo, así que
+   hay que quitarle el triángulo del navegador y poner uno propio que gire: el de serie se coloca fuera de
+   la rejilla y descuadra la fila. Cursor de mano porque es un control, no un título. */
+.tasks-group > summary,
+.trow-group > summary { cursor: pointer; list-style: none; }
+.tasks-group > summary::-webkit-details-marker,
+.trow-group > summary::-webkit-details-marker { display: none; }
+.tasks-group > summary::after,
+.trow-group > summary::after {
+    content: "";
+    display: inline-block; width: 6px; height: 6px; margin-left: 8px; vertical-align: middle;
+    border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor;
+    transform: rotate(45deg) translateY(-1px); transition: transform .15s ease;
+}
+.tasks-group[open] > summary::after,
+.trow-group[open] > summary::after { transform: rotate(-135deg) translateY(-1px); }
+.tasks-group > summary:hover,
+.trow-group > summary:hover { color: var(--text); }

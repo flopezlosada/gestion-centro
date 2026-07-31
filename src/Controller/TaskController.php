@@ -28,6 +28,7 @@ use App\Service\TaskVisibility;
 use App\Service\TaskWorkflow;
 use App\Support\DocumentUpload;
 use App\Support\TaskActivityPresenter;
+use App\Support\TaskStatus;
 use App\Support\TickOutcome;
 use App\Util\CalendarDate;
 use App\Util\SchoolYear;
@@ -45,7 +46,7 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
 final class TaskController extends AbstractController
 {
     /** Transitions reserved to the superior/admin (guarded by the workflow); the rest are progress. */
-    private const array SUPERIOR_TRANSITIONS = ['validate', 'review'];
+    private const array SUPERIOR_TRANSITIONS = ['validate', 'review', 'reopen'];
 
     /** The deadline windows of the narrowing form, aligned with the buckets Inicio already speaks. */
     private const array DATE_WINDOWS = [
@@ -133,6 +134,11 @@ final class TaskController extends AbstractController
             ['key' => 'abiertas', 'label' => 'Abiertas'],
             ['key' => 'mias', 'label' => 'Mías', 'only' => $supervises],
             ['key' => 'validar', 'label' => 'Esperando mi validación', 'only' => $supervises],
+            // "Devueltas para revisar" es trabajo que espera a alguien concreto, igual que "Esperando mi
+            // validación": sin vista propia, las devueltas quedaban revueltas entre las 42 "Abiertas" y no
+            // había forma de ver a quién le toca mover ficha. Se ofrece a todo el mundo, no solo a quien
+            // supervisa: una tarea devuelta la tiene que rehacer su responsable.
+            ['key' => 'revision', 'label' => 'Devueltas para revisar'],
             // La CLAVE sigue siendo "vencidas" (vive en la URL y en los enlaces que la gente ya tiene
             // guardados); lo que el centro pidió cambiar es la palabra que se lee.
             ['key' => 'vencidas', 'label' => 'Fuera de plazo', 'tone' => 'warning'],
@@ -214,6 +220,7 @@ final class TaskController extends AbstractController
                 // tarea, así que pasaba el filtro de jerarquía). Un listado no debe prometer lo que la ficha
                 // va a negar.
                 'validar' => $workflows->isAwaitingVerdict($t),
+                'revision' => TaskStatus::IN_REVIEW === $t->getStatus(),
                 'vencidas' => $t->isOverdueOn($today),
                 'cerradas' => $t->isClosed(),
                 // "Abiertas" es TODO lo abierto del ámbito visible, y es la vista por defecto: cualquier

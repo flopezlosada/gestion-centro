@@ -1226,4 +1226,85 @@ final class TaskCrudTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(403);
     }
+
+    /**
+     * Una tarea de la CIMA de la jerarquía se cierra al entregarla, porque no hay superior que la valide.
+     * Antes se quedaba en Entregada esperando a alguien que no existe: en la revisión del 31/07 había cuatro
+     * tareas de Dirección así, y el único que podía cerrarlas era el TIC por ser superusuario técnico.
+     */
+    public function testATaskNobodyOutranksIsClosedOnDelivery(): void
+    {
+        $direction = (new Role())->setCode('direction')->setName('Dirección')->setHierarchyLevel(40);
+        $this->em->persist($direction);
+        $head = $this->user('directora@centro.test');
+        $head->addAssignedRole($direction);
+        $task = new Task('Memoria de dirección', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
+        $task->setResponsibility(new TaskResponsibility($direction, null))->setAssignedUser($head);
+        $this->em->persist($task);
+        $this->em->flush();
+        $taskId = (int) $task->getId();
+
+        $this->client->loginUser($head);
+        $crawler = $this->client->request('GET', '/tareas/'.$taskId);
+        $this->client->submit($crawler->filter('form.actionbar__form--submit')->form());
+
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(Task::class)->find($taskId);
+        self::assertSame(TaskStatus::VALIDATED, $reloaded?->getStatus(), 'sin superior posible, entregar ES cerrar');
+        self::assertSame($head->getId(), $reloaded->getCompletedBy()?->getId());
+    }
+
+    /**
+     * Y esa misma persona puede REABRIRLA (decisión de Paco, 31/07): sin esa salida, un cierre por error
+     * obligaba a crear una tarea nueva y se perdía el hilo de la original. Vuelve a Pendiente, no a
+     * Entregada: si se reabre es porque hay algo que volver a hacer.
+     */
+    public function testTheTopOfTheChartCanReopenItsOwnFinishedTask(): void
+    {
+        $direction = (new Role())->setCode('direction')->setName('Dirección')->setHierarchyLevel(40);
+        $this->em->persist($direction);
+        $head = $this->user('directora@centro.test');
+        $head->addAssignedRole($direction);
+        $task = new Task('Memoria de dirección', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
+        $task->setResponsibility(new TaskResponsibility($direction, null))->setAssignedUser($head);
+        $task->setStatus(TaskStatus::VALIDATED);
+        $this->em->persist($task);
+        $this->em->flush();
+        $taskId = (int) $task->getId();
+
+        $this->client->loginUser($head);
+        $crawler = $this->client->request('GET', '/tareas/'.$taskId);
+        self::assertCount(1, $crawler->filter('form.actionbar__form--reopen'), 'una finalizada se puede reabrir');
+        $this->client->submit($crawler->filter('form.actionbar__form--reopen')->form());
+
+        $this->em->clear();
+        self::assertSame(TaskStatus::PENDING, $this->em->getRepository(Task::class)->find($taskId)?->getStatus());
+    }
+
+    /** Y el responsable raso NO puede reabrir la suya: eso sigue siendo del superior. */
+    public function testAPlainAssigneeCannotReopenTheirOwnFinishedTask(): void
+    {
+        $dept = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($dept);
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
+        $head = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
+        $this->em->persist($teacherRole);
+        $this->em->persist($head);
+        // Hay jefatura de departamento en el mismo departamento: alguien POR ENCIMA de la tarea existe.
+        $boss = $this->user('jefa@centro.test', $dept);
+        $boss->addAssignedRole($head);
+        $teacher = $this->user('profe@centro.test', $dept);
+        $teacher->addAssignedRole($teacherRole);
+        $task = new Task('Programación', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
+        $task->setUnit($dept)->setResponsibility(new TaskResponsibility($teacherRole, $dept))->setAssignedUser($teacher);
+        $task->setStatus(TaskStatus::VALIDATED);
+        $this->em->persist($task);
+        $this->em->flush();
+
+        $this->client->loginUser($teacher);
+        $crawler = $this->client->request('GET', '/tareas/'.$task->getId());
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(0, $crawler->filter('form.actionbar__form--reopen'), 'reabrir no es del responsable');
+    }
 }

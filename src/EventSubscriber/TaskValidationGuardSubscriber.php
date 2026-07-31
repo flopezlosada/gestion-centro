@@ -12,11 +12,16 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\Workflow\Event\GuardEvent;
 
 /**
- * Separation of duties on the single task workflow: the superior's verdict transitions ("validate"
- * and "review") may only be fired by a superior of the task's unit (up the chain of command) or an
- * admin, and never by the task's own assignee. The other transitions (submit = Entregar; cancel) are
- * NOT restricted here — that is handled where they are triggered (controller/voter), like the rest of
- * the app.
+ * Separation of duties on the single task workflow: the verdict transitions ("validate", "review" and
+ * "reopen") may only be fired by a superior of the task's unit (up the chain of command) or an admin, and
+ * never by the task's own assignee. The other transitions (submit = Entregar; cancel) are NOT restricted
+ * here — that is handled where they are triggered (controller/voter), like the rest of the app.
+ *
+ * With ONE exception, at the very top of the chart: a task whose responsibility nobody outranks — the
+ * dirección's own — has no possible validator, so requiring one left it waiting for somebody who does not
+ * exist, and in practice only the TIC (a technical superuser) could close it. Nobody above you means you
+ * close your own; that is why the same task also gets closed on delivery
+ * ({@see TaskSelfClosingSubscriber}).
  */
 #[AsEventListener(event: 'workflow.guard')]
 final class TaskValidationGuardSubscriber
@@ -36,7 +41,7 @@ final class TaskValidationGuardSubscriber
 
         // Superior-only transitions (the verdict on someone else's work). Keep this list in sync with
         // TaskController::SUPERIOR_TRANSITIONS — both must agree on what counts as a superior action.
-        if (!\in_array($event->getTransition()->getName(), ['validate', 'review'], true)) {
+        if (!\in_array($event->getTransition()->getName(), ['validate', 'review', 'reopen'], true)) {
             return;
         }
 
@@ -51,6 +56,13 @@ final class TaskValidationGuardSubscriber
         // the task NOW ({@see Task::isOwnedBy()}), not against the titular assignee: on a delegated task
         // the doer is the delegatee, so comparing with getAssignedUser() got it backwards both ways —
         // it let the delegatee validate their own work and stopped the titular from judging it.
+        // La cima de la jerarquía cierra (y reabre) lo suyo: si NADIE la supera por rango, exigir un
+        // superior es exigir a alguien que no existe. Se comprueba antes que la separación de funciones
+        // porque aquí no hay separación posible.
+        if ([] === $this->hierarchy->managersAbove($task)) {
+            return;
+        }
+
         if ($task->isOwnedBy($actor)) {
             $event->setBlocked(true, 'No puedes validar ni devolver tu propia tarea.');
 

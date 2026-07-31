@@ -192,7 +192,7 @@
         {# "Validar" juzga algo ENTREGADO; sobre una Pendiente el mismo cierre es "Dar por finalizada"
            (el superior da por hecho lo que le consta, sin que nadie haya entregado). Mismo verbo del
            workflow, dos nombres, porque para quien mira son dos gestos distintos. #}
-        {% set labels = { 'submit': task.inReview ? 'Volver a entregar' : 'Entregar tarea', 'validate': task.pending ? 'Dar por finalizada' : 'Validar', 'review': 'Devolver para revisar', 'cancel': 'Cancelar' } %}
+        {% set labels = { 'submit': task.inReview ? 'Volver a entregar' : 'Entregar tarea', 'validate': task.pending ? 'Dar por finalizada' : 'Validar', 'review': 'Devolver para revisar', 'cancel': 'Cancelar', 'reopen': 'Reabrir' } %}
         {# Cada acción puede llevar un comentario para la otra parte; devolver lo EXIGE (lo comprueba el
            servidor). Cancelar no lo lleva: no hay a quién contárselo, la tarea deja de existir. #}
         {% set commented = { 'submit': 'Cuéntale algo a quien la revisa (opcional)', 'review': 'Explica qué hay que modificar', 'validate': 'Un comentario de cierre (opcional)' } %}
