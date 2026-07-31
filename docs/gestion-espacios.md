@@ -482,3 +482,55 @@ PDF en un minuto.
    `distinctSlots`. Aquí se mantiene `distinctSlots` **por consistencia**: usar `TimeSlot` solo en
    espacios haría que las pestañas de "aulas libres" mostraran el recreo y las del parte no. Unificar
    todo el proyecto sobre `TimeSlot` es un refactor propio, no de esta rama.
+
+---
+
+## 12. Al desplegar en producción
+
+Solo lo de este módulo; el checklist completo del centro vive aparte.
+
+### 12.1 `app:sync-rooms` es BLOQUEANTE, no un "cuando se pueda"
+
+Tras migrar, hay que ejecutarlo **una vez** (no lleva argumentos). La migración del catálogo **no hace
+backfill a propósito**: crea la tabla vacía y nada más.
+
+Lo que pasa si no se corre, y por qué no se ve venir:
+
+- `/espacios` y `/guardias/aulas` responden 200 y **mienten**: sin fichas de espacio no hay nada que
+  declarar libre ni ocupado, así que cada tramo dice *"Todas las aulas están ocupadas a esta hora"*.
+- El desplegable de **"juntar grupos en un aula"** sale vacío, así que el coordinador no puede agrupar.
+  Esa pantalla ya funcionaba antes de existir el catálogo (leía el horario), así que es una **regresión**
+  visible el primer día de guardias, no una función nueva que tarda en llegar.
+- Las dos pantallas avisan del número de clases que nombran un aula sin ficha, que es la pista para
+  diagnosticarlo en diez segundos. Es un aviso, no una defensa.
+
+Después del comando conviene comprobar dos cosas en pantalla: que ese contador está a cero y que la hoja
+lista aulas de verdad.
+
+### 12.2 Se ejecuta otra vez tras cada importación de horario
+
+`TimetableImporter` ya lo llama al terminar (nunca en dry-run), así que en el uso normal no hay nada que
+recordar. El comando existe para el caso del servidor: una base de datos cuyo horario se importó **antes**
+de que existiera este módulo, o un código de aula corregido a mano.
+
+Es idempotente y no pisa lo que ha escrito una persona: crea las fichas que faltan, enlaza las celdas y
+recalcula `observed_groups` (dato del sistema). El tamaño, el tipo y el `assignable` que teclee el centro
+no se tocan nunca.
+
+### 12.3 Sin catálogo relleno el módulo funciona, pero opina menos
+
+Con `observed_groups` puesto por el sync, las listas ya salen ordenadas por tamaño y se etiquetan "según
+el horario". Lo que **no** puede hacer el programa hasta que el centro clasifique las ~40 fichas:
+
+- avisar de que un grupo **no cabe** (la evidencia es una cota inferior: nunca descarta un aula);
+- distinguir un aula pequeña de desdoble de un aula normal (ninguna de las dos ha tenido nunca dos grupos);
+- respetar laboratorios y talleres (`PRESERVE_SPECIALISED` no hace nada si todo es `OTHER`);
+- dejar de ofrecer las pistas y el gimnasio, que Peñalara llama aulas y que el centro dijo que **no** se
+  usan para recolocar → `assignable = false`.
+
+### 12.4 Permisos: el área `ESPACIOS` no se concede sola
+
+`RoleFixtures` da `espacios: write` a Dirección, pero **las fixtures son dev-only** y en el servidor los
+roles vienen de `app:import-roster`: sin tocar la matriz, la dirección recibe un **403** en `/espacios*` y
+el módulo llega muerto. La hoja `/guardias/aulas` y "juntar grupos" son la excepción **a propósito**: van
+con el permiso de GUARDIAS, porque quien coordina guardias puede no tener nada en el módulo de espacios.
