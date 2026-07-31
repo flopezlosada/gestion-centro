@@ -27,7 +27,10 @@
             {{ f.field(form.description) }}
             {{ f.field(form.dueDate) }}
             {{ f.responsibility(form) }}
-            {{ f.toggles([form.mandatory]|merge(form.requiresDocument is defined ? [form.requiresDocument] : [])) }}
+            {{ f.toggles([form.mandatory]) }}
+            {# Qué hay que entregar ya no es un sí/no: son cuatro opciones, así que va como grupo de
+               radios y no como interruptor. #}
+            {% if form.deliverable is defined %}{{ f.field(form.deliverable) }}{% endif %}
             <div class="stackform__foot">
                 <button class="btn-lg btn-lg--primary" type="submit">Crear tarea</button>
             </div>

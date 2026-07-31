@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Form;
 
+use App\Entity\MeetingType;
 use App\Entity\Project;
 use App\Entity\User;
 use App\Enum\EventReminderOffset;
+use App\Enum\MeetingScope;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
@@ -52,6 +54,26 @@ final class MeetingFormType extends AbstractType
                 'label' => 'Título',
                 'help' => 'Por ejemplo: «Reunión de departamento de septiembre».',
             ])
+            // Con quién es la reunión. Va lo PRIMERO porque decide el resto de la pantalla: con alumnado
+            // o con familias no hay acta que rellenar (eso se registra en RAICES) y meeting-form.js
+            // esconde esos cuadros.
+            ->add('scope', EnumType::class, [
+                'class' => MeetingScope::class,
+                'label' => '¿Con quién es?',
+                'expanded' => true,
+                'choice_label' => static fn (MeetingScope $s): string => $s->label(),
+                'choice_attr' => static fn (MeetingScope $s): array => ['data-keeps-minutes' => $s->keepsMinutes() ? '1' : '0'],
+            ])
+            ->add('type', EntityType::class, [
+                'label' => 'Tipo de reunión',
+                'class' => MeetingType::class,
+                'choices' => $options['type_choices'],
+                'choice_label' => 'name',
+                'required' => false,
+                'placeholder' => '— Sin tipo —',
+                'help' => 'Sirve para archivar el acta. La lista la mantiene administración.',
+                'row_attr' => ['data-staff-only' => '1'],
+            ])
             ->add('day', DateType::class, [
                 'label' => 'Día',
                 'widget' => 'single_text',
@@ -84,6 +106,7 @@ final class MeetingFormType extends AbstractType
                 'label' => 'Orden del día',
                 'required' => false,
                 'help' => 'Los puntos a tratar. Lo verán los convocados.',
+                'row_attr' => ['data-staff-only' => '1'],
             ])
             ->add('project', EntityType::class, [
                 'label' => 'Proyecto',
@@ -130,8 +153,10 @@ final class MeetingFormType extends AbstractType
             'data_class' => MeetingFormData::class,
             'project_choices' => [],
             'attendee_choices' => [],
+            'type_choices' => [],
         ]);
         $resolver->setAllowedTypes('project_choices', 'array');
         $resolver->setAllowedTypes('attendee_choices', 'array');
+        $resolver->setAllowedTypes('type_choices', 'array');
     }
 }

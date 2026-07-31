@@ -1,0 +1,27 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}{{ material.id ? 'Editar material' : 'Nuevo material' }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('admin_material_index') }}">Material</a><span class="sep">/</span>
+    {{ material.id ? 'Editar' : 'Nuevo' }}
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <p class="eyebrow">Material</p>
+        <h1>{{ material.id ? 'Editar material' : 'Nuevo material' }}</h1>
+    </div>
+
+    <div class="card form-card">
+        {{ form_start(form, { attr: { novalidate: 'novalidate' } }) }}
+            {{ f.submit_error(form) }}
+            {{ form_errors(form) }}
+            {{ f.fields([form.name, form.keptAt, form.notes]) }}
+            {{ f.toggle(form.active) }}
+            {{ f.actions(path('admin_material_index')) }}
+        {{ form_end(form) }}
+    </div>
+{% endblock %}

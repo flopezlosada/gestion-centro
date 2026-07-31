@@ -1,0 +1,39 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}Avisar de una avería · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('tic_incident_index') }}">Incidencias TIC</a><span class="sep">/</span>Nueva{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Incidencias TIC</p>
+            <h1>Avisar de una avería</h1>
+            <p class="lead">Cuenta qué falla y dónde. Con la hora y el grupo se puede reconstruir qué pasó, así que merece la pena rellenarlos.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        {{ form_start(form) }}
+        {{ form_errors(form) }}
+        <div class="stackform stackform--screen">
+            {{ f.field(form.equipment) }}
+            {{ f.field(form.room) }}
+            {{ f.field(form.occurredAt) }}
+            {{ f.field(form.priority) }}
+            {{ f.toggles([form.individualUse]) }}
+            {# El grupo solo tiene sentido si lo estaba usando una clase: tic-incident-form.js esconde la
+               fila al marcar "uso individual", y el propio formulario lo limpia en el servidor. #}
+            {{ f.field(form.groupName) }}
+            {{ f.field(form.description) }}
+            <div class="stackform__foot">
+                <button class="btn-lg btn-lg--primary" type="submit">Registrar la incidencia</button>
+            </div>
+        </div>
+        {{ form_end(form) }}
+    </div>
+{% endblock %}
+
+{% block page_scripts %}
+    <script src="{{ asset_ver('/js/tic-incident-form.js') }}"></script>
+{% endblock %}

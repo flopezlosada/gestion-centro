@@ -15,6 +15,7 @@ final class TaskStatus
     /** Workflow places (Symfony Workflow markings), matching config/packages/workflow.yaml. */
     public const string PENDING = 'pending';
     public const string SUBMITTED = 'submitted';
+    public const string IN_REVIEW = 'in_review';
     public const string VALIDATED = 'validated';
     public const string CANCELLED = 'cancelled';
 
@@ -27,12 +28,12 @@ final class TaskStatus
 
     /**
      * Workflow place → human label (Spanish). Un único ciclo para todas las tareas: Pendiente →
-     * Entregada → Finalizada, con Cancelada como cierre alternativo. "Devolver" no es un estado:
-     * vuelve a Pendiente (el rechazo queda en el histórico), por eso no aparece aquí.
+     * Entregada → Finalizada, con "En revisión" para lo devuelto y Cancelada como cierre alternativo.
      */
     public const array LABELS = [
         self::PENDING => 'Pendiente',
         self::SUBMITTED => 'Entregada',
+        self::IN_REVIEW => 'En revisión',
         self::VALIDATED => 'Finalizada',
         self::CANCELLED => 'Cancelada',
     ];

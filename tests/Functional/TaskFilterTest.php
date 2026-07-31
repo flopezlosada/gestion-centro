@@ -415,7 +415,7 @@ final class TaskFilterTest extends WebTestCase
 
         $page = $this->get('/tareas?departamento=Matem%C3%A1ticas');
 
-        self::assertSelectorTextContains('.tasks-group__head.is-warning', 'Vencidas');
+        self::assertSelectorTextContains('.tasks-group__head.is-warning', 'Fuera de plazo');
         self::assertGreaterThan(0, $page->filter('.tasks-table .trow--group')->count(), 'the desktop table groups too');
     }
 

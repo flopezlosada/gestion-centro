@@ -9,6 +9,7 @@ use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskResponsibility;
 use App\Entity\User;
+use App\Enum\DeliverableRequirement;
 use App\Enum\TaskType;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
@@ -54,7 +55,7 @@ final class TaskEditPreservesFlagsTest extends WebTestCase
         // getter therefore reads false, which is exactly the value that used to leak into the column.
         // The responsibility carries NO department, because a centre-wide role has none — pairing one
         // with a department leaves the form unable to offer a valid responsible person.
-        $task->setRequiresCheckbox(true)->setRequiresDocument(true)
+        $task->setRequiresCheckbox(true)->setDeliverable(DeliverableRequirement::LINK)
             ->setResponsibility(new TaskResponsibility($role, null))
             ->setAssignedUser($editor)
             ->setCreatedBy($editor);

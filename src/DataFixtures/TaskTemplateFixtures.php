@@ -8,6 +8,7 @@ use App\DueDate\PerTerm;
 use App\DueDate\RelativeToAnchor;
 use App\Entity\TaskTemplate;
 use App\Enum\CalendarAnchor;
+use App\Enum\DeliverableRequirement;
 use App\Enum\TaskType;
 use App\Enum\TermBoundary;
 use Doctrine\Common\DataFixtures\DependentFixtureInterface;
@@ -31,7 +32,7 @@ final class TaskTemplateFixtures extends AbstractGoldenFixture implements Depend
         // carry a role — "head of department" is whoever holds the head_dept role, resolved live.
         // The department report is due at the end of the course; the meeting minutes recur at the end
         // of every term.
-        $report = (new TaskTemplate())->setTitle('Memoria del departamento')->setType(TaskType::WITH_DELIVERABLE)->setRequiresDocument(true)
+        $report = (new TaskTemplate())->setTitle('Memoria del departamento')->setType(TaskType::WITH_DELIVERABLE)->setDeliverable(DeliverableRequirement::LINK)
             ->setDueDateRule(new RelativeToAnchor(CalendarAnchor::YEAR_END, 0));
         $meeting = (new TaskTemplate())->setTitle('Acta de reunión de departamento')->setType(TaskType::SIMPLE)
             ->setDueDateRule(new PerTerm(TermBoundary::END));

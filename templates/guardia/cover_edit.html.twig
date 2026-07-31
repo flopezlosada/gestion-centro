@@ -9,7 +9,7 @@
     <div class="page-head">
         <div>
             <h1>Modificar guardia</h1>
-            <p class="lead">El reparto es automático: usa esto solo cuando algo se sale de lo normal. Si cambias de sustituto avisamos a los dos profesores con tu explicación, y todo queda en el histórico.</p>
+            <p class="lead">El reparto es automático: usa esto solo cuando algo se sale de lo normal. Si cambias de sustituto avisamos a los dos profesores, y todo queda en el histórico.</p>
         </div>
     </div>
 
@@ -75,9 +75,14 @@
             </div>
 
             {# La única palabra "Motivo" que queda arriba es la de la ausencia (privada). Este campo no la
-               usa a propósito: tener dos "motivos" en la misma pantalla era lo que despistaba al centro. #}
+               usa a propósito: tener dos "motivos" en la misma pantalla era lo que despistaba al centro.
+
+               El asterisco nace oculto y solo aparece si se cambia de profesor (change-note-presets.js):
+               es exactamente el caso en que el campo es obligatorio. Sin JS no se pierde nada — quien
+               manda de verdad es el servidor. #}
             <div class="field field--change-note">
-                <label for="motivo">¿Por qué haces este cambio? <span class="req">*</span></label>
+                <label for="motivo">¿Por qué haces este cambio? <span class="req" data-change-note-req hidden>*</span></label>
+                <p class="field-help field-help--lead">Privado: esto lo lee <strong>solo el equipo directivo</strong>. No se envía a los profesores.</p>
                 {# Atajos: rellenan el campo de un clic y siguen siendo editables. Ocultos sin JS (no harían
                    nada), y el campo se escribe a mano igual: mejora progresiva, no requisito. #}
                 <div class="change-note__presets" data-change-note-presets hidden role="group" aria-labelledby="change-note-presets-label">
@@ -87,8 +92,8 @@
                     <button type="button">Corrijo un error del reparto</button>
                     <button type="button">Al final no se cubrió</button>
                 </div>
-                <textarea id="motivo" name="motivo" rows="3" maxlength="500" required placeholder="Ej.: lo cubre otro compañero porque el asignado tiene una reunión fuera del centro."></textarea>
-                <p class="field-help">Obligatorio. Si cambias de sustituto se lo contamos a los dos: al que entra y al que deja de hacerla. Siempre queda en el histórico de esta guardia.</p>
+                <textarea id="motivo" name="motivo" rows="3" maxlength="500" placeholder="Ej.: lo cubre otro compañero porque el asignado tiene una reunión fuera del centro."></textarea>
+                <p class="field-help">Obligatorio solo si cambias de profesor de guardia. A los dos afectados —al que entra y al que deja de hacerla— les avisamos del cambio, pero no les llega este texto.</p>
             </div>
 
             <div class="form-actions">

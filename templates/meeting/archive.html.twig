@@ -1,0 +1,48 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Actas · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('meeting_index') }}">Reuniones</a><span class="sep">/</span>Actas{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Reuniones</p>
+            <h1>Actas</h1>
+            <p class="lead">{% if wholeCentre %}Todas las actas publicadas del centro, de la más reciente a la más antigua.{% else %}Las actas publicadas de las reuniones en las que has estado, de la más reciente a la más antigua.{% endif %}</p>
+        </div>
+    </div>
+
+    {% if types is not empty %}
+        <nav class="scope-toggle" aria-label="Filtrar por tipo de reunión">
+            <a href="{{ path('meeting_minutes_archive') }}" class="{{ currentType ? '' : 'is-active' }}"{{ currentType ? '' : ' aria-current="page"' }}>Todas</a>
+            {% for t in types %}
+                <a href="{{ path('meeting_minutes_archive', { tipo: t.id }) }}" class="{{ currentType and currentType.id == t.id ? 'is-active' : '' }}"{{ currentType and currentType.id == t.id ? ' aria-current="page"' : '' }}>{{ t.name }}</a>
+            {% endfor %}
+        </nav>
+    {% endif %}
+
+    {% if minutes is empty %}
+        <div class="tasks-empty">
+            <p>{% if currentType %}No hay actas publicadas de ese tipo de reunión.{% else %}Todavía no hay actas publicadas.{% endif %}</p>
+        </div>
+    {% else %}
+        <div class="card">
+            <ul class="incident-list">
+                {% for m in minutes %}
+                    <li class="incident">
+                        <a class="incident__main" href="{{ path('meeting_show', { id: m.id }) }}">
+                            <span class="incident__head">
+                                <span class="incident__what">{{ m.title }}</span>
+                                {% if m.type %}<span class="badge badge--muted">{{ m.type.name }}</span>{% endif %}
+                                {% if m.areMinutesApproved %}<span class="badge badge--success">Aprobada</span>{% endif %}
+                            </span>
+                            <span class="incident__where">{{ m.startAt|date('d/m/Y', false) }}{% if m.place %} · {{ m.place }}{% endif %}</span>
+                            <span class="incident__meta">Publicada el {{ m.minutesPublishedAt|date('d/m/Y', false) }}{% if m.minutesPublishedBy %} por {{ m.minutesPublishedBy.fullName }}{% endif %}</span>
+                        </a>
+                        <a class="incident__download" href="{{ path('meeting_minutes_download', { id: m.id }) }}">Descargar</a>
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+{% endblock %}

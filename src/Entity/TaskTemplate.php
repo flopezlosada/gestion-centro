@@ -7,6 +7,7 @@ namespace App\Entity;
 use App\Contract\Auditable;
 use App\DueDate\DueDateRule;
 use App\DueDate\DueDateRuleFactory;
+use App\Enum\DeliverableRequirement;
 use App\Enum\TaskType;
 use App\Repository\TaskTemplateRepository;
 use Doctrine\DBAL\Types\Types;
@@ -52,9 +53,13 @@ class TaskTemplate implements Auditable
     #[ORM\JoinColumn(name: 'responsible_role_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
     private ?Role $responsibleRole = null;
 
-    /** Whether the task expects a document reference as a deliverable. */
-    #[ORM\Column]
-    private bool $requiresDocument = false;
+    /**
+     * What the tasks born from this template demand in order to be delivered: nothing, a link, a file
+     * or either. Same choice as on a one-off task ({@see Task::getDeliverable()}), so a recurring
+     * "Memoria del departamento" can ask for a file without anyone having to remember it each course.
+     */
+    #[ORM\Column(name: 'deliverable_requirement', length: 10, enumType: DeliverableRequirement::class, options: ['default' => 'none'])]
+    private DeliverableRequirement $deliverable = DeliverableRequirement::NONE;
 
     /** Whether the task expects a "done" checkbox declared by the assignee. */
     #[ORM\Column]
@@ -138,16 +143,22 @@ class TaskTemplate implements Auditable
         return $this;
     }
 
-    public function requiresDocument(): bool
+    public function getDeliverable(): DeliverableRequirement
     {
-        return $this->requiresDocument;
+        return $this->deliverable;
     }
 
-    public function setRequiresDocument(bool $requiresDocument): static
+    public function setDeliverable(DeliverableRequirement $deliverable): static
     {
-        $this->requiresDocument = $requiresDocument;
+        $this->deliverable = $deliverable;
 
         return $this;
+    }
+
+    /** Whether tasks from this template cannot be delivered empty-handed. */
+    public function requiresDocument(): bool
+    {
+        return $this->deliverable->isRequired();
     }
 
     public function requiresCheckbox(): bool

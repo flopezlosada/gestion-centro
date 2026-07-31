@@ -3,8 +3,15 @@
    Traducción del handoff en catalogo/handoff_gestion_centro/README.md.
    Todos los colores son TOKENS SEMÁNTICOS: un único juego de nombres cambia de
    valor entre tema claro (:root) y oscuro ([data-theme="dark"]). Nunca hex
-   sueltos repetidos por el CSS. Paleta: papel cálido + verde bosque; ámbar para
-   tareas con entregable, naranja para vencido/sin cubrir, malva para lo personal.
+   sueltos repetidos por el CSS. Paleta: papel cálido + el NARANJA y el VERDE del
+   logo del centro (catalogo/logo_ies.png, #FF9E00 y #00AA00); dorado para tareas
+   con entregable, rojo para fuera de plazo/sin cubrir, malva para lo personal.
+
+   Sobre el naranja de la marca: es un color LUMINOSO (relación 2:1 sobre papel),
+   así que sirve de RELLENO con tinta oscura encima (--on-accent) pero nunca de
+   texto. Por eso hay dos tokens y no uno: --accent es la marca que se rellena y
+   --accent-ink el mismo naranja oscurecido hasta ser legible como texto o icono.
+   Confundirlos es el único modo de romper el contraste de esta paleta.
    ============================================================================= */
 
 /* ---- Tokens: tema claro ------------------------------------------------- */
@@ -22,21 +29,26 @@
     --text-muted: #615C4E;     /* texto secundario */
     --text-faint: #8A8471;     /* texto terciario / etiqueta mono / placeholder */
     --text-tenue: #B0A98F;     /* texto tenue / chevron */
-    --on-accent: #F5F1E6;      /* texto sobre relleno de acento (verde) */
-    --accent: #1E4A3D;         /* acción primaria / marca / nav activo (verde bosque) */
-    --accent-hover: #17392F;
-    --accent-weak: #DDF0E4;    /* fondo tenue de acento (chip, hover, seleccionado) */
-    --accent-weak-border: #B9DBC6;
-    --success: #2F6B55;        /* "hecha" / enlace en verde */
-    --success-weak: #DDF0E4;
-    --success-text: #235B44;
-    --warning: #D9803B;        /* naranja: vencida / sin cubrir (señal de urgencia) */
-    --warning-weak: #FCF3E9;
-    --warning-text: #9A4A1C;
-    --warning-border: #EBD3BC;
-    --amber: #E7B24A;          /* ámbar: tarea con entregable / adjuntar (fuerte) */
-    --amber-on: #3A2A08;       /* texto sobre ámbar fuerte */
-    --amber-weak: #F6E9CB;     /* ámbar suave (fondo de aviso) */
+    --on-accent: #2B1A00;      /* tinta sobre relleno de acento (naranja): oscura, 8:1 */
+    --accent: #FF9E00;         /* marca del logo / relleno primario / nav activo (naranja) */
+    --accent-hover: #E88F00;
+    --accent-ink: #8F4B00;     /* el mismo naranja, legible como TEXTO o icono sobre papel (6:1) */
+    --accent-weak: #FFF0DA;    /* fondo tenue de acento (chip, hover, seleccionado) */
+    --accent-weak-border: #F6D6A4;
+    --success: #0B7A28;        /* verde del logo oscurecido hasta ser legible: "hecha" */
+    --success-weak: #DFF3E2;
+    --success-text: #0A6522;
+    /* Rojo teja: fuera de plazo / sin cubrir. Era naranja, pero el naranja pasó a ser la MARCA y una
+       señal de urgencia no puede compartir color con los botones. Comparte familia con --danger y no
+       se fusiona con él a propósito: "hay que atenderlo" y "esto destruye algo" son cosas distintas y
+       nunca aparecen en el mismo componente. */
+    --warning: #B93A2B;
+    --warning-weak: #FBEBE8;
+    --warning-text: #8E2A1E;
+    --warning-border: #EFC7C0;
+    --amber: #B5872A;          /* dorado tostado: tarea con entregable / adjuntar (fuerte) */
+    --amber-on: #3A2A08;       /* texto sobre dorado fuerte */
+    --amber-weak: #F6E9CB;     /* dorado suave (fondo de aviso) */
     --amber-text: #6B4E12;
     --amber-border: #E4CE9A;
     --danger: #C0392B;         /* rojo: destructivo / ausente / no leído */
@@ -46,7 +58,7 @@
     --personal: #7A6CA8;       /* agenda personal (malva) */
     --personal-icon: #6A5C99;
     --personal-weak: #E6E0F1;
-    --accent-bright: #7FB88C;  /* verde secundario: dot pulsante, "disponible" */
+    --accent-bright: #00AA00;  /* verde del logo: dot pulsante, "disponible" */
     /* Módulos "de gestión" (zona aparte según rol): caja con banda de cabecera. */
     --module-bg: #EFEADB;
     --module-band: #E9E2CF;
@@ -63,7 +75,7 @@
     --pillar-do: #5F8A5A;
     --pillar-check: #4F8A86;
     --pillar-act: #9A6A86;
-    --focus: #1E4A3D;
+    --focus: #8F4B00;
 
     /* Tipografía: serif de lectura en titulares + sans neutra en el cuerpo + mono para cifras/horas */
     --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
@@ -73,7 +85,7 @@
     /* Sombras (claro). En oscuro se neutralizan más abajo. */
     --shadow-card: 0 14px 30px -24px rgba(60, 50, 20, .5);
     --shadow-mobile: 0 16px 48px rgba(45, 38, 26, .18);
-    --shadow-hero: 0 20px 38px -24px rgba(30, 74, 61, .7);
+    --shadow-hero: 0 20px 38px -24px rgba(120, 62, 0, .55);
     --shadow-sheet: 0 -20px 50px -20px rgba(20, 40, 30, .5);
 
     /* Radios (el rediseño es más redondeado) */
@@ -98,18 +110,21 @@
     --text-muted: #ADA593;
     --text-faint: #7C7565;
     --text-tenue: #625C4E;
-    --on-accent: #0E1A16;
-    --accent: #7FB88C;         /* verde secundario claro como acento en oscuro */
-    --accent-hover: #93C89E;
-    --accent-weak: #17302A;
-    --accent-weak-border: #2A4A3D;
-    --success: #7FB88C;
-    --success-weak: #17302A;
-    --success-text: #A9D6B7;
-    --warning: #E0954F;
-    --warning-weak: #33220F;
-    --warning-text: #EEBB85;
-    --warning-border: #4A3418;
+    /* El naranja de la marca ya destaca sobre un fondo oscuro, así que aquí --accent-ink es una versión
+       ACLARADA (no oscurecida como en claro): el matiz es el mismo, cambia hacia dónde hay que huir. */
+    --on-accent: #2B1A00;
+    --accent: #FF9E00;         /* naranja del logo, igual en los dos temas: es la marca */
+    --accent-hover: #FFB43D;
+    --accent-ink: #FFB340;
+    --accent-weak: #3A2405;
+    --accent-weak-border: #5C3A0A;
+    --success: #4FC463;        /* verde del logo aclarado para leerse sobre fondo oscuro */
+    --success-weak: #12301A;
+    --success-text: #8EDB9B;
+    --warning: #E0705E;        /* rojo teja aclarado: fuera de plazo / sin cubrir */
+    --warning-weak: #3A1A14;
+    --warning-text: #F0A697;
+    --warning-border: #58261D;
     --amber: #E7B24A;
     --amber-on: #2A1E06;
     --amber-weak: #332911;
@@ -122,7 +137,7 @@
     --personal: #B0A2DA;
     --personal-icon: #B0A2DA;
     --personal-weak: #241F33;
-    --accent-bright: #7FB88C;
+    --accent-bright: #35C13A;
     --module-bg: #262117;
     --module-band: #2E2818;
     --module-border: #3A3324;
@@ -136,7 +151,7 @@
     --pillar-do: #8FB98A;
     --pillar-check: #74B8B0;
     --pillar-act: #C49AB6;
-    --focus: #93C89E;
+    --focus: #FFB340;
     color-scheme: dark;
 
     /* En oscuro las sombras son casi imperceptibles: la separación la dan los bordes. */
@@ -163,7 +178,7 @@ body {
     text-rendering: optimizeLegibility;
 }
 
-a { color: var(--accent); }
+a { color: var(--accent-ink); }
 
 h1, h2, h3 { font-family: var(--font-display); font-weight: 500; color: var(--text); }
 
@@ -219,9 +234,10 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 500; color: var(--te
 }
 /* Marca SGA: el SVG hereda el color (currentColor). El contenedor lo fija al acento,
    así sigue al tema claro/oscuro sin lógica extra. */
-.brand-mark { display: inline-flex; align-items: center; justify-content: center; color: var(--accent); }
-.brand-mark-svg { display: block; }
-.sidebar .brand .brand-mark { width: 30px; height: 30px; }
+.brand-mark { display: inline-flex; align-items: center; justify-content: center; }
+/* El logo trae sus colores: `height` manda y el ancho sigue la proporción del fichero. */
+.brand-mark-img { display: block; width: auto; }
+.sidebar .brand .brand-mark { height: 30px; }
 .auth-card .brand-mark--lg { justify-content: center; margin: 0 auto 18px; }
 .dash-greeting .brand-mark--lg { flex: none; }
 .sidebar .brand .brand-name { font-family: var(--font-display); font-size: 17px; }
@@ -266,7 +282,7 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 500; color: var(--te
         color: var(--text-faint);
         font: 500 10px var(--font-body);
     }
-    .bottomnav__item.is-active { color: var(--accent); }
+    .bottomnav__item.is-active { color: var(--accent-ink); }
     .bottomnav__item.is-active > span:last-child { font-weight: 600; }
     .bottomnav__item:active { transform: scale(.96); }
     .bottomnav__dot {
@@ -447,7 +463,7 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 500; color: var(--te
 .btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .btn.secondary, .btn-secondary {
     background: transparent;
-    color: var(--accent);
+    color: var(--accent-ink);
     border-color: var(--border-strong);
 }
 .btn.secondary:hover, .btn-secondary:hover { background: var(--surface-sunken); }
@@ -494,7 +510,7 @@ tbody tr:hover { background: var(--accent-weak); }
 /* Enlace del identificador de fila: el nombre actúa como acceso directo al
    detalle. Sin subrayado en reposo (como .nav a / breadcrumb), se revela al
    pasar el cursor para no ensuciar la tabla. */
-td a.cell-link { color: var(--accent); text-decoration: none; font-weight: 500; }
+td a.cell-link { color: var(--accent-ink); text-decoration: none; font-weight: 500; }
 td a.cell-link:hover { text-decoration: underline; }
 td .doc-code { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint); display: block; }
 td .doc-title { font-family: var(--font-display); font-size: 16.5px; }
@@ -504,7 +520,7 @@ td .doc-title { font-family: var(--font-display); font-size: 16.5px; }
 .person__avatar {
     flex-shrink: 0; width: 28px; height: 28px; border-radius: 7px;
     display: grid; place-items: center;
-    background: var(--accent-weak); color: var(--accent);
+    background: var(--accent-weak); color: var(--accent-ink);
     font-family: var(--font-display); font-weight: 600; font-size: 11.5px;
     letter-spacing: -.01em; line-height: 1;
 }
@@ -636,7 +652,7 @@ tbody tr.is-in-force { background: var(--success-weak); }
 .tt-pop__opt[aria-selected="true"] { font-weight: 600; }
 .tt-pop__opt[aria-selected="true"]::before {
     border-color: var(--accent);
-    background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") center / 11px no-repeat;
+    background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232B1A00' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") center / 11px no-repeat;
 }
 .tt-pop__opt:hover { background: var(--accent-weak); }
 /* Punto de color del estado en el popover: mismo tono que el chip de la tabla. */
@@ -713,7 +729,7 @@ thead th.is-sortable:focus-visible { outline: 2px solid var(--focus); outline-of
 /* Columna ordenada activa: fondo tenue de acento + texto/flecha en acento, para que se vea cuál
    manda el orden (el color solo, en 10px, no se apreciaba). */
 thead th.is-sortable[aria-sort="ascending"],
-thead th.is-sortable[aria-sort="descending"] { color: var(--accent); background: var(--accent-weak); }
+thead th.is-sortable[aria-sort="descending"] { color: var(--accent-ink); background: var(--accent-weak); }
 thead th.is-sortable[aria-sort="ascending"]::after,
 thead th.is-sortable[aria-sort="descending"]::after { opacity: 1; }
 
@@ -738,7 +754,8 @@ thead th.is-sortable[aria-sort="descending"]::after { opacity: 1; }
 .badge--void    { color: var(--text-faint); text-decoration: line-through; }
 .badge--done    { background: var(--surface-sunken); color: var(--text-muted); border-color: var(--border-strong); }
 .badge--muted   { background: var(--surface-sunken); color: var(--text-faint); border-color: var(--border); }
-.badge--accent  { background: var(--accent-weak);    color: var(--accent);      border-color: var(--accent); }
+.badge--accent  { background: var(--accent-weak);    color: var(--accent-ink);      border-color: var(--accent); }
+.badge--amber   { background: var(--amber-weak);   color: var(--amber-text);   border-color: var(--amber-border); }
 
 /* Nivel de valoración de riesgo: dato INFORMATIVO (no accionable), por eso es texto coloreado por
    severidad, no un badge (que se reserva a estados accionables). Escala sobria: trivial apagado. */
@@ -795,6 +812,9 @@ a.badge:hover { border-color: currentColor; }
 .document-editor .field { margin-bottom: 20px; }
 .document-editor .field > label { display: block; font-weight: 600; margin-bottom: 4px; }
 .field-help { color: var(--text-muted); font-size: 13px; margin: 0 0 8px; }
+/* Ayuda que va ANTES del control y hay que leer sí o sí (p. ej. "esto solo lo ve el equipo directivo"):
+   mismo tamaño, pero en el color del texto normal para que no se lea como letra pequeña. */
+.field-help--lead { color: var(--text); margin: 0 0 6px; }
 .document-editor trix-editor {
     min-height: 340px;
     border: 1px solid var(--border-strong);
@@ -812,7 +832,7 @@ a.badge:hover { border-color: currentColor; }
 .document-body h1 { font-size: 20px; }
 .document-body h2 { font-size: 17px; }
 /* Subida discreta (Adjuntar firma): un enlace que abre el selector; el input nativo queda oculto. */
-.file-action { color: var(--accent); cursor: pointer; position: relative; white-space: nowrap; }
+.file-action { color: var(--accent-ink); cursor: pointer; position: relative; white-space: nowrap; }
 .file-action input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
 /* Sección de formulario: agrupa campos bajo un título en los formularios largos. Reset del
    fieldset nativo + una línea divisoria sutil sobre cada grupo salvo el primero. */
@@ -853,7 +873,7 @@ a.badge:hover { border-color: currentColor; }
 input[type="file"] { font: inherit; font-size: 13.5px; color: var(--text-muted); max-width: 100%; }
 input[type="file"]::file-selector-button {
     margin-right: 10px; padding: 8px 14px; cursor: pointer;
-    background: var(--surface); color: var(--accent);
+    background: var(--surface); color: var(--accent-ink);
     border: 1px solid var(--border-strong); border-radius: var(--radius);
     font: 600 13px var(--font-body);
 }
@@ -1002,9 +1022,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
     display: flex; align-items: center; gap: 8px; padding: 8px 10px;
     border-radius: var(--radius-sm); color: var(--text); cursor: pointer;
 }
-.cselect__option::before { content: ""; flex: none; width: 14px; color: var(--accent); }
+.cselect__option::before { content: ""; flex: none; width: 14px; color: var(--accent-ink); }
 .cselect__option[aria-selected="true"]::before { content: "\2713"; }
-.cselect__option[aria-selected="true"] { color: var(--accent); font-weight: 500; }
+.cselect__option[aria-selected="true"] { color: var(--accent-ink); font-weight: 500; }
 .cselect__option:hover, .cselect__option.is-active { background: var(--surface-sunken); }
 
 /* ---- Calendario propio de fecha (date-field.js) ----
@@ -1107,7 +1127,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
     border: 0;
     border-radius: 999px;
     background: var(--surface-sunken);
-    color: var(--accent);
+    color: var(--accent-ink);
     font: 600 13.5px var(--font-body);
     cursor: pointer;
 }
@@ -1170,7 +1190,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
     display: grid;
     place-items: center;
     text-align: center;
-    color: var(--accent);
+    color: var(--accent-ink);
     line-height: 1.1;
 }
 .seal .seal-top, .seal .seal-bottom {
@@ -1393,7 +1413,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 }
 .quick-link:hover { border-color: var(--accent); background: var(--accent-weak); }
 .quick-link-title { display: block; font-family: var(--font-display); font-size: 17px; margin-bottom: 4px; }
-.quick-link-title::after { content: " →"; color: var(--accent); }
+.quick-link-title::after { content: " →"; color: var(--accent-ink); }
 .quick-link-desc { display: block; color: var(--text-muted); font-size: 13px; }
 
 .dash-grid {
@@ -1522,7 +1542,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .worklist-item .badge,
 .worklist-item .btn { flex: none; }
 .worklist-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.worklist-title { font-weight: 500; color: var(--accent); text-decoration: none; }
+.worklist-title { font-weight: 500; color: var(--accent-ink); text-decoration: none; }
 .worklist-title:hover { text-decoration: underline; }
 .worklist-code { font-size: 11px; }
 .worklist-due { flex: 0 0 auto; font-size: 13px; white-space: nowrap; color: var(--text-muted); }
@@ -1752,7 +1772,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
    es un <button> dentro de un <form>, no un enlace). */
 .link-danger { background: none; border: 0; padding: 0; margin-left: 14px; color: var(--danger-text); font: inherit; cursor: pointer; }
 .link-danger:hover { text-decoration: underline; }
-.link-action { background: none; border: 0; padding: 0; margin-left: 14px; color: var(--accent); font: inherit; cursor: pointer; }
+.link-action { background: none; border: 0; padding: 0; margin-left: 14px; color: var(--accent-ink); font: inherit; cursor: pointer; }
 .link-action:hover { text-decoration: underline; }
 .sga-phase { margin-block: 2rem; }
 .sga-phase-head { display: flex; align-items: baseline; gap: .6rem; padding-bottom: .4rem; border-bottom: 1px solid var(--border); }
@@ -1807,6 +1827,45 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .pick-option__desc { font-size: 13px; color: var(--text-muted); line-height: 1.35; }
 /* Estado seleccionado: la casilla nativa es el control real; :has solo lo refuerza. */
 .pick-option:has(.pick-option__input:checked) { border-color: var(--accent); background: var(--accent-weak); }
+
+/* Lista de incidencias TIC: una fila por avería, con lo que hace falta para no abrirla — qué, dónde,
+   cuándo y en qué estado. Lo resuelto se apaga en vez de esconderse: sigue siendo consultable. */
+.incident-list { list-style: none; margin: 0; padding: 0; }
+.incident + .incident { border-top: 1px solid var(--separator); }
+.incident.is-done { opacity: .6; }
+.incident__main { display: flex; flex-direction: column; gap: 3px; padding: 13px 2px; text-decoration: none; color: var(--text); }
+.incident__main:hover { background: var(--surface-sunken); }
+.incident__head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.incident__what { font-weight: 600; }
+.incident__where { font-size: 13px; color: var(--text-muted); }
+.incident__meta { font-size: 12px; color: var(--text-faint); }
+/* La misma fila sirve para el archivo de actas, donde además hay un enlace de descarga a la derecha. */
+.incident { display: flex; align-items: center; gap: 12px; }
+.incident__main { flex: 1; min-width: 0; }
+.incident__download { flex: none; font-size: 13px; font-weight: 500; color: var(--accent-ink); text-decoration: none; }
+.incident__download:hover { text-decoration: underline; }
+
+/* "Marcar todas" sobre la lista de personas de una tarea nueva: alineado a la derecha, sobre la lista. */
+.people-bulk { display: flex; justify-content: flex-end; margin: 0 0 6px; }
+
+/* Un tema de los ajustes de avisos: fieldset sin la caja del navegador, con su nombre como titular. */
+.notif-topic { border: 0; padding: 0; margin: 0 0 22px; }
+.notif-topic__name { padding: 0; font-family: var(--font-display); font-size: 17px; font-weight: 500; color: var(--text); }
+
+/* Invitación de Inicio a elegir por dónde llegan los avisos. Se enseña una sola vez, así que pide
+   atención (fondo de acento tenue) sin llegar a competir con el hero de la próxima guardia. */
+.notice-setup {
+    display: flex; align-items: center; gap: 14px; margin: 0 0 18px;
+    padding: 14px 16px; border: 1px solid var(--accent-weak-border); border-radius: var(--radius-lg);
+    background: var(--accent-weak); color: var(--text); text-decoration: none;
+}
+.notice-setup:hover { border-color: var(--accent); }
+.notice-setup__icon { flex: none; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; background: var(--surface); color: var(--accent-ink); }
+.notice-setup__icon svg { width: 19px; height: 19px; }
+.notice-setup__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.notice-setup__title { font-weight: 600; }
+.notice-setup__sub { font-size: 13px; color: var(--text-muted); }
+.notice-setup__cta { flex: none; margin-left: auto; font-weight: 600; font-size: 13px; color: var(--accent-ink); }
 
 /* =============================================================================
    Calendario anual de obligaciones (obligation_calendar)
@@ -1865,7 +1924,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .obj-timeline__field { min-width: 9ch; color: var(--text-muted); font-variant: small-caps; }
 .obj-timeline__label { color: var(--text-muted); font-weight: 600; }
 .obj-timeline__del { color: var(--danger); text-decoration: line-through; }
-.obj-timeline__add { color: var(--accent); }
+.obj-timeline__add { color: var(--accent-ink); }
 /* Resumen de alta/baja: frase completa, sin diff campo a campo. */
 .obj-timeline__summary { margin: 6px 0 0; font-size: 13.5px; }
 /* Detalle técnico crudo, plegado por defecto y solo visible para admin. */
@@ -1909,10 +1968,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 
 .agenda-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-top: 1px; }
 .agenda-title { font-size: 15px; font-weight: 500; color: var(--text); text-decoration: none; }
-.agenda-title:hover { color: var(--accent); }
+.agenda-title:hover { color: var(--accent-ink); }
 .agenda-meta { font-size: 12.5px; color: var(--text-muted); }
 /* Guardia en la agenda del día: marcador ESCUDO (forma distinta del círculo de tarea/evento). */
-.agenda-guardia-marker { flex: none; width: 22px; height: 22px; margin-top: 1px; display: grid; place-items: center; color: var(--accent); }
+.agenda-guardia-marker { flex: none; width: 22px; height: 22px; margin-top: 1px; display: grid; place-items: center; color: var(--accent-ink); }
 .agenda-guardia-marker svg { width: 20px; height: 20px; }
 .agenda-item--guardia .agenda-title { font-weight: 600; }
 /* Reunión convocada en la agenda del día: marcador PERSONAS, otra forma distinta (no es tuya sola, hay
@@ -1958,7 +2017,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 /* "Hoy" manda sobre el fondo de finde/no lectivo. */
 .calendar-day.is-today { background: var(--accent-weak); }
 
-.calendar-nonlective { margin: 0; font-size: 11px; line-height: 1.25; font-weight: 600; color: var(--accent); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.calendar-nonlective { margin: 0; font-size: 11px; line-height: 1.25; font-weight: 600; color: var(--accent-ink); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
 .calendar-daynum { display: flex; align-items: center; justify-content: space-between; gap: 4px; font-family: var(--font-mono); font-size: 12.5px; color: var(--text-muted); line-height: 1; }
 .calendar-day.is-today .calendar-daynum span { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-weight: 600; }
@@ -1998,6 +2057,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
    (verde, como el chip) y cancelada (anillo hueco, para distinguirla del gris de pendiente). */
 .calendar-dot--pending { background: var(--text-faint); }
 .calendar-dot--submitted { background: var(--warning); }
+.calendar-dot--in_review { background: var(--review); }
 .calendar-dot--validated { background: var(--success); }
 .calendar-dot--cancelled { background: transparent; border: 1.5px solid var(--text-faint); box-sizing: border-box; }
 /* Eventos personales en la celda: como las tareas, con separación sutil arriba y marcador neutro
@@ -2015,7 +2075,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .calendar-guardias { list-style: none; margin: 3px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .calendar-guardia { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: var(--radius-sm); text-decoration: none; color: var(--text); font-size: 12.5px; line-height: 1.25; }
 .calendar-guardia:hover { background: var(--surface-sunken); }
-.calendar-guardia-icon { flex: none; display: inline-flex; color: var(--accent); }
+.calendar-guardia-icon { flex: none; display: inline-flex; color: var(--accent-ink); }
 .calendar-guardia-icon svg { width: 13px; height: 13px; }
 .calendar-guardia-icon--legend svg { width: 14px; height: 14px; }
 
@@ -2023,10 +2083,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
    EXISTENTE del tema (soporte claro/oscuro gratis, cero hex nuevos). La consumen el punto del
    calendario, el badge de la agenda y los swatches del formulario admin.
 
-   Se usan los tokens CATEGÓRICOS (--pillar-*), no los de estado: --accent y --success son el MISMO
-   valor en tema oscuro (#7FB88C), así que "Verde azulado" y "Verde" salían idénticos; y reutilizar
-   --warning/--success hacía que el color de una categoría se confundiera con el estado de una tarea
-   (justo la ambigüedad que evita el punto cuadrado del calendario). ---- */
+   Se usan los tokens CATEGÓRICOS (--pillar-*), no los de estado: reutilizar --warning/--success haría
+   que el color de una categoría se confundiera con el estado de una tarea (justo la ambigüedad que
+   evita el punto cuadrado del calendario). ---- */
 .cat-color--slate { --event-color: var(--text-muted); }
 .cat-color--teal  { --event-color: var(--pillar-check); }
 .cat-color--blue  { --event-color: var(--pillar-plan); }
@@ -2078,7 +2137,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 /* Vista de día: reutiliza la agenda de Inicio; bandera arriba si es no lectivo o fin de semana. */
 .calendar-dayview { display: flex; flex-direction: column; gap: 14px; }
 .calendar-dayview-flag { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text-muted); }
-.calendar-dayview-flag--nonlective { color: var(--accent); font-weight: 600; }
+.calendar-dayview-flag--nonlective { color: var(--accent-ink); font-weight: 600; }
 
 /* Vista anual: doce mini-meses; cada día con tareas lleva un punto de color por estado.
    Clic en un mini-mes abre la vista mensual de ese mes. */
@@ -2196,7 +2255,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .today__head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
 .today__title { margin: 0; font-size: 22px; }
 .today__date { color: var(--text-muted); font-size: 14px; text-transform: capitalize; }
-.count-chip { margin-left: auto; font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-weak); border: 1px solid var(--accent); border-radius: 999px; padding: 3px 11px; white-space: nowrap; }
+.count-chip { margin-left: auto; font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent-ink); background: var(--accent-weak); border: 1px solid var(--accent); border-radius: 999px; padding: 3px 11px; white-space: nowrap; }
 /* Recordatorio de RAICES en la vista del día: una línea, no un callout. El callout (ámbar, con borde)
    es para UNA guardia concreta; aquí encabeza una lista y a ese tamaño competiría con las filas, que
    son lo que hay que leer. Mismo ámbar en el signo para que se reconozca como el mismo aviso. */
@@ -2218,10 +2277,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .today-row { display: grid; grid-template-columns: 66px minmax(0, 1fr) auto 18px; align-items: center; gap: 16px; padding: 14px 18px; text-decoration: none; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 18px; }
 .today-row:hover, .today-row:focus-visible { border-color: var(--border-strong); }
 .today-row__slot { display: flex; flex-direction: column; line-height: 1.15; }
-.today-row__slot strong { font-size: 17px; font-weight: 700; color: var(--accent); }
+.today-row__slot strong { font-size: 17px; font-weight: 700; color: var(--accent-ink); }
 .today-row__slot span { font-size: 12px; color: var(--text-faint); }
 .today-row__place { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.today-row__eyebrow { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+.today-row__eyebrow { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--accent-ink); }
 .today-row__where { font-family: var(--font-display); font-size: 18px; }
 .today-row__teacher { font-size: 13px; color: var(--text-muted); }
 .today-row__teacher strong { color: var(--text); font-weight: 600; }
@@ -2253,6 +2312,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .hero-guardia__badge { align-self: flex-start; font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; padding: 5px 10px; border-radius: 999px; margin-top: 14px; }
 .hero-guardia__badge--task { background: var(--warning-weak); color: var(--warning-text); }
 .hero-guardia__badge--danger { background: var(--danger-weak); color: var(--danger-text); }
+/* Único sitio donde el naranja de marca SÍ va como texto: el fondo es la tinta oscura (--on-accent),
+   así que el par está invertido y el contraste es de 8:1. */
 .hero-guardia__cta { margin-top: 18px; text-align: center; background: var(--on-accent); color: var(--accent); border-radius: 14px; padding: 13px; font: 600 14px var(--font-body); }
 .hero-guardia.is-incident, .hero-guardia.is-incident:hover { background: var(--danger); }
 .hero-guardia.is-incident .hero-guardia__cta { color: var(--danger); }
@@ -2263,7 +2324,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .today-summary__row { display: flex; align-items: center; justify-content: space-between; padding: 11px 0; font-size: 14px; color: var(--text-muted); }
 .today-summary__row + .today-summary__row { border-top: 1px solid var(--border); }
 .today-summary__row .mono { font-size: 16px; font-weight: 600; color: var(--text); }
-.today-summary__pending { color: var(--accent) !important; }
+.today-summary__pending { color: var(--accent-ink) !important; }
 .today-summary__task { color: var(--warning-text) !important; }
 
 /* PRÓXIMAS: deliberadamente en segundo plano; no debe competir con "Hoy". */
@@ -2277,7 +2338,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .upcoming__row + .upcoming__row { border-top: 1px solid var(--border); }
 .upcoming__row:hover, .upcoming__row:focus-visible { background: var(--surface-sunken); }
 .upcoming__time { display: flex; flex-direction: column; line-height: 1.15; }
-.upcoming__time strong { font-size: 15px; font-weight: 700; color: var(--accent); }
+.upcoming__time strong { font-size: 15px; font-weight: 700; color: var(--accent-ink); }
 .upcoming__time span { font-size: 11px; color: var(--text-faint); }
 .upcoming__body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .upcoming__where { font-weight: 500; }
@@ -2286,14 +2347,14 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 
 /* Estado vacío positivo + la siguiente guardia prevista. */
 .guardia-empty { text-align: center; padding: 48px 24px; }
-.guardia-empty__badge { width: 96px; height: 96px; margin: 0 auto 20px; border-radius: 999px; background: var(--accent-weak); color: var(--accent); font-size: 42px; display: flex; align-items: center; justify-content: center; }
+.guardia-empty__badge { width: 96px; height: 96px; margin: 0 auto 20px; border-radius: 999px; background: var(--accent-weak); color: var(--accent-ink); font-size: 42px; display: flex; align-items: center; justify-content: center; }
 .guardia-empty h2 { font-size: 24px; margin: 0 0 8px; }
 .guardia-empty > p { color: var(--text-muted); margin: 0 auto; max-width: 42ch; }
 .next-preview { text-align: left; max-width: 520px; margin: 28px auto 0; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 18px 20px; }
 .next-preview__title { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 12px; }
 .next-preview__row { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; align-items: center; gap: 16px; }
 .next-preview__time { display: flex; flex-direction: column; line-height: 1.15; }
-.next-preview__time strong { font-size: 17px; font-weight: 700; color: var(--accent); }
+.next-preview__time strong { font-size: 17px; font-weight: 700; color: var(--accent-ink); }
 .next-preview__time span { font-size: 11px; color: var(--text-faint); }
 .next-preview__place { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .next-preview__where { font-family: var(--font-display); font-size: 17px; }
@@ -2556,7 +2617,7 @@ tr.is-not-covered { background: var(--danger-weak); }
 }
 .no-guardia__icon {
     flex: none; width: 34px; height: 34px; border-radius: 10px;
-    background: var(--accent-weak); color: var(--accent); display: grid; place-items: center;
+    background: var(--accent-weak); color: var(--accent-ink); display: grid; place-items: center;
 }
 .no-guardia__icon svg { width: 17px; height: 17px; }
 .no-guardia__body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -2581,7 +2642,7 @@ tr.is-not-covered { background: var(--danger-weak); }
 .guardia-rest__row { display: flex; align-items: center; gap: 13px; padding: 11px 14px; text-decoration: none; border-radius: 12px; }
 .guardia-rest__row:hover { background: var(--surface); }
 .guardia-rest__list li + li .guardia-rest__row { border-top: 1px solid var(--separator); border-radius: 0; }
-.guardia-rest__time { flex: none; width: 46px; font-family: var(--font-mono); font-weight: 600; font-size: 14px; color: var(--accent); }
+.guardia-rest__time { flex: none; width: 46px; font-family: var(--font-mono); font-weight: 600; font-size: 14px; color: var(--accent-ink); }
 .guardia-rest__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .guardia-rest__where { font-size: 14px; font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .guardia-rest__who { font-size: 12px; color: var(--text-faint); }
@@ -2645,7 +2706,7 @@ tr.is-not-covered { background: var(--danger-weak); }
 .is-overdue .tick--personal { border-color: var(--personal); }
 /* Guardia en "Próximos 7 días": ESCUDO, la misma forma con la que el calendario la distingue de la
    tarea (círculo) y del evento (cuadrado). Sin aro ni área táctil: no se marca, se va a ella. */
-.tick--guardia { border: 0; cursor: default; color: var(--accent); }
+.tick--guardia { border: 0; cursor: default; color: var(--accent-ink); }
 .tick--guardia::before { content: none; }
 .tick--guardia svg { width: 20px; height: 20px; }
 .tasklist__body { flex: 1; min-width: 0; text-decoration: none; display: flex; flex-direction: column; gap: 5px; }
@@ -2737,7 +2798,7 @@ tr.is-not-covered { background: var(--danger-weak); }
 .module-tile { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; }
 .module-tile__num { font-family: var(--font-mono); font-weight: 600; font-size: 22px; line-height: 1; }
 .module-tile__num--amber { color: var(--amber-text); }
-.module-tile__num--accent { color: var(--accent); }
+.module-tile__num--accent { color: var(--accent-ink); }
 .module-tile__label { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
 
 .module__eyebrow {
@@ -2790,7 +2851,7 @@ tr.is-not-covered { background: var(--danger-weak); }
 /* Barra de progreso del módulo "El centro" */
 .progress-block { padding: 14px 18px 12px; }
 .progress-block__head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; font-size: 12.5px; color: var(--text-muted); }
-.progress-block__pct { font-family: var(--font-mono); font-weight: 600; font-size: 14px; color: var(--accent); }
+.progress-block__pct { font-family: var(--font-mono); font-weight: 600; font-size: 14px; color: var(--accent-ink); }
 .progress-bar { height: 9px; background: color-mix(in srgb, var(--accent) 16%, var(--surface)); border-radius: 999px; overflow: hidden; }
 .progress-bar__fill { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--success)); }
 .progress-block__meta { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); margin-top: 6px; }
@@ -2822,8 +2883,8 @@ tr.is-not-covered { background: var(--danger-weak); }
 .taskview:hover { color: var(--text); }
 .taskview__n { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
 .taskview.is-warning .taskview__n { color: var(--warning-text); font-weight: 600; }
-.taskview.is-active { color: var(--accent); font-weight: 600; border-bottom-color: var(--accent); }
-.taskview.is-active .taskview__n { color: var(--accent); }
+.taskview.is-active { color: var(--accent-ink); font-weight: 600; border-bottom-color: var(--accent); }
+.taskview.is-active .taskview__n { color: var(--accent-ink); }
 
 /* ACOTAR: un solo formulario, plegado por defecto para no empujar la primera tarea bajo el pliegue.
    Lo que está acotado se lee siempre fuera, en las etiquetas, así que plegarlo no esconde nada. */
@@ -2837,8 +2898,8 @@ tr.is-not-covered { background: var(--danger-weak); }
 .narrow__toggle::-webkit-details-marker { display: none; }
 .narrow__toggle:hover { color: var(--text); background: var(--surface-sunken); }
 .narrow__toggle svg { width: 14px; height: 14px; }
-.narrow[open] .narrow__toggle { border-color: var(--accent); color: var(--accent); }
-.narrow__n { font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--accent); }
+.narrow[open] .narrow__toggle { border-color: var(--accent); color: var(--accent-ink); }
+.narrow__n { font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--accent-ink); }
 .narrow__panel {
     margin-top: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
     padding: 14px 16px; display: flex; flex-direction: column; gap: 12px;
@@ -2868,7 +2929,7 @@ tr.is-not-covered { background: var(--danger-weak); }
 .ntoken {
     display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; min-height: 44px;
     background: var(--accent-weak); border: 1px solid var(--accent-weak-border); border-radius: 999px;
-    padding: 4px 12px 4px 15px; font-size: 12.5px; font-weight: 500; color: var(--accent); text-decoration: none;
+    padding: 4px 12px 4px 15px; font-size: 12.5px; font-weight: 500; color: var(--accent-ink); text-decoration: none;
 }
 .ntoken:hover { background: var(--surface-sunken); border-color: var(--border-strong); color: var(--text); }
 .ntoken__x { font-size: 11px; opacity: .75; }
@@ -2879,7 +2940,7 @@ tr.is-not-covered { background: var(--danger-weak); }
 .narrow-active__clear { display: inline-flex; align-items: center; min-height: 44px; font-size: 12.5px; color: var(--text-muted); }
 
 /* El histórico se alcanza por el pie, no por la fila de vistas: no compite con el trabajo vivo. */
-.tasks-closed { align-self: flex-start; padding: 10px 2px; font-size: 13px; font-weight: 600; color: var(--accent); text-decoration: none; }
+.tasks-closed { align-self: flex-start; padding: 10px 2px; font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; }
 .tasks-closed:hover { text-decoration: underline; }
 
 .tasks-group__head {
@@ -2916,12 +2977,15 @@ tr.is-not-covered { background: var(--danger-weak); }
 .task-pill--is-muted   { background: var(--separator); color: var(--text-faint); border-color: var(--border-strong); }
 .task-pill--is-amber   { background: var(--amber-weak); color: var(--amber-text); border-color: var(--amber-border); }
 .task-pill--is-success { background: var(--accent-weak); color: var(--success); border-color: var(--accent-weak-border); }
+/* "En revisión": devuelta con correcciones. Azul pizarra, ni el ámbar de lo entregado (que espera un
+   veredicto) ni el rojo de lo que se ha pasado de fecha: hay trabajo que hacer, pero nada va mal. */
+.task-pill--is-review  { background: var(--review-weak); color: var(--review-text); border-color: var(--review); }
 
 .task-card__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
 .task-card__who { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .task-card__avatar {
     flex: none; width: 24px; height: 24px; border-radius: 999px;
-    background: var(--accent-weak); color: var(--accent);
+    background: var(--accent-weak); color: var(--accent-ink);
     display: grid; place-items: center; font-size: 10px; font-weight: 700;
 }
 .task-card__avatar--empty { background: var(--separator); color: var(--text-faint); }
@@ -2961,7 +3025,7 @@ tr.is-not-covered { background: var(--danger-weak); }
     .trow.is-cancelled .trow__title { text-decoration: line-through; text-decoration-color: var(--text-tenue); }
     .trow__unit { font-size: 13px; color: var(--text-muted); }
     .trow__who { display: flex; align-items: center; gap: 7px; min-width: 0; }
-    .trow__avatar { flex: none; width: 22px; height: 22px; border-radius: 999px; background: var(--accent-weak); color: var(--accent); display: grid; place-items: center; font-size: 9px; font-weight: 700; }
+    .trow__avatar { flex: none; width: 22px; height: 22px; border-radius: 999px; background: var(--accent-weak); color: var(--accent-ink); display: grid; place-items: center; font-size: 9px; font-weight: 700; }
     .trow__name { font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .trow__date { font-family: var(--font-mono); font-size: 13px; color: var(--text-muted); }
     .trow__date.is-overdue { color: var(--warning-text); font-weight: 600; }
@@ -2972,7 +3036,7 @@ tr.is-not-covered { background: var(--danger-weak); }
    Detalle de tarea — pantalla empujada: barra de volver, ficha, barra de acciones
    ============================================================================= */
 .backbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-.backbar__back { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-weight: 600; font-size: 14px; text-decoration: none; }
+.backbar__back { display: inline-flex; align-items: center; gap: 6px; color: var(--accent-ink); font-weight: 600; font-size: 14px; text-decoration: none; }
 .backbar__back svg { width: 18px; height: 18px; }
 .backbar__edit { color: var(--text-muted); font-size: 13px; text-decoration: none; }
 .backbar__edit:hover { color: var(--text); }
@@ -3007,7 +3071,7 @@ tr.is-not-covered { background: var(--danger-weak); }
 
 .doc-card { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 13px 15px; text-decoration: none; color: inherit; }
 .doc-card:hover { border-color: var(--border-strong); }
-.doc-card__icon { flex: none; width: 36px; height: 36px; border-radius: 9px; background: var(--accent-weak); color: var(--accent); display: grid; place-items: center; }
+.doc-card__icon { flex: none; width: 36px; height: 36px; border-radius: 9px; background: var(--accent-weak); color: var(--accent-ink); display: grid; place-items: center; }
 .doc-card__icon svg { width: 18px; height: 18px; }
 .doc-card__body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .doc-card__name { font-size: 13.5px; color: var(--text); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -3030,11 +3094,31 @@ tr.is-not-covered { background: var(--danger-weak); }
     .detail-aside .meta-grid { margin-top: 0; }
 }
 
+/* Conversación de una tarea: lo que las personas se dicen mientras va y viene, distinto del histórico
+   (que es lo que la aplicación vio cambiar). Lo devuelto para revisar lleva filete, porque es lo único
+   del hilo que pide una acción. */
+.thread { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.thread__item { position: relative; padding: 11px 14px; border-radius: var(--radius); background: var(--surface-sunken); }
+.thread__item--review { background: var(--review-weak); padding-left: 17px; }
+.thread__item--review::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 4px; border-radius: 999px; background: var(--review); }
+.thread__head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+.thread__who { font-weight: 600; font-size: 13.5px; }
+.thread__lead { font-size: 12.5px; color: var(--text-muted); }
+.thread__when { margin-left: auto; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-faint); }
+.thread__body { margin: 0; font-size: 14px; line-height: 1.5; }
+.thread__form { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.thread__form textarea { width: 100%; padding: 11px 14px; border: 1px solid var(--border-strong); border-radius: var(--radius); font: 400 14px var(--font-body); background: var(--surface); color: var(--text); resize: vertical; }
+
 /* Barra de acciones */
 .actionbar { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 24px; max-width: 600px; }
 .actionbar__form { flex: 1; display: flex; margin: 0; }
-.actionbar__form--submit { flex-basis: 100%; flex-direction: column; gap: 10px; }
+/* Las acciones que llevan campos ocupan la fila entera y apilan; las de un solo botón siguen en línea. */
+.actionbar__form--submit,
+.actionbar__form--review,
+.actionbar__form--validate { flex-basis: 100%; flex-direction: column; gap: 10px; }
 .actionbar__input { width: 100%; padding: 13px 15px; border: 1px solid var(--border-strong); border-radius: 14px; font: 400 14px var(--font-body); background: var(--surface); color: var(--text); }
+.actionbar__file { width: 100%; font: 400 13px var(--font-body); color: var(--text-muted); }
+.actionbar__note { width: 100%; padding: 11px 15px; border: 1px solid var(--border-strong); border-radius: 14px; font: 400 14px var(--font-body); background: var(--surface); color: var(--text); resize: vertical; }
 .btn-lg {
     flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
     padding: 15px; border-radius: 15px; font: 600 15px var(--font-body); cursor: pointer; border: 1.5px solid transparent;
@@ -3069,6 +3153,8 @@ tr.is-not-covered { background: var(--danger-weak); }
 .avisos-page { display: flex; flex-direction: column; gap: 10px; max-width: 600px; }
 .avisos-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .avisos-title { font-family: var(--font-display); font-weight: 500; font-size: 26px; margin: 0; }
+.avisos-settings { font-size: 13px; font-weight: 500; color: var(--accent-ink); text-decoration: none; }
+.avisos-settings:hover { text-decoration: underline; }
 .avisos-markread { background: transparent; border: 0; color: var(--success); font: 600 12.5px var(--font-body); cursor: pointer; }
 .avisos-group__label { font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint); margin: 0 2px 4px; }
 .avisos-group__label--sep { margin-top: 18px; }
@@ -3083,7 +3169,7 @@ tr.is-not-covered { background: var(--danger-weak); }
 .notice__icon { flex: none; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; }
 .notice__icon svg { width: 17px; height: 17px; }
 .notice__icon--task { background: var(--surface-sunken); color: var(--text-muted); }
-.notice__icon--bell { background: var(--accent-weak); color: var(--accent); }
+.notice__icon--bell { background: var(--accent-weak); color: var(--accent-ink); }
 .notice__body { flex: 1; min-width: 0; }
 .notice__head { display: flex; align-items: center; gap: 8px; }
 .notice__title { font-size: 14px; color: var(--text); font-weight: 600; }
@@ -3179,7 +3265,7 @@ tr.is-not-covered { background: var(--danger-weak); }
 .parte-card__taskline { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; font-size: 12.5px; }
 .parte-card__taskdesc { color: var(--text-muted); }
 .parte-card__foot { display: flex; align-items: center; gap: 9px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--separator); }
-.parte-card__avatar { flex: none; width: 26px; height: 26px; border-radius: 999px; background: var(--accent-weak); color: var(--accent); display: grid; place-items: center; font-size: 10px; font-weight: 700; }
+.parte-card__avatar { flex: none; width: 26px; height: 26px; border-radius: 999px; background: var(--accent-weak); color: var(--accent-ink); display: grid; place-items: center; font-size: 10px; font-weight: 700; }
 .parte-card__covers { flex: 1; font-size: 13px; }
 .parte-card__change { flex: none; font-size: 12px; font-weight: 600; color: var(--success); text-decoration: none; }
 
@@ -3213,7 +3299,7 @@ tr.is-not-covered { background: var(--danger-weak); }
 .assignsheet__row.is-doubling { border-color: var(--warning); background: var(--warning-weak); }
 .assignsheet__load {
     flex: none; width: 30px; height: 30px; border-radius: 999px; background: var(--accent-weak);
-    color: var(--accent); display: grid; place-items: center;
+    color: var(--accent-ink); display: grid; place-items: center;
     font-family: var(--font-mono); font-size: 13px; font-weight: 600;
 }
 .assignsheet__row.is-off .assignsheet__load { background: var(--separator); color: var(--text-muted); }
@@ -3262,7 +3348,7 @@ tr.is-not-covered { background: var(--danger-weak); }
         width: 340px; max-height: 60vh; overflow-y: auto;
     }
     .parte-who { display: inline-flex; align-items: center; gap: 7px; }
-    .parte-who__avatar { flex: none; width: 22px; height: 22px; border-radius: 999px; background: var(--accent-weak); color: var(--accent); display: grid; place-items: center; font-size: 9px; font-weight: 700; }
+    .parte-who__avatar { flex: none; width: 22px; height: 22px; border-radius: 999px; background: var(--accent-weak); color: var(--accent-ink); display: grid; place-items: center; font-size: 9px; font-weight: 700; }
 }
 
 /* =============================================================================
@@ -3278,9 +3364,9 @@ tr.is-not-covered { background: var(--danger-weak); }
 .pickrow:hover { border-color: var(--border-strong); }
 .pickrow__avatar {
     flex: none; width: 32px; height: 32px; border-radius: 999px; background: var(--accent-weak);
-    color: var(--accent); display: grid; place-items: center; font-size: 11px; font-weight: 700;
+    color: var(--accent-ink); display: grid; place-items: center; font-size: 11px; font-weight: 700;
 }
-.pickrow__icon { flex: none; width: 20px; height: 20px; color: var(--accent); }
+.pickrow__icon { flex: none; width: 20px; height: 20px; color: var(--accent-ink); }
 .pickrow__value { flex: 1; font-size: 14.5px; }
 /* El control va desnudo dentro de la tarjeta: el marco lo pone .pickrow. */
 .pickrow--select select, .pickrow--select input[type="date"] {
@@ -3312,7 +3398,7 @@ tr.is-not-covered { background: var(--danger-weak); }
 .classcard__box svg { width: 15px; height: 15px; }
 .classcard__pick input:focus-visible + .classcard__box { outline: 2px solid var(--focus); outline-offset: 2px; }
 .classcard__what { flex: 1; min-width: 0; }
-.classcard__time { display: block; font-family: var(--font-mono); font-weight: 600; font-size: 13px; color: var(--accent); }
+.classcard__time { display: block; font-family: var(--font-mono); font-weight: 600; font-size: 13px; color: var(--accent-ink); }
 .classcard__group { display: block; font-size: 13px; margin-top: 2px; }
 /* Estado de la hora, SIEMPRE con texto (no solo color): "Falta" en rojo por defecto (marcada),
    "Sí estará" atenuado cuando se desmarca. El texto lo lee también un lector de pantalla. */
@@ -3333,7 +3419,7 @@ tr.is-not-covered { background: var(--danger-weak); }
    el navegador a su lado. */
 .classcard__file input[type="file"] { font: 400 13px var(--font-body); color: var(--text-muted); }
 .classcard__file input[type="file"]::file-selector-button {
-    font: 500 13px var(--font-body); color: var(--accent); background: var(--surface-sunken);
+    font: 500 13px var(--font-body); color: var(--accent-ink); background: var(--surface-sunken);
     border: 1px solid var(--border-strong); border-radius: 10px; padding: 7px 12px; margin-right: 10px;
     cursor: pointer;
 }

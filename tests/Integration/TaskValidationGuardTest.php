@@ -84,30 +84,30 @@ final class TaskValidationGuardTest extends WebTestCase
         self::assertFalse($this->canValidate($client, $s['task']));
     }
 
-    private function canReject(Task $task): bool
+    private function canReview(Task $task): bool
     {
         /** @var TaskWorkflow $workflows */
         $workflows = self::getContainer()->get('test.task_workflow');
 
-        return $workflows->for($task)->can($task, 'reject');
+        return $workflows->for($task)->can($task, 'review');
     }
 
-    public function testSuperiorCanReject(): void
+    public function testSuperiorCanReview(): void
     {
         $client = static::createClient();
         $s = $this->scenario();
         $client->loginUser($s['headStudies']);
 
-        self::assertTrue($this->canReject($s['task']), 'un superior puede devolver la tarea');
+        self::assertTrue($this->canReview($s['task']), 'un superior puede devolver la tarea');
     }
 
-    public function testOutsiderCannotReject(): void
+    public function testOutsiderCannotReview(): void
     {
         $client = static::createClient();
         $s = $this->scenario();
         $client->loginUser($this->user('otro'));
 
-        self::assertFalse($this->canReject($s['task']), 'devolver es acción de superior, no de cualquiera');
+        self::assertFalse($this->canReview($s['task']), 'devolver es acción de superior, no de cualquiera');
     }
 
     public function testAssigneeCannotValidateOwnTaskEvenIfSuperior(): void
@@ -151,7 +151,7 @@ final class TaskValidationGuardTest extends WebTestCase
         $client->loginUser($s['headMaths']);
 
         self::assertTrue($this->canValidate($client, $s['task']), 'quien delegó juzga lo que entregó su delegado');
-        self::assertTrue($this->canReject($s['task']), 'y también puede devolvérselo');
+        self::assertTrue($this->canReview($s['task']), 'y también puede devolvérselo');
     }
 
     /**
@@ -188,7 +188,7 @@ final class TaskValidationGuardTest extends WebTestCase
         $s['task']->setStatus('pending');
         $client->loginUser($s['headStudies']);
 
-        self::assertFalse($this->canReject($s['task']), 'no se devuelve algo que nadie ha entregado');
+        self::assertFalse($this->canReview($s['task']), 'no se devuelve algo que nadie ha entregado');
     }
 
     public function testCentreWideSuperiorCanValidateEvenWithoutUnit(): void

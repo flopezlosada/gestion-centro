@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace App\Form;
 
+use App\Entity\Department;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskResponsibility;
-use App\Entity\Department;
 use App\Entity\User;
+use App\Enum\DeliverableRequirement;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
@@ -38,12 +39,43 @@ final class TaskFormData
     /** The department (second step); required only when the role is per-department. */
     public ?Department $responsibilityUnit = null;
 
-    /** The concrete responsible person (third step), one of the role + department holders. */
+    /**
+     * The concrete responsible person (third step) when the form edits ONE task, one of the role +
+     * department holders.
+     */
     public ?User $responsibilityUser = null;
+
+    /**
+     * The people to create a task FOR, when creating (the centre asked to be able to send the same task
+     * to a whole department or to the entire staff at once). One task per person, each with its own
+     * lifecycle: they deliver separately, so a single shared task would be a lie the moment the first
+     * person delivers it.
+     *
+     * Two fields and not one because the form is genuinely two forms: creating takes a list, editing
+     * takes the single assignee of the task in front of you. Callers read {@see responsibleUsers()},
+     * which is the only place that knows which of the two is in play.
+     *
+     * Con claves arbitrarias a propósito en el phpdoc: quien lo rellena es el formulario, que no promete
+     * una lista consecutiva. {@see responsibleUsers()} es quien la normaliza.
+     *
+     * @var array<array-key, User>
+     */
+    public array $responsibilityUsers = [];
+
+    /**
+     * Whether this submission came from the CREATE form (the one that takes a list) rather than the edit
+     * one. Set by the controller, which is the only one that knows; the validator needs it to attach a
+     * violation to a field that actually exists on screen — with nobody chosen at all, the two fields
+     * are equally empty and there is nothing to tell them apart.
+     */
+    public bool $multiple = false;
 
     public bool $mandatory = true;
 
     /**
+     * What the task demands in order to be delivered: nada, un enlace, un archivo o cualquiera de los
+     * dos. Lo decide quien la crea.
+     *
      * Deliberately NO $requiresCheckbox here. The form does not offer it (only the task TEMPLATE does,
      * see {@see \App\Form\TaskTemplateType}), and carrying it anyway corrupted the column: it was filled
      * from {@see \App\Entity\Task::requiresCheckbox()}, which is DERIVED (`checkbox && !document`), and
@@ -51,13 +83,51 @@ final class TaskFormData
      * requires_checkbox = 0, and dropping the document afterwards left a task that could not be closed
      * any way at all. A field the form cannot edit has no business in its data object.
      */
-    public bool $requiresDocument = false;
+    public DeliverableRequirement $deliverable = DeliverableRequirement::NONE;
 
     /**
-     * Validates the responsibility cascade end to end: a per-department role needs a department (and a
-     * centre-wide one must not carry one — enforced by the controller), and the chosen person must
-     * actually hold that role in that department. These are cross-field rules a single-field constraint
-     * cannot express.
+     * The people this submission is about: the list when creating, or the single assignee when editing.
+     * The ONLY place that knows which of the two fields is in play, so no caller has to.
+     *
+     * @return list<User> the chosen people, possibly empty
+     */
+    public function responsibleUsers(): array
+    {
+        if ([] !== $this->responsibilityUsers) {
+            return array_values($this->responsibilityUsers);
+        }
+
+        return null !== $this->responsibilityUser ? [$this->responsibilityUser] : [];
+    }
+
+    /**
+     * The department a task for this person belongs to. It is the one chosen in the cascade, and — when
+     * the form was sent WITHOUT one, which is how "toda la plantilla, de todos los departamentos" is
+     * expressed — the person's own. That is what makes one submission able to produce a task per
+     * department without asking for the department fifteen times.
+     *
+     * @param User $person the person the task is for
+     *
+     * @return Department|null the department for that person's task
+     */
+    public function departmentFor(User $person): ?Department
+    {
+        if (null === $this->responsibilityRole || !$this->responsibilityRole->isPerDepartment()) {
+            return null;
+        }
+
+        return $this->responsibilityUnit ?? $person->getUnit();
+    }
+
+    /**
+     * Validates the responsibility cascade end to end: somebody has to be chosen, and every chosen
+     * person must actually hold that role in the department their task will belong to. These are
+     * cross-field rules a single-field constraint cannot express.
+     *
+     * The department is NOT demanded any more when several people are picked: leaving it empty is how
+     * one says "de todos los departamentos" ({@see departmentFor()}). With a single person it is not
+     * demanded either — their own department answers it — and the holder check below still catches
+     * anyone who does not hold the role.
      *
      * @param ExecutionContextInterface $context the validation context to attach violations to
      */
@@ -68,23 +138,21 @@ final class TaskFormData
             return; // the NotNull on the role already reports the empty case
         }
 
-        $perDepartment = $this->responsibilityRole->isPerDepartment();
-        if ($perDepartment && null === $this->responsibilityUnit) {
-            $context->buildViolation('Elige el departamento.')->atPath('responsibilityUnit')->addViolation();
-
-            return; // without the department the holder set is undefined
-        }
-
-        if (null === $this->responsibilityUser) {
-            $context->buildViolation('Elige la persona responsable.')->atPath('responsibilityUser')->addViolation();
+        $field = $this->multiple ? 'responsibilityUsers' : 'responsibilityUser';
+        $people = $this->responsibleUsers();
+        if ([] === $people) {
+            $context->buildViolation('Elige al menos una persona responsable.')->atPath($field)->addViolation();
 
             return;
         }
 
-        // Coupled choice: the person must be one of the current holders of role + (department).
-        $unit = $perDepartment ? $this->responsibilityUnit : null;
-        if (!(new TaskResponsibility($this->responsibilityRole, $unit))->isHeldBy($this->responsibilityUser)) {
-            $context->buildViolation('Esa persona no tiene ese rol en ese departamento.')->atPath('responsibilityUser')->addViolation();
+        // Coupled choice: each person must be one of the current holders of role + (their department).
+        foreach ($people as $person) {
+            if (!(new TaskResponsibility($this->responsibilityRole, $this->departmentFor($person)))->isHeldBy($person)) {
+                $context->buildViolation(sprintf('%s no tiene ese rol en ese departamento.', $person->getFullName()))
+                    ->atPath($field)
+                    ->addViolation();
+            }
         }
     }
 
@@ -102,7 +170,7 @@ final class TaskFormData
         $data->description = $task->getDescription();
         $data->dueDate = $task->getDueDate();
         $data->mandatory = $task->isMandatory();
-        $data->requiresDocument = $task->requiresDocument();
+        $data->deliverable = $task->getDeliverable();
 
         $responsibility = $task->getResponsibility();
         if (null !== $responsibility) {

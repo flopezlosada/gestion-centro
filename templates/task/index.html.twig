@@ -74,7 +74,7 @@
         'abiertas': 'No hay ninguna tarea abierta. Todo al día.',
         'mias':     'No tienes tareas abiertas.',
         'validar':  'No hay nada esperando tu validación.',
-        'vencidas': 'No hay tareas vencidas. Todo al día.',
+        'vencidas': 'No hay ninguna tarea fuera de plazo. Todo al día.',
         'cerradas': 'Todavía no hay tareas cerradas este curso.',
     } %}
 
@@ -200,7 +200,7 @@
                 {% if grouped %}
                     {% if overdueTasks is not empty %}
                         <div class="tasks-group">
-                            <h2 class="tasks-group__head is-warning"><span class="tasks-group__dot"></span>Vencidas · {{ overdueTasks|length }}</h2>
+                            <h2 class="tasks-group__head is-warning"><span class="tasks-group__dot"></span>Fuera de plazo · {{ overdueTasks|length }}</h2>
                             <div class="tasks-cards">
                                 {% for t in overdueTasks %}{{ ui.task_card(t, todayStr) }}{% endfor %}
                             </div>
@@ -208,7 +208,7 @@
                     {% endif %}
                     {% if upcomingTasks is not empty %}
                         <div class="tasks-group">
-                            <h2 class="tasks-group__head"><span class="tasks-group__dot"></span>Próximas · {{ upcomingTasks|length }}</h2>
+                            <h2 class="tasks-group__head"><span class="tasks-group__dot"></span>Pendientes de realizar · {{ upcomingTasks|length }}</h2>
                             <div class="tasks-cards">
                                 {% for t in upcomingTasks %}{{ ui.task_card(t, todayStr) }}{% endfor %}
                             </div>
@@ -228,11 +228,11 @@
                 </div>
                 {% if grouped %}
                     {% if overdueTasks is not empty %}
-                        <h2 class="trow trow--group is-warning">Vencidas · {{ overdueTasks|length }}</h2>
+                        <h2 class="trow trow--group is-warning">Fuera de plazo · {{ overdueTasks|length }}</h2>
                         {% for t in overdueTasks %}{{ ui.task_row(t, todayStr) }}{% endfor %}
                     {% endif %}
                     {% if upcomingTasks is not empty %}
-                        <h2 class="trow trow--group">Próximas · {{ upcomingTasks|length }}</h2>
+                        <h2 class="trow trow--group">Pendientes de realizar · {{ upcomingTasks|length }}</h2>
                         {% for t in upcomingTasks %}{{ ui.task_row(t, todayStr) }}{% endfor %}
                     {% endif %}
                 {% else %}

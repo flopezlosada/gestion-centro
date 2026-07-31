@@ -15,7 +15,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * Sends the daily task reminders (due in 15/7 days) and escalations (overdue) — meant to run once a
  * day from cron.
  */
-#[AsCommand(name: 'app:tasks:send-reminders', description: 'Envía avisos de tareas próximas y escala las vencidas')]
+#[AsCommand(name: 'app:tasks:send-reminders', description: 'Envía avisos de tareas próximas y escala las que están fuera de plazo')]
 final class SendTaskRemindersCommand extends Command
 {
     public function __construct(private readonly TaskReminderNotifier $notifier)

@@ -314,15 +314,15 @@ final class GuardiaPageTest extends WebTestCase
         // salir, el profesor se presentaría igual a cubrir un grupo que ya no es suyo.
         $relieved = $this->notificationFor('gp@centro.test');
         self::assertSame('guardia.relieved', $relieved->getKind());
-        self::assertStringContainsString('Se retira la asignación.', (string) $relieved->getBody());
+        self::assertStringContainsString('ya no tienes que hacerla', (string) $relieved->getBody());
     }
 
     /**
-     * The explanation the coordinator is forced to write reaches the two people the change affects: the
-     * teacher who takes the guardia over and the one relieved of it. Without this it only landed in the
-     * audit trail, which is what made the mandatory field look like red tape to the centre.
+     * A change of substitute reaches the two people it affects — the one who takes the guardia over and
+     * the one relieved of it — but WITHOUT the coordinator's explanation: the centre asked for that text
+     * to be private to the leadership team, so it stays in the audit trail and nowhere else.
      */
-    public function testAChangeOfSubstituteIsExplainedToBothTeachers(): void
+    public function testAChangeOfSubstituteIsToldToBothTeachersWithoutTheReason(): void
     {
         $this->login();
         $year = $this->academicYear('2025-2026');
@@ -347,12 +347,43 @@ final class GuardiaPageTest extends WebTestCase
 
         $assigned = $this->notificationFor('entrante@centro.test');
         self::assertSame('guardia.assigned', $assigned->getKind());
-        self::assertStringContainsString('El sustituto asignado también falta hoy.', (string) $assigned->getBody(), 'quien entra lee por qué le toca');
+        self::assertStringNotContainsString('El sustituto asignado también falta hoy.', (string) $assigned->getBody(), 'el motivo es privado: no viaja en el aviso');
 
         $relieved = $this->notificationFor('saliente@centro.test');
         self::assertSame('guardia.relieved', $relieved->getKind());
-        self::assertStringContainsString('ya no tienes que hacerla', (string) $relieved->getBody());
-        self::assertStringContainsString('El sustituto asignado también falta hoy.', (string) $relieved->getBody(), 'quien sale lee por qué se la quitan');
+        self::assertStringContainsString('ya no tienes que hacerla', (string) $relieved->getBody(), 'lo que sí necesita saber: que no le toca');
+        self::assertStringNotContainsString('El sustituto asignado también falta hoy.', (string) $relieved->getBody(), 'el motivo es privado: no viaja en el aviso');
+    }
+
+    /**
+     * A change that does NOT move the guardia goes through without an explanation: the centre only wants
+     * the reason demanded when someone who was not covering this period ends up covering it. Before this,
+     * fixing a typo in the task description forced a paragraph nobody was ever going to read.
+     */
+    public function testAnEditThatKeepsTheSubstituteNeedsNoReason(): void
+    {
+        $this->login();
+        $year = $this->academicYear('2025-2026');
+        $this->em->persist($year);
+        $guardia = $this->user('Guardia Nueve', 'g9@centro.test');
+        $absent = $this->user('Ausente Nueve', 'a9@centro.test');
+        $date = new \DateTimeImmutable('2025-11-10');
+        $this->guardiaEntry($year, $guardia, $date);
+        $cover = $this->cover($date, 0, $absent, $guardia);
+        $this->em->flush();
+        $id = (int) $cover->getId();
+        $action = '/guardias/'.$id.'/modificar';
+
+        $crawler = $this->client->request('GET', $action);
+        $this->client->request('POST', $action, [
+            '_token' => $this->tokenFrom($crawler, $action),
+            'guardia' => (string) $guardia->getId(),
+            'task_description' => 'Ejercicios 3 y 4 de la página 88.',
+            'motivo' => '',
+        ]);
+
+        self::assertResponseRedirects();
+        self::assertSame('Ejercicios 3 y 4 de la página 88.', $this->reload($id)->getTaskDescription(), 'el cambio se guarda sin motivo');
     }
 
     /**
@@ -386,7 +417,7 @@ final class GuardiaPageTest extends WebTestCase
 
     /**
      * The screen names the field for what it does — no second "motivo" to confuse with the private
-     * reason of the absence, and it says out loud that the text reaches the teachers involved.
+     * reason of the absence — and says out loud WHO reads it: only the leadership team.
      */
     public function testTheChangeFieldSaysWhoReadsIt(): void
     {
@@ -399,7 +430,8 @@ final class GuardiaPageTest extends WebTestCase
 
         self::assertResponseIsSuccessful();
         self::assertSelectorTextContains('label[for="motivo"]', '¿Por qué haces este cambio?');
-        self::assertSelectorTextContains('.field--change-note .field-help', 'al que entra y al que deja de hacerla');
+        self::assertSelectorTextContains('.field--change-note .field-help--lead', 'solo el equipo directivo');
+        self::assertSelectorTextContains('.field--change-note .field-help--lead', 'No se envía a los profesores');
     }
 
     /**
@@ -542,8 +574,8 @@ final class GuardiaPageTest extends WebTestCase
     }
 
     /**
-     * A change without a reason is refused and leaves the cover untouched: the motivo is the record of
-     * why a manual change was made.
+     * Putting a DIFFERENT teacher on the guardia without a reason is refused and leaves the cover
+     * untouched: that is the one case the centre wants explained, and the motivo is its only record.
      */
     public function testModifyRequiresAReason(): void
     {

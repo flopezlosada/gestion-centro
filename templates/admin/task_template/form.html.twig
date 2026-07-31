@@ -19,7 +19,8 @@
         {{ form_start(form, { 'attr': { 'novalidate': 'novalidate' } }) }}
             {{ form_errors(form) }}
             {{ f.fields([form.title, form.description, form.type, form.responsibleRole]) }}
-            {{ f.section('Comportamiento', [form.mandatory, form.requiresDocument, form.requiresCheckbox, form.active]) }}
+            {{ f.section('Comportamiento', [form.mandatory, form.requiresCheckbox, form.active]) }}
+            {{ f.field(form.deliverable) }}
             {{ f.section('Regla de fecha límite (opcional)', [
                 form.ruleKind,
                 form.ruleMonth, form.ruleDay,

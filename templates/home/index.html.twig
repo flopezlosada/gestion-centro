@@ -24,6 +24,22 @@
             <span class="home-avatar" aria-hidden="true">{{ iniciales }}</span>
         </header>
 
+        {# ---- Elegir por dónde llegan los avisos. Se enseña UNA vez —mientras no se haya elegido nada—
+               y desaparece en cuanto se guarda: era la queja del centro (activas el móvil y los correos
+               siguen llegando), así que la pregunta se hace al entrar y no escondida en un menú. ---- #}
+        {% if not app.user.hasChosenNotificationChannels %}
+            <a class="notice-setup" href="{{ path('notification_settings') }}">
+                <span class="notice-setup__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+                </span>
+                <span class="notice-setup__body">
+                    <span class="notice-setup__title">¿Por dónde quieres los avisos?</span>
+                    <span class="notice-setup__sub">Al móvil, al correo o a los dos. Y por separado para tareas, guardias y reuniones.</span>
+                </span>
+                <span class="notice-setup__cta">Elegir</span>
+            </a>
+        {% endif %}
+
         {# ---- Ancla: próxima guardia (hero) o tira "sin guardia" ---- #}
         {% if nextGuardia %}
             {% set g = nextGuardia.cover %}
@@ -94,7 +110,7 @@
            en móvil es una sola columna apilada. #}
         <div class="home-cols">
         {# ---- Por hacer: tareas del centro (fecha límite) + recordatorios sin hora, como checklist.
-               Vencidas primero. Las citas con hora NO están aquí: viven en el bloque "Con hora". ---- #}
+               Lo que está fuera de plazo primero. Las citas con hora NO están aquí: viven en "Con hora". ---- #}
         <section class="home-section">
             <div class="home-section__head">
                 <h2 class="home-section__title">Por hacer</h2>
@@ -400,7 +416,7 @@
                 <a class="module-row" href="{{ path('task_index') }}">
                     <span class="module-row__stat module-row__stat--warning">{{ c.overdue }}</span>
                     <span class="module-row__body">
-                        <span class="module-row__title">Tareas vencidas del centro</span>
+                        <span class="module-row__title">Tareas del centro fuera de plazo</span>
                         <span class="module-row__sub">abiertas con fecha pasada</span>
                     </span>
                     <span class="module-row__chevron" aria-hidden="true">›</span>
