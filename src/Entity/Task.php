@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Contract\Auditable;
+use App\Enum\DeliverableRequirement;
 use App\Enum\TaskType;
 use App\Repository\TaskRepository;
 use App\Support\TaskStatus;
@@ -18,8 +19,9 @@ use Symfony\Component\Validator\Constraints as Assert;
  * {@see $type}); progress declared by the assignee and validation by the superior are distinct
  * transitions of that machine.
  *
- * Deliverables are references, not content: {@see $deliverableReference} holds an opaque link/code
- * to the document living in the school's cloud, never the document itself (Fase 1 legal boundary).
+ * What has to be handed in is {@see $deliverable}: a link ({@see $deliverableReference}, an opaque
+ * reference to a document living in the school's cloud), a file ({@see $deliverableFilePath}, kept in
+ * private storage), either, or nothing at all.
  */
 #[ORM\Entity(repositoryClass: TaskRepository::class)]
 #[ORM\Table(name: 'task')]
@@ -91,8 +93,13 @@ class Task implements Auditable
     #[ORM\JoinColumn(name: 'responsibility_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
     private ?TaskResponsibility $responsibility = null;
 
-    #[ORM\Column]
-    private bool $requiresDocument = false;
+    /**
+     * What has to be handed in to deliver this task: nothing, a link, a file, or either. Chosen by
+     * whoever creates it — "el equipo directivo decide si la tarea requiere hipervínculo, archivo
+     * adjunto o la posibilidad de entregar cualquiera de las opciones".
+     */
+    #[ORM\Column(name: 'deliverable_requirement', length: 10, enumType: DeliverableRequirement::class, options: ['default' => 'none'])]
+    private DeliverableRequirement $deliverable = DeliverableRequirement::NONE;
 
     #[ORM\Column]
     private bool $requiresCheckbox = true;
@@ -104,6 +111,24 @@ class Task implements Auditable
     /** Opaque reference/link to the deliverable in the school's cloud — never the content itself. */
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $deliverableReference = null;
+
+    /**
+     * Storage-relative path of the delivered file, as returned by {@see \App\Service\FileUploader}, or
+     * null when nothing was uploaded. Always set together with {@see $deliverableFileName} through
+     * {@see attachDeliverableFile()}: a path without a name (an undownloadable file) is not
+     * representable from outside.
+     *
+     * Unlike the link, the file IS kept by the app. That is a deliberate exception to the Fase 1 rule of
+     * "references, never content": the centre needs a scanned sheet or a signed form to be somewhere, and
+     * the alternative is a teacher e-mailing it and nobody finding it in March. It lives in private
+     * storage and is served only to the people the task concerns.
+     */
+    #[ORM\Column(name: 'deliverable_file_path', length: 255, nullable: true)]
+    private ?string $deliverableFilePath = null;
+
+    /** Original client filename of the delivered file, so the download keeps a meaningful name. */
+    #[ORM\Column(name: 'deliverable_file_name', length: 255, nullable: true)]
+    private ?string $deliverableFileName = null;
 
     #[ORM\Column(name: 'created_at', type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
@@ -159,7 +184,7 @@ class Task implements Auditable
         $task->description = $template->getDescription();
         $task->mandatory = $template->isMandatory();
         $task->assignedRole = $template->getResponsibleRole();
-        $task->requiresDocument = $template->requiresDocument();
+        $task->deliverable = $template->getDeliverable();
         $task->requiresCheckbox = $template->requiresCheckbox();
 
         return $task;
@@ -280,6 +305,17 @@ class Task implements Auditable
     }
 
     /**
+     * Whether the task came back with corrections to make (En revisión). Distinct from Pendiente on
+     * purpose: it has already been delivered once and carries, in writing, what has to change.
+     *
+     * @return bool true while the task is En revisión
+     */
+    public function isInReview(): bool
+    {
+        return TaskStatus::IN_REVIEW === $this->status;
+    }
+
+    /**
      * Whether the task is closed: finalizada o cancelada ({@see TaskStatus::CLOSED}). Una tarea cerrada
      * es de solo lectura — ni se ejecuta, ni se delega, ni se marca/desmarca.
      *
@@ -288,6 +324,27 @@ class Task implements Auditable
     public function isClosed(): bool
     {
         return \in_array($this->status, TaskStatus::CLOSED, true);
+    }
+
+    /**
+     * Whether the task is out of time ("fuera de plazo"): still open and its deadline already past.
+     *
+     * The single definition, on the entity, because three places asked the same question and each one
+     * wrote it again — the controller, the task list and the detail template — and one of them had
+     * already drifted. It also decides whether "Cancelar" is offered ({@see \App\Controller\TaskController}):
+     * the centre does not want a task that is out of time to be disposed of instead of delivered.
+     *
+     * Compared as "Y-m-d" strings and never as instants: the deadline is a DAY, and comparing it as a
+     * moment makes the answer depend on the server timezone (green in Madrid, wrong in CI's UTC).
+     *
+     * @param \DateTimeInterface $today the day to measure against (accepts Twig's date(), hence the
+     *                                  wider interface)
+     *
+     * @return bool true when the task is open and its deadline has passed
+     */
+    public function isOverdueOn(\DateTimeInterface $today): bool
+    {
+        return !$this->isClosed() && $this->dueDate->format('Y-m-d') < $today->format('Y-m-d');
     }
 
     /**
@@ -390,14 +447,59 @@ class Task implements Auditable
         return $this;
     }
 
-    public function requiresDocument(): bool
+    public function getDeliverable(): DeliverableRequirement
     {
-        return $this->requiresDocument;
+        return $this->deliverable;
     }
 
-    public function setRequiresDocument(bool $requiresDocument): static
+    public function setDeliverable(DeliverableRequirement $deliverable): static
     {
-        $this->requiresDocument = $requiresDocument;
+        $this->deliverable = $deliverable;
+
+        return $this;
+    }
+
+    /**
+     * Whether the task cannot be delivered empty-handed. Kept as a predicate over
+     * {@see $deliverable} (it used to be its own boolean column) so the many callers that only ask
+     * "¿lleva entregable?" — the list, the agenda, the home row — keep reading one single source.
+     */
+    public function requiresDocument(): bool
+    {
+        return $this->deliverable->isRequired();
+    }
+
+    /**
+     * Whether the task has been delivered with something attached: a link, a file, or both.
+     *
+     * @return bool true when there is anything to open
+     */
+    public function hasDeliverable(): bool
+    {
+        return null !== $this->deliverableReference || null !== $this->deliverableFilePath;
+    }
+
+    public function getDeliverableFilePath(): ?string
+    {
+        return $this->deliverableFilePath;
+    }
+
+    public function getDeliverableFileName(): ?string
+    {
+        return $this->deliverableFileName;
+    }
+
+    /**
+     * Attaches (or, with nulls, drops) the delivered file. Path and name move together on purpose: a
+     * path without a name is a file nobody can download, and that state should not be reachable.
+     *
+     * @param string|null $path the storage-relative path, or null to drop it
+     * @param string|null $name the original filename, or null to drop it
+     */
+    public function attachDeliverableFile(?string $path, ?string $name): static
+    {
+        $this->deliverableFilePath = null !== $path && '' !== $path ? $path : null;
+        $this->deliverableFileName = null !== $this->deliverableFilePath ? ($name ?? 'documento') : null;
 
         return $this;
     }
@@ -410,7 +512,7 @@ class Task implements Auditable
      */
     public function requiresCheckbox(): bool
     {
-        return $this->requiresCheckbox && !$this->requiresDocument;
+        return $this->requiresCheckbox && !$this->requiresDocument();
     }
 
     public function setRequiresCheckbox(bool $requiresCheckbox): static

@@ -7,13 +7,15 @@
 {% block bottomnav %}{% endblock %}
 
 {% block body %}
-    {% set overdue = task.status not in ['validated', 'cancelled'] and task.dueDate|date('Y-m-d', false) < 'now'|date('Y-m-d') %}
+    {# Una sola definición de "fuera de plazo", la de la entidad: aquí estaba reescrita a mano. #}
+    {% set overdue = task.isOverdueOn(date()) %}
     {% set responsibleRole = task.responsibility ? task.responsibility.role.name : (task.assignedRole ? task.assignedRole.name : null) %}
     {% set who = task.responsibleForDisplay %}
     {% set canValidate = 'validate' in actions %}
     {% set pill = {
         'pending':   {'cls': 'is-pending', 'label': 'Pendiente'},
         'submitted': {'cls': 'is-amber',   'label': canValidate ? 'Entregada · espera tu OK' : 'Entregada'},
+        'in_review': {'cls': 'is-review',  'label': 'En revisión'},
         'validated': {'cls': 'is-success', 'label': '✓ Finalizada'},
         'cancelled': {'cls': 'is-muted',   'label': 'Cancelada'},
     }[task.status]|default({'cls': 'is-pending', 'label': task.status}) %}
@@ -58,37 +60,80 @@
             {% if task.description %}<p class="detail-prose">{{ task.description|nl2br }}</p>{% else %}<p class="muted">Esta tarea no tiene descripción.</p>{% endif %}
         </div>
 
-        {# Aviso: requiere documento (solo mientras está pendiente de entrega) #}
-        {% if task.requiresDocument and task.status == 'pending' %}
+        {# Aviso: qué hay que entregar (mientras no se ha entregado: pendiente o devuelta para revisar) #}
+        {% if task.requiresDocument and task.status in ['pending', 'in_review'] %}
             <div class="doc-notice">
                 <span class="doc-notice__icon" aria-hidden="true">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg>
                 </span>
                 <div>
-                    <div class="doc-notice__title">Requiere adjuntar un documento</div>
-                    <div class="doc-notice__sub">Podrás pegar el enlace al entregar la tarea.</div>
+                    <div class="doc-notice__title">{{ task.deliverable.label }}</div>
+                    <div class="doc-notice__sub">{{ task.deliverable.instruction }}</div>
                 </div>
             </div>
         {% endif %}
 
-        {# Entregable ya aportado (referencia/enlace, nunca el archivo) #}
-        {% if task.requiresDocument and task.deliverableReference and task.status in ['submitted', 'validated'] %}
+        {# Lo entregado: el enlace, el archivo, o los dos. Se sigue viendo mientras la tarea vuelve del
+           revisor, que es cuando hace falta comparar lo entregado con lo que piden cambiar. #}
+        {% if task.hasDeliverable and task.status in ['submitted', 'in_review', 'validated'] %}
             <div class="detail-block">
-                <div class="detail-block__label">Documento entregado</div>
-                {% if task.deliverableReference starts with 'http' %}
-                    <a class="doc-card" href="{{ task.deliverableReference }}" target="_blank" rel="noopener">
-                        <span class="doc-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span>
-                        <span class="doc-card__body"><span class="doc-card__name">{{ task.deliverableReference }}</span><span class="doc-card__meta">Enlace al documento</span></span>
-                        <span class="doc-card__open">Abrir</span>
-                    </a>
-                {% else %}
-                    <p class="detail-prose">{{ task.deliverableReference }}</p>
+                <div class="detail-block__label">Lo entregado</div>
+                {% if task.deliverableReference %}
+                    {% if task.deliverableReference starts with 'http' %}
+                        <a class="doc-card" href="{{ task.deliverableReference }}" target="_blank" rel="noopener">
+                            <span class="doc-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span>
+                            <span class="doc-card__body"><span class="doc-card__name">{{ task.deliverableReference }}</span><span class="doc-card__meta">Enlace al documento</span></span>
+                            <span class="doc-card__open">Abrir</span>
+                        </a>
+                    {% else %}
+                        <p class="detail-prose">{{ task.deliverableReference }}</p>
+                    {% endif %}
                 {% endif %}
-                {% if canEditDeliverable %}
+                {% if task.deliverableFilePath %}
+                    <a class="doc-card" href="{{ path('task_deliverable_download', { id: task.id }) }}">
+                        <span class="doc-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.05 12.25 20.2a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a2 2 0 0 1-2.82-2.83l8.49-8.48"/></svg></span>
+                        <span class="doc-card__body"><span class="doc-card__name">{{ task.deliverableFileName }}</span><span class="doc-card__meta">Archivo adjunto</span></span>
+                        <span class="doc-card__open">Descargar</span>
+                    </a>
+                {% endif %}
+                {% if canEditDeliverable and task.deliverable.acceptsLink %}
                     <form method="post" action="{{ path('task_set_deliverable', { id: task.id }) }}" class="deliverable-form">
                         <input type="hidden" name="_token" value="{{ csrf_token('task_deliverable' ~ task.id) }}">
                         <input type="url" name="reference" value="{{ task.deliverableReference }}" placeholder="https://cloud.educa.madrid.org/…" class="deliverable-input">
                         <button type="submit" class="btn btn-secondary">Actualizar enlace</button>
+                    </form>
+                {% endif %}
+            </div>
+        {% endif %}
+
+        {# ---- Conversación de la tarea. Aparte del histórico: uno es lo que la aplicación vio cambiar y
+               este es lo que las personas se dijeron. Sin tope de vueltas. ---- #}
+        {% if comments is not empty or canComment %}
+            <div class="detail-block">
+                <div class="detail-block__label">Comentarios</div>
+                {% if comments is empty %}
+                    <p class="muted" style="margin-top:0">Todavía no hay comentarios.</p>
+                {% else %}
+                    <ol class="thread">
+                        {% for c in comments %}
+                            <li class="thread__item{{ c.transition == 'review' ? ' thread__item--review' : '' }}">
+                                <div class="thread__head">
+                                    <span class="thread__who">{{ c.author ? c.author.fullName : 'Alguien que ya no está en el centro' }}</span>
+                                    {% if c.lead %}<span class="thread__lead">{{ c.lead }}</span>{% endif %}
+                                    <time class="thread__when" datetime="{{ c.createdAt|date('c') }}">{{ c.createdAt|date('d/m/Y H:i') }}</time>
+                                </div>
+                                <p class="thread__body">{{ c.body|nl2br }}</p>
+                            </li>
+                        {% endfor %}
+                    </ol>
+                {% endif %}
+
+                {% if canComment %}
+                    <form method="post" action="{{ path('task_comment', { id: task.id }) }}" class="thread__form">
+                        <input type="hidden" name="_token" value="{{ csrf_token('task_comment' ~ task.id) }}">
+                        <label class="visually-hidden" for="comentario-suelto">Escribe un comentario</label>
+                        <textarea id="comentario-suelto" name="comentario" rows="2" maxlength="2000" placeholder="Escribe un comentario para quien lleva esta tarea…"></textarea>
+                        <button type="submit" class="btn btn-secondary">Comentar</button>
                     </form>
                 {% endif %}
             </div>
@@ -147,15 +192,27 @@
         {# "Validar" juzga algo ENTREGADO; sobre una Pendiente el mismo cierre es "Dar por finalizada"
            (el superior da por hecho lo que le consta, sin que nadie haya entregado). Mismo verbo del
            workflow, dos nombres, porque para quien mira son dos gestos distintos. #}
-        {% set labels = { 'submit': 'Entregar tarea', 'validate': task.pending ? 'Dar por finalizada' : 'Validar', 'reject': 'Devolver', 'cancel': 'Cancelar' } %}
+        {% set labels = { 'submit': task.inReview ? 'Volver a entregar' : 'Entregar tarea', 'validate': task.pending ? 'Dar por finalizada' : 'Validar', 'review': 'Devolver para revisar', 'cancel': 'Cancelar' } %}
+        {# Cada acción puede llevar un comentario para la otra parte; devolver lo EXIGE (lo comprueba el
+           servidor). Cancelar no lo lleva: no hay a quién contárselo, la tarea deja de existir. #}
+        {% set commented = { 'submit': 'Cuéntale algo a quien la revisa (opcional)', 'review': 'Explica qué hay que modificar', 'validate': 'Un comentario de cierre (opcional)' } %}
         <div class="actionbar">
             {% for name in actions %}
-                <form method="post" action="{{ path('task_transition', { id: task.id, transition: name }) }}" class="actionbar__form actionbar__form--{{ name }}"{% if name == 'cancel' %} data-confirm="¿Cancelar esta tarea? Quedará anulada."{% endif %}>
+                <form method="post" action="{{ path('task_transition', { id: task.id, transition: name }) }}" class="actionbar__form actionbar__form--{{ name }}"{% if name == 'submit' and task.deliverable.acceptsFile %} enctype="multipart/form-data"{% endif %}{% if name == 'cancel' %} data-confirm="¿Cancelar esta tarea? Quedará anulada."{% endif %}>
                     <input type="hidden" name="_token" value="{{ csrf_token('task_transition' ~ task.id) }}">
-                    {% if name == 'submit' and task.requiresDocument %}
-                        <input type="url" name="reference" value="{{ task.deliverableReference }}" placeholder="Enlace al documento (https://…)" class="actionbar__input" required>
+                    {% if name == 'submit' and task.deliverable.acceptsLink %}
+                        <label class="visually-hidden" for="entrega-enlace">Enlace al documento</label>
+                        <input type="url" id="entrega-enlace" name="reference" value="{{ task.deliverableReference }}" placeholder="Enlace al documento (https://…)" class="actionbar__input"{{ task.deliverable.value == 'link' and not task.hasDeliverable ? ' required' : '' }}>
                     {% endif %}
-                    <button type="submit" class="btn-lg btn-lg--{{ name in ['submit', 'validate'] ? 'primary' : (name == 'reject' ? 'danger' : 'muted') }}">
+                    {% if name == 'submit' and task.deliverable.acceptsFile %}
+                        <label class="visually-hidden" for="entrega-archivo">Archivo adjunto</label>
+                        <input type="file" id="entrega-archivo" name="archivo" class="actionbar__file"{{ task.deliverable.value == 'file' and not task.hasDeliverable ? ' required' : '' }}>
+                    {% endif %}
+                    {% if commented[name] is defined %}
+                        <label class="visually-hidden" for="comentario-{{ name }}">{{ commented[name] }}</label>
+                        <textarea id="comentario-{{ name }}" name="comentario" rows="2" maxlength="2000" class="actionbar__note" placeholder="{{ commented[name] }}"{{ name == 'review' ? ' required' : '' }}></textarea>
+                    {% endif %}
+                    <button type="submit" class="btn-lg btn-lg--{{ name in ['submit', 'validate'] ? 'primary' : (name == 'review' ? 'danger' : 'muted') }}">
                         {% if name == 'validate' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-11"/></svg>{% endif %}{{ labels[name]|default(name) }}
                     </button>
                 </form>

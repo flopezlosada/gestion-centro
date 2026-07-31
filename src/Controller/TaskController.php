@@ -4,30 +4,36 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Entity\Department;
 use App\Entity\Role;
 use App\Entity\Task;
+use App\Entity\TaskComment;
 use App\Entity\TaskResponsibility;
-use App\Entity\Department;
 use App\Entity\User;
+use App\Enum\DeliverableRequirement;
 use App\Enum\TaskType;
 use App\Form\TaskFormData;
 use App\Form\TaskFormType;
 use App\Repository\AuditLogRepository;
 use App\Repository\RoleRepository;
+use App\Repository\TaskCommentRepository;
 use App\Repository\TaskRepository;
 use App\Repository\UserRepository;
+use App\Service\FileUploader;
 use App\Service\OrganizationHierarchy;
 use App\Service\TaskAssignmentNotifier;
+use App\Service\TaskProgressNotifier;
 use App\Service\TaskReminderNotifier;
 use App\Service\TaskVisibility;
 use App\Service\TaskWorkflow;
+use App\Support\DocumentUpload;
 use App\Support\TaskActivityPresenter;
-use App\Support\TaskStatus;
 use App\Support\TickOutcome;
 use App\Util\CalendarDate;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
@@ -39,7 +45,7 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
 final class TaskController extends AbstractController
 {
     /** Transitions reserved to the superior/admin (guarded by the workflow); the rest are progress. */
-    private const array SUPERIOR_TRANSITIONS = ['validate', 'reject'];
+    private const array SUPERIOR_TRANSITIONS = ['validate', 'review'];
 
     /** The deadline windows of the narrowing form, aligned with the buckets Inicio already speaks. */
     private const array DATE_WINDOWS = [
@@ -49,6 +55,12 @@ final class TaskController extends AbstractController
 
     /** The "persona" value meaning "nobody is on the hook for it": tasks with no resolvable responsible. */
     private const string NOBODY = 'nadie';
+
+    /** Private-storage subdirectory for the files handed in with a task. */
+    private const string DELIVERABLE_SUBDIR = 'task-deliverables';
+
+    /** Ceiling for a comment, matching the column's validation on {@see TaskComment}. */
+    private const int COMMENT_MAX = 2000;
 
     /**
      * The course plan, scoped to the tasks the user may see: their own, those under a unit they are a
@@ -121,7 +133,9 @@ final class TaskController extends AbstractController
             ['key' => 'abiertas', 'label' => 'Abiertas'],
             ['key' => 'mias', 'label' => 'Mías', 'only' => $supervises],
             ['key' => 'validar', 'label' => 'Esperando mi validación', 'only' => $supervises],
-            ['key' => 'vencidas', 'label' => 'Vencidas', 'tone' => 'warning'],
+            // La CLAVE sigue siendo "vencidas" (vive en la URL y en los enlaces que la gente ya tiene
+            // guardados); lo que el centro pidió cambiar es la palabra que se lee.
+            ['key' => 'vencidas', 'label' => 'Fuera de plazo', 'tone' => 'warning'],
         ], static fn (array $v): bool => false !== ($v['only'] ?? true));
         // "cerradas" no está en la fila de vistas (se alcanza por el pie): el histórico no compite con
         // el trabajo vivo, que es un tercio de las filas.
@@ -200,7 +214,7 @@ final class TaskController extends AbstractController
                 // tarea, así que pasaba el filtro de jerarquía). Un listado no debe prometer lo que la ficha
                 // va a negar.
                 'validar' => $workflows->isAwaitingVerdict($t),
-                'vencidas' => self::isOverdue($t, $today),
+                'vencidas' => $t->isOverdueOn($today),
                 'cerradas' => $t->isClosed(),
                 // "Abiertas" es TODO lo abierto del ámbito visible, y es la vista por defecto: cualquier
                 // tarea viva tiene que ser alcanzable desde aquí sin acotar nada.
@@ -226,7 +240,7 @@ final class TaskController extends AbstractController
         $overdue = $upcoming = [];
         if ($grouped) {
             foreach ($filtered as $t) {
-                if (self::isOverdue($t, $today)) {
+                if ($t->isOverdueOn($today)) {
                     $overdue[] = $t;
                 } else {
                     $upcoming[] = $t;
@@ -302,19 +316,15 @@ final class TaskController extends AbstractController
     }
 
     /**
-     * A task is overdue when it is still open (neither finalized nor cancelled) and its deadline has
-     * passed. |date-free comparison as strings to avoid timezone drift (see CI-UTC memory).
-     */
-    private static function isOverdue(Task $task, \DateTimeImmutable $today): bool
-    {
-        return !\in_array($task->getStatus(), TaskStatus::CLOSED, true)
-            && $task->getDueDate()->format('Y-m-d') < $today->format('Y-m-d');
-    }
-
-    /**
-     * Creates a task. Each user may assign it to themselves or to someone below them in the chain of
-     * command (the departments they command by rank); the choices are
-     * limited to that set and re-checked on submit.
+     * Creates a task — or ONE PER PERSON, when several are picked. Each user may assign it to themselves
+     * or to someone below them in the chain of command (the departments they command by rank); the
+     * choices are limited to that set and re-checked on submit.
+     *
+     * The centre asked to be able to send the same task "a un solo usuario o a un colectivo (todo un
+     * departamento o todo el claustro)". That is N independent tasks and not one shared task: each person
+     * delivers their own, gets their own comments and their own verdict, and a single row could not hold
+     * four different states at once. Leaving the department empty is how "todo el claustro" is said — each
+     * task then belongs to its own person's department ({@see TaskFormData::departmentFor()}).
      */
     #[Route('/tareas/nueva', name: 'task_new', methods: ['GET', 'POST'])]
     public function new(Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, EntityManagerInterface $entityManager, TaskAssignmentNotifier $assignmentNotifier): Response
@@ -324,6 +334,7 @@ final class TaskController extends AbstractController
         $userChoices = $this->assignableUsers($user, $hierarchy);
 
         $data = new TaskFormData();
+        $data->multiple = true;
         // Prefill the deadline when arriving from the calendar's "+ Nueva tarea" (?fecha=YYYY-MM-DD).
         // An invalid/missing value leaves it empty; a non-teaching day is still caught by the form's
         // lective-day validation on submit. Anchor the midnight in PHP's default time zone — the one
@@ -335,26 +346,41 @@ final class TaskController extends AbstractController
             'assignable_units' => $units,
             'assignable_users' => $userChoices,
             'include_deliverable' => true,
+            'multiple_assignees' => true,
         ]);
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
             $this->assertResponsibilityAllowed($data, $roleChoices, $units, $userChoices);
 
-            // The deliverable toggle also picks the lifecycle: a deliverable task carries the
-            // progress/submission/validation flow; a plain one is the simple do-and-validate lifecycle.
-            $type = $data->requiresDocument ? TaskType::WITH_DELIVERABLE : TaskType::SIMPLE;
-            $task = new Task($data->title, SchoolYear::current($data->dueDate), $data->dueDate, $type);
-            $this->applyFormData($task, $data);
-            $task->setCreatedBy($user);
-            $entityManager->persist($task);
+            // Lo que hay que entregar también nombra el tipo de tarea: con entregable o simple.
+            $type = $data->deliverable->isRequired() ? TaskType::WITH_DELIVERABLE : TaskType::SIMPLE;
+            $created = [];
+            foreach ($data->responsibleUsers() as $person) {
+                $task = new Task($data->title, SchoolYear::current($data->dueDate), $data->dueDate, $type);
+                $this->applyFormData($task, $data, $person);
+                $task->setCreatedBy($user);
+                $entityManager->persist($task);
+                $created[] = $task;
+            }
+            // Un solo flush para todas: crear la tarea de 78 personas no puede ser 78 transacciones.
             $entityManager->flush();
-            // Avisa al responsable (típicamente un subordinado) de que tiene una tarea nueva. No se
-            // auto-notifica si te la creas a ti mismo (ver TaskAssignmentNotifier).
-            $assignmentNotifier->notifyCreated($task, $user);
-            $this->addFlash('success', 'Tarea creada.');
 
-            return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
+            // Avisa a cada responsable (típicamente un subordinado) de que tiene una tarea nueva. No se
+            // auto-notifica si te la creas a ti mismo (ver TaskAssignmentNotifier). En LOTE a propósito:
+            // uno a uno serían ochenta flushes y ochenta correos seguidos dentro de esta misma petición.
+            $assignmentNotifier->notifyCreatedBatch($created, $user);
+
+            if (1 === \count($created)) {
+                $this->addFlash('success', 'Tarea creada.');
+
+                return $this->redirectToRoute('task_show', ['id' => $created[0]->getId()]);
+            }
+
+            // Con varias no hay una ficha a la que ir: el listado es la única vista que las enseña juntas.
+            $this->addFlash('success', sprintf('Creadas %d tareas, una para cada persona. Ya las tienen avisadas.', \count($created)));
+
+            return $this->redirectToRoute('task_index');
         }
 
         return $this->render('task/new.html.twig', ['form' => $form]);
@@ -443,6 +469,7 @@ final class TaskController extends AbstractController
         TaskWorkflow $workflows,
         TaskActivityPresenter $activity,
         TaskReminderNotifier $reminders,
+        TaskCommentRepository $comments,
     ): Response {
         // Same organisation-chart scope as the plan and the calendar, enforced here so the detail
         // cannot be reached by guessing an id: only the task's own people, a superior of its unit, or
@@ -483,8 +510,8 @@ final class TaskController extends AbstractController
             'canManage' => $canManage,
             // The lifecycle actions this user may fire now: the workflow's guards already hide the
             // superior-only ones for non-superiors; here we also hide progress ones from outsiders and
-            // offer "cancel" only to whoever may manage the task.
-            'actions' => $this->availableActions($workflows, $task, $canWork, $canManage),
+            // offer "cancel" only to whoever may manage the task and only while it is still in time.
+            'actions' => $this->availableActions($workflows, $task, $canWork, $canManage, new \DateTimeImmutable('today')),
             'canSeeHistory' => true,
             // Only a superior with subordinates gets the delegate control.
             'canDelegate' => $canDelegate && [] !== $delegatable,
@@ -495,6 +522,12 @@ final class TaskController extends AbstractController
             'remindedAt' => $canRemind ? $reminders->nudgedTodayAt($task) : null,
             // The trail humanised for non-technical readers; the raw diff rides along for admins only.
             'activityRows' => $activity->present($auditLog->findForSubject('Task', (string) $task->getId())),
+            // La conversación de la tarea, aparte del histórico: uno es lo que la aplicación vio cambiar
+            // y el otro lo que las personas se dijeron.
+            'comments' => $comments->findThreadFor($task),
+            // Comentar suelto lo puede hacer cualquiera que tenga algo que ver con la tarea ("siempre
+            // puede hacer comentarios"), pero no un superior de paso que solo está mirando el plan.
+            'canComment' => !$task->isClosed() && ($isAdmin || $task->concerns($user) || $canManage),
             'isAdmin' => $isAdmin,
         ]);
     }
@@ -539,21 +572,35 @@ final class TaskController extends AbstractController
     }
 
     /**
-     * Fires a lifecycle transition (entregar/validar/devolver/cancelar) chosen from the task detail.
-     * "Entregar" (submit) requires the assignee; "validar"/"devolver" are gated by the workflow guard
-     * (superior only); "cancelar" is a management action (creator/superior/admin).
+     * Fires a lifecycle transition (entregar/validar/devolver a revisión/cancelar) chosen from the task
+     * detail. "Entregar" (submit) requires the assignee; "validar"/"review" are gated by the workflow
+     * guard (superior only); "cancelar" is a management action (creator/superior/admin) and, on top of
+     * that, only while the task is still within its deadline ({@see Task::isOverdueOn()}).
+     *
+     * Every one of them may carry a COMMENT, and "devolver" demands one: what comes back has to say what
+     * to change, or the person on the other side is left guessing. The comment is written before the
+     * transition is applied so a rejected comment never leaves the task moved with nothing said.
      */
     #[Route('/tareas/{id}/accion/{transition}', name: 'task_transition', requirements: ['id' => '\d+', 'transition' => '[a-z_]+'], methods: ['POST'])]
-    public function transition(Task $task, string $transition, Request $request, #[CurrentUser] User $user, TaskWorkflow $workflows, OrganizationHierarchy $hierarchy, EntityManagerInterface $entityManager): Response
+    public function transition(Task $task, string $transition, Request $request, #[CurrentUser] User $user, TaskWorkflow $workflows, OrganizationHierarchy $hierarchy, EntityManagerInterface $entityManager, FileUploader $uploader, TaskProgressNotifier $progress): Response
     {
         if (!$this->isCsrfTokenValid('task_transition'.$task->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
-        // Cancel is a management action; validate/reject are guarded as superior by the workflow; the
+        // Cancel is a management action; validate/review are guarded as superior by the workflow; the
         // rest (submit) require whoever works on the task.
         if ('cancel' === $transition) {
             if (!$this->canManage($task, $user, $hierarchy)) {
                 throw $this->createAccessDeniedException('No puedes cancelar esta tarea.');
+            }
+            // Una tarea FUERA DE PLAZO no se cancela: se entrega, o quien manda la da por finalizada.
+            // Petición expresa del centro — cancelar una tarea que ya se ha pasado de fecha es quitársela
+            // de encima, y en el histórico queda como "anulada" cuando en realidad no se hizo. Se
+            // comprueba aquí y no solo en la pantalla: esconder el botón no es una regla.
+            if ($task->isOverdueOn(new \DateTimeImmutable('today'))) {
+                $this->addFlash('error', 'Esta tarea está fuera de plazo: ya no se puede cancelar. Entrégala o pide que la den por finalizada.');
+
+                return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
             }
         } elseif (!\in_array($transition, self::SUPERIOR_TRANSITIONS, true) && !$this->canWorkOn($task, $user)) {
             throw $this->createAccessDeniedException('Esta tarea no es tuya.');
@@ -565,28 +612,110 @@ final class TaskController extends AbstractController
             throw $this->createAccessDeniedException('Acción no disponible para esta tarea.');
         }
 
-        // Entregar: si la tarea lleva entregable, la referencia del documento se adjunta en el MISMO
-        // paso (no hay un estado intermedio donde ponerla antes), y es obligatoria.
-        if ('submit' === $transition && $task->requiresDocument()) {
-            $reference = trim((string) $request->request->get('reference'));
-            if ('' === $reference) {
-                $this->addFlash('error', 'Adjunta el enlace del documento para entregar la tarea.');
+        // Devolver para revisar SIN decir qué hay que cambiar deja a la otra persona adivinando, así que
+        // el comentario es obligatorio justo aquí y opcional en todo lo demás.
+        $comment = trim((string) $request->request->get('comentario'));
+        if ('review' === $transition && '' === $comment) {
+            $this->addFlash('error', 'Escribe qué hay que modificar: es lo que va a leer quien tiene que corregirla.');
+
+            return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
+        }
+        if (mb_strlen($comment) > self::COMMENT_MAX) {
+            $this->addFlash('error', sprintf('El comentario es demasiado largo (máximo %d caracteres).', self::COMMENT_MAX));
+
+            return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
+        }
+
+        // Entregar: lo que la tarea exija se adjunta en el MISMO paso (no hay un estado intermedio donde
+        // ponerlo antes). Un fallo aquí devuelve a la ficha con la tarea intacta.
+        if ('submit' === $transition) {
+            $error = $this->collectDeliverable($task, $request, $uploader);
+            if (null !== $error) {
+                $this->addFlash('error', $error);
 
                 return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
             }
-            if (mb_strlen($reference) > 255) {
-                $this->addFlash('error', 'La referencia es demasiado larga (máximo 255 caracteres).');
+        }
 
-                return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
-            }
-            $task->setDeliverableReference($reference);
+        if ('' !== $comment) {
+            $entityManager->persist(new TaskComment($task, $user, $comment, $transition));
         }
 
         $workflow->apply($task, $transition);
         $entityManager->flush();
-        $this->addFlash('success', 'Tarea actualizada.');
+
+        // Cada vuelta del ciclo avisa a la otra parte: entregada → a quien la mandó; devuelta → a quien
+        // la tiene que corregir; finalizada → a quien la hizo, que es cuando le desaparece del panel.
+        $progress->notify($task, $transition, $user, '' !== $comment ? $comment : null);
+
+        $this->addFlash('success', match ($transition) {
+            'submit' => 'Entregada. Avisamos a quien tiene que revisarla.',
+            'review' => 'Devuelta para revisar. Ya sabe qué tiene que cambiar.',
+            'validate' => 'Tarea finalizada.',
+            default => 'Tarea actualizada.',
+        });
 
         return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
+    }
+
+    /**
+     * Reads what was handed in with a delivery (a link, a file, or either) and puts it on the task,
+     * checking it against what the task demands ({@see Task::getDeliverable()}).
+     *
+     * @param Task         $task     the task being delivered
+     * @param Request      $request  the submit request
+     * @param FileUploader $uploader the private-storage uploader
+     *
+     * @return string|null an error to show, or null when everything is in place
+     */
+    private function collectDeliverable(Task $task, Request $request, FileUploader $uploader): ?string
+    {
+        $requirement = $task->getDeliverable();
+        $reference = trim((string) $request->request->get('reference'));
+        $file = $request->files->get('archivo');
+
+        if ('' !== $reference) {
+            if (!$requirement->acceptsLink()) {
+                return 'Esta tarea se entrega con un archivo, no con un enlace.';
+            }
+            if (mb_strlen($reference) > 255) {
+                return 'El enlace es demasiado largo (máximo 255 caracteres).';
+            }
+            $task->setDeliverableReference($reference);
+        }
+
+        if ($file instanceof UploadedFile && DocumentUpload::isPresent($file)) {
+            if (!$requirement->acceptsFile()) {
+                return 'Esta tarea se entrega con un enlace, no con un archivo.';
+            }
+            // Misma política que el resto de documentos del centro (tamaño y extensiones): lo que la
+            // conserjería acepta imprimir y lo que se entrega en una tarea no pueden ser cosas distintas.
+            $problem = DocumentUpload::problem($file);
+            if (null !== $problem) {
+                return $problem;
+            }
+            // El anterior se borra del disco: con las vueltas de revisión sin tope, cada reentrega dejaría
+            // huérfano el archivo de la vuelta anterior y el almacén crecería sin fin. Se borra DESPUÉS de
+            // subir el nuevo, para no quedarse sin ninguno de los dos si la subida falla.
+            $previous = $task->getDeliverableFilePath();
+            $task->attachDeliverableFile($uploader->upload($file, self::DELIVERABLE_SUBDIR), DocumentUpload::nameOf($file));
+            if (null !== $previous) {
+                $uploader->remove($previous);
+            }
+        }
+
+        // "Requiere algo" se comprueba contra lo que la tarea TIENE, no contra lo que llega ahora: una
+        // tarea devuelta para revisar ya trae su entregable de la vuelta anterior, y obligar a volver a
+        // subirlo para cambiar una coma sería absurdo.
+        if ($requirement->isRequired() && !$task->hasDeliverable()) {
+            return match ($requirement) {
+                DeliverableRequirement::LINK => 'Pega el enlace del documento para entregar la tarea.',
+                DeliverableRequirement::FILE => 'Sube el archivo para entregar la tarea.',
+                default => 'Pega un enlace o sube un archivo para entregar la tarea.',
+            };
+        }
+
+        return null;
     }
 
     /**
@@ -662,13 +791,73 @@ final class TaskController extends AbstractController
     }
 
     /**
+     * Adds a comment to the task on its own, without moving it. "Siempre puede hacer comentarios": a
+     * question about the delivery, or an answer to it, does not have to wait for a transition.
+     *
+     * Open to whoever the task concerns and to whoever manages it — not to a superior who is merely
+     * browsing the course plan, which is the same line {@see show()} draws for `canComment`.
+     */
+    #[Route('/tareas/{id}/comentario', name: 'task_comment', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function comment(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, EntityManagerInterface $entityManager, TaskVisibility $visibility): Response
+    {
+        if (!$this->isCsrfTokenValid('task_comment'.$task->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+        $isAdmin = $this->isGranted('ROLE_ADMIN');
+        if (!$visibility->isVisibleTo($task, $user, $isAdmin)) {
+            throw $this->createAccessDeniedException('No puedes ver esta tarea.');
+        }
+        if (!$isAdmin && !$task->concerns($user) && !$this->canManage($task, $user, $hierarchy)) {
+            throw $this->createAccessDeniedException('Esta tarea no es tuya.');
+        }
+        if ($task->isClosed()) {
+            // Una tarea cerrada es de solo lectura, igual que para todo lo demás: su hilo es el registro
+            // de cómo se llegó hasta ahí, no un tablón que siga creciendo después.
+            throw $this->createAccessDeniedException('Esta tarea ya está cerrada.');
+        }
+
+        $body = trim((string) $request->request->get('comentario'));
+        if ('' === $body || mb_strlen($body) > self::COMMENT_MAX) {
+            $this->addFlash('error', '' === $body ? 'Escribe algo antes de enviar el comentario.' : sprintf('El comentario es demasiado largo (máximo %d caracteres).', self::COMMENT_MAX));
+
+            return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
+        }
+
+        $entityManager->persist(new TaskComment($task, $user, $body));
+        $entityManager->flush();
+        $this->addFlash('success', 'Comentario añadido.');
+
+        return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
+    }
+
+    /**
+     * Serves the file handed in with a task, as an attachment and only to the people the task concerns
+     * ({@see TaskVisibility}). It is stored outside the web root, so this route IS the access control:
+     * there is no URL that reaches the file without passing through here.
+     */
+    #[Route('/tareas/{id}/entregable/archivo', name: 'task_deliverable_download', requirements: ['id' => '\d+'], methods: ['GET'])]
+    public function downloadDeliverable(Task $task, #[CurrentUser] User $user, TaskVisibility $visibility, FileUploader $uploader): Response
+    {
+        if (!$visibility->isVisibleTo($task, $user, $this->isGranted('ROLE_ADMIN'))) {
+            throw $this->createAccessDeniedException('No puedes ver esta tarea.');
+        }
+
+        $path = $task->getDeliverableFilePath();
+        if (null === $path) {
+            throw $this->createNotFoundException('Esta tarea no tiene archivo entregado.');
+        }
+
+        return $this->file($uploader->absolutePath($path), $task->getDeliverableFileName() ?? 'documento');
+    }
+
+    /**
      * The lifecycle transitions to offer as buttons: those enabled now, keeping the superior-only ones
-     * (validate/reject); "submit" (Entregar) for whoever works on the task; and "cancel" only for
-     * whoever may manage it.
+     * (validate/review); "submit" (Entregar) for whoever works on the task; and "cancel" only for
+     * whoever may manage it AND while the task is still within its deadline.
      *
      * @return list<string> the transition names to show
      */
-    private function availableActions(TaskWorkflow $workflows, Task $task, bool $canWork, bool $canManage): array
+    private function availableActions(TaskWorkflow $workflows, Task $task, bool $canWork, bool $canManage, \DateTimeImmutable $today): array
     {
         $names = array_map(
             static fn ($transition): string => $transition->getName(),
@@ -678,7 +867,7 @@ final class TaskController extends AbstractController
         return array_values(array_filter(
             $names,
             fn (string $name): bool => match (true) {
-                'cancel' === $name => $canManage,
+                'cancel' === $name => $canManage && !$task->isOverdueOn($today),
                 \in_array($name, self::SUPERIOR_TRANSITIONS, true) => true,
                 default => $canWork,
             },
@@ -730,7 +919,7 @@ final class TaskController extends AbstractController
      * person is a concrete assignee on top of it) and is leadership-only: it is written only when
      * $applyRole is true, so a routine edit by anyone else leaves it untouched.
      */
-    private function applyFormData(Task $task, TaskFormData $data): void
+    private function applyFormData(Task $task, TaskFormData $data, ?User $person = null): void
     {
         \assert(null !== $data->dueDate && null !== $data->responsibilityRole);
         $task->setTitle($data->title)
@@ -740,15 +929,19 @@ final class TaskController extends AbstractController
             ->setMandatory($data->mandatory)
             // requiresCheckbox is NOT touched: the form does not edit it (see TaskFormData), so whatever
             // the task template set must survive an edit untouched.
-            ->setRequiresDocument($data->requiresDocument);
+            ->setDeliverable($data->deliverable);
 
         // Responsibility = role + (department, only for per-department roles): the structural backbone,
         // resolved live. The department is also the task's unit context for hierarchy/escalation. The
         // concrete responsible person chosen in the cascade is the assignee.
-        $role = $data->responsibilityRole;
-        $unit = $role->isPerDepartment() ? $data->responsibilityUnit : null;
-        $task->setResponsibility(new TaskResponsibility($role, $unit))->setUnit($unit);
-        $task->setAssignedUser($data->responsibilityUser);
+        //
+        // The department comes from {@see TaskFormData::departmentFor()} and not straight from the form:
+        // creating for several people at once may leave it empty ("todos los departamentos"), and then
+        // each task belongs to its own person's department.
+        $person ??= $data->responsibilityUser;
+        $unit = null !== $person ? $data->departmentFor($person) : ($data->responsibilityRole->isPerDepartment() ? $data->responsibilityUnit : null);
+        $task->setResponsibility(new TaskResponsibility($data->responsibilityRole, $unit))->setUnit($unit);
+        $task->setAssignedUser($person);
     }
 
     /**
@@ -766,14 +959,19 @@ final class TaskController extends AbstractController
             throw $this->createAccessDeniedException('No puedes asignar la tarea a ese rol.');
         }
 
+        // El departamento vacío es legítimo al crear para varias personas ("todos los departamentos"):
+        // lo que se comprueba entonces es cada persona, una a una, contra el ámbito de quien crea.
         if (null !== $data->responsibilityRole
             && $data->responsibilityRole->isPerDepartment()
+            && null !== $data->responsibilityUnit
             && !\in_array($data->responsibilityUnit, $assignableUnits, true)) {
             throw $this->createAccessDeniedException('No puedes asignar la tarea a ese departamento.');
         }
 
-        if (null !== $data->responsibilityUser && !\in_array($data->responsibilityUser, $assignableUsers, true)) {
-            throw $this->createAccessDeniedException('No puedes asignar la tarea a esa persona.');
+        foreach ($data->responsibleUsers() as $person) {
+            if (!\in_array($person, $assignableUsers, true)) {
+                throw $this->createAccessDeniedException(sprintf('No puedes asignar la tarea a %s.', $person->getFullName()));
+            }
         }
     }
 
@@ -845,7 +1043,6 @@ final class TaskController extends AbstractController
         return $hierarchy->outranks($user, $role, $scope);
     }
 
-    /**
     /**
      * Whether the user may nudge the task's people ("Recordar"). Supervision, so: only on a task that is
      * still open, only for someone who does NOT owe the work (you do not remind yourself), and only if

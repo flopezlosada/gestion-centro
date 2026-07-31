@@ -13,6 +13,7 @@ use App\DueDate\RelativeToAnchor;
 use App\Entity\Role;
 use App\Entity\TaskTemplate;
 use App\Enum\CalendarAnchor;
+use App\Enum\DeliverableRequirement;
 use App\Enum\DueDateRuleKind;
 use App\Enum\TaskType;
 use App\Enum\TermBoundary;
@@ -73,7 +74,12 @@ final class TaskTemplateType extends AbstractType
                 'placeholder' => '— Se decide en cada instancia —',
                 'query_builder' => static fn (RoleRepository $repo) => $repo->createQueryBuilder('r')->orderBy('r.name', 'ASC'),
             ])
-            ->add('requiresDocument', CheckboxType::class, ['label' => 'Requiere documento entregable', 'required' => false])
+            ->add('deliverable', EnumType::class, [
+                'class' => DeliverableRequirement::class,
+                'label' => '¿Qué hay que entregar?',
+                'expanded' => true,
+                'choice_label' => static fn (DeliverableRequirement $r): string => $r->label(),
+            ])
             ->add('requiresCheckbox', CheckboxType::class, ['label' => 'Requiere casilla de "hecho"', 'required' => false])
             ->add('active', CheckboxType::class, [
                 'label' => 'Activa (se instancia en nuevos cursos)',

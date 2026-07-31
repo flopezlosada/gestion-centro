@@ -9,8 +9,8 @@ use App\Entity\Task;
 /**
  * Turns a set of tasks into the figures the panel shows against the single task lifecycle
  * (Pendiente → Entregada → Finalizada, con Cancelada aparte): cuántas finalizadas / entregadas /
- * pendientes / canceladas, cuántas vencidas, el porcentaje de avance, las que requieren atención
- * (abiertas y vencidas) y el desglose por departamento.
+ * pendientes / canceladas, cuántas fuera de plazo, el porcentaje de avance, las que requieren atención
+ * (abiertas y fuera de plazo) y el desglose por departamento.
  *
  * Pure by design: it derives everything from the tasks handed to it — already scoped to what the viewer
  * may see ({@see \App\Service\TaskVisibility}) — so a director gets the whole centre and a plain teacher
@@ -55,6 +55,8 @@ final class CentreDashboard
             $isOpen = !$isFinalized && self::CANCELLED !== $status;
             $isOverdue = $isOpen && $task->getDueDate()->format('Y-m-d') < $todayStr;
 
+            // "En revisión" (devuelta con correcciones) cuenta como pendiente, en el `default`: para
+            // dirección las dos son lo mismo — trabajo abierto que todavía no está entregado.
             match ($status) {
                 self::FINALIZED => ++$finalized,
                 self::SUBMITTED => ++$submitted,

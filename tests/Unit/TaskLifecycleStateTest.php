@@ -6,6 +6,7 @@ namespace App\Tests\Unit;
 
 use App\Agenda\AgendaEntry;
 use App\Entity\Task;
+use App\Enum\DeliverableRequirement;
 use App\Enum\TaskType;
 use App\Support\TaskStatus;
 use PHPUnit\Framework\TestCase;
@@ -82,7 +83,7 @@ final class TaskLifecycleStateTest extends TestCase
     {
         // El bug: el alta dejaba requiresCheckbox=true también en una tarea con entregable, y la casilla
         // rápida la cerraba saltándose el documento y el flujo Entregar→Validar. La casilla NO debe existir.
-        $task = $this->task(TaskType::WITH_DELIVERABLE)->setRequiresDocument(true)->setRequiresCheckbox(true);
+        $task = $this->task(TaskType::WITH_DELIVERABLE)->setDeliverable(DeliverableRequirement::LINK)->setRequiresCheckbox(true);
 
         self::assertFalse($task->requiresCheckbox(), 'una tarea con entregable no tiene casilla rápida');
     }
@@ -91,7 +92,7 @@ final class TaskLifecycleStateTest extends TestCase
     {
         // Datos heredados del bug: checkboxDone=true en una tarea con entregable. No debe darla por hecha;
         // solo la cierra la Finalización.
-        $task = $this->task(TaskType::WITH_DELIVERABLE)->setRequiresDocument(true)->setCheckboxDone(true);
+        $task = $this->task(TaskType::WITH_DELIVERABLE)->setDeliverable(DeliverableRequirement::LINK)->setCheckboxDone(true);
 
         self::assertFalse($task->isDone(), 'un checkbox obsoleto en una con entregable no la da por hecha');
         self::assertFalse(AgendaEntry::fromTask($task)->done);

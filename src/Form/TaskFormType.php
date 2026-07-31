@@ -4,14 +4,16 @@ declare(strict_types=1);
 
 namespace App\Form;
 
-use App\Entity\Role;
 use App\Entity\Department;
+use App\Entity\Role;
 use App\Entity\User;
+use App\Enum\DeliverableRequirement;
 use App\Service\SchoolCalendar;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
+use Symfony\Component\Form\Extension\Core\Type\EnumType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
@@ -57,28 +59,18 @@ final class TaskFormType extends AbstractType
                 'choice_attr' => static fn (Role $role): array => ['data-per-department' => $role->isPerDepartment() ? '1' : '0'],
             ])
             ->add('responsibilityUnit', EntityType::class, [
-                'label' => 'Departamento',
                 'class' => Department::class,
                 'choices' => $options['assignable_units'],
                 'choice_label' => 'name',
                 'required' => false,
-                'placeholder' => '— Elige departamento —',
-                'help' => 'Solo los departamentos: acota a quién tiene el rol dentro de él.',
+                // Al crear, dejarlo vacío es lo que significa "de todos los departamentos": es la forma
+                // de mandar la misma tarea a todo el claustro sin repetir el formulario quince veces.
+                'label' => 'Departamento',
+                'placeholder' => $options['multiple_assignees'] ? '— Todos los departamentos —' : '— Elige departamento —',
+                'help' => $options['multiple_assignees']
+                    ? 'Acota a quién tiene el rol dentro de él. Déjalo vacío para llegar a todos los departamentos.'
+                    : 'Solo los departamentos: acota a quién tiene el rol dentro de él.',
                 'row_attr' => ['data-dept-step' => '1'],
-            ])
-            ->add('responsibilityUser', EntityType::class, [
-                'label' => 'Persona responsable',
-                'class' => User::class,
-                'choices' => $options['assignable_users'],
-                'choice_label' => 'fullName',
-                'placeholder' => '— Elige la persona —',
-                'help' => 'Solo quienes tienen ese rol en ese departamento. Luego un superior puede reasignarla.',
-                // task-form.js filters this list by the chosen role + department using these attributes.
-                'choice_attr' => static fn (User $candidate): array => [
-                    'data-roles' => implode(' ', $candidate->getAssignedRoles()->map(static fn (Role $role): int => (int) $role->getId())->toArray()),
-                    'data-unit' => (string) ($candidate->getUnit()?->getId() ?? ''),
-                ],
-                'row_attr' => ['data-resp-user-step' => '1'],
             ])
             ->add('mandatory', CheckboxType::class, [
                 'label' => 'Obligatoria',
@@ -86,13 +78,49 @@ final class TaskFormType extends AbstractType
                 'help' => 'Las obligatorias cuentan como pendientes hasta cerrarse; las voluntarias son opcionales.',
             ]);
 
-        // The single deliverable switch also decides the lifecycle (see the controller). Only on
-        // creation: the lifecycle cannot change once the task is running.
-        if (true === $options['include_deliverable']) {
-            $builder->add('requiresDocument', CheckboxType::class, [
-                'label' => 'Lleva entregable',
+        // Tercer paso de la cascada. Al CREAR es una lista (una tarea por persona: "a un solo usuario o a
+        // un colectivo"); al EDITAR es la única persona que tiene esa tarea. Mismos atributos en las
+        // opciones en los dos casos, porque el mismo task-form.js acota las dos.
+        $candidateAttributes = static fn (User $candidate): array => [
+            'data-roles' => implode(' ', $candidate->getAssignedRoles()->map(static fn (Role $role): int => (int) $role->getId())->toArray()),
+            'data-unit' => (string) ($candidate->getUnit()?->getId() ?? ''),
+        ];
+
+        if (true === $options['multiple_assignees']) {
+            $builder->add('responsibilityUsers', EntityType::class, [
+                'label' => '¿Para quién?',
+                'class' => User::class,
+                'choices' => $options['assignable_users'],
+                'choice_label' => 'fullName',
+                'multiple' => true,
+                'expanded' => true,
                 'required' => false,
-                'help' => 'Pide una referencia a un documento (un enlace, nunca el archivo) y añade un paso de entrega y validación.',
+                'help' => 'Marca a una persona o a varias. Cada una recibe su propia tarea y la entrega por su cuenta.',
+                'choice_attr' => $candidateAttributes,
+                'row_attr' => ['data-resp-user-step' => '1'],
+            ]);
+        } else {
+            $builder->add('responsibilityUser', EntityType::class, [
+                'label' => 'Persona responsable',
+                'class' => User::class,
+                'choices' => $options['assignable_users'],
+                'choice_label' => 'fullName',
+                'placeholder' => '— Elige la persona —',
+                'help' => 'Solo quienes tienen ese rol en ese departamento. Luego un superior puede reasignarla.',
+                'choice_attr' => $candidateAttributes,
+                'row_attr' => ['data-resp-user-step' => '1'],
+            ]);
+        }
+
+        // Qué hay que entregar. Solo al crear: cambiarlo con la tarea en marcha dejaría a alguien con un
+        // enlace ya entregado y un cartel pidiéndole un archivo.
+        if (true === $options['include_deliverable']) {
+            $builder->add('deliverable', EnumType::class, [
+                'class' => DeliverableRequirement::class,
+                'label' => '¿Qué hay que entregar?',
+                'expanded' => true,
+                'choice_label' => static fn (DeliverableRequirement $r): string => $r->label(),
+                'help' => 'Con enlace o archivo, la tarea pasa por un paso de entrega y revisión antes de darse por finalizada.',
             ]);
         }
     }
@@ -121,10 +149,12 @@ final class TaskFormType extends AbstractType
             'assignable_units' => [],
             'assignable_users' => [],
             'include_deliverable' => true,
+            'multiple_assignees' => false,
         ]);
         $resolver->setAllowedTypes('assignable_roles', 'array');
         $resolver->setAllowedTypes('assignable_units', 'array');
         $resolver->setAllowedTypes('assignable_users', 'array');
         $resolver->setAllowedTypes('include_deliverable', 'bool');
+        $resolver->setAllowedTypes('multiple_assignees', 'bool');
     }
 }

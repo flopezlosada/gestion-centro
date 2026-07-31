@@ -9,6 +9,7 @@ use App\Entity\Task;
 use App\Entity\TaskResponsibility;
 use App\Entity\Department;
 use App\Entity\User;
+use App\Enum\DeliverableRequirement;
 use App\Enum\TaskType;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
@@ -180,7 +181,7 @@ final class DesignPagesTest extends WebTestCase
     {
         $s = $this->seed();
         // La tarea lleva entregable: al entregar hay que adjuntar la referencia del documento.
-        $s['task']->setRequiresDocument(true);
+        $s['task']->setDeliverable(DeliverableRequirement::LINK);
         $this->em->flush();
         $this->client->loginUser($s['teacher']);
 
@@ -211,6 +212,6 @@ final class DesignPagesTest extends WebTestCase
         self::assertResponseIsSuccessful();
         $content = (string) $this->client->getResponse()->getContent();
         self::assertStringNotContainsString('accion/validate', $content, 'un no-superior no ve la acción de validar');
-        self::assertStringNotContainsString('accion/reject', $content, 'un no-superior no ve la acción de devolver');
+        self::assertStringNotContainsString('accion/review', $content, 'un no-superior no ve la acción de devolver');
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Service;
 
+use App\Entity\Notification;
 use App\Entity\Task;
 use App\Entity\User;
 
@@ -29,17 +30,45 @@ final class TaskAssignmentNotifier
      */
     public function notifyCreated(Task $task, User $creator): void
     {
-        $recipient = $task->resolveResponsible();
-        if (null === $recipient || $recipient === $creator) {
+        $this->notifyCreatedBatch([$task], $creator);
+    }
+
+    /**
+     * Lo mismo para VARIAS tareas creadas de una vez — mandar la misma tarea a un departamento entero o
+     * a todo el claustro genera una por persona ({@see \App\Controller\TaskController::new()}).
+     *
+     * Existe porque hacerlo en un bucle sobre {@see notifyCreated()} no era lo mismo: cada llamada
+     * termina en {@see NotificationDispatcher::dispatch()}, que hace su propio flush Y manda el correo
+     * ahí mismo. Con el claustro entero eso son ochenta flushes y ochenta envíos SMTP seguidos dentro de
+     * la misma petición: lenta, y si PHP corta a mitad las tareas quedan creadas pero media plantilla sin
+     * enterarse, en silencio. Aquí se acumulan los avisos, se hace UN flush y se entrega el lote.
+     *
+     * @param list<Task> $tasks   the freshly created (and flushed) tasks
+     * @param User       $creator the user who created them
+     */
+    public function notifyCreatedBatch(array $tasks, User $creator): void
+    {
+        /** @var list<Notification> $notifications */
+        $notifications = [];
+        foreach ($tasks as $task) {
+            $recipient = $task->resolveResponsible();
+            if (null === $recipient || $recipient === $creator) {
+                continue;
+            }
+
+            $notifications[] = $this->dispatcher->record(
+                $recipient,
+                'task.assigned',
+                sprintf('Nueva tarea: %s', $task->getTitle()),
+                sprintf('%s te ha asignado una tarea. Vence el %s.', $creator->getFullName(), $task->getDueDate()->format('d/m/Y')),
+                $task,
+            );
+        }
+
+        if ([] === $notifications) {
             return;
         }
 
-        $this->dispatcher->dispatch(
-            $recipient,
-            'task.assigned',
-            sprintf('Nueva tarea: %s', $task->getTitle()),
-            sprintf('%s te ha asignado una tarea. Vence el %s.', $creator->getFullName(), $task->getDueDate()->format('d/m/Y')),
-            $task,
-        );
+        $this->dispatcher->flushAndSend($notifications);
     }
 }

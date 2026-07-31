@@ -13,7 +13,7 @@ use Symfony\Component\Workflow\Event\GuardEvent;
 
 /**
  * Separation of duties on the single task workflow: the superior's verdict transitions ("validate"
- * and "reject") may only be fired by a superior of the task's unit (up the chain of command) or an
+ * and "review") may only be fired by a superior of the task's unit (up the chain of command) or an
  * admin, and never by the task's own assignee. The other transitions (submit = Entregar; cancel) are
  * NOT restricted here — that is handled where they are triggered (controller/voter), like the rest of
  * the app.
@@ -36,7 +36,7 @@ final class TaskValidationGuardSubscriber
 
         // Superior-only transitions (the verdict on someone else's work). Keep this list in sync with
         // TaskController::SUPERIOR_TRANSITIONS — both must agree on what counts as a superior action.
-        if (!\in_array($event->getTransition()->getName(), ['validate', 'reject'], true)) {
+        if (!\in_array($event->getTransition()->getName(), ['validate', 'review'], true)) {
             return;
         }
 

@@ -4,20 +4,24 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
+use App\Entity\Department;
 use App\Entity\NonLectiveDay;
 use App\Entity\Role;
 use App\Entity\Task;
+use App\Entity\TaskComment;
 use App\Entity\TaskResponsibility;
-use App\Entity\Department;
 use App\Entity\User;
+use App\Enum\DeliverableRequirement;
 use App\Enum\TaskType;
 use App\Repository\NotificationRepository;
+use App\Service\FileUploader;
 use App\Service\TaskReminderNotifier;
 use App\Support\TaskStatus;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\Mime\Email;
 
 /**
@@ -61,6 +65,22 @@ final class TaskCrudTest extends WebTestCase
         $em->flush();
 
         return $task;
+    }
+
+    /**
+     * Sends the CREATE form choosing the people it is for. The person step is a list of CHECKBOXES there
+     * (one task per person), and DomCrawler only ever touches the first control of a group when you
+     * assign to it — hence getPhpValues() plus a raw request, the idiom this project already uses for
+     * expanded choices.
+     *
+     * @param \Symfony\Component\DomCrawler\Form $form    the create form, already filled
+     * @param list<string>                        $userIds the ids to tick
+     */
+    private function submitCreateForm(\Symfony\Component\DomCrawler\Form $form, array $userIds): void
+    {
+        $values = $form->getPhpValues();
+        $values['task_form']['responsibilityUsers'] = $userIds;
+        $this->client->request($form->getMethod(), $form->getUri(), $values);
     }
 
     public function testNewTaskFormRenders(): void
@@ -128,8 +148,7 @@ final class TaskCrudTest extends WebTestCase
         $form['task_form[dueDate]'] = '2026-09-15';
         $form['task_form[responsibilityRole]'] = (string) $roleId;
         $form['task_form[responsibilityUnit]'] = (string) $unitId;
-        $form['task_form[responsibilityUser]'] = (string) $creator->getId();
-        $this->client->submit($form);
+        $this->submitCreateForm($form, [(string) $creator->getId()]);
 
         self::assertResponseRedirects();
         $creatorId = $creator->getId();
@@ -171,8 +190,7 @@ final class TaskCrudTest extends WebTestCase
         $form['task_form[dueDate]'] = '2026-09-15';
         $form['task_form[responsibilityRole]'] = (string) $roleId;
         $form['task_form[responsibilityUnit]'] = (string) $unitId;
-        $form['task_form[responsibilityUser]'] = (string) $memberId;
-        $this->client->submit($form);
+        $this->submitCreateForm($form, [(string) $memberId]);
 
         self::assertResponseRedirects();
         // El subordinado recibe un correo de la tarea que le han asignado.
@@ -229,8 +247,7 @@ final class TaskCrudTest extends WebTestCase
         $form['task_form[dueDate]'] = '2026-09-15';
         $form['task_form[responsibilityRole]'] = (string) $direction->getId();
         $form['task_form[responsibilityUnit]'] = (string) $unit->getId();
-        $form['task_form[responsibilityUser]'] = (string) $member->getId();
-        $this->client->submit($form);
+        $this->submitCreateForm($form, [(string) $member->getId()]);
 
         self::assertNull($this->em->getRepository(Task::class)->findOneBy(['title' => 'Tarea prohibida']));
     }
@@ -242,7 +259,9 @@ final class TaskCrudTest extends WebTestCase
         $member = $this->user('profe@centro.test', $unit);
         $other = $this->user('otro@centro.test', $unit);
         // Asignada al miembro pero creada por otra persona: no es creador ni superior → no puede gestionar.
-        $task = new Task('Preparar el acta', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
+        // Fecha EN PLAZO y relativa a hoy: si estuviera pasada, "Cancelar" desaparecería por estar fuera
+        // de plazo y el test pasaría sin probar lo que dice su nombre.
+        $task = new Task('Preparar el acta', '2025-2026', new \DateTimeImmutable('+30 days'), TaskType::SIMPLE);
         $task->setUnit($unit)->setAssignedUser($member)->setCreatedBy($other);
         $this->em->persist($task);
         $this->em->flush();
@@ -264,7 +283,8 @@ final class TaskCrudTest extends WebTestCase
         $boss = $this->user('jefatura@centro.test', $unit);
         $boss->addAssignedRole($headStudiesRole);
         $member = $this->user('profe@centro.test', $unit);
-        $task = new Task('Actividad anulada', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE);
+        // En plazo: cancelar solo existe mientras la fecha no ha pasado (ver el test siguiente).
+        $task = new Task('Actividad anulada', '2025-2026', new \DateTimeImmutable('+30 days'), TaskType::SIMPLE);
         $task->setUnit($unit)->setAssignedUser($member)->setCreatedBy($boss);
         $this->em->persist($task);
         $this->em->flush();
@@ -281,13 +301,49 @@ final class TaskCrudTest extends WebTestCase
         self::assertSame('cancelled', $this->em->getRepository(Task::class)->find($taskId)?->getStatus());
     }
 
+    /**
+     * Una tarea FUERA DE PLAZO no se cancela ni siquiera desde arriba: petición del centro, para que
+     * pasarse de fecha no sea una vía de escape. El botón no se ofrece Y el POST directo se rechaza —
+     * si solo se escondiera el botón, esto no sería una regla.
+     */
+    public function testAnOverdueTaskCannotBeCancelled(): void
+    {
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $headStudiesRole = (new Role())->setCode('head_of_studies')->setName('Jefatura de estudios')->setHierarchyLevel(30);
+        $this->em->persist($headStudiesRole);
+        $boss = $this->user('jefatura@centro.test', $unit);
+        $boss->addAssignedRole($headStudiesRole);
+        $member = $this->user('profe@centro.test', $unit);
+        $task = new Task('Memoria sin entregar', '2025-2026', new \DateTimeImmutable('-3 days'), TaskType::SIMPLE);
+        $task->setUnit($unit)->setAssignedUser($member)->setCreatedBy($boss);
+        $this->em->persist($task);
+        $this->em->flush();
+        $taskId = $task->getId();
+
+        $this->client->loginUser($boss);
+        $crawler = $this->client->request('GET', '/tareas/'.$taskId);
+        self::assertResponseIsSuccessful();
+        self::assertSelectorNotExists('form[action$="/accion/cancel"]', 'fuera de plazo no se ofrece cancelar');
+        // "Dar por finalizada" SÍ sigue estando: la salida de una tarea pasada de fecha existe, es otra.
+        self::assertSelectorExists('form[action$="/accion/validate"]');
+
+        // Y el POST a pelo tampoco pasa. El token se lee DE LA PÁGINA (todas las transiciones comparten
+        // el mismo `task_transition<id>`): pedírselo al token manager devuelve uno de otra sesión.
+        $token = $crawler->filter('form[action$="/accion/validate"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', '/tareas/'.$taskId.'/accion/cancel', ['_token' => $token]);
+        self::assertResponseRedirects();
+        $this->em->clear();
+        self::assertSame('pending', $this->em->getRepository(Task::class)->find($taskId)?->getStatus());
+    }
+
     public function testDeliverableCannotBeSubmittedWithoutReference(): void
     {
         $unit = (new Department())->setCode('maths')->setName('Matemáticas');
         $this->em->persist($unit);
         $member = $this->user('profe@centro.test', $unit);
         $task = new Task('Memoria', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::WITH_DELIVERABLE);
-        $task->setUnit($unit)->setAssignedUser($member)->setRequiresDocument(true);
+        $task->setUnit($unit)->setAssignedUser($member)->setDeliverable(DeliverableRequirement::LINK);
         $this->em->persist($task);
         $this->em->flush();
         $taskId = $task->getId();
@@ -302,6 +358,287 @@ final class TaskCrudTest extends WebTestCase
         self::assertResponseRedirects();
         $this->em->clear();
         self::assertSame('pending', $this->em->getRepository(Task::class)->find($taskId)?->getStatus(), 'sin enlace no se entrega');
+    }
+
+    /**
+     * El ciclo entero que describió el centro, de punta a punta: se entrega con un comentario, quien la
+     * mandó la devuelve diciendo qué cambiar, se vuelve a entregar y se da por finalizada. Cada paso deja
+     * su comentario en el hilo y avisa a la OTRA parte, nunca a quien acaba de actuar.
+     */
+    public function testTheDeliveryCycleGoesBackAndForthWithComments(): void
+    {
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
+        $this->em->persist($headRole);
+        $boss = $this->user('jefa@centro.test', $unit);
+        $boss->addAssignedRole($headRole);
+        $member = $this->user('profe@centro.test', $unit);
+        $task = new Task('Memoria', '2025-2026', new \DateTimeImmutable('+20 days'), TaskType::WITH_DELIVERABLE);
+        $task->setUnit($unit)->setAssignedUser($member)->setCreatedBy($boss)->setDeliverable(DeliverableRequirement::LINK);
+        $this->em->persist($task);
+        $this->em->flush();
+        $taskId = (int) $task->getId();
+
+        // 1. El profesor entrega, con enlace y con una nota.
+        $this->client->loginUser($member);
+        $crawler = $this->client->request('GET', '/tareas/'.$taskId);
+        $token = $crawler->filter('form[action$="/accion/submit"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', '/tareas/'.$taskId.'/accion/submit', [
+            '_token' => $token,
+            'reference' => 'https://cloud.educa.madrid.org/memoria',
+            'comentario' => 'Va la parte de resultados; los anexos los mando aparte.',
+        ]);
+        self::assertResponseRedirects();
+        self::assertSame('submitted', $this->reloadTask($taskId)->getStatus());
+
+        // 2. La jefa la devuelve DICIENDO qué cambiar. Sin ese texto no se movería (se prueba abajo).
+        $this->client->loginUser($boss);
+        $crawler = $this->client->request('GET', '/tareas/'.$taskId);
+        $token = $crawler->filter('form[action$="/accion/review"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', '/tareas/'.$taskId.'/accion/review', [
+            '_token' => $token,
+            'comentario' => 'Faltan los datos del tercer trimestre.',
+        ]);
+        self::assertResponseRedirects();
+        self::assertSame('in_review', $this->reloadTask($taskId)->getStatus(), 'devuelta NO es volver a Pendiente');
+
+        // 3. El profesor corrige y vuelve a entregar: no tiene que repetir el enlace, ya está puesto.
+        $this->client->loginUser($member);
+        $crawler = $this->client->request('GET', '/tareas/'.$taskId);
+        $token = $crawler->filter('form[action$="/accion/submit"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', '/tareas/'.$taskId.'/accion/submit', ['_token' => $token, 'comentario' => 'Añadido el tercer trimestre.']);
+        self::assertResponseRedirects();
+        self::assertSame('submitted', $this->reloadTask($taskId)->getStatus());
+
+        // 4. La jefa la da por finalizada.
+        $this->client->loginUser($boss);
+        $crawler = $this->client->request('GET', '/tareas/'.$taskId);
+        $token = $crawler->filter('form[action$="/accion/validate"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', '/tareas/'.$taskId.'/accion/validate', ['_token' => $token, 'comentario' => 'Perfecto, gracias.']);
+        self::assertResponseRedirects();
+        self::assertSame('validated', $this->reloadTask($taskId)->getStatus());
+
+        // El hilo guarda las cuatro intervenciones, en orden, con la transición de cada una.
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $thread = $em->getRepository(TaskComment::class)->findThreadFor($this->reloadTask($taskId));
+        self::assertSame(
+            ['submit', 'review', 'submit', 'validate'],
+            array_map(static fn (TaskComment $c): ?string => $c->getTransition(), $thread),
+        );
+    }
+
+    /**
+     * Una tarea para un COLECTIVO son N tareas independientes, no una compartida: cada persona entrega la
+     * suya, comenta la suya y recibe su veredicto, y una sola fila no puede estar en cuatro estados a la
+     * vez. Es lo que pidió el centro ("a un solo usuario o a un colectivo").
+     */
+    public function testCreatingForSeveralPeopleMakesOneTaskEach(): void
+    {
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
+        $this->em->persist($headRole);
+        $this->em->persist($teacherRole);
+        $boss = $this->user('jefa@centro.test', $unit);
+        $boss->addAssignedRole($headRole);
+        $one = $this->user('uno@centro.test', $unit);
+        $one->addAssignedRole($teacherRole);
+        $two = $this->user('dos@centro.test', $unit);
+        $two->addAssignedRole($teacherRole);
+        $this->em->flush();
+        $this->client->loginUser($boss);
+
+        $crawler = $this->client->request('GET', '/tareas/nueva');
+        $form = $crawler->selectButton('Crear tarea')->form();
+        $form['task_form[title]'] = 'Rellenar la encuesta';
+        $form['task_form[dueDate]'] = '2026-09-15';
+        $form['task_form[responsibilityRole]'] = (string) $teacherRole->getId();
+        $form['task_form[responsibilityUnit]'] = (string) $unit->getId();
+        $this->submitCreateForm($form, [(string) $one->getId(), (string) $two->getId()]);
+
+        // Con varias no hay una ficha a la que ir: se vuelve al listado.
+        self::assertResponseRedirects('/tareas');
+        $this->em->clear();
+        $tasks = $this->em->getRepository(Task::class)->findBy(['title' => 'Rellenar la encuesta']);
+        self::assertCount(2, $tasks, 'una tarea por persona');
+        $assignees = array_map(static fn (Task $t): ?string => $t->getAssignedUser()?->getEmail(), $tasks);
+        sort($assignees);
+        self::assertSame(['dos@centro.test', 'uno@centro.test'], $assignees);
+        // Y cada una avisa a la suya: dos correos, no uno.
+        self::assertEmailCount(2);
+    }
+
+    /**
+     * Sin departamento, al crear para varias personas, cada tarea cae en el departamento DE SU PERSONA.
+     * Es lo que hace posible mandar algo a todo el claustro de una vez, sin repetir el formulario por
+     * cada departamento del centro.
+     */
+    public function testWithNoDepartmentEachTaskLandsInItsOwnPersonsDepartment(): void
+    {
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
+        $language = (new Department())->setCode('lang')->setName('Lengua');
+        $this->em->persist($maths);
+        $this->em->persist($language);
+        $directionRole = (new Role())->setCode('direction')->setName('Dirección')->setHierarchyLevel(50);
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
+        $this->em->persist($directionRole);
+        $this->em->persist($teacherRole);
+        $director = $this->user('director@centro.test', $maths);
+        $director->addAssignedRole($directionRole);
+        $mathsTeacher = $this->user('mates@centro.test', $maths);
+        $mathsTeacher->addAssignedRole($teacherRole);
+        $langTeacher = $this->user('lengua@centro.test', $language);
+        $langTeacher->addAssignedRole($teacherRole);
+        $this->em->flush();
+        $this->client->loginUser($director);
+
+        $crawler = $this->client->request('GET', '/tareas/nueva');
+        $form = $crawler->selectButton('Crear tarea')->form();
+        $form['task_form[title]'] = 'Leer el plan de convivencia';
+        $form['task_form[dueDate]'] = '2026-09-15';
+        $form['task_form[responsibilityRole]'] = (string) $teacherRole->getId();
+        // Departamento a propósito VACÍO: "todo el claustro".
+        $this->submitCreateForm($form, [(string) $mathsTeacher->getId(), (string) $langTeacher->getId()]);
+
+        self::assertResponseRedirects('/tareas');
+        $this->em->clear();
+        $tasks = $this->em->getRepository(Task::class)->findBy(['title' => 'Leer el plan de convivencia']);
+        self::assertCount(2, $tasks);
+        $byEmail = [];
+        foreach ($tasks as $task) {
+            $byEmail[(string) $task->getAssignedUser()?->getEmail()] = $task->getUnit()?->getName();
+        }
+        self::assertSame('Matemáticas', $byEmail['mates@centro.test']);
+        self::assertSame('Lengua', $byEmail['lengua@centro.test']);
+    }
+
+    /**
+     * La superficie nueva de entrega y comentarios se comprueba en el SERVIDOR, no escondiendo botones:
+     * quien no tiene nada que ver con la tarea no comenta ni se descarga lo entregado, y una tarea cerrada
+     * no admite más comentarios.
+     */
+    public function testCommentsAndTheDeliveredFileAreGuardedServerSide(): void
+    {
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $other = (new Department())->setCode('lang')->setName('Lengua');
+        $this->em->persist($unit);
+        $this->em->persist($other);
+        $member = $this->user('profe@centro.test', $unit);
+        $outsider = $this->user('ajeno@centro.test', $other);
+        $task = new Task('Memoria', '2025-2026', new \DateTimeImmutable('+20 days'), TaskType::WITH_DELIVERABLE);
+        $task->setUnit($unit)->setAssignedUser($member)->setCreatedBy($member)->setDeliverable(DeliverableRequirement::ANY);
+        $this->em->persist($task);
+        $this->em->flush();
+        $taskId = (int) $task->getId();
+
+        // Quien tiene la tarea sí comenta.
+        $this->client->loginUser($member);
+        $crawler = $this->client->request('GET', '/tareas/'.$taskId);
+        $token = $crawler->filter('form[action$="/comentario"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', '/tareas/'.$taskId.'/comentario', ['_token' => $token, 'comentario' => '¿Vale con el guion de la memoria?']);
+        self::assertResponseRedirects();
+        self::assertCount(1, self::getContainer()->get(EntityManagerInterface::class)->getRepository(TaskComment::class)->findBy(['task' => $taskId]));
+
+        // Una persona de otro departamento no ve la tarea, así que ni comenta ni descarga.
+        $this->client->loginUser($outsider);
+        $this->client->request('POST', '/tareas/'.$taskId.'/comentario', ['_token' => $token, 'comentario' => 'me cuelo']);
+        self::assertResponseStatusCodeSame(403);
+        $this->client->request('GET', '/tareas/'.$taskId.'/entregable/archivo');
+        self::assertResponseStatusCodeSame(403);
+
+        // Y sobre una tarea ya cerrada no se sigue comentando: su hilo es el registro de cómo se llegó ahí.
+        $this->moveTaskTo($taskId, TaskStatus::VALIDATED);
+        $this->client->loginUser($member);
+        $this->client->request('POST', '/tareas/'.$taskId.'/comentario', ['_token' => $token, 'comentario' => 'una más']);
+        self::assertResponseStatusCodeSame(403);
+    }
+
+    /**
+     * Una tarea que pide ARCHIVO se entrega subiéndolo, y lo que se sube pasa por la misma política de
+     * documentos que el resto del centro: un tipo no admitido se rechaza sin mover la tarea.
+     */
+    public function testATaskThatAsksForAFileIsDeliveredByUploadingIt(): void
+    {
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $member = $this->user('profe@centro.test', $unit);
+        $task = new Task('Hoja firmada', '2025-2026', new \DateTimeImmutable('+20 days'), TaskType::WITH_DELIVERABLE);
+        $task->setUnit($unit)->setAssignedUser($member)->setCreatedBy($member)->setDeliverable(DeliverableRequirement::FILE);
+        $this->em->persist($task);
+        $this->em->flush();
+        $taskId = (int) $task->getId();
+
+        $this->client->loginUser($member);
+        $crawler = $this->client->request('GET', '/tareas/'.$taskId);
+        $token = $crawler->filter('form[action$="/accion/submit"] input[name="_token"]')->attr('value');
+
+        // Un ejecutable no entra: misma política que las fotocopias y el banco de tareas.
+        $this->client->request('POST', '/tareas/'.$taskId.'/accion/submit', ['_token' => $token], ['archivo' => $this->upload('malo.exe')]);
+        self::assertResponseRedirects();
+        self::assertSame('pending', $this->reloadTask($taskId)->getStatus(), 'un tipo no admitido no entrega la tarea');
+
+        // Un PDF sí, y queda descargable para quien la tarea concierne.
+        $this->client->request('POST', '/tareas/'.$taskId.'/accion/submit', ['_token' => $token], ['archivo' => $this->upload('memoria.pdf')]);
+        self::assertResponseRedirects();
+        $stored = $this->reloadTask($taskId);
+        self::assertSame('submitted', $stored->getStatus());
+        self::assertSame('memoria.pdf', $stored->getDeliverableFileName());
+
+        $this->client->request('GET', '/tareas/'.$taskId.'/entregable/archivo');
+        self::assertResponseIsSuccessful();
+
+        self::getContainer()->get(FileUploader::class)->remove((string) $stored->getDeliverableFilePath());
+    }
+
+    /**
+     * A throwaway upload with the given name, written to the system temp dir (test mode, so the file is
+     * moved rather than checked as a real HTTP upload).
+     */
+    private function upload(string $name): UploadedFile
+    {
+        $path = sys_get_temp_dir().'/'.uniqid('entrega-', true).'-'.$name;
+        file_put_contents($path, 'contenido de prueba');
+
+        return new UploadedFile($path, $name, null, null, true);
+    }
+
+    /** Devolver sin decir qué cambiar deja a la otra persona adivinando: el servidor lo frena. */
+    public function testATaskCannotBeSentBackWithoutSayingWhatToChange(): void
+    {
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
+        $this->em->persist($headRole);
+        $boss = $this->user('jefa@centro.test', $unit);
+        $boss->addAssignedRole($headRole);
+        $member = $this->user('profe@centro.test', $unit);
+        $task = new Task('Memoria', '2025-2026', new \DateTimeImmutable('+20 days'), TaskType::SIMPLE);
+        $task->setUnit($unit)->setAssignedUser($member)->setCreatedBy($boss)->setStatus('submitted');
+        $this->em->persist($task);
+        $this->em->flush();
+        $taskId = (int) $task->getId();
+
+        $this->client->loginUser($boss);
+        $crawler = $this->client->request('GET', '/tareas/'.$taskId);
+        $token = $crawler->filter('form[action$="/accion/review"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', '/tareas/'.$taskId.'/accion/review', ['_token' => $token, 'comentario' => '']);
+
+        self::assertResponseRedirects();
+        self::assertSame('submitted', $this->reloadTask($taskId)->getStatus(), 'sin explicación no se devuelve');
+    }
+
+    /**
+     * Re-reads a task through the container that is alive right now: the browser reboots the kernel on
+     * every request, so the manager captured in setUp is reset and its entities detached.
+     */
+    private function reloadTask(int $id): Task
+    {
+        $task = self::getContainer()->get(EntityManagerInterface::class)->getRepository(Task::class)->find($id);
+        self::assertNotNull($task);
+
+        return $task;
     }
 
     public function testCannotCreateTaskDueOnAWeekend(): void
@@ -373,6 +710,7 @@ final class TaskCrudTest extends WebTestCase
         self::assertSelectorExists('[name="task_form[responsibilityRole]"]');
         $form = $crawler->selectButton('Guardar')->form();
         $form['task_form[responsibilityRole]'] = (string) $ccpId;
+        // Editar sigue siendo de UNA persona: allí el paso sigue siendo un desplegable, no casillas.
         $form['task_form[responsibilityUser]'] = (string) $creator->getId();
         $this->client->submit($form);
 
@@ -404,8 +742,7 @@ final class TaskCrudTest extends WebTestCase
         $form['task_form[dueDate]'] = '2026-09-15';
         $form['task_form[responsibilityRole]'] = (string) $teacherRole->getId();
         $form['task_form[responsibilityUnit]'] = (string) $dept->getId();
-        $form['task_form[responsibilityUser]'] = (string) $creatorId;
-        $this->client->submit($form);
+        $this->submitCreateForm($form, [(string) $creatorId]);
 
         self::assertResponseRedirects();
         $this->em->clear();
@@ -437,8 +774,7 @@ final class TaskCrudTest extends WebTestCase
         $form['task_form[dueDate]'] = '2026-09-15';
         $form['task_form[responsibilityRole]'] = (string) $teacherRole->getId();
         $form['task_form[responsibilityUnit]'] = (string) $dept->getId();
-        $form['task_form[responsibilityUser]'] = (string) $outsider->getId();
-        $this->client->submit($form);
+        $this->submitCreateForm($form, [(string) $outsider->getId()]);
 
         self::assertResponseStatusCodeSame(422);
         self::assertNull($this->em->getRepository(Task::class)->findOneBy(['title' => 'Tarea mal asignada']));
@@ -813,7 +1149,7 @@ final class TaskCrudTest extends WebTestCase
         $task = new Task('Criterios de horarios', '2025-2026', new \DateTimeImmutable('2026-06-30'), TaskType::WITH_DELIVERABLE);
         $task->setResponsibility(new TaskResponsibility($role, null))->setAssignedUser($owner)->setCreatedBy($owner);
         // El tipo NO implica el flag: lo pone el formulario (applyFormData), así que aquí también.
-        $task->setRequiresDocument(true);
+        $task->setDeliverable(DeliverableRequirement::LINK);
         $task->setDeliverableReference('https://cloud.educa.madrid.org/A1-01');
         $task->setStatus(TaskStatus::VALIDATED);
         $this->em->persist($task);
