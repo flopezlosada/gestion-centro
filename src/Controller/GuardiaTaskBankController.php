@@ -85,15 +85,29 @@ final class GuardiaTaskBankController extends AbstractController
         $subject = null !== $cover
             ? $cover->getSubjectName()
             : (trim((string) $request->query->get('materia')) ?: null);
-        $departmentId = (int) $request->query->get('depto') ?: null;
+        // Eligiendo para una guardia, el DEPARTAMENTO viene sugerido del profesor ausente: la tarea del
+        // grupo es de su materia, así que su departamento es quien la habrá dejado. Es una sugerencia, no
+        // una jaula — "Todos" sigue ahí—, y solo se aplica si el filtro no viene ya en la URL (si alguien
+        // lo cambió a mano, manda su elección).
+        $suggestedDepartment = null !== $cover ? $cover->getAbsentTeacher()->getUnit() : null;
+        $departmentId = $request->query->has('depto')
+            ? ((int) $request->query->get('depto') ?: null)
+            : $suggestedDepartment?->getId();
         $includeRetired = $request->query->getBoolean('retiradas');
 
         $items = $bank->findFiltered($year, $level, $subject, $cover?->getGroupName(), $departmentId, $includeRetired);
+        // Si el departamento sugerido deja la pantalla vacía pero SIN él hay trabajo, hay que decirlo: un
+        // vacío que se debe a un filtro que el usuario no puso es un vacío inexplicable.
+        $hiddenByDepartment = 0;
+        if ([] === $items && null !== $departmentId) {
+            $hiddenByDepartment = \count($bank->findFiltered($year, $level, $subject, $cover?->getGroupName(), null, $includeRetired));
+        }
 
         return $this->render('guardia/bank/index.html.twig', [
             'noCourse' => null,
             'course' => $year->getSchoolYear(),
             'items' => $items,
+            'hiddenByDepartment' => $hiddenByDepartment,
             // Which rows offer an "editar": resolved here rather than in the template, which cannot ask
             // the chain of command, and so that nobody is shown a link that would 403.
             'curatableIds' => $this->curatableIds($items, $user, $hierarchy),

@@ -97,6 +97,13 @@
             <div class="empty-state">
                 <h2>No hay tareas con esos filtros</h2>
                 <p>{% if cover %}Nadie ha dejado trabajo de {{ cover.subjectName ?: 'esa materia' }}{% if level %} para {{ level.label }}{% endif %} en el banco de este curso.{% elseif level %}Nadie ha dejado todavía trabajo preparado para {{ level.label }}.{% else %}El banco de {{ course }} está vacío: cada departamento puede ir dejando aquí fichas y lecturas para las guardias.{% endif %}</p>
+                {#- El departamento viene sugerido del profesor ausente, así que puede estar escondiendo
+                    fichas que sí valen: decirlo y ofrecer quitarlo, en vez de dejar un vacío que el usuario
+                    no sabe que ha provocado un filtro que no puso. -#}
+                {% if hiddenByDepartment > 0 %}
+                    <p class="help">Hay {{ hiddenByDepartment }} tarea{{ hiddenByDepartment != 1 ? 's' }} de otros departamentos que encaja{{ hiddenByDepartment != 1 ? 'n' : '' }} con este grupo.
+                        <a href="{{ path('guardia_bank_index', app.request.query.all|merge({'depto': ''})) }}">Ver también esas</a>.</p>
+                {% endif %}
                 <a class="btn" href="{{ path('guardia_bank_new') }}">Añadir la primera</a>
             </div>
         {% else %}

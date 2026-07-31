@@ -48,10 +48,15 @@ final class GuardiaAssignmentNotifier
         }
 
         $title = sprintf('Nueva guardia: %s', $cover->getDate()->format('d/m/Y'));
+        // Decir SI LLEVA TAREA cambia cuándo se puede resolver: sabiéndolo, quien cubre coge una del banco
+        // la noche anterior desde el sofá; sin saberlo, se entera a las 8:20 delante del grupo.
         $body = sprintf(
-            'Te han asignado una guardia el %s para cubrir a %s.',
+            'Te han asignado una guardia el %s para cubrir a %s. %s',
             $cover->getDate()->format('d/m/Y'),
             self::whatIsCovered($cover),
+            $cover->hasTask()
+                ? 'El grupo tiene tarea.'
+                : 'El grupo NO tiene tarea: puedes coger una del banco antes de la clase.',
         );
 
         $this->dispatcher->dispatch($recipient, 'guardia.assigned', $title, $body.self::RAICES_REMINDER);
