@@ -385,6 +385,9 @@ final class MeetingCrudTest extends WebTestCase
         // Un correo por persona (no uno con todos en copia) y con el PDF adjunto: es lo que el centro
         // pidió — "envía por mail a todas las personas participantes".
         $emails = self::getMailerMessages();
+        // DOS y no tres: uno por convocado, con el acta adjunta, y ninguno más. El aviso de "ya hay acta"
+        // es push-only justamente por esto — si también fuera por correo, cada persona recibiría dos
+        // mensajes de la misma acta, y el segundo peor que el primero.
         self::assertCount(2, $emails, 'un correo a cada convocado, incluido quien levanta el acta');
         // getMailerMessages() promete RawMessage; los adjuntos son de Email, así que se estrecha primero.
         $first = $emails[0];

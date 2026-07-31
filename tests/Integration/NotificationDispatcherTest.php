@@ -34,6 +34,11 @@ final class NotificationDispatcherTest extends KernelTestCase
         $this->em = self::getContainer()->get(EntityManagerInterface::class);
         $this->settings = self::getContainer()->get(AppSettings::class);
         $this->dispatcher = self::getContainer()->get(NotificationDispatcher::class);
+        // El interruptor de acceso vive en la base de datos y NO se deshace entre tests: sin esto, los
+        // que cierran el acceso dejaban a los siguientes sin recibir nada, y el fallo aparecía en el test
+        // equivocado según el orden de ejecución. Cada uno arranca con la puerta abierta y la cierra si
+        // es lo que va a probar.
+        $this->settings->setLoginOpen(true);
     }
 
     public function testAnActiveUserIsEmailedWhileSignInIsOpen(): void

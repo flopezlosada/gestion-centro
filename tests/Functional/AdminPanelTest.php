@@ -250,7 +250,11 @@ final class AdminPanelTest extends WebTestCase
         $this->client->request('GET', '/');
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorNotExists('.nav-section-title');
+        // Se comprueba que no ve la sección de ADMINISTRACIÓN, no que no vea ninguna: hay secciones del
+        // menú abiertas a todo el mundo (reservas, incidencias), y medir la ausencia de administración
+        // por "no hay ningún título de sección" convertía cualquier módulo nuevo en un fallo de este test.
+        self::assertSelectorTextNotContains('#main-nav', 'Administración');
+        self::assertSelectorNotExists('#main-nav a[href="/admin/usuarios"]');
     }
 
     public function testAdministrationManagerReachesAdminWithoutSuperuserFlag(): void

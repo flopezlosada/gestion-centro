@@ -44,7 +44,7 @@ final class NotificationDispatcher
      * reminders that fire at the very moment they are about. This is the DEFAULT, not the rule — a
      * person who explicitly asks for e-mail in that section gets it. See {@see channelFor()}.
      */
-    private const array PUSH_ONLY_KINDS = ['event.', 'guardia.raices', 'meeting.reminder'];
+    private const array PUSH_ONLY_KINDS = ['event.', 'guardia.raices', 'meeting.reminder', 'meeting.minutes'];
 
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
@@ -157,8 +157,11 @@ final class NotificationDispatcher
      * except the reminders that fire AT the moment they are about — a personal agenda nudge ("empieza en
      * 10 minutos"), the RAICES reminder sent while a guardia is under way, and the one that says a
      * meeting is about to start. By the time an e-mail about any of those is read the moment has passed.
-     * Note how narrow the meeting entry is: only the reminder, while a convocatoria, a change of time and
-     * a new acta do go by e-mail, because those you want in writing.
+     *
+     * A published acta is push-only for a different reason: {@see MinutesMailer} already sends it by
+     * e-mail WITH THE PDF ATTACHED. Both would mean two messages to the same person about the same acta,
+     * one of them worse than the other. A convocatoria and a change of time do go by e-mail — those you
+     * want in writing and nobody else is sending them.
      *
      * @param Notification $notification the notice about to be delivered
      *

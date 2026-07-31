@@ -1160,7 +1160,7 @@ final class TaskCrudTest extends WebTestCase
 
         self::assertResponseIsSuccessful();
         // El documento entregado sigue visible (solo lectura), pero sin formulario para cambiarlo.
-        self::assertSelectorTextContains('body', 'Documento entregado');
+        self::assertSelectorTextContains('body', 'Lo entregado');
         self::assertSelectorNotExists('form.deliverable-form');
         self::assertSelectorNotExists('select[name="delegatedTo"]');
     }
