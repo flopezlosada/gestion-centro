@@ -17,7 +17,7 @@ use Doctrine\Migrations\AbstractMigration;
  * `priority_weight` es la prioridad MATERIALIZADA como número solo para poder ordenar en SQL: "high"
  * va detrás de "low" por orden alfabético, que es justo al revés de lo que hace falta.
  */
-final class Version20260731120000 extends AbstractMigration
+final class Version20260731160000 extends AbstractMigration
 {
     public function getDescription(): string
     {

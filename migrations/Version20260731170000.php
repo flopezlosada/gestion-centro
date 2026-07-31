@@ -21,7 +21,7 @@ use Doctrine\Migrations\AbstractMigration;
  *    PUBLICADAS: se subieron cuando publicar no existía y ya se avisó de ellas, así que marcarlas como
  *    borrador las escondería de quien lleva meses viéndolas.
  */
-final class Version20260731130000 extends AbstractMigration
+final class Version20260731170000 extends AbstractMigration
 {
     public function getDescription(): string
     {

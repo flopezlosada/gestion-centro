@@ -24,7 +24,7 @@ use Doctrine\Migrations\AbstractMigration;
  *  4. `task_comment`, el hilo de la tarea. Vacío al empezar: lo que se dijo antes no existía en ningún
  *     sitio del que rescatarlo.
  */
-final class Version20260731110000 extends AbstractMigration
+final class Version20260731150000 extends AbstractMigration
 {
     public function getDescription(): string
     {
