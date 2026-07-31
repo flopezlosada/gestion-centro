@@ -41,7 +41,13 @@ final class Version20260731200000 extends AbstractMigration
     {
         // 1. La columna nueva, rellenada desde la vieja: 'both' se resuelve como la plaza del recreo
         //    grande, y la del corto se añade abajo como fila aparte.
-        $this->addSql("ALTER TABLE break_duty_assignment ADD period VARCHAR(8) DEFAULT 'first' NOT NULL");
+        //
+        // ⚠️ `period` VA ENTRE BACKTICKS y no es un adorno: en MariaDB (10.4+) `ALTER TABLE ... ADD PERIOD
+        // FOR` existe, así que `ADD period VARCHAR(8)` se parsea como el inicio de esa cláusula y muere con
+        // un 1064. MySQL 8 —el de local— lo acepta sin más, así que esto solo se ve al desplegar. Probado
+        // en la BD del server el 31/07: `ADD period` falla, `ADD \`period\`` pasa, y ni el CREATE TABLE de
+        // abajo ni el CHANGE lo necesitan (ahí el parser ya espera un nombre de columna).
+        $this->addSql("ALTER TABLE break_duty_assignment ADD `period` VARCHAR(8) DEFAULT 'first' NOT NULL");
         $this->addSql("UPDATE break_duty_assignment SET period = CASE WHEN periods = 'second' THEN 'second' ELSE 'first' END");
 
         // 2. El índice único, ANTES de duplicar: el viejo (curso, profesor, día) impediría insertar la
@@ -121,6 +127,8 @@ final class Version20260731200000 extends AbstractMigration
 
         $this->addSql('DROP INDEX UNIQ_break_duty_teacher_period ON break_duty_assignment');
         $this->addSql('CREATE UNIQUE INDEX UNIQ_break_duty_teacher_weekday ON break_duty_assignment (academic_year_id, teacher_id, weekday)');
-        $this->addSql('ALTER TABLE break_duty_assignment DROP period');
+        // Backticks por lo mismo que en up(): MariaDB también tiene `DROP PERIOD FOR`, y sin ellos esto
+        // muere con un 1064 (probado en el server).
+        $this->addSql('ALTER TABLE break_duty_assignment DROP `period`');
     }
 }
