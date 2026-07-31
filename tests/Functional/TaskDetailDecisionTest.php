@@ -68,7 +68,7 @@ final class TaskDetailDecisionTest extends WebTestCase
     private function task(Department $unit, User $assignee, string $status = TaskStatus::PENDING): Task
     {
         $task = new Task('Memoria del departamento', '2025-2026', new \DateTimeImmutable('+20 days'), TaskType::WITH_DELIVERABLE);
-        $task->setUnit($unit)->setAssignedUser($assignee)->setDeliverable(DeliverableRequirement::LINK);
+        $task->setUnit($unit)->setAssignedUser($assignee)->setDeliverable(DeliverableRequirement::LINK)->setStatus($status);
         $this->em->persist($task);
 
         return $task;

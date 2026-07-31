@@ -958,11 +958,13 @@ final class TaskCrudTest extends WebTestCase
         $this->client->loginUser($boss);
         $crawler = $this->client->request('GET', '/tareas/'.$taskId);
         self::assertResponseIsSuccessful();
-        // Sobre una Pendiente el mismo cierre se llama "Dar por finalizada": no hay nada entregado que validar.
-        self::assertSelectorTextContains('.actionbar', 'Dar por finalizada');
-        self::assertSelectorNotExists('.actionbar__form--submit', 'un superior no ejecuta la tarea de otro');
+        // Sobre una Pendiente el mismo cierre se llama "Dar por finalizada": no hay nada entregado que
+        // validar. Se mira en la tarjeta de decisión (`.decision`), que es donde vive la acción desde el
+        // rediseño de la ficha; y los formularios se apuntan por su RUTA, que no cambia con la maqueta.
+        self::assertSelectorTextContains('.decision', 'Dar por finalizada');
+        self::assertSelectorNotExists('form[action$="/accion/submit"]', 'un superior no ejecuta la tarea de otro');
 
-        $this->client->submit($crawler->filter('form.actionbar__form--validate')->form());
+        $this->client->submit($crawler->filter('form[action$="/accion/validate"]')->form());
 
         self::assertResponseRedirects();
         $this->em->clear();
@@ -989,8 +991,8 @@ final class TaskCrudTest extends WebTestCase
         $this->client->request('GET', '/tareas/'.$task->getId());
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorExists('.actionbar__form--submit', 'el responsable entrega');
-        self::assertSelectorNotExists('.actionbar__form--validate', 'pero no se cierra su propia tarea');
+        self::assertSelectorExists('form[action$="/accion/submit"]', 'el responsable entrega');
+        self::assertSelectorNotExists('form[action$="/accion/validate"]', 'pero no se cierra su propia tarea');
     }
 
     /**

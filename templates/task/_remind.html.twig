@@ -1,0 +1,18 @@
+{# Recordar: acción de SUPERVISIÓN (quien responde de la tarea sin tener que hacerla). Vive aparte porque
+   NO cambia el estado de nada y porque aparece en varias tarjetas de decisión: sobre una tarea pendiente
+   que no es tuya puede ser lo ÚNICO que puedas hacer, así que no puede colgar de una sola de ellas.
+   Espera `task` y `remindedAt` del contexto que lo incluye; quién puede avisar lo decide el controlador
+   ({@see App\Controller\TaskController::canRemind}). #}
+{% if remindedAt %}
+    {# El tope es del servidor: ofrecer el botón otra vez solo daría un "ya se avisó hoy". #}
+    <p class="decision__hint">Avisado hoy a las {{ remindedAt|date('H:i', false) }}. Se puede volver a avisar mañana.</p>
+{% else %}
+    <form method="post" action="{{ path('task_remind', { id: task.id }) }}" class="taskact">
+        <input type="hidden" name="_token" value="{{ csrf_token('task_remind' ~ task.id) }}">
+        <button class="btn-lg btn-lg--accent" type="submit">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+            Enviar recordatorio
+        </button>
+    </form>
+    <p class="decision__hint">Le llega en la app, por correo y al móvil. Máximo un aviso al día.</p>
+{% endif %}

@@ -376,6 +376,14 @@
                     {%- if task.submitted %}Al validar podrás dejar un comentario de cierre.
                     {%- else %}Se cierra sin esperar entrega. Podrás dejar un comentario.{% endif %}
                 </p>
+                {# Antes de cerrarla tú, apurar a quien la debe: sobre una tarea que nadie ha entregado, esta
+                   es la acción SUAVE y la que casi siempre toca primero. Va tras un separador porque no es
+                   un veredicto — y no puede faltar aquí: para quien supervisa una pendiente ajena, puede
+                   ser lo único que pueda hacer. #}
+                {% if canRemind %}
+                    <div class="decision__sep" aria-hidden="true"></div>
+                    {{ include('task/_remind.html.twig') }}
+                {% endif %}
                 {% if canManage %}<div class="decision__minor"><a class="btn secondary btn-sm" href="{{ path('task_edit', { id: task.id }) }}">Editar</a></div>{% endif %}
                 {% if 'cancel' in actions %}{{ ui.action(task, 'cancel', 'Cancelar tarea', 'quiet', '¿Cancelar esta tarea? Quedará anulada.') }}{% endif %}
             </div>
@@ -385,21 +393,7 @@
             <div class="decision">
                 <div class="decision__label">Haces seguimiento</div>
                 <p class="decision__intro">La lleva {{ task.delegatedTo.fullName }}. Puedes recordárselo{% if 'validate' in actions %}, o cerrarla tú si ya está hecha{% endif %}.</p>
-                {% if canRemind %}
-                    {% if remindedAt %}
-                        {# El tope es del servidor: ofrecer el botón otra vez solo daría un "ya se avisó hoy". #}
-                        <p class="decision__hint">Avisado hoy a las {{ remindedAt|date('H:i', false) }}. Se puede volver a avisar mañana.</p>
-                    {% else %}
-                        <form method="post" action="{{ path('task_remind', { id: task.id }) }}" class="taskact">
-                            <input type="hidden" name="_token" value="{{ csrf_token('task_remind' ~ task.id) }}">
-                            <button class="btn-lg btn-lg--accent" type="submit">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
-                                Enviar recordatorio
-                            </button>
-                        </form>
-                        <p class="decision__hint">Le llega en la app, por correo y al móvil. Máximo un aviso al día.</p>
-                    {% endif %}
-                {% endif %}
+                {% if canRemind %}{{ include('task/_remind.html.twig') }}{% endif %}
                 {% if 'validate' in actions %}
                     <div class="decision__sep" aria-hidden="true"></div>
                     {{ ui.action(task, 'validate', 'Dar por finalizada', 'primary') }}
@@ -425,6 +419,16 @@
                     {%- endif %}
                 </p>
                 {% if view.closingNote %}<div class="quote-card quote-card--quoted">{{ view.closingNote.body|nl2br }}</div>{% endif %}
+            </div>
+        {% endif %}
+
+        {# Y si el recordatorio no ha caído en ninguna tarjeta (p. ej. quien creó la tarea sin ser superior
+           de rango: no valida, no la hace, pero responde de ella), va en la suya. Es la misma razón por la
+           que antes vivía fuera de todos los `if`: puede ser lo único que esa persona pueda hacer. #}
+        {% if canRemind and role not in ['validator', 'delegator'] %}
+            <div class="side-card">
+                <div class="side-card__label">Recordatorio</div>
+                {{ include('task/_remind.html.twig') }}
             </div>
         {% endif %}
 
