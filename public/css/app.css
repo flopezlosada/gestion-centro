@@ -1100,7 +1100,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .toast {
     position: fixed;
     left: 50%;
-    bottom: 24px;
+    /* ARRIBA, no abajo (2026-07-31, Paco revisando): la fila marcada DESAPARECE de la lista, así que el
+       toast es la única confirmación de lo que ha pasado y la única forma de deshacerlo. Abajo, a 24px del
+       borde inferior, quedaba lejos del sitio donde estaba mirando y fuera del recorrido de la vista: lo
+       vio al tercer intento. Un aviso que hay que buscar no es un aviso. */
+    top: 16px;
     transform: translateX(-50%);
     /* Por encima de la barra inferior (z 50) y por debajo del cajón de navegación (58/62). */
     z-index: 55;
@@ -1132,13 +1136,13 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
     cursor: pointer;
 }
 .toast__undo button:hover { background: var(--accent-weak); }
-.toast.is-leaving { opacity: 0; transform: translate(-50%, 6px); transition: opacity .25s ease, transform .25s ease; }
+.toast.is-leaving { opacity: 0; transform: translate(-50%, -6px); transition: opacity .25s ease, transform .25s ease; }
 @media (prefers-reduced-motion: reduce) {
     .toast.is-leaving { transition: none; }
 }
 @media (max-width: 760px) {
-    /* Sobre la barra inferior, no detrás: si la tapara, escondería la navegación mientras se lee. */
-    .toast { bottom: calc(86px + env(safe-area-inset-bottom, 14px)); }
+    /* Bajo la barra superior, no detrás: en móvil la cabecera es pegajosa y taparía el aviso. */
+    .toast { top: calc(66px + env(safe-area-inset-top, 0px)); }
 }
 
 /* ---- Aviso en bloque dentro de una vista ---------------------------------

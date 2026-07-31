@@ -801,4 +801,94 @@ final class GuardiaPageTest extends WebTestCase
         self::assertResponseIsSuccessful();
         self::assertCount(0, $crawler->filter('.raices-line'));
     }
+
+    /**
+     * Quien cubre la guardia puede contar lo que ha pasado sin depender de la coordinación, que era el
+     * agujero: antes la única marca posible (`not_covered`) solo la ponía la coordinación desde el parte,
+     * así que había que ir a buscarla en persona y la mayoría de incidencias no constaba.
+     */
+    public function testTheCoveringTeacherCanReportAnIncident(): void
+    {
+        $user = $this->login(false); // NO es coordinación: solo cubre
+        $absent = $this->user('Ausente Inc', 'ainc@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('today'), 0, $absent, $user);
+        $this->em->flush();
+        $coverId = (int) $cover->getId();
+
+        $crawler = $this->client->request('GET', '/guardias/'.$coverId.'/ver');
+        self::assertResponseIsSuccessful();
+        $form = $crawler->filter('form[action$="/incidencia"]')->form();
+        $form['incidencia'] = 'El grupo estaba en una salida y no había nadie en el aula.';
+        $this->client->submit($form);
+
+        self::assertResponseRedirects();
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(GuardiaCover::class)->find($coverId);
+        self::assertNotNull($reloaded);
+        self::assertTrue($reloaded->hasIncident());
+        self::assertStringContainsString('salida', (string) $reloaded->getIncidentNote());
+    }
+
+    /** Y la coordinación se entera en el momento: es quien tiene que resolverlo. */
+    public function testReportingAnIncidentNotifiesTheCoordination(): void
+    {
+        // La coordinación existe pero NO es quien cubre.
+        $role = (new Role())->setCode('guardias')->setName('Coordinación de guardias')->setLevel(Area::GUARDIAS, PermissionLevel::WRITE);
+        $this->em->persist($role);
+        $coordinator = $this->user('Coordina Guardias', 'coord@centro.test');
+        $coordinator->addAssignedRole($role);
+        $user = $this->login(false);
+        $absent = $this->user('Ausente Avisa', 'aavisa@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('today'), 1, $absent, $user);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/'.$cover->getId().'/ver');
+        $form = $crawler->filter('form[action$="/incidencia"]')->form();
+        $form['incidencia'] = 'No he podido cubrirla: me llamaron de jefatura.';
+        $this->client->submit($form);
+
+        self::assertResponseRedirects();
+        $notices = $this->em->getRepository(Notification::class)->findBy(['recipient' => $coordinator]);
+        self::assertCount(1, $notices);
+        self::assertSame('guardia.incident', $notices[0]->getKind());
+        // El texto viaja en el aviso: un "hay una incidencia" a secas obliga a abrir la pantalla para saber qué pasa.
+        self::assertStringContainsString('jefatura', (string) $notices[0]->getBody());
+    }
+
+    /** Un texto vacío RETIRA la incidencia: es la forma de deshacer un aviso puesto por error. */
+    public function testAnEmptyNoteClearsTheIncident(): void
+    {
+        $user = $this->login(false);
+        $absent = $this->user('Ausente Borra', 'aborra@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('today'), 2, $absent, $user);
+        $cover->setIncidentNote('Me equivoqué de guardia.');
+        $this->em->flush();
+        $coverId = (int) $cover->getId();
+
+        $crawler = $this->client->request('GET', '/guardias/'.$coverId.'/ver');
+        $form = $crawler->filter('form[action$="/incidencia"]')->form();
+        $form['incidencia'] = '   ';
+        $this->client->submit($form);
+
+        $this->em->clear();
+        self::assertFalse($this->em->getRepository(GuardiaCover::class)->find($coverId)?->hasIncident());
+    }
+
+    /** Un tercero que no cubre ni coordina no puede contar nada de una guardia ajena. */
+    public function testAnOutsiderCannotReportOnSomeoneElsesGuardia(): void
+    {
+        $this->login(false); // ni cubre esta guardia ni coordina
+        $guardia = $this->user('Guardia Ajena', 'gajena@centro.test');
+        $absent = $this->user('Ausente Ajena', 'aajena@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('today'), 3, $absent, $guardia);
+        $this->em->flush();
+
+        $this->client->request('POST', '/guardias/'.$cover->getId().'/incidencia', [
+            '_token' => 'irrelevante',
+            'incidencia' => 'Me lo invento.',
+        ]);
+
+        // Falla por CSRF o por permisos, pero falla: lo que no puede es escribirse.
+        self::assertResponseStatusCodeSame(403);
+    }
 }

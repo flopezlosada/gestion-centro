@@ -32,6 +32,7 @@ use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
 use App\Service\FileUploader;
 use App\Service\GuardiaAssignmentNotifier;
+use App\Service\GuardiaIncidentNotifier;
 use App\Support\AuditContext;
 use App\Support\DocumentUpload;
 use App\Support\GuardiaActivityPresenter;
@@ -1023,7 +1024,54 @@ final class GuardiaController extends AbstractController
             // Quien cubre ve el recordatorio de RAICES (apuntar las ausencias del alumnado de la sesión);
             // la coordinación mirando la guardia de otra persona, no: no es su tarea.
             'isAssignedGuardia' => $isOwner,
+            // Contar lo que ha pasado es de quien ESTUVO allí (o de la coordinación, que es quien lo
+            // resuelve). Sin esto, la única forma de que constara era que la coordinación lo marcara en
+            // el parte, con lo que quien cubría tenía que ir a buscarla.
+            'canReportIncident' => $isOwner || $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS),
         ]);
+    }
+
+    /**
+     * Records what happened during a guardia, in the words of whoever was covering it, and tells the
+     * coordination right away ({@see GuardiaIncidentNotifier}). Separate from "modificar guardia" on
+     * purpose: that screen is the coordination's and needs write access on the area, while this is the
+     * only thing the covering teacher has to be able to say about their own hour.
+     *
+     * An empty note CLEARS the incident, which is how a mistake is undone — the trail keeps both moves.
+     */
+    #[Route('/{id}/incidencia', name: 'guardia_cover_incident', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function reportIncident(GuardiaCover $cover, Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager, GuardiaIncidentNotifier $notifier): Response
+    {
+        if (!$this->isCsrfTokenValid('guardia_incident'.$cover->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+        $isOwner = $cover->getAssignedGuardia()?->getId() === $user->getId();
+        if (!$isOwner && !$this->isGranted(AreaVoter::WRITE, Area::GUARDIAS)) {
+            throw $this->createAccessDeniedException('Esta guardia no es tuya.');
+        }
+
+        $note = (string) $request->request->get('incidencia');
+        if (mb_strlen(trim($note)) > 500) {
+            $this->addFlash('error', 'La incidencia es demasiado larga (máximo 500 caracteres).');
+
+            return $this->redirectToRoute('guardia_cover_show', ['id' => $cover->getId()]);
+        }
+
+        $cover->setIncidentNote($note);
+        $entityManager->flush();
+
+        if (!$cover->hasIncident()) {
+            $this->addFlash('success', 'Incidencia retirada.');
+
+            return $this->redirectToRoute('guardia_cover_show', ['id' => $cover->getId()]);
+        }
+
+        $notified = $notifier->notifyReported($cover, $user);
+        $this->addFlash('success', [] !== $notified
+            ? 'Incidencia registrada. Avisada la coordinación de guardias.'
+            : 'Incidencia registrada.');
+
+        return $this->redirectToRoute('guardia_cover_show', ['id' => $cover->getId()]);
     }
 
     /**

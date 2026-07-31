@@ -116,6 +116,37 @@
             {% endif %}
         </div>
 
+        {# ¿Ha pasado algo? Lo cuenta quien ESTUVO en el aula. Antes solo la coordinación podía dejarlo por
+           escrito, desde el parte, así que había que ir a buscarla y la mayoría de incidencias no constaba.
+           Se muestra ya escrita a todo el que puede ver la guardia (la coordinación la necesita para
+           resolverla) y solo es editable por quien cubre o por la coordinación. #}
+        {% if cover.hasIncident or canReportIncident %}
+            <div class="detail-block">
+                <div class="detail-block__label">{{ cover.hasIncident ? 'Incidencia' : '¿Ha pasado algo?' }}</div>
+                {% if cover.hasIncident %}
+                    <div class="guardia-tasknote"><p class="detail-prose">{{ cover.incidentNote|nl2br }}</p></div>
+                    {% if canReportIncident %}
+                        <p class="help">La coordinación de guardias ya está avisada. Puedes corregirlo o retirarlo.</p>
+                    {% endif %}
+                {% elseif canReportIncident %}
+                    <p class="help">Si el grupo no apareció, el aula estaba ocupada o no has podido cubrirla, cuéntalo aquí: le llega a la coordinación de guardias.</p>
+                {% endif %}
+                {% if canReportIncident %}
+                    <form method="post" action="{{ path('guardia_cover_incident', { id: cover.id }) }}">
+                        <input type="hidden" name="_token" value="{{ csrf_token('guardia_incident' ~ cover.id) }}">
+                        <div class="field">
+                            <label for="incidencia">Qué ha pasado</label>
+                            <textarea id="incidencia" name="incidencia" rows="3" maxlength="500"
+                                      placeholder="Ej.: el grupo estaba en una salida y no había nadie en el aula.">{{ cover.incidentNote }}</textarea>
+                        </div>
+                        <div class="bank-task__actions">
+                            <button class="btn secondary" type="submit">{{ cover.hasIncident ? 'Guardar cambios' : 'Avisar de una incidencia' }}</button>
+                        </div>
+                    </form>
+                {% endif %}
+            </div>
+        {% endif %}
+
       </div>{# /detail-main #}
 
       <aside class="detail-aside">
