@@ -200,7 +200,7 @@ final class TaskFilterTest extends WebTestCase
         $this->client->loginUser($s['director']);
 
         $counters = $this->viewCounters($this->get('/tareas'));
-        self::assertSame(['abiertas', 'mias', 'validar', 'vencidas'], array_keys($counters));
+        self::assertSame(['abiertas', 'mias', 'validar', 'revision', 'vencidas'], array_keys($counters));
 
         foreach ($counters as $key => $promised) {
             self::assertSame(
@@ -419,7 +419,10 @@ final class TaskFilterTest extends WebTestCase
         self::assertGreaterThan(0, $page->filter('.tasks-table .trow--group')->count(), 'the desktop table groups too');
     }
 
-    /** A teacher commands nobody, so the supervision views are not even offered. */
+    /**
+     * A teacher commands nobody, so the supervision views are not even offered — but "Devueltas para
+     * revisar" is, because a task sent back is work waiting for whoever holds it, not for a superior.
+     */
     public function testATeacherIsOnlyOfferedTheViewsThatCanEverHaveContent(): void
     {
         $s = $this->seed();
@@ -427,7 +430,7 @@ final class TaskFilterTest extends WebTestCase
 
         $counters = $this->viewCounters($this->get('/tareas'));
 
-        self::assertSame(['abiertas', 'vencidas'], array_keys($counters), 'a teacher validates nothing, and everything in scope is already theirs');
+        self::assertSame(['abiertas', 'revision', 'vencidas'], array_keys($counters), 'a teacher validates nothing, and everything in scope is already theirs');
     }
 
     /**

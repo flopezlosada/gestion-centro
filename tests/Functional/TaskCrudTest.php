@@ -1248,7 +1248,7 @@ final class TaskCrudTest extends WebTestCase
 
         $this->client->loginUser($head);
         $crawler = $this->client->request('GET', '/tareas/'.$taskId);
-        $this->client->submit($crawler->filter('form.actionbar__form--submit')->form());
+        $this->client->submit($crawler->filter('form[action$="/accion/submit"]')->form());
 
         $this->em->clear();
         $reloaded = $this->em->getRepository(Task::class)->find($taskId);
@@ -1276,8 +1276,8 @@ final class TaskCrudTest extends WebTestCase
 
         $this->client->loginUser($head);
         $crawler = $this->client->request('GET', '/tareas/'.$taskId);
-        self::assertCount(1, $crawler->filter('form.actionbar__form--reopen'), 'una finalizada se puede reabrir');
-        $this->client->submit($crawler->filter('form.actionbar__form--reopen')->form());
+        self::assertCount(1, $crawler->filter('form[action$="/accion/reopen"]'), 'una finalizada se puede reabrir');
+        $this->client->submit($crawler->filter('form[action$="/accion/reopen"]')->form());
 
         $this->em->clear();
         self::assertSame(TaskStatus::PENDING, $this->em->getRepository(Task::class)->find($taskId)?->getStatus());
@@ -1307,6 +1307,6 @@ final class TaskCrudTest extends WebTestCase
         $crawler = $this->client->request('GET', '/tareas/'.$task->getId());
 
         self::assertResponseIsSuccessful();
-        self::assertCount(0, $crawler->filter('form.actionbar__form--reopen'), 'reabrir no es del responsable');
+        self::assertCount(0, $crawler->filter('form[action$="/accion/reopen"]'), 'reabrir no es del responsable');
     }
 }
