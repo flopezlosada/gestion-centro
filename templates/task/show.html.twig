@@ -3,19 +3,110 @@
 {% block title %}{{ task.title }} · {{ app_organization_name }}{% endblock %}
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('task_index') }}">Tareas</a><span class="sep">/</span>{{ task.title }}{% endblock %}
 
-{# Pantalla empujada: sin barra de pestañas; barra de volver arriba y barra de acciones abajo. #}
+{# Pantalla empujada: sin barra de pestañas; barra de volver arriba y tarjeta de decisión a la derecha
+   (que en móvil es la barra fija inferior). #}
 {% block bottomnav %}{% endblock %}
 
+{#- Una acción del ciclo de vida, con su formulario propio, su token y sus campos.
+
+    Los campos NO están abiertos de partida: el botón abre el panel y solo entonces aparecen (handoff
+    catalogo/handoff_detalle_tarea). Antes la columna llevaba dos cajas de texto vacías compitiendo con
+    los botones, y la más llamativa de la pantalla ("explica qué hay que modificar") pedía por escrito
+    algo que la mayoría de las veces no había que hacer.
+
+    Todo llega por parámetro a propósito: un macro de Twig NO ve las variables de la plantilla que lo
+    llama, así que `task` viaja explícito (las funciones globales `path()`/`csrf_token()` sí valen). -#}
+{% macro action(task, name, label, tone, confirm) %}
+    {#- Cada acción puede llevar un comentario para la otra parte; devolver lo EXIGE (lo comprueba el
+        servidor). Cancelar no lo lleva: no hay a quién contárselo, la tarea deja de existir. -#}
+    {% set notes = {
+        'submit': { 'placeholder': 'Cuéntale algo a quien la revisa (opcional)', 'label': 'Un comentario para quien la revisa' },
+        'review': { 'placeholder': 'Ej.: faltan los datos del tercer trimestre.', 'label': 'Explica qué hay que modificar' },
+        'validate': { 'placeholder': 'Ej.: presentado en el claustro del 13.', 'label': 'Un comentario de cierre (opcional)' },
+    } %}
+    {% set note = notes[name]|default(null) %}
+    {% set wantsLink = name == 'submit' and task.deliverable.acceptsLink %}
+    {% set wantsFile = name == 'submit' and task.deliverable.acceptsFile %}
+    {% set panelled = note is not null or wantsLink or wantsFile %}
+    <form method="post" action="{{ path('task_transition', { id: task.id, transition: name }) }}" class="taskact taskact--{{ name }}"{% if wantsFile %} enctype="multipart/form-data"{% endif %}{% if confirm %} data-confirm="{{ confirm }}"{% endif %}>
+        <input type="hidden" name="_token" value="{{ csrf_token('task_transition' ~ task.id) }}">
+        {% if panelled %}
+            <details class="taskact__panel">
+                {#- Cerrado, el summary ES el botón de la acción; abierto pasa a ser el "cerrar" del panel (el
+                    gesto se remata en el botón de abajo). Dos textos de verdad y no uno recoloreado: con la
+                    misma etiqueta arriba y abajo, la pantalla parecía pedir dos veces lo mismo. -#}
+                <summary class="btn-lg btn-lg--{{ tone }}">
+                    <span class="taskact__shut">{% if name == 'validate' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-11"/></svg>{% endif %}{{ label }}</span>
+                    <span class="taskact__shown">Cerrar</span>
+                </summary>
+                <div class="taskact__fields">
+                    {% if wantsLink %}
+                        <div class="field">
+                            <label for="entrega-enlace">Enlace al documento</label>
+                            <input type="url" id="entrega-enlace" name="reference" value="{{ task.deliverableReference }}" placeholder="https://cloud.educa.madrid.org/…"{{ task.deliverable.value == 'link' and not task.hasDeliverable ? ' required' : '' }}>
+                        </div>
+                    {% endif %}
+                    {% if wantsFile %}
+                        <div class="field">
+                            <label for="entrega-archivo">Archivo</label>
+                            <input type="file" id="entrega-archivo" name="archivo"{{ task.deliverable.value == 'file' and not task.hasDeliverable ? ' required' : '' }}>
+                        </div>
+                    {% endif %}
+                    {% if note %}
+                        <div class="field">
+                            <label for="comentario-{{ name }}">{{ note.label }}</label>
+                            <textarea id="comentario-{{ name }}" name="comentario" rows="3" maxlength="2000" placeholder="{{ note.placeholder }}"{{ name == 'review' ? ' required' : '' }}></textarea>
+                        </div>
+                    {% endif %}
+                    <button type="submit" class="btn-lg btn-lg--{{ tone }}">{{ label }}</button>
+                </div>
+            </details>
+        {% else %}
+            <button type="submit" class="btn-lg btn-lg--{{ tone }}">{{ label }}</button>
+        {% endif %}
+    </form>
+{% endmacro %}
+
+{#- La línea del ciclo de vida: los últimos hitos, dónde está ahora y (si sigue pendiente) lo que falta.
+    Sustituye al log de texto que ocupaba la columna: lo que se pregunta al abrir la ficha es "¿dónde está
+    esto?", no "¿qué campo cambió el martes?" — eso vive en el histórico, plegado al final. -#}
+{% macro lifecycle(milestones) %}
+    <div class="side-card">
+        <div class="side-card__label">Ciclo de vida</div>
+        <ol class="lifecycle">
+            {% for step in milestones %}
+                <li class="lifecycle__step lifecycle__step--{{ step.tone }}">
+                    <span class="lifecycle__dot" aria-hidden="true"></span>
+                    <span class="lifecycle__label">{{ step.label }}</span>
+                    {% set bits = [step.at ? step.at|date('d/m/Y H:i', false) : null, step.who]|filter(v => v) %}
+                    {% if bits is not empty %}<span class="lifecycle__meta">{{ bits|join(' · ') }}</span>{% endif %}
+                    {% if step.note %}<span class="lifecycle__note">{{ step.note }}</span>{% endif %}
+                </li>
+            {% endfor %}
+        </ol>
+    </div>
+{% endmacro %}
+
 {% block body %}
-    {# Una sola definición de "fuera de plazo", la de la entidad: aquí estaba reescrita a mano. #}
-    {% set overdue = task.isOverdueOn(date()) %}
+    {% import _self as ui %}
+    {# "Fuera de plazo" se pregunta UNA vez y en un solo sitio: lo cuenta TaskDetailView con el mismo día
+       contra el que mide el controlador. Preguntárselo aquí otra vez con el `date()` de Twig era abrir la
+       puerta a que el chip y la fecha discreparan por una diferencia de zona horaria. #}
+    {% set overdue = view.overdueDays > 0 %}
     {% set responsibleRole = task.responsibility ? task.responsibility.role.name : (task.assignedRole ? task.assignedRole.name : null) %}
     {% set who = task.responsibleForDisplay %}
     {% set canValidate = 'validate' in actions %}
+    {# El papel de quien mira decide la tarjeta de decisión, y lo resuelve TaskDetailView leyendo las
+       transiciones que el workflow permite de verdad — nunca el estado a secas. #}
+    {% set role = view.role %}
+    {% set isDelegator = role == 'delegator' %}
+    {# La tarjeta de "quién la lleva ahora" es para quien NO la lleva: a quien la tiene ya se lo dice su
+       propia tarjeta de decisión, y verse la cara en una ficha sobre uno mismo no informa de nada. #}
+    {% set showDoer = task.delegatedTo and task.delegatedTo != app.user %}
     {% set pill = {
         'pending':   {'cls': 'is-pending', 'label': 'Pendiente'},
-        'submitted': {'cls': 'is-amber',   'label': canValidate ? 'Entregada · espera tu OK' : 'Entregada'},
-        'in_review': {'cls': 'is-review',  'label': 'En revisión'},
+        'submitted': {'cls': 'is-amber',   'label': canValidate ? 'Entregada · espera tu validación' : 'Entregada · espera validación'},
+        'in_review': {'cls': 'is-review',  'label': 'Devuelta · hay que corregirla'},
         'validated': {'cls': 'is-success', 'label': '✓ Finalizada'},
         'cancelled': {'cls': 'is-muted',   'label': 'Cancelada'},
     }[task.status]|default({'cls': 'is-pending', 'label': task.status}) %}
@@ -28,48 +119,97 @@
         {% if canManage %}<a class="backbar__edit" href="{{ path('task_edit', { id: task.id }) }}">Editar</a>{% endif %}
     </div>
 
-    <div class="detail-cols">
+    <div class="detail-cols detail-cols--task">
       <div class="detail-main">
-        <span class="status-pill task-pill--{{ pill.cls }}">{{ pill.label }}</span>
-        {% if not task.mandatory %}<span class="status-pill task-pill--is-muted">Voluntaria</span>{% endif %}
+        <div class="task-detail__pills">
+            <span class="status-pill task-pill--{{ pill.cls }}">{{ pill.label }}</span>
+            {% if view.overdueDays > 0 %}
+                <span class="status-pill task-pill--is-late">Fuera de plazo · {{ view.overdueDays }} {{ view.overdueDays == 1 ? 'día' : 'días' }}</span>
+            {% endif %}
+            {% if isDelegator %}
+                <span class="status-pill task-pill--is-accent">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20v-2a4 4 0 0 1 4-4h2M15 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM14 20v-1a4 4 0 0 1 8 0v1"/><circle cx="9" cy="8" r="3"/></svg>Delegada por ti
+                </span>
+            {% endif %}
+            {% if not task.mandatory %}<span class="status-pill task-pill--is-muted">Voluntaria</span>{% endif %}
+        </div>
         <h1 class="task-detail__title">{{ task.title }}</h1>
 
-        {# Ficha 2×2 con lo esencial #}
-        <dl class="meta-grid">
+        {# Quién la lleva AHORA, cuando no la hace quien figura como responsable estructural: delegar es
+           cambiar de persona, no rellenar un formulario, así que se lee como un hecho de la tarea y el
+           selector se abre desde aquí. Antes el desplegable "Delegar" colgaba suelto del lateral. #}
+        {% if showDoer %}
+            <div class="doer">
+                <span class="doer__avatar" aria-hidden="true">{{ task.delegatedTo.fullName|initials }}</span>
+                <div class="doer__body">
+                    <div class="doer__name">{{ task.delegatedTo.fullName }}</div>
+                    <div class="doer__meta">
+                        {%- if view.delegatedAt %}La lleva desde el {{ view.delegatedAt|date('d/m/Y', false) }}{% else %}La lleva ahora{% endif %}
+                        {%- if task.responsibility %} · sigue siendo tarea de {{ task.responsibility.role.name }}{% endif %}
+                    </div>
+                </div>
+                {% if canDelegate %}
+                    <details class="doer__change">
+                        <summary class="btn secondary btn-sm">Cambiar</summary>
+                        {{ include('task/_delegate.html.twig') }}
+                    </details>
+                {% endif %}
+            </div>
+        {% endif %}
+
+        {# Ficha de datos: solo las celdas que APLICAN. Un "Unidad —" no informa de nada y ocupa el sitio de
+           algo que sí (quién valida, cuándo se entregó, cuándo se cerró). #}
+        <dl class="meta-grid meta-grid--three">
             <div class="meta-grid__cell">
                 <dt>Fecha límite</dt>
                 <dd class="mono{{ overdue ? ' is-overdue' }}">{{ task.dueDate|date('d/m/Y') }}</dd>
             </div>
-            <div class="meta-grid__cell">
-                <dt>Unidad</dt>
-                <dd>{{ task.unit ? task.unit.name : '—' }}</dd>
-            </div>
-            <div class="meta-grid__cell">
-                <dt>Rol</dt>
-                <dd>{{ responsibleRole ?? '—' }}</dd>
-            </div>
-            <div class="meta-grid__cell">
-                <dt>Responsable</dt>
-                <dd>{{ who ? who.fullName : '—' }}{% if task.delegatedTo %} · delegada{% endif %}</dd>
-            </div>
+            {% if task.unit %}
+                <div class="meta-grid__cell"><dt>Unidad</dt><dd>{{ task.unit.name }}</dd></div>
+            {% endif %}
+            {% if responsibleRole %}
+                <div class="meta-grid__cell"><dt>Rol</dt><dd>{{ responsibleRole }}</dd></div>
+            {% endif %}
+            {# Con la tarjeta de arriba, repetir aquí a quien la lleva sería decirlo dos veces seguidas. #}
+            {% if who and not showDoer %}
+                <div class="meta-grid__cell">
+                    <dt>Responsable</dt>
+                    <dd class="meta-grid__who"><span class="doer__avatar doer__avatar--sm" aria-hidden="true">{{ who.fullName|initials }}</span>{{ who == app.user ? 'Tú' : who.fullName }}</dd>
+                </div>
+            {% endif %}
+            {# Quién dará el visto bueno. A quien PUEDE darlo no se le dice: su tarjeta ya pone "Tu decisión",
+               y la celda nombraría al superior inmediato de la tarea — que puede ser otra persona (cualquier
+               superior por rango puede validar), así que ahí se leería como una contradicción. #}
+            {% if view.validator and role != 'validator' %}
+                <div class="meta-grid__cell">
+                    <dt>Valida</dt>
+                    <dd class="meta-grid__who"><span class="doer__avatar doer__avatar--sm" aria-hidden="true">{{ view.validator.fullName|initials }}</span>{{ view.validator.fullName }}</dd>
+                </div>
+            {% endif %}
+            {% if task.submitted and view.submittedAt %}
+                <div class="meta-grid__cell"><dt>Entregada</dt><dd class="mono">{{ view.submittedAt|date('d/m/Y H:i', false) }}</dd></div>
+            {% endif %}
+            {% if task.closed and view.closedAt %}
+                <div class="meta-grid__cell"><dt>Cerrada</dt><dd class="mono is-closed">{{ view.closedAt|date('d/m/Y', false) }}</dd></div>
+            {% endif %}
+            {# De dónde viene: una tarea del catálogo se repite cada curso, y saberlo cambia cómo se lee. #}
+            {% if task.template %}
+                <div class="meta-grid__cell"><dt>Origen</dt><dd>Catálogo · {{ task.template.title }}</dd></div>
+            {% endif %}
         </dl>
 
-        {# Instrucciones #}
-        <div class="detail-block">
-            <div class="detail-block__label">Instrucciones</div>
-            {% if task.description %}<p class="detail-prose">{{ task.description|nl2br }}</p>{% else %}<p class="muted">Esta tarea no tiene descripción.</p>{% endif %}
-        </div>
-
-        {# Aviso: qué hay que entregar (mientras no se ha entregado: pendiente o devuelta para revisar) #}
-        {% if task.requiresDocument and task.status in ['pending', 'in_review'] %}
-            <div class="doc-notice">
-                <span class="doc-notice__icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg>
-                </span>
-                <div>
-                    <div class="doc-notice__title">{{ task.deliverable.label }}</div>
-                    <div class="doc-notice__sub">{{ task.deliverable.instruction }}</div>
+        {# Lo PRIMERO cuando vuelve para corregir: POR QUÉ. Es la información que necesita quien la recibe,
+           y antes había que bajar hasta el hilo de comentarios para encontrarla. #}
+        {% if task.inReview and view.returnNote %}
+            <div class="returned">
+                <div class="returned__head">
+                    <span class="returned__avatar" aria-hidden="true">{{ view.returnNote.author ? view.returnNote.author.fullName|initials : '·' }}</span>
+                    <span class="returned__who">
+                        <strong>{{ view.returnNote.author ? view.returnNote.author.fullName : 'Alguien que ya no está en el centro' }}</strong> la devolvió ·
+                        <time datetime="{{ view.returnNote.createdAt|date('c') }}">{{ view.returnNote.createdAt|date('d/m/Y H:i') }}</time>
+                    </span>
                 </div>
+                <p class="returned__body">{{ view.returnNote.body|nl2br }}</p>
             </div>
         {% endif %}
 
@@ -77,45 +217,85 @@
            revisor, que es cuando hace falta comparar lo entregado con lo que piden cambiar. #}
         {% if task.hasDeliverable and task.status in ['submitted', 'in_review', 'validated'] %}
             <div class="detail-block">
-                <div class="detail-block__label">Lo entregado</div>
+                <div class="detail-block__label">{{ task.inReview ? 'Tu entrega anterior' : 'Lo entregado' }}</div>
+                {% set handed = task.inReview and view.submittedAt ? 'Entregado el ' ~ view.submittedAt|date('d/m', false) ~ ' · devuelto' : null %}
+                {% set cardTone = task.submitted ? ' doc-card--offered' : (task.inReview ? ' doc-card--faded' : (task.closed ? ' doc-card--closed' : '')) %}
                 {% if task.deliverableReference %}
                     {% if task.deliverableReference starts with 'http' %}
-                        <a class="doc-card" href="{{ task.deliverableReference }}" target="_blank" rel="noopener">
+                        <a class="doc-card{{ cardTone }}" href="{{ task.deliverableReference }}" target="_blank" rel="noopener">
                             <span class="doc-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span>
-                            <span class="doc-card__body"><span class="doc-card__name">{{ task.deliverableReference }}</span><span class="doc-card__meta">Enlace al documento</span></span>
-                            <span class="doc-card__open">Abrir</span>
+                            <span class="doc-card__body"><span class="doc-card__name">{{ task.deliverableReference }}</span><span class="doc-card__meta">{{ handed ?? 'Enlace al documento' }}</span></span>
+                            <span class="doc-card__open">Abrir ↗</span>
                         </a>
                     {% else %}
                         <p class="detail-prose">{{ task.deliverableReference }}</p>
                     {% endif %}
                 {% endif %}
                 {% if task.deliverableFilePath %}
-                    <a class="doc-card" href="{{ path('task_deliverable_download', { id: task.id }) }}">
-                        <span class="doc-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.05 12.25 20.2a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a2 2 0 0 1-2.82-2.83l8.49-8.48"/></svg></span>
-                        <span class="doc-card__body"><span class="doc-card__name">{{ task.deliverableFileName }}</span><span class="doc-card__meta">Archivo adjunto</span></span>
+                    <a class="doc-card{{ cardTone }}{{ task.deliverableReference ? ' doc-card--spaced' }}" href="{{ path('task_deliverable_download', { id: task.id }) }}">
+                        <span class="doc-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span>
+                        <span class="doc-card__body"><span class="doc-card__name">{{ task.deliverableFileName }}</span><span class="doc-card__meta">{{ handed ?? 'Archivo adjunto' }}</span></span>
                         <span class="doc-card__open">Descargar</span>
                     </a>
                 {% endif %}
+                {# Corregir el enlace es una reparación, no un paso: plegado, para que no parezca que hay que
+                   volver a entregar algo que ya está entregado. #}
                 {% if canEditDeliverable and task.deliverable.acceptsLink %}
-                    <form method="post" action="{{ path('task_set_deliverable', { id: task.id }) }}" class="deliverable-form">
-                        <input type="hidden" name="_token" value="{{ csrf_token('task_deliverable' ~ task.id) }}">
-                        <input type="url" name="reference" value="{{ task.deliverableReference }}" placeholder="https://cloud.educa.madrid.org/…" class="deliverable-input">
-                        <button type="submit" class="btn btn-secondary">Actualizar enlace</button>
-                    </form>
+                    <details class="fix-link">
+                        <summary class="fix-link__toggle">Corregir el enlace</summary>
+                        <form method="post" action="{{ path('task_set_deliverable', { id: task.id }) }}" class="deliverable-form">
+                            <input type="hidden" name="_token" value="{{ csrf_token('task_deliverable' ~ task.id) }}">
+                            <input type="url" name="reference" value="{{ task.deliverableReference }}" placeholder="https://cloud.educa.madrid.org/…" class="deliverable-input">
+                            <button type="submit" class="btn secondary">Actualizar enlace</button>
+                        </form>
+                    </details>
                 {% endif %}
+            </div>
+        {% endif %}
+
+        {# La nota con la que se entregó: mientras espera veredicto es CONTENIDO (quien valida la lee antes
+           de decidir), no una línea más del hilo — y por eso el hilo ya no la repite. #}
+        {% if view.deliveryNote %}
+            <div class="detail-block">
+                <div class="detail-block__label">Nota de la entrega</div>
+                <div class="quote-card">{{ view.deliveryNote.body|nl2br }}</div>
+            </div>
+        {% endif %}
+
+        {# Instrucciones #}
+        <div class="detail-block">
+            <div class="detail-block__label">Instrucciones</div>
+            {% if task.description %}<p class="detail-prose">{{ task.description|nl2br }}</p>{% else %}<p class="detail-prose detail-prose--absent">Esta tarea no tenía descripción.</p>{% endif %}
+        </div>
+
+        {# Con qué se entrega: un DATO de la tarea, en fila neutra, y solo mientras no hay entrega. Iba en
+           rosa de aviso (parecía un error) y seguía ahí con la entrega ya hecha, cuando ya no sirve. #}
+        {% if task.requiresDocument and task.status in ['pending', 'in_review'] %}
+            <div class="handin">
+                <span class="handin__icon" aria-hidden="true">
+                    {% if task.deliverable.acceptsFile and not task.deliverable.acceptsLink %}
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg>
+                    {% else %}
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+                    {% endif %}
+                </span>
+                <div>
+                    <div class="handin__title">{{ task.deliverable.deliveryLine }}</div>
+                    <div class="handin__sub">{{ task.deliverable.instruction }}</div>
+                </div>
             </div>
         {% endif %}
 
         {# ---- Conversación de la tarea. Aparte del histórico: uno es lo que la aplicación vio cambiar y
                este es lo que las personas se dijeron. Sin tope de vueltas. ---- #}
-        {% if comments is not empty or canComment %}
-            <div class="detail-block">
+        {% if view.thread is not empty or canComment %}
+            <div class="detail-block" id="comentarios">
                 <div class="detail-block__label">Comentarios</div>
-                {% if comments is empty %}
-                    <p class="muted" style="margin-top:0">Todavía no hay comentarios.</p>
+                {% if view.thread is empty %}
+                    <p class="muted" style="margin-top:0">Nadie ha comentado todavía.</p>
                 {% else %}
                     <ol class="thread">
-                        {% for c in comments %}
+                        {% for c in view.thread %}
                             <li class="thread__item{{ c.transition == 'review' ? ' thread__item--review' : '' }}">
                                 <div class="thread__head">
                                     <span class="thread__who">{{ c.author ? c.author.fullName : 'Alguien que ya no está en el centro' }}</span>
@@ -132,93 +312,141 @@
                     <form method="post" action="{{ path('task_comment', { id: task.id }) }}" class="thread__form">
                         <input type="hidden" name="_token" value="{{ csrf_token('task_comment' ~ task.id) }}">
                         <label class="visually-hidden" for="comentario-suelto">Escribe un comentario</label>
-                        <textarea id="comentario-suelto" name="comentario" rows="2" maxlength="2000" placeholder="Escribe un comentario para quien lleva esta tarea…"></textarea>
-                        <button type="submit" class="btn btn-secondary">Comentar</button>
+                        <textarea id="comentario-suelto" name="comentario" rows="2" maxlength="2000" placeholder="{% if task.delegatedTo and isDelegator %}Escribe un comentario para {{ task.delegatedTo.fullName }}…{% else %}Escribe un comentario…{% endif %}"></textarea>
+                        <button type="submit" class="btn secondary">Comentar</button>
                     </form>
                 {% endif %}
             </div>
+        {% endif %}
+
+        {# El histórico campo a campo: sigue completo, pero PLEGADO y al final. Es lo que la aplicación vio
+           cambiar (para auditar), no dónde está la tarea — eso lo dice el ciclo de vida del lateral, que
+           antes competía con este log por el mismo sitio. #}
+        {% if canSeeHistory %}
+            <details class="detail-block task-history">
+                <summary class="task-history__toggle">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>
+                    Histórico de cambios
+                </summary>
+                {{ include('_partials/_activity_log.html.twig', { rows: activityRows, isAdmin: isAdmin }) }}
+            </details>
         {% endif %}
 
       </div>{# /detail-main #}
 
       <aside class="detail-aside">
-        {# Delegar (solo titular con equipo o admin) #}
-        {% if canDelegate %}
-            <div class="detail-block">
-                <div class="detail-block__label">Delegar</div>
-                <p class="muted" style="margin-top:0">Pásala a alguien de tu equipo; sigue siendo {{ task.responsibility ? task.responsibility.label : 'de su responsable' }}.</p>
-                <form method="post" action="{{ path('task_delegate', { id: task.id }) }}" class="delegate-form">
-                    <input type="hidden" name="_token" value="{{ csrf_token('task_delegate' ~ task.id) }}">
-                    <select name="delegatedTo" id="delegatedTo">
-                        <option value="">— Sin delegar —</option>
-                        {% for u in delegatable %}
-                            <option value="{{ u.id }}"{{ task.delegatedTo and task.delegatedTo.id == u.id ? ' selected' : '' }}>{{ u.fullName }}</option>
-                        {% endfor %}
-                    </select>
-                    <button class="btn btn-secondary" type="submit">Guardar</button>
-                </form>
+        {# ---- La decisión, ARRIBA. Antes los botones caían al final de un cajón con el recordatorio y el
+               histórico por delante, así que para actuar había que buscar. En móvil esta misma tarjeta es
+               la barra fija inferior: una sola pieza, dos presentaciones. ---- #}
+        {% if role == 'responsible' %}
+            <div class="decision decision--mine">
+                <div class="decision__label">Te toca a ti</div>
+                <p class="decision__intro">
+                    {%- if task.inReview %}Corrige lo que te han indicado y vuelve a entregarla.
+                    {%- elseif task.requiresDocument %}Cuando la tengas lista, entrégala con el documento.{% if view.validator %} {{ view.validator.fullName }} la validará.{% endif %}
+                    {%- else %}Cuando esté hecha, entrégala.{% if view.validator %} {{ view.validator.fullName }} la validará.{% endif %}{% endif %}
+                </p>
+                {% if 'submit' in actions %}{{ ui.action(task, 'submit', task.inReview ? 'Volver a entregar' : 'Entregar tarea', 'primary') }}{% endif %}
+                <div class="decision__minor">
+                    {# "Responder" lleva al campo de comentario que ya existe abajo, no abre otro sitio donde
+                       escribir: la conversación de la tarea es una sola. #}
+                    {% if task.inReview and canComment %}<a class="btn secondary btn-sm" href="#comentario-suelto">Responder{% if view.returnNote and view.returnNote.author %} a {{ view.returnNote.author.fullName }}{% endif %}</a>{% endif %}
+                    {% if canDelegate and not task.delegatedTo %}
+                        <details class="decision__delegate">
+                            <summary class="btn secondary btn-sm">Pasarla a alguien</summary>
+                            {{ include('task/_delegate.html.twig') }}
+                        </details>
+                    {% endif %}
+                    {% if canManage %}<a class="btn secondary btn-sm" href="{{ path('task_edit', { id: task.id }) }}">Editar</a>{% endif %}
+                </div>
+                {% if 'cancel' in actions %}{{ ui.action(task, 'cancel', 'Cancelar tarea', 'quiet', '¿Cancelar esta tarea? Quedará anulada.') }}{% endif %}
             </div>
-        {% endif %}
-
-        {# Recordar: acción de SUPERVISIÓN (quien responde de la tarea sin tener que hacerla), fuera de la
-           barra de acciones porque no cambia el estado de nada — y fuera de su `if`, porque sobre una
-           Pendiente que no es tuya puede ser lo ÚNICO que puedas hacer. #}
-        {% if canRemind %}
-            <div class="detail-block">
-                <div class="detail-block__label">Recordatorio</div>
-                {% if remindedAt %}
-                    {# El tope es del servidor: ofrecer el botón otra vez solo daría un "ya se avisó hoy". #}
-                    <p class="muted" style="margin-top:0">Avisado hoy a las {{ remindedAt|date('H:i', false) }}. Se puede volver a avisar mañana.</p>
-                {% else %}
-                    <p class="muted" style="margin-top:0">Avisa a quien tiene que hacerla, en la app, por correo y en el móvil. Un aviso al día como máximo.</p>
-                    <form method="post" action="{{ path('task_remind', { id: task.id }) }}">
-                        <input type="hidden" name="_token" value="{{ csrf_token('task_remind' ~ task.id) }}">
-                        <button class="btn btn-secondary" type="submit">Recordar</button>
-                    </form>
+        {% elseif role == 'validator' %}
+            <div class="decision decision--mine">
+                <div class="decision__label">Tu decisión</div>
+                <p class="decision__intro">
+                    {%- if task.submitted %}Revisa lo entregado y ciérrala, o devuélvela indicando qué falta.
+                    {%- else %}Puedes darla por finalizada si ya te consta que está hecha.{% endif %}
+                </p>
+                {# "Validar" juzga algo ENTREGADO. Sobre una Pendiente —o una Devuelta, que tampoco tiene
+                   entrega en pie— el mismo verbo del workflow es otro gesto: "Dar por finalizada". #}
+                {% if 'validate' in actions %}{{ ui.action(task, 'validate', task.submitted ? 'Validar y finalizar' : 'Dar por finalizada', 'primary') }}{% endif %}
+                {% if 'review' in actions %}{{ ui.action(task, 'review', 'Devolver para revisar…', 'review') }}{% endif %}
+                <p class="decision__hint">
+                    {%- if task.submitted %}Al validar podrás dejar un comentario de cierre.
+                    {%- else %}Se cierra sin esperar entrega. Podrás dejar un comentario.{% endif %}
+                </p>
+                {% if canManage %}<div class="decision__minor"><a class="btn secondary btn-sm" href="{{ path('task_edit', { id: task.id }) }}">Editar</a></div>{% endif %}
+                {% if 'cancel' in actions %}{{ ui.action(task, 'cancel', 'Cancelar tarea', 'quiet', '¿Cancelar esta tarea? Quedará anulada.') }}{% endif %}
+            </div>
+        {% elseif role == 'delegator' %}
+            {# Sin borde de acento: haces seguimiento, no te toca actuar. Y cerrarla sin entrega baja tras un
+               separador, con su advertencia — no puede ser el gesto más fácil de la pantalla. #}
+            <div class="decision">
+                <div class="decision__label">Haces seguimiento</div>
+                <p class="decision__intro">La lleva {{ task.delegatedTo.fullName }}. Puedes recordárselo{% if 'validate' in actions %}, o cerrarla tú si ya está hecha{% endif %}.</p>
+                {% if canRemind %}
+                    {% if remindedAt %}
+                        {# El tope es del servidor: ofrecer el botón otra vez solo daría un "ya se avisó hoy". #}
+                        <p class="decision__hint">Avisado hoy a las {{ remindedAt|date('H:i', false) }}. Se puede volver a avisar mañana.</p>
+                    {% else %}
+                        <form method="post" action="{{ path('task_remind', { id: task.id }) }}" class="taskact">
+                            <input type="hidden" name="_token" value="{{ csrf_token('task_remind' ~ task.id) }}">
+                            <button class="btn-lg btn-lg--accent" type="submit">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+                                Enviar recordatorio
+                            </button>
+                        </form>
+                        <p class="decision__hint">Le llega en la app, por correo y al móvil. Máximo un aviso al día.</p>
+                    {% endif %}
                 {% endif %}
+                {% if 'validate' in actions %}
+                    <div class="decision__sep" aria-hidden="true"></div>
+                    {{ ui.action(task, 'validate', 'Dar por finalizada', 'primary') }}
+                    <p class="decision__hint">Se cierra sin esperar entrega. Podrás dejar un comentario.</p>
+                {% endif %}
+                {% if 'cancel' in actions %}{{ ui.action(task, 'cancel', 'Cancelar tarea', 'quiet', '¿Cancelar esta tarea? Quedará anulada.') }}{% endif %}
+            </div>
+        {% elseif role == 'closed' %}
+            <div class="decision decision--closed">
+                <div class="decision__closed-head">
+                    <span class="decision__check{{ task.status == 'cancelled' ? ' decision__check--off' }}" aria-hidden="true">
+                        {% if task.status == 'validated' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-11"/></svg>
+                        {% else %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg>{% endif %}
+                    </span>
+                    <span class="decision__closed-title">{{ task.status == 'validated' ? 'Cerrada y validada' : 'Tarea cancelada' }}</span>
+                </div>
+                <p class="decision__intro">
+                    {%- if task.status == 'validated' -%}
+                        {% if view.closingNote and view.closingNote.author %}Validada por {{ view.closingNote.author.fullName }}{% else %}Validada{% endif %}
+                        {%- if view.closedAt %} el {{ view.closedAt|date('d/m/Y', false) }}{% endif %}. No hay nada pendiente.
+                    {%- else -%}
+                        Se anuló{% if view.closedAt %} el {{ view.closedAt|date('d/m/Y', false) }}{% endif %}. No hay nada que hacer con ella.
+                    {%- endif %}
+                </p>
+                {% if view.closingNote %}<div class="quote-card quote-card--quoted">{{ view.closingNote.body|nl2br }}</div>{% endif %}
             </div>
         {% endif %}
 
-        {# Actividad real (histórico ya humanizado) — la "línea de estado" del diseño #}
-        {% if canSeeHistory %}
-            <div class="detail-block">
-                <div class="detail-block__label">Actividad</div>
-                {{ include('_partials/_activity_log.html.twig', { rows: activityRows, isAdmin: isAdmin }) }}
+        {# Cualquier acción que la tarjeta del papel no haya pintado sigue estando: la pantalla no puede
+           esconder algo que el servidor sí permite (una "reopen" sobre una finalizada, p. ej.). #}
+        {% set painted = {
+            'responsible': ['submit', 'cancel'],
+            'validator': ['validate', 'review', 'cancel'],
+            'delegator': ['validate', 'cancel'],
+        }[role]|default([]) %}
+        {% set labels = { 'submit': task.inReview ? 'Volver a entregar' : 'Entregar tarea', 'validate': task.submitted ? 'Validar y finalizar' : 'Dar por finalizada', 'review': 'Devolver para revisar…', 'cancel': 'Cancelar tarea', 'reopen': 'Reabrir tarea' } %}
+        {% set leftovers = actions|filter(name => name not in painted) %}
+        {% if leftovers is not empty %}
+            <div class="side-card">
+                <div class="side-card__label">{{ role == 'closed' ? 'Volver atrás' : 'Acciones' }}</div>
+                {% for name in leftovers %}
+                    {{ ui.action(task, name, labels[name]|default(name), name in ['cancel', 'reopen'] ? 'quiet' : 'muted', name == 'cancel' ? '¿Cancelar esta tarea? Quedará anulada.' : (name == 'reopen' ? '¿Reabrir esta tarea? Volverá a estar pendiente de entrega.' : null)) }}
+                {% endfor %}
             </div>
         {% endif %}
 
-        {# Barra de acciones (fija abajo en móvil, en el aside en escritorio). Conserva formularios y guards. #}
-        {% if actions is not empty %}
-        {# "Validar" juzga algo ENTREGADO; sobre una Pendiente el mismo cierre es "Dar por finalizada"
-           (el superior da por hecho lo que le consta, sin que nadie haya entregado). Mismo verbo del
-           workflow, dos nombres, porque para quien mira son dos gestos distintos. #}
-        {% set labels = { 'submit': task.inReview ? 'Volver a entregar' : 'Entregar tarea', 'validate': task.pending ? 'Dar por finalizada' : 'Validar', 'review': 'Devolver para revisar', 'cancel': 'Cancelar' } %}
-        {# Cada acción puede llevar un comentario para la otra parte; devolver lo EXIGE (lo comprueba el
-           servidor). Cancelar no lo lleva: no hay a quién contárselo, la tarea deja de existir. #}
-        {% set commented = { 'submit': 'Cuéntale algo a quien la revisa (opcional)', 'review': 'Explica qué hay que modificar', 'validate': 'Un comentario de cierre (opcional)' } %}
-        <div class="actionbar">
-            {% for name in actions %}
-                <form method="post" action="{{ path('task_transition', { id: task.id, transition: name }) }}" class="actionbar__form actionbar__form--{{ name }}"{% if name == 'submit' and task.deliverable.acceptsFile %} enctype="multipart/form-data"{% endif %}{% if name == 'cancel' %} data-confirm="¿Cancelar esta tarea? Quedará anulada."{% endif %}>
-                    <input type="hidden" name="_token" value="{{ csrf_token('task_transition' ~ task.id) }}">
-                    {% if name == 'submit' and task.deliverable.acceptsLink %}
-                        <label class="visually-hidden" for="entrega-enlace">Enlace al documento</label>
-                        <input type="url" id="entrega-enlace" name="reference" value="{{ task.deliverableReference }}" placeholder="Enlace al documento (https://…)" class="actionbar__input"{{ task.deliverable.value == 'link' and not task.hasDeliverable ? ' required' : '' }}>
-                    {% endif %}
-                    {% if name == 'submit' and task.deliverable.acceptsFile %}
-                        <label class="visually-hidden" for="entrega-archivo">Archivo adjunto</label>
-                        <input type="file" id="entrega-archivo" name="archivo" class="actionbar__file"{{ task.deliverable.value == 'file' and not task.hasDeliverable ? ' required' : '' }}>
-                    {% endif %}
-                    {% if commented[name] is defined %}
-                        <label class="visually-hidden" for="comentario-{{ name }}">{{ commented[name] }}</label>
-                        <textarea id="comentario-{{ name }}" name="comentario" rows="2" maxlength="2000" class="actionbar__note" placeholder="{{ commented[name] }}"{{ name == 'review' ? ' required' : '' }}></textarea>
-                    {% endif %}
-                    <button type="submit" class="btn-lg btn-lg--{{ name in ['submit', 'validate'] ? 'primary' : (name == 'review' ? 'danger' : 'muted') }}">
-                        {% if name == 'validate' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-11"/></svg>{% endif %}{{ labels[name]|default(name) }}
-                    </button>
-                </form>
-            {% endfor %}
-        </div>
-        {% endif %}
+        {{ ui.lifecycle(view.milestones) }}
       </aside>{# /detail-aside #}
     </div>{# /detail-cols #}
 {% endblock %}
