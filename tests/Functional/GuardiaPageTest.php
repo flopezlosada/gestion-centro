@@ -195,6 +195,70 @@ final class GuardiaPageTest extends WebTestCase
         self::assertSelectorNotExists('.empty-state');
     }
 
+    /**
+     * A gap in ANOTHER period is flagged on that period's own chip. The coordinator works one hour at a
+     * time, and without this the only way to find out that 09:20 is short-staffed is to click on it —
+     * which is exactly what nobody does at 08:20 in the morning.
+     *
+     * Two periods: the one being viewed is fully covered, the next one has an uncovered line. Only the
+     * next one carries the dot.
+     */
+    public function testPeriodsWithGapsAreFlaggedOnTheirOwnChip(): void
+    {
+        $this->login();
+        $year = $this->academicYear('2025-2026');
+        $this->em->persist($year);
+        $date = new \DateTimeImmutable('2025-11-10');
+        $guardia = $this->user('Guardia Chip', 'chip@centro.test');
+        $this->guardiaEntry($year, $guardia, $date, 0);
+        $this->guardiaEntry($year, $guardia, $date, 1);
+        // Tramo 0 (el que se mira): cubierto. Tramo 1: sin cubrir.
+        $this->cover($date, 0, $this->user('Ausente Chip Uno', 'chip1@centro.test'), $guardia);
+        $this->cover($date, 1, $this->user('Ausente Chip Dos', 'chip2@centro.test'), null, group: '2ºB');
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias?date='.$date->format('Y-m-d').'&slot=0');
+
+        self::assertResponseIsSuccessful();
+        // Un solo aviso, y en el chip del tramo que NO se está mirando.
+        self::assertCount(1, $crawler->filter('.slotchip .slotchip__dot'));
+        self::assertCount(0, $crawler->filter('.slotchip.is-active .slotchip__dot'));
+    }
+
+    /**
+     * The on-call panel is ordered like the split orders its candidates — fewest guardias at that period
+     * first — and whoever cannot cover (absent, or already minding a group) falls to the end. The panel
+     * is the coordinator's reference for "who do I give this to": if it ranked people differently from
+     * the machine, reading it would mislead.
+     */
+    public function testOnCallPanelPutsTheLeastLoadedFirstAndTheUnavailableLast(): void
+    {
+        $this->login();
+        $year = $this->academicYear('2025-2026');
+        $this->em->persist($year);
+        $date = new \DateTimeImmutable('2025-11-10');
+        // Zeta: libre y sin carga → primero, aunque su nombre vaya al final del alfabeto.
+        $zeta = $this->user('Zeta Libre', 'zeta@centro.test');
+        // Alfa: libre pero ya con una guardia en ese tramo (otro día del curso) → después de Zeta.
+        $alfa = $this->user('Alfa Cargado', 'alfa@centro.test');
+        // Beta: ocupada aquí y ahora (cubre un grupo este mismo tramo) → al final, no es candidata.
+        $beta = $this->user('Beta Ocupada', 'beta@centro.test');
+        foreach ([$zeta, $alfa, $beta] as $teacher) {
+            $this->guardiaEntry($year, $teacher, $date, 0);
+        }
+        // La carga de Alfa: una guardia suya en el MISMO tramo, otro día del curso.
+        $this->cover(new \DateTimeImmutable('2025-11-03'), 0, $this->user('Ausente Previo', 'prev@centro.test'), $alfa);
+        $this->cover($date, 0, $this->user('Ausente Hoy', 'hoy@centro.test'), $beta, group: '3ºC');
+        $this->cover($date, 0, $this->user('Ausente Sin Cubrir', 'sincubrir@centro.test'), null, group: '4ºD');
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias?date='.$date->format('Y-m-d').'&slot=0');
+
+        self::assertResponseIsSuccessful();
+        $names = $crawler->filter('.duty-card__name')->each(static fn (Crawler $node): string => trim($node->text()));
+        self::assertSame(['Zeta Libre', 'Alfa Cargado', 'Beta Ocupada'], $names);
+    }
+
     public function testPlainTeacherCannotAccessManagementScreens(): void
     {
         $this->login(coordinator: false);
