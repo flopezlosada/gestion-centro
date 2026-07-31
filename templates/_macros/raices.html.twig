@@ -10,12 +10,18 @@
 
 {# Aviso completo, para la pantalla de UNA guardia concreta ("estoy aquí, haciéndola"). Redactado en
    presente y sin plazo ("recuerda", no "antes de acabar") porque la misma pantalla se abre antes, durante
-   y después de la guardia, y una frase con plazo envejece mal en dos de los tres casos. #}
+   y después de la guardia, y una frase con plazo envejece mal en dos de los tres casos.
+
+   Va en el tinte del NARANJA de la marca, no en el rojo de `callout--warning`: esto es una nota de trabajo
+   que sale en toda guardia, no una alarma. Con el rojo —que en esta paleta es "fuera de plazo / sin
+   cubrir"— la pantalla parecía tener un error abierto de forma permanente. El rojo queda para la
+   incidencia, que sí lo es. #}
 {% macro notice() %}
-    <div class="callout callout--warning raices-notice">
+    <div class="callout callout--accent raices-notice">
+        <span class="raices-notice__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg></span>
         <p>
             <strong>Recuerda:</strong> entra en RAICES y apunta las ausencias del alumnado de esta sesión.
-            {% if app_raices_url %}<a class="raices-notice__link" href="{{ app_raices_url }}" target="_blank" rel="noopener">Abrir RAICES</a>{% endif %}
+            {% if app_raices_url %}<a class="raices-notice__link" href="{{ app_raices_url }}" target="_blank" rel="noopener">Abrir RAICES ↗</a>{% endif %}
         </p>
     </div>
 {% endmacro %}

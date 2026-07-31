@@ -149,6 +149,21 @@ class GuardiaCover implements Auditable
     private bool $notCovered = false;
 
     /**
+     * What the person covering the guardia says happened, in their words: the group never turned up, the
+     * room was taken, they were pulled into something else. Null while nothing has been reported.
+     *
+     * It is SEPARATE from {@see $notCovered} on purpose, because they answer different questions: "did
+     * this hour get covered" is what the balance counts, and "what happened" is what the coordination
+     * needs to read. An incident can be reported on an hour that WAS covered (the projector was dead),
+     * and an hour can go uncovered with nothing to explain.
+     *
+     * Who wrote it and when are NOT stored here: the entity is {@see Auditable}, so the trail already
+     * has both, and a second copy could disagree with it.
+     */
+    #[ORM\Column(name: 'incident_note', type: Types::TEXT, nullable: true)]
+    private ?string $incidentNote = null;
+
+    /**
      * When the "entra en RAICES y apunta las ausencias" push was sent for this cover, or null if it has
      * not gone out. It is the sweep's idempotence key ({@see \App\Service\GuardiaRaicesReminder}): the
      * job runs every few minutes over the covers whose period is happening NOW, and without a mark it
@@ -394,6 +409,29 @@ class GuardiaCover implements Auditable
         $this->notCovered = $notCovered;
 
         return $this;
+    }
+
+    public function getIncidentNote(): ?string
+    {
+        return $this->incidentNote;
+    }
+
+    /**
+     * Records (or clears) what happened during the guardia. An empty string clears it: a note that says
+     * nothing is not an incident, and keeping it would make {@see hasIncident()} lie.
+     */
+    public function setIncidentNote(?string $incidentNote): static
+    {
+        $note = null !== $incidentNote ? trim($incidentNote) : null;
+        $this->incidentNote = '' !== $note ? $note : null;
+
+        return $this;
+    }
+
+    /** Whether something has been reported about this guardia. */
+    public function hasIncident(): bool
+    {
+        return null !== $this->incidentNote;
     }
 
     public function getRaicesReminderSentAt(): ?\DateTimeImmutable

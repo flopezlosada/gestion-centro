@@ -801,4 +801,159 @@ final class GuardiaPageTest extends WebTestCase
         self::assertResponseIsSuccessful();
         self::assertCount(0, $crawler->filter('.raices-line'));
     }
+
+    /**
+     * Quien cubre la guardia puede contar lo que ha pasado sin depender de la coordinación, que era el
+     * agujero: antes la única marca posible (`not_covered`) solo la ponía la coordinación desde el parte,
+     * así que había que ir a buscarla en persona y la mayoría de incidencias no constaba.
+     */
+    public function testTheCoveringTeacherCanReportAnIncident(): void
+    {
+        $user = $this->login(false); // NO es coordinación: solo cubre
+        $absent = $this->user('Ausente Inc', 'ainc@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('today'), 0, $absent, $user);
+        $this->em->flush();
+        $coverId = (int) $cover->getId();
+
+        $crawler = $this->client->request('GET', '/guardias/'.$coverId.'/ver');
+        self::assertResponseIsSuccessful();
+        $form = $crawler->filter('form[action$="/incidencia"]')->form();
+        $form['incidencia'] = 'El grupo estaba en una salida y no había nadie en el aula.';
+        $this->client->submit($form);
+
+        self::assertResponseRedirects();
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(GuardiaCover::class)->find($coverId);
+        self::assertNotNull($reloaded);
+        self::assertTrue($reloaded->hasIncident());
+        self::assertStringContainsString('salida', (string) $reloaded->getIncidentNote());
+    }
+
+    /** Y la coordinación se entera en el momento: es quien tiene que resolverlo. */
+    public function testReportingAnIncidentNotifiesTheCoordination(): void
+    {
+        // La coordinación existe pero NO es quien cubre.
+        $role = (new Role())->setCode('guardias')->setName('Coordinación de guardias')->setLevel(Area::GUARDIAS, PermissionLevel::WRITE);
+        $this->em->persist($role);
+        $coordinator = $this->user('Coordina Guardias', 'coord@centro.test');
+        $coordinator->addAssignedRole($role);
+        $user = $this->login(false);
+        $absent = $this->user('Ausente Avisa', 'aavisa@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('today'), 1, $absent, $user);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/'.$cover->getId().'/ver');
+        $form = $crawler->filter('form[action$="/incidencia"]')->form();
+        $form['incidencia'] = 'No he podido cubrirla: me llamaron de jefatura.';
+        $this->client->submit($form);
+
+        self::assertResponseRedirects();
+        $notices = $this->em->getRepository(Notification::class)->findBy(['recipient' => $coordinator]);
+        self::assertCount(1, $notices);
+        self::assertSame('guardia.incident', $notices[0]->getKind());
+        // El texto viaja en el aviso: un "hay una incidencia" a secas obliga a abrir la pantalla para saber qué pasa.
+        self::assertStringContainsString('jefatura', (string) $notices[0]->getBody());
+    }
+
+    /** Un texto vacío RETIRA la incidencia: es la forma de deshacer un aviso puesto por error. */
+    public function testAnEmptyNoteClearsTheIncident(): void
+    {
+        $user = $this->login(false);
+        $absent = $this->user('Ausente Borra', 'aborra@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('today'), 2, $absent, $user);
+        $cover->setIncidentNote('Me equivoqué de guardia.');
+        $this->em->flush();
+        $coverId = (int) $cover->getId();
+
+        $crawler = $this->client->request('GET', '/guardias/'.$coverId.'/ver');
+        $form = $crawler->filter('form[action$="/incidencia"]')->form();
+        $form['incidencia'] = '   ';
+        $this->client->submit($form);
+
+        $this->em->clear();
+        self::assertFalse($this->em->getRepository(GuardiaCover::class)->find($coverId)?->hasIncident());
+    }
+
+    /** Un tercero que no cubre ni coordina no puede contar nada de una guardia ajena. */
+    public function testAnOutsiderCannotReportOnSomeoneElsesGuardia(): void
+    {
+        $this->login(false); // ni cubre esta guardia ni coordina
+        $guardia = $this->user('Guardia Ajena', 'gajena@centro.test');
+        $absent = $this->user('Ausente Ajena', 'aajena@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('today'), 3, $absent, $guardia);
+        $this->em->flush();
+
+        $this->client->request('POST', '/guardias/'.$cover->getId().'/incidencia', [
+            '_token' => 'irrelevante',
+            'incidencia' => 'Me lo invento.',
+        ]);
+
+        // Falla por CSRF o por permisos, pero falla: lo que no puede es escribirse.
+        self::assertResponseStatusCodeSame(403);
+    }
+
+    /**
+     * Una guardia que ya pasó se lee, no se toca: la cabecera dice "Hecha" en pasado y desaparecen las
+     * acciones sobre la tarea del grupo (cambiarla o pedir sus fotocopias no tiene ya a quién servir, y
+     * ofrecerlo invita a reescribir algo que ocurrió). "Hecha" sale del RELOJ, no de una casilla: es el
+     * mismo criterio que usan el hero de Inicio y "Mis guardias" ({@see App\Guardia\TeacherGuardiaDay}).
+     */
+    public function testAGuardiaFromAPastDayIsReadOnly(): void
+    {
+        $guardia = $this->login(false); // quien la cubrió, sin coordinación
+        $absent = $this->user('Ausente Pasada', 'apasada@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('-3 days'), 0, $absent, $guardia);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/'.$cover->getId().'/ver');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('.guardia-detail-head', 'Hecha');
+        self::assertSelectorTextContains('.guardia-detail-head', 'Cubriste a');
+        // Acotado al detalle: el menú lateral tiene su propio enlace al banco, que no es de esta guardia.
+        self::assertCount(0, $crawler->filter('.detail-cols a[href*="/guardias/banco"]'), 'ya no se puede coger tarea para una hora que pasó');
+        self::assertCount(0, $crawler->filter('.detail-cols a[href*="fotocopias"]'), 'ni pedir fotocopias de su ficha');
+        // Pero contar lo que pasó sigue disponible: casi siempre se cuenta al salir del aula.
+        self::assertCount(1, $crawler->filter('form[action$="/incidencia"]'));
+    }
+
+    /** Y la de mañana no está hecha: la cabecera sigue siendo la del bloque de "tu guardia". */
+    public function testAGuardiaStillToComeIsNotShownAsDone(): void
+    {
+        $guardia = $this->login(false);
+        $absent = $this->user('Ausente Futura', 'afutura@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('+1 day'), 0, $absent, $guardia);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/'.$cover->getId().'/ver');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('.guardia-detail-head', 'Cubres a');
+        self::assertStringNotContainsString('Cubriste', $crawler->filter('.guardia-detail-head')->text());
+    }
+
+    /**
+     * El contexto "tus guardias de hoy" solo aparece cuando hay más de una: con una sola, la tira sería la
+     * misma guardia que ya llena la pantalla.
+     */
+    public function testTheDayStripOnlyShowsUpWhenThereIsMoreThanOneGuardiaThatDay(): void
+    {
+        $guardia = $this->login(false);
+        $absent = $this->user('Ausente Tira', 'atira@centro.test');
+        $today = new \DateTimeImmutable('today');
+        $one = $this->cover($today, 0, $absent, $guardia);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/'.$one->getId().'/ver');
+        self::assertCount(0, $crawler->filter('.day-strip'));
+
+        $this->cover($today, 3, $absent, $guardia, group: '2ºB');
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/'.$one->getId().'/ver');
+        self::assertCount(1, $crawler->filter('.day-strip'));
+        self::assertCount(2, $crawler->filter('.day-strip__row'));
+        // La que estás mirando no se enlaza a sí misma.
+        self::assertCount(1, $crawler->filter('.day-strip__row[href]'));
+    }
 }

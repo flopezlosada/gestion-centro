@@ -218,6 +218,11 @@
                                         {% endif %}
                                         <div class="parte-card__absent">Falta: {{ cover.absentTeacher.fullName }}</div>
                                     </div>
+                                    {# Lo que contó quien cubrió: la coordinación resuelve desde esta pantalla, así
+                                       que el aviso tiene que verse aquí y no solo en la ficha de la guardia. #}
+                                    {% if cover.hasIncident %}
+                                        <span class="badge badge--warning" title="{{ cover.incidentNote }}">Incidencia</span>
+                                    {% endif %}
                                     {% if cover.notCovered %}
                                         <span class="badge badge--danger">No se cubrió</span>
                                     {% elseif sinCubrir %}
@@ -301,6 +306,9 @@
                                         {% endif %}
                                     </td>
                                     <td>
+                                        {% if cover.hasIncident %}
+                                            <span class="badge badge--warning" title="{{ cover.incidentNote }}">Incidencia</span>
+                                        {% endif %}
                                         {% if cover.notCovered %}
                                             <span class="badge badge--danger">No se cubrió</span>
                                             {% if cover.assignedGuardia %}<span class="muted"> · {{ cover.assignedGuardia.fullName }}</span>{% endif %}
