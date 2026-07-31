@@ -47,10 +47,23 @@ final class SpacePageTest extends WebTestCase
         self::assertSame(403, $this->client->getResponse()->getStatusCode());
     }
 
-    public function testFreeRoomsIsOpenToReadAccess(): void
+    public function testFreeRoomsSendsYouToTheOneFreeRoomsScreen(): void
     {
+        // There were two screens answering "what rooms are free at this hour" and only one is left, the
+        // guardia one. This route stays because there are saved links and notices pointing at it, so its
+        // job is now to hand over — carrying the hour, or somebody's bookmarked link would land on now.
         $this->login(PermissionLevel::READ);
-        $this->client->request('GET', '/espacios');
+        $this->client->request('GET', '/espacios?date=2026-01-12&slot=3');
+
+        self::assertResponseRedirects('/guardias/aulas?date=2026-01-12&slot=3');
+    }
+
+    public function testTheFreeRoomsScreenOpensWithSpacesAccessAlone(): void
+    {
+        // The screen it redirects to lives under /guardias, and whoever manages rooms may have no guardia
+        // permission at all: if it asked for guardias, the redirect above would end in a 403.
+        $this->login(PermissionLevel::READ);
+        $this->client->request('GET', '/guardias/aulas');
 
         self::assertResponseIsSuccessful();
     }
@@ -63,39 +76,8 @@ final class SpacePageTest extends WebTestCase
         self::assertSame(403, $this->client->getResponse()->getStatusCode(), 'reading is not editing');
     }
 
-    public function testWithoutATimetableItSaysSoInsteadOfShowingEveryRoomAsFree(): void
-    {
-        $this->login(PermissionLevel::READ);
-        $this->room('0LC1');
-        $this->em->flush();
-
-        $crawler = $this->client->request('GET', '/espacios?date=2026-01-12');
-
-        self::assertResponseIsSuccessful();
-        self::assertStringContainsString('No hay horario importado', $crawler->filter('.empty-state')->text());
-    }
-
-    public function testFreeAndOccupiedRoomsAreListedForTheChosenPeriod(): void
-    {
-        $this->login(PermissionLevel::READ);
-        $year = $this->academicYear('2025-2026');
-        $this->em->persist($year);
-        $teacher = $this->user('Rosa Aula Vega', 'rosa.aula@educa.madrid.org');
-        $this->room('0LC1');
-        $this->room('0LC7');
-        $this->lective($year, $teacher, Weekday::MONDAY, 0, '0LC1');
-        $this->em->flush();
-        self::getContainer()->get(RoomSynchroniser::class)->sync();
-        $this->em->clear();
-
-        // 2026-01-12 is a Monday inside the course.
-        $crawler = $this->client->request('GET', '/espacios?date=2026-01-12&slot=0');
-
-        self::assertResponseIsSuccessful();
-        self::assertStringContainsString('0LC7', $crawler->filter('.card-grid')->text(), 'the free room is offered');
-        self::assertStringContainsString('0LC1', $crawler->filter('table')->text(), 'the occupied one is listed with its occupier');
-        self::assertStringContainsString('Rosa Aula Vega', $crawler->filter('table')->text());
-    }
+    // Lo que la hoja de aulas libres contesta —libres por tamaño, sin horario, nada libre a esa hora— se
+    // prueba donde vive la pantalla, en {@see GuardiaDeficitControllerTest}. Aquí solo queda la puerta.
 
     public function testARoomTheTimetableUsesCannotBeDeleted(): void
     {

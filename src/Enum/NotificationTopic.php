@@ -98,8 +98,8 @@ enum NotificationTopic: string
      * porque el reparto por defecto no es igual en todos: hay avisos que solo tienen sentido en el móvil
      * porque llegan cuando la cosa está pasando, y el resto van también por correo.
      *
-     * ⚠️ Espejo de `NotificationDispatcher::PUSH_ONLY_KINDS` (hoy `event.`, `guardia.raices` y
-     * `meeting.reminder`): si esa lista cambia, este texto miente. Antes había UNA
+     * ⚠️ Espejo de `NotificationDispatcher::PUSH_ONLY_KINDS` (hoy `event.`, `guardia.raices`,
+     * `meeting.reminder` y `meeting.minutes`): si esa lista cambia, este texto miente. Antes había UNA
      * frase copiada en las cinco secciones que hablaba de "recordatorios de última hora", y era falsa en
      * Tareas y en Cambios de aula, donde no hay ninguno.
      *
@@ -110,7 +110,7 @@ enum NotificationTopic: string
         return match ($this) {
             self::TASK, self::SPACE => 'Al móvil y al correo.',
             self::GUARDIA => 'Al móvil y al correo, salvo el aviso de apuntar las ausencias en RAICES, que solo va al móvil porque llega durante la propia hora.',
-            self::MEETING => 'Al móvil y al correo, salvo el recordatorio de justo antes de empezar, que solo va al móvil.',
+            self::MEETING => 'Al móvil y al correo, salvo el recordatorio de justo antes de empezar y el aviso de acta publicada, que solo van al móvil (el acta la recibes igualmente por correo, con el PDF adjunto).',
             self::AGENDA => 'Solo al móvil: cuando llega, tu evento está a punto de empezar.',
         };
     }

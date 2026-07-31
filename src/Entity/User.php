@@ -347,6 +347,10 @@ class User implements UserInterface, Auditable
             unset($this->notificationChannels[$topic->value]);
         } else {
             $this->notificationChannels[$topic->value] = $channel->value;
+            // Elegir un canal ES contestar a la pregunta, por cualquier vía que se haga (la pantalla, un
+            // comando, un import). Marcarlo aquí y no solo en el controlador evita el caso absurdo de tener
+            // canales elegidos y que Inicio siga preguntando "¿por dónde quieres los avisos?".
+            $this->markNotificationChannelsChosen();
         }
 
         return $this;

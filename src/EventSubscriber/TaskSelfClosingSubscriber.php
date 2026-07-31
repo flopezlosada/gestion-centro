@@ -44,6 +44,14 @@ final class TaskSelfClosingSubscriber
 
         // Alguien por encima = alguien a quien esperar. Se pregunta a la jerarquía, no al rango del actor:
         // lo que decide es la tarea, no quién la entrega.
+        //
+        // Y la tarea tiene que ser de un PUESTO CON RANGO. "Nadie por encima" también es cierto en un centro
+        // donde la jerarquía no está configurada, y ahí cerrar al entregar convertiría CUALQUIER entrega en
+        // un cierre sin validación — el mismo matiz que aplica {@see TaskValidationGuardSubscriber}.
+        $role = $task->getResponsibility()?->getRole() ?? $task->getAssignedRole();
+        if (null === $role || !$role->isHierarchical()) {
+            return;
+        }
         if ([] !== $this->hierarchy->managersAbove($task)) {
             return;
         }

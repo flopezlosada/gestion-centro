@@ -59,7 +59,13 @@ final class TaskValidationGuardSubscriber
         // La cima de la jerarquía cierra (y reabre) lo suyo: si NADIE la supera por rango, exigir un
         // superior es exigir a alguien que no existe. Se comprueba antes que la separación de funciones
         // porque aquí no hay separación posible.
-        if ([] === $this->hierarchy->managersAbove($task)) {
+        //
+        // Dos condiciones, y la segunda es la que evita abrir la puerta a todo el mundo: la tarea tiene que
+        // ser de un PUESTO CON RANGO (dirección, jefatura…). "Nadie me supera porque estoy arriba" y "nadie
+        // me supera porque aquí no hay jerarquía montada" se ven igual desde `managersAbove()`, y sin este
+        // matiz una tarea de un docente en un centro sin rangos configurados la podía cerrar su propio
+        // responsable — justo lo que la separación de funciones existe para impedir.
+        if ($this->isTopOfTheChart($task)) {
             return;
         }
 
@@ -83,5 +89,26 @@ final class TaskValidationGuardSubscriber
         if (!$this->hierarchy->isSuperiorOfTask($actor, $task)) {
             $event->setBlocked(true, 'Solo un superior por rango puede validar o devolver esta tarea.');
         }
+    }
+
+    /**
+     * Whether the task belongs to a RANKED post that nothing outranks — dirección's own work.
+     *
+     * Both parts matter. Without the rank, every task of a centre with no hierarchy configured would look
+     * like the top of the chart (nobody above it) and its own holder could sign it off. Without the emptiness
+     * check, a jefatura task would qualify while dirección exists above it.
+     *
+     * @param Task $task the task being judged
+     *
+     * @return bool true when the task is at the very top of the chain of command
+     */
+    private function isTopOfTheChart(Task $task): bool
+    {
+        $role = $task->getResponsibility()?->getRole() ?? $task->getAssignedRole();
+        if (null === $role || !$role->isHierarchical()) {
+            return false;
+        }
+
+        return [] === $this->hierarchy->managersAbove($task);
     }
 }

@@ -38,9 +38,6 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
 final class SpaceController extends AbstractController
 {
     /**
-     * The free/occupied spaces at a period, with the same date-and-period picker as the guardia parte.
-     */
-    /**
      * Redirige a LA pantalla de aulas libres, la de guardias.
      *
      * Había dos: esta y `/guardias/aulas`. Las dos contestaban «¿qué aulas quedan libres a esta hora?» y las
@@ -57,9 +54,10 @@ final class SpaceController extends AbstractController
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::ESPACIOS);
 
         // Se pasan la fecha y el tramo que traiga la petición: quien llegue con un enlace guardado a una hora
-        // concreta tiene que aterrizar en ESA hora, no en la de ahora.
+        // concreta tiene que aterrizar en ESA hora, no en la de ahora. Los nombres son los que lee
+        // {@see GuardiaDate::fromRequest()} —`date`, no `fecha`—, que son además los que usaba esta pantalla.
         return $this->redirectToRoute('guardia_rooms', array_filter([
-            'fecha' => $request->query->get('fecha'),
+            'date' => $request->query->get('date'),
             'slot' => $request->query->get('slot'),
         ], static fn ($v): bool => null !== $v && '' !== $v));
     }

@@ -136,6 +136,22 @@ final class GuardiaDeficitControllerTest extends WebTestCase
         self::assertStringContainsString('slot=1', (string) $salida->attr('href'), 'and it points at that period');
     }
 
+    public function testFreeRoomsSheetSaysThereIsNoTimetableInsteadOfCallingEveryRoomFree(): void
+    {
+        // The dangerous failure of this screen is the silent one: with no timetable imported nothing is
+        // occupied, so every catalogued room reads as free and the coordinator sends groups into rooms
+        // that have a class in them. It has to say what it does not know.
+        $this->login();
+        $this->room('A10');
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/aulas?date='.self::MONDAY);
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(0, $crawler->filter('.rooms-tiers'), 'no room is offered as free');
+        self::assertStringContainsString('No hay horario importado', $crawler->filter('.empty-state')->text());
+    }
+
     public function testFreeRoomsCardCarriesTheRoomOverToTheGroupingScreen(): void
     {
         // Picking a room on the sheet is what somebody came to do: the card is the way into "juntar
