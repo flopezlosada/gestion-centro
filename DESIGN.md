@@ -201,15 +201,17 @@ Papel cálido y tinta casi negra como base, verde bosque como única voz de acci
 ### Named Rules
 **The Serif-Greets, Mono-Counts Rule.** Newsreader para lo humano (saludo, títulos); IBM Plex Mono para todo dato (horas, cifras, contadores, eyebrows). El cuerpo y los controles son siempre Instrument Sans.
 
+**The One Serif Per Screen Rule (Inicio).** En Inicio el serif es del **saludo** y de nada más: las secciones personales se rotulan con **cabecera mono en mayúsculas + contador + enlace de salida** (`.sec-head`). Dos serifs seguidos competían entre sí, y el peso de una sección no lo da el tamaño de su rótulo sino **su contenedor**: lo personal va en paneles con borde (`.panel`) y la gestión del centro en cajas planas bajo un rótulo tenue. Otras pantallas (/reuniones, /reservas) siguen usando el título serif `.home-section__title`, donde no hay saludo con el que competir.
+
 ## Layout
 
-Inicio es una **columna única legible** (`max-width: 600px`) en móvil: cabecera (fecha + saludo + avatar), luego el ancla de guardia, y debajo el resto apilado. En escritorio (`≥900px`) el `max-width` sube a 1000px y **todo lo que va bajo el hero se reparte en dos columnas** (rejilla `1fr 1fr`); el saludo gana un botón "+ Nueva tarea" a la derecha (oculto en móvil, donde se crea desde Tareas). El shell es barra lateral de 230px (arena) + contenido.
+Inicio es una **columna única legible** (`max-width: 600px`) en móvil: cabecera (fecha + saludo + avatar), luego el ancla de guardia, y debajo el resto apilado en el orden **Por hacer → Tu día → Próximos 7 días → Gestión del centro** (lo personal primero, hoy antes que la semana, el centro al final). En escritorio (`≥900px`) el `max-width` sube a 1080px y lo que va bajo el hero se reparte en **dos columnas asimétricas** (`minmax(0,1.35fr)` para lo que hay que hacer + `minmax(280px,1fr)` para el reloj del día y la gestión); el saludo gana un botón "+ Nueva tarea" **secundario** a la derecha (oculto en móvil, donde se crea desde Tareas). El orden del DOM es el de móvil y las columnas se disuelven ahí con `display: contents`, así que el reparto de escritorio no puede desordenar el móvil. El shell es barra lateral de 230px (arena) + contenido.
 
 El ritmo es holgado: `gap` de 24px entre bloques del Inicio, padding de 20–22px en hero y tarjetas, 16–18px dentro de los módulos. La densidad es baja y respirable a propósito — es un vistazo, no una hoja de cálculo. Breakpoints observados (`min-width: 900px` para la rejilla de dos columnas; el resto del sistema colapsa la barra lateral en `max-width: 760px`).
 
 ## Elevation & Depth
 
-El rediseño **usa sombras**, pero suaves, largas y teñidas — nunca duras. La profundidad distingue tres planos: el fondo de papel, los **módulos** que flotan levemente sobre él (`shadow-card`), y la **única ancla** —el hero de guardia— que flota más y con una **sombra verde** propia (`shadow-hero`), reforzando que es la pieza protagonista. Las hojas inferiores (bottom sheets) usan una sombra hacia arriba (`shadow-sheet`). En tema oscuro las sombras casi desaparecen y la separación recae en los bordes.
+El rediseño **usa sombras**, pero suaves, largas y teñidas — nunca duras. La profundidad distingue tres planos: el fondo de papel, los **módulos** que flotan levemente sobre él (`shadow-card`), y el **botón primario** del ancla, que sí lleva su sombra cálida. El hero de guardia **no lleva sombra**: ser el único bloque oscuro de la pantalla ya lo separa del papel, y añadirle elevación solo lo hacía parecer un cartel pegado encima. Las hojas inferiores (bottom sheets) usan una sombra hacia arriba (`shadow-sheet`). En tema oscuro las sombras casi desaparecen y la separación recae en los bordes.
 
 ### Shadow Vocabulary
 - **Sombra de módulo** (`0 14px 30px -24px rgba(60,50,20,.5)`): elevación leve de módulos y tarjetas sobre el papel.
@@ -217,7 +219,7 @@ El rediseño **usa sombras**, pero suaves, largas y teñidas — nunca duras. La
 - **Sombra de hoja** (`0 -20px 50px -20px rgba(20,40,30,.5)`): bottom sheets (filtros, popovers móviles).
 
 ### Named Rules
-**The Single Dark Anchor Rule.** Exactamente **una** pieza rellena y oscura por pantalla de Inicio: la próxima guardia, con su sombra verde. Todo lo demás respira en claro. Dos anclas competirían y romperían la jerarquía.
+**The Single Dark Anchor Rule.** Exactamente **una** pieza rellena y oscura por pantalla de Inicio: la próxima guardia, en tostado profundo y sin sombra. Todo lo demás respira en claro. Dos anclas competirían y romperían la jerarquía.
 
 ## Shapes
 
@@ -226,13 +228,17 @@ Lenguaje **generosamente redondeado**: 10px en badges e inputs internos, 12px en
 ## Components
 
 ### Guardia hero (componente firma)
-La pieza protagonista y la única ancla oscura. Tarjeta enlace **verde bosque rellena**, radio 20px, con sombra verde (`shadow-hero`). Eyebrow mono con **punto pulsante** verde salvia ("Tu próxima guardia"), la hora en mono 32px, el destino en Newsreader 21px, y un subtítulo con a quién cubres y si la ausencia "tiene tarea" (ámbar) o "sin tarea". Cuando no hay guardia hoy, se sustituye por la **tira tranquila** `.no-guardia`: fondo hundido, icono de reloj en verde tenue, "Hoy no tienes guardia" + próxima fecha. El contraste entre el hero oscuro y la tira clara ES la señal.
+La pieza protagonista y la única ancla oscura. Bloque relleno en **tostado profundo** (`--hero`), radio 18px (22px en móvil) y **sin sombra**: ya destaca por ser el único bloque oscuro. Va en tostado y no en el naranja de la marca porque ese naranja se reserva a **una sola acción por pantalla**, que aquí es su propio botón. Eyebrow mono con **punto pulsante** ámbar, la hora en mono 28px, el destino en Newsreader 21px, y un subtítulo con a quién cubres y si la ausencia "tiene tarea" o **"sin tarea asignada"** (en `--hero-accent`, lo único cálido del bloque). A la derecha, la salida: **"Elegir tarea del banco"** en naranja pleno cuando no hay tarea que dar a la clase, o **"Ver la guardia"** en fantasma cuando no hay nada que resolver. El rótulo cambia a **"Tu guardia · ahora"** cuando el tramo ya ha empezado. Cuando no hay guardia pendiente hoy, se sustituye por la **tira tranquila** `.no-guardia`: fondo hundido, icono de reloj, "Hoy no tienes guardia" (o "ya has hecho tus N guardias de hoy") + próxima fecha. El contraste entre el hero oscuro y la tira clara ES la señal.
 
 ### Módulos con caja
-Zona "de gestión" separada del flujo personal. Caja radio 20px con **banda de cabecera** (icono + título Newsreader + subtítulo + acción), `shadow-card`, y filas internas separadas por filete. Dos sabores: **gestión** (fondo oliva `module-bg`, icono verde) y **personal** (`module--personal`, malva). Contenido según rol: tiles de cifras (`module-tile`, número mono), filas con avatar/stat + chevron (`module-row`), barra de progreso, y un pie "Ver todo…" en verde.
+Caja radio 20px con **banda de cabecera** (título Newsreader + subtítulo), `shadow-card` y filas separadas por filete. Queda para pantallas como /avisos.
+
+**En Inicio la gestión del centro NO usa este componente**: son **cajas planas** (`.mgmt-card`, radio 14px, fondo `module-bg`, sin banda ni icono grande ni sombra) bajo el rótulo más tenue de la pantalla (`.mgmt__label`, mono en `--text-tenue`) y siempre al final. Con banda, icono y sombra pesaban más que la agenda y lo del centro se leía como el contenido principal. Dentro: filas `.mgmt-row` con su cifra en cuadro (ámbar = por validar, rojo teja = fuera de plazo) + chevron, barra de avance del curso y un pie "Ver todo…".
 
 ### Tasklist (Mis tareas)
-Lista abierta sobre el fondo, sin caja. Cada item: **casilla circular** (`.tick`, 22px, borde 2px, se rellena de verde al marcar con un check SVG), título en Instrument Sans 14.5px, y meta en mono ("HOY", "VENCIÓ 12/06 · Depto · adjuntar documento"). Una tarea **vencida** se convierte en **fila de alerta**: fondo naranja suave, radio 14px y barra lateral naranja de 4px. Las no accionables llevan un tick estático.
+Cada item: **casilla circular** (`.tick`, 24px, borde 2px, se rellena al marcar con un check SVG), título en Instrument Sans 14.5px, y meta en mono ("HOY", "LUN 03/08 · Depto" + chip neutro "adjuntar documento"). Las no accionables llevan un tick estático (clip = se cierra entregando; aro discontinuo = se resuelve en su ficha).
+
+En /reuniones va **abierta sobre el fondo, sin caja**. En Inicio va **dentro del panel** de su sección (`.tasklist--panel`), que es lo que le da el peso que le corresponde. Una tarea **fuera de plazo** ya NO se pinta como fila de alerta: en Inicio las vencidas se resumen en **una sola línea** (`.overdue-line`: rojo teja suave, cuántas son y desde cuándo arrastra la más antigua, enlace "Revisar") y en /tareas tienen su propia tarjeta. Un muro de filas rojas empujaba el resto de la pantalla bajo el pliegue, y si todo grita nada grita.
 
 ### Buttons
 - **Shape:** radio 12px (`--radius`), Instrument Sans 500/600.

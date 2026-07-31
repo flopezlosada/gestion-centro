@@ -20,19 +20,29 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
-     * How many covers on a given day are still without an assigned guardia — the "ausencias sin cubrir"
-     * that the coordinator's home module surfaces. Counts covers, not teachers (one absent teacher may
-     * have several uncovered slots).
+     * How the day's parte stands: how many covers it has at all and how many are still without an
+     * assigned guardia — what the coordinator's home module says in one line ("todo cubierto · 12 de 12"
+     * when there are no gaps, "3 sin cubrir" when there are). Both figures come from ONE query on
+     * purpose: they are the two halves of the same sentence, and asking twice would let them be read
+     * from two different snapshots of a parte that is being filled in right now.
+     *
+     * Counts covers, not teachers (one absent teacher may have several uncovered periods).
+     *
+     * @param \DateTimeImmutable $date the day
+     *
+     * @return array{total: int, uncovered: int} the day's covers and how many lack a guardia
      */
-    public function countUnassignedOn(\DateTimeImmutable $date): int
+    public function coverageOn(\DateTimeImmutable $date): array
     {
-        return (int) $this->createQueryBuilder('c')
-            ->select('COUNT(c.id)')
+        /** @var array{total: int|string, uncovered: int|string|null} $row */
+        $row = $this->createQueryBuilder('c')
+            ->select('COUNT(c.id) AS total', 'SUM(CASE WHEN c.assignedGuardia IS NULL THEN 1 ELSE 0 END) AS uncovered')
             ->andWhere('c.date = :date')
-            ->andWhere('c.assignedGuardia IS NULL')
             ->setParameter('date', $date, 'date_immutable')
             ->getQuery()
-            ->getSingleScalarResult();
+            ->getSingleResult();
+
+        return ['total' => (int) $row['total'], 'uncovered' => (int) $row['uncovered']];
     }
 
     /**
