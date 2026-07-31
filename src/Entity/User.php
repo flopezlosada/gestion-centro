@@ -106,6 +106,17 @@ class User implements UserInterface, Auditable
     #[ORM\Column(name: 'notification_channels', type: Types::JSON)]
     private array $notificationChannels = [];
 
+    /**
+     * When this person answered "¿por dónde quieres los avisos?", or null while they never have.
+     *
+     * Separate from {@see $notificationChannels} because ANSWERING and CHOOSING are different facts:
+     * leaving every section on "como lo tenga la aplicación" is a legitimate answer that stores no
+     * channel at all, and using the empty map as the signal meant that pressing Guardar changed nothing
+     * and the prompt came back for ever.
+     */
+    #[ORM\Column(name: 'notification_channels_set_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $notificationChannelsSetAt = null;
+
     public function __construct()
     {
         $this->assignedRoles = new ArrayCollection();
@@ -349,7 +360,23 @@ class User implements UserInterface, Auditable
      */
     public function hasChosenNotificationChannels(): bool
     {
-        return [] !== $this->notificationChannels;
+        return null !== $this->notificationChannelsSetAt;
+    }
+
+    /**
+     * Records that the person has answered the question, whatever they answered. Idempotent: the first
+     * answer is the one that counts, so re-saving the settings later does not move the date.
+     */
+    public function markNotificationChannelsChosen(): static
+    {
+        $this->notificationChannelsSetAt ??= new \DateTimeImmutable();
+
+        return $this;
+    }
+
+    public function getNotificationChannelsSetAt(): ?\DateTimeImmutable
+    {
+        return $this->notificationChannelsSetAt;
     }
 
     /**

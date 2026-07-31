@@ -38,6 +38,9 @@ use App\Util\SchoolYear;
  */
 final readonly class HomeDashboard
 {
+    /** Cuántas tareas fuera de plazo caben en "Por hacer" antes de resumir el resto en una línea. */
+    private const int OVERDUE_IN_TODOS = 3;
+
     public function __construct(
         private PersonalAgenda $agenda,
         private GuardiaCoverRepository $covers,
@@ -67,6 +70,7 @@ final readonly class HomeDashboard
      *     timedToday: AgendaEntry[],
      *     meetingsToday: AgendaEntry[],
      *     todos: AgendaEntry[],
+     *     overdueHidden: int,
      *     upcoming: AgendaEntry[]
      * }
      */
@@ -96,10 +100,16 @@ final readonly class HomeDashboard
         // ninguna pasada: una reunión no es un pendiente que se arrastre (no puedes ir ya) y la checklist
         // no sabe pintarla, así que si alguien amplía la consulta hacia atrás debe verlo aquí y no en un
         // error de plantilla.
-        $todos = \array_slice([
-            ...array_values(array_filter($buckets['overdue'], static fn (AgendaEntry $e): bool => !$isMeeting($e))),
-            ...array_values(array_filter($buckets['today'], $isTodo)),
-        ], 0, 8);
+        // Las de FUERA DE PLAZO se limitan a tres, y las de hoy entran SIEMPRE. Antes era un corte único a
+        // ocho sobre "vencidas primero", y con el arrastre de un curso eso significa ocho retrasos y ni una
+        // sola tarea del día: el bloque se llamaba "Por hacer" y solo enseñaba deuda antigua. Lo que queda
+        // fuera no se esconde — se cuenta en una línea que lleva a la lista filtrada.
+        $overdueTodos = array_values(array_filter($buckets['overdue'], static fn (AgendaEntry $e): bool => !$isMeeting($e)));
+        $todayTodos = array_values(array_filter($buckets['today'], $isTodo));
+        $todos = [
+            ...\array_slice($overdueTodos, 0, self::OVERDUE_IN_TODOS),
+            ...\array_slice($todayTodos, 0, 8),
+        ];
 
         $guardias = $this->guardias($user, $today, $now);
 
@@ -117,6 +127,8 @@ final readonly class HomeDashboard
             'timedToday' => $timedToday,
             'meetingsToday' => $meetingsToday,
             'todos' => $todos,
+            // Cuántas fuera de plazo no se han pintado, para decirlo en una línea en vez de callarlo.
+            'overdueHidden' => max(0, \count($overdueTodos) - self::OVERDUE_IN_TODOS),
             'upcoming' => $upcoming,
             'roleSubtitle' => $this->roleSubtitle($user),
         ];
@@ -262,9 +274,16 @@ final readonly class HomeDashboard
         // cuál es "tu próxima guardia" ni sobre cuáles ya han pasado.
         $day = $this->guardiaDay->forDay($todayCovers, $slotTimes, $now);
         $next = null !== $day['next'] ? $day['items'][$day['next']] : null;
+        // Solo las que QUEDAN por hacer. Inicio contesta "qué me toca hoy", no "qué he hecho": una guardia
+        // de las 8:25 a las 13:00 solo ocupa sitio y empuja hacia abajo lo que sí hay que atender. Lo hecho
+        // se consulta en "Mis guardias", que es la pantalla del día completo. Se cuentan aparte para poder
+        // cerrar el día en una línea en vez de en dos filas.
         $others = [];
         foreach ($day['items'] as $i => $item) {
-            if ($i !== $day['next']) {
+            // Fuera la próxima (ya va en el hero) y fuera las HECHAS: el recuento del día lo cierra la tira
+            // "Ya has hecho tus N guardias de hoy", que usa $day['counts'], así que no hace falta un
+            // contador propio aquí.
+            if ($i !== $day['next'] && !$item['done']) {
                 $others[] = $item;
             }
         }

@@ -40,7 +40,7 @@
                         <input class="pick-option__input" type="radio" name="canal_{{ topic.value }}" value=""{{ chosen is null ? ' checked' : '' }}>
                         <span class="pick-option__body">
                             <span class="pick-option__name">Como lo tenga la aplicación</span>
-                            <span class="pick-option__desc">Al móvil y al correo, salvo los recordatorios de última hora, que solo van al móvil.</span>
+                            <span class="pick-option__desc">{{ topic.defaultHelp }}</span>
                         </span>
                     </label>
                 </div>

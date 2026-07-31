@@ -279,8 +279,11 @@ final class HomeAgendaTest extends WebTestCase
     }
 
     /**
-     * "Hoy no tienes guardia" y "ya has hecho las de hoy" no son lo mismo, y ahora se distinguen: con la
-     * lista de las ya pasadas debajo, el mensaje viejo se contradecía con lo que se veía.
+     * "Hoy no tienes guardia" y "ya has hecho las de hoy" no son lo mismo, y se distinguen. Además la
+     * guardia ya hecha NO se lista (2026-07-31, decisión de Paco revisando): Inicio contesta "qué me
+     * toca", y una guardia de las 8:25 leída a mediodía solo empuja hacia abajo lo que sí hay que
+     * atender. La tira de arriba es la que cierra el día, así que su desaparición no se lee como "no la
+     * tenías"; el detalle sigue en "Mis guardias".
      */
     public function testADayWhoseGuardiasAreAllOverDoesNotClaimThereWereNone(): void
     {
@@ -313,7 +316,7 @@ final class HomeAgendaTest extends WebTestCase
         $html = (string) $this->client->getResponse()->getContent();
         self::assertStringNotContainsString('Hoy no tienes guardia', $html);
         self::assertStringContainsString('Ya has hecho tu guardia de hoy', $html);
-        self::assertStringContainsString('A11', $html, 'y la guardia sigue listada, no desaparece');
+        self::assertStringNotContainsString('A11', $html, 'la ya hecha no ocupa sitio en la agenda del día');
     }
 
     /**
@@ -371,5 +374,59 @@ final class HomeAgendaTest extends WebTestCase
         $this->client->request('GET', '/agenda');
 
         self::assertResponseStatusCodeSame(404);
+    }
+
+    /**
+     * "Por hacer" no puede llenarse de deuda antigua y dejar fuera el día. Con el arrastre de un curso las
+     * fuera de plazo son muchas, y el corte único de ocho filas (vencidas primero) hacía que las tareas de
+     * HOY no llegaran nunca a pintarse: un bloque llamado "Por hacer" que solo enseñaba retrasos. Ahora
+     * caben tres fuera de plazo, las de hoy entran siempre y el resto se cuenta en una línea.
+     */
+    public function testOverdueTasksNeverPushTodaysOutOfTheTodoBlock(): void
+    {
+        $user = $this->user('profe@centro.test');
+        $today = new \DateTimeImmutable('today');
+        $year = SchoolYear::current($today);
+
+        // Seis fuera de plazo: más de las tres que caben.
+        for ($i = 1; $i <= 6; ++$i) {
+            $this->em->persist(
+                (new Task('Atrasada '.$i, $year, $today->modify('-'.$i.' days'), TaskType::SIMPLE))->setAssignedUser($user)
+            );
+        }
+        $this->em->persist((new Task('La de hoy', $year, $today, TaskType::SIMPLE))->setAssignedUser($user));
+        $this->em->flush();
+
+        $this->client->loginUser($user);
+        $crawler = $this->client->request('GET', '/');
+
+        self::assertResponseIsSuccessful();
+        $html = (string) $this->client->getResponse()->getContent();
+        self::assertStringContainsString('La de hoy', $html, 'lo de hoy entra aunque haya cola de atrasos');
+        self::assertSame(3, substr_count($html, 'FUERA DE PLAZO'), 'solo tres fuera de plazo en el bloque');
+        // Y lo que no cabe se dice, no se esconde: 6 - 3 = 3.
+        self::assertStringContainsString('y 3 más fuera de plazo', $html);
+        self::assertCount(1, $crawler->filter('.home-section__more--foot'));
+    }
+
+    /**
+     * Y el marcador de retraso usa la nomenclatura que pidió el centro ("fuera de plazo", no "venció"),
+     * la misma que /tareas: la misma tarea no puede llamarse de dos formas según la pantalla.
+     */
+    public function testTheOverdueMarkerUsesTheCentresWording(): void
+    {
+        $user = $this->user('profe@centro.test');
+        $today = new \DateTimeImmutable('today');
+        $this->em->persist(
+            (new Task('Atrasada', SchoolYear::current($today), $today->modify('-2 days'), TaskType::SIMPLE))->setAssignedUser($user)
+        );
+        $this->em->flush();
+
+        $this->client->loginUser($user);
+        $this->client->request('GET', '/');
+
+        $html = (string) $this->client->getResponse()->getContent();
+        self::assertStringContainsString('FUERA DE PLAZO', $html);
+        self::assertStringNotContainsString('VENCIÓ', $html);
     }
 }

@@ -44,7 +44,7 @@ final class NotificationDispatcher
      * reminders that fire at the very moment they are about. This is the DEFAULT, not the rule — a
      * person who explicitly asks for e-mail in that section gets it. See {@see channelFor()}.
      */
-    private const array PUSH_ONLY_KINDS = ['event.', 'guardia.raices', 'meeting.reminder', 'meeting.minutes'];
+    private const array PUSH_ONLY_KINDS = ['event.', 'guardia.raices', 'meeting.reminder'];
 
     public function __construct(
         private readonly EntityManagerInterface $entityManager,

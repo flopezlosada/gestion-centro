@@ -43,7 +43,11 @@
         {# ---- Ancla: próxima guardia (hero) o tira "sin guardia" ---- #}
         {% if nextGuardia %}
             {% set g = nextGuardia.cover %}
-            <a class="guardia-hero" href="{{ path('guardia_mine') }}">
+            {# Al DETALLE de esa guardia, no al listado: lo que se necesita al pulsarla es el aula, la tarea
+               del grupo y el aviso de RAICES, y pasar por "Mis guardias" era un clic de peaje. Las filas de
+               debajo (guardia-rest__row) y las de /guardias/mias ya iban al detalle: el hero era el único
+               que se salía del patrón. #}
+            <a class="guardia-hero" href="{{ path('guardia_cover_show', { id: g.id }) }}">
                 <div class="guardia-hero__top">
                     <span class="guardia-hero__eyebrow"><span class="guardia-hero__pulse"></span>Tu próxima guardia</span>
                     {% if nextGuardia.minutesUntil is not null %}<span class="guardia-hero__in">en {{ nextGuardia.minutesUntil }} min</span>{% endif %}
@@ -79,10 +83,13 @@
             </a>
         {% endif %}
 
-        {# ---- El resto de tus guardias de hoy. El centro pidió que aparezcan TODAS, no solo la próxima:
-               un día con tres guardias tiene que leerse como tres. Las ya pasadas siguen aquí, marcadas
-               como hechas, porque desaparecer sin más se lee como "no la tenías". Cada fila lleva a SU
-               guardia (la tarea del grupo y el aviso de RAICES viven en el detalle). ---- #}
+        {# ---- El resto de tus guardias de hoy que QUEDAN POR HACER. El centro pidió que se vean todas las
+               del día, no solo la próxima: un día con tres guardias tiene que leerse como tres. Pero las
+               ya pasadas NO: Inicio contesta "qué me toca", y una guardia de las 8:25 leída a mediodía solo
+               empuja hacia abajo lo que sí hay que atender (las hechas se ven en "Mis guardias", que es la
+               pantalla del día completo). Cuando ya están todas hechas, lo dice la tira de arriba ("Ya has
+               hecho tus N guardias de hoy"), así que su desaparición no se lee como "no la tenías". Cada
+               fila lleva a SU guardia. ---- #}
         {% if otherGuardiasToday is not empty %}
             <section class="guardia-rest">
                 <h2 class="guardia-rest__title">{{ nextGuardia ? 'Resto de tus guardias de hoy' : 'Tus guardias de hoy' }}</h2>
@@ -158,7 +165,8 @@
                                 <a class="tasklist__body" href="{{ path('task_show', { id: t.id }) }}">
                                     <span class="tasklist__title">{{ t.title }}</span>
                                     <span class="tasklist__meta">
-                                        {%- if overdue %}VENCIÓ {{ t.dueDate|date('d/m') }}{% else %}HOY{% endif -%}
+                                        {#- «Fuera de plazo», no «venció»: es la nomenclatura que pidió el centro (PR #117). En /tareas se cambió y aquí se quedó sin cambiar, así que la misma tarea se llamaba de dos formas según la pantalla. -#}
+                                        {%- if overdue %}FUERA DE PLAZO · {{ t.dueDate|date('d/m') }}{% else %}HOY{% endif -%}
                                         {%- if t.unit %} · {{ t.unit.name }}{% endif -%}
                                         {%- if t.requiresDocument %} · adjuntar documento{% endif -%}
                                     </span>
@@ -181,7 +189,7 @@
                                 <a class="tasklist__body" href="{{ path('personal_event_edit', { id: e.id }) }}">
                                     <span class="tasklist__title">{{ e.title }}</span>
                                     <span class="tasklist__meta">
-                                        {%- if overdue %}VENCIÓ {{ e.startAt|date('d/m') }}{% else %}HOY{% endif -%}
+                                        {%- if overdue %}FUERA DE PLAZO · {{ e.startAt|date('d/m') }}{% else %}HOY{% endif -%}
                                          · recordatorio{% if e.category %} · {{ e.category.name }}{% endif %}
                                     </span>
                                 </a>
@@ -189,6 +197,13 @@
                         {% endif %}
                     {% endfor %}
                 </ul>
+            {% endif %}
+            {# Lo que no cabe NO se calla: el resto de fuera de plazo se cuenta y se enlaza a su lista, que es
+               donde se trabaja una cola de retrasos. Sin esto, limitar las vencidas a tres las escondería. #}
+            {% if overdueHidden > 0 %}
+                <a class="home-section__more home-section__more--foot" href="{{ path('task_index', { vista: 'vencidas' }) }}">
+                    y {{ overdueHidden }} más fuera de plazo
+                </a>
             {% endif %}
         </section>
 

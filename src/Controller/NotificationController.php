@@ -61,6 +61,10 @@ final class NotificationController extends AbstractController
                 // entero: nadie debería perder los cuatro ajustes buenos por uno manipulado.
                 $user->setChannelFor($topic, NotificationChannel::tryFrom((string) $request->request->get($field)));
             }
+            // Haber contestado se guarda aparte de lo contestado: dejarlo todo en "como lo tenga la
+            // aplicación" es una respuesta válida que no escribe ningún canal, y sin esta marca el aviso
+            // de Inicio volvía a salir después de pulsar Guardar.
+            $user->markNotificationChannelsChosen();
             $entityManager->flush();
             $this->addFlash('success', 'Hecho. A partir de ahora los avisos te llegarán como has elegido.');
 
