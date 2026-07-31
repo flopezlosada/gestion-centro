@@ -153,6 +153,39 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
+     * Every period a teacher is booked on a weekday, whatever the booking — a class, a guardia or a
+     * collaborator slot.
+     *
+     * This is the span of an all-day absence, and it is deliberately wider than
+     * {@see lectiveSlotsFor()}: that one answers "what has to be covered" and only counts lessons, while
+     * being away covers the guardia hours too. Confusing the two is what let a teacher stay on the rota
+     * for a period they were not at the centre for.
+     *
+     * @param AcademicYear $year    the course whose timetable to read
+     * @param User         $teacher the teacher
+     * @param Weekday      $weekday the weekday
+     *
+     * @return list<int> the period indexes they are booked in, earliest first
+     */
+    public function bookedSlotsFor(AcademicYear $year, User $teacher, Weekday $weekday): array
+    {
+        /** @var list<array{slotIndex: int}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('DISTINCT s.slotIndex AS slotIndex')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.teacher = :teacher')
+            ->andWhere('s.weekday = :weekday')
+            ->setParameter('year', $year)
+            ->setParameter('teacher', $teacher)
+            ->setParameter('weekday', $weekday)
+            ->orderBy('s.slotIndex', 'ASC')
+            ->getQuery()
+            ->getResult();
+
+        return array_map(static fn (array $r): int => (int) $r['slotIndex'], $rows);
+    }
+
+    /**
      * The teacher's lective classes on a weekday of a course, earliest period first — the rows the
      * "apuntar ausencia" screen lists so the coordinator ticks the periods missed and leaves a task per
      * class (each carries its group, room, subject and time to read without another query).

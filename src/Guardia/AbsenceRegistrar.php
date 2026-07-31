@@ -12,6 +12,7 @@ use App\Enum\Weekday;
 use App\Repository\AbsenceRepository;
 use App\Repository\GuardiaCoverRepository;
 use App\Repository\ScheduleEntryRepository;
+use App\Service\GuardiaAssignmentNotifier;
 use App\Space\EffectiveLesson;
 use App\Space\EffectiveTimetable;
 use Doctrine\ORM\EntityManagerInterface;
@@ -45,6 +46,7 @@ final class AbsenceRegistrar
         private readonly AbsenceRepository $absences,
         private readonly GuardiaScheduler $scheduler,
         private readonly BreakDutyGapRegistrar $breakGaps,
+        private readonly GuardiaAssignmentNotifier $notifier,
         private readonly EntityManagerInterface $em,
     ) {
     }
@@ -74,21 +76,37 @@ final class AbsenceRegistrar
     public function register(AcademicYear $year, User $teacher, \DateTimeImmutable $date, ?array $slotIndexes, ?string $reason, array $taskBySlot = [], bool $missesBreakDuty = false): AbsenceRegistrationResult
     {
         $weekday = Weekday::from((int) $date->format('N'));
-        $slots = $slotIndexes ?? $this->schedule->lectiveSlotsFor($year, $teacher, $weekday);
+        // An all-day absence spans every period the teacher is booked in, guardia hours included — not
+        // only the lessons. Covers are still created for lessons alone (a guardia hour has no group to
+        // cover), but the absence has to know about the rest or the rota keeps handing them work.
+        $slots = $slotIndexes ?? $this->schedule->bookedSlotsFor($year, $teacher, $weekday);
 
         // One absence per (teacher, day): reuse it if the day is already partly registered, so the
-        // reason stays single-sourced. Built in memory and only persisted once a cover is actually
-        // created, so an all-skipped registration never leaves an orphan absence (with its reason).
+        // reason stays single-sourced.
         $absence = $this->absences->findForTeacherAndDate($teacher, $date);
         $absenceIsNew = null === $absence;
         if ($absenceIsNew) {
             $absence = (new Absence())->setAbsentTeacher($teacher)->setDate($date);
         }
 
+        // The absence spans these periods whether or not any of them produces a cover, and it is stored
+        // even when none does — that is the whole fix. A teacher away only during their guardia hours
+        // generates no cover (there is no class to hand over), and under the old lazy persist the
+        // absence was never written, so the rota went on treating them as available.
+        //
+        // The one case that still writes nothing is a day the teacher is not booked for at all: there is
+        // no absence to record and an empty row would only be an orphan.
+        $spanned = array_values(array_unique($slots));
+        sort($spanned);
+        $absence->addSlotIndexes($spanned);
+        if ($absenceIsNew && [] !== $spanned) {
+            $this->em->persist($absence);
+        }
+
         $createdSlots = [];
         $skippedFree = 0;
         $skippedExisting = 0;
-        foreach (array_values(array_unique($slots)) as $slotIndex) {
+        foreach ($spanned as $slotIndex) {
             // A period may hold several classes at once (a multi-group activity in the assembly hall);
             // it is still ONE guardia to cover, so all its groups/rooms fold into a single cover.
             $lessons = $this->timetable->forTeacherAt($year, $teacher, $date, $slotIndex);
@@ -99,11 +117,6 @@ final class AbsenceRegistrar
             if (null !== $this->covers->findOneBy(['absentTeacher' => $teacher, 'date' => $date, 'slotIndex' => $slotIndex])) {
                 ++$skippedExisting;
                 continue;
-            }
-
-            // Persist the (possibly new) absence lazily, on the first cover that will actually exist.
-            if ($absenceIsNew && [] === $createdSlots) {
-                $this->em->persist($absence);
             }
 
             $task = $taskBySlot[$slotIndex] ?? [];
@@ -126,16 +139,24 @@ final class AbsenceRegistrar
             $createdSlots[] = $slotIndex;
         }
 
-        // Apply the reason only when the absence is (or already was) real: a fresh, non-empty reason on
-        // a day that produced a cover, or an update to an already-persisted absence. Never on a brand-new
-        // absence that ends up with no covers (nothing is flushed in that case, so no orphan).
-        if ((null !== $reason && '' !== trim($reason)) && ([] !== $createdSlots || !$absenceIsNew)) {
+        // Apply the reason only when the absence is (or already was) real: one that spans some period, or
+        // an update to an already-persisted absence. Never on a brand-new absence with nothing in it.
+        if ((null !== $reason && '' !== trim($reason)) && ([] !== $spanned || !$absenceIsNew)) {
             $absence->setReason($reason);
         }
         $this->em->flush();
 
-        // Assign each affected period after the covers exist, so the balance sees them all.
-        foreach ($createdSlots as $slotIndex) {
+        // Now that the absence is on record, take back the guardias this teacher was due to cover today
+        // in the periods they are away for. Until this existed, a teacher who signed up as absent stayed
+        // assigned to a group nobody would show up for, and nobody was told.
+        $relievedSlots = $this->relieveOwnGuardias($teacher, $date, $spanned);
+
+        // Assign each affected period after the covers exist, so the balance sees them all. The periods
+        // just relieved go in too: the group still needs somebody, and now the rota cannot pick the
+        // absent teacher again, because being away is a stored fact.
+        $toAssign = array_values(array_unique(array_merge($createdSlots, $relievedSlots)));
+        sort($toAssign);
+        foreach ($toAssign as $slotIndex) {
             $this->scheduler->autoAssign($year, $date, $slotIndex);
         }
 
@@ -144,7 +165,56 @@ final class AbsenceRegistrar
         // created) still leaves their zone unwatched.
         $breakGap = $missesBreakDuty ? $this->breakGaps->register($year, $teacher, $date) : null;
 
-        return new AbsenceRegistrationResult($createdSlots, $skippedFree, $skippedExisting, $breakGap);
+        return new AbsenceRegistrationResult($createdSlots, $skippedFree, $skippedExisting, $breakGap, $relievedSlots);
+    }
+
+    /**
+     * Takes the absent teacher off the guardias they were assigned to cover today, in the periods the
+     * absence spans, and tells them it is no longer theirs.
+     *
+     * Only their own assignments are touched: the class they were going to cover still needs somebody,
+     * so the cover line stays and goes back into the pot to be reassigned. Periods outside the absence
+     * are left alone — somebody away first thing may well do their afternoon guardia.
+     *
+     * They are notified with {@see \App\Service\GuardiaAssignmentNotifier::notifyRelieved()}, the same
+     * message a coordinator's hand-edit sends. Being relieved after reporting your own absence is not
+     * obvious from the outside: the guardia was in your agenda a moment ago and now it is not. No reason
+     * travels with it — the centre decided the note behind a guardia change stays with the equipo
+     * directivo — and here it would say nothing anyway: the teacher is the one who reported the absence.
+     *
+     * @param User               $teacher the absent teacher
+     * @param \DateTimeImmutable $date    the day
+     * @param list<int>          $slots   the periods the absence spans
+     *
+     * @return list<int> the periods that lost their guardia and need reassigning
+     */
+    private function relieveOwnGuardias(User $teacher, \DateTimeImmutable $date, array $slots): array
+    {
+        if ([] === $slots) {
+            return [];
+        }
+
+        $relieved = [];
+        $freed = [];
+        foreach ($this->covers->findAssignedTo($teacher, $date) as $cover) {
+            if (!\in_array($cover->getSlotIndex(), $slots, true)) {
+                continue;
+            }
+            $cover->setAssignedGuardia(null);
+            $relieved[] = $cover;
+            $freed[] = $cover->getSlotIndex();
+        }
+
+        if ([] === $relieved) {
+            return [];
+        }
+
+        $this->em->flush();
+        foreach ($relieved as $cover) {
+            $this->notifier->notifyRelieved($cover, $teacher);
+        }
+
+        return array_values(array_unique($freed));
     }
 
     /**

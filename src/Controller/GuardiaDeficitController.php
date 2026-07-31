@@ -12,6 +12,7 @@ use App\Entity\Room;
 use App\Entity\User;
 use App\Enum\Area;
 use App\Enum\Weekday;
+use App\Repository\AbsenceRepository;
 use App\Repository\AcademicYearRepository;
 use App\Repository\GuardiaCoverRepository;
 use App\Repository\GuardiaGroupingRepository;
@@ -207,7 +208,7 @@ final class GuardiaDeficitController extends AbstractController
      * together, and — when the room chosen was in use — the colleague whose class has to make way.
      */
     #[Route('/agrupar', name: 'guardia_grouping_create', methods: ['POST'])]
-    public function createGrouping(Request $request, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years, RoomRepository $rooms, RoomOccupancy $occupancy, GuardiaRoomChangeNotifier $notifier, EntityManagerInterface $em): Response
+    public function createGrouping(Request $request, GuardiaCoverRepository $covers, AbsenceRepository $absences, ScheduleEntryRepository $schedule, AcademicYearRepository $years, RoomRepository $rooms, RoomOccupancy $occupancy, GuardiaRoomChangeNotifier $notifier, EntityManagerInterface $em): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $this->assertCsrf($request, 'guardia_grouping_create');
@@ -288,7 +289,7 @@ final class GuardiaDeficitController extends AbstractController
         // failing to save it would be the worst of both worlds.
         $timeLabel = $this->slotLabel($schedule, $year, $slotIndex);
         $notifier->notifyGrouped($grouping, $selected, $timeLabel);
-        $warned = $notifier->notifyDisplaced($grouping, $displaced, $covers->absentTeacherIdsAt($date, $slotIndex), $timeLabel);
+        $warned = $notifier->notifyDisplaced($grouping, $displaced, $absences->absentTeacherIdsAt($date, $slotIndex), $timeLabel);
 
         $this->addFlash('success', sprintf(
             '%d grupos juntos en %s.%s',
@@ -316,7 +317,7 @@ final class GuardiaDeficitController extends AbstractController
      * change is off. The parte lines themselves are untouched — the grouping never owned anything.
      */
     #[Route('/agrupacion/{id}/deshacer', name: 'guardia_grouping_undo', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function undoGrouping(GuardiaGrouping $grouping, Request $request, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years, RoomRepository $rooms, RoomOccupancy $occupancy, GuardiaRoomChangeNotifier $notifier, EntityManagerInterface $em): Response
+    public function undoGrouping(GuardiaGrouping $grouping, Request $request, GuardiaCoverRepository $covers, AbsenceRepository $absences, ScheduleEntryRepository $schedule, AcademicYearRepository $years, RoomRepository $rooms, RoomOccupancy $occupancy, GuardiaRoomChangeNotifier $notifier, EntityManagerInterface $em): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $this->assertCsrf($request, 'guardia_grouping_undo'.$grouping->getId());
@@ -334,7 +335,7 @@ final class GuardiaDeficitController extends AbstractController
             : null;
         $displaced = null !== $occupation ? $occupation->entries : [];
         $timeLabel = $this->slotLabel($schedule, $year, $slotIndex);
-        $absentIds = $covers->absentTeacherIdsAt($date, $slotIndex);
+        $absentIds = $absences->absentTeacherIdsAt($date, $slotIndex);
 
         // ON DELETE SET NULL clears the covers' grouping_id, but the lines loaded in this request would
         // still point at a deleted row, so they are unhooked in memory too.

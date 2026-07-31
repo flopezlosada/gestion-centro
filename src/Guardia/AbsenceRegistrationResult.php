@@ -21,13 +21,27 @@ final class AbsenceRegistrationResult
      * @param BreakDutyGap|null  $breakGap        the recreo left unwatched by this absence, when the
      *                                            teacher was on the break rota that day — recorded, never
      *                                            re-covered, and alerted to the equipo directivo
+     * @param list<int>          $relievedSlots   periods where this teacher was covering somebody else's
+     *                                            class and has now been taken off it — the other half of
+     *                                            an absence, and the half that used to be missed
      */
     public function __construct(
         public readonly array $createdSlots,
         public readonly int $skippedFree,
         public readonly int $skippedExisting,
         public readonly ?BreakDutyGap $breakGap = null,
+        public readonly array $relievedSlots = [],
     ) {
+    }
+
+    /**
+     * How many guardias this teacher was relieved of.
+     *
+     * @return int the number of periods they no longer have to cover
+     */
+    public function relievedCount(): int
+    {
+        return \count($this->relievedSlots);
     }
 
     /**

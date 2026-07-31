@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration;
 
+use App\Entity\Absence;
 use App\Entity\AcademicYear;
 use App\Entity\GuardiaCover;
 use App\Entity\Room;
@@ -258,6 +259,122 @@ final class AbsenceRegistrarTest extends KernelTestCase
         self::assertSame(0, $result->createdCount());
         self::assertSame(1, $result->skippedExisting);
         self::assertCount(1, $this->coversFor($this->absent), 'still a single cover for that period');
+    }
+
+    // ── Being away is a stored fact, not something inferred from the parte ──────────────────────────
+
+    public function testAnAbsenceRecordsEveryPeriodItSpansIncludingGuardiaHours(): void
+    {
+        // Ana teaches at 0 and 2; give her a guardia at 1, the period that used to leave no trace.
+        $this->duty($this->absent, 1, ScheduleActivityKind::GUARDIA);
+        $this->em->flush();
+
+        $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), null, null);
+
+        $absence = $this->absenceFor($this->absent);
+        self::assertNotNull($absence);
+        self::assertSame([0, 1, 2], $absence->getSlotIndexes(), 'the guardia hour belongs to the absence too');
+        self::assertTrue($absence->coversSlot(1));
+    }
+
+    public function testATeacherWhoReportsAnAbsenceIsTakenOffTheGuardiasTheyWereCovering(): void
+    {
+        // The bug. Gonzalo is on call at period 0 and picks up Ana's class; then Gonzalo reports that he
+        // is away too. His guardia used to stay on him: a group nobody would turn up for.
+        $date = new \DateTimeImmutable(self::MONDAY);
+        $this->registrar->register($this->year, $this->absent, $date, [0], null);
+        $anasCover = $this->coversFor($this->absent)[0];
+        self::assertSame($this->g1->getId(), $anasCover->getAssignedGuardia()?->getId(), 'precondition: Gonzalo is covering it');
+
+        // A second teacher on call at period 0, so there is somebody to hand it over to.
+        $spare = $this->user('Sara Suplente Gil', 'sara@educa.madrid.org');
+        $this->duty($spare, 0, ScheduleActivityKind::GUARDIA);
+        $this->em->flush();
+
+        $result = $this->registrar->register($this->year, $this->g1, $date, [0], 'Baja.');
+
+        self::assertSame([0], $result->relievedSlots, 'the period he was covering is reported as relieved');
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(GuardiaCover::class)->find($anasCover->getId());
+        self::assertNotNull($reloaded);
+        self::assertSame($spare->getId(), $reloaded->getAssignedGuardia()?->getId(), 'the class went to the teacher who IS there');
+    }
+
+    public function testTheRotaNeverHandsAGuardiaBackToSomebodyAlreadyAway(): void
+    {
+        // With nobody else on call, the class is left uncovered rather than given back to the absentee:
+        // "somebody is away" is now read from the absence, so the assigner cannot pick them.
+        $date = new \DateTimeImmutable(self::MONDAY);
+        $this->registrar->register($this->year, $this->absent, $date, [0], null);
+        $cover = $this->coversFor($this->absent)[0];
+        self::assertSame($this->g1->getId(), $cover->getAssignedGuardia()?->getId());
+
+        $this->registrar->register($this->year, $this->g1, $date, [0], null);
+
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(GuardiaCover::class)->find($cover->getId());
+        self::assertNotNull($reloaded);
+        self::assertNull($reloaded->getAssignedGuardia(), 'better uncovered and visible than assigned to somebody who is not coming');
+    }
+
+    public function testAnAbsenceThatOnlyTouchesGuardiaHoursIsStillRecorded(): void
+    {
+        // Gonzalo teaches nothing on Monday; he only has a guardia. Under the old lazy persist this
+        // produced no cover and therefore no absence at all, so he stayed available to the rota.
+        $date = new \DateTimeImmutable(self::MONDAY);
+        $result = $this->registrar->register($this->year, $this->g1, $date, null, 'Formación.');
+
+        self::assertSame(0, $result->createdCount(), 'a guardia hour has no class to cover');
+        $absence = $this->absenceFor($this->g1);
+        self::assertNotNull($absence, 'the absence is recorded even with nothing to cover');
+        self::assertSame([0], $absence->getSlotIndexes());
+        self::assertSame('Formación.', $absence->getReason());
+    }
+
+    public function testGuardiasOutsideTheAbsenceAreLeftAlone(): void
+    {
+        // Away first thing does not mean away all day: Gema's period-2 guardia is none of its business.
+        $date = new \DateTimeImmutable(self::MONDAY);
+        $this->registrar->register($this->year, $this->absent, $date, [0, 2], null);
+        $gemasCover = $this->coversFor($this->absent)[2];
+        self::assertSame($this->g2->getId(), $gemasCover->getAssignedGuardia()?->getId());
+
+        $result = $this->registrar->register($this->year, $this->g2, $date, [0], null);
+
+        self::assertSame([], $result->relievedSlots, 'her period-2 guardia is outside the absence');
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(GuardiaCover::class)->find($gemasCover->getId());
+        self::assertNotNull($reloaded);
+        self::assertSame($this->g2->getId(), $reloaded->getAssignedGuardia()?->getId());
+    }
+
+    public function testRegisteringADayInTwoGoesAddsUpThePeriodsInsteadOfReplacingThem(): void
+    {
+        // The morning is signed up by the teacher and the afternoon added by the coordinator later.
+        $date = new \DateTimeImmutable(self::MONDAY);
+        $this->registrar->register($this->year, $this->absent, $date, [0], null);
+        $this->registrar->register($this->year, $this->absent, $date, [2], null);
+
+        $absence = $this->absenceFor($this->absent);
+        self::assertNotNull($absence);
+        self::assertSame([0, 2], $absence->getSlotIndexes(), 'the second pass must not erase the first');
+    }
+
+    /**
+     * The absence row of a teacher on the test's Monday, if any.
+     *
+     * @param User $teacher the teacher
+     *
+     * @return Absence|null the absence
+     */
+    private function absenceFor(User $teacher): ?Absence
+    {
+        $this->em->clear();
+
+        return $this->em->getRepository(Absence::class)->findOneBy([
+            'absentTeacher' => $teacher->getId(),
+            'date' => new \DateTimeImmutable(self::MONDAY),
+        ]);
     }
 
     /**

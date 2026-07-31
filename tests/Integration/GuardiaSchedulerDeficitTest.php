@@ -261,7 +261,12 @@ final class GuardiaSchedulerDeficitTest extends KernelTestCase
     private function cover(string $group, ?User $teacher = null): GuardiaCover
     {
         $absentTeacher = $teacher ?? $this->user('Falta '.$group, 'falta-'.(++$this->absentees).'@educa.madrid.org');
-        $absence = (new Absence())->setAbsentTeacher($absentTeacher)->setDate(new \DateTimeImmutable(self::MONDAY));
+        // The absence carries the period it spans, as the registrar writes it: that is what tells the
+        // assigner this teacher is away, so a fixture without it would quietly offer them as a candidate.
+        $absence = (new Absence())
+            ->setAbsentTeacher($absentTeacher)
+            ->setDate(new \DateTimeImmutable(self::MONDAY))
+            ->addSlotIndexes([self::SLOT]);
         $this->em->persist($absence);
 
         $cover = (new GuardiaCover())
