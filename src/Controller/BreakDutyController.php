@@ -8,6 +8,7 @@ use App\Entity\AcademicYear;
 use App\Entity\BreakDutyAssignment;
 use App\Entity\BreakDutyGap;
 use App\Entity\BreakZone;
+use App\Entity\BreakZoneDemand;
 use App\Entity\User;
 use App\Enum\Area;
 use App\Enum\BreakPeriod;
@@ -19,6 +20,7 @@ use App\Guardia\BreakRotaProposal;
 use App\Repository\AcademicYearRepository;
 use App\Repository\BreakDutyAssignmentRepository;
 use App\Repository\BreakDutyGapRepository;
+use App\Repository\BreakZoneDemandRepository;
 use App\Repository\BreakZoneRepository;
 use App\Repository\TimeSlotRepository;
 use App\Repository\UserRepository;
@@ -285,12 +287,13 @@ final class BreakDutyController extends AbstractController
      * neither should need a deploy.
      */
     #[Route('/zonas', name: 'break_zone_index', methods: ['GET'])]
-    public function zones(BreakZoneRepository $zones, BreakDutyAssignmentRepository $duties, TimeSlotRepository $timeSlots, AcademicYearRepository $years): Response
+    public function zones(BreakZoneRepository $zones, BreakDutyAssignmentRepository $duties, TimeSlotRepository $timeSlots, AcademicYearRepository $years, BreakDutyDemand $demand): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
 
         $year = $years->findBySchoolYear(SchoolYear::current(new \DateTimeImmutable('today')));
         $all = $zones->findAllOrdered();
+        $active = $zones->findActiveOrdered();
 
         // How many duties each zone holds: what makes archiving the honest gesture instead of deleting.
         $usage = [];
@@ -298,13 +301,94 @@ final class BreakDutyController extends AbstractController
             $usage[(int) $zone->getId()] = $duties->countByZone($zone);
         }
 
+        // How many people each cell of the week needs, resolved (zone figure unless singled out) plus a
+        // flag for the ones somebody has singled out, so the grid can show which were touched on purpose.
+        $needed = [];
+        $overridden = [];
+        foreach (BreakPeriod::inDayOrder() as $period) {
+            foreach (Weekday::schoolWeek() as $weekday) {
+                foreach ($active as $zone) {
+                    $needed[$period->value][$weekday->value][(int) $zone->getId()] = $demand->required($zone, $weekday, $period);
+                    $overridden[$period->value][$weekday->value][(int) $zone->getId()] = $demand->isOverridden($zone, $weekday, $period);
+                }
+            }
+        }
+
         return $this->render('guardia/break_zone_index.html.twig', [
             'zones' => $all,
+            'activeZones' => $active,
             'usage' => $usage,
             'breaks' => $timeSlots->findBreaksByYear($year instanceof AcademicYear ? $year : null),
             'minWeight' => BreakZone::MIN_WEIGHT,
             'maxWeight' => BreakZone::MAX_WEIGHT,
+            'weekdays' => Weekday::schoolWeek(),
+            'periods' => BreakPeriod::inDayOrder(),
+            'needed' => $needed,
+            'overridden' => $overridden,
+            'weekly' => $demand->weeklyTotals($active),
         ]);
+    }
+
+    /**
+     * Saves the whole demand grid in one submit.
+     *
+     * Only EXCEPTIONS are stored: a cell left at the zone's own figure has its row deleted rather than
+     * written. That is what keeps the table to the handful of cells somebody has deliberately singled out
+     * — and what makes changing a zone's figure still move every ordinary cell with it.
+     */
+    #[Route('/zonas/demanda', name: 'break_zone_demand_save', methods: ['POST'])]
+    public function saveDemand(Request $request, BreakZoneRepository $zones, BreakZoneDemandRepository $demands, EntityManagerInterface $em): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
+        $this->assertCsrf($request, 'break_zone_demand_save');
+
+        /** @var array<string, mixed> $submitted */
+        $submitted = $request->request->all('need');
+        $existing = [];
+        foreach ($demands->findAll() as $row) {
+            $existing[$row->getZone()->getId().':'.$row->getWeekday()->value.':'.$row->getPeriod()->value] = $row;
+        }
+
+        $changed = 0;
+        foreach ($zones->findActiveOrdered() as $zone) {
+            foreach (Weekday::schoolWeek() as $weekday) {
+                foreach (BreakPeriod::inDayOrder() as $period) {
+                    $key = $zone->getId().':'.$weekday->value.':'.$period->value;
+                    $raw = $submitted[$key] ?? null;
+                    if (!is_numeric($raw)) {
+                        continue;
+                    }
+                    $want = max(0, (int) $raw);
+                    $row = $existing[$key] ?? null;
+
+                    if ($want === $zone->getRequiredTeachers()) {
+                        // Back to the zone's own figure: the exception stops existing rather than being
+                        // stored as a copy of the default, which would then not follow the zone.
+                        if (null !== $row) {
+                            $em->remove($row);
+                            ++$changed;
+                        }
+                        continue;
+                    }
+
+                    if (null === $row) {
+                        $row = (new BreakZoneDemand())->setZone($zone)->setWeekday($weekday)->setPeriod($period);
+                        $em->persist($row);
+                    }
+                    if ($row->getRequiredTeachers() !== $want) {
+                        ++$changed;
+                    }
+                    $row->setRequiredTeachers($want);
+                }
+            }
+        }
+
+        $em->flush();
+        $this->addFlash('success', 0 === $changed
+            ? 'No había ninguna casilla que cambiar.'
+            : sprintf('Guardadas %d casilla(s) de la demanda.', $changed));
+
+        return $this->redirectToRoute('break_zone_index');
     }
 
     /**
