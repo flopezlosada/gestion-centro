@@ -17,6 +17,7 @@ use App\Entity\Task;
 use App\Entity\TaskResponsibility;
 use App\Entity\User;
 use App\Enum\CategoryColor;
+use App\Enum\DeliverableRequirement;
 use App\Enum\TaskType;
 use App\Service\SchoolCalendar;
 use App\Util\SchoolYear;
@@ -336,7 +337,8 @@ final class SeedDemoCommand extends Command
             $task->setResponsibility($responsibility)
                 ->setUnit($department)
                 ->setAssignedUser($holders[0] ?? null)
-                ->setRequiresDocument(TaskType::WITH_DELIVERABLE === $type)
+                // Las de demo con entregable piden un ENLACE, que es lo que después rellenan más abajo.
+                ->setDeliverable(TaskType::WITH_DELIVERABLE === $type ? DeliverableRequirement::LINK : DeliverableRequirement::NONE)
                 ->setCreatedBy($director)
                 ->setDescription($this->describe($row));
 

@@ -3,11 +3,19 @@ framework:
         # Un ÚNICO ciclo de vida para toda tarea (simple o con entregable): el mismo vocabulario de
         # estados para todas, sin estados que existan solo para algunos tipos.
         #   Pendiente → (Entregar) → Entregada → (Validar) → Finalizada
-        #                                     ↘ (Devolver) → Pendiente     [queda en el histórico]
-        #   Pendiente/Entregada → (Cancelar) → Cancelada
-        # La única diferencia entre tipos NO es un estado: es si "Entregar" exige adjuntar la referencia
-        # de un documento (Task::requiresDocument), lo controla el controlador. "Devolver" no crea un
-        # estado "rechazada": devuelve a Pendiente (vuelta a empezar) y el evento queda en la auditoría.
+        #                                     ↘ (Devolver) → En revisión → (Entregar) → Entregada …
+        #   Pendiente → (Cancelar) → Cancelada
+        #
+        # "En revisión" es un sitio propio y no una vuelta a Pendiente. Es lo que pidió el centro con esas
+        # palabras, y describe algo distinto: una tarea Pendiente es la que nadie ha tocado, y una En
+        # revisión ya se entregó una vez y lleva por escrito qué hay que corregir. Con las dos en el mismo
+        # sitio ni el listado ni el aviso podían distinguirlas, y quien la tenía leía "Pendiente" como si
+        # su trabajo no hubiera existido. El ciclo no tiene tope de vueltas a propósito: "puede haber tanta
+        # retroalimentación como sea necesaria".
+        #
+        # La única diferencia entre tipos NO es un estado: es QUÉ hay que aportar al entregar (enlace,
+        # archivo, cualquiera de los dos o nada; ver App\Enum\DeliverableRequirement), y lo controla el
+        # controlador.
         task:
             type: state_machine
             marking_store:
@@ -19,22 +27,29 @@ framework:
             places:
                 - pending
                 - submitted
+                - in_review
                 - validated
                 - cancelled
             transitions:
                 submit:
-                    from: pending
+                    from: [pending, in_review]
                     to: submitted
                 # También desde Pendiente ("Dar por finalizada"): sin esa salida, una tarea que el titular
                 # no entrega —está de baja, la hizo fuera de la app— se quedaba pendiente para siempre y
                 # al superior solo le quedaba Cancelar, que en el histórico miente ("anulada") y es
                 # terminal. Sigue siendo cosa del superior: el guard no ha cambiado.
                 validate:
-                    from: [pending, submitted]
+                    from: [pending, submitted, in_review]
                     to: validated
-                reject:
+                # "Devolver para revisar": exige por escrito qué hay que cambiar (lo pide el controlador).
+                review:
                     from: submitted
-                    to: pending
+                    to: in_review
+                # Cancelar sigue saliendo de TODO lo abierto, como siempre. Lo que el centro pidió quitar
+                # es cancelar una tarea FUERA DE PLAZO (para que pasarse de fecha no sea una vía de
+                # escape), y eso lo comprueba TaskController contra la fecha, no la máquina de estados.
+                # Restringirlo además a Pendiente quitaría una salida que hoy existe y que nadie pidió
+                # tocar: una actividad que se anula en enero puede tener ya algo entregado.
                 cancel:
-                    from: [pending, submitted]
+                    from: [pending, submitted, in_review]
                     to: cancelled

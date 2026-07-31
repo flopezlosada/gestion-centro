@@ -68,7 +68,7 @@ final class TaskActivityPresenterTest extends TestCase
         $rows = $presenter->present([
             $this->entry('task.updated', [
                 'dueDate' => ['old' => '2026-07-13T00:00:00+02:00', 'new' => '2026-07-14T00:00:00+02:00'],
-                'requiresDocument' => ['old' => false, 'new' => true],
+                'deliverable' => ['old' => 'none', 'new' => 'link'],
                 'status' => ['old' => 'pending', 'new' => 'submitted'],
                 'type' => ['old' => 'simple', 'new' => 'with_deliverable'],
             ], 'director@centro.test'),
@@ -80,7 +80,7 @@ final class TaskActivityPresenterTest extends TestCase
         self::assertNull($rows[0]['summary']);
         self::assertSame([
             ['label' => 'Fecha límite', 'old' => '13/07/2026', 'new' => '14/07/2026'],
-            ['label' => 'Requiere documento', 'old' => 'No', 'new' => 'Sí'],
+            ['label' => 'Qué hay que entregar', 'old' => 'No hay que entregar nada', 'new' => 'Un enlace'],
             ['label' => 'Estado', 'old' => 'Pendiente', 'new' => 'Entregada'],
             ['label' => 'Tipo', 'old' => 'Tarea simple', 'new' => 'Tarea con entregable'],
         ], $rows[0]['changes']);

@@ -9,6 +9,7 @@ use App\Entity\Role;
 use App\Entity\TaskTemplate;
 use App\Entity\Department;
 use App\Entity\User;
+use App\Enum\DeliverableRequirement;
 use App\Enum\TaskType;
 use Doctrine\ORM\EntityManagerInterface;
 
@@ -42,10 +43,11 @@ final class TaskActivityPresenter
         'assignedUser' => ['label' => 'Responsable', 'kind' => 'ref', 'class' => User::class],
         'delegatedTo' => ['label' => 'Delegada a', 'kind' => 'ref', 'class' => User::class],
         'unit' => ['label' => 'Unidad', 'kind' => 'ref', 'class' => Department::class],
-        'requiresDocument' => ['label' => 'Requiere documento', 'kind' => 'bool'],
+        'deliverable' => ['label' => 'Qué hay que entregar', 'kind' => 'deliverable'],
         'requiresCheckbox' => ['label' => 'Requiere confirmación', 'kind' => 'bool'],
         'checkboxDone' => ['label' => 'Confirmada por el responsable', 'kind' => 'bool'],
-        'deliverableReference' => ['label' => 'Referencia del entregable', 'kind' => 'text'],
+        'deliverableReference' => ['label' => 'Enlace entregado', 'kind' => 'text'],
+        'deliverableFileName' => ['label' => 'Archivo entregado', 'kind' => 'text'],
         'template' => ['label' => 'Plantilla', 'kind' => 'ref', 'class' => TaskTemplate::class],
         'createdAt' => ['label' => 'Creada', 'kind' => 'datetime'],
         'createdBy' => ['label' => 'Creada por', 'kind' => 'ref', 'class' => User::class],
@@ -176,6 +178,7 @@ final class TaskActivityPresenter
             'date' => $this->formatDate($value, 'd/m/Y'),
             'datetime' => $this->formatDate($value, 'd/m/Y H:i'),
             'type' => TaskType::tryFrom((string) $value)?->label() ?? (string) $value,
+            'deliverable' => DeliverableRequirement::tryFrom((string) $value)?->label() ?? (string) $value,
             'status' => TaskStatus::label((string) $value),
             'ref' => $names[$meta['class'] ?? ''][(int) $value] ?? sprintf('#%d (eliminado)', (int) $value),
             default => (string) $value,

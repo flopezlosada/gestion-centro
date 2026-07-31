@@ -181,8 +181,8 @@ final class TaskReminderNotifier
                     $notifications[] = $this->dispatcher->record(
                         $recipient,
                         'task.escalation',
-                        sprintf('Tarea vencida sin cerrar: %s', $task->getTitle()),
-                        sprintf('Venció el %s (hace %d días) y sigue sin cerrarse.', $task->getDueDate()->format('d/m/Y'), $days),
+                        sprintf('Tarea fuera de plazo sin cerrar: %s', $task->getTitle()),
+                        sprintf('El plazo terminó el %s (hace %d días) y sigue sin cerrarse.', $task->getDueDate()->format('d/m/Y'), $days),
                         $task,
                     );
                 }

@@ -1006,7 +1006,8 @@ final class GuardiaController extends AbstractController
 
     /**
      * The single "modificar guardia" screen: change the assigned substitute and/or flag that the cover
-     * did not happen, always stating a reason. It is the only way to touch a cover by hand — the centre
+     * did not happen. A reason is required only when the substitute actually changes ({@see updateCover()}),
+     * and it is PRIVATE to the leadership team. It is the only way to touch a cover by hand — the centre
      * wants the system as automatic as possible, so every manual change is deliberate and traceable.
      * Shows the cover's context and its event log (the audit trail of what changed and why).
      */
@@ -1029,9 +1030,16 @@ final class GuardiaController extends AbstractController
 
     /**
      * Applies a manual change to a cover: reassigns the substitute (empty clears it) and/or toggles the
-     * "did not happen" flag, with a mandatory explanation recorded in the event log ({@see AuditContext}).
-     * When the substitute actually changes, that explanation is sent to both people it affects — the one
-     * who takes the guardia over and the one relieved of it.
+     * "did not happen" flag, with an explanation recorded in the event log ({@see AuditContext}).
+     *
+     * That explanation is PRIVATE — it stays in the log, which only the leadership team reads, and is
+     * deliberately NOT forwarded to the teachers involved (the centre asked for it in those words). They
+     * are still told that the guardia changed, just not why; if coordination wants them to know the
+     * reason, they say so themselves.
+     *
+     * And it is only DEMANDED when the substitute actually changes, which is the case the centre cares
+     * about (someone who was not covering this period ends up covering it). Fixing a typo in the task
+     * description or ticking "no se cubrió" no longer forces a paragraph nobody will read.
      */
     #[Route('/{id}/modificar', name: 'guardia_cover_update', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function updateCover(GuardiaCover $cover, Request $request, UserRepository $users, EntityManagerInterface $em, GuardiaAssignmentNotifier $notifier, AuditContext $audit, FileUploader $uploader): Response
@@ -1039,16 +1047,19 @@ final class GuardiaController extends AbstractController
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $this->assertCsrf($request, 'guardia_cover_update'.$cover->getId());
 
+        $teacherId = $request->request->get('guardia');
+        $previous = $cover->getAssignedGuardia();
+        $incoming = '' !== (string) $teacherId ? $users->find((int) $teacherId) : null;
+
+        // Se comprueba ANTES de tocar nada: si falta la explicación, la pantalla vuelve tal cual estaba.
         $reason = trim((string) $request->request->get('motivo'));
-        if ('' === $reason) {
-            $this->addFlash('error', 'Explica por qué cambias esta guardia: se lo contamos a los profesores afectados y queda en el histórico.');
+        if ('' === $reason && $incoming !== $previous) {
+            $this->addFlash('error', 'Cambias de profesor de guardia: explica por qué. Queda en el histórico y solo lo ve el equipo directivo.');
 
             return $this->redirectToRoute('guardia_cover_edit', ['id' => $cover->getId()]);
         }
 
-        $teacherId = $request->request->get('guardia');
-        $previous = $cover->getAssignedGuardia();
-        $cover->setAssignedGuardia('' !== (string) $teacherId ? $users->find((int) $teacherId) : null);
+        $cover->setAssignedGuardia($incoming);
         $cover->setNotCovered($request->request->getBoolean('not_covered'));
         // setTaskDescription normaliza cadena vacía a null, así que "borrar la descripción" queda soportado.
         $cover->setTaskDescription((string) $request->request->get('task_description'));
@@ -1086,17 +1097,15 @@ final class GuardiaController extends AbstractController
         }
 
         // Notify only when the substitute actually changes (reselecting the same one does not notify).
-        // Everyone the change affects hears about it with the coordinator's explanation: whoever takes
-        // the guardia over and whoever is relieved of it — otherwise the relieved teacher would still
-        // turn up to a group that is no longer theirs, and the mandatory explanation would die unread
-        // in the audit trail.
-        $incoming = $cover->getAssignedGuardia();
+        // Everyone the change affects hears about it: whoever takes the guardia over and whoever is
+        // relieved of it — otherwise the relieved teacher would still turn up to a group that is no
+        // longer theirs. The WHY does not travel with it: it is private to the leadership team.
         $substituteChanged = $incoming !== $previous;
         if ($substituteChanged) {
             // notifyAssigned no hace nada si el hueco se ha dejado vacío, así que no hace falta guardarlo.
-            $notifier->notifyAssigned($cover, $reason);
+            $notifier->notifyAssigned($cover);
             if (null !== $previous) {
-                $notifier->notifyRelieved($cover, $previous, $reason);
+                $notifier->notifyRelieved($cover, $previous);
             }
         }
 

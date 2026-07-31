@@ -1,0 +1,72 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}{{ incident.equipment }} · Incidencias TIC{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('tic_incident_index') }}">Incidencias TIC</a><span class="sep">/</span>{{ incident.equipment }}{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Incidencia TIC</p>
+            <h1>{{ incident.equipment }}</h1>
+            <p class="lead">
+                <span class="badge {{ incident.priority.badgeClass }}">Prioridad {{ incident.priority.label|lower }}</span>
+                <span class="badge {{ incident.status.badgeClass }}">{{ incident.status.label }}</span>
+            </p>
+        </div>
+    </div>
+
+    <div class="card">
+        <dl class="cover-summary">
+            <div><dt>Dónde</dt><dd>{{ incident.room ? incident.room.name : 'Sin aula concreta' }}</dd></div>
+            <div>
+                <dt>Grupo</dt>
+                <dd>{% if incident.individualUse %}<span class="muted">Equipo de uso individual, no de un grupo</span>{% else %}{{ incident.groupName ?? '—' }}{% endif %}</dd>
+            </div>
+            <div><dt>Cuándo</dt><dd class="mono">{{ incident.occurredAt|date('d/m/Y H:i', false) }}</dd></div>
+            <div><dt>Quien avisa</dt><dd>{{ incident.reportedBy ? incident.reportedBy.fullName : '—' }}</dd></div>
+        </dl>
+
+        <div class="detail-block">
+            <div class="detail-block__label">Qué pasa</div>
+            <p class="detail-prose">{{ incident.description|nl2br }}</p>
+        </div>
+
+        {% if incident.resolutionNote %}
+            <div class="detail-block">
+                <div class="detail-block__label">Qué se hizo</div>
+                <p class="detail-prose">{{ incident.resolutionNote|nl2br }}</p>
+                <p class="muted">{{ incident.resolvedBy ? incident.resolvedBy.fullName : 'Alguien' }} · {{ incident.resolvedAt|date('d/m/Y H:i', false) }}</p>
+            </div>
+        {% elseif incident.takenBy %}
+            <p class="muted">La está mirando {{ incident.takenBy.fullName }}.</p>
+        {% endif %}
+    </div>
+
+    {% if canHandle %}
+        <div class="card">
+            <div class="page-head"><div><h2>Gestionar</h2></div></div>
+            <form method="post" action="{{ path('tic_incident_move', { id: incident.id }) }}" class="stack-form">
+                <input type="hidden" name="_token" value="{{ csrf_token('tic_incident_move' ~ incident.id) }}">
+
+                {% if incident.status.value != 'resolved' %}
+                    <div class="field">
+                        <label for="nota">¿Qué se ha hecho?</label>
+                        <textarea id="nota" name="nota" rows="3" maxlength="2000" placeholder="Se ha cambiado el cable HDMI; el proyector va."></textarea>
+                        <p class="field-help">Obligatorio para darla por resuelta: dentro de un mes esto es lo único que dirá si se arregló de verdad.</p>
+                    </div>
+                {% endif %}
+
+                <div class="form-actions">
+                    {% if incident.status.value == 'open' %}
+                        <button type="submit" name="estado" value="in_progress" class="btn secondary">Me pongo con ella</button>
+                    {% endif %}
+                    {% if incident.status.value != 'resolved' %}
+                        <button type="submit" name="estado" value="resolved" class="btn">Darla por resuelta</button>
+                    {% else %}
+                        <button type="submit" name="estado" value="open" class="btn secondary">Reabrir</button>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    {% endif %}
+{% endblock %}

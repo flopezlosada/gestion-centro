@@ -98,20 +98,11 @@
     <span class="calendar-dot calendar-dot--{{ status }}" title="{{ _self.status_label(status) }}"></span>
 {% endmacro %}
 
-{% macro action_label(name) %}
-    {%- set labels = {
-        'submit': 'Entregar',
-        'validate': 'Validar',
-        'reject': 'Devolver',
-        'cancel': 'Cancelar',
-    } -%}
-    {{- labels[name]|default(name) -}}
-{% endmacro %}
-
 {% macro status_badge(status) %}
     {%- set classes = {
         'pending': 'badge--muted',
         'submitted': 'badge--warning',
+        'in_review': 'badge--review',
         'validated': 'badge--success',
         'cancelled': 'badge--void',
     } -%}
@@ -124,6 +115,7 @@
     {%- set classes = {
         'pending': 'badge--muted',
         'submitted': 'badge--warning',
+        'in_review': 'badge--review',
         'validated': 'badge--success',
         'cancelled': 'badge--void',
     } -%}

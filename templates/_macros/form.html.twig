@@ -33,10 +33,14 @@
 {#
    Renderiza una lista de campos, cada uno en su .form-row (etiqueta + widget + ayuda + errores).
    Se pasa la lista explícita para preservar el orden y la selección exactos de cada formulario.
+
+   Emite el `row_attr` que declare el FormType en la propia fila. Es lo que espera Symfony al ofrecer esa
+   opción, y sin ello un `'row_attr' => ['data-algo' => '1']` se tragaba en silencio: el JS que buscaba
+   esa fila no encontraba nada y la mejora progresiva no ocurría, sin ningún error que lo delatara.
 #}
 {% macro fields(list) %}
     {% for field in list %}
-        <div class="form-row">
+        <div class="form-row"{% for name, value in field.vars.row_attr %} {{ name }}="{{ value }}"{% endfor %}>
             {{ form_label(field) }}
             {{ form_widget(field) }}
             {% if field.vars.help %}<p class="help">{{ field.vars.help }}</p>{% endif %}
@@ -55,7 +59,7 @@
    cuando se cumple la condición (p. ej. las horas solo si NO es "todo el día"). Sin JS, se ve siempre.
 #}
 {% macro field(field, when = null) %}
-    <div class="form-row"{% if when %} data-qa-when="{{ when }}"{% endif %}>
+    <div class="form-row"{% if when %} data-qa-when="{{ when }}"{% endif %}{% for name, value in field.vars.row_attr %} {{ name }}="{{ value }}"{% endfor %}>
         {{ form_label(field) }}
         {{ form_widget(field) }}
         {% if field.vars.help %}<p class="help">{{ field.vars.help }}</p>{% endif %}
@@ -182,11 +186,31 @@
     {% endif %}
     {#- Tercer paso de la cascada: la persona, acotada por task-form.js a quien tiene el rol en el
        departamento elegido. Sin JS se ven todos los candidatos y la validación del servidor rechaza
-       una elección que no corresponda. -#}
+       una elección que no corresponda.
+
+       Al CREAR son casillas (una tarea por persona: a alguien, a un departamento o a todo el claustro);
+       al EDITAR es un desplegable, porque la tarea que tienes delante es de una sola persona. -#}
     <div class="form-row" data-resp-user-step="1">
-        {{ form_label(form.responsibilityUser) }}
-        {{ form_widget(form.responsibilityUser) }}
-        {% if form.responsibilityUser.vars.help %}<p class="help">{{ form.responsibilityUser.vars.help }}</p>{% endif %}
-        {{ form_errors(form.responsibilityUser) }}
+        {% if form.responsibilityUsers is defined %}
+            {{ form_label(form.responsibilityUsers) }}
+            {% if form.responsibilityUsers.vars.help %}<p class="help">{{ form.responsibilityUsers.vars.help }}</p>{% endif %}
+            {# Nace oculto: solo tiene sentido con dos o más personas a la vista, y eso lo sabe el JS. #}
+            <p class="people-bulk" data-people-bulk hidden><button type="button" class="btn btn-secondary btn-sm">Marcar todas</button></p>
+            <div class="pick-list">
+                {% for choice in form.responsibilityUsers %}
+                    <label class="pick-option">
+                        {{ form_widget(choice, { attr: { class: 'pick-option__input' } }) }}
+                        <span class="pick-option__body"><span class="pick-option__name">{{ choice.vars.label }}</span></span>
+                    </label>
+                {% endfor %}
+            </div>
+            <p class="muted" data-people-empty hidden>Nadie tiene ese rol ahí. Prueba con otro departamento o déjalo vacío para verlos todos.</p>
+            {{ form_errors(form.responsibilityUsers) }}
+        {% else %}
+            {{ form_label(form.responsibilityUser) }}
+            {{ form_widget(form.responsibilityUser) }}
+            {% if form.responsibilityUser.vars.help %}<p class="help">{{ form.responsibilityUser.vars.help }}</p>{% endif %}
+            {{ form_errors(form.responsibilityUser) }}
+        {% endif %}
     </div>
 {% endmacro %}

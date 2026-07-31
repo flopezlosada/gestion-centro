@@ -7,6 +7,7 @@ namespace App\Tests\Functional;
 use App\Entity\Department;
 use App\Entity\Task;
 use App\Entity\User;
+use App\Enum\DeliverableRequirement;
 use App\Enum\TaskType;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
@@ -56,7 +57,7 @@ final class HomeDeliverableRowTest extends WebTestCase
         $type = $document ? TaskType::WITH_DELIVERABLE : TaskType::SIMPLE;
         $task = new Task('Memoria del departamento', SchoolYear::current($today), $today, $type);
         $task->setAssignedUser($owner)->setCreatedBy($owner)
-            ->setRequiresDocument($document)
+            ->setDeliverable($document ? DeliverableRequirement::LINK : DeliverableRequirement::NONE)
             ->setRequiresCheckbox($checkbox);
         $this->em->persist($task);
         $this->em->flush();

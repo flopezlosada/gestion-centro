@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repository;
 
 use App\Entity\Meeting;
+use App\Entity\MeetingType;
 use App\Entity\Project;
 use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
@@ -150,5 +151,60 @@ class MeetingRepository extends ServiceEntityRepository
             ->andWhere('m.convener = :user OR a = :user')
             ->setParameter('user', $user)
             ->distinct();
+    }
+
+    /**
+     * The PUBLISHED minutes a person may read, newest first — the archive the centre asked for
+     * ("quedan archivadas en el programa ordenadas cronológicamente y por tipo de reunión").
+     *
+     * Drafts are excluded: an acta that is still being written is not archived, it is being worked on.
+     * Scoped, as everything else here, to the meetings that concern the person; the leadership team sees
+     * the whole archive through {@see findPublishedMinutes()}.
+     *
+     * @param User             $user the person
+     * @param MeetingType|null $type only this kind, or null for every kind
+     *
+     * @return list<Meeting> the meetings with a published acta, newest first
+     */
+    public function findPublishedMinutesFor(User $user, ?MeetingType $type = null): array
+    {
+        $qb = $this->concerning($user)->andWhere('m.minutesPublishedAt IS NOT NULL');
+
+        return $this->orderedArchive($qb, $type);
+    }
+
+    /**
+     * Every published acta of the centre, for whoever may see the whole archive (the leadership team).
+     *
+     * @param MeetingType|null $type only this kind, or null for every kind
+     *
+     * @return list<Meeting> the meetings with a published acta, newest first
+     */
+    public function findPublishedMinutes(?MeetingType $type = null): array
+    {
+        $qb = $this->createQueryBuilder('m')->andWhere('m.minutesPublishedAt IS NOT NULL');
+
+        return $this->orderedArchive($qb, $type);
+    }
+
+    /**
+     * Finishes an archive query: narrows it by kind when asked and orders it chronologically, newest
+     * first. Shared so the two archives (mine and the centre's) cannot drift apart.
+     *
+     * @param QueryBuilder     $qb   the query so far
+     * @param MeetingType|null $type the kind to narrow to, or null
+     *
+     * @return list<Meeting> the meetings, newest first
+     */
+    private function orderedArchive(QueryBuilder $qb, ?MeetingType $type): array
+    {
+        // El tipo se pinta en cada fila del archivo: se trae en la misma consulta (evita un N+1).
+        $qb->leftJoin('m.type', 'type')->addSelect('type');
+
+        if (null !== $type) {
+            $qb->andWhere('m.type = :type')->setParameter('type', $type);
+        }
+
+        return $qb->orderBy('m.startAt', 'DESC')->getQuery()->getResult();
     }
 }

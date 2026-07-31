@@ -35,7 +35,21 @@ self.addEventListener('push', function (event) {
         vibrate: [200, 100, 200]
     };
 
-    event.waitUntil(self.registration.showNotification(title, options));
+    // Además del aviso, la marca en el ICONO de la aplicación instalada: es lo que se ve en la pantalla
+    // del móvil sin abrir nada. Aquí no se sabe cuántos avisos hay sin leer (el service worker no tiene
+    // sesión), así que se cuenta a ojo sumando las notificaciones que siguen en pantalla; al abrir la
+    // aplicación, js/app-badge.js lo cuadra con el número de verdad.
+    event.waitUntil(
+        self.registration.showNotification(title, options).then(function () {
+            if (!('setAppBadge' in self.navigator)) {
+                return;
+            }
+
+            return self.registration.getNotifications().then(function (list) {
+                return self.navigator.setAppBadge(list.length || 1);
+            }).catch(function () {});
+        })
+    );
 });
 
 self.addEventListener('notificationclick', function (event) {
