@@ -1003,9 +1003,15 @@ final class GuardiaController extends AbstractController
      * for THEIR own cover (self-service, no WRITE needed) and to the coordinator (READ). This is where
      * "mis guardias" links each row; coordinators additionally get a link to modify it. The private
      * reason for the absence is shown only to the coordinator, never to the covering guardia.
+     *
+     * "Falta tanto" y "ya pasó" NO son un estado guardado: los deduce del reloj el MISMO view-model que
+     * usan el hero de Inicio y "Mis guardias" ({@see TeacherGuardiaDay}), para que las tres pantallas no
+     * puedan discrepar sobre si una guardia está hecha. Cuando quien mira es quien la cubre se le pasa
+     * además el resto de SU día, como contexto de "¿y la siguiente?"; a la coordinación no, porque el día
+     * que le interesa es el del parte, no el suyo.
      */
     #[Route('/{id}/ver', name: 'guardia_cover_show', requirements: ['id' => '\d+'], methods: ['GET'])]
-    public function showCover(GuardiaCover $cover, #[CurrentUser] User $user, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
+    public function showCover(GuardiaCover $cover, #[CurrentUser] User $user, ScheduleEntryRepository $schedule, AcademicYearRepository $years, GuardiaCoverRepository $covers, TeacherGuardiaDay $day): Response
     {
         // A teacher may see the guardia assigned to them; anyone else needs read access to the area.
         $isOwner = $cover->getAssignedGuardia()?->getId() === $user->getId();
@@ -1015,10 +1021,35 @@ final class GuardiaController extends AbstractController
         }
 
         $year = $years->findBySchoolYear(SchoolYear::current($cover->getDate()));
+        $slotTimes = $this->slotTimes($schedule, $year);
+
+        // Las horas de los tramos vienen fechadas HOY ({@see ScheduleEntryRepository::distinctSlots()}:
+        // son horas sueltas del horario, no instantes), así que compararlas con el reloj solo dice algo de
+        // una guardia de hoy. Para otro día lo resuelve el calendario: si el día ya pasó, está hecha; si
+        // está por venir, no hay cuenta atrás que dar.
+        $today = new \DateTimeImmutable('today');
+        $isToday = $cover->getDate()->format('Y-m-d') === $today->format('Y-m-d');
+
+        $items = [];
+        $mine = ['done' => $cover->getDate() < $today, 'minutesUntil' => null];
+        if ($isToday) {
+            // El día de quien cubre, o esta sola guardia si la mira otra persona: en los dos casos por el
+            // mismo servicio, que es el que sabe cuándo una guardia cuenta como hecha.
+            $items = $day->forDay($isOwner ? $covers->findAssignedTo($user, $cover->getDate()) : [$cover], $slotTimes, new \DateTimeImmutable('now'))['items'];
+            foreach ($items as $item) {
+                if ($item['cover']->getId() === $cover->getId()) {
+                    $mine = $item;
+                }
+            }
+        }
 
         return $this->render('guardia/cover_show.html.twig', [
             'cover' => $cover,
-            'slotTimes' => $this->slotTimes($schedule, $year),
+            'slotTimes' => $slotTimes,
+            // Esta guardia dentro del día: `done` (su hora ya terminó) y `minutesUntil` (la cuenta atrás).
+            'item' => $mine,
+            // El resto del día solo cuando hay resto: una lista de una fila sería la misma guardia otra vez.
+            'dayItems' => \count($items) > 1 ? $items : [],
             'canEdit' => $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS),
             'canSeeReason' => $canManage,
             // Quien cubre ve el recordatorio de RAICES (apuntar las ausencias del alumnado de la sesión);

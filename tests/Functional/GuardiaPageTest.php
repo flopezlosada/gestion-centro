@@ -891,4 +891,69 @@ final class GuardiaPageTest extends WebTestCase
         // Falla por CSRF o por permisos, pero falla: lo que no puede es escribirse.
         self::assertResponseStatusCodeSame(403);
     }
+
+    /**
+     * Una guardia que ya pasó se lee, no se toca: la cabecera dice "Hecha" en pasado y desaparecen las
+     * acciones sobre la tarea del grupo (cambiarla o pedir sus fotocopias no tiene ya a quién servir, y
+     * ofrecerlo invita a reescribir algo que ocurrió). "Hecha" sale del RELOJ, no de una casilla: es el
+     * mismo criterio que usan el hero de Inicio y "Mis guardias" ({@see App\Guardia\TeacherGuardiaDay}).
+     */
+    public function testAGuardiaFromAPastDayIsReadOnly(): void
+    {
+        $guardia = $this->login(false); // quien la cubrió, sin coordinación
+        $absent = $this->user('Ausente Pasada', 'apasada@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('-3 days'), 0, $absent, $guardia);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/'.$cover->getId().'/ver');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('.guardia-detail-head', 'Hecha');
+        self::assertSelectorTextContains('.guardia-detail-head', 'Cubriste a');
+        // Acotado al detalle: el menú lateral tiene su propio enlace al banco, que no es de esta guardia.
+        self::assertCount(0, $crawler->filter('.detail-cols a[href*="/guardias/banco"]'), 'ya no se puede coger tarea para una hora que pasó');
+        self::assertCount(0, $crawler->filter('.detail-cols a[href*="fotocopias"]'), 'ni pedir fotocopias de su ficha');
+        // Pero contar lo que pasó sigue disponible: casi siempre se cuenta al salir del aula.
+        self::assertCount(1, $crawler->filter('form[action$="/incidencia"]'));
+    }
+
+    /** Y la de mañana no está hecha: la cabecera sigue siendo la del bloque de "tu guardia". */
+    public function testAGuardiaStillToComeIsNotShownAsDone(): void
+    {
+        $guardia = $this->login(false);
+        $absent = $this->user('Ausente Futura', 'afutura@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('+1 day'), 0, $absent, $guardia);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/'.$cover->getId().'/ver');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('.guardia-detail-head', 'Cubres a');
+        self::assertStringNotContainsString('Cubriste', $crawler->filter('.guardia-detail-head')->text());
+    }
+
+    /**
+     * El contexto "tus guardias de hoy" solo aparece cuando hay más de una: con una sola, la tira sería la
+     * misma guardia que ya llena la pantalla.
+     */
+    public function testTheDayStripOnlyShowsUpWhenThereIsMoreThanOneGuardiaThatDay(): void
+    {
+        $guardia = $this->login(false);
+        $absent = $this->user('Ausente Tira', 'atira@centro.test');
+        $today = new \DateTimeImmutable('today');
+        $one = $this->cover($today, 0, $absent, $guardia);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/'.$one->getId().'/ver');
+        self::assertCount(0, $crawler->filter('.day-strip'));
+
+        $this->cover($today, 3, $absent, $guardia, group: '2ºB');
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/'.$one->getId().'/ver');
+        self::assertCount(1, $crawler->filter('.day-strip'));
+        self::assertCount(2, $crawler->filter('.day-strip__row'));
+        // La que estás mirando no se enlaza a sí misma.
+        self::assertCount(1, $crawler->filter('.day-strip__row[href]'));
+    }
 }

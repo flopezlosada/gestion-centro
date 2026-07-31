@@ -35,6 +35,12 @@
     --accent-ink: #8F4B00;     /* el mismo naranja, legible como TEXTO o icono sobre papel (6:1) */
     --accent-weak: #FFF0DA;    /* fondo tenue de acento (chip, hover, seleccionado) */
     --accent-weak-border: #F6D6A4;
+    /* El MISMO naranja llevado a tostado profundo: el bloque ancla de una pantalla (la guardia que estás
+       haciendo). Existe porque el relleno de marca es luminoso y a tamaño de tarjeta grande saturaba: el
+       ancla necesita ser lo más oscuro de la pantalla para dar jerarquía, no lo más brillante. Un solo
+       bloque así por pantalla; si hay dos, ninguno es el ancla. */
+    --accent-deep: #7A3D0A;
+    --on-accent-deep: #FFF6EA;  /* tinta crema sobre el tostado (13:1) */
     --success: #0B7A28;        /* verde del logo oscurecido hasta ser legible: "hecha" */
     --success-weak: #DFF3E2;
     --success-text: #0A6522;
@@ -118,6 +124,10 @@
     --accent-ink: #FFB340;
     --accent-weak: #3A2405;
     --accent-weak-border: #5C3A0A;
+    /* En oscuro el ancla no puede ser "lo más oscuro" (el lienzo ya lo es): se aclara un paso respecto al
+       claro para seguir destacando SOBRE el fondo, conservando el matiz tostado. */
+    --accent-deep: #6B3608;
+    --on-accent-deep: #FFF1E0;
     --success: #4FC463;        /* verde del logo aclarado para leerse sobre fondo oscuro */
     --success-weak: #12301A;
     --success-text: #8EDB9B;
@@ -1155,9 +1165,17 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .callout ul { margin: 6px 0 0; padding-left: 20px; }
 .callout li + li { margin-top: 4px; }
 .callout--warning { background: var(--warning-weak); border-color: var(--warning); color: var(--warning-text); }
-/* Enlace de salida dentro de un callout (p. ej. "Abrir RAICES"): hereda el color del aviso y no parte
-   en dos líneas, que es lo que hace un enlace corto al final de una frase larga. */
-.raices-notice__link { color: var(--warning-text); font-weight: 600; white-space: nowrap; }
+/* Variante en el naranja de la marca: la nota de trabajo que hay que leer pero que NO es un problema
+   (el recordatorio de RAICES). El filete es el único naranja pleno del aviso; el fondo, tinte. */
+.callout--accent { background: var(--accent-weak); border-color: var(--accent-weak-border); border-left-color: var(--accent); color: var(--text-muted); }
+.callout--accent strong { color: var(--text); }
+/* Enlace de salida dentro de un callout (p. ej. "Abrir RAICES"): destaca sin gritar y no parte en dos
+   líneas, que es lo que hace un enlace corto al final de una frase larga. */
+.raices-notice { display: flex; align-items: flex-start; gap: 11px; }
+.raices-notice__icon { flex: none; margin-top: 1px; color: var(--accent-ink); display: flex; }
+.raices-notice__icon svg { width: 17px; height: 17px; }
+.raices-notice p { line-height: 1.5; }
+.raices-notice__link { color: var(--accent-ink); font-weight: 600; white-space: nowrap; }
 /* Listas que pueden ser de dos nombres o del claustro entero: plegadas, para no sepultar lo que
    viene debajo (normalmente el botón que confirma la acción que el aviso está describiendo). */
 .callout__more > summary { cursor: pointer; font-weight: 600; margin-top: 8px; }
@@ -1776,6 +1794,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
    es un <button> dentro de un <form>, no un enlace). */
 .link-danger { background: none; border: 0; padding: 0; margin-left: 14px; color: var(--danger-text); font: inherit; cursor: pointer; }
 .link-danger:hover { text-decoration: underline; }
+/* Variante discreta: lo destructivo que va JUNTO a la acción normal (p. ej. "Quitar" al lado de "Cambiar
+   de tarea"). En rojo desde el principio compite con la acción que se espera que pulses; el rojo aparece
+   al apuntarlo, que es cuando hace falta la señal. */
+.link-danger--quiet { margin-left: 0; padding: 9px 12px; color: var(--text-faint); font-weight: 600; }
+.link-danger--quiet:hover { color: var(--danger-text); text-decoration: none; }
 .link-action { background: none; border: 0; padding: 0; margin-left: 14px; color: var(--accent-ink); font: inherit; cursor: pointer; }
 .link-action:hover { text-decoration: underline; }
 .sga-phase { margin-block: 2rem; }
@@ -2260,16 +2283,17 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .today__title { margin: 0; font-size: 22px; }
 .today__date { color: var(--text-muted); font-size: 14px; text-transform: capitalize; }
 .count-chip { margin-left: auto; font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent-ink); background: var(--accent-weak); border: 1px solid var(--accent); border-radius: 999px; padding: 3px 11px; white-space: nowrap; }
-/* Recordatorio de RAICES en la vista del día: una línea, no un callout. El callout (ámbar, con borde)
-   es para UNA guardia concreta; aquí encabeza una lista y a ese tamaño competiría con las filas, que
-   son lo que hay que leer. Mismo ámbar en el signo para que se reconozca como el mismo aviso. */
+/* Recordatorio de RAICES en la vista del día: una línea, no un callout. El callout es para UNA guardia
+   concreta; aquí encabeza una lista y a ese tamaño competiría con las filas, que son lo que hay que leer.
+   Mismo tinte naranja que el callout para que se reconozca como el mismo aviso, y por lo mismo: es una
+   nota de trabajo, no una alarma (el rojo de esta paleta significa "sin cubrir"). */
 .raices-line { display: flex; align-items: baseline; gap: 9px; margin: -4px 0 16px; font-size: 13px; color: var(--text-muted); }
 .raices-line__mark {
     flex: none; width: 18px; height: 18px; border-radius: 999px;
-    background: var(--warning-weak); color: var(--warning-text);
+    background: var(--accent-weak); color: var(--accent-ink);
     display: grid; place-items: center; font: 600 12px var(--font-mono);
 }
-.raices-line a { color: var(--warning-text); font-weight: 600; }
+.raices-line a { color: var(--accent-ink); font-weight: 600; }
 
 /* Rejilla de dos columnas: el resto del día a la izquierda; la próxima guardia (protagonista)
    y el resumen a la derecha, fijos al hacer scroll. En móvil se apila y el protagonista sube. */
@@ -3084,7 +3108,10 @@ tr.is-not-covered { background: var(--danger-weak); }
 .doc-card__body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .doc-card__name { font-size: 13.5px; color: var(--text); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .doc-card__meta { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
-.doc-card__open { flex: none; font-size: 12.5px; color: var(--success); font-weight: 600; }
+/* La acción del adjunto va en el naranja de los enlaces, no en verde: en esta paleta el verde significa
+   "hecha" (tarea cerrada, guardia pasada), y usarlo para "Descargar" hacía leer un documento pendiente de
+   abrir como algo ya resuelto. Vale igual en tareas y en reuniones, que usan la misma tarjeta. */
+.doc-card__open { flex: none; font-size: 12.5px; color: var(--accent-ink); font-weight: 600; }
 
 .deliverable-form, .delegate-form { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .deliverable-form .deliverable-input, .delegate-form select {
@@ -3188,24 +3215,53 @@ tr.is-not-covered { background: var(--danger-weak); }
 .notice__time { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-tenue); margin-top: 6px; }
 
 /* =============================================================================
-   Detalle de guardia — hero + tarea del grupo + clase
+   Detalle de guardia — ancla + tarea del grupo + clase + acciones
+   -----------------------------------------------------------------------------
+   El naranja se usa en TRES niveles y nunca todo al mismo volumen (handoff
+   catalogo/handoff_detalle_guardia): tostado profundo para el ancla, naranja pleno solo para el filete
+   del recordatorio y el punto de estado, y tinte suave para chips y avisos. Antes el ancla era el
+   relleno de marca a todo volumen y el recordatorio iba en rojo, así que la pantalla tenía dos gritos
+   y ninguna jerarquía.
    ============================================================================= */
-.guardia-detail-head { background: var(--accent); color: var(--on-accent); border-radius: var(--radius-lg); padding: 20px 22px; box-shadow: var(--shadow-hero); }
-.guardia-detail-head.is-incident { background: var(--surface-sunken); color: var(--text); border: 1px solid var(--border); box-shadow: none; }
+.guardia-detail-head {
+    background: var(--accent-deep); color: var(--on-accent-deep);
+    border-radius: var(--radius-lg); padding: 20px 22px; box-shadow: var(--shadow-hero);
+    --on-deep-soft: color-mix(in srgb, var(--on-accent-deep) 62%, transparent);
+}
+/* Dos estados neutros y por el mismo motivo: ni la incidencia ni una guardia ya pasada son "lo que estás
+   haciendo ahora", así que dejan de ser el ancla de la pantalla en vez de cambiar solo de etiqueta. */
+.guardia-detail-head.is-incident,
+.guardia-detail-head.is-done { background: var(--surface-sunken); color: var(--text); border: 1px solid var(--border); box-shadow: none; }
 .guardia-detail-head__top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.guardia-detail-head__eyebrow { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: color-mix(in srgb, var(--on-accent) 62%, transparent); }
+.guardia-detail-head__eyebrow { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--on-deep-soft); }
+/* El punto de estado es el único naranja PLENO del ancla (sobre tostado sí contrasta; sobre el relleno
+   de marca del hero de Inicio no, y por eso allí sigue siendo el verde del logo). */
+.guardia-detail-head .guardia-hero__pulse { background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 24%, transparent); }
 .guardia-detail-head__flag { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; font-weight: 600; color: var(--danger-text); }
+.guardia-detail-head__flag--done { color: var(--success-text); }
 .guardia-detail-head__flag svg { width: 13px; height: 13px; }
-.guardia-detail-head__time { font-family: var(--font-mono); font-size: 12px; color: color-mix(in srgb, var(--on-accent) 62%, transparent); }
-.guardia-detail-head.is-incident .guardia-detail-head__time { color: var(--text-faint); }
-.guardia-detail-head__where { font-family: var(--font-display); font-size: 23px; margin-top: 14px; }
+.guardia-detail-head__time { font-family: var(--font-mono); font-size: 12px; color: var(--on-deep-soft); }
+.guardia-detail-head.is-incident .guardia-detail-head__time,
+.guardia-detail-head.is-done .guardia-detail-head__time { color: var(--text-faint); }
+.guardia-detail-head__line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 12px; margin-top: 14px; }
+.guardia-detail-head__where { font-family: var(--font-display); font-size: 23px; }
 .guardia-detail-head__where--dark { color: var(--text); }
-.guardia-detail-head__sub { font-size: 13.5px; color: color-mix(in srgb, var(--on-accent) 80%, transparent); margin-top: 6px; }
-.guardia-detail-head__sub strong { color: var(--on-accent); }
+.guardia-detail-head__slot { font-family: var(--font-mono); font-size: 12px; color: var(--on-deep-soft); }
+.guardia-detail-head.is-incident .guardia-detail-head__slot,
+.guardia-detail-head.is-done .guardia-detail-head__slot { color: var(--text-faint); }
+.guardia-detail-head__sub { font-size: 13.5px; color: color-mix(in srgb, var(--on-accent-deep) 80%, transparent); margin-top: 6px; }
+.guardia-detail-head__sub strong { color: var(--on-accent-deep); }
 .guardia-detail-head__sub--dark { color: var(--text-muted); }
 .guardia-detail-head__sub--dark strong { color: var(--text); }
+@media (min-width: 900px) {
+    /* En escritorio el ancla tiene sitio para ser lo primero que se lee sin competir con nada. */
+    .guardia-detail-head { padding: 24px; }
+    .guardia-detail-head__where { font-size: 28px; }
+}
 
-.task-note-flag { font-family: var(--font-mono); font-size: 9px; font-weight: 600; color: var(--amber-text); background: var(--amber-weak); border: 1px solid var(--amber-border); padding: 2px 7px; border-radius: 999px; text-transform: uppercase; margin-left: 6px; }
+/* "Tiene tarea": un DATO de la guardia, en tinte de marca. No en dorado ni en rojo — no es un entregable
+   pendiente ni una alarma, es lo que el grupo va a hacer esa hora. */
+.task-note-flag { font-family: var(--font-mono); font-size: 9px; font-weight: 600; color: var(--accent-ink); background: var(--accent-weak); border: 1px solid var(--accent-weak-border); padding: 2px 7px; border-radius: 999px; text-transform: uppercase; margin-left: 6px; }
 .guardia-tasknote { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px 17px; }
 .doc-card--spaced { margin-top: 14px; }
 .guardia-empty { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 26px 20px; text-align: center; }
@@ -3213,6 +3269,56 @@ tr.is-not-covered { background: var(--danger-weak); }
 .guardia-empty__icon svg { width: 26px; height: 26px; }
 .guardia-empty__title { font-size: 15px; color: var(--text); font-weight: 600; }
 .guardia-empty__sub { font-size: 13px; line-height: 1.55; color: var(--text-muted); margin: 6px 0 0; }
+
+/* ---- Ficha de datos en filas (lateral del detalle) ----------------------
+   Los mismos pares etiqueta/valor que .meta-grid, pero en filas: en una columna estrecha la rejilla de
+   dos celdas deja un valor por línea con la mitad del ancho vacío, y con cuatro datos (grupo, aula,
+   materia…) ya no cabe. La rejilla se queda para el cuerpo, que es ancho. */
+.meta-rows { margin: 0; }
+.meta-rows__row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 8px 0; }
+.meta-rows__row + .meta-rows__row { border-top: 1px solid var(--separator); }
+.meta-rows dt { font-size: 13px; color: var(--text-faint); }
+.meta-rows dd { margin: 0; font-size: 13.5px; color: var(--text); font-weight: 500; text-align: right; }
+.meta-rows dd.mono { font-family: var(--font-mono); font-weight: 600; }
+
+/* ---- Tarjeta del lateral (rótulo + contenido) ---------------------------
+   Un solo envoltorio para las tarjetas de la columna lateral: la ficha de la clase, las acciones y el
+   motivo privado de la ausencia. Los botones que caen dentro van a ancho completo, agrupados y con
+   rótulo, nunca sueltos: en el detalle de la guardia flotaban al final del contenido, así que "pedir
+   fotocopias" parecía parte de la tarea del banco y no algo que puedes hacer con ella. */
+.side-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 9px; }
+.side-card__label { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 3px; }
+.side-card .btn { width: 100%; padding: 12px; }
+.side-card .btn svg { width: 16px; height: 16px; }
+
+/* ---- Contexto: el resto de tus guardias del día ------------------------- */
+.day-strip { background: var(--surface-sunken); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; }
+.day-strip__label { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 10px; }
+.day-strip__row { display: flex; align-items: center; gap: 10px; padding: 7px 0; text-decoration: none; color: inherit; }
+.day-strip__row + .day-strip__row { border-top: 1px solid var(--border); }
+.day-strip__time { flex: none; width: 46px; font-family: var(--font-mono); font-size: 12.5px; color: var(--text-muted); }
+.day-strip__where { flex: 1; min-width: 0; font-size: 13px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.day-strip__done { font-family: var(--font-mono); font-size: 10px; font-weight: 600; color: var(--success-text); }
+.day-strip__dot { flex: none; width: 7px; height: 7px; border-radius: 999px; background: var(--accent); }
+/* La guardia que estás mirando: en color de marca y sin enlace (ya estás en ella). Las pasadas, con la
+   hora tachada, que es lo que distingue "ya fue" de "queda por hacer" sin añadir una etiqueta más. */
+.day-strip__row.is-current .day-strip__time { color: var(--accent-ink); font-weight: 600; }
+.day-strip__row.is-current .day-strip__where { color: var(--text); font-weight: 500; }
+.day-strip__row.is-done .day-strip__time { text-decoration: line-through; }
+
+/* ---- Notificar una incidencia de una guardia (plegado) ------------------
+   Plegado y en gris: es la salida para cuando algo ha ido mal, así que tiene que estar siempre a mano
+   pero no puede parecer un paso de la guardia. Abierto de partida si ya hay algo contado, porque
+   entonces es contenido de la pantalla y no una acción.
+   `cover-incident` y no `incident`: ese nombre ya es de la lista de incidencias TIC (más arriba, con
+   `display: flex`), y reutilizarlo convertía este bloque en dos columnas sin un solo error. */
+.cover-incident__toggle { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; font: 600 13px var(--font-body); color: var(--text-faint); padding: 8px 0; }
+.cover-incident__toggle:hover { color: var(--danger-text); }
+.cover-incident__toggle svg { width: 16px; height: 16px; }
+.cover-incident__toggle::-webkit-details-marker { display: none; }
+.cover-incident__toggle:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: var(--radius-sm); }
+.cover-incident[open] .cover-incident__toggle { color: var(--danger-text); }
+.cover-incident__body { margin-top: 4px; }
 
 /* =============================================================================
    Parte de guardias (coordinación) — handoff 8a móvil / 3a escritorio / 8b hoja
@@ -3505,11 +3611,14 @@ tr.is-not-covered { background: var(--danger-weak); }
 /* Retirada: sigue en la lista (para su departamento) pero se lee como apagada. */
 tr.is-retired { opacity: .6; }
 
-.bank-task { border: 1px solid var(--border); border-left: 4px solid var(--warning); border-radius: var(--radius); padding: 14px 16px; margin-top: 14px; }
-.bank-task__head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.bank-task__meta { color: var(--text-muted); font-size: 13px; }
-.bank-task__title { margin: 8px 0 4px; }
-.bank-task__actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 12px; }
+/* La tarea del banco es una tarjeta normal, no un aviso: llevaba filete rojo y la etiqueta "Del banco" en
+   rojo teja —el color de "sin cubrir"— y con eso la ficha de repaso del departamento parecía un problema.
+   De dónde sale la tarea es un dato; el pie va separado por un filete porque son acciones, no contenido. */
+.bank-task { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; margin-top: 14px; }
+.bank-task__head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
+.bank-task__meta { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-faint); }
+.bank-task__title { font-family: var(--font-display); font-size: 20px; line-height: 1.25; color: var(--text); margin: 0; }
+.bank-task__actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--separator); }
 
 .bank-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
 .copy-context__line { margin: 4px 0 10px; font-weight: 600; font-size: 16px; }

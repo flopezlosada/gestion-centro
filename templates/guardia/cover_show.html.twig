@@ -8,11 +8,21 @@
 
 {% block body %}
     {% import '_macros/raices.html.twig' as raices %}
+    {% import '_macros/time.html.twig' as fmt %}
     {% set times = slotTimes[cover.slotIndex] ?? null %}
     {# Mismo voter que exigen las rutas: los botones que se pintan y lo que el servidor acepta no pueden
        separarse (quien cubre, el profesor ausente o la coordinación de guardias). #}
     {% set canWorkOnTask = is_granted(constant('App\\Security\\Voter\\GuardiaCoverVoter::WORK_ON_TASK'), cover) %}
-    {% set done = cover.notCovered %}
+    {# Tres estados excluyentes, en este orden: una incidencia manda sobre lo demás (la guardia no ocurrió);
+       después "ya pasó", que lo dice el RELOJ y no una casilla ({@see App\Guardia\TeacherGuardiaDay}); y por
+       último la que estás a punto de hacer o estás haciendo, la única que se lleva el bloque tostado. #}
+    {% set incident = cover.notCovered %}
+    {% set isOver = item.done %}
+    {% set isDone = not incident and isOver %}
+    {# Terminada la hora, la pantalla pasa a LECTURA: cambiar la tarea del grupo o pedir fotocopias de su
+       ficha ya no tiene a quién servir, y ofrecerlo invita a reescribir algo que ya ocurrió. Contar una
+       incidencia sí sigue disponible, porque casi siempre se cuenta al salir del aula. #}
+    {% set canChangeTask = canWorkOnTask and not isOver and not incident %}
 
     <div class="backbar">
         <a class="backbar__back" href="{{ path('guardia_mine') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>Mis guardias</a>
@@ -21,26 +31,27 @@
 
     <div class="detail-cols">
       <div class="detail-main">
-        {% if done %}
-            {# Incidencia registrada: cabecera clara, sin hero verde. #}
-            <div class="guardia-detail-head is-incident">
-                <div class="guardia-detail-head__top">
-                    <span class="guardia-detail-head__flag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>Incidencia</span>
-                    <span class="guardia-detail-head__time">{% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}{{ cover.slotIndex + 1 }}ª hora{% endif %}</span>
-                </div>
-                <div class="guardia-detail-head__where guardia-detail-head__where--dark">{{ cover.effectiveRoomName ?: 'Aula' }} · {{ cover.groupName ?: 'Grupo' }}</div>
-                <div class="guardia-detail-head__sub guardia-detail-head__sub--dark">Debías cubrir a <strong>{{ cover.absentTeacher.fullName }}</strong></div>
+        <div class="guardia-detail-head{{ incident ? ' is-incident' }}{{ isDone ? ' is-done' }}">
+            <div class="guardia-detail-head__top">
+                {% if incident %}
+                    <span class="guardia-detail-head__flag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>Incidencia</span>
+                {% elseif isDone %}
+                    <span class="guardia-detail-head__flag guardia-detail-head__flag--done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-11"/></svg>Hecha</span>
+                {% else %}
+                    {# La cuenta atrás va en el rótulo, no en una tarjeta aparte: "¿cuándo?" es la mitad de la
+                       pregunta con la que se abre esta pantalla. Solo existe el día de la guardia. #}
+                    <span class="guardia-detail-head__eyebrow"><span class="guardia-hero__pulse"></span>Tu guardia{% if item.minutesUntil is not null %} · {{ fmt.countdown(item.minutesUntil) }}{% endif %}</span>
+                {% endif %}
+                {% if times %}<span class="guardia-detail-head__time">{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}</span>{% endif %}
             </div>
-        {% else %}
-            <div class="guardia-detail-head">
-                <div class="guardia-detail-head__top">
-                    <span class="guardia-detail-head__eyebrow"><span class="guardia-hero__pulse"></span>Tu guardia</span>
-                    <span class="guardia-detail-head__time">{% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}{{ cover.slotIndex + 1 }}ª hora{% endif %}</span>
-                </div>
-                <div class="guardia-detail-head__where">{{ cover.effectiveRoomName ?: 'Aula' }} · {{ cover.groupName ?: 'Grupo' }}</div>
-                <div class="guardia-detail-head__sub">Cubres a <strong>{{ cover.absentTeacher.fullName }}</strong></div>
+            <div class="guardia-detail-head__line">
+                <span class="guardia-detail-head__where{{ incident or isDone ? ' guardia-detail-head__where--dark' }}">{{ cover.effectiveRoomName ?: 'Aula' }} · {{ cover.groupName ?: 'Grupo' }}</span>
+                <span class="guardia-detail-head__slot">{{ cover.slotIndex + 1 }}ª hora</span>
             </div>
-        {% endif %}
+            <div class="guardia-detail-head__sub{{ incident or isDone ? ' guardia-detail-head__sub--dark' }}">
+                {%- if incident %}Debías cubrir a{% elseif isDone %}Cubriste a{% else %}Cubres a{% endif %} <strong>{{ cover.absentTeacher.fullName }}</strong>
+            </div>
+        </div>
 
         {#- Recordatorio de RAICES: pegado a la cabecera, ANTES de la tarea del grupo. Va aquí porque esta
             es la pantalla que se abre estando en el aula.
@@ -53,7 +64,7 @@
               criterio con el que el barrido del push descarta esos covers
               ({@see App\Repository\GuardiaCoverRepository::findRaicesRemindableOn}); tenerlo distinto en
               cada sitio era pedirle a alguien algo imposible en una de las dos superficies. -#}
-        {% if isAssignedGuardia and not cover.notCovered %}{{ raices.notice() }}{% endif %}
+        {% if isAssignedGuardia and not incident %}{{ raices.notice() }}{% endif %}
 
         <div class="detail-block">
             <div class="detail-block__label">Tarea para el grupo{% if cover.hasTask %} <span class="task-note-flag">tiene tarea</span>{% endif %}</div>
@@ -72,8 +83,12 @@
                 <div class="guardia-empty">
                     <span class="guardia-empty__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span>
                     <div class="guardia-empty__title">El profesor no ha dejado tarea</div>
-                    <p class="guardia-empty__sub">Coge una del banco de tareas: los departamentos dejan trabajo preparado por nivel.</p>
-                    {% if canWorkOnTask %}<a class="btn" href="{{ path('guardia_bank_index', { para: cover.id }) }}">Coger tarea del banco</a>{% endif %}
+                    {# La invitación solo si aún se puede aceptar: en una guardia ya pasada, "coge una del
+                       banco" es pedir algo que no se puede hacer. #}
+                    {% if canChangeTask %}
+                        <p class="guardia-empty__sub">Coge una del banco de tareas: los departamentos dejan trabajo preparado por nivel.</p>
+                        <a class="btn" href="{{ path('guardia_bank_index', { para: cover.id }) }}">Coger tarea del banco</a>
+                    {% endif %}
                 </div>
             {% endif %}
 
@@ -82,10 +97,14 @@
                 {% set bank = cover.bankItem %}
                 <div class="bank-task">
                     <div class="bank-task__head">
-                        <span class="badge badge--warning" data-tone="warning">Del banco</span>
-                        <span class="bank-task__meta">{{ bank.level.label }}{% if bank.subject %} · {{ bank.subject }}{% endif %} · {{ bank.department.name }}</span>
+                        <span class="badge badge--draft">Del banco</span>
+                        {#- Nivel y materia, no también el departamento: casi siempre se llaman igual y la
+                            línea salía repetida ("1º de ESO · Biología y Geología · Biología y Geología"),
+                            que leído en pantalla parece un fallo de la aplicación. De quién es la ficha se
+                            ve en el banco de tareas; aquí lo que hace falta es para quién es y de qué. -#}
+                        <span class="bank-task__meta">{{ [bank.level.label, bank.subject ?: bank.department.name]|filter(v => v)|join(' · ') }}</span>
                     </div>
-                    <p class="bank-task__title"><strong>{{ bank.title }}</strong></p>
+                    <p class="bank-task__title">{{ bank.title }}</p>
                     {% if bank.description %}<p class="detail-prose">{{ bank.description|nl2br }}</p>{% endif %}
                     {% if bank.hasDocument %}
                         <a class="doc-card doc-card--spaced" href="{{ path('guardia_bank_download', { id: bank.id }) }}">
@@ -94,23 +113,14 @@
                             <span class="doc-card__open">Descargar</span>
                         </a>
                     {% endif %}
-                    {% if canWorkOnTask %}
+                    {% if canChangeTask %}
                         <div class="bank-task__actions">
                             <a class="btn secondary btn-sm" href="{{ path('guardia_bank_index', { para: cover.id }) }}">Cambiar de tarea</a>
                             <form method="post" action="{{ path('guardia_bank_detach', { cover: cover.id }) }}">
                                 <input type="hidden" name="_token" value="{{ csrf_token('guardia_bank_detach' ~ cover.id) }}">
-                                <button type="submit" class="link-danger">Quitar</button>
+                                <button type="submit" class="link-danger link-danger--quiet">Quitar</button>
                             </form>
                         </div>
-                    {% endif %}
-                </div>
-            {% endif %}
-
-            {% if canWorkOnTask %}
-                <div class="bank-actions">
-                    <a class="btn secondary" href="{{ path('copy_request_for_cover', { cover: cover.id }) }}">Pedir fotocopias</a>
-                    {% if cover.hasTask and not cover.hasBankTask %}
-                        <a class="btn secondary" href="{{ path('guardia_bank_index', { para: cover.id }) }}">Ver banco de tareas</a>
                     {% endif %}
                 </div>
             {% endif %}
@@ -119,42 +129,54 @@
         {# ¿Ha pasado algo? Lo cuenta quien ESTUVO en el aula. Antes solo la coordinación podía dejarlo por
            escrito, desde el parte, así que había que ir a buscarla y la mayoría de incidencias no constaba.
            Se muestra ya escrita a todo el que puede ver la guardia (la coordinación la necesita para
-           resolverla) y solo es editable por quien cubre o por la coordinación. #}
+           resolverla) y solo es editable por quien cubre o por la coordinación.
+
+           Plegado mientras no hay nada que contar: es la salida para cuando algo va mal, no un paso de la
+           guardia, y un campo de texto abierto en mitad de la pantalla se lee como que hay que rellenarlo.
+           Si ya hay algo escrito viene abierto, porque entonces es contenido y no una acción. #}
         {% if cover.hasIncident or canReportIncident %}
-            <div class="detail-block">
-                <div class="detail-block__label">{{ cover.hasIncident ? 'Incidencia' : '¿Ha pasado algo?' }}</div>
-                {% if cover.hasIncident %}
-                    <div class="guardia-tasknote"><p class="detail-prose">{{ cover.incidentNote|nl2br }}</p></div>
-                    {% if canReportIncident %}
-                        <p class="help">La coordinación de guardias ya está avisada. Puedes corregirlo o retirarlo.</p>
+            <details class="detail-block cover-incident" id="incidencia"{{ cover.hasIncident ? ' open' }}>
+                <summary class="cover-incident__toggle">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+                    {{ cover.hasIncident ? 'Incidencia registrada' : 'Notificar una incidencia' }}
+                </summary>
+                <div class="cover-incident__body">
+                    {#- Lo ya contado se pinta UNA vez: como texto a quien solo puede leerlo, y dentro del
+                        campo a quien puede corregirlo. Las dos cosas a la vez era la misma frase dos veces
+                        seguidas, y la de arriba parecía otra incidencia distinta. -#}
+                    {% if cover.hasIncident and not canReportIncident %}
+                        <div class="guardia-tasknote"><p class="detail-prose">{{ cover.incidentNote|nl2br }}</p></div>
+                    {% elseif cover.hasIncident %}
+                        <p class="help">La coordinación de guardias ya está avisada. Puedes corregirlo o retirarlo (déjalo en blanco para retirarlo).</p>
+                    {% elseif canReportIncident %}
+                        <p class="help">Si el grupo no apareció, el aula estaba ocupada o no has podido cubrirla, cuéntalo aquí: le llega a la coordinación de guardias.</p>
                     {% endif %}
-                {% elseif canReportIncident %}
-                    <p class="help">Si el grupo no apareció, el aula estaba ocupada o no has podido cubrirla, cuéntalo aquí: le llega a la coordinación de guardias.</p>
-                {% endif %}
-                {% if canReportIncident %}
-                    <form method="post" action="{{ path('guardia_cover_incident', { id: cover.id }) }}">
-                        <input type="hidden" name="_token" value="{{ csrf_token('guardia_incident' ~ cover.id) }}">
-                        <div class="field">
-                            <label for="incidencia">Qué ha pasado</label>
-                            <textarea id="incidencia" name="incidencia" rows="3" maxlength="500"
-                                      placeholder="Ej.: el grupo estaba en una salida y no había nadie en el aula.">{{ cover.incidentNote }}</textarea>
-                        </div>
-                        <div class="bank-task__actions">
+                    {% if canReportIncident %}
+                        <form method="post" action="{{ path('guardia_cover_incident', { id: cover.id }) }}">
+                            <input type="hidden" name="_token" value="{{ csrf_token('guardia_incident' ~ cover.id) }}">
+                            <div class="field">
+                                <label for="incidencia-texto">Qué ha pasado</label>
+                                <textarea id="incidencia-texto" name="incidencia" rows="3" maxlength="500"
+                                          placeholder="Ej.: el grupo estaba en una salida y no había nadie en el aula.">{{ cover.incidentNote }}</textarea>
+                            </div>
                             <button class="btn secondary" type="submit">{{ cover.hasIncident ? 'Guardar cambios' : 'Avisar de una incidencia' }}</button>
-                        </div>
-                    </form>
-                {% endif %}
-            </div>
+                        </form>
+                    {% endif %}
+                </div>
+            </details>
         {% endif %}
 
       </div>{# /detail-main #}
 
       <aside class="detail-aside">
-        <div class="detail-block">
-            <div class="detail-block__label">La clase</div>
-            <dl class="meta-grid">
-                <div class="meta-grid__cell"><dt>Grupo</dt><dd>{{ cover.groupName ?: '—' }}</dd></div>
-                <div class="meta-grid__cell"><dt>Aula</dt><dd>{{ cover.effectiveRoomName ?: '—' }}</dd></div>
+        {# Ficha de datos en filas, no en la rejilla de dos celdas del cuerpo: aquí la columna es estrecha y
+           además ya son tres datos, no dos. #}
+        <div class="side-card">
+            <div class="side-card__label">La clase</div>
+            <dl class="meta-rows">
+                <div class="meta-rows__row"><dt>Grupo</dt><dd>{{ cover.groupName ?: '—' }}</dd></div>
+                <div class="meta-rows__row"><dt>Aula</dt><dd class="mono">{{ cover.effectiveRoomName ?: '—' }}</dd></div>
+                {% if cover.subjectName %}<div class="meta-rows__row"><dt>Materia</dt><dd>{{ cover.subjectName }}</dd></div>{% endif %}
             </dl>
             {# Si la clase se ha juntado con otras, decirlo aquí y no solo cambiar el aula: quien cubre
                necesita saber que se va a encontrar varios grupos, no solo a dónde ir. #}
@@ -163,11 +185,44 @@
             {% endif %}
         </div>
 
+        {# Las acciones, agrupadas y con rótulo. Antes colgaban del final de la tarea, y ahí "pedir
+           fotocopias" parecía parte de la ficha del banco en vez de algo que puedes hacer con ella. #}
+        {% if canChangeTask %}
+            <div class="side-card">
+                <div class="side-card__label">Acciones</div>
+                <a class="btn secondary" href="{{ path('copy_request_for_cover', { cover: cover.id }) }}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 8V4h10v4"/><rect x="5" y="8" width="14" height="7" rx="1.5"/><path d="M7 15h10v5H7z"/></svg>
+                    Pedir fotocopias
+                </a>
+                {% if cover.hasTask and not cover.hasBankTask %}
+                    <a class="btn secondary" href="{{ path('guardia_bank_index', { para: cover.id }) }}">Ver banco de tareas</a>
+                {% endif %}
+            </div>
+        {% endif %}
+
+        {# El resto de TU día, como contexto de "¿y la siguiente?". La que estás mirando va sin enlace: ya
+           estás en ella. #}
+        {% if dayItems is not empty %}
+            <div class="day-strip">
+                <div class="day-strip__label">Tus guardias de hoy</div>
+                {% for other in dayItems %}
+                    {% set isCurrent = other.cover.id == cover.id %}
+                    <a class="day-strip__row{{ isCurrent ? ' is-current' }}{{ other.done ? ' is-done' }}"{% if not isCurrent %} href="{{ path('guardia_cover_show', { id: other.cover.id }) }}"{% endif %}>
+                        <span class="day-strip__time">{% if other.startsAt %}{{ other.startsAt|date('H:i', false) }}{% else %}{{ other.cover.slotIndex + 1 }}ª{% endif %}</span>
+                        <span class="day-strip__where">{{ [other.cover.groupName, other.cover.effectiveRoomName]|filter(v => v)|join(' · ') ?: 'Sin especificar' }}</span>
+                        {% if other.cover.notCovered %}<span class="badge badge--danger" data-tone="danger">Incidencia</span>
+                        {% elseif other.done %}<span class="day-strip__done">Hecha</span>
+                        {% elseif isCurrent %}<span class="day-strip__dot" aria-hidden="true"></span>{% endif %}
+                    </a>
+                {% endfor %}
+            </div>
+        {% endif %}
+
         {# El motivo de la ausencia es privado: solo coordinación (y el ausente), nunca quien cubre. #}
         {% if canSeeReason and cover.absence.reason %}
-            <div class="detail-block">
-                <div class="detail-block__label">Motivo de la ausencia · privado</div>
-                <div class="guardia-tasknote"><p class="detail-prose">{{ cover.absence.reason|nl2br }}</p></div>
+            <div class="side-card">
+                <div class="side-card__label">Motivo de la ausencia · privado</div>
+                <p class="detail-prose">{{ cover.absence.reason|nl2br }}</p>
                 <p class="help">Solo visible para la coordinación de guardias y el profesor ausente.</p>
             </div>
         {% endif %}

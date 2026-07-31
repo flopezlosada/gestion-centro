@@ -4,12 +4,9 @@
 
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Mis guardias{% endblock %}
 
-{# Cuenta atrás legible ("en 40 min" / "en 2 h 10 min") reutilizada por el protagonista y la fila
-   destacada, para no repetir el formateo. #}
-{% macro countdown(min) %}{% if min < 60 %}en {{ min }} min{% else %}en {{ min // 60 }} h{% if min % 60 %} {{ min % 60 }} min{% endif %}{% endif %}{% endmacro %}
-
 {% block body %}
-    {% import _self as fmt %}
+    {# La cuenta atrás es compartida con el detalle de la guardia: {@see _macros/time.html.twig}. #}
+    {% import '_macros/time.html.twig' as fmt %}
     {% import '_macros/raices.html.twig' as raices %}
     {% set weekdayNames = {1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves', 5: 'Viernes', 6: 'Sábado', 7: 'Domingo'} %}
     {% set nextItem = today.next is not null ? today.items[today.next] : null %}

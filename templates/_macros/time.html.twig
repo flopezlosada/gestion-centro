@@ -1,0 +1,8 @@
+{#
+   Formateo de tiempos que sale en varias pantallas. Vive aquí y no en cada plantilla porque la cuenta
+   atrás la pintan "Mis guardias" (fila destacada y protagonista) y el detalle de la guardia: dos redacciones
+   distintas de "en cuánto empieza" se leen como dos datos distintos.
+#}
+
+{# Cuenta atrás legible ("en 40 min" / "en 2 h 10 min"). `min` son minutos completos hasta el comienzo. #}
+{% macro countdown(min) %}{% if min < 60 %}en {{ min }} min{% else %}en {{ min // 60 }} h{% if min % 60 %} {{ min % 60 }} min{% endif %}{% endif %}{% endmacro %}
