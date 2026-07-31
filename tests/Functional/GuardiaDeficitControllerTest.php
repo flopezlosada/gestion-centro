@@ -99,6 +99,9 @@ final class GuardiaDeficitControllerTest extends WebTestCase
         $this->login();
         $teacher = $this->user('Docente Aula', 'aula@centro.test');
         $this->lective($teacher, 0, '1ºA', 'A10', Weekday::MONDAY);
+        // S ACTOS is free on Monday and has to be there: without a room to list, the screen would show its
+        // empty state and "BIBL is not offered" would pass for the wrong reason.
+        $this->lective($teacher, 0, 'E4A', 'S ACTOS', Weekday::TUESDAY);
         $this->room('BIBL');
         $this->syncRooms();
         $this->planTakes('BIBL', 0, 'E4A');
@@ -106,7 +109,9 @@ final class GuardiaDeficitControllerTest extends WebTestCase
         $crawler = $this->client->request('GET', '/guardias/aulas?date='.self::MONDAY);
 
         self::assertResponseIsSuccessful();
-        self::assertStringNotContainsString('BIBL', $crawler->filter('.rooms-tiers')->text(), 'the plan has that room, so it is not free');
+        $libres = $crawler->filter('.rooms-tiers')->text();
+        self::assertStringContainsString('S ACTOS', $libres, 'the room nobody has taken is offered');
+        self::assertStringNotContainsString('BIBL', $libres, 'the plan has that room, so it is not free');
     }
 
     public function testFreeRoomsSheetOffersTheNextPeriodWhenNothingIsFree(): void
