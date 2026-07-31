@@ -20,6 +20,7 @@ use App\Guardia\BreakDutyGapRegistrar;
 use App\Guardia\GuardiaScheduler;
 use App\Guardia\GuardiaStatistics;
 use App\Guardia\TeacherGuardiaDay;
+use App\Repository\AbsenceRepository;
 use App\Repository\AcademicYearRepository;
 use App\Repository\AuditLogRepository;
 use App\Repository\BreakDutyAssignmentRepository;
@@ -73,7 +74,7 @@ final class GuardiaController extends AbstractController
      * first — they are the ones that need action — and the coverage figures head the panel.
      */
     #[Route('', name: 'guardia_index', methods: ['GET'])]
-    public function index(Request $request, ScheduleEntryRepository $schedule, GuardiaCoverRepository $covers, GuardiaSupportRepository $support, AcademicYearRepository $years, UserRepository $users, GuardiaScheduler $scheduler): Response
+    public function index(Request $request, ScheduleEntryRepository $schedule, GuardiaCoverRepository $covers, AbsenceRepository $absences, GuardiaSupportRepository $support, AcademicYearRepository $years, UserRepository $users, GuardiaScheduler $scheduler): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
@@ -116,7 +117,7 @@ final class GuardiaController extends AbstractController
         usort($ordered, static fn (GuardiaCover $a, GuardiaCover $b): int => (null === $a->getAssignedGuardia() ? 0 : 1) <=> (null === $b->getAssignedGuardia() ? 0 : 1));
 
         $uncovered = \count(array_filter($parte, static fn (GuardiaCover $c): bool => null === $c->getAssignedGuardia()));
-        $absentIds = $covers->absentTeacherIdsAt($date, $slotIndex);
+        $absentIds = $absences->absentTeacherIdsAt($date, $slotIndex);
         $poolView = $this->poolView($pool, $support->findForSlot($date, $slotIndex), $absentIds, $assignedHere, $covers->loadBySlot($slotIndex));
 
         return $this->render('guardia/index.html.twig', [
@@ -838,9 +839,17 @@ final class GuardiaController extends AbstractController
             ? sprintf(' El recreo de %s se queda sin vigilar: avisado el equipo directivo para buscar un voluntario.', $result->breakGap->getAssignment()->getZone()->getName())
             : '';
 
+        // Las guardias que esta persona iba a cubrir y ya no cubre. Se cuenta aparte porque puede ser la
+        // ÚNICA consecuencia del día: quien falta solo a sus horas de guardia no genera ni un parte, y sin
+        // esta frase la pantalla respondería "no se generó ninguna guardia" a algo que sí ha movido el
+        // cuadrante del día.
+        $relievedNote = $result->relievedCount() > 0
+            ? sprintf(' Se han retirado %d guardia(s) que %s iba a cubrir, y se han vuelto a repartir.', $result->relievedCount(), $teacher->getFullName())
+            : '';
+
         if (0 === $result->createdCount()) {
-            if ('' !== $breakNote) {
-                $this->addFlash('warning', sprintf('No se generó ninguna guardia para %s (no da clase esas horas o ya estaban en el parte).%s', $teacher->getFullName(), $breakNote));
+            if ('' !== $breakNote || '' !== $relievedNote) {
+                $this->addFlash('warning', sprintf('No se generó ninguna guardia para %s (no da clase esas horas o ya estaban en el parte).%s%s', $teacher->getFullName(), $relievedNote, $breakNote));
 
                 return;
             }
@@ -856,7 +865,7 @@ final class GuardiaController extends AbstractController
         if ($result->skippedExisting > 0) {
             $msg .= sprintf(' %d ya estaba(n) en el parte.', $result->skippedExisting);
         }
-        $this->addFlash('success', $msg.$breakNote);
+        $this->addFlash('success', $msg.$relievedNote.$breakNote);
     }
 
     /**

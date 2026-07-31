@@ -11,6 +11,7 @@ use App\Entity\User;
 use App\Enum\GuardiaDutyBand;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
+use App\Repository\AbsenceRepository;
 use App\Repository\GuardiaCoverRepository;
 use App\Repository\GuardiaSupportRepository;
 use App\Repository\ScheduleEntryRepository;
@@ -33,6 +34,7 @@ final class GuardiaScheduler
     public function __construct(
         private readonly ScheduleEntryRepository $schedule,
         private readonly GuardiaCoverRepository $covers,
+        private readonly AbsenceRepository $absences,
         private readonly GuardiaSupportRepository $support,
         private readonly GuardiaAssigner $assigner,
         private readonly EntityManagerInterface $em,
@@ -166,7 +168,7 @@ final class GuardiaScheduler
     private function candidates(AcademicYear $year, \DateTimeImmutable $date, int $slotIndex, array $hereLoad): array
     {
         $weekday = Weekday::from((int) $date->format('N'));
-        $absentIds = $this->covers->absentTeacherIdsAt($date, $slotIndex);
+        $absentIds = $this->absences->absentTeacherIdsAt($date, $slotIndex);
         $slotLoad = $this->covers->loadBySlot($slotIndex);
         $totalLoad = $this->covers->totalLoad();
 

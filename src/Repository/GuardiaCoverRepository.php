@@ -273,30 +273,6 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
-     * Ids of the teachers who are themselves absent on a date and period — they must be dropped from
-     * the guardia pool (a teacher on call cannot cover while they are away).
-     *
-     * @param \DateTimeImmutable $date      the day
-     * @param int                $slotIndex the period index within the day
-     *
-     * @return list<int> the absent teachers' ids
-     */
-    public function absentTeacherIdsAt(\DateTimeImmutable $date, int $slotIndex): array
-    {
-        /** @var list<array{id: int}> $rows */
-        $rows = $this->createQueryBuilder('c')
-            ->select('IDENTITY(c.absentTeacher) AS id')
-            ->andWhere('c.date = :date')
-            ->andWhere('c.slotIndex = :slot')
-            ->setParameter('date', $date, 'date_immutable')
-            ->setParameter('slot', $slotIndex)
-            ->getQuery()
-            ->getResult();
-
-        return array_map(static fn (array $r): int => (int) $r['id'], $rows);
-    }
-
-    /**
      * Guardias covered per teacher across the whole course, teacher eager-loaded and ordered by count
      * (busiest first). An assigned cover with no incident counts as done, and a whole grouping counts as
      * one (see {@see self::WORK_UNIT}); teachers with none do not appear. Powers the coordinator's stats

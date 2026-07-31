@@ -771,6 +771,9 @@ final class SeedDemoCommand extends Command
                     $this->em->persist($absence);
                     $absences[$absenceKey] = $absence;
                 }
+                // El tramo forma parte de la ausencia, igual que lo escribe el registrador de verdad: es
+                // lo que hace que el profesor conste como ausente esa hora y no se le ofrezca de guardia.
+                $absence->addSlotIndexes([$slot]);
 
                 $cover = (new GuardiaCover())
                     ->setAbsence($absence)

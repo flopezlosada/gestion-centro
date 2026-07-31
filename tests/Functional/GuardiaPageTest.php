@@ -115,6 +115,9 @@ final class GuardiaPageTest extends WebTestCase
             $this->em->persist($absence);
             $this->absences[$key] = $absence;
         }
+        // Each period the cover belongs to is a period the teacher is away for. Written here, as the
+        // registrar does, so the panel marks them absent and the assigner never offers them.
+        $absence->addSlotIndexes([$slot]);
 
         $cover = (new GuardiaCover())
             ->setAbsence($absence)
