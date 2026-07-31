@@ -131,18 +131,21 @@ final class TaskController extends AbstractController
         // podría tener nada, así que solo ve dos. Se resuelve ANTES de acotar porque no depende de los
         // datos, solo de quién mira.
         $supervises = $isAdmin || $hierarchy->commandsWholeSchool($user) || null !== $hierarchy->commandedDepartment($user);
+        // Cada vista lleva SU texto de "aquí no hay nada" pegado a su definición. Vivía en un mapa aparte,
+        // en la plantilla, y añadir "Devueltas para revisar" sin acordarse de él dejaba la pantalla en un
+        // 500 de Twig justo cuando la vista estaba vacía — el peor momento posible.
         $viewDefs = array_filter([
-            ['key' => 'abiertas', 'label' => 'Abiertas'],
-            ['key' => 'mias', 'label' => 'Mías', 'only' => $supervises],
-            ['key' => 'validar', 'label' => 'Esperando mi validación', 'only' => $supervises],
+            ['key' => 'abiertas', 'label' => 'Abiertas', 'empty' => 'No hay ninguna tarea abierta. Todo al día.'],
+            ['key' => 'mias', 'label' => 'Mías', 'only' => $supervises, 'empty' => 'No tienes tareas abiertas.'],
+            ['key' => 'validar', 'label' => 'Esperando mi validación', 'only' => $supervises, 'empty' => 'No hay nada esperando tu validación.'],
             // "Devueltas para revisar" es trabajo que espera a alguien concreto, igual que "Esperando mi
             // validación": sin vista propia, las devueltas quedaban revueltas entre las 42 "Abiertas" y no
             // había forma de ver a quién le toca mover ficha. Se ofrece a todo el mundo, no solo a quien
             // supervisa: una tarea devuelta la tiene que rehacer su responsable.
-            ['key' => 'revision', 'label' => 'Devueltas para revisar'],
+            ['key' => 'revision', 'label' => 'Devueltas para revisar', 'empty' => 'No hay ninguna tarea devuelta para revisar.'],
             // La CLAVE sigue siendo "vencidas" (vive en la URL y en los enlaces que la gente ya tiene
             // guardados); lo que el centro pidió cambiar es la palabra que se lee.
-            ['key' => 'vencidas', 'label' => 'Fuera de plazo', 'tone' => 'warning'],
+            ['key' => 'vencidas', 'label' => 'Fuera de plazo', 'tone' => 'warning', 'empty' => 'No hay ninguna tarea fuera de plazo. Todo al día.'],
         ], static fn (array $v): bool => false !== ($v['only'] ?? true));
         // "cerradas" no está en la fila de vistas (se alcanza por el pie): el histórico no compite con
         // el trabajo vivo, que es un tercio de las filas.
@@ -150,6 +153,9 @@ final class TaskController extends AbstractController
         if (!\in_array($vista, [...array_column($viewDefs, 'key'), 'cerradas'], true)) {
             $vista = 'abiertas';
         }
+        $emptyCopy = 'cerradas' === $vista
+            ? 'Todavía no hay tareas cerradas este curso.'
+            : array_column($viewDefs, 'empty', 'key')[$vista];
 
         // ACOTAR. Un valor que no está entre las opciones se descarta: filtrar por algo que no puede
         // casar solo produce un vacío inexplicable.
@@ -294,6 +300,7 @@ final class TaskController extends AbstractController
             'params' => $params,
             'views' => $views,
             'vista' => $vista,
+            'emptyCopy' => $emptyCopy,
             'tokens' => $tokens,
             'closedCount' => \count(array_filter($scoped, static fn (Task $t): bool => $t->isClosed())),
             'departamento' => $departamento,
