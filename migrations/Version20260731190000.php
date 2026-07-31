@@ -29,7 +29,7 @@ use Doctrine\Migrations\AbstractMigration;
  * pocas y el filtro por tramo se hace en PHP (`Absence::coversSlot()`), así que una tabla, su entidad y
  * su cascada no comprarían nada.
  */
-final class Version20260731120000 extends AbstractMigration
+final class Version20260731190000 extends AbstractMigration
 {
     public function getDescription(): string
     {

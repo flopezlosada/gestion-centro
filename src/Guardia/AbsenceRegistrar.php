@@ -178,7 +178,9 @@ final class AbsenceRegistrar
      *
      * They are notified with {@see \App\Service\GuardiaAssignmentNotifier::notifyRelieved()}, the same
      * message a coordinator's hand-edit sends. Being relieved after reporting your own absence is not
-     * obvious from the outside: the guardia was in your agenda a moment ago and now it is not.
+     * obvious from the outside: the guardia was in your agenda a moment ago and now it is not. No reason
+     * travels with it — the centre decided the note behind a guardia change stays with the equipo
+     * directivo — and here it would say nothing anyway: the teacher is the one who reported the absence.
      *
      * @param User               $teacher the absent teacher
      * @param \DateTimeImmutable $date    the day
@@ -209,7 +211,7 @@ final class AbsenceRegistrar
 
         $this->em->flush();
         foreach ($relieved as $cover) {
-            $this->notifier->notifyRelieved($cover, $teacher, 'Has quedado libre porque se ha apuntado que faltas ese día.');
+            $this->notifier->notifyRelieved($cover, $teacher);
         }
 
         return array_values(array_unique($freed));

@@ -651,7 +651,7 @@ final class GuardiaController extends AbstractController
      * picker is limited to themselves. Reachable prefilled with {@code ?teacher=<id>} for a coordinator.
      */
     #[Route('/ausencia/nueva', name: 'guardia_absence_new', methods: ['GET'])]
-    public function newAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, ScheduleEntryRepository $schedule, AcademicYearRepository $years, BreakDutyGapRegistrar $breakGaps, TimeSlotRepository $timeSlots): Response
+    public function newAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, ScheduleEntryRepository $schedule, AcademicYearRepository $years, BreakDutyGapRegistrar $breakGaps, TimeSlotRepository $timeSlots, GuardiaCoverRepository $covers): Response
     {
         $canManage = $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $date = $this->dateFromRequest($request);
@@ -679,6 +679,12 @@ final class GuardiaController extends AbstractController
             ? $breakGaps->dutyOn($year, $selected, $date)
             : null;
 
+        // The guardias this teacher was going to cover that day, offered as ticks of their own.
+        // Without them the screen answered "no da clase, no hay nada que registrar" to precisely the
+        // case the whole absence fix is about: somebody whose day holds only guardias. There IS
+        // something to register — the group they were covering needs handing over to somebody else.
+        $ownGuardias = $selected instanceof User ? $covers->findAssignedTo($selected, $date) : [];
+
         return $this->render('guardia/absence_new.html.twig', [
             'date' => $date,
             'weekday' => $weekday,
@@ -690,6 +696,7 @@ final class GuardiaController extends AbstractController
             'selectedTeacherName' => $selected?->getFullName(),
             'dayClasses' => $dayClasses,
             'breakDuty' => $breakDuty,
+            'ownGuardias' => $ownGuardias,
             'breakSlots' => $timeSlots->findBreaksByYear($year instanceof AcademicYear ? $year : null),
         ]);
     }

@@ -61,14 +61,14 @@
             {# Paso 2 · clases reales de ese día del profesor elegido. #}
             {% if selectedTeacher is null %}
                 <p class="muted step-hint">Elige un profesor para ver sus clases del {{ weekday.label|lower }}.</p>
-            {% elseif dayClasses is empty and breakDuty is null %}
+            {% elseif dayClasses is empty and breakDuty is null and ownGuardias is empty %}
                 <div class="empty-state">
-                    <h2>No da clase el {{ weekday.label|lower }}</h2>
-                    <p>Ese día no tiene ninguna clase lectiva ni guardia de recreo, así que no hay nada que registrar. Prueba con otro día.</p>
+                    <h2>No tiene nada el {{ weekday.label|lower }}</h2>
+                    <p>Ese día no da ninguna clase, no le toca guardia y no tiene guardia de recreo, así que no hay nada que registrar. Prueba con otro día.</p>
                 </div>
             {% else %}
                 <form method="post" action="{{ path('guardia_absence_create') }}" class="absence-form" enctype="multipart/form-data" data-absence-form
-                      data-confirm="{% if dayClasses is empty %}Se avisará al equipo directivo de que su recreo se queda sin vigilar. ¿Continuar?{% else %}Se generarán {{ dayClasses|length }} guardia{{ dayClasses|length == 1 ? '' : 's' }} y se avisará a los profesores asignados. ¿Continuar?{% endif %}">
+                      data-confirm="{% if dayClasses is empty and ownGuardias is not empty %}Se le retirarán las guardias que iba a cubrir y se repartirán entre el resto. ¿Continuar?{% elseif dayClasses is empty %}Se avisará al equipo directivo de que su recreo se queda sin vigilar. ¿Continuar?{% else %}Se generarán {{ dayClasses|length }} guardia{{ dayClasses|length == 1 ? '' : 's' }} y se avisará a los profesores asignados. ¿Continuar?{% endif %}">
                     <input type="hidden" name="_token" value="{{ csrf_token('guardia_absence_create') }}">
                     <input type="hidden" name="absent_teacher" value="{{ selectedTeacher }}">
                     <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
@@ -132,6 +132,40 @@
                             </li>
                         {% endfor %}
                     </ul>
+
+                    {% if ownGuardias is not empty %}
+                        {# Las guardias que esta persona iba a CUBRIR ese día. Van aparte de sus clases porque
+                           la consecuencia es la inversa: no generan una guardia nueva, se le retiran y el grupo
+                           pasa a otro compañero. Sin esta sección, quien ese día solo tenía guardias veía «no
+                           hay nada que registrar» y su grupo se quedaba esperando a alguien que no iba a venir. #}
+                        <div class="form-row field--own-guardias">
+                            <label class="eyebrow">Guardias que iba a cubrir</label>
+                            <ul class="classcards">
+                                {% for g in ownGuardias %}
+                                    <li class="classcard">
+                                        <label class="classcard__pick">
+                                            <input type="checkbox" name="slots[]" value="{{ g.slotIndex }}" checked>
+                                            <span class="classcard__box" aria-hidden="true">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-11"/></svg>
+                                            </span>
+                                            <span class="classcard__what">
+                                                <span class="classcard__time">{{ (g.slotIndex + 1) }}.ª hora</span>
+                                                <span class="classcard__group">
+                                                    <strong>{{ g.groupName ?? 'un grupo' }}</strong>
+                                                    <span class="muted mono"> · cubría a {{ g.absentTeacher.fullName }}</span>
+                                                </span>
+                                                <span class="classcard__state">
+                                                    <span class="classcard__state--falta">Falta esta hora · se le retira</span>
+                                                    <span class="classcard__state--asiste">Sí estará · la sigue cubriendo</span>
+                                                </span>
+                                            </span>
+                                        </label>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                            <p class="field-help">Al registrar la ausencia se le <strong>retiran</strong> estas guardias y el grupo se reparte entre quien sí esté. Desmárcala si va a venir a hacerla igualmente.</p>
+                        </div>
+                    {% endif %}
 
                     {% if breakDuty %}
                         {# El recreo va aparte de las clases a propósito: no es una hora que nadie dé, así que
