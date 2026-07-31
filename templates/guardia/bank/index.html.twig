@@ -165,7 +165,10 @@
                     fichas que sí valen para esta clase: decirlo y ofrecer quitarlo. Un vacío provocado por
                     un filtro que el usuario no puso es un vacío que no se puede explicar. -#}
                 {% if hiddenByDepartment > 0 %}
-                    <p class="bank-empty__hint">Hay {{ hiddenByDepartment }} ficha{{ hiddenByDepartment != 1 ? 's' }} de otros departamentos que encaja{{ hiddenByDepartment != 1 ? 'n' : '' }} con este grupo.
+                    {#- "encajan con este grupo" solo es verdad si se conoce el nivel o la materia; sin ninguno de
+                        los dos, el filtro que se quita es únicamente el del departamento y prometer encaje sería
+                        mentir. -#}
+                    <p class="bank-empty__hint">Hay {{ hiddenByDepartment }} ficha{{ hiddenByDepartment != 1 ? 's' }} de otros departamentos{% if level or subject %} que encaja{{ hiddenByDepartment != 1 ? 'n' : '' }} con este grupo{% endif %}.
                         <a href="{{ path(self_route, app.request.query.all|merge({'depto': ''})) }}">Verlas también</a>.</p>
                 {% endif %}
                 {% if level %}

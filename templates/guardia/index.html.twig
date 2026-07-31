@@ -96,9 +96,12 @@
 {% endmacro %}
 
 {#
-   Coger tarea del banco sin salir del parte, para una línea que no tiene ninguna: "Del banco" saca una
-   al azar del nivel que deduce el grupo (un clic, que es el gesto de la mañana de guardias) y "Elegir…"
-   abre el banco filtrado para esa guardia. Vuelve al parte, no al detalle: el coordinador está
+   Coger tarea del banco sin salir del parte, para una línea que no tiene ninguna. Dos gestos y no dos
+   etiquetas: "Una al azar" SORTEA de un clic entre las menos usadas del nivel y la materia del grupo (el
+   gesto de la mañana de guardias, veinte líneas y sin tiempo de mirar), y "o elegir…" abre el banco
+   filtrado para esa guardia. Antes el primero se llamaba "Del banco", que se lee como el ORIGEN de la
+   tarea y no como un botón que hace algo, y los dos pesaban lo mismo sin que nada dijera que uno actúa al
+   instante y el otro te saca de la pantalla. Vuelve al parte, no al detalle: el coordinador está
    repasando la hora entera.
 #}
 {% macro bank_pick(cover, canWrite) %}
@@ -107,9 +110,9 @@
             <form method="post" action="{{ path('guardia_bank_apply', { cover: cover.id }) }}" class="inline-form">
                 <input type="hidden" name="_token" value="{{ csrf_token('guardia_bank_apply' ~ cover.id) }}">
                 <input type="hidden" name="volver" value="parte">
-                <button type="submit" class="link-action" title="Coge una tarea al azar del banco para el nivel de este grupo">Del banco</button>
+                <button type="submit" class="link-action" title="Coge una tarea al azar del banco, entre las menos usadas para el nivel y la materia de este grupo">Una al azar</button>
             </form>
-            <a class="link-action" href="{{ path('guardia_bank_index', { para: cover.id }) }}">Elegir…</a>
+            <a class="link-action link-action--soft" href="{{ path('guardia_bank_index', { para: cover.id }) }}">o elegir…</a>
         </span>
     {% endif %}
 {% endmacro %}
@@ -325,6 +328,7 @@
                                         {% if (workUnits[cover.assignedGuardia.id] ?? 1) > 1 and not cover.grouping %}<span class="badge badge--warning" title="Lleva {{ workUnits[cover.assignedGuardia.id] }} guardias a esta hora en sitios distintos">×{{ workUnits[cover.assignedGuardia.id] }}</span>{% endif %}
                                         {# Mismo verbo que en la tabla de escritorio: dos nombres para la misma pantalla despistaban. #}
                                         {% if canWrite %}<a class="parte-card__change" href="{{ path('guardia_cover_edit', { id: cover.id }) }}">Cambiar</a>{% endif %}
+                                        <a class="parte-card__change parte-card__change--soft" href="{{ path('guardia_cover_show', { id: cover.id }) }}">Ver</a>
                                     </div>
                                 {% endif %}
                             </article>
@@ -415,9 +419,12 @@
                                                     <input type="hidden" name="_token" value="{{ csrf_token('guardia_delete' ~ cover.id) }}">
                                                     <button type="submit" class="link-quiet">Borrar</button>
                                                 </form>
-                                            {% else %}
-                                                <a class="link-action" href="{{ path('guardia_cover_show', { id: cover.id }) }}">Ver</a>
                                             {% endif %}
+                                            {#- "Ver" para TODO el mundo, no solo para quien no puede escribir: la
+                                                coordinación es quien más usa el parte y era la única que no podía
+                                                abrir el detalle, donde están la tarea del grupo, su documento, el
+                                                aviso de RAICES y la incidencia. Leer no compite con cambiar. -#}
+                                            <a class="link-action link-action--soft" href="{{ path('guardia_cover_show', { id: cover.id }) }}">Ver</a>
                                         </div>
                                     </td>
                                 </tr>

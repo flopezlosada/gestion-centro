@@ -70,6 +70,18 @@
                 {% if proposal is null %}
                     <div class="inline-form">
                         <a class="btn" href="{{ path('break_duty_index', {curso: curso, propuesta: 1}) }}">Proponer cuadrante</a>
+                        {#- Vaciar para empezar de cero: publicar sustituye lo del motor pero CONSERVA lo manual, así
+                            que sin esto un curso montado con la demanda equivocada arrastra esos restos para siempre y
+                            el siguiente reparto sale encima. Dice cuántas manuales se pierden, que son las que nadie
+                            puede recuperar solo. -#}
+                        {% if grid and grid.manualCount is defined and (grid.total ?? 0) > 0 %}
+                            <form method="post" action="{{ path('break_duty_reset') }}" class="inline-form"
+                                  data-confirm="¿Vaciar el cuadrante de {{ curso }}? Se borran las {{ grid.total }} plaza(s), incluidas {{ grid.manualCount }} puesta(s) a mano.">
+                                <input type="hidden" name="_token" value="{{ csrf_token('break_duty_reset') }}">
+                                <input type="hidden" name="curso" value="{{ curso }}">
+                                <button type="submit" class="btn secondary">Vaciar y empezar de cero</button>
+                            </form>
+                        {% endif %}
                     </div>
                     <p class="help">
                         Reparte las plazas entre quien tenga cupo de recreo, dando primero las zonas más exigentes a quien menos carga lleva. No guarda nada: la verás antes de decidir.
@@ -126,8 +138,11 @@
         <div class="card">
             <div class="page-head">
                 <div><h2>Cuadrante de {{ curso }}</h2></div>
-                {% if grid.missing > 0 %}
-                    <div><span class="badge badge--warning">Faltan {{ grid.missing }} puesto(s)</span></div>
+                {% if grid.missing > 0 or grid.extra > 0 %}
+                    <div>
+                        {% if grid.missing > 0 %}<span class="badge badge--warning">Faltan {{ grid.missing }} puesto(s)</span>{% endif %}
+                        {% if grid.extra > 0 %}<span class="badge badge--warning">Sobran {{ grid.extra }} puesto(s)</span>{% endif %}
+                    </div>
                 {% else %}
                     <div><span class="badge badge--ok">Cuadrante completo</span></div>
                 {% endif %}
@@ -162,17 +177,37 @@
                                 {% for zone in grid.zones %}
                                     <tr>
                                         <th scope="row">
+                                            {#- Lo PRIMERO que se pregunta quien mira una fila es cuánta gente tiene que
+                                                haber ahí, así que va en la fila y con la palabra entera ("2 profesores"),
+                                                no un número suelto. Un rango si la demanda cambia según el día. El peso
+                                                va detrás y en gris: es del reparto, no del cuadrante — y antes, puesto
+                                                solo, se leía como si fuera el número de personas. -#}
                                             {{ zone.name }}
-                                            <span class="muted"> · peso {{ zone.weight }}</span>
+                                            {% set needs = grid.zoneNeeds[zone.id] ?? null %}
+                                            {% if needs %}
+                                                <span class="zone-needs">{% if needs.min == needs.max %}{{ needs.min }}{% else %}{{ needs.min }}–{{ needs.max }}{% endif %} profesor{{ needs.max != 1 ? 'es' }}</span>
+                                            {% endif %}
+                                            <span class="zone-weight">peso {{ zone.weight }}</span>
                                         </th>
                                         {% for wd in grid.weekdays %}
                                             {% set duties = grid.cells[period.value][wd.value][zone.id] %}
                                             {% set short = grid.shortfall[period.value][wd.value][zone.id] %}
-                                            <td class="tt-cell {{ short > 0 ? 'tt-cell--short' }}">
+                                            {% set over = grid.surplus[period.value][wd.value][zone.id] %}
+                                            {% set pide = grid.required[period.value][wd.value][zone.id] %}
+                                            <td class="tt-cell {{ short > 0 ? 'tt-cell--short' }}{{ over > 0 ? ' tt-cell--over' }}" title="Esta zona pide {{ pide }} persona{{ pide != 1 ? 's' }} este día en este recreo">
+                                                {#- "2/3" = hay 2 de las 3 que pide la zona. Un contador se escanea en
+                                                    vertical de un vistazo; la frase "Faltan 2 de 3" pegada al último
+                                                    nombre se leía como parte del nombre. -#}
+                                                <span class="cell-count{{ short > 0 ? ' is-short' }}{{ over > 0 ? ' is-over' }}"
+                                                      title="{{ duties|length }} asignada(s) · esta zona pide {{ pide }}{{ short > 0 ? ' · falta ' ~ short : (over > 0 ? ' · sobra ' ~ over : ' · completa') }}">{{ duties|length }}/{{ pide }}</span>
                                                 {% for duty in duties %}
                                                     <span class="duty-chip">
                                                         {{ duty.teacher.fullName }}
-                                                        {% if canManage %}
+                                                        {#- `duty.id`: las plazas de una PROPUESTA no están guardadas y no
+                                                            tienen id, así que no se les puede ofrecer "quitar" (y pedir la
+                                                            ruta con id vacío reventaba la página). En una propuesta no hay
+                                                            nada que quitar todavía: se publica o se descarta. -#}
+                                                        {% if canManage and duty.id %}
                                                             <form method="post" action="{{ path('break_duty_remove', {id: duty.id}) }}" class="duty-chip__remove">
                                                                 <input type="hidden" name="_token" value="{{ csrf_token('break_duty_remove' ~ duty.id) }}">
                                                                 <button type="submit" class="chip-x" title="Quitar a {{ duty.teacher.fullName }} de {{ zone.name }} los {{ wd.label|lower }} en el {{ period.label|lower }}" aria-label="Quitar a {{ duty.teacher.fullName }} de {{ zone.name }} los {{ wd.label|lower }} en el {{ period.label|lower }}">×</button>
@@ -180,9 +215,7 @@
                                                         {% endif %}
                                                     </span>
                                                 {% endfor %}
-                                                {% if short > 0 %}
-                                                    <span class="muted">Falta{{ short > 1 ? 'n' }} {{ short }}</span>
-                                                {% endif %}
+
                                             </td>
                                         {% endfor %}
                                     </tr>

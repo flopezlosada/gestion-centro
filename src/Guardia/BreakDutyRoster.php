@@ -9,9 +9,11 @@ use App\Entity\BreakDutyAssignment;
 use App\Entity\BreakZone;
 use App\Entity\TimeSlot;
 use App\Entity\User;
+use App\Enum\BreakDutySource;
 use App\Enum\BreakPeriod;
 use App\Enum\Weekday;
 use App\Repository\BreakDutyAssignmentRepository;
+use App\Repository\UserRepository;
 use App\Repository\BreakZoneRepository;
 use App\Repository\TimeSlotRepository;
 
@@ -42,6 +44,9 @@ final class BreakDutyRoster
         private readonly TimeSlotRepository $timeSlots,
         private readonly GuardiaStatistics $statistics,
         private readonly BreakDutyDemand $demand,
+        // Solo para dibujar una PROPUESTA: sus plazas vienen con ids de docente, y hay que resolverlos a
+        // personas para poder pintar la misma rejilla que la del cuadrante guardado.
+        private readonly UserRepository $users,
     ) {
     }
 
@@ -63,6 +68,12 @@ final class BreakDutyRoster
      *         periods: list<BreakPeriod>,
      *         cells: array<string, array<int, array<int, list<BreakDutyAssignment>>>>,
      *         shortfall: array<string, array<int, array<int, int>>>,
+     *         surplus: array<string, array<int, array<int, int>>>,
+     *         required: array<string, array<int, array<int, int>>>,
+     *         zoneNeeds: array<int, array{min: int, max: int}>,
+     *         total: int,
+     *         manualCount: int,
+     *         extra: int,
      *         missing: int
      *     },
      *     equity: array{
@@ -92,6 +103,12 @@ final class BreakDutyRoster
      *     periods: list<BreakPeriod>,
      *     cells: array<string, array<int, array<int, list<BreakDutyAssignment>>>>,
      *     shortfall: array<string, array<int, array<int, int>>>,
+     *     surplus: array<string, array<int, array<int, int>>>,
+     *     required: array<string, array<int, array<int, int>>>,
+     *     zoneNeeds: array<int, array{min: int, max: int}>,
+     *     total: int,
+     *     manualCount: int,
+     *     extra: int,
      *     missing: int
      * } the grid
      */
@@ -135,6 +152,12 @@ final class BreakDutyRoster
      *     periods: list<BreakPeriod>,
      *     cells: array<string, array<int, array<int, list<BreakDutyAssignment>>>>,
      *     shortfall: array<string, array<int, array<int, int>>>,
+     *     surplus: array<string, array<int, array<int, int>>>,
+     *     required: array<string, array<int, array<int, int>>>,
+     *     zoneNeeds: array<int, array{min: int, max: int}>,
+     *     total: int,
+     *     manualCount: int,
+     *     extra: int,
      *     missing: int
      * } the grid
      */
@@ -164,14 +187,31 @@ final class BreakDutyRoster
         }
 
         $shortfall = [];
+        // Lo que SOBRA se cuenta igual que lo que falta. Una celda con más gente de la que la zona pide no
+        // es "completa": está gastando plazas de recreo que hacen falta otro día, y el cuadrante se
+        // declaraba COMPLETO sin decir nada. También se guarda lo que pide cada celda, porque el peso de la
+        // zona (que es su exigencia para el reparto) se estaba leyendo como si fuera el número de plazas.
+        $surplus = [];
+        $required = [];
+        // Cuántos profesores pide cada ZONA, para poder decirlo en su fila: es lo primero que se pregunta
+        // quien mira el cuadrante ("¿cuántos tiene que haber en el patio?"). Se guarda el mínimo y el máximo
+        // porque la demanda puede variar por día y por recreo; si coinciden es un número y si no, un rango.
+        $zoneNeeds = [];
         $missing = 0;
+        $extra = 0;
         foreach ($periods as $period) {
             foreach ($weekdays as $weekday) {
                 foreach ($zones as $zone) {
+                    $zoneId = (int) $zone->getId();
                     $needed = $this->demand->required($zone, $weekday, $period);
-                    $short = max(0, $needed - \count($cells[$period->value][$weekday->value][(int) $zone->getId()]));
-                    $shortfall[$period->value][$weekday->value][(int) $zone->getId()] = $short;
-                    $missing += $short;
+                    $have = \count($cells[$period->value][$weekday->value][$zoneId]);
+                    $required[$period->value][$weekday->value][$zoneId] = $needed;
+                    $zoneNeeds[$zoneId]['min'] = min($zoneNeeds[$zoneId]['min'] ?? $needed, $needed);
+                    $zoneNeeds[$zoneId]['max'] = max($zoneNeeds[$zoneId]['max'] ?? $needed, $needed);
+                    $shortfall[$period->value][$weekday->value][$zoneId] = max(0, $needed - $have);
+                    $surplus[$period->value][$weekday->value][$zoneId] = max(0, $have - $needed);
+                    $missing += max(0, $needed - $have);
+                    $extra += max(0, $have - $needed);
                 }
             }
         }
@@ -183,8 +223,64 @@ final class BreakDutyRoster
             'periods' => $periods,
             'cells' => $cells,
             'shortfall' => $shortfall,
+            'surplus' => $surplus,
+            'required' => $required,
+            'zoneNeeds' => $zoneNeeds,
+            // Para el botón de vaciar: cuántas plazas hay y cuántas puso una persona (las que nadie puede
+            // recuperar sola si se borran).
+            'total' => \count($duties),
+            'manualCount' => \count(array_filter($duties, static fn (BreakDutyAssignment $d): bool => BreakDutySource::MANUAL === $d->getSource())),
             'missing' => $missing,
+            'extra' => $extra,
         ];
+    }
+
+    /**
+     * The same grid, but drawn from a PROPOSAL instead of from what is stored — so the draft can actually be
+     * reviewed before publishing it.
+     *
+     * It existed only as headline figures ("30 guardias completas, 0 plazas sin cubrir") while the table
+     * underneath kept showing the saved rota, which on an empty course meant the whole grid at 0/2: numbers
+     * to trust blindly and nothing to validate. The centre asked to "validar la propuesta y/o modificarla",
+     * and you cannot validate what you cannot see.
+     *
+     * The proposal carries plain ids ({@see BreakRotaProposal}), so they are turned into unsaved
+     * {@see BreakDutyAssignment} objects: throwaway objects, never persisted, only so the grid can be built
+     * by the SAME code that draws the real one — two drawings of the same thing would drift apart.
+     *
+     * @param AcademicYear                                                                        $year   the course
+     * @param list<array{weekday: int, period: string, zoneId: int, teacherId: int, fixed: bool}> $places the proposed places
+     *
+     * @return array<string, mixed> the grid, in the same shape {@see overview()} returns
+     */
+    public function gridFromProposal(AcademicYear $year, array $places): array
+    {
+        $teachers = [];
+        foreach ($this->users->findActive() as $user) {
+            $teachers[(int) $user->getId()] = $user;
+        }
+        $zones = [];
+        foreach ($this->zones->findActiveOrdered() as $zone) {
+            $zones[(int) $zone->getId()] = $zone;
+        }
+
+        $duties = [];
+        foreach ($places as $place) {
+            $teacher = $teachers[$place['teacherId']] ?? null;
+            $zone = $zones[$place['zoneId']] ?? null;
+            if (null === $teacher || null === $zone) {
+                continue; // una zona archivada o alguien dado de baja entre proponer y pintar
+            }
+            $duties[] = (new BreakDutyAssignment())
+                ->setAcademicYear($year)
+                ->setTeacher($teacher)
+                ->setZone($zone)
+                ->setWeekday(Weekday::from($place['weekday']))
+                ->setPeriod(BreakPeriod::from($place['period']))
+                ->setSource($place['fixed'] ? BreakDutySource::MANUAL : BreakDutySource::ENGINE);
+        }
+
+        return $this->gridFrom($year, $duties);
     }
 
     /**

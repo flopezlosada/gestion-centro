@@ -72,6 +72,12 @@ final class BreakDutyController extends AbstractController
         $canManage = $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $draft = $canManage && $request->query->getBoolean('propuesta');
         $proposal = ($draft && $year instanceof AcademicYear) ? $planner->propose($year) : null;
+        // Con propuesta en pantalla, la TABLA muestra la propuesta y no lo guardado: antes solo se veían sus
+        // cifras y debajo el cuadrante real, así que en un curso vacío salía todo a 0/2 y no había nada que
+        // revisar. Lo guardado sigue estando a un clic: se descarta y vuelve.
+        if (null !== $proposal) {
+            $overview['grid'] = $roster->gridFromProposal($year, $proposal->places);
+        }
 
         return $this->render('guardia/break_duty_index.html.twig', [
             'courses' => $years->findAllOrdered(),
@@ -100,6 +106,37 @@ final class BreakDutyController extends AbstractController
      * deterministic, which makes that identical — and the narrow window it buys (somebody changing a
      * quota in between) still yields the correct rota for the quotas as they stand.
      */
+    /**
+     * Vacía el cuadrante del curso para volver a empezar: todas las plazas, las del motor y las manuales.
+     *
+     * Hacía falta porque hasta ahora no había forma de deshacer un reparto: publicar sustituye lo del motor
+     * pero conserva lo manual, así que un curso montado con la demanda o los cupos equivocados arrastraba
+     * esos restos para siempre y el siguiente reparto salía sobre ellos. Borra también lo manual a
+     * propósito — "de cero" con excepciones no es de cero — y por eso la pantalla dice cuántas plazas
+     * manuales se van a perder antes de pulsar.
+     */
+    #[Route('/vaciar', name: 'break_duty_reset', methods: ['POST'])]
+    public function reset(Request $request, AcademicYearRepository $years, BreakDutyAssignmentRepository $places): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
+        $this->assertCsrf($request, 'break_duty_reset');
+
+        $curso = (string) $request->request->get('curso');
+        $year = $years->findBySchoolYear($curso);
+        if (!$year instanceof AcademicYear) {
+            $this->addFlash('error', 'Ese curso no existe.');
+
+            return $this->redirectToRoute('break_duty_index');
+        }
+
+        $deleted = $places->clearYear($year);
+        $this->addFlash('success', 0 === $deleted
+            ? 'El cuadrante de ese curso ya estaba vacío.'
+            : sprintf('Cuadrante vaciado: %d plaza(s) borrada(s). Puedes proponer uno nuevo desde cero.', $deleted));
+
+        return $this->redirectToRoute('break_duty_index', ['curso' => $curso]);
+    }
+
     #[Route('/proponer', name: 'break_duty_publish', methods: ['POST'])]
     public function publishProposal(Request $request, AcademicYearRepository $years, BreakRotaPlanner $planner): Response
     {

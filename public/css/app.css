@@ -1108,6 +1108,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 
 /* ---- Mensajes flash ----------------------------------------------------- */
 .flash {
+    /* Por encima de las cabeceras PEGAJOSAS de contenido (.bank-anchor va a z-index 20 y con margen
+       negativo hacia arriba, así que tapaba el mensaje justo cuando decía por qué la acción no salió).
+       Por debajo de la navegación (barra inferior 50, toast 55, cajón 58/62): un aviso no debe esconder
+       los mandos. */
+    position: relative; z-index: 21;
     padding: 12px 16px;
     border-radius: var(--radius);
     margin-bottom: 16px;
@@ -1818,6 +1823,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .link-danger--quiet { margin-left: 0; padding: 9px 12px; color: var(--text-faint); font-weight: 600; }
 .link-danger--quiet:hover { color: var(--danger-text); text-decoration: none; }
 .link-action { background: none; border: 0; padding: 0; margin-left: 14px; color: var(--accent-ink); font: inherit; cursor: pointer; }
+/* Segunda opción de un par: mismo tamaño, menos tinta. Hace legible de un vistazo cuál es el gesto
+   principal ("Una al azar", que actúa) y cuál el desvío ("o elegir…", que abre otra pantalla). */
+.link-action--soft { color: var(--text-muted); font-weight: 400; }
 .link-action:hover { text-decoration: underline; }
 .sga-phase { margin-block: 2rem; }
 .sga-phase-head { display: flex; align-items: baseline; gap: .6rem; padding-bottom: .4rem; border-bottom: 1px solid var(--border); }
@@ -2623,6 +2631,23 @@ tr.is-not-covered { background: var(--danger-weak); }
 /* Falta gente en esa zona ese día. Naranja de "sin cubrir", el mismo que el parte usa para lo que
    aún no está resuelto — no rojo: un cuadrante a medio hacer en septiembre no es un error. */
 .tt-cell--short { background: var(--warning-weak); }
+/* Contador "hay/pide" de cada celda del cuadrante: el dato que se escanea. Monoespaciado y arriba, para que
+   la columna de números se lea en vertical sin tropezar con los nombres. Neutro cuando cuadra: si todo se
+   pinta, nada destaca. */
+.cell-count {
+    display: block; margin-bottom: 5px;
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .06em;
+    color: var(--text-faint);
+}
+.cell-count.is-short { color: var(--warning-text); font-weight: 600; }
+.cell-count.is-over { color: var(--text-muted); font-weight: 600; }
+/* En la fila de la zona: cuánta gente hace falta (el dato que se busca) y, detrás y más apagado, el peso
+   con el que se reparte. Dos líneas para que no se lean como un solo número pegado al nombre. */
+.zone-needs { display: block; font-size: 11.5px; font-weight: 500; color: var(--text-muted); }
+.zone-weight { display: block; font-family: var(--font-mono); font-size: 10px; color: var(--text-faint); }
+/* Sobrar es un problema DISTINTO de faltar, y menos grave: son plazas gastadas donde no hacen falta, no un
+   recreo sin vigilar. Mismo fondo tenue pero en el ámbar de "atención", no en el rojo de "falta". */
+.tt-cell--over { background: color-mix(in srgb, var(--warning-weak) 45%, var(--surface)); }
 
 /* =============================================================================
    Inicio ("qué me toca hoy") — rediseño handoff_dashboard.
@@ -3792,6 +3817,7 @@ tr.is-not-covered { background: var(--danger-weak); }
 .parte-card__covers { flex: 1; font-size: 13px; }
 /* Enlace naranja, no verde: el verde de este sistema significa «hecha», y cambiar de profesor no lo es. */
 .parte-card__change { flex: none; font-size: 12px; font-weight: 600; color: var(--accent-ink); text-decoration: none; }
+.parte-card__change--soft { color: var(--text-muted); font-weight: 400; }
 
 /* ---- Hoja para asignar (8b): candidatos que el reparto elegiría ---- */
 .assignsheet { margin-top: 12px; }
