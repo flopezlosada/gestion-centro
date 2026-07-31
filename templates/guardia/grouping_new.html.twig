@@ -77,7 +77,9 @@
                                     <span class="classcard__state">
                                         <span class="muted">Falta {{ c.absentTeacher.fullName }}
                                             {%- if c.assignedGuardia %} · cubre {{ c.assignedGuardia.fullName }}
-                                            {%- else %} · <span class="badge badge--warning">sin cubrir</span>{% endif %}
+                                            {#- Tinte de marca, igual que en el parte: un hueco es trabajo por hacer, no un fallo. El rojo se
+                                                reserva a lo que ya salió mal (una guardia que NO se cubrió). -#}
+                                            {%- else %} · <span class="badge badge--accent">sin cubrir</span>{% endif %}
                                         </span>
                                     </span>
                                 </span>

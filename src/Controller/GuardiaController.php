@@ -121,6 +121,11 @@ final class GuardiaController extends AbstractController
         $absentIds = $absences->absentTeacherIdsAt($date, $slotIndex);
         $poolView = $this->poolView($pool, $support->findForSlot($date, $slotIndex), $absentIds, $assignedHere, $covers->loadBySlot($slotIndex));
 
+        // Cómo va el día entero, tramo a tramo: los chips avisan de los tramos que todavía tienen huecos
+        // (el hueco de las 09:20 no espera a que alguien pulse ese chip) y el ancla dice cuántas ausencias
+        // hay hoy en total, no solo a esta hora.
+        $bySlot = $covers->coverageBySlotOn($date);
+
         return $this->render('guardia/index.html.twig', [
             'date' => $date,
             'weekday' => $weekday,
@@ -133,6 +138,8 @@ final class GuardiaController extends AbstractController
             'workUnits' => $workUnits,
             'uncovered' => $uncovered,
             'covered' => \count($parte) - $uncovered,
+            'slotCoverage' => $bySlot,
+            'dayAbsences' => array_sum(array_column($bySlot, 'total')),
             // Who the split would pick, least loaded first: feeds the per-cover assignment sheet. With
             // nothing left to cover no sheet is rendered, so the pool queries are not worth running.
             'candidates' => ($uncovered > 0 && $year instanceof AcademicYear) ? $scheduler->availableFor($year, $date, $slotIndex, $parte) : [],
@@ -186,7 +193,20 @@ final class GuardiaController extends AbstractController
                 'load' => $slotLoad[$id] ?? 0,
             ];
         }
-        usort($view, static fn (array $a, array $b): int => $a['band']->rank() <=> $b['band']->rank()
+        // Ordenado como reparte el motor ({@see GuardiaAssigner::byBands()}): banda, luego quien menos
+        // guardias lleva en este tramo, luego el nombre. La lista y el botón «Repartir» tienen que contar
+        // la misma historia; con el pool ordenado solo por nombre, el coordinador leía un orden y la
+        // máquina aplicaba otro. Los que no pueden cubrir (ausentes o ya ocupados) caen al final: son
+        // referencia, no candidatos.
+        //
+        // Falta un desempate respecto al motor, y a propósito: {@see GuardiaAssigner::byBalance()} rompe
+        // los empates de tramo con la carga TOTAL del curso, que aquí costaría otra consulta para afinar
+        // el orden de gente que ya empata a ojos del coordinador. Entre dos personas a cero, el motor
+        // puede elegir la segunda de la lista; el panel dice quién hay y con cuánta carga, no promete
+        // cuál saldrá elegida.
+        usort($view, static fn (array $a, array $b): int => (int) ($a['absent'] || [] !== $a['groups']) <=> (int) ($b['absent'] || [] !== $b['groups'])
+            ?: $a['band']->rank() <=> $b['band']->rank()
+            ?: $a['load'] <=> $b['load']
             ?: strcasecmp($a['teacher']->getFullName(), $b['teacher']->getFullName()));
 
         return $view;

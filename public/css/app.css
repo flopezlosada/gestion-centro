@@ -2490,7 +2490,10 @@ tr.is-not-covered { background: var(--danger-weak); }
 .field--reason { border-left: 3px solid var(--border); padding-left: 12px; }
 
 /* ── Guardias · celda de tarea del parte y pantalla de modificar ───────────── */
-.task-cell { max-width: 320px; color: var(--text-muted); display: flex; flex-direction: column; gap: 2px; }
+/* Sin display:flex: esta clase va en un <td> y un display distinto de table-cell lo saca de la rejilla
+   (bordes de fila cortados y columnas desalineadas, que es lo que hacía). El apilado lo dan los hijos. */
+.task-cell { color: var(--text-muted); }
+.task-cell > * { display: block; }
 .task-doc { display: inline-block; }
 .task-desc { display: block; }
 .reason-note { font-size: 12px; cursor: help; white-space: nowrap; }
@@ -2524,11 +2527,15 @@ tr.is-not-covered { background: var(--danger-weak); }
 .mini-card.is-free { border-color: var(--success); }
 .mini-card.is-busy { opacity: .6; }
 .mini-card-status { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
+/* Cuántas guardias lleva alguien a esa hora, en círculo: es la cifra con la que decide el reparto, así
+   que se compara de un barrido vertical. En tinte de marca cuando está a CERO (a quien hay que asignar)
+   y neutra en cuanto lleva alguna — el color señala al candidato, no al número. */
 .load-count {
-    font-family: var(--font-mono); font-weight: 600; min-width: 1.6em; height: 1.6em;
-    display: inline-flex; align-items: center; justify-content: center;
+    flex: none; font-family: var(--font-mono); font-size: 13px; font-weight: 600;
+    width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
     border-radius: 999px; background: var(--surface-sunken); color: var(--text-muted);
 }
+.load-count.is-zero { background: var(--accent-weak); color: var(--accent-ink); }
 /* Por qué un compañero figura como apoyo puntual: sin esto, el próximo coordinador no distingue un
    arreglo deliberado de un error. */
 .mini-card-note { margin: 0; font-size: 12.5px; color: var(--text-faint); }
@@ -3442,12 +3449,87 @@ tr.is-not-covered { background: var(--danger-weak); }
 .cover-incident__body { margin-top: 4px; }
 
 /* =============================================================================
-   Parte de guardias (coordinación) — handoff 8a móvil / 3a escritorio / 8b hoja
-   Móvil: tarjetas con lo sin cubrir primero. Escritorio: tabla refinada.
+   Parte de guardias (coordinación) — handoff catalogo/handoff_parte_guardias
+   (22a escritorio · 22b móvil · 22c hoja para asignar)
+   -----------------------------------------------------------------------------
+   Los cinco principios de la vista, para que un cambio futuro no los deshaga sin querer:
+   1. Lo SIN CUBRIR primero y visible: va arriba de la lista, en tinte de marca con filo naranja, y es
+      el único sitio con naranja PLENO dentro de la lista (su botón «Asignar»).
+   2. La cobertura siempre a la vista: barra + «N / M cubiertas» en el ancla, y punto de aviso en los
+      chips de los tramos que todavía tienen huecos.
+   3. El pool se ordena como reparte la máquina (menos carga primero); el número va en un círculo.
+   4. UN solo bloque oscuro: el ancla tostada. El resto es superficie clara.
+   5. Lo destructivo, discreto: «Borrar» es texto gris que solo se vuelve rojo al pasar por encima.
+
+   Por qué «sin cubrir» dejó de ser rojo teja (--warning) y pasó a tinte de marca: el rojo se reserva a
+   lo que ya salió mal y no se puede arreglar (una guardia que NO se cubrió, un profesor ausente). Un
+   hueco a las 08:25 es trabajo por hacer, no un fallo — y con toda la lista en rojo la pantalla parecía
+   una alarma permanente en la que ya nadie distinguía el hueco de verdad. Ver también el badge
+   «sin cubrir» de guardia/grouping_new, alineado con esto.
    ============================================================================= */
 .parte { display: grid; gap: 18px; }
 
-/* ---- Tramos horarios: chips mono con scroll lateral en móvil ---- */
+/* ---- Barra ancla: el día, la cobertura y las acciones de la hora -----------
+   A sangre (los márgenes negativos son el padding de .page: 22/16 en móvil, 42/56 en escritorio) y en
+   tostado profundo. Es el MARCO de la pantalla, no una tarjeta más: dentro va lo que no cambia al
+   cambiar de tramo (el día) y lo que hay que poder leer sin buscar (cómo va la cobertura). */
+.parte-anchor {
+    display: flex; flex-direction: column; gap: 14px;
+    margin: -22px -16px 0; padding: 14px 16px 16px;
+    background: var(--accent-deep); color: var(--on-accent-deep);
+    /* Los pesos de tinta sobre el tostado son tokens del sistema (los mismos del hero de Inicio): no se
+       vuelven a derivar aquí para que las tres pantallas con ancla no se separen con el tiempo. */
+}
+.parte-anchor__what { min-width: 0; }
+.parte-anchor__eyebrow {
+    display: inline-flex; align-items: center; gap: 7px; margin: 0;
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--on-hero-dim);
+}
+.parte-anchor__dot {
+    flex: none; width: 7px; height: 7px; border-radius: 999px; background: var(--hero-accent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--hero-accent) 24%, transparent);
+}
+.parte-anchor__row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-top: 7px; }
+.parte-anchor__day { font-family: var(--font-display); font-weight: 500; font-size: 21px; }
+.parte-anchor__sum { font-size: 12.5px; color: var(--on-hero-soft); }
+.parte-anchor__sum b { color: var(--on-hero); font-weight: 600; }
+.parte-anchor__coverage { margin-top: 12px; max-width: 320px; }
+.parte-anchor__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.parte-anchor__nav { display: flex; align-items: center; gap: 6px; }
+/* Controles sobre el tostado: superficie translúcida en vez de un color nuevo, para no meter otra capa
+   de paleta dentro del ancla. */
+.parte-anchor__arrow, .parte-anchor__ghost, .parte-anchor__today, .parte-anchor__date input {
+    background: color-mix(in srgb, var(--on-accent-deep) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--on-accent-deep) 28%, transparent);
+    color: var(--on-hero); text-decoration: none;
+}
+.parte-anchor__arrow {
+    display: grid; place-items: center; width: 34px; height: 34px; flex: none;
+    border-radius: var(--radius-sm); font-size: 16px; line-height: 1;
+}
+.parte-anchor__arrow:hover, .parte-anchor__ghost:hover, .parte-anchor__today:hover { border-color: var(--on-hero); color: var(--on-hero); }
+.parte-anchor__date { flex: none; display: inline-flex; margin: 0; }
+/* En móvil el ancla ya lleva cuatro controles: la palabra larga del botón se cae y queda «Repartir». */
+.parte-anchor__goword { display: none; }
+.parte-anchor__date input {
+    font-family: var(--font-mono); font-size: 13px; padding: 8px 10px;
+    border-radius: var(--radius-sm); color-scheme: dark;
+}
+.parte-anchor__today, .parte-anchor__ghost {
+    display: inline-flex; align-items: center; min-height: 34px; padding: 8px 14px;
+    border-radius: var(--radius); font: 600 13.5px var(--font-body);
+}
+.parte-anchor__today { font-size: 12.5px; padding: 8px 12px; }
+/* La ÚNICA acción en naranja pleno de la pantalla, y solo mientras quede algo que repartir. */
+.parte-anchor__go { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; }
+.parte-anchor__go svg { width: 16px; height: 16px; }
+
+/* ---- Tramos horarios: rótulo + chips mono con scroll lateral en móvil ---- */
+.parte-slots { display: flex; align-items: center; gap: 10px; min-width: 0; }
+/* El rótulo solo en escritorio: en móvil se come el ancho que necesitan los chips, y ahí se entiende
+   solo (una fila de horas bajo la fecha no puede ser otra cosa). */
+.parte-slots__label { display: none; }
 .slotchips { display: flex; gap: 7px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
 .slotchips::-webkit-scrollbar { height: 0; }
 .slotchip {
@@ -3459,8 +3541,17 @@ tr.is-not-covered { background: var(--danger-weak); }
 .slotchip.is-active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
 .slotchip__dot {
     position: absolute; top: -4px; right: -4px; width: 9px; height: 9px; border-radius: 999px;
-    background: var(--amber); border: 1.5px solid var(--bg);
+    background: var(--accent); border: 1.5px solid var(--bg);
 }
+/* Sobre el chip activo (relleno de marca) el punto naranja no se vería: allí se pinta con la tinta. */
+.slotchip.is-active .slotchip__dot { background: var(--on-accent); border-color: var(--accent); }
+
+/* ---- Todo cubierto: la buena noticia, en verde y una sola vez ---- */
+.parte-done {
+    display: flex; align-items: center; gap: 8px; margin: 0;
+    font-size: 13.5px; font-weight: 600; color: var(--success-text);
+}
+.parte-done svg { flex: none; width: 16px; height: 16px; }
 
 /* ---- Panel de ausencias ---- */
 .parte-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
@@ -3473,23 +3564,49 @@ tr.is-not-covered { background: var(--danger-weak); }
 .parte-panel__titles { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .parte-panel__title { font-family: var(--font-display); font-weight: 500; font-size: 20px; margin: 0; }
 .parte-panel__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Tira de badges junto al título de un panel. El parte ya no la usa (su cobertura vive en el ancla),
+   pero sí las pantallas de espacios, que reutilizan este mismo cabezal. */
 .coverage { display: flex; gap: 7px; }
 
-/* ---- Barra de cobertura: cuánto del tramo está resuelto ---- */
-.coverage-bar { display: flex; align-items: center; gap: 12px; padding: 0 18px 14px; }
-.coverage-bar__track { flex: 1; height: 8px; background: var(--surface-sunken); border-radius: 999px; overflow: hidden; }
-.coverage-bar__fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--success)); }
-.coverage-bar__count { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+/* Cabecera de la lista de tarjetas (móvil). En escritorio la cabecera de la tabla ya dice qué es cada
+   columna y esta desaparece; nombre propio y no .parte-panel__head porque esa clase la comparten otras
+   pantallas (espacios, cursos) y ocultarla las rompería. */
+.parte-listhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 16px 10px; }
+.parte-listhead__count {
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--text-faint);
+}
+.parte-listhead__link { font-size: 12.5px; font-weight: 600; color: var(--accent-ink); text-decoration: none; }
+
+/* ---- Barra de cobertura: cuánto del tramo está resuelto (vive en el ancla) ---- */
+.coverage-bar { display: flex; align-items: center; gap: 12px; }
+.coverage-bar__track {
+    flex: 1; height: 7px; border-radius: 999px; overflow: hidden;
+    background: color-mix(in srgb, var(--on-accent-deep) 22%, transparent);
+}
+/* Un solo color, no un degradado a verde: la barra mide una cosa (cuánto está repartido), y el verde a
+   mitad de camino se leía como "esta parte está bien" frente a "esta parte está mal". */
+.coverage-bar__fill { height: 100%; background: var(--hero-accent); }
+.coverage-bar__count { font-family: var(--font-mono); font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--on-hero); }
 
 /* ---- MÓVIL: tarjetas del parte ---- */
 .parte-cards { display: grid; gap: 10px; padding: 0 14px 16px; }
 .parte-card { position: relative; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 16px; padding: 14px 16px; }
-.parte-card.is-uncovered { background: var(--warning-weak); border-color: var(--warning-border); padding-left: 18px; }
+.parte-card:hover { border-color: var(--border-strong); }
+/* Tinte de marca y filo naranja: «esto te reclama». El rojo queda para lo que ya salió mal (.is-failed). */
+.parte-card.is-uncovered { background: var(--accent-weak); border-color: var(--accent-weak-border); padding-left: 18px; }
 .parte-card.is-uncovered::before {
     content: ""; position: absolute; left: 0; top: 13px; bottom: 13px; width: 4px;
-    border-radius: 999px; background: var(--amber);
+    border-radius: 999px; background: var(--accent);
 }
 .parte-card.is-failed { background: var(--danger-weak); border-color: var(--danger-border); }
+/* Chip «Sin cubrir» de la tarjeta: en tinte, porque el filo y el botón ya dan el volumen. */
+.parte-chip-gap {
+    flex: none; font-family: var(--font-mono); font-size: 9px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--accent-ink); background: var(--accent-weak);
+    border: 1px solid var(--accent-weak-border); padding: 3px 8px; border-radius: 999px;
+}
+.parte-card__notask { flex: none; font-family: var(--font-mono); font-size: 10px; color: var(--text-tenue); }
 .parte-card__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .parte-card__what { min-width: 0; }
 .parte-card__group { font-weight: 600; font-size: 15px; }
@@ -3502,7 +3619,8 @@ tr.is-not-covered { background: var(--danger-weak); }
 .parte-card__foot { display: flex; align-items: center; gap: 9px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--separator); }
 .parte-card__avatar { flex: none; width: 26px; height: 26px; border-radius: 999px; background: var(--accent-weak); color: var(--accent-ink); display: grid; place-items: center; font-size: 10px; font-weight: 700; }
 .parte-card__covers { flex: 1; font-size: 13px; }
-.parte-card__change { flex: none; font-size: 12px; font-weight: 600; color: var(--success); text-decoration: none; }
+/* Enlace naranja, no verde: el verde de este sistema significa «hecha», y cambiar de profesor no lo es. */
+.parte-card__change { flex: none; font-size: 12px; font-weight: 600; color: var(--accent-ink); text-decoration: none; }
 
 /* ---- Hoja para asignar (8b): candidatos que el reparto elegiría ---- */
 .assignsheet { margin-top: 12px; }
@@ -3518,7 +3636,19 @@ tr.is-not-covered { background: var(--danger-weak); }
     margin-top: 10px; background: var(--bg); border: 1px solid var(--border);
     border-radius: 18px; padding: 14px; box-shadow: var(--shadow-sheet);
 }
-.assignsheet__title { font-family: var(--font-display); font-weight: 500; font-size: 18px; margin: 4px 0 2px; }
+/* El asa de la hoja: señal de que esto es una capa sobre la lista, no una fila que ha crecido. */
+.assignsheet__grip { width: 40px; height: 5px; border-radius: 999px; background: var(--border-strong); margin: 0 auto 12px; }
+.assignsheet__title { font-family: var(--font-display); font-weight: 500; font-size: 21px; margin: 4px 0 2px; }
+/* Repartir la hora entera desde la hoja de un hueco: quien abre una suele querer resolver la hora. En
+   TINTE, no en pleno — el naranja pleno de la hoja es el «Asignar» de cada persona. */
+.assignsheet__auto {
+    display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%;
+    margin: 0 0 12px; padding: 11px; cursor: pointer;
+    background: var(--accent-weak); border: 1px solid var(--accent-weak-border); border-radius: var(--radius);
+    font: 600 13.5px var(--font-body); color: var(--accent-ink);
+}
+.assignsheet__auto:hover { border-color: var(--accent); }
+.assignsheet__auto svg { width: 14px; height: 14px; }
 .assignsheet__when { font-size: 13px; color: var(--text-faint); }
 .assignsheet__sub { font-size: 12.5px; color: var(--text-faint); margin: 0 0 12px; }
 /* Sin scroll interno a propósito: el pool de guardia de un tramo son unas pocas personas, y una
@@ -3542,48 +3672,150 @@ tr.is-not-covered { background: var(--danger-weak); }
 .assignsheet__sep { height: 1px; background: var(--border); margin: 4px 2px; }
 .assignsheet__seplabel { padding: 0 4px; }
 
-.parte-empty { padding: 6px 18px 20px; color: var(--text-muted); font-size: 13.5px; }
-.parte-empty p { margin: 0; }
+.parte-empty { padding: 20px 18px 22px; color: var(--text-muted); font-size: 13.5px; }
+.parte-empty p { margin: 0 0 4px; }
+.parte-empty .btn { margin-top: 12px; }
 
 /* ---- Aviso de déficit de personal: texto a la izquierda, salidas a la derecha ---- */
 .parte-deficit { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: flex-start; justify-content: space-between; }
 .parte-deficit p { margin: 4px 0 0; }
 .parte-deficit__actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
-/* ---- Quién está de guardia: referencia plegable ---- */
+/* ---- Profesorado de guardia: la referencia del reparto ---------------------
+   Abierta por defecto (antes estaba plegada): es lo que se mira ANTES de asignar, no un anexo. Sigue
+   siendo <details> para poder cerrarla en móvil, donde ocupa media pantalla. */
 .parte-pool { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
 .parte-pool__toggle {
     display: flex; align-items: center; gap: 10px; padding: 15px 18px; cursor: pointer;
-    font-weight: 600; font-size: 14px; list-style: none;
+    list-style: none;
 }
 .parte-pool__toggle::-webkit-details-marker { display: none; }
 .parte-pool__toggle::after { content: '▾'; margin-left: auto; color: var(--text-tenue); }
 .parte-pool[open] .parte-pool__toggle::after { content: '▴'; }
+.parte-pool__label {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--text-muted);
+}
 .parte-pool__count { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); background: var(--surface-sunken); border-radius: 999px; padding: 2px 8px; }
 .parte-pool__body { padding: 0 18px 18px; }
-.parte-pool__lead { font-size: 13px; color: var(--text-muted); margin: 0 0 14px; }
+.parte-pool__meta { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 18px; margin-bottom: 14px; }
+.parte-pool__lead { font-size: 12.5px; color: var(--text-faint); margin: 0; }
+.parte-pool__legend { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-muted); }
+.parte-pool__legend .load-count { width: 18px; height: 18px; font-size: 10px; }
+
+/* Tarjeta de una persona de guardia: nombre + estado a la izquierda, cuánto lleva a la derecha. El
+   número va en círculo porque es el dato con el que decide el reparto, y así se compara de un barrido
+   vertical sin leer las etiquetas. */
+.duty-grid { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+.duty-card {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    background: var(--surface-alt); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px;
+}
+.duty-card.is-free:hover { border-color: var(--accent); box-shadow: 0 8px 20px -14px color-mix(in srgb, var(--accent) 60%, transparent); }
+/* Quien no puede cubrir sigue en la lista (hay que poder ver POR QUÉ no puede), pero apagado: no es
+   candidato, es contexto. */
+.duty-card.is-off { background: var(--surface-sunken); opacity: .72; }
+.duty-card__what { min-width: 0; }
+.duty-card__name { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.duty-card__tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+.duty-card__note { margin: 6px 0 0; font-size: 12px; color: var(--text-faint); }
+.duty-card__side { flex: none; display: flex; align-items: center; gap: 10px; }
+.duty-tag {
+    font-family: var(--font-mono); font-size: 9px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .04em; padding: 2px 8px; border-radius: 999px;
+    background: var(--surface-sunken); border: 1px solid var(--border); color: var(--text-muted);
+}
+.duty-tag--free { background: var(--accent-weak); border-color: var(--accent-weak-border); color: var(--accent-ink); }
+.duty-tag--absent { background: var(--danger-weak); border-color: var(--danger-border); color: var(--danger-text); }
+.duty-tag--over { background: var(--warning-weak); border-color: var(--warning-border); color: var(--warning-text); }
+
+/* ---- Celdas de la tabla (escritorio): tarea, aula y estado ----
+   Definidas fuera del @media porque .parte-gap lo usa también la tarjeta de móvil. */
+.parte-room { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-faint); display: block; margin-top: 2px; }
+.parte-task { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.parte-task__icon { flex: none; display: grid; color: var(--accent-ink); }
+.parte-task__icon svg { width: 15px; height: 15px; }
+.parte-task__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--text-muted); }
+.parte-notask { font-size: 12.5px; color: var(--text-tenue); }
+/* «Sin cubrir» dicho con palabras y un punto, no solo con el tinte de la fila: el estado tiene que
+   sobrevivir a una impresión en blanco y negro y a quien no distingue el tinte del papel. */
+.parte-gap {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--accent-ink);
+}
+.parte-gap__dot { flex: none; width: 7px; height: 7px; border-radius: 999px; background: var(--accent); }
+
+/* Acción destructiva discreta: texto gris que solo se vuelve rojo al pasar por encima. «Borrar» no
+   compite con «Cambiar», pero tampoco se esconde. */
+.link-quiet {
+    background: none; border: 0; padding: 0; cursor: pointer;
+    font: 600 12.5px var(--font-body); color: var(--text-faint);
+}
+.link-quiet:hover { color: var(--danger-text); }
+.link-quiet:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 
 /* ---- La tabla del parte manda en escritorio; en móvil manda la tarjeta ---- */
 .parte-table { display: none; }
 @media (min-width: 900px) {
     .parte { gap: 22px; }
-    .parte-cards, .coverage-bar { display: none; }
-    .parte-table { display: table; }
-    .parte-table thead th { border-top: 1px solid var(--border); }
+    .parte-cards, .parte-listhead { display: none; }
+    /* El ancla, a sangre del padding de escritorio de .page, y pegada arriba: al recorrer una hora con
+       muchas ausencias, el día y la cobertura son justo lo que no debe salir de pantalla. */
+    .parte-anchor {
+        position: sticky; top: 0; z-index: 20;
+        flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between;
+        gap: 14px 24px; margin: -42px -56px 0; padding: 16px 56px;
+    }
+    .parte-anchor__actions { flex: none; }
+    .parte-anchor__goword { display: inline; }
+    .parte-slots__label {
+        display: inline; flex: none; font-family: var(--font-mono); font-size: 10px;
+        letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint);
+    }
+    /* Anchos fijos (las proporciones del handoff): con anchos automáticos la columna de acciones se
+       movía de una hora a otra según lo largo que fuera el nombre del profesor de turno. */
+    .parte-table { display: table; table-layout: fixed; }
+    .parte-table th:nth-child(1) { width: 15%; }
+    .parte-table th:nth-child(2) { width: 22%; }
+    .parte-table th:nth-child(3) { width: 25%; }
+    .parte-table th:nth-child(4) { width: 22%; }
+    .parte-table th:nth-child(5) { width: 16%; }
+    .parte-table thead th {
+        border-top: 1px solid var(--border); background: var(--surface-sunken);
+        font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+        color: var(--text-faint); font-weight: 500;
+    }
     .parte-table tbody tr:hover { background: color-mix(in srgb, var(--surface-sunken) 60%, var(--surface)); }
-    .parte-table tbody tr.is-uncovered td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
+    /* La fila con hueco: tinte de marca y filo naranja, la misma señal que la tarjeta de móvil. */
+    .parte-table tbody tr.is-uncovered { background: var(--accent-weak); }
+    .parte-table tbody tr.is-uncovered:hover { background: var(--accent-weak); }
+    .parte-table tbody tr.is-uncovered td:first-child { box-shadow: inset 4px 0 0 var(--accent); }
     .parte-table td { padding-left: 18px; }
     /* La hoja dentro de una celda: el panel flota sobre la tabla en vez de estirar la fila, que
        empujaría todas las demás al abrirse. */
     .parte-table td { position: relative; }
     .parte-table .assignsheet { margin-top: 0; }
-    .parte-table .assignsheet__toggle { padding: 7px 12px; font-size: 12.5px; border-radius: var(--radius-sm); }
+    .parte-table .assignsheet__toggle { padding: 8px 15px; font-size: 12.5px; border-radius: var(--radius-sm); box-shadow: 0 8px 16px -12px color-mix(in srgb, var(--accent) 90%, transparent); }
+    .parte-table .assignsheet__toggleword { display: none; }
     .parte-table .assignsheet__panel {
         position: absolute; z-index: 20; top: calc(100% + 6px); right: 0;
         width: 340px; max-height: 60vh; overflow-y: auto;
+        /* La celda de acciones va en nowrap y alineada a la derecha (para que los enlaces no se partan);
+           la hoja heredaba ambas cosas: el título se salía del panel y todo el texto salía alineado a la
+           derecha, como un recibo. */
+        white-space: normal; text-align: left;
     }
+    /* En escritorio la hoja es un popover, no una hoja que se arrastra: sin asa. */
+    .parte-table .assignsheet__grip { display: none; }
+    .parte-table .assignsheet__title { font-size: 18px; }
     .parte-who { display: inline-flex; align-items: center; gap: 7px; }
-    .parte-who__avatar { flex: none; width: 22px; height: 22px; border-radius: 999px; background: var(--accent-weak); color: var(--accent-ink); display: grid; place-items: center; font-size: 9px; font-weight: 700; }
+    .parte-who__avatar { flex: none; width: 24px; height: 24px; border-radius: 999px; background: var(--accent-weak); color: var(--accent-ink); display: grid; place-items: center; font-size: 9px; font-weight: 700; }
+    /* Acciones de fila en una línea, alineadas a la derecha como en el handoff. El flex va en el div
+       interior: en el propio <td> rompería la rejilla de la tabla. */
+    .parte-table .row-actions__inner { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+    /* Cuatro por fila, que es lo que cabe sin que el nombre se corte. */
+    .duty-grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
 }
 
 /* =============================================================================

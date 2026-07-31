@@ -5,27 +5,52 @@
 
 {% block title %}Parte de guardias{% endblock %}
 
-{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Parte de guardias{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Guardias<span class="sep">/</span>Parte del día{% endblock %}
+
+{# El icono de «repartir»: dos flechas en círculo. Aquí y no suelto por la plantilla porque la misma
+   acción aparece en el ancla y dentro de la hoja de candidatos. #}
+{% macro icon_shuffle() %}
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v6h6"/><path d="M20 20v-6h-6"/><path d="M20 9A8 8 0 0 0 6 6L4 8M4 15a8 8 0 0 0 14 3l2-2"/></svg>
+{% endmacro %}
+
+{% macro icon_doc() %}
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg>
+{% endmacro %}
 
 {#
-   La hoja para asignar una ausencia concreta (handoff 8b): candidatos que el reparto elegiría,
-   primero quien menos carga lleva, y debajo quién NO puede cubrir y por qué. Se abre con <details>
-   para no depender de JS. `libres` son los GuardiaCandidate ya priorizados por el scheduler.
+   La hoja para asignar una ausencia concreta: candidatos que el reparto elegiría, primero quien menos
+   carga lleva, y debajo quién NO puede cubrir y por qué. Se abre con <details> para no depender de JS.
+   `libres` son los GuardiaCandidate ya priorizados por el scheduler.
 
    En déficit la lista incluye a compañeros que YA cubren un grupo a esa hora (hereLoad > 0): salen al
    final, marcados, y el botón dice «Doblar» en vez de «Asignar» — que quede claro que asignarlos es
    ponerles un segundo grupo, no darles trabajo nuevo.
+
+   Lleva dentro «Repartir automáticamente» (handoff 22c): quien abre la hoja para un hueco suele querer
+   resolver la hora entera, y tenerlo aquí ahorra volver arriba.
 #}
-{% macro assign_sheet(cover, libres, pool, assignedHere, slotLabel) %}
+{% macro assign_sheet(cover, libres, pool, assignedHere, slotLabel, uncovered) %}
+    {% import _self as ico %}
     <details class="assignsheet">
-        <summary class="assignsheet__toggle">Asignar profesor</summary>
+        {# «profesor» sobra en la tabla de escritorio, donde la columna ya se llama «Cubre»; en la tarjeta de
+           móvil el botón va a ancho completo y sin él quedaría un verbo suelto. #}
+        <summary class="assignsheet__toggle">Asignar<span class="assignsheet__toggleword"> profesor</span></summary>
         <div class="assignsheet__panel">
+            <div class="assignsheet__grip" aria-hidden="true"></div>
             <div class="assignsheet__head">
                 <div class="eyebrow">Asignar guardia</div>
                 <h3 class="assignsheet__title">{{ cover.groupName ?? 'Sin grupo' }}{% if cover.roomName %} · {{ cover.roomName }}{% endif %}
                     {% if slotLabel %}<span class="assignsheet__when">· {{ slotLabel }}</span>{% endif %}
                 </h3>
-                <p class="assignsheet__sub">Falta {{ cover.absentTeacher.fullName }} · profesores libres, primero quien menos lleva</p>
+                <p class="assignsheet__sub">Falta {{ cover.absentTeacher.fullName }} · primero quien menos lleva</p>
+                {% if uncovered > 1 %}
+                    <form method="post" action="{{ path('guardia_auto_assign') }}" class="inline-form">
+                        <input type="hidden" name="_token" value="{{ csrf_token('guardia_auto_assign') }}">
+                        <input type="hidden" name="date" value="{{ cover.date|date('Y-m-d', false) }}">
+                        <input type="hidden" name="slot" value="{{ cover.slotIndex }}">
+                        <button type="submit" class="assignsheet__auto">{{ ico.icon_shuffle() }} Repartir las {{ uncovered }} de esta hora</button>
+                    </form>
+                {% endif %}
             </div>
 
             <div class="assignsheet__list">
@@ -38,6 +63,8 @@
                             {% if c.band.label %}<span class="badge badge--accent" title="{{ c.band.hint }}">{{ c.band.label }}</span>{% endif %}
                             {% if c.doublingUp %}<span class="badge badge--warning" title="Ya cubre {{ (assignedHere[c.teacher.id] ?? [])|join(', ') }} a esta hora">Ya lleva {{ c.hereLoad }} guardia{{ c.hereLoad == 1 ? '' : 's' }}</span>{% endif %}
                         </span>
+                        {# Naranja pleno solo para quien está a cero: es a quien hay que pulsar. Los demás,
+                           en secundario, para que doblar o cargar más a alguien no se haga por inercia. #}
                         <button type="submit" class="btn btn-sm{{ (c.doublingUp or c.slotLoad > 0) ? ' secondary' : '' }}">{{ c.doublingUp ? 'Doblar' : 'Asignar' }}</button>
                     </form>
                 {% else %}
@@ -91,24 +118,66 @@
     {% import _self as parte %}
     {% set slotActual = slots|filter(s => s.index == slotIndex)|first %}
     {% set slotLabel = slotActual ? slotActual.startsAt|date('H:i', false) ~ '–' ~ slotActual.endsAt|date('H:i', false) : null %}
+    {% set esHoy = date|date('Y-m-d', false) == 'now'|date('Y-m-d', false) %}
 
     <div class="parte">
-        {# ---- Cabecera: fecha, título y navegación de día ---- #}
-        <header class="page-head">
-            <div>
-                <p class="eyebrow">{{ dias[date|date('N', false)] }} {{ date|date('d/m/Y', false) }}</p>
-                <h1>Parte de guardias</h1>
-                <p class="lead">Ausencias del día y reparto de las guardias que las cubren.</p>
+        {# ---- Barra ancla: el día, cómo va y las acciones de la hora ----------------------
+           A sangre y en tostado profundo, el único bloque oscuro de la pantalla: el día y la cobertura
+           son el marco dentro del que se lee todo lo demás, y así el resto queda en superficie clara.
+           Las acciones globales viven SOLO aquí (antes estaban repartidas entre la cabecera y el panel,
+           y ninguna de las dos parecía la principal). #}
+        <header class="parte-anchor">
+            <div class="parte-anchor__what">
+                <p class="parte-anchor__eyebrow"><span class="parte-anchor__dot" aria-hidden="true"></span>Parte del día</p>
+                <div class="parte-anchor__row">
+                    <span class="parte-anchor__day">{{ dias[date|date('N', false)] }} {{ date|date('d/m', false) }}</span>
+                    <span class="parte-anchor__sum">
+                        {% if dayAbsences > 0 %}
+                            {# Sin «hoy»: la pantalla también se usa para cuadrar otros días, y el parte de
+                               marzo no puede decir «hoy» estando en julio. #}
+                            <b>{{ dayAbsences }} ausencia{{ dayAbsences == 1 ? '' : 's' }}</b> en el día
+                            {%- if uncovered > 0 %} · {{ uncovered }} sin cubrir a esta hora{% endif %}
+                        {% else %}
+                            No hay ausencias apuntadas
+                        {% endif %}
+                    </span>
+                </div>
+                {# La cobertura del tramo, siempre a la vista: es la pregunta que trae aquí al coordinador. #}
+                {% if covers is not empty %}
+                    <div class="parte-anchor__coverage">
+                        <div class="coverage-bar" role="img" aria-label="{{ covered }} de {{ covers|length }} ausencias cubiertas a esta hora">
+                            <div class="coverage-bar__track"><div class="coverage-bar__fill" style="width: {{ (covered / covers|length * 100)|round }}%"></div></div>
+                            <span class="coverage-bar__count">{{ covered }} / {{ covers|length }} cubiertas</span>
+                        </div>
+                    </div>
+                {% endif %}
             </div>
-            <div class="day-nav">
-                <a class="day-nav-arrow" href="{{ path('guardia_index', { date: date|date_modify('-1 day')|date('Y-m-d', false), slot: slotIndex }) }}" aria-label="Día anterior">‹</a>
-                <form method="get" action="{{ path('guardia_index') }}" class="day-nav-date">
-                    <input type="date" name="date" value="{{ date|date('Y-m-d', false) }}" onchange="this.form.submit()" aria-label="Fecha del parte">
-                    <input type="hidden" name="slot" value="{{ slotIndex }}">
-                    <noscript><button type="submit" class="btn">Ir</button></noscript>
-                </form>
-                <a class="day-nav-arrow" href="{{ path('guardia_index', { date: date|date_modify('+1 day')|date('Y-m-d', false), slot: slotIndex }) }}" aria-label="Día siguiente">›</a>
-                <a class="btn" href="{{ path('guardia_index', { slot: slotIndex }) }}">Hoy</a>
+
+            <div class="parte-anchor__actions">
+                <div class="parte-anchor__nav">
+                    <a class="parte-anchor__arrow" href="{{ path('guardia_index', { date: date|date_modify('-1 day')|date('Y-m-d', false), slot: slotIndex }) }}" aria-label="Día anterior">‹</a>
+                    <form method="get" action="{{ path('guardia_index') }}" class="parte-anchor__date">
+                        <input type="date" name="date" value="{{ date|date('Y-m-d', false) }}" onchange="this.form.submit()" aria-label="Fecha del parte">
+                        <input type="hidden" name="slot" value="{{ slotIndex }}">
+                        <noscript><button type="submit" class="parte-anchor__ghost">Ir</button></noscript>
+                    </form>
+                    <a class="parte-anchor__arrow" href="{{ path('guardia_index', { date: date|date_modify('+1 day')|date('Y-m-d', false), slot: slotIndex }) }}" aria-label="Día siguiente">›</a>
+                </div>
+                {% if not esHoy %}
+                    <a class="parte-anchor__today" href="{{ path('guardia_index', { slot: slotIndex }) }}">Hoy</a>
+                {% endif %}
+                {% if canWrite %}
+                    <a class="parte-anchor__ghost" href="{{ path('guardia_absence_new', { date: date|date('Y-m-d', false) }) }}">＋ Apuntar ausencia</a>
+                    {% if uncovered > 0 %}
+                        <form method="post" action="{{ path('guardia_auto_assign') }}" class="inline-form">
+                            <input type="hidden" name="_token" value="{{ csrf_token('guardia_auto_assign') }}">
+                            <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
+                            <input type="hidden" name="slot" value="{{ slotIndex }}">
+                            <button type="submit" class="btn parte-anchor__go" title="Reparte las guardias pendientes de asignar de este tramo">{# Sin espacio antes del span: el botón es flex y su gap ya separa las dos palabras (con espacio salían dos). #}
+                            {{ parte.icon_shuffle() }} Repartir<span class="parte-anchor__goword">automáticamente</span></button>
+                        </form>
+                    {% endif %}
+                {% endif %}
             </div>
         </header>
 
@@ -123,15 +192,25 @@
                 </div>
             </div>
         {% else %}
-            {# ---- Tramos horarios: el activo en verde, con punto ámbar si le quedan ausencias sin cubrir ---- #}
-            <nav class="slotchips" aria-label="Tramo horario">
-                {% for slot in slots %}
-                    <a class="slotchip {{ slot.index == slotIndex ? 'is-active' }}"
-                       href="{{ path('guardia_index', { date: date|date('Y-m-d', false), slot: slot.index }) }}">
-                        {{ slot.startsAt|date('H:i', false) }}–{{ slot.endsAt|date('H:i', false) }}
-                        {% if slot.index == slotIndex and uncovered > 0 %}<span class="slotchip__dot" aria-hidden="true"></span>{% endif %}
-                    </a>
-                {% endfor %}
+            {# ---- Tramos horarios ----
+               El activo en naranja pleno; los que TODAVÍA tienen huecos llevan un punto de aviso, sea cual
+               sea el tramo abierto: el hueco de las 09:20 no espera a que alguien pulse ese chip. #}
+            <nav class="parte-slots" aria-label="Tramo horario">
+                <span class="parte-slots__label">Tramo</span>
+                <div class="slotchips">
+                    {% for slot in slots %}
+                        {% set huecos = (slotCoverage[slot.index] ?? { uncovered: 0 }).uncovered %}
+                        {# El punto avisa de los huecos de los OTROS tramos: del tramo abierto ya lo dice la
+                           barra de cobertura del ancla, y sobre el chip relleno no se distinguiría. #}
+                        {% set aviso = huecos > 0 and slot.index != slotIndex %}
+                        <a class="slotchip {{ slot.index == slotIndex ? 'is-active' }}"
+                           href="{{ path('guardia_index', { date: date|date('Y-m-d', false), slot: slot.index }) }}"
+                           {% if aviso %}title="{{ huecos }} sin cubrir a esta hora"{% endif %}>
+                            {{ slot.startsAt|date('H:i', false) }}–{{ slot.endsAt|date('H:i', false) }}
+                            {% if aviso %}<span class="slotchip__dot" aria-hidden="true"></span>{% endif %}
+                        </a>
+                    {% endfor %}
+                </div>
             </nav>
 
             {# ---- Déficit de personal: se dice, no se disimula ----
@@ -158,52 +237,38 @@
                 </div>
             {% endif %}
 
+            {# ---- Todo cubierto: la buena noticia se dice una vez y en verde ----
+               Verde, no naranja: el naranja de esta pantalla significa «esto te reclama». #}
+            {% if covers is not empty and uncovered == 0 %}
+                <p class="parte-done">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+                    Todo cubierto a esta hora · {{ covered }} de {{ covers|length }}
+                </p>
+            {% endif %}
+
             {# ---- Panel de ausencias del tramo ---- #}
             <section class="parte-panel">
-                <div class="parte-panel__head">
-                    <div class="parte-panel__titles">
-                        <h2 class="parte-panel__title">Ausencias de esta hora</h2>
-                        {% if covers is not empty %}
-                            <div class="coverage">
-                                <span class="badge badge--ok">{{ covered }} cubierta{{ covered == 1 ? '' : 's' }}</span>
-                                {% if uncovered > 0 %}<span class="badge badge--warning">{{ uncovered }} sin cubrir</span>{% endif %}
-                            </div>
-                        {% endif %}
-                    </div>
-                    {% if canWrite %}
-                        <div class="parte-panel__actions">
-                            <a class="btn btn--ghost" href="{{ path('guardia_absence_new', { date: date|date('Y-m-d', false) }) }}">+ Apuntar ausencia</a>
-                            {# Camino permanente a las agrupaciones (el aviso de déficit también lleva
-                               aquí, pero desaparece en cuanto cuadra y hay que poder deshacerlas). #}
-                            {% if covers|length > 1 %}
-                                <a class="btn btn--ghost" href="{{ path('guardia_grouping_new', { date: date|date('Y-m-d', false), slot: slotIndex }) }}">Juntar grupos</a>
-                            {% endif %}
-                            {% if uncovered > 0 %}
-                                <form method="post" action="{{ path('guardia_auto_assign') }}" class="inline-form">
-                                    <input type="hidden" name="_token" value="{{ csrf_token('guardia_auto_assign') }}">
-                                    <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
-                                    <input type="hidden" name="slot" value="{{ slotIndex }}">
-                                    <button type="submit" class="btn" title="Reparte las guardias pendientes de asignar de este tramo">↻ Repartir</button>
-                                </form>
-                            {% endif %}
-                        </div>
-                    {% endif %}
-                </div>
-
                 {# Clase propia, no .empty-state: ese estado vacío es el de "sin horario importado",
                    que es un problema a resolver; esto es la buena noticia de que no falta nadie. #}
                 {% if covers is empty %}
                     <div class="parte-empty">
-                        <p>Nadie falta a esta hora.</p>
+                        <p><b>Nadie falta a esta hora.</b></p>
+                        <p class="muted">{{ dias[date|date('N', false)] }} {{ date|date('d/m/Y', false) }}{% if slotLabel %} · {{ slotLabel }}{% endif %}. Si sabes de una ausencia, apúntala y se reparte la guardia.</p>
+                        {% if canWrite %}
+                            <a class="btn btn--ghost" href="{{ path('guardia_absence_new', { date: date|date('Y-m-d', false) }) }}">＋ Apuntar ausencia</a>
+                        {% endif %}
                     </div>
                 {% else %}
-                    {# Barra de cobertura: sólo aporta en móvil, donde no cabe la tabla entera de un vistazo. #}
-                    <div class="coverage-bar" role="img" aria-label="{{ covered }} de {{ covers|length }} ausencias cubiertas">
-                        <div class="coverage-bar__track"><div class="coverage-bar__fill" style="width: {{ (covered / covers|length * 100)|round }}%"></div></div>
-                        <span class="coverage-bar__count">{{ covered }} / {{ covers|length }}</span>
+                    {# Cabecera de la lista, solo en móvil: en escritorio la cabecera de la tabla ya dice
+                       qué es cada columna, y repetir el rótulo sobraba. #}
+                    <div class="parte-listhead">
+                        <span class="parte-listhead__count">{{ covers|length }} ausencia{{ covers|length == 1 ? '' : 's' }}{% if slotLabel %} · {{ slotLabel }}{% endif %}</span>
+                        {% if canWrite and covers|length > 1 %}
+                            <a class="parte-listhead__link" href="{{ path('guardia_grouping_new', { date: date|date('Y-m-d', false), slot: slotIndex }) }}">Juntar grupos</a>
+                        {% endif %}
                     </div>
 
-                    {# ================= MÓVIL: tarjetas, sin cubrir primero (handoff 8a) ================= #}
+                    {# ================= MÓVIL: tarjetas, sin cubrir primero ================= #}
                     <div class="parte-cards">
                         {% for cover in covers %}
                             {% set sinCubrir = cover.assignedGuardia is null %}
@@ -226,11 +291,11 @@
                                     {% if cover.notCovered %}
                                         <span class="badge badge--danger">No se cubrió</span>
                                     {% elseif sinCubrir %}
-                                        <span class="badge badge--warning">Sin cubrir</span>
+                                        <span class="parte-chip-gap">Sin cubrir</span>
                                     {% elseif cover.hasTask %}
-                                        <span class="parte-card__task" title="Deja tarea para el grupo">
-                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg>
-                                        </span>
+                                        <span class="parte-card__task" title="Deja tarea para el grupo">{{ parte.icon_doc() }}</span>
+                                    {% else %}
+                                        <span class="parte-card__notask">sin tarea</span>
                                     {% endif %}
                                 </div>
 
@@ -243,7 +308,7 @@
                                         <span class="parte-card__taskdesc">{{ cover.taskDescription|excerpt(80) }}</span>
                                     {% endif %}
                                     {% if cover.hasBankTask %}
-                                        <span class="parte-card__taskdesc"><span class="badge badge--warning">Del banco</span> {{ cover.bankItem.title|excerpt(60) }}</span>
+                                        <span class="parte-card__taskdesc">Ficha del banco · {{ cover.bankItem.title|excerpt(60) }}</span>
                                     {% endif %}
                                     {% if not cover.hasTask %}
                                         {{ parte.bank_pick(cover, canWrite) }}
@@ -252,24 +317,24 @@
                                 {% endif %}
 
                                 {% if sinCubrir and canWrite %}
-                                    {{ parte.assign_sheet(cover, candidates, pool, assignedHere, slotLabel) }}
+                                    {{ parte.assign_sheet(cover, candidates, pool, assignedHere, slotLabel, uncovered) }}
                                 {% elseif cover.assignedGuardia %}
                                     <div class="parte-card__foot">
                                         <span class="parte-card__avatar" aria-hidden="true">{{ cover.assignedGuardia.fullName|initials }}</span>
                                         <span class="parte-card__covers">Cubre <b>{{ cover.assignedGuardia.fullName }}</b></span>
                                         {% if (workUnits[cover.assignedGuardia.id] ?? 1) > 1 and not cover.grouping %}<span class="badge badge--warning" title="Lleva {{ workUnits[cover.assignedGuardia.id] }} guardias a esta hora en sitios distintos">×{{ workUnits[cover.assignedGuardia.id] }}</span>{% endif %}
                                         {# Mismo verbo que en la tabla de escritorio: dos nombres para la misma pantalla despistaban. #}
-                                        {% if canWrite %}<a class="parte-card__change" href="{{ path('guardia_cover_edit', { id: cover.id }) }}">Modificar</a>{% endif %}
+                                        {% if canWrite %}<a class="parte-card__change" href="{{ path('guardia_cover_edit', { id: cover.id }) }}">Cambiar</a>{% endif %}
                                     </div>
                                 {% endif %}
                             </article>
                         {% endfor %}
                     </div>
 
-                    {# ================= ESCRITORIO: tabla refinada (handoff 3a) ================= #}
+                    {# ================= ESCRITORIO: la tabla ================= #}
                     <table class="parte-table">
                         <thead>
-                            <tr><th>Grupo · Aula</th><th>Profesor ausente</th><th>Tarea para el grupo</th><th>Guardia asignada</th><th></th></tr>
+                            <tr><th>Grupo · Aula</th><th>Profesor ausente</th><th>Tarea para el grupo</th><th>Cubre</th><th></th></tr>
                             {# El "motivo" junto al ausente es el motivo de la ausencia (privado): solo aquí y en el detalle del coordinador. #}
                         </thead>
                         <tbody>
@@ -282,7 +347,7 @@
                                                la clase ocurre de verdad, y es lo que hay que leer aquí. #}
                                             <span class="badge badge--accent" title="Junto con otros grupos en {{ cover.grouping.roomName }}">→ {{ cover.grouping.roomName }}</span>
                                         {% elseif cover.roomName %}
-                                            <span class="muted mono"> · {{ cover.roomName }}</span>
+                                            <span class="parte-room">{{ cover.roomName }}</span>
                                         {% endif %}
                                     </td>
                                     <td>
@@ -290,18 +355,20 @@
                                         {% if cover.absence.reason %}<span class="reason-note muted" title="Motivo (privado): {{ cover.absence.reason }}">· motivo ▾</span>{% endif %}
                                     </td>
                                     <td class="task-cell">
-                                        {% if cover.taskDocumentPath %}
-                                            <a class="task-doc" href="{{ path('guardia_task_download', { id: cover.id }) }}">📎 {{ cover.taskDocumentName ?? 'Documento' }}</a>
-                                        {% endif %}
-                                        {% if cover.taskDescription %}
-                                            <span class="task-desc" title="{{ cover.taskDescription }}">{{ cover.taskDescription|excerpt(60) }}</span>
-                                        {% endif %}
-                                        {# La del banco se distingue de la que dejó el profesor: no es su trabajo, es de repuesto. #}
-                                        {% if cover.hasBankTask %}
-                                            <span class="task-desc"><span class="badge badge--warning">Del banco</span> {{ cover.bankItem.title|excerpt(48) }}</span>
-                                        {% endif %}
-                                        {% if not cover.hasTask %}
-                                            <span class="muted">Sin tarea</span>
+                                        {% if cover.hasTask %}
+                                            <span class="parte-task">
+                                                <span class="parte-task__icon">{{ parte.icon_doc() }}</span>
+                                                <span class="parte-task__text">
+                                                    {% if cover.taskDocumentPath %}
+                                                        <a class="task-doc" href="{{ path('guardia_task_download', { id: cover.id }) }}">{{ cover.taskDocumentName ?? 'Documento' }}</a>
+                                                    {% endif %}
+                                                    {# La del banco se distingue de la que dejó el profesor: no es su trabajo, es de repuesto. #}
+                                                    {% if cover.hasBankTask %}Ficha del banco · {{ cover.bankItem.title|excerpt(48) }}{% endif %}
+                                                    {% if cover.taskDescription %}<span title="{{ cover.taskDescription }}">{{ cover.taskDescription|excerpt(60) }}</span>{% endif %}
+                                                </span>
+                                            </span>
+                                        {% else %}
+                                            <span class="parte-notask">Sin tarea</span>
                                             {{ parte.bank_pick(cover, canWrite) }}
                                         {% endif %}
                                     </td>
@@ -313,7 +380,7 @@
                                             <span class="badge badge--danger">No se cubrió</span>
                                             {% if cover.assignedGuardia %}<span class="muted"> · {{ cover.assignedGuardia.fullName }}</span>{% endif %}
                                         {% elseif cover.assignedGuardia %}
-                                                    <span class="parte-who">
+                                            <span class="parte-who">
                                                 <span class="parte-who__avatar" aria-hidden="true">{{ cover.assignedGuardia.fullName|initials }}</span>{{ cover.assignedGuardia.fullName }}
                                             </span>
                                             {# El ámbar señala la fila que hay que resolver: este profesor lleva
@@ -325,24 +392,33 @@
                                                    juntos, enumerarlos como «sitios distintos» sería falso. #}
                                                 <span class="badge badge--warning" title="Lleva {{ workUnits[cover.assignedGuardia.id] }} guardias a esta hora en sitios distintos; esta clase va aparte. Júntala con otra en un aula y contarán como una.">Doble guardia</span>
                                             {% endif %}
-                                        {% elseif canWrite %}
-                                            {# La misma hoja que en móvil: asignar sin salir del parte es
-                                               justamente lo que más se usa desde el escritorio. #}
-                                            {{ parte.assign_sheet(cover, candidates, pool, assignedHere, slotLabel) }}
                                         {% else %}
-                                            <span class="badge badge--warning">Sin asignar</span>
+                                            {# El estado se dice con palabras, no solo con el tinte de la fila:
+                                               quien lee en blanco y negro (o imprime el parte) tiene que verlo. #}
+                                            <span class="parte-gap"><span class="parte-gap__dot" aria-hidden="true"></span>Sin cubrir</span>
                                         {% endif %}
                                     </td>
                                     <td class="row-actions">
-                                        {% if canWrite %}
-                                            <a class="link-action" href="{{ path('guardia_cover_edit', { id: cover.id }) }}">Modificar</a>
-                                            <form method="post" action="{{ path('guardia_delete', { id: cover.id }) }}" data-confirm="¿Borrar la ausencia de {{ cover.absentTeacher.fullName }} en {{ cover.groupName ?? 'este grupo' }}? Esta línea del parte desaparecerá.">
-                                                <input type="hidden" name="_token" value="{{ csrf_token('guardia_delete' ~ cover.id) }}">
-                                                <button type="submit" class="link-danger">Borrar</button>
-                                            </form>
-                                        {% else %}
-                                            <a class="link-action" href="{{ path('guardia_cover_show', { id: cover.id }) }}">Ver</a>
-                                        {% endif %}
+                                        {# El envoltorio no es decorativo: un <td> con display:flex deja de ser
+                                           celda y rompe la rejilla de la tabla (bordes cortados y columnas
+                                           desalineadas). El flex va aquí dentro. #}
+                                        <div class="row-actions__inner">
+                                            {% if canWrite %}
+                                                {% if cover.assignedGuardia is null and not cover.notCovered %}
+                                                    {# La misma hoja que en móvil: asignar sin salir del parte es
+                                                       justamente lo que más se usa desde el escritorio. #}
+                                                    {{ parte.assign_sheet(cover, candidates, pool, assignedHere, slotLabel, uncovered) }}
+                                                {% else %}
+                                                    <a class="link-action" href="{{ path('guardia_cover_edit', { id: cover.id }) }}">Cambiar</a>
+                                                {% endif %}
+                                                <form method="post" action="{{ path('guardia_delete', { id: cover.id }) }}" data-confirm="¿Borrar la ausencia de {{ cover.absentTeacher.fullName }} en {{ cover.groupName ?? 'este grupo' }}? Esta línea del parte desaparecerá.">
+                                                    <input type="hidden" name="_token" value="{{ csrf_token('guardia_delete' ~ cover.id) }}">
+                                                    <button type="submit" class="link-quiet">Borrar</button>
+                                                </form>
+                                            {% else %}
+                                                <a class="link-action" href="{{ path('guardia_cover_show', { id: cover.id }) }}">Ver</a>
+                                            {% endif %}
+                                        </div>
                                     </td>
                                 </tr>
                             {% endfor %}
@@ -351,43 +427,50 @@
                 {% endif %}
             </section>
 
-            {# ---- Quién puede cubrir a esta hora: referencia del reparto (escritorio) ----
+            {# ---- Profesorado de guardia a esta hora: la referencia del reparto ----
                Una sola lista con las tres procedencias (guardia, colaborador y apoyo puntual dado de
-               alta a mano para hoy), porque la pregunta del coordinador es una sola: quién hay. #}
-            <details class="parte-pool" id="pool"{{ covers is empty ? ' open' : '' }}>
+               alta a mano para hoy), porque la pregunta del coordinador es una sola: quién hay. Abierta
+               por defecto: es lo que se mira ANTES de asignar, no un anexo. #}
+            <details class="parte-pool" id="pool" open>
                 <summary class="parte-pool__toggle">
-                    Profesores disponibles a esta hora
+                    <span class="parte-pool__label">Profesorado de guardia{% if slotLabel %} · {{ slotLabel }}{% endif %}</span>
                     <span class="parte-pool__count">{{ pool|length }}</span>
                 </summary>
                 <div class="parte-pool__body">
                     {% if pool is empty %}
                         <p class="muted">Nadie tiene guardia en el horario para este tramo.</p>
                     {% else %}
-                        <p class="parte-pool__lead">Quién puede cubrir según el horario. El número es lo que ya lleva en este tramo: el reparto asigna primero al que menos tiene.</p>
-                        <div class="card-grid">
+                        <div class="parte-pool__meta">
+                            <p class="parte-pool__lead">Ordenado como reparte la máquina: primero quien menos guardias lleva a esta hora.</p>
+                            <span class="parte-pool__legend"><span class="load-count">n</span> guardias a esta hora este curso</span>
+                        </div>
+                        <div class="duty-grid">
                             {% for p in pool %}
-                                <div class="mini-card {{ p.absent ? 'is-absent' : (p.groups ? 'is-busy' : 'is-free') }}">
-                                    <div class="mini-card-head">
-                                        <strong>{{ p.teacher.fullName }}</strong>
-                                        {% if p.band.label %}<span class="badge badge--accent" title="{{ p.band.hint }}">{{ p.band.label }}</span>{% endif %}
+                                {% set libre = not p.absent and not p.groups %}
+                                <div class="duty-card {{ libre ? 'is-free' : 'is-off' }}">
+                                    <div class="duty-card__what">
+                                        <div class="duty-card__name">{{ p.teacher.fullName }}</div>
+                                        <div class="duty-card__tags">
+                                            {% if p.absent %}
+                                                <span class="duty-tag duty-tag--absent">Ausente</span>
+                                            {% elseif p.groups|length > 1 %}
+                                                {# Aviso solo si son sitios distintos; ya juntos en un aula es una guardia. #}
+                                                <span class="duty-tag {{ (workUnits[p.teacher.id] ?? 1) > 1 ? 'duty-tag--over' : '' }}" title="Cubre {{ p.groups|join(', ') }} a esta hora">→ {{ p.groups|length }} grupos</span>
+                                            {% elseif p.groups %}
+                                                <span class="duty-tag" title="Cubre {{ p.groups|join(', ') }} a esta hora">→ {{ p.groups|join(', ') }}</span>
+                                            {% else %}
+                                                <span class="duty-tag duty-tag--free">Libre</span>
+                                            {% endif %}
+                                            {% if p.band.label %}<span class="duty-tag" title="{{ p.band.hint }}">{{ p.band.label }}</span>{% endif %}
+                                        </div>
+                                        {% if p.note %}<p class="duty-card__note">{{ p.note }}</p>{% endif %}
                                     </div>
-                                    {% if p.note %}<p class="mini-card-note">{{ p.note }}</p>{% endif %}
-                                    <div class="mini-card-status">
-                                        {% if p.absent %}
-                                            <span class="badge badge--danger">Ausente</span>
-                                        {% elseif p.groups|length > 1 %}
-                                            {# Ámbar solo si son sitios distintos; ya juntos en un aula es una guardia. #}
-                                            <span class="badge {{ (workUnits[p.teacher.id] ?? 1) > 1 ? 'badge--warning' : 'badge--muted' }}" title="Cubre {{ p.groups|join(', ') }} a esta hora">→ {{ p.groups|length }} grupos</span>
-                                        {% elseif p.groups %}
-                                            <span class="badge badge--muted">→ {{ p.groups|join(', ') }}</span>
-                                        {% else %}
-                                            <span class="badge badge--ok">Disponible</span>
-                                        {% endif %}
-                                        <span class="load-count" title="{{ p.load }} guardia(s) en este tramo. El reparto elige primero al que menos tiene.">{{ p.load }}</span>
+                                    <div class="duty-card__side">
+                                        <span class="load-count{{ p.load == 0 and libre ? ' is-zero' : '' }}" title="{{ p.load }} guardia(s) a esta hora este curso. El reparto elige primero al que menos tiene.">{{ p.load }}</span>
                                         {% if p.supportId and canWrite %}
                                             <form method="post" action="{{ path('guardia_support_remove', { id: p.supportId }) }}" data-confirm="¿Quitar a {{ p.teacher.fullName }} del apoyo de esta hora? Las guardias que ya tenga asignadas se mantienen.">
                                                 <input type="hidden" name="_token" value="{{ csrf_token('guardia_support_remove' ~ p.supportId) }}">
-                                                <button type="submit" class="link-danger">Quitar</button>
+                                                <button type="submit" class="link-quiet">Quitar</button>
                                             </form>
                                         {% endif %}
                                     </div>

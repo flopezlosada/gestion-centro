@@ -46,6 +46,38 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
+     * How the day's parte stands PERIOD BY PERIOD: for each slot with absences, how many lines it has and
+     * how many still lack a guardia. What the parte needs to mark the periods that still have gaps on
+     * their own chip, so a coordinator standing on 08:25 can see that 09:20 is not sorted out either
+     * without clicking through the whole morning.
+     *
+     * One query for the whole day, keyed by slot index. Periods with no absences are simply absent from
+     * the map (there is nothing to say about them), so callers read them with `?? null`.
+     *
+     * @param \DateTimeImmutable $date the day
+     *
+     * @return array<int, array{total: int, uncovered: int}> slot index → its lines and how many lack a guardia
+     */
+    public function coverageBySlotOn(\DateTimeImmutable $date): array
+    {
+        /** @var list<array{slot: int, total: int|string, uncovered: int|string|null}> $rows */
+        $rows = $this->createQueryBuilder('c')
+            ->select('c.slotIndex AS slot', 'COUNT(c.id) AS total', 'SUM(CASE WHEN c.assignedGuardia IS NULL THEN 1 ELSE 0 END) AS uncovered')
+            ->andWhere('c.date = :date')
+            ->setParameter('date', $date, 'date_immutable')
+            ->groupBy('c.slotIndex')
+            ->getQuery()
+            ->getResult();
+
+        $bySlot = [];
+        foreach ($rows as $row) {
+            $bySlot[(int) $row['slot']] = ['total' => (int) $row['total'], 'uncovered' => (int) $row['uncovered']];
+        }
+
+        return $bySlot;
+    }
+
+    /**
      * The parte lines for a date and period, absent teacher and assigned guardia eager-loaded.
      *
      * @param \DateTimeImmutable $date      the day
