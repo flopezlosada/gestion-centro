@@ -95,12 +95,16 @@ final class GuardiaTaskBankController extends AbstractController
             : $suggestedDepartment?->getId();
         $includeRetired = $request->query->getBoolean('retiradas');
 
-        $items = $bank->findFiltered($year, $level, $subject, $cover?->getGroupName(), $departmentId, $includeRetired);
-        // Si el departamento sugerido deja la pantalla vacía pero SIN él hay trabajo, hay que decirlo: un
-        // vacío que se debe a un filtro que el usuario no puso es un vacío inexplicable.
+        // Eligiendo para una clase manda el reparto (menos usadas primero, como el sorteo); navegando el
+        // catálogo manda encontrar la estantería (por nivel y materia).
+        $picking = null !== $cover;
+        $items = $bank->findFiltered($year, $level, $subject, $cover?->getGroupName(), $departmentId, $includeRetired, $picking);
+        // Si el departamento SUGERIDO (el del profesor ausente) deja la pantalla vacía pero sin él hay
+        // trabajo que encaja, hay que decirlo: un vacío provocado por un filtro que el usuario no puso es
+        // un vacío que no se puede explicar.
         $hiddenByDepartment = 0;
         if ([] === $items && null !== $departmentId) {
-            $hiddenByDepartment = \count($bank->findFiltered($year, $level, $subject, $cover?->getGroupName(), null, $includeRetired));
+            $hiddenByDepartment = \count($bank->findFiltered($year, $level, $subject, $cover?->getGroupName(), null, $includeRetired, $picking));
         }
 
         return $this->render('guardia/bank/index.html.twig', [
@@ -108,6 +112,11 @@ final class GuardiaTaskBankController extends AbstractController
             'course' => $year->getSchoolYear(),
             'items' => $items,
             'hiddenByDepartment' => $hiddenByDepartment,
+            // La ficha que la pantalla ofrece por defecto: la primera de las menos usadas, que es
+            // exactamente una de las que el sorteo podría dar. Solo existe eligiendo para una clase y
+            // solo si el sorteo es posible (nivel y materia conocidos): sin eso, "sugerida" sería
+            // una etiqueta sin criterio detrás.
+            'suggestedId' => $picking && null !== $level && null !== $subject ? self::firstActiveId($items) : null,
             // Which rows offer an "editar": resolved here rather than in the template, which cannot ask
             // the chain of command, and so that nobody is shown a link that would 403.
             'curatableIds' => $this->curatableIds($items, $user, $hierarchy),
@@ -124,7 +133,57 @@ final class GuardiaTaskBankController extends AbstractController
             'levelSuggested' => null !== $cover && !$request->query->has('nivel'),
             // The letters of the group being covered, to explain why some tasks are not offered.
             'coverSections' => null !== $cover ? GroupCode::sections($cover->getGroupName()) : [],
+            // Las horas del tramo, para que el ancla diga "13:35" y no "3ª hora": es lo que el profesor
+            // reconoce de un vistazo. Mismo patrón que el detalle de la guardia.
+            'slotTimes' => $schedule->slotTimes($year),
         ]);
+    }
+
+    /**
+     * Retires a bank task (or puts it back on offer). The recommended way out of a task that no longer
+     * works: a covered guardia keeps its reference to it, unlike a delete, and the use count it earned
+     * stays counted. Same permission as editing — it IS an edit of one field.
+     */
+    #[Route('/{id}/retirar', name: 'guardia_bank_retire', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function retire(GuardiaTaskBankItem $item, Request $request, #[CurrentUser] User $user, EntityManagerInterface $em, OrganizationHierarchy $hierarchy): Response
+    {
+        $this->assertMayCurate($item, $user, $hierarchy);
+        $this->assertCsrf($request, 'guardia_bank_retire'.$item->getId());
+
+        $item->setActive(!$item->isActive());
+        $em->flush();
+        $this->addFlash('success', $item->isActive()
+            ? sprintf('«%s» vuelve a ofrecerse en el banco.', $item->getTitle())
+            : sprintf('«%s» retirada: deja de ofrecerse, pero las guardias que la usaron la conservan.', $item->getTitle()));
+
+        // De vuelta a la MISMA pantalla: si se retiró estando a mitad de una guardia (`para`), sacar de
+        // ese flujo por haber ordenado el banco sería perder el sitio; el nivel solo se fija al navegar.
+        $coverId = (int) $request->request->get('para');
+
+        return $this->redirectToRoute('guardia_bank_index', array_filter([
+            'para' => $coverId > 0 ? $coverId : null,
+            'nivel' => $coverId > 0 ? null : $item->getLevel()->value,
+            'retiradas' => $request->request->getBoolean('retiradas') ? '1' : null,
+        ]));
+    }
+
+    /**
+     * The id of the first listed task still on offer — the one the screen suggests. Retired rows can be
+     * listed too (with the "ver retiradas" chip on) and they are not on offer, so they cannot be it.
+     *
+     * @param list<GuardiaTaskBankItem> $items the listed tasks, already in the reading order
+     *
+     * @return int|null the id, or null when nothing on the list is on offer
+     */
+    private static function firstActiveId(array $items): ?int
+    {
+        foreach ($items as $item) {
+            if ($item->isActive()) {
+                return $item->getId();
+            }
+        }
+
+        return null;
     }
 
     /**

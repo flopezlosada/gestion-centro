@@ -1,0 +1,18 @@
+{# Cambiar de manos la tarea: el mismo formulario se abre desde la tarjeta de "quién la lleva ahora"
+   (cuando ya está delegada) y desde la tarjeta de decisión (cuando todavía no lo está), así que vive
+   aquí una sola vez. Espera `task` y `delegatable` del contexto que lo incluye.
+
+   Sigue siendo del TITULAR: delegar reparte el trabajo hacia abajo, nunca la responsabilidad
+   ({@see App\Controller\TaskController::delegate}). #}
+<form method="post" action="{{ path('task_delegate', { id: task.id }) }}" class="delegate-form">
+    <input type="hidden" name="_token" value="{{ csrf_token('task_delegate' ~ task.id) }}">
+    <label class="visually-hidden" for="delegatedTo">Quién la lleva</label>
+    <select name="delegatedTo" id="delegatedTo">
+        <option value="">— Nadie: la lleva quien es responsable —</option>
+        {% for u in delegatable %}
+            <option value="{{ u.id }}"{{ task.delegatedTo and task.delegatedTo.id == u.id ? ' selected' : '' }}>{{ u.fullName }}</option>
+        {% endfor %}
+    </select>
+    <button class="btn secondary" type="submit">Guardar</button>
+</form>
+<p class="help">Sigue siendo {{ task.responsibility ? task.responsibility.label : 'de su responsable' }}: pasa el trabajo, no la responsabilidad.</p>

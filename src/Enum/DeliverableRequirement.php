@@ -75,6 +75,23 @@ enum DeliverableRequirement: string
     }
 
     /**
+     * How the task's own screen states what it is handed in with, as a plain fact and not a warning
+     * ("Se entrega con un enlace"). Distinct from {@see label()}, which answers a question in the
+     * creation form ("¿Qué hay que entregar?" → "Un enlace") and reads like a fragment on a detail page.
+     *
+     * @return string the Spanish sentence, empty for NONE
+     */
+    public function deliveryLine(): string
+    {
+        return match ($this) {
+            self::NONE => '',
+            self::LINK => 'Se entrega con un enlace',
+            self::FILE => 'Se entrega con un archivo',
+            self::ANY => 'Se entrega con un enlace o un archivo',
+        };
+    }
+
+    /**
      * What the person who has to deliver reads on the task, phrased as an instruction.
      *
      * @return string the Spanish instruction, empty for NONE

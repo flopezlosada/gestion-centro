@@ -14,6 +14,8 @@ use App\Entity\ScheduleEntry;
 use App\Entity\Task;
 use App\Entity\TaskResponsibility;
 use App\Entity\User;
+use App\Enum\Area;
+use App\Enum\PermissionLevel;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\TaskType;
 use App\Enum\Weekday;
@@ -162,7 +164,7 @@ final class HomeAgendaTest extends WebTestCase
     {
         $user = $this->user('profe@centro.test');
         $today = new \DateTimeImmutable('today');
-        // Una tarea que vence hoy → "Por hacer"; una cita con hora hoy → "Con hora"; un recordatorio sin
+        // Una tarea que vence hoy → "Por hacer"; una cita con hora hoy → "Tu día"; un recordatorio sin
         // hora → "Por hacer". Con strict_variables activo en el entorno de test, poblar de verdad la
         // plantilla nueva caza cualquier error de variable (el 500 de g.taskNote habría saltado aquí).
         $task = (new Task('Entregar memoria PGA', SchoolYear::current($today), $today, TaskType::SIMPLE))->setAssignedUser($user);
@@ -177,7 +179,7 @@ final class HomeAgendaTest extends WebTestCase
         self::assertResponseIsSuccessful();
         $html = (string) $this->client->getResponse()->getContent();
         self::assertStringContainsString('Entregar memoria PGA', $html, 'la tarea de hoy sale en "Por hacer"');
-        self::assertStringContainsString('Reunión de departamento', $html, 'la cita con hora sale en "Con hora"');
+        self::assertStringContainsString('Reunión de departamento', $html, 'la cita con hora sale en "Tu día"');
         self::assertStringContainsString('Llamar a la editorial', $html, 'el recordatorio sin hora sale en "Por hacer"');
     }
 
@@ -214,20 +216,20 @@ final class HomeAgendaTest extends WebTestCase
         $crawler = $this->client->request('GET', '/');
 
         self::assertResponseIsSuccessful();
-        // Dos entregadas en el departamento, pero solo UNA es suya de validar. Se busca el mosaico por su
+        // Dos entregadas en el departamento, pero solo UNA es suya de validar. Se busca la fila por su
         // etiqueta y no por su posición: el orden de los módulos de Inicio cambia con el rol y con el día.
-        $tile = $crawler->filter('.module-tile')->reduce(static fn (Crawler $node): bool => str_contains($node->text(), 'por validar'));
-        self::assertCount(1, $tile, 'the department module renders its "por validar" tile');
-        self::assertSame('1', trim($tile->filter('.module-tile__num')->text()), 'only the subordinate\'s task counts as pending her validation');
-        $listed = $crawler->filter('.module-row__title')->each(static fn ($node): string => $node->text());
+        $row = $crawler->filter('.mgmt-row')->reduce(static fn (Crawler $node): bool => str_contains($node->text(), 'Pendientes de tu validación'));
+        self::assertCount(1, $row, 'the department module renders its "por validar" row');
+        self::assertSame('1', trim($row->filter('.mgmt-row__stat')->text()), 'only the subordinate\'s task counts as pending her validation');
+        $listed = $crawler->filter('.mgmt-row__title')->each(static fn ($node): string => $node->text());
         self::assertContains('El acta de Pedro', $listed);
         self::assertNotContains('Mi propia acta', $listed, 'you are never offered your own task to validate');
     }
 
     /**
      * El centro pidió que TODAS las guardias salgan en la agenda, no solo la próxima: un día con tres
-     * guardias tiene que leerse como tres. El hero se queda con la siguiente y las demás se listan
-     * debajo, incluidas las que ya han pasado (marcadas), porque desaparecer se lee como "no la tenías".
+     * guardias tiene que leerse como tres. El hero se queda con la siguiente y las tres —esa incluida—
+     * ocupan su hora en la línea temporal de "Tu día", que es donde se lee el reloj del día.
      */
     public function testEveryGuardiaOfTodayIsListedOnTheHomeNotJustTheNextOne(): void
     {
@@ -236,7 +238,8 @@ final class HomeAgendaTest extends WebTestCase
         $today = new \DateTimeImmutable('today');
 
         // Sin horario importado ninguna hora "ha pasado" (no se saben las horas), así que las tres
-        // quedan pendientes: una va al hero y las otras dos a la lista.
+        // quedan pendientes: la primera va al hero y las tres a "Tu día", con su ordinal de tramo en vez
+        // del reloj.
         foreach ([['A11', '1ºA'], ['A12', '2ºB'], ['A13', '3ºC']] as $i => [$room, $group]) {
             $this->guardiaCover($me, $absent, $today, $i, $room, $group);
         }
@@ -250,9 +253,43 @@ final class HomeAgendaTest extends WebTestCase
         self::assertStringContainsString('A11', $html, 'la primera es el ancla del día');
         self::assertStringContainsString('A12', $html);
         self::assertStringContainsString('A13', $html);
-        self::assertCount(2, $crawler->filter('.guardia-rest__row'), 'las dos que no son el hero se listan aparte');
+        self::assertCount(3, $crawler->filter('.day-row'), 'las tres ocupan su hora en "Tu día"');
         // Y llevan a SU guardia, no a la lista genérica: es donde está la tarea del grupo y el aviso de RAICES.
-        self::assertStringContainsString('/guardias/', $crawler->filter('.guardia-rest__row')->attr('href') ?? '');
+        self::assertStringContainsString('/guardias/', $crawler->filter('.day-row')->attr('href') ?? '');
+        // La primera que queda por hacer es la marcada como "lo siguiente", y solo esa.
+        self::assertCount(1, $crawler->filter('.day-row.is-now'));
+    }
+
+    /**
+     * "Por hacer" no pinta las tareas fuera de plazo fila a fila: las resume en UNA línea con el total y
+     * la fecha de la más antigua. Un muro de alertas rojas empujaba el resto de la pantalla bajo el
+     * pliegue, y si todo grita nada grita. Resumir no es esconder: la línea lleva a la lista filtrada.
+     */
+    public function testOverdueTasksAreSummarisedInOneLineInsteadOfOneRowEach(): void
+    {
+        $user = $this->user('profe@centro.test');
+        $year = SchoolYear::current(new \DateTimeImmutable('today'));
+        // Cuatro retrasos, el más viejo hace 20 días; y una tarea de hoy, que sí es una fila.
+        foreach ([20, 9, 4, 2] as $daysAgo) {
+            $this->em->persist(
+                (new Task('Retraso de hace '.$daysAgo, $year, self::midday('-'.$daysAgo.' days'), TaskType::SIMPLE))->setAssignedUser($user)
+            );
+        }
+        $this->em->persist((new Task('Lo de hoy', $year, self::midday('today'), TaskType::SIMPLE))->setAssignedUser($user));
+        $this->em->flush();
+
+        $this->client->loginUser($user);
+        $crawler = $this->client->request('GET', '/');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(1, $crawler->filter('.overdue-line'), 'las cuatro caben en una sola línea');
+        $line = $crawler->filter('.overdue-line')->text();
+        self::assertStringContainsString('4 tareas fuera de plazo', $line);
+        self::assertStringContainsString(self::midday('-20 days')->format('d/m'), $line, 'dice desde cuándo arrastra la más antigua');
+        self::assertStringContainsString('/tareas?vista=vencidas', $crawler->filter('.overdue-line')->attr('href') ?? '');
+        // Y ninguna de las cuatro se pinta como fila: la lista es para lo que queda por delante.
+        $rows = $crawler->filter('.tasklist__title')->each(static fn (Crawler $n): string => $n->text());
+        self::assertSame(['Lo de hoy'], $rows);
     }
 
     /**
@@ -279,11 +316,31 @@ final class HomeAgendaTest extends WebTestCase
     }
 
     /**
-     * "Hoy no tienes guardia" y "ya has hecho las de hoy" no son lo mismo, y se distinguen. Además la
-     * guardia ya hecha NO se lista (2026-07-31, decisión de Paco revisando): Inicio contesta "qué me
-     * toca", y una guardia de las 8:25 leída a mediodía solo empuja hacia abajo lo que sí hay que
-     * atender. La tira de arriba es la que cierra el día, así que su desaparición no se lee como "no la
-     * tenías"; el detalle sigue en "Mis guardias".
+     * Una guardia sin tarea deja al profesorado con una clase que improvisar, así que el hero ofrece la
+     * salida en el sitio donde se ve el problema: el banco, abierto ya para ESA guardia. Si la guardia sí
+     * tiene tarea no hay nada que resolver y el botón solo lleva a mirarla.
+     */
+    public function testTheHeroOffersTheTaskBankOnlyWhenTheGuardiaHasNoTask(): void
+    {
+        $me = $this->user('guardia@centro.test');
+        $absent = $this->user('ausente@centro.test');
+        $today = new \DateTimeImmutable('today');
+        $this->guardiaCover($me, $absent, $today, 0, 'A11', '1ºA');
+        $this->em->flush();
+
+        $this->client->loginUser($me);
+        $crawler = $this->client->request('GET', '/');
+
+        self::assertResponseIsSuccessful();
+        $cta = $crawler->filter('.hero-cta');
+        self::assertSame('Elegir tarea del banco', trim($cta->text()));
+        // Con ?para=, que es lo que fija el nivel y la materia de esta clase en el banco.
+        self::assertStringContainsString('para=', (string) $cta->attr('href'));
+    }
+
+    /**
+     * "Hoy no tienes guardia" y "ya has hecho las de hoy" no son lo mismo, y ahora se distinguen: con las
+     * ya pasadas todavía en "Tu día", el mensaje viejo se contradecía con lo que se veía.
      */
     public function testADayWhoseGuardiasAreAllOverDoesNotClaimThereWereNone(): void
     {
@@ -316,14 +373,45 @@ final class HomeAgendaTest extends WebTestCase
         $html = (string) $this->client->getResponse()->getContent();
         self::assertStringNotContainsString('Hoy no tienes guardia', $html);
         self::assertStringContainsString('Ya has hecho tu guardia de hoy', $html);
-        self::assertStringNotContainsString('A11', $html, 'la ya hecha no ocupa sitio en la agenda del día');
+        self::assertStringContainsString('A11', $html, 'y la guardia sigue listada, no desaparece');
     }
 
     /**
-     * Persists one parte line assigned to a teacher, with its absence (one per absent teacher and day:
-     * that pair is UNIQUE in guardia_absence).
+     * El módulo de coordinación cuenta el parte de hoy ENTERO, no solo los huecos: un cero sin total no
+     * distingue "todo repartido" de "hoy no hay ausencias", que son dos días muy distintos para quien
+     * reparte. Las dos cifras salen de la misma consulta, así que no pueden contradecirse.
      */
-    private function guardiaCover(User $guardia, User $absent, \DateTimeImmutable $date, int $slot, string $room, string $group): void
+    public function testTheCoordinatorModuleCountsTheWholeDayNotJustTheGaps(): void
+    {
+        $role = (new Role())->setCode('guardias')->setName('Coordinación de guardias')->setLevel(Area::GUARDIAS, PermissionLevel::WRITE);
+        $this->em->persist($role);
+        $coord = (new User())->setFullName('Marta Coordina')->setEmail('coord@centro.test')->addAssignedRole($role);
+        $this->em->persist($coord);
+        $absent = $this->user('ausente@centro.test');
+        $today = new \DateTimeImmutable('today');
+
+        // Tres ausencias del día: dos repartidas y una sin cubrir.
+        $this->guardiaCover($coord, $absent, $today, 0, 'A11', '1ºA');
+        $this->guardiaCover($coord, $absent, $today, 1, 'A12', '2ºB');
+        $this->guardiaCover(null, $absent, $today, 2, 'A13', '3ºC');
+        $this->em->flush();
+
+        $this->client->loginUser($coord);
+        $crawler = $this->client->request('GET', '/');
+
+        self::assertResponseIsSuccessful();
+        $card = $crawler->filter('.mgmt-card--row');
+        self::assertCount(1, $card, 'el módulo de coordinación se pinta');
+        $text = $card->text();
+        self::assertStringContainsString('1 sin cubrir', $text);
+        self::assertStringContainsString('2 de 3 repartidas', $text, 'dice el día entero, no solo el hueco');
+    }
+
+    /**
+     * Persists one parte line, with its absence (one per absent teacher and day: that pair is UNIQUE in
+     * guardia_absence). A null guardia is a line still to be handed out.
+     */
+    private function guardiaCover(?User $guardia, User $absent, \DateTimeImmutable $date, int $slot, string $room, string $group): void
     {
         $key = $absent->getEmail().'|'.$date->format('Y-m-d');
         if (!isset($this->absences[$key])) {
@@ -374,59 +462,5 @@ final class HomeAgendaTest extends WebTestCase
         $this->client->request('GET', '/agenda');
 
         self::assertResponseStatusCodeSame(404);
-    }
-
-    /**
-     * "Por hacer" no puede llenarse de deuda antigua y dejar fuera el día. Con el arrastre de un curso las
-     * fuera de plazo son muchas, y el corte único de ocho filas (vencidas primero) hacía que las tareas de
-     * HOY no llegaran nunca a pintarse: un bloque llamado "Por hacer" que solo enseñaba retrasos. Ahora
-     * caben tres fuera de plazo, las de hoy entran siempre y el resto se cuenta en una línea.
-     */
-    public function testOverdueTasksNeverPushTodaysOutOfTheTodoBlock(): void
-    {
-        $user = $this->user('profe@centro.test');
-        $today = new \DateTimeImmutable('today');
-        $year = SchoolYear::current($today);
-
-        // Seis fuera de plazo: más de las tres que caben.
-        for ($i = 1; $i <= 6; ++$i) {
-            $this->em->persist(
-                (new Task('Atrasada '.$i, $year, $today->modify('-'.$i.' days'), TaskType::SIMPLE))->setAssignedUser($user)
-            );
-        }
-        $this->em->persist((new Task('La de hoy', $year, $today, TaskType::SIMPLE))->setAssignedUser($user));
-        $this->em->flush();
-
-        $this->client->loginUser($user);
-        $crawler = $this->client->request('GET', '/');
-
-        self::assertResponseIsSuccessful();
-        $html = (string) $this->client->getResponse()->getContent();
-        self::assertStringContainsString('La de hoy', $html, 'lo de hoy entra aunque haya cola de atrasos');
-        self::assertSame(3, substr_count($html, 'FUERA DE PLAZO'), 'solo tres fuera de plazo en el bloque');
-        // Y lo que no cabe se dice, no se esconde: 6 - 3 = 3.
-        self::assertStringContainsString('y 3 más fuera de plazo', $html);
-        self::assertCount(1, $crawler->filter('.home-section__more--foot'));
-    }
-
-    /**
-     * Y el marcador de retraso usa la nomenclatura que pidió el centro ("fuera de plazo", no "venció"),
-     * la misma que /tareas: la misma tarea no puede llamarse de dos formas según la pantalla.
-     */
-    public function testTheOverdueMarkerUsesTheCentresWording(): void
-    {
-        $user = $this->user('profe@centro.test');
-        $today = new \DateTimeImmutable('today');
-        $this->em->persist(
-            (new Task('Atrasada', SchoolYear::current($today), $today->modify('-2 days'), TaskType::SIMPLE))->setAssignedUser($user)
-        );
-        $this->em->flush();
-
-        $this->client->loginUser($user);
-        $this->client->request('GET', '/');
-
-        $html = (string) $this->client->getResponse()->getContent();
-        self::assertStringContainsString('FUERA DE PLAZO', $html);
-        self::assertStringNotContainsString('VENCIÓ', $html);
     }
 }

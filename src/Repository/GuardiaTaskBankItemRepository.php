@@ -28,22 +28,32 @@ class GuardiaTaskBankItemRepository extends ServiceEntityRepository
      * unless asked for (the department managing its own bank wants to see them; the teacher picking a
      * task for a group does not).
      *
+     * Ordered to match what the reader is doing. Browsing the catalogue, by level and subject (the way
+     * a department looks for its own shelf); picking for a class, by LEAST USED first — the same order
+     * {@see pickRandom()} draws from, so the first card really is one of the ones the dice would give
+     * and the screen can label it as the suggested one without lying.
+     *
      * @param AcademicYear $year           the course whose bank to read
      * @param EducationLevel|null $level          only tasks for this level
      * @param string|null         $subject        only tasks of this subject (exact, as the timetable spells it)
      * @param string|null         $groupName      only tasks whose section letters fit this group
      * @param int|null            $departmentId   only tasks contributed by this department
      * @param bool                $includeRetired whether to also list the retired ones
+     * @param bool                $leastUsedFirst whether to order by use count instead of by level and subject
      *
      * @return list<GuardiaTaskBankItem> the matching tasks
      */
-    public function findFiltered(AcademicYear $year, ?EducationLevel $level = null, ?string $subject = null, ?string $groupName = null, ?int $departmentId = null, bool $includeRetired = false): array
+    public function findFiltered(AcademicYear $year, ?EducationLevel $level = null, ?string $subject = null, ?string $groupName = null, ?int $departmentId = null, bool $includeRetired = false, bool $leastUsedFirst = false): array
     {
         $qb = $this->createQueryBuilder('i')
             ->addSelect('d')
-            ->join('i.department', 'd')
-            ->addOrderBy('i.subject', 'ASC')
-            ->addOrderBy('i.createdAt', 'DESC');
+            ->join('i.department', 'd');
+
+        if ($leastUsedFirst) {
+            $qb->addOrderBy('i.timesUsed', 'ASC')->addOrderBy('i.createdAt', 'DESC');
+        } else {
+            $qb->addOrderBy('i.subject', 'ASC')->addOrderBy('i.createdAt', 'DESC');
+        }
 
         $this->applyFilters($qb, $year, $level, $subject, $departmentId, $includeRetired);
 
@@ -51,9 +61,13 @@ class GuardiaTaskBankItemRepository extends ServiceEntityRepository
         $rows = $qb->getQuery()->getResult();
 
         // Por nivel de enseñanza (ESO → DIV → BACH → GB), no por el valor del enum, que ordenado
-        // alfabéticamente pondría Bachillerato el primero y no casaría con el desplegable.
-        $rank = array_flip(array_map(static fn (EducationLevel $l): string => $l->value, EducationLevel::inDisplayOrder()));
-        usort($rows, static fn (GuardiaTaskBankItem $a, GuardiaTaskBankItem $b): int => $rank[$a->getLevel()->value] <=> $rank[$b->getLevel()->value]);
+        // alfabéticamente pondría Bachillerato el primero y no casaría con el desplegable. Con
+        // "menos usadas primero" NO se reagrupa: eso metería el nivel por delante del recuento de
+        // usos y la primera tarjeta dejaría de ser la que el sorteo daría.
+        if (!$leastUsedFirst) {
+            $rank = array_flip(array_map(static fn (EducationLevel $l): string => $l->value, EducationLevel::inDisplayOrder()));
+            usort($rows, static fn (GuardiaTaskBankItem $a, GuardiaTaskBankItem $b): int => $rank[$a->getLevel()->value] <=> $rank[$b->getLevel()->value]);
+        }
 
         return self::fittingGroup($rows, $groupName);
     }

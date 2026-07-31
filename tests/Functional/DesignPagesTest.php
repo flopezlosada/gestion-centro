@@ -186,10 +186,10 @@ final class DesignPagesTest extends WebTestCase
         $this->client->loginUser($s['teacher']);
 
         $crawler = $this->client->request('GET', '/tareas/'.$s['task']->getId());
-        // Entregar adjunta la referencia del documento en el mismo paso.
-        // La barra de acciones se llama .actionbar tras el rediseño, y cada transición tiene su propio
-        // form: se apunta al de "submit" en vez de al primero, que depende del orden de las acciones.
-        $form = $crawler->filter('form.actionbar__form--submit')->form();
+        // Entregar adjunta la referencia del documento en el mismo paso. Se apunta al form por su ACCIÓN
+        // (la ruta de la transición) y no por su clase: la clase es maquetación y ya ha cambiado dos veces
+        // de nombre con los rediseños; la ruta es el contrato.
+        $form = $crawler->filter('form[action$="/accion/submit"]')->form();
         $form['reference'] = 'https://cloud.educa.madrid.org/memoria';
         $this->client->submit($form);
 

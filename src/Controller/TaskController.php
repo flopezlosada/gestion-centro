@@ -28,6 +28,7 @@ use App\Service\TaskVisibility;
 use App\Service\TaskWorkflow;
 use App\Support\DocumentUpload;
 use App\Support\TaskActivityPresenter;
+use App\Support\TaskDetailView;
 use App\Support\TaskStatus;
 use App\Support\TickOutcome;
 use App\Util\CalendarDate;
@@ -506,8 +507,29 @@ final class TaskController extends AbstractController
             ? array_values(array_filter($this->assignableUsers($user, $hierarchy), static fn (User $u): bool => $u !== $user))
             : [];
 
+        $today = new \DateTimeImmutable('today');
+        $actions = $this->availableActions($workflows, $task, $canWork, $canManage, $today);
+        // La misma consulta sirve dos vistas del mismo hecho: el histórico campo a campo (plegado, para
+        // quien audita) y la línea del ciclo de vida (los hitos, arriba). Una sola lectura del rastro.
+        $trail = $auditLog->findForSubject('Task', (string) $task->getId());
+        $thread = $comments->findThreadFor($task);
+
         return $this->render('task/show.html.twig', [
             'task' => $task,
+            // Quién decide, dónde está la tarea y qué comentarios dejan de ser conversación para ser
+            // contenido: resuelto en PHP, porque son preguntas de negocio y no de maquetación.
+            'view' => TaskDetailView::of(
+                task: $task,
+                viewer: $user,
+                actions: $actions,
+                trail: $trail,
+                comments: $thread,
+                // Quién dará el visto bueno: el superior INMEDIATO de la tarea (managersAbove viene
+                // ordenado de menor a mayor rango). En la cima de la jerarquía no hay ninguno, y la ficha
+                // se calla en vez de prometer una validación que nadie puede dar.
+                validator: $task->isClosed() ? null : ($hierarchy->managersAbove($task)[0] ?? null),
+                today: $today,
+            ),
             // El enlace del entregable solo se corrige mientras la tarea está Entregada (a la espera de
             // validación): es EXACTAMENTE la regla que aplica setDeliverable(), aquí para no ofrecer un
             // formulario que el servidor va a rechazar (salía en una tarea ya finalizada).
@@ -518,7 +540,7 @@ final class TaskController extends AbstractController
             // The lifecycle actions this user may fire now: the workflow's guards already hide the
             // superior-only ones for non-superiors; here we also hide progress ones from outsiders and
             // offer "cancel" only to whoever may manage the task and only while it is still in time.
-            'actions' => $this->availableActions($workflows, $task, $canWork, $canManage, new \DateTimeImmutable('today')),
+            'actions' => $actions,
             'canSeeHistory' => true,
             // Only a superior with subordinates gets the delegate control.
             'canDelegate' => $canDelegate && [] !== $delegatable,
@@ -528,10 +550,7 @@ final class TaskController extends AbstractController
             'canRemind' => $canRemind,
             'remindedAt' => $canRemind ? $reminders->nudgedTodayAt($task) : null,
             // The trail humanised for non-technical readers; the raw diff rides along for admins only.
-            'activityRows' => $activity->present($auditLog->findForSubject('Task', (string) $task->getId())),
-            // La conversación de la tarea, aparte del histórico: uno es lo que la aplicación vio cambiar
-            // y el otro lo que las personas se dijeron.
-            'comments' => $comments->findThreadFor($task),
+            'activityRows' => $activity->present($trail),
             // Comentar suelto lo puede hacer cualquiera que tenga algo que ver con la tarea ("siempre
             // puede hacer comentarios"), pero no un superior de paso que solo está mirando el plan.
             'canComment' => !$task->isClosed() && ($isAdmin || $task->concerns($user) || $canManage),
