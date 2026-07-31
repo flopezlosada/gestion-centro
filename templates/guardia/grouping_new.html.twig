@@ -95,7 +95,8 @@
                         {% if rooms is not empty %}
                             <optgroup label="Libres a esta hora">
                                 {% for r in rooms %}
-                                    <option value="{{ r.code }}">{{ r.code }}{{ size.suffix(r) }}</option>
+                                    {# Preseleccionada si se llega desde la hoja de aulas libres con un aula elegida. #}
+                                    <option value="{{ r.code }}" {{ r.code == preselectedRoom ? 'selected' }}>{{ r.code }}{{ size.suffix(r) }}</option>
                                 {% endfor %}
                             </optgroup>
                         {% endif %}

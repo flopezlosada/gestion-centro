@@ -2572,16 +2572,7 @@ tr.is-not-covered { background: var(--danger-weak); }
 .grouping-existing__row p { margin: 4px 0 0; font-size: 12.5px; }
 .grouping-form .form-row { margin-top: 18px; }
 
-/* ── Guardias · hoja de aulas libres ────────────────────────────────────────
-   Una tarjeta por tramo en rejilla: la pregunta es "a esta hora, ¿dónde puedo meter tres grupos?",
-   así que cada hora se lee sola y las aulas grandes van arriba con su prueba de aforo. */
-.rooms-sheet__note { margin: 0 0 14px; font-size: 12.5px; }
-.rooms-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
-.rooms-slot { padding: 14px 16px; }
-.rooms-slot__title { font-family: var(--font-display); font-weight: 500; font-size: 17px; margin: 0 0 10px; }
-.rooms-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.rooms-list__item { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
-.rooms-list__item.is-large { font-weight: 600; }
+/* La hoja de aulas libres (.rooms*) vive al final del fichero, con su handoff. */
 
 /* ── Guardias · navegador de días (parte) ──────────────────────────────────── */
 .day-nav { display: flex; align-items: center; gap: 8px; }
@@ -3427,6 +3418,9 @@ tr.is-not-covered { background: var(--danger-weak); }
 .btn-lg {
     flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
     padding: 15px; border-radius: 15px; font: 600 15px var(--font-body); cursor: pointer; border: 1.5px solid transparent;
+    /* Nació para <button> y también se usa como <a> (las dos salidas del estado sin aulas): sin esto el
+       botón sale subrayado, que es lo que delata que era un enlace disfrazado. */
+    text-decoration: none;
 }
 .btn-lg svg { width: 18px; height: 18px; }
 .btn-lg:active { transform: scale(.99); }
@@ -4415,3 +4409,252 @@ tr.is-not-covered { background: var(--danger-weak); }
 .trow-group[open] > summary::after { transform: rotate(-135deg) translateY(-1px); }
 .tasks-group > summary:hover,
 .trow-group > summary:hover { color: var(--text); }
+/* ── Aulas libres (coordinación de guardias) — handoff catalogo/handoff_aulas_libres ──────────
+   (23a escritorio · 23b móvil · 23c sin aulas a esa hora)
+   -----------------------------------------------------------------------------------------------
+   La pantalla responde a UNA pregunta —«¿dónde caben estos dos grupos a tercera hora?»— casi siempre
+   con prisa y muchas veces desde el móvil, de pie en el pasillo. Los cinco principios, para que un
+   cambio futuro no los deshaga sin querer:
+   1. UNA hora a la vez. El selector vive en el ancla (fuera del scroll) y es el mando de la pantalla;
+      no hay scroll lateral en ninguna vista. Las seis horas en columnas hacían que la hora que importa
+      fuese lo más difícil de encontrar y la sexta ni entraba.
+   2. La capacidad es un NÚMERO en un cuadro, no una frase. Es lo que hay que comparar, así que domina
+      la tarjeta; el nombre del aula va debajo y en pequeño.
+   3. De dónde sale el dato se dice con la FORMA del cuadro —sólido = catálogo, punteado = estimado— y
+      una leyenda de dos ítems. Sin texto repetido en cada línea y sin color de alerta: una estimación
+      no es un problema.
+   4. UN solo bloque oscuro (el ancla tostada) y UN solo naranja pleno (el botón «Hoy»).
+   5. El rojo teja aparece SOLO en el estado sin aulas, como aviso. Nunca para marcar una capacidad.
+   ============================================================================================== */
+.rooms { display: flex; flex-direction: column; }
+
+/* ---- Ancla: el día y la hora elegida ---------------------------------------
+   A sangre (los márgenes negativos son el padding de .page: 22/16 en móvil, 42/56 en escritorio) y en
+   tostado profundo. Es el MARCO de la pantalla: dentro va lo que NO cambia al cambiar de hora. */
+.rooms-anchor {
+    margin: -22px -16px 0; padding: 14px 16px 16px;
+    background: var(--accent-deep); color: var(--on-accent-deep);
+    /* Los pesos de tinta sobre el tostado son tokens del sistema (los mismos del hero de Inicio y del
+       ancla del parte): no se vuelven a derivar aquí para que las pantallas con ancla no se separen.
+       Lo propio de esta son las superficies de las pestañas, derivadas de UNA tinta. */
+    --tab-surface: color-mix(in srgb, var(--on-accent-deep) 10%, transparent);
+    --tab-surface-quiet: color-mix(in srgb, var(--on-accent-deep) 6%, transparent);
+    --tab-count: color-mix(in srgb, var(--on-hero-dim) 76%, var(--accent-deep));
+}
+/* Con selector, el remate inferior del ancla lo pone la tira de pestañas: en móvil es una banda clara
+   a sangre y en escritorio las pestañas se pegan al borde. En los dos casos el padding sobra. */
+.rooms-anchor:has(.rooms-tabs) { padding-bottom: 0; }
+/* Rejilla de áreas: el mismo marcado da las dos composiciones del handoff (ver la nota de la plantilla). */
+.rooms-anchor__top {
+    display: grid; align-items: center; gap: 8px 16px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "eyebrow nav" "row row";
+}
+.rooms-anchor__eyebrow {
+    grid-area: eyebrow; margin: 0;
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--on-hero-dim);
+}
+.rooms-anchor__row { grid-area: row; display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 12px; min-width: 0; }
+.rooms-anchor__day { font-family: var(--font-display); font-weight: 500; font-size: 20px; }
+/* La línea de propósito, solo en escritorio: en móvil se lleva una línea entera de ancla —lo más caro que
+   hay en un teléfono— para decir algo que el rótulo «Aulas libres» ya deja claro. */
+.rooms-anchor__why { display: none; font-size: 12.5px; color: var(--on-hero-soft); }
+.rooms-anchor__nav { grid-area: nav; display: flex; align-items: center; gap: 5px; }
+/* Controles sobre el tostado: superficie translúcida en vez de un color nuevo, para no meter otra capa
+   de paleta dentro del ancla. */
+.rooms-anchor__arrow, .rooms-anchor__ghost, .rooms-anchor__date input {
+    background: color-mix(in srgb, var(--on-accent-deep) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--on-accent-deep) 28%, transparent);
+    color: var(--on-hero); text-decoration: none;
+}
+.rooms-anchor__arrow {
+    display: grid; place-items: center; flex: none; width: 30px; height: 30px;
+    border-radius: var(--radius-sm); font-size: 15px; line-height: 1;
+}
+.rooms-anchor__arrow:hover, .rooms-anchor__ghost:hover { border-color: var(--on-hero); color: var(--on-hero); }
+.rooms-anchor__date { flex: none; display: inline-flex; margin: 0; }
+.rooms-anchor__date input {
+    font-family: var(--font-mono); font-size: 12px; padding: 6px 8px;
+    border-radius: var(--radius-sm); color-scheme: dark;
+}
+.rooms-anchor__ghost { padding: 7px 12px; border-radius: var(--radius-sm); font: 600 12.5px var(--font-body); }
+.rooms-anchor__today { flex: none; padding: 7px 13px; font-size: 12.5px; }
+
+/* ---- Selector de hora ------------------------------------------------------
+   Móvil: chips en una tira clara a sangre, con scroll lateral y el activo en naranja pleno.
+   Escritorio: pestañas pegadas al borde inferior del ancla, y la activa toma el color del lienzo para
+   fundirse con el contenido (ver el @media de abajo). */
+.rooms-tabs {
+    display: flex; gap: 7px; margin: 12px -16px 0; padding: 12px 16px;
+    background: var(--bg); border-bottom: 1px solid var(--separator);
+    overflow-x: auto; scrollbar-width: none;
+}
+.rooms-tabs::-webkit-scrollbar { height: 0; }
+.rooms-tab {
+    flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+    min-height: 44px; padding: 6px 12px; text-decoration: none;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 11px; color: var(--text-muted);
+}
+.rooms-tab:hover { border-color: var(--border-strong); color: var(--text); }
+.rooms-tab__time { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; }
+.rooms-tab__count { font-family: var(--font-mono); font-size: 9.5px; color: var(--text-tenue); }
+/* En móvil el chip lleva solo la cifra: la palabra «aulas» se come el ancho que necesitan los demás
+   tramos, y una fila de horas con un número debajo no puede ser otra cosa (el nombre accesible del
+   enlace sí lo dice entero). */
+.rooms-tab__unit { display: none; }
+/* El recreo se puede elegir, pero pesa menos: entonces está TODO libre y el número no dice nada. */
+.rooms-tab.is-break { background: var(--surface-sunken); border-style: dashed; color: var(--text-tenue); }
+.rooms-tab.is-break .rooms-tab__time { font-weight: 500; }
+/* Después de .is-break a propósito: misma especificidad, así que el tramo abierto gana aunque sea recreo. */
+.rooms-tab.is-active { background: var(--accent); border: 1px solid var(--accent); color: var(--on-accent); }
+.rooms-tab.is-active .rooms-tab__count { color: color-mix(in srgb, var(--on-accent) 65%, transparent); }
+.rooms-tab:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* ---- El cuerpo: la respuesta, las aulas y el pie ---------------------------
+   Rejilla de áreas por lo mismo que el ancla: en móvil la leyenda va al pie (tras un filete) y en
+   escritorio sube al lado del titular, con un solo marcado. */
+.rooms-body {
+    display: grid; padding-top: 16px;
+    grid-template-areas: "answer" "warn" "tiers" "legend" "note";
+}
+.rooms-answer { grid-area: answer; min-width: 0; }
+.rooms-answer__title {
+    font-family: var(--font-display); font-weight: 500; font-size: 22px; line-height: 1.2;
+    letter-spacing: -.01em; margin: 0 0 4px;
+}
+.rooms-answer__when { color: var(--text-muted); }
+.rooms-answer__hint { margin: 0; max-width: 70ch; font-size: 12.5px; line-height: 1.5; color: var(--text-faint); }
+.rooms-warn { grid-area: warn; margin: 16px 0 0; }
+.rooms-tiers { grid-area: tiers; margin-top: 20px; }
+.rooms-note { grid-area: note; margin: 10px 0 0; max-width: 78ch; font-size: 12.5px; line-height: 1.55; color: var(--text-faint); }
+.rooms-note b { color: var(--text-muted); font-weight: 600; }
+.rooms-note a { font-weight: 600; }
+.rooms-legend {
+    grid-area: legend; display: flex; flex-wrap: wrap; gap: 8px 16px;
+    margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border);
+}
+.rooms-legend__item { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--text-muted); }
+
+/* ---- Un grupo de aulas: las que caben otras tantas clases ------------------ */
+.rooms-tier + .rooms-tier { margin-top: 22px; }
+.rooms-tier__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0 0 11px; font-weight: 400; }
+.rooms-tier__label {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted);
+}
+.rooms-tier__count { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
+/* Las que no dan para juntar: atenuadas y al final, pero no escondidas. Siguen siendo aulas libres. */
+.rooms-tier.is-dimmed .rooms-tier__label { color: var(--text-faint); }
+/* Dos columnas ya en móvil, y no una a ancho completo como el prototipo: sus tarjetas llevaban un nombre
+   largo («Salón de actos») que llenaba la línea, y las fichas reales del centro se llaman como su código
+   («LABG»), así que a ancho completo cada tarjeta era 85% aire y había que hacer scroll para ver seis
+   aulas. Con auto-fill la maqueta se adapta sola si algún día el catálogo trae nombres largos. */
+.rooms-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); }
+
+/* ---- Tarjeta de aula -------------------------------------------------------
+   Lleva a juntar grupos EN esa aula. Sin permiso de escritura se sirve sin href: entonces no es un
+   enlace ni para el navegador ni para un lector de pantalla, y por eso el hover cuelga de [href]. */
+.roomcard {
+    display: flex; align-items: center; gap: 13px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 13px 15px; color: inherit; text-decoration: none;
+}
+.roomcard[href]:hover {
+    border-color: var(--accent);
+    box-shadow: 0 8px 20px -14px color-mix(in srgb, var(--accent-ink) 60%, transparent);
+}
+.roomcard[href]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.roomcard__what { min-width: 0; display: grid; gap: 2px; }
+.roomcard__code { font-family: var(--font-mono); font-size: 15px; font-weight: 600; color: var(--text); }
+.roomcard__name { font-size: 11.5px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rooms-tier.is-dimmed .roomcard { background: var(--surface-sunken); }
+.rooms-tier.is-dimmed .roomcard__code { color: var(--text-muted); }
+
+/* ---- Cuadro de capacidad ---------------------------------------------------
+   La forma ES el dato: sólido con filo naranja = tamaño que el centro ha clasificado en el catálogo;
+   punteado = deducido del horario («aquí han coincidido tres grupos»), que prueba un mínimo y no es un
+   aforo. Nunca en color de alerta: una estimación no es un problema. Sin tamaño, el mismo punteado con
+   un «?» — nadie lo ha medido, así que puede ser el aula más grande que hay libre.
+   El tamaño va aparte de la forma (--box / --swatch) para que la leyenda comparta la definición del
+   cuadro y no puedan separarse a base de retoques. */
+.roomfits { flex: none; display: grid; place-items: center; font-family: var(--font-mono); font-weight: 600; }
+.roomfits--box { width: 44px; height: 44px; border-radius: 12px; font-size: 21px; }
+.roomfits--swatch { width: 18px; height: 18px; border-radius: 6px; }
+.roomfits--catalogue { background: var(--accent-weak); border: 1px solid var(--accent); color: var(--accent-ink); }
+.roomfits--observed, .roomfits--unknown { background: var(--surface-sunken); border: 1.5px dashed var(--border-strong); color: var(--text-muted); }
+.roomfits--unknown { color: var(--text-tenue); }
+.rooms-tier.is-dimmed .roomfits { background: color-mix(in srgb, var(--surface-sunken) 70%, var(--canvas)); color: var(--text-faint); }
+
+/* ---- 23c: ninguna aula libre a esa hora ------------------------------------
+   Con prisa hay que ofrecer la alternativa, no un vacío. Único rojo teja de la pantalla. */
+/* Centrado en el hueco que queda, no pegado arriba: cuando la respuesta es «no hay nada» la pantalla es
+   este bloque y nada más, y arriba a la izquierda parecía que se había quedado a medio cargar. */
+.rooms-empty {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 40px 20px; min-height: 50vh;
+}
+.rooms-empty__icon {
+    display: grid; place-items: center; width: 60px; height: 60px; border-radius: 17px;
+    background: var(--warning-weak); color: var(--warning);
+}
+.rooms-empty__icon svg { width: 27px; height: 27px; }
+.rooms-empty__title { font-family: var(--font-display); font-weight: 500; font-size: 22px; line-height: 1.25; margin: 20px 0 8px; }
+.rooms-empty__text { margin: 0; max-width: 46ch; font-size: 14px; line-height: 1.55; color: var(--text-muted); }
+.rooms-empty__ways { display: flex; flex-direction: column; gap: 9px; width: 100%; max-width: 340px; margin-top: 22px; }
+
+@media (min-width: 900px) {
+    /* El ancla, a sangre del padding de escritorio de .page. Sin sticky: aquí el selector de hora manda
+       sobre una lista corta, y pegarlo arriba solo quitaría alto a lo que se ha venido a leer. */
+    .rooms-anchor { margin: -42px -56px 0; padding: 15px 56px 16px; }
+    .rooms-anchor__top { grid-template-areas: "eyebrow nav" "row nav"; align-items: start; gap: 6px 24px; }
+    .rooms-anchor__nav { align-self: start; gap: 6px; }
+    .rooms-anchor__arrow { width: 34px; height: 34px; font-size: 16px; }
+    .rooms-anchor__date input { font-size: 13px; padding: 8px 10px; }
+    .rooms-anchor__today { padding: 9px 15px; font-size: 13px; }
+    .rooms-anchor__day { font-size: 21px; }
+    .rooms-anchor__why { display: inline; }
+
+    /* Pestañas pegadas al borde inferior del ancla: la activa toma el color del lienzo (--bg, el fondo de
+       .page) y se funde con el contenido, que es lo que dice «esta hora es la que estás leyendo». Por eso
+       el cuerpo arranca sin hueco y el padding inferior del ancla es 0 (ver :has más arriba). */
+    .rooms-tabs {
+        gap: 4px; margin: 16px 0 0; padding: 0;
+        background: none; border-bottom: 0; overflow: visible; flex-wrap: wrap;
+    }
+    .rooms-tab {
+        align-items: flex-start; gap: 2px; min-height: 0; padding: 10px 15px 11px;
+        background: var(--tab-surface); border: 0; border-radius: 10px 10px 0 0; color: var(--on-hero-soft);
+    }
+    .rooms-tab:hover { background: color-mix(in srgb, var(--on-accent-deep) 16%, transparent); color: var(--on-hero); }
+    .rooms-tab__count { color: var(--tab-count); font-size: 10px; }
+    .rooms-tab__unit { display: inline; }
+    .rooms-tab.is-break { background: var(--tab-surface-quiet); border: 0; color: var(--tab-count); }
+    .rooms-tab.is-break .rooms-tab__time { font-size: 11.5px; }
+    .rooms-tab.is-active { background: var(--bg); border: 0; color: var(--text); }
+    .rooms-tab.is-active .rooms-tab__time { font-size: 12.5px; font-weight: 600; }
+    .rooms-tab.is-active .rooms-tab__count { color: var(--accent-ink); }
+
+    .rooms-body {
+        padding-top: 22px; column-gap: 24px;
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas: "answer legend" "warn warn" "tiers tiers" "note note";
+    }
+    .rooms-answer__title { font-size: 26px; }
+    .rooms-answer__hint { font-size: 13.5px; color: var(--text-muted); }
+    /* Arriba, junto al titular: se lee ANTES de recorrer las tarjetas, que es cuando hace falta. */
+    .rooms-legend { margin: 0; padding: 0; border-top: 0; justify-self: end; align-self: end; }
+    .rooms-legend__item { font-size: 12px; }
+    .rooms-note { margin-top: 26px; padding-top: 16px; border-top: 1px solid var(--border); }
+
+    /* Cuatro columnas al ancho del handoff (~1020px de contenido), y menos cuando no caben: un número
+       fijo de columnas dejaba la tarjeta a 137px en una pantalla de 900, con el código del aula partido. */
+    .rooms-cards { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+    .roomcard { gap: 14px; padding: 14px 16px; }
+    .roomfits--box { width: 46px; height: 46px; font-size: 22px; }
+    .roomfits--swatch { width: 22px; height: 22px; border-radius: 7px; }
+
+    .rooms-empty { padding: 64px 24px; }
+    .rooms-empty__title { font-size: 23px; }
+    .rooms-empty__ways { flex-direction: row; max-width: 520px; }
+}
