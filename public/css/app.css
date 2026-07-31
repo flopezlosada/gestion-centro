@@ -2860,6 +2860,9 @@ tr.is-not-covered { background: var(--danger-weak); }
 .tasklist--panel .tick--personal.is-checked { border-color: var(--personal); }
 .tasklist__when { color: var(--text-faint); }
 .tasklist__when.is-today { color: var(--accent-ink); font-weight: 600; }
+/* Un recordatorio tuyo que se te ha pasado: lo dice su fecha, en el rojo teja de siempre, y ahí acaba.
+   La fila NO se convierte en alerta — eso es lo que hacía el muro que este rediseño quitó. */
+.tasklist__when.is-late { color: var(--warning-text); font-weight: 600; }
 .tasklist__sep { color: var(--text-tenue); }
 
 /* Chip neutro de dato ("adjuntar documento"): dice de qué va la tarea sin competir con la fecha, que es

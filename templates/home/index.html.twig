@@ -136,7 +136,7 @@
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5l3 2"/></svg>
                                 </span>
                                 <span class="overdue-line__text">
-                                    <b>{{ overdueCount }} {{ overdueCount == 1 ? 'pendiente' : 'pendientes' }} fuera de plazo</b>{% if overdueOldest %} · la más antigua desde el {{ overdueOldest|date('d/m') }}{% endif %}
+                                    <b>{{ overdueCount }} {{ overdueCount == 1 ? 'tarea' : 'tareas' }} fuera de plazo</b>{% if overdueOldest %} · la más antigua desde el {{ overdueOldest|date('d/m') }}{% endif %}
                                 </span>
                                 <span class="overdue-line__cta">Revisar</span>
                                 <span class="overdue-line__chevron" aria-hidden="true">
@@ -214,6 +214,10 @@
                                         {# Recordatorio personal sin hora: misma checklist, pero es tuyo y privado. #}
                                         {% set e = entry.event %}
                                         {% set vence_hoy = e.startAt|date('Y-m-d') == hoyStr %}
+                                        {#- Un recordatorio TUYO vencido sí se pinta como fila (el resumen de arriba
+                                            es solo de tareas del centro, porque lleva a /tareas y aquí no estaría).
+                                            Lo dice su fecha, sin convertir la fila en una alerta. -#}
+                                        {% set fuera_de_plazo = e.startAt|date('Y-m-d') < hoyStr %}
                                         <li class="tasklist__item">
                                             <form method="post" action="{{ path('personal_event_toggle_done', { id: e.id }) }}" class="tasklist__check-form">
                                                 <input type="hidden" name="_token" value="{{ csrf_token('personal_event_done' ~ e.id) }}">
@@ -224,7 +228,13 @@
                                             <a class="tasklist__body" href="{{ path('personal_event_edit', { id: e.id }) }}">
                                                 <span class="tasklist__title">{{ e.title }}</span>
                                                 <span class="tasklist__meta">
-                                                    {% if vence_hoy %}<span class="tasklist__when is-today">HOY</span>{% else %}<span class="tasklist__when">{{ dias[e.startAt|date('N')]|slice(0, 3)|upper }} {{ e.startAt|date('d/m') }}</span>{% endif %}
+                                                    {%- if fuera_de_plazo -%}
+                                                        <span class="tasklist__when is-late">FUERA DE PLAZO · {{ e.startAt|date('d/m') }}</span>
+                                                    {%- elseif vence_hoy -%}
+                                                        <span class="tasklist__when is-today">HOY</span>
+                                                    {%- else -%}
+                                                        <span class="tasklist__when">{{ dias[e.startAt|date('N')]|slice(0, 3)|upper }} {{ e.startAt|date('d/m') }}</span>
+                                                    {%- endif %}
                                                     <span class="tasklist__sep">·</span>recordatorio{% if e.category %} · {{ e.category.name }}{% endif %}
                                                 </span>
                                             </a>

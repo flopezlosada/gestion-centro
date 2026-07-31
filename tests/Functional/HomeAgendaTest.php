@@ -284,7 +284,7 @@ final class HomeAgendaTest extends WebTestCase
         self::assertResponseIsSuccessful();
         self::assertCount(1, $crawler->filter('.overdue-line'), 'las cuatro caben en una sola línea');
         $line = $crawler->filter('.overdue-line')->text();
-        self::assertStringContainsString('4 pendientes fuera de plazo', $line);
+        self::assertStringContainsString('4 tareas fuera de plazo', $line);
         self::assertStringContainsString(self::midday('-20 days')->format('d/m'), $line, 'dice desde cuándo arrastra la más antigua');
         self::assertStringContainsString('/tareas?vista=vencidas', $crawler->filter('.overdue-line')->attr('href') ?? '');
         // Y ninguna de las cuatro se pinta como fila: la lista es para lo que queda por delante.

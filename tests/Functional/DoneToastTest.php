@@ -127,11 +127,10 @@ final class DoneToastTest extends WebTestCase
     {
         // Same component for the other kind of row: a personal reminder without a time.
         $owner = $this->user('profe@centro.test');
-        // Sin zona explícita, como el resto de los tests de Inicio: así el recordatorio cae en el MISMO
-        // día que la pantalla resuelve como hoy, y "Por hacer" lo pinta como fila con su casilla.
-        // Ojo: esto ya no tiene red. "Por hacer" solo pinta lo que queda por delante; lo que cae en
-        // vencidas se resume en una línea SIN casilla, así que un desfase de zona no dejaría el test en
-        // otro tramo del mismo bloque — lo dejaría sin formulario que enviar.
+        // Sin zona explícita, como el resto de los tests de Inicio: un recordatorio de hoy cae en "Por
+        // hacer" tanto si el runner lo clasifica como "hoy" como si un desfase lo deja en vencidas, porque
+        // los recordatorios PROPIOS se siguen pintando como fila con su casilla en los dos casos. Lo que
+        // se resume en una línea sin casilla son las tareas del centro fuera de plazo, no esto.
         $today = new \DateTimeImmutable('today');
         $event = (new PersonalEvent($owner, 'Llamar a la editorial', $today))->setAllDay(true);
         $this->em->persist($event);

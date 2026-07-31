@@ -101,23 +101,34 @@ final readonly class HomeDashboard
             || (AgendaEntry::KIND_EVENT === $e->kind && null !== $e->event && $e->event->isAllDay());
 
         // ---- "Por hacer" -------------------------------------------------------------------------
-        // Lo de FUERA DE PLAZO no se pinta fila a fila: se resume en UNA línea con el total y la más
-        // antigua. Con el arrastre de un curso, un muro de ocho alertas rojas empujaba fuera de pantalla
-        // las tareas del día, y si todo grita no grita nada. La línea lleva a la lista filtrada, así que
-        // resumir no es esconder.
+        // Las TAREAS DEL CENTRO fuera de plazo no se pintan fila a fila: se resumen en UNA línea con el
+        // total y la más antigua. Con el arrastre de un curso, un muro de ocho alertas rojas empujaba
+        // fuera de pantalla las tareas del día, y si todo grita no grita nada. La línea lleva a
+        // /tareas filtrado por vencidas, así que resumir no es esconder.
         //
-        // Las reuniones se excluyen EXPLÍCITAMENTE de las vencidas, aunque hoy la agenda no traiga
-        // ninguna pasada: una reunión no es un pendiente que se arrastre (no puedes ir ya) y la checklist
-        // no sabe pintarla, así que si alguien amplía la consulta hacia atrás debe verlo aquí y no en un
-        // error de plantilla.
-        $overdueTodos = array_values(array_filter($buckets['overdue'], static fn (AgendaEntry $e): bool => !$isMeeting($e)));
-        // Y las que quedan por delante, en orden de fecha: las de hoy, las de la semana y las lejanas. Las
-        // tres cestas y no solo la de hoy, porque el bloque se llama "Por hacer" y no "hoy": un día sin
-        // nada que venza mostraría el contenedor vacío teniendo trabajo esperando el lunes.
-        $ahead = array_values(array_filter(
-            [...$buckets['today'], ...$buckets['week'], ...$buckets['later']],
-            $isTodo,
+        // Las reuniones se excluyen EXPLÍCITAMENTE, aunque hoy la agenda no traiga ninguna pasada: una
+        // reunión no es un pendiente que se arrastre (no puedes ir ya) y la checklist no sabe pintarla,
+        // así que si alguien amplía la consulta hacia atrás debe verlo aquí y no en un error de plantilla.
+        $overdueTasks = array_values(array_filter($buckets['overdue'], static fn (AgendaEntry $e): bool => AgendaEntry::KIND_TASK === $e->kind));
+        // Los RECORDATORIOS personales vencidos NO entran en ese resumen y siguen siendo filas: la línea
+        // lleva a /tareas, donde un recordatorio privado no está, así que contarlo ahí sería prometer un
+        // sitio al que no se puede ir — perderlo en silencio, justo lo que el resumen quiere evitar.
+        // Tampoco hacen muro: te los pones tú y son pocos, mientras que el arrastre de vencidas es del
+        // centro. Van delante de lo que viene, que es el orden en que aprietan.
+        $overdueReminders = array_values(array_filter(
+            $buckets['overdue'],
+            static fn (AgendaEntry $e): bool => AgendaEntry::KIND_EVENT === $e->kind && null !== $e->event && $e->event->isAllDay(),
         ));
+        // Y lo que queda por delante, en orden de fecha: hoy, la semana y lo lejano. Las tres cestas y no
+        // solo la de hoy, porque el bloque se llama "Por hacer" y no "hoy": un día sin nada que venza
+        // mostraría el contenedor vacío teniendo trabajo esperando el lunes.
+        $ahead = [
+            ...$overdueReminders,
+            ...array_values(array_filter(
+                [...$buckets['today'], ...$buckets['week'], ...$buckets['later']],
+                $isTodo,
+            )),
+        ];
 
         // ---- "Próximos 7 días" -------------------------------------------------------------------
         // Lo que se atiende a una hora en los días siguientes: guardias, reuniones y citas privadas. Las
@@ -137,11 +148,11 @@ final readonly class HomeDashboard
             'todos' => \array_slice($ahead, 0, self::TODOS_SHOWN),
             // Todo lo que hay por hacer, no lo que se pinta: es la cifra de la cabecera y del pie, y los
             // dos llevan a la lista donde está entero.
-            'todosTotal' => \count($overdueTodos) + \count($ahead),
-            'overdueCount' => \count($overdueTodos),
+            'todosTotal' => \count($overdueTasks) + \count($ahead),
+            'overdueCount' => \count($overdueTasks),
             // La más antigua da la medida del retraso ("desde el 12/11"), que un número solo no da. Las
             // cestas vienen en orden cronológico, así que es la primera.
-            'overdueOldest' => $overdueTodos[0]->date ?? null,
+            'overdueOldest' => $overdueTasks[0]->date ?? null,
             'upcoming' => \array_slice($upcoming, 0, self::UPCOMING_SHOWN),
             // El contador de la cabecera cuenta la SEMANA, no las filas pintadas: leerlo del recorte diría
             // "6 citas" en una semana de nueve, y el contador está justamente para que no haya que
