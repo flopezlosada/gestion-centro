@@ -1,69 +1,201 @@
 {% extends 'app_shell.html.twig' %}
 
+{# Aulas libres — handoff catalogo/handoff_aulas_libres (23a escritorio · 23b móvil · 23c sin aulas).
+
+   Responde a UNA pregunta: «¿dónde caben estos dos grupos a tercera hora?». De ahí las tres decisiones
+   que no conviene deshacer sin pensarlo:
+   1. UNA hora a la vez, elegida en el selector del ancla. Las seis en columnas hacían que la hora que
+      importa —la de la ausencia que se está resolviendo— fuese lo más difícil de encontrar, y la sexta
+      columna ni siquiera entraba en pantalla.
+   2. La capacidad es un NÚMERO grande en un cuadro, y las aulas van agrupadas por ese número. Antes era
+      una frase («3 grupos según el horario») repetida treinta veces y más ancha que el nombre del aula.
+   3. De dónde sale el dato se dice con la FORMA del cuadro (sólido = catálogo, punteado = estimado) más
+      una leyenda de dos ítems, no con texto en cada línea: distingue el dato fiable del estimado sin
+      gritarlo ni repetirlo.
+   El rojo teja aparece SOLO en el estado sin aulas, como aviso; nunca para marcar una capacidad estimada. #}
+
 {% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
 
 {% block title %}Aulas libres{% endblock %}
 
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_index') }}">Guardias</a><span class="sep">/</span>Aulas libres{% endblock %}
 
-{% import 'space/_size.html.twig' as size %}
-
 {% block body %}
-    <div class="rooms-sheet">
-        <header class="page-head">
-            <div>
-                <p class="eyebrow">{{ dias[date|date('N', false)] }} {{ date|date('d/m/Y', false) }}</p>
-                <h1>Aulas libres</h1>
-                <p class="lead">Qué aulas no tiene nadie ocupadas a cada hora, las más grandes primero. Para juntar varios grupos en una sola aula cuando no hay profesorado de guardia para todos.</p>
+    {% set ymd = date|date('Y-m-d', false) %}
+    {% set esHoy = ymd == 'now'|date('Y-m-d', false) %}
+    {% set actual = day.current %}
+    {# Juntar grupos es una acción de coordinación: quien solo consulta la hoja ve las mismas aulas, pero
+       sus tarjetas no llevan a ninguna parte (el destino le daría un 403). #}
+    {% set canGroup = is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::GUARDIAS')) %}
+
+    <div class="rooms">
+        {# ---- Ancla: el día y la hora elegida --------------------------------------------------
+           A sangre y en tostado profundo, el único bloque oscuro de la pantalla (mismo papel que el ancla
+           del parte). Dentro va lo que NO cambia al cambiar de hora —el día— y el selector de hora, que es
+           el mando de la pantalla y por eso queda fuera del scroll. #}
+        <header class="rooms-anchor">
+            {# Los tres hijos son hermanos y no van envueltos en un «what» a propósito: así una rejilla de
+               áreas los coloca de las dos formas del handoff sin duplicar el marcado — en móvil el
+               navegador de día se sube junto al rótulo (23b) y en escritorio se va al lado derecho (23a). #}
+            <div class="rooms-anchor__top">
+                <p class="rooms-anchor__eyebrow">Aulas libres</p>
+                <div class="rooms-anchor__row">
+                    <span class="rooms-anchor__day">{{ dias[date|date('N', false)] }} {{ date|date('d/m', false) }}</span>
+                    <span class="rooms-anchor__why">Para juntar grupos cuando no hay profesorado de guardia para todos.</span>
+                </div>
+                <div class="rooms-anchor__nav">
+                    <a class="rooms-anchor__arrow" href="{{ path('guardia_rooms', { date: date|date_modify('-1 day')|date('Y-m-d', false), slot: actual ? actual.index : null }) }}" aria-label="Día anterior">‹</a>
+                    <form method="get" action="{{ path('guardia_rooms') }}" class="rooms-anchor__date">
+                        <input type="date" name="date" value="{{ ymd }}" onchange="this.form.submit()" aria-label="Fecha">
+                        {% if actual %}<input type="hidden" name="slot" value="{{ actual.index }}">{% endif %}
+                        <noscript><button type="submit" class="rooms-anchor__ghost">Ir</button></noscript>
+                    </form>
+                    <a class="rooms-anchor__arrow" href="{{ path('guardia_rooms', { date: date|date_modify('+1 day')|date('Y-m-d', false), slot: actual ? actual.index : null }) }}" aria-label="Día siguiente">›</a>
+                    {% if not esHoy %}
+                        {# El único naranja pleno de la pantalla. Y sin arrastrar el tramo: al volver a hoy
+                           manda el reloj, que es justo lo que se viene a mirar. #}
+                        <a class="btn rooms-anchor__today" href="{{ path('guardia_rooms') }}">Hoy</a>
+                    {% endif %}
+                </div>
             </div>
-            <div class="day-nav">
-                <a class="day-nav-arrow" href="{{ path('guardia_rooms', { date: date|date_modify('-1 day')|date('Y-m-d', false) }) }}" aria-label="Día anterior">‹</a>
-                <form method="get" action="{{ path('guardia_rooms') }}" class="day-nav-date">
-                    <input type="date" name="date" value="{{ date|date('Y-m-d', false) }}" onchange="this.form.submit()" aria-label="Fecha">
-                    <noscript><button type="submit" class="btn">Ir</button></noscript>
-                </form>
-                <a class="day-nav-arrow" href="{{ path('guardia_rooms', { date: date|date_modify('+1 day')|date('Y-m-d', false) }) }}" aria-label="Día siguiente">›</a>
-                <a class="btn" href="{{ path('guardia_rooms') }}">Hoy</a>
-            </div>
+
+            {# ---- Selector de hora ----
+               Pestañas pegadas al borde inferior del ancla en escritorio (la activa toma el color del
+               lienzo y se funde con el contenido); chips con scroll lateral en móvil. Cada una lleva la
+               hora y cuántas aulas hay libres, para poder elegir sin entrar a mirar.
+               El recreo se puede elegir pero pesa menos: entonces está TODO libre, así que el número no
+               dice nada útil y la etiqueta lo dice por su nombre. #}
+            {% if day.slots is not empty %}
+                <nav class="rooms-tabs" aria-label="Tramo horario">
+                    {% for slot in day.slots %}
+                        <a class="rooms-tab{{ actual and slot.index == actual.index ? ' is-active' }}{{ slot.isBreak ? ' is-break' }}"
+                           href="{{ path('guardia_rooms', { date: ymd, slot: slot.index }) }}"
+                           {{ actual and slot.index == actual.index ? 'aria-current=page' }}
+                           aria-label="De {{ slot.startsAt|date('H:i', false) }} a {{ slot.endsAt|date('H:i', false) }}{{ slot.isBreak ? ' (recreo)' }} · {{ slot.count }} aula{{ slot.count == 1 ? '' : 's' }} libre{{ slot.count == 1 ? '' : 's' }}">
+                            <span class="rooms-tab__time">{{ slot.startsAt|date('H:i', false) }}</span>
+                            <span class="rooms-tab__count" aria-hidden="true">
+                                {%- if slot.isBreak -%}
+                                    recreo
+                                {%- else -%}
+                                    {{ slot.count }}<span class="rooms-tab__unit"> aula{{ slot.count == 1 ? '' : 's' }}</span>
+                                {%- endif -%}
+                            </span>
+                        </a>
+                    {% endfor %}
+                </nav>
+            {% endif %}
         </header>
 
-        {% if slots is empty %}
-            <div class="card">
+        {% if actual is null %}
+            <div class="rooms-body">
                 <div class="empty-state">
                     <h2>No hay horario importado para el curso {{ schoolYear }}</h2>
                     <p>Las aulas libres se deducen del horario del centro: sin horario importado no hay nada que deducir.</p>
+                    {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ADMINISTRATION')) %}
+                        <p><a class="btn" href="{{ path('admin_timetable_import') }}">Importar horario</a></p>
+                    {% endif %}
+                </div>
+            </div>
+        {% elseif not actual.hasRooms %}
+            {# ---- 23c: ninguna aula libre a esa hora ----
+               Con prisa hay que ofrecer la alternativa, no un vacío: el atajo salta al siguiente tramo que
+               SÍ tiene aulas. Único sitio de la pantalla con rojo teja, y como aviso. #}
+            {% set siguiente = day.nextWithRooms %}
+            <div class="rooms-body">
+                <div class="rooms-empty">
+                    <span class="rooms-empty__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V9l7-5 7 5v12"/><path d="M9 21v-6h6v6"/></svg>
+                    </span>
+                    <h1 class="rooms-empty__title">Ninguna aula libre de {{ actual.startsAt|date('H:i', false) }} a {{ actual.endsAt|date('H:i', false) }}</h1>
+                    <p class="rooms-empty__text">A esta hora está todo ocupado. Prueba con otro tramo o mira el parte para repartir de otra forma.</p>
+                    <div class="rooms-empty__ways">
+                        {% if siguiente %}
+                            <a class="btn-lg btn-lg--primary" href="{{ path('guardia_rooms', { date: ymd, slot: siguiente.index }) }}">Ver el tramo de {{ siguiente.startsAt|date('H:i', false) }} · {{ siguiente.count }} aula{{ siguiente.count == 1 ? '' : 's' }}</a>
+                        {% endif %}
+                        <a class="btn-lg btn-lg--muted" href="{{ path('guardia_index', { date: ymd, slot: actual.index }) }}">Ir al parte del día</a>
+                    </div>
                 </div>
             </div>
         {% else %}
-            {# El tamaño puede venir de dos sitios y no es lo mismo: lo que ha clasificado el centro en el
-               catálogo de espacios (fiable) o lo que se deduce del horario (una prueba: «aquí han estado
-               dos grupos a la vez»). Se distinguen para no vender una deducción como un aforo. #}
-            <p class="muted rooms-sheet__note">El tamaño sale del catálogo de espacios cuando alguien lo ha rellenado; si no, de lo que hace el horario («según el horario» = lo máximo que pone a la vez en esa aula, que es una prueba y no un aforo). Solo aulas donde se puede dejar un grupo: pistas y gimnasio quedan fuera.</p>
+            <div class="rooms-body">
+                {# ---- La respuesta, arriba ----
+                   El titular ES la respuesta. Ese sitio lo ocupaban dos líneas de explicación, que ahora
+                   bajan al pie. #}
+                <div class="rooms-answer">
+                    <h1 class="rooms-answer__title">{{ actual.count }} aula{{ actual.count == 1 ? '' : 's' }} libre{{ actual.count == 1 ? '' : 's' }} <span class="rooms-answer__when">de {{ actual.startsAt|date('H:i', false) }} a {{ actual.endsAt|date('H:i', false) }}</span></h1>
+                    {# Ojo con la promesa: que las pistas y el gimnasio queden fuera NO es una regla de esta
+                       pantalla, es lo que diga el catálogo de cada espacio («no se le asignan grupos»).
+                       Mientras nadie los marque, aquí saldrán — así que la línea dice de qué depende y el
+                       matiz de cómo arreglarlo baja al pie, que es donde vive el enlace al catálogo. #}
+                    <p class="rooms-answer__hint">Las más grandes primero. Solo las aulas a las que el catálogo permite mandar un grupo.</p>
+                </div>
 
-            {% if unlinkedCells > 0 %}
-                <p class="alert alert--warning">Hay {{ unlinkedCells }} clase(s) del horario en aulas que no están en el catálogo de espacios: esas aulas podrían salir aquí como libres sin estarlo. Se arregla sincronizando el catálogo desde Espacios.</p>
-            {% endif %}
+                {# La procedencia del dato, dicha una vez y por la FORMA del cuadro. Mismas clases que las
+                   tarjetas para que las dos formas no puedan separarse con el tiempo: la leyenda solo
+                   cambia el tamaño. #}
+                <div class="rooms-legend">
+                    <span class="rooms-legend__item"><span class="roomfits roomfits--swatch roomfits--catalogue" aria-hidden="true"></span>del catálogo</span>
+                    <span class="rooms-legend__item"><span class="roomfits roomfits--swatch roomfits--observed" aria-hidden="true"></span>estimado por el horario</span>
+                </div>
 
-            <div class="rooms-grid">
-                {% for slot in slots %}
-                    {% set libres = free[slot.index] ?? [] %}
-                    <section class="card rooms-slot">
-                        <h2 class="rooms-slot__title">{{ slot.startsAt|date('H:i', false) }}–{{ slot.endsAt|date('H:i', false) }}</h2>
-                        {% if libres is empty %}
-                            <p class="muted">Todas las aulas están ocupadas a esta hora.</p>
-                        {% else %}
-                            <ul class="rooms-list">
-                                {% for r in libres %}
-                                    {% set grupos = r.effectiveSize ? r.effectiveSize.groups : 0 %}
-                                    <li class="rooms-list__item{{ grupos > 1 ? ' is-large' }}">
-                                        <span class="mono">{{ r.code }}</span>
-                                        {{ size.badge(r) }}
+                {# En tinte de marca y NO en rojo teja: que falte sincronizar el catálogo es trabajo por
+                   hacer, no un fallo. El rojo teja es de la pantalla sin aulas y de nadie más. #}
+                {% if unlinkedCells > 0 %}
+                    <div class="callout callout--accent rooms-warn">
+                        <strong>Hay {{ unlinkedCells }} clase(s) del horario en aulas que no están en el catálogo de espacios.</strong>
+                        <p>Esas aulas pueden salir aquí como libres sin estarlo. Se arregla sincronizando el catálogo desde Espacios.</p>
+                    </div>
+                {% endif %}
+
+                {# ---- Aulas agrupadas por cuántos grupos caben ----
+                   De mayor a menor; las que no dan para juntar van al final y atenuadas. Quién va en cada
+                   grupo y en qué orden lo decide App\Space\FreeRoomsSlot::tiers(). #}
+                <div class="rooms-tiers">
+                    {% for tier in actual.tiers %}
+                        <section class="rooms-tier{{ tier.dimmed ? ' is-dimmed' }}">
+                            <h2 class="rooms-tier__head">
+                                <span class="rooms-tier__label">{{ tier.label }}</span>
+                                <span class="rooms-tier__count">{{ tier.rooms|length }} aula{{ tier.rooms|length == 1 ? '' : 's' }}{% if tier.note %} · {{ tier.note }}{% endif %}</span>
+                            </h2>
+                            <ul class="rooms-cards">
+                                {% for r in tier.rooms %}
+                                    {% set grupos = r.effectiveSize ? r.effectiveSize.groups : null %}
+                                    {% set origen = r.sizeConfirmed ? 'catalogue' : (r.effectiveSize ? 'observed' : 'unknown') %}
+                                    {% set dice = r.sizeConfirmed ? 'tamaño del catálogo' : (r.effectiveSize ? 'estimado por el horario' : 'tamaño sin indicar') %}
+                                    <li>
+                                        {# La tarjeta lleva a juntar grupos EN esa aula, con el aula ya elegida: es a lo
+                                           que se venía. Sin permiso de escritura se queda SIN href —un <a> sin destino
+                                           no es un enlace ni para el navegador ni para un lector de pantalla— en vez de
+                                           ofrecer una salida que el servidor va a negar con un 403. #}
+                                        <a class="roomcard"{% if canGroup %} href="{{ path('guardia_grouping_new', { date: ymd, slot: actual.index, room: r.code }) }}" title="Juntar grupos en {{ r.code }}"{% endif %}>
+                                            <span class="roomfits roomfits--box roomfits--{{ origen }}">
+                                                {{ grupos ?? '?' }}
+                                                <span class="visually-hidden">{{ grupos is null ? 'no se sabe cuántos grupos caben' : 'caben ' ~ grupos ~ ' grupo' ~ (grupos == 1 ? '' : 's') }} · {{ dice }}</span>
+                                            </span>
+                                            <span class="roomcard__what">
+                                                <span class="roomcard__code">{{ r.code }}</span>
+                                                {# El nombre largo solo cuando lo hay: las fichas que crea la sincronización
+                                                   del horario se llaman como su código, y repetirlo debajo en gris no es un
+                                                   dato, es una línea de ruido en cada una de las cuarenta tarjetas. #}
+                                                {% if r.name != r.code %}<span class="roomcard__name">{{ r.name }}</span>{% endif %}
+                                            </span>
+                                        </a>
                                     </li>
                                 {% endfor %}
                             </ul>
-                        {% endif %}
-                    </section>
-                {% endfor %}
+                        </section>
+                    {% endfor %}
+                </div>
+
+                {# ---- El pie: de dónde sale el tamaño ----
+                   Al pie y una sola vez, no en cada línea. Con la salida para arreglarlo, que es lo único
+                   que hace que un dato estimado deje de serlo. #}
+                <p class="rooms-note">
+                    El tamaño sale del <b>catálogo de espacios</b> cuando el centro lo ha rellenado. Si no, se <b>estima con el horario</b>: el máximo de grupos que ha coincidido en esa aula. Es una pista, no un aforo. Las pistas, el gimnasio y cualquier sitio donde no se pueda dejar un grupo solo dejan de salir aquí en cuanto se marcan como tales en el catálogo.
+                    {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ESPACIOS')) %}
+                        <a href="{{ path('space_room_index') }}">Completar el catálogo</a>
+                    {% endif %}
+                </p>
             </div>
         {% endif %}
     </div>
