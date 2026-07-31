@@ -9,7 +9,7 @@ use App\Entity\BreakDutyAssignment;
 use App\Entity\BreakZone;
 use App\Entity\TimeSlot;
 use App\Entity\User;
-use App\Enum\BreakPeriodCoverage;
+use App\Enum\BreakPeriod;
 use App\Enum\TimeSlotKind;
 use App\Enum\Weekday;
 use App\Guardia\BreakDutyRoster;
@@ -17,12 +17,13 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 /**
- * The break duty rota read as the screens read it: the weekday × zone grid, where it is short of people,
- * and the weighted equity count.
+ * The break duty rota read as the screens read it: the recreo × weekday × zone grid, where it is short of
+ * people, and the weighted equity count.
  *
- * The load rule is the one worth pinning down: the centre counts covering BOTH recreos of a day as ONE
- * guardia, and weighs zones differently, so the counter adds the zone's weight once per duty — not once
- * per recreo, and not one point per turn.
+ * Two rules are worth pinning down, and they are separate. A GUARDIA is one long recreo plus one short
+ * one, on any two days, so it is counted as min(long, short) and the remainder shows up as halves. The
+ * LOAD is the zone's weight per PLACE, because the centre said not every zone costs the same — two spells
+ * in the patio have to outweigh two in the biblioteca.
  */
 final class BreakDutyRosterTest extends KernelTestCase
 {
@@ -63,7 +64,7 @@ final class BreakDutyRosterTest extends KernelTestCase
     public function testGridPlacesEachDutyInItsWeekdayAndZoneAndReportsTheBreaks(): void
     {
         $ana = $this->user('Ana Patio Ruiz', 'ana.patio@educa.madrid.org');
-        $this->duty($ana, Weekday::MONDAY, $this->patio, BreakPeriodCoverage::BOTH);
+        $this->duty($ana, Weekday::MONDAY, $this->patio, BreakPeriod::FIRST);
 
         $grid = $this->roster->grid($this->year);
 
@@ -72,62 +73,102 @@ final class BreakDutyRosterTest extends KernelTestCase
         self::assertSame('11:10–11:35', $grid['breaks'][0]->timeRange());
         self::assertSame('13:25–13:35', $grid['breaks'][1]->timeRange());
 
-        self::assertCount(1, $grid['cells'][Weekday::MONDAY->value][(int) $this->patio->getId()]);
-        self::assertSame([], $grid['cells'][Weekday::TUESDAY->value][(int) $this->patio->getId()], 'an empty cell still exists, so a template can index it');
+        $patio = (int) $this->patio->getId();
+        self::assertCount(1, $grid['cells'][BreakPeriod::FIRST->value][Weekday::MONDAY->value][$patio]);
+        self::assertSame([], $grid['cells'][BreakPeriod::SECOND->value][Weekday::MONDAY->value][$patio], 'the place is for ONE recreo, not both');
+        self::assertSame([], $grid['cells'][BreakPeriod::FIRST->value][Weekday::TUESDAY->value][$patio], 'an empty cell still exists, so a template can index it');
     }
 
     public function testShortfallCountsThePeopleEachZoneStillNeeds(): void
     {
         $ana = $this->user('Ana Patio Ruiz', 'ana.patio@educa.madrid.org');
-        $this->duty($ana, Weekday::MONDAY, $this->patio, BreakPeriodCoverage::BOTH);
+        $this->duty($ana, Weekday::MONDAY, $this->patio, BreakPeriod::FIRST);
 
         $grid = $this->roster->grid($this->year);
 
-        // Patio needs 2 and has 1 on Monday; every other cell is empty.
-        self::assertSame(1, $grid['shortfall'][Weekday::MONDAY->value][(int) $this->patio->getId()]);
-        self::assertSame(2, $grid['shortfall'][Weekday::TUESDAY->value][(int) $this->patio->getId()]);
-        self::assertSame(1, $grid['shortfall'][Weekday::MONDAY->value][(int) $this->biblioteca->getId()]);
-        // 5 weekdays × (2 patio + 1 biblioteca) = 15 posts, one of them filled.
-        self::assertSame(14, $grid['missing']);
+        $patio = (int) $this->patio->getId();
+        $biblio = (int) $this->biblioteca->getId();
+        // Patio needs 2 and has 1 at Monday's long recreo; every other cell is empty.
+        self::assertSame(1, $grid['shortfall'][BreakPeriod::FIRST->value][Weekday::MONDAY->value][$patio]);
+        self::assertSame(2, $grid['shortfall'][BreakPeriod::SECOND->value][Weekday::MONDAY->value][$patio], 'the short recreo of that day is still empty');
+        self::assertSame(2, $grid['shortfall'][BreakPeriod::FIRST->value][Weekday::TUESDAY->value][$patio]);
+        self::assertSame(1, $grid['shortfall'][BreakPeriod::FIRST->value][Weekday::MONDAY->value][$biblio]);
+        // 2 recreos × 5 weekdays × (2 patio + 1 biblioteca) = 30 places, one of them filled.
+        self::assertSame(29, $grid['missing']);
     }
 
     public function testAnArchivedZoneLeavesTheGridButItsDutiesAreNotLost(): void
     {
         $ana = $this->user('Ana Patio Ruiz', 'ana.patio@educa.madrid.org');
-        $this->duty($ana, Weekday::MONDAY, $this->biblioteca, BreakPeriodCoverage::FIRST);
+        $this->duty($ana, Weekday::MONDAY, $this->biblioteca, BreakPeriod::FIRST);
         $this->biblioteca->setArchived(true);
         $this->em->flush();
 
         $grid = $this->roster->grid($this->year);
 
         self::assertCount(1, $grid['zones'], 'the archived zone is out of the grid');
-        self::assertArrayNotHasKey((int) $this->biblioteca->getId(), $grid['cells'][Weekday::MONDAY->value]);
+        self::assertArrayNotHasKey((int) $this->biblioteca->getId(), $grid['cells'][BreakPeriod::FIRST->value][Weekday::MONDAY->value]);
         // The duty itself survives, which is why archiving (not deleting) is the gesture: the equity
         // reading still accounts for the turn that person did.
         self::assertSame(1, $this->roster->equity($this->year)['equity']['count']);
     }
 
-    public function testCoveringBothRecreosCountsAsASingleWeightedGuardia(): void
+    public function testAGuardiaIsALongRecreoPlusAShortOneEvenOnDifferentDays(): void
     {
         $ana = $this->user('Ana Patio Ruiz', 'ana.patio@educa.madrid.org');
         $luis = $this->user('Luis Biblio Soto', 'luis.biblio@educa.madrid.org');
 
-        // Ana: one duty spanning BOTH recreos of the patio (weight 3) → load 3, not 6.
-        $this->duty($ana, Weekday::MONDAY, $this->patio, BreakPeriodCoverage::BOTH);
-        // Luis: two duties on different days, biblioteca (weight 1) → load 2.
-        $this->duty($luis, Weekday::TUESDAY, $this->biblioteca, BreakPeriodCoverage::FIRST);
-        $this->duty($luis, Weekday::THURSDAY, $this->biblioteca, BreakPeriodCoverage::SECOND);
+        // Ana: the patio (weight 3) at both recreos of the same day → 1 guardia, load 6.
+        $this->duty($ana, Weekday::MONDAY, $this->patio, BreakPeriod::FIRST);
+        $this->duty($ana, Weekday::MONDAY, $this->patio, BreakPeriod::SECOND);
+        // Luis: the biblioteca (weight 1) on DIFFERENT days, one long and one short → also 1 guardia.
+        // That is the centre's rule, and the pairing is what the old model could not express.
+        $this->duty($luis, Weekday::TUESDAY, $this->biblioteca, BreakPeriod::FIRST);
+        $this->duty($luis, Weekday::THURSDAY, $this->biblioteca, BreakPeriod::SECOND);
 
         $equity = $this->roster->equity($this->year);
 
         self::assertSame(2, $equity['equity']['count'], 'only teachers on the rota are counted');
-        // Heaviest first: Ana's single two-recreo patio turn outweighs Luis's two library turns.
+        // Heaviest first: two spells in the patio outweigh two in the library, which is the whole point
+        // of weighing places rather than counting turns.
         self::assertSame('Ana Patio Ruiz', $equity['rows'][0]['teacher']->getFullName());
-        self::assertSame(1, $equity['rows'][0]['duties'], 'both recreos of a day are ONE guardia');
-        self::assertSame(3, $equity['rows'][0]['load'], 'the zone weight counts once, not per recreo');
-        self::assertSame(2, $equity['rows'][1]['duties']);
+        self::assertSame(1, $equity['rows'][0]['guardias'], 'a long plus a short is one guardia');
+        self::assertSame(0, $equity['rows'][0]['halves']);
+        self::assertSame(6, $equity['rows'][0]['load'], 'the weight counts per place: two spells in the patio');
+        self::assertSame(1, $equity['rows'][1]['guardias'], 'across days it is still one guardia');
         self::assertSame(2, $equity['rows'][1]['load']);
         self::assertSame(['Biblioteca'], $equity['rows'][1]['zones'], 'the same zone twice is listed once');
+    }
+
+    public function testAPlaceWithNoPartnerIsReportedAsAHalf(): void
+    {
+        // Two long recreos and no short one is NOT two guardias, and it is not one either: it is one
+        // guardia's worth of work split so it cannot pair up. Rounding it away would hide exactly the
+        // imbalance the rota is meant to expose.
+        $ana = $this->user('Ana Patio Ruiz', 'ana.patio@educa.madrid.org');
+        $this->duty($ana, Weekday::MONDAY, $this->biblioteca, BreakPeriod::FIRST);
+        $this->duty($ana, Weekday::TUESDAY, $this->biblioteca, BreakPeriod::FIRST);
+
+        $equity = $this->roster->equity($this->year);
+
+        self::assertSame(0, $equity['rows'][0]['guardias']);
+        self::assertSame(2, $equity['rows'][0]['halves'], 'two long recreos waiting for a short one');
+        self::assertSame(2, $equity['rows'][0]['places']);
+    }
+
+    public function testSomebodyCanWatchDifferentZonesAtEachRecreoOfTheSameDay(): void
+    {
+        // Flatly impossible under the old shape (one row per teacher and weekday), and something the
+        // centre asked for by name.
+        $ana = $this->user('Ana Patio Ruiz', 'ana.patio@educa.madrid.org');
+        $this->duty($ana, Weekday::MONDAY, $this->patio, BreakPeriod::FIRST);
+        $this->duty($ana, Weekday::MONDAY, $this->biblioteca, BreakPeriod::SECOND);
+
+        $equity = $this->roster->equity($this->year);
+
+        self::assertSame(1, $equity['rows'][0]['guardias']);
+        self::assertSame(4, $equity['rows'][0]['load'], 'patio 3 + biblioteca 1');
+        self::assertSame(['Patio', 'Biblioteca'], $equity['rows'][0]['zones']);
     }
 
     public function testEquityIsEmptyButUsableWhenNobodyIsOnTheRota(): void
@@ -180,16 +221,16 @@ final class BreakDutyRosterTest extends KernelTestCase
      * @param User                $teacher  the teacher on duty
      * @param Weekday             $weekday  the weekday
      * @param BreakZone           $zone     the zone to watch
-     * @param BreakPeriodCoverage $coverage which recreos it spans
+     * @param BreakPeriod $period which recreo the place is for
      */
-    private function duty(User $teacher, Weekday $weekday, BreakZone $zone, BreakPeriodCoverage $coverage): void
+    private function duty(User $teacher, Weekday $weekday, BreakZone $zone, BreakPeriod $period): void
     {
         $this->em->persist((new BreakDutyAssignment())
             ->setAcademicYear($this->year)
             ->setTeacher($teacher)
             ->setWeekday($weekday)
             ->setZone($zone)
-            ->setPeriods($coverage));
+            ->setPeriod($period));
         $this->em->flush();
     }
 

@@ -11,7 +11,7 @@ use App\Entity\BreakZone;
 use App\Entity\Role;
 use App\Entity\User;
 use App\Enum\Area;
-use App\Enum\BreakPeriodCoverage;
+use App\Enum\BreakPeriod;
 use App\Enum\PermissionLevel;
 use App\Enum\Weekday;
 use App\Util\SchoolYear;
@@ -73,17 +73,17 @@ final class BreakDutyPageTest extends WebTestCase
             'teacher' => (string) $teacher->getId(),
             'zone' => (string) $zone->getId(),
             'weekday' => (string) Weekday::MONDAY->value,
-            'periods' => BreakPeriodCoverage::BOTH->value,
+            'period' => BreakPeriod::FIRST->value,
         ]);
 
         self::assertResponseRedirects();
         $duties = $this->em->getRepository(BreakDutyAssignment::class)->findAll();
         self::assertCount(1, $duties);
-        self::assertSame(BreakPeriodCoverage::BOTH, $duties[0]->getPeriods());
+        self::assertSame(BreakPeriod::FIRST, $duties[0]->getPeriod());
         self::assertSame('Patio', $duties[0]->getZone()->getName());
     }
 
-    public function testASecondZoneOnTheSameDayIsRefusedWithAnExplanation(): void
+    public function testASecondZoneAtTheSameRecreoIsRefusedWithAnExplanation(): void
     {
         $this->login();
         $year = $this->currentYear();
@@ -97,16 +97,23 @@ final class BreakDutyPageTest extends WebTestCase
             'teacher' => (string) $teacher->getId(),
             'zone' => (string) $patio->getId(),
             'weekday' => (string) Weekday::MONDAY->value,
-            'periods' => BreakPeriodCoverage::FIRST->value,
+            'period' => BreakPeriod::FIRST->value,
         ];
         $this->post('/guardias/recreo', '/guardias/recreo/asignar', $payload);
         $this->post('/guardias/recreo', '/guardias/recreo/asignar', ['zone' => (string) $biblioteca->getId()] + $payload);
 
-        // Nobody can be in two places at once: the clash is a message, not a crash.
+        // Nobody can be in two places at once: the clash is a message, not a crash. The clash is now the
+        // RECREO, not the day — the same person watching two zones on one day is fine as long as they are
+        // at different breaks, which is what the centre asked for.
         self::assertResponseRedirects();
         self::assertCount(1, $this->em->getRepository(BreakDutyAssignment::class)->findAll());
         $crawler = $this->client->followRedirect();
-        self::assertStringContainsString('ya tiene una guardia de recreo', $crawler->filter('.flash.error')->text());
+        self::assertStringContainsString('ya vigila una zona', $crawler->filter('.flash.error')->text());
+        self::assertStringContainsString('recreo grande', $crawler->filter('.flash.error')->text(), 'the message names which recreo is taken');
+
+        // And the other recreo of that same day is accepted, which the old model forbade outright.
+        $this->post('/guardias/recreo', '/guardias/recreo/asignar', ['zone' => (string) $biblioteca->getId(), 'period' => BreakPeriod::SECOND->value] + $payload);
+        self::assertCount(2, $this->em->getRepository(BreakDutyAssignment::class)->findAll());
     }
 
     public function testRemovingADutyTakesItsRecordedGapsWithIt(): void
@@ -188,7 +195,7 @@ final class BreakDutyPageTest extends WebTestCase
             'teacher' => (string) $teacher->getId(),
             'zone' => (string) $zone->getId(),
             'weekday' => (string) Weekday::MONDAY->value,
-            'periods' => BreakPeriodCoverage::BOTH->value,
+            'period' => BreakPeriod::FIRST->value,
         ]);
 
         self::assertResponseStatusCodeSame(403);
@@ -306,7 +313,7 @@ final class BreakDutyPageTest extends WebTestCase
             ->setTeacher($teacher)
             ->setWeekday(Weekday::MONDAY)
             ->setZone($zone)
-            ->setPeriods(BreakPeriodCoverage::BOTH);
+            ->setPeriod(BreakPeriod::FIRST);
         $this->em->persist($duty);
 
         return $duty;

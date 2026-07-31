@@ -163,9 +163,9 @@ final class AbsenceRegistrar
         // The recreo is a separate consequence of the same absence: it is never re-covered, only recorded
         // and alerted. It stands on its own — a teacher whose day holds no lesson at all (so no cover was
         // created) still leaves their zone unwatched.
-        $breakGap = $missesBreakDuty ? $this->breakGaps->register($year, $teacher, $date) : null;
+        $breakGaps = $missesBreakDuty ? $this->breakGaps->register($year, $teacher, $date) : [];
 
-        return new AbsenceRegistrationResult($createdSlots, $skippedFree, $skippedExisting, $breakGap, $relievedSlots);
+        return new AbsenceRegistrationResult($createdSlots, $skippedFree, $skippedExisting, $breakGaps, $relievedSlots);
     }
 
     /**

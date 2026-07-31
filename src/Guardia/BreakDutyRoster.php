@@ -9,21 +9,26 @@ use App\Entity\BreakDutyAssignment;
 use App\Entity\BreakZone;
 use App\Entity\TimeSlot;
 use App\Entity\User;
+use App\Enum\BreakPeriod;
 use App\Enum\Weekday;
 use App\Repository\BreakDutyAssignmentRepository;
 use App\Repository\BreakZoneRepository;
 use App\Repository\TimeSlotRepository;
 
 /**
- * Reads the break duty rota of a course into the two shapes the screens need: the weekday × zone grid
- * the centre draws its recreos on, and the weighted counter that says whether the rota is fair.
+ * Reads the break duty rota of a course into the two shapes the screens need: the recreo × weekday ×
+ * zone grid the centre draws its recreos on, and the weighted counter that says whether the rota is fair.
  *
  * The counter is the reason this class exists rather than a couple of queries. The centre asked for an
  * equitable count that takes the zone's category into account, and with a rota fixed for the whole
  * course "equitable" is a property of the rota itself, not of anything that happens day by day: it adds
- * up the weight of each teacher's duties, each duty counting once even when it spans both recreos, and
- * hands the totals to {@see GuardiaStatistics::equity()} — the same mean/median/Gini reading the
- * substitution guardias already get, so both rotas are judged by one yardstick.
+ * up the weight of each teacher's PLACES and hands the totals to {@see GuardiaStatistics::equity()} —
+ * the same mean/median/Gini reading the substitution guardias already get, so both rotas are judged by
+ * one yardstick.
+ *
+ * It is also where the centre's counting rule lives, now that it is arithmetic rather than structure: a
+ * guardia is one long recreo plus one short one, on any days, so somebody's guardias are
+ * {@code min(long, short)} and the remainder are halves waiting for a partner.
  *
  * Every read starts from one fetch of the course's rota with its teachers and zones joined, and the
  * aggregation happens here: the rota is a few dozen rows (five weekdays by a handful of zones), so
@@ -36,6 +41,7 @@ final class BreakDutyRoster
         private readonly BreakZoneRepository $zones,
         private readonly TimeSlotRepository $timeSlots,
         private readonly GuardiaStatistics $statistics,
+        private readonly BreakDutyDemand $demand,
     ) {
     }
 
@@ -54,12 +60,13 @@ final class BreakDutyRoster
      *         breaks: list<TimeSlot>,
      *         zones: list<BreakZone>,
      *         weekdays: list<Weekday>,
-     *         cells: array<int, array<int, list<BreakDutyAssignment>>>,
-     *         shortfall: array<int, array<int, int>>,
+     *         periods: list<BreakPeriod>,
+     *         cells: array<string, array<int, array<int, list<BreakDutyAssignment>>>>,
+     *         shortfall: array<string, array<int, array<int, int>>>,
      *         missing: int
      *     },
      *     equity: array{
-     *         rows: list<array{teacher: User, duties: int, load: int, zones: list<string>}>,
+     *         rows: list<array{teacher: User, guardias: int, halves: int, places: int, load: int, zones: list<string>}>,
      *         equity: array{count: int, mean: float, median: float, min: int, max: int, spread: int, gini: float, label: string}
      *     }
      * } the grid and the equity reading
@@ -82,8 +89,9 @@ final class BreakDutyRoster
      *     breaks: list<TimeSlot>,
      *     zones: list<BreakZone>,
      *     weekdays: list<Weekday>,
-     *     cells: array<int, array<int, list<BreakDutyAssignment>>>,
-     *     shortfall: array<int, array<int, int>>,
+     *     periods: list<BreakPeriod>,
+     *     cells: array<string, array<int, array<int, list<BreakDutyAssignment>>>>,
+     *     shortfall: array<string, array<int, array<int, int>>>,
      *     missing: int
      * } the grid
      */
@@ -98,7 +106,7 @@ final class BreakDutyRoster
      * @param AcademicYear $year the course whose rota to weigh
      *
      * @return array{
-     *     rows: list<array{teacher: User, duties: int, load: int, zones: list<string>}>,
+     *     rows: list<array{teacher: User, guardias: int, halves: int, places: int, load: int, zones: list<string>}>,
      *     equity: array{count: int, mean: float, median: float, min: int, max: int, spread: int, gini: float, label: string}
      * } the per-teacher totals and the spread
      */
@@ -108,17 +116,25 @@ final class BreakDutyRoster
     }
 
     /**
-     * Lays the given duties out as the weekday × zone grid.
+     * Lays the given places out as one recreo × weekday × zone grid.
+     *
+     * Three dimensions rather than two, because a place now belongs to a specific recreo: the same
+     * teacher can be in the patio at the long one and the biblioteca at the short one, and a grid that
+     * only knew about weekdays would have to pile both into one cell.
+     *
+     * Every cell exists even when empty, so a template can index it without existence checks (Twig
+     * raises under strict_variables on a missing key).
      *
      * @param AcademicYear          $year   the course the rota belongs to
-     * @param BreakDutyAssignment[] $duties the course's duties
+     * @param BreakDutyAssignment[] $duties the course's places
      *
      * @return array{
      *     breaks: list<TimeSlot>,
      *     zones: list<BreakZone>,
      *     weekdays: list<Weekday>,
-     *     cells: array<int, array<int, list<BreakDutyAssignment>>>,
-     *     shortfall: array<int, array<int, int>>,
+     *     periods: list<BreakPeriod>,
+     *     cells: array<string, array<int, array<int, list<BreakDutyAssignment>>>>,
+     *     shortfall: array<string, array<int, array<int, int>>>,
      *     missing: int
      * } the grid
      */
@@ -126,31 +142,37 @@ final class BreakDutyRoster
     {
         $zones = $this->zones->findActiveOrdered();
         $weekdays = Weekday::schoolWeek();
+        $periods = BreakPeriod::inDayOrder();
 
         $cells = [];
-        foreach ($weekdays as $weekday) {
-            foreach ($zones as $zone) {
-                $cells[$weekday->value][(int) $zone->getId()] = [];
+        foreach ($periods as $period) {
+            foreach ($weekdays as $weekday) {
+                foreach ($zones as $zone) {
+                    $cells[$period->value][$weekday->value][(int) $zone->getId()] = [];
+                }
             }
         }
 
-        // An archived zone still holds duties from earlier in the course: its column is gone from the
+        // An archived zone still holds places from earlier in the course: its column is gone from the
         // grid, so its rows are skipped here rather than being wedged into a cell that does not exist.
         foreach ($duties as $duty) {
             $zoneId = (int) $duty->getZone()->getId();
-            if (!isset($cells[$duty->getWeekday()->value][$zoneId])) {
+            if (!isset($cells[$duty->getPeriod()->value][$duty->getWeekday()->value][$zoneId])) {
                 continue;
             }
-            $cells[$duty->getWeekday()->value][$zoneId][] = $duty;
+            $cells[$duty->getPeriod()->value][$duty->getWeekday()->value][$zoneId][] = $duty;
         }
 
         $shortfall = [];
         $missing = 0;
-        foreach ($weekdays as $weekday) {
-            foreach ($zones as $zone) {
-                $short = max(0, $zone->getRequiredTeachers() - \count($cells[$weekday->value][(int) $zone->getId()]));
-                $shortfall[$weekday->value][(int) $zone->getId()] = $short;
-                $missing += $short;
+        foreach ($periods as $period) {
+            foreach ($weekdays as $weekday) {
+                foreach ($zones as $zone) {
+                    $needed = $this->demand->required($zone, $weekday, $period);
+                    $short = max(0, $needed - \count($cells[$period->value][$weekday->value][(int) $zone->getId()]));
+                    $shortfall[$period->value][$weekday->value][(int) $zone->getId()] = $short;
+                    $missing += $short;
+                }
             }
         }
 
@@ -158,6 +180,7 @@ final class BreakDutyRoster
             'breaks' => array_values($this->timeSlots->findBreaksByYear($year)),
             'zones' => $zones,
             'weekdays' => $weekdays,
+            'periods' => $periods,
             'cells' => $cells,
             'shortfall' => $shortfall,
             'missing' => $missing,
@@ -165,17 +188,22 @@ final class BreakDutyRoster
     }
 
     /**
-     * The equitable reading of the given duties: one row per teacher on the rota, with how many recreo
-     * guardias they hold and what those weigh, plus the spread across them.
+     * The equitable reading of the given places: one row per teacher on the rota, how many guardias that
+     * makes, what they weigh, and the spread across everybody.
      *
-     * Only teachers who actually have a duty are counted. Averaging over the whole staff would drown the
-     * signal — most of the claustro is not on the break rota at all — and the question the centre asks is
-     * whether the load is even among those who are.
+     * **A guardia is a long recreo plus a short one** (the centre's rule, and they may be on different
+     * days), so the count is {@code min(long, short)} and whatever is left over is a HALF: a place with
+     * no partner. Halves are reported rather than rounded away — somebody carrying two long recreos and
+     * no short one has done as much work as somebody with one of each, and only the report can say so.
      *
-     * @param BreakDutyAssignment[] $duties the course's duties
+     * Only teachers who actually hold a place are counted. Averaging over the whole staff would drown
+     * the signal — most of the claustro is not on the break rota at all — and the question the centre
+     * asks is whether the load is even among those who are.
+     *
+     * @param BreakDutyAssignment[] $duties the course's places
      *
      * @return array{
-     *     rows: list<array{teacher: User, duties: int, load: int, zones: list<string>}>,
+     *     rows: list<array{teacher: User, guardias: int, halves: int, places: int, load: int, zones: list<string>}>,
      *     equity: array{count: int, mean: float, median: float, min: int, max: int, spread: int, gini: float, label: string}
      * } the per-teacher totals (heaviest first) and the spread
      */
@@ -185,9 +213,10 @@ final class BreakDutyRoster
         foreach ($duties as $duty) {
             $teacherId = (int) $duty->getTeacher()->getId();
             if (!isset($byTeacher[$teacherId])) {
-                $byTeacher[$teacherId] = ['teacher' => $duty->getTeacher(), 'duties' => 0, 'load' => 0, 'zones' => []];
+                $byTeacher[$teacherId] = ['teacher' => $duty->getTeacher(), 'long' => 0, 'short' => 0, 'load' => 0, 'zones' => []];
             }
-            ++$byTeacher[$teacherId]['duties'];
+            $key = BreakPeriod::FIRST === $duty->getPeriod() ? 'long' : 'short';
+            ++$byTeacher[$teacherId][$key];
             $byTeacher[$teacherId]['load'] += $duty->load();
             $byTeacher[$teacherId]['zones'][] = $duty->getZone()->getName();
         }
@@ -195,7 +224,9 @@ final class BreakDutyRoster
         $rows = array_values(array_map(
             static fn (array $row): array => [
                 'teacher' => $row['teacher'],
-                'duties' => $row['duties'],
+                'guardias' => min($row['long'], $row['short']),
+                'halves' => abs($row['long'] - $row['short']),
+                'places' => $row['long'] + $row['short'],
                 'load' => $row['load'],
                 'zones' => array_values(array_unique($row['zones'])),
             ],

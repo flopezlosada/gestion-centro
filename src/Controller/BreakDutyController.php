@@ -8,14 +8,19 @@ use App\Entity\AcademicYear;
 use App\Entity\BreakDutyAssignment;
 use App\Entity\BreakDutyGap;
 use App\Entity\BreakZone;
+use App\Entity\BreakZoneDemand;
 use App\Entity\User;
 use App\Enum\Area;
-use App\Enum\BreakPeriodCoverage;
+use App\Enum\BreakPeriod;
 use App\Enum\Weekday;
+use App\Guardia\BreakDutyDemand;
 use App\Guardia\BreakDutyRoster;
+use App\Guardia\BreakRotaPlanner;
+use App\Guardia\BreakRotaProposal;
 use App\Repository\AcademicYearRepository;
 use App\Repository\BreakDutyAssignmentRepository;
 use App\Repository\BreakDutyGapRepository;
+use App\Repository\BreakZoneDemandRepository;
 use App\Repository\BreakZoneRepository;
 use App\Repository\TimeSlotRepository;
 use App\Repository\UserRepository;
@@ -49,7 +54,7 @@ final class BreakDutyController extends AbstractController
      * people, and the weighted equity reading of how the turns are spread.
      */
     #[Route('', name: 'break_duty_index', methods: ['GET'])]
-    public function index(Request $request, AcademicYearRepository $years, BreakDutyRoster $roster, BreakZoneRepository $zones, UserRepository $users, BreakDutyGapRepository $gaps): Response
+    public function index(Request $request, AcademicYearRepository $years, BreakDutyRoster $roster, BreakZoneRepository $zones, UserRepository $users, BreakDutyGapRepository $gaps, BreakRotaPlanner $planner, BreakDutyDemand $demand): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
@@ -57,6 +62,16 @@ final class BreakDutyController extends AbstractController
         $curso = (string) ($request->query->get('curso') ?: SchoolYear::current($today));
         $year = $years->findBySchoolYear($curso);
         $overview = $year instanceof AcademicYear ? $roster->overview($year) : null;
+
+        // La propuesta se pide con ?propuesta=1 y NO se guarda en ningún sitio: el motor es determinista,
+        // así que el borrador se reconstruye idéntico en vez de aparcarlo en una tabla o en la sesión.
+        // Mismo trato que el cuadrante lectivo.
+        // El gate de la pantalla es READ, pero proponer es una acción de gestión: sin esta comprobación,
+        // añadir ?propuesta=1 a la URL hacía correr el motor entero a quien solo puede mirar. La plantilla
+        // ya lo ocultaba, y ocultar no es permitir.
+        $canManage = $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS);
+        $draft = $canManage && $request->query->getBoolean('propuesta');
+        $proposal = ($draft && $year instanceof AcademicYear) ? $planner->propose($year) : null;
 
         return $this->render('guardia/break_duty_index.html.twig', [
             'courses' => $years->findAllOrdered(),
@@ -67,10 +82,72 @@ final class BreakDutyController extends AbstractController
             'zones' => $zones->findActiveOrdered(),
             'teachers' => $users->findBy(['active' => true], ['fullName' => 'ASC']),
             'weekdays' => Weekday::schoolWeek(),
-            'coverages' => BreakPeriodCoverage::cases(),
+            'periods' => BreakPeriod::inDayOrder(),
             'todayGaps' => $gaps->findByDate($today),
-            'canManage' => $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS),
+            'canManage' => $canManage,
+            'proposal' => $proposal,
+            'proposalGrid' => null !== $proposal ? $this->proposalGrid($proposal) : null,
+            'summary' => $proposal?->summary(),
+            'gaps' => $proposal?->gapsByReason() ?? [],
+            'weekly' => $demand->weeklyTotals($zones->findActiveOrdered()),
         ]);
+    }
+
+    /**
+     * Approves the proposal: asks the engine for it again and writes it into the rota.
+     *
+     * Nothing was stored between the two clicks, so this recomputes rather than reads back. The engine is
+     * deterministic, which makes that identical — and the narrow window it buys (somebody changing a
+     * quota in between) still yields the correct rota for the quotas as they stand.
+     */
+    #[Route('/proponer', name: 'break_duty_publish', methods: ['POST'])]
+    public function publishProposal(Request $request, AcademicYearRepository $years, BreakRotaPlanner $planner): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
+        $this->assertCsrf($request, 'break_duty_publish');
+
+        $curso = (string) $request->request->get('curso');
+        $year = $years->findBySchoolYear($curso);
+        if (!$year instanceof AcademicYear) {
+            $this->addFlash('error', 'Ese curso no existe.');
+
+            return $this->redirectToRoute('break_duty_index');
+        }
+
+        $proposal = $planner->propose($year);
+        $written = $planner->publish($year, $proposal->places);
+        $summary = $proposal->summary();
+
+        $this->addFlash('success', sprintf(
+            'Cuadrante de recreo publicado: %d plazas repartidas, %d guardias completas%s.',
+            $written,
+            $summary['guardias'],
+            $summary['halves'] > 0 ? sprintf(' y %d media(s) sin pareja', $summary['halves']) : '',
+        ));
+
+        return $this->redirectToRoute('break_duty_index', ['curso' => $curso]);
+    }
+
+    /**
+     * A proposal laid out the way the rota grid reads it: recreo → weekday → zone → the people proposed.
+     *
+     * Every cell exists even when empty, so the template can index it without existence checks.
+     *
+     * @param BreakRotaProposal $proposal the draft
+     *
+     * @return array<string, array<int, array<int, list<array{teacherId: int, fixed: bool}>>>> the grid
+     */
+    private function proposalGrid(BreakRotaProposal $proposal): array
+    {
+        $grid = [];
+        foreach ($proposal->places as $place) {
+            $grid[$place['period']][$place['weekday']][$place['zoneId']][] = [
+                'teacherId' => $place['teacherId'],
+                'fixed' => $place['fixed'],
+            ];
+        }
+
+        return $grid;
     }
 
     /**
@@ -93,16 +170,16 @@ final class BreakDutyController extends AbstractController
         $teacher = $users->find((int) $request->request->get('teacher'));
         $zone = $zones->find((int) $request->request->get('zone'));
         $weekday = Weekday::tryFrom((int) $request->request->get('weekday'));
-        $periods = BreakPeriodCoverage::tryFrom((string) $request->request->get('periods'));
+        $period = BreakPeriod::tryFrom((string) $request->request->get('period'));
 
-        if (!$year instanceof AcademicYear || !$teacher instanceof User || !$zone instanceof BreakZone || null === $weekday || null === $periods) {
-            $this->addFlash('error', 'Elige curso, profesor, día, zona y tramos.');
+        if (!$year instanceof AcademicYear || !$teacher instanceof User || !$zone instanceof BreakZone || null === $weekday || null === $period) {
+            $this->addFlash('error', 'Elige curso, profesor, día, zona y recreo.');
 
             return $this->redirectToRoute('break_duty_index', ['curso' => $curso]);
         }
 
-        if (null !== $duties->findForTeacherAndWeekday($year, $teacher, $weekday)) {
-            $this->addFlash('error', $this->clashMessage($teacher, $weekday));
+        if (null !== $duties->findForTeacherWeekdayAndPeriod($year, $teacher, $weekday, $period)) {
+            $this->addFlash('error', $this->clashMessage($teacher, $weekday, $period));
 
             return $this->redirectToRoute('break_duty_index', ['curso' => $curso]);
         }
@@ -112,7 +189,7 @@ final class BreakDutyController extends AbstractController
             ->setTeacher($teacher)
             ->setWeekday($weekday)
             ->setZone($zone)
-            ->setPeriods($periods);
+            ->setPeriod($period);
 
         try {
             $em->persist($duty);
@@ -120,12 +197,12 @@ final class BreakDutyController extends AbstractController
         } catch (UniqueConstraintViolationException) {
             // Somebody else added that same person on that same weekday between the check above and this
             // insert. Same message; nothing else is touched, so the redirect is safe on a closed manager.
-            $this->addFlash('error', $this->clashMessage($teacher, $weekday));
+            $this->addFlash('error', $this->clashMessage($teacher, $weekday, $period));
 
             return $this->redirectToRoute('break_duty_index', ['curso' => $curso]);
         }
 
-        $this->addFlash('success', sprintf('%s vigila %s los %s (%s).', $teacher->getFullName(), $zone->getName(), mb_strtolower($weekday->label()), mb_strtolower($periods->label())));
+        $this->addFlash('success', sprintf('%s vigila %s los %s en el %s.', $teacher->getFullName(), $zone->getName(), mb_strtolower($weekday->label()), mb_strtolower($period->label())));
 
         return $this->redirectToRoute('break_duty_index', ['curso' => $curso]);
     }
@@ -214,12 +291,13 @@ final class BreakDutyController extends AbstractController
      * neither should need a deploy.
      */
     #[Route('/zonas', name: 'break_zone_index', methods: ['GET'])]
-    public function zones(BreakZoneRepository $zones, BreakDutyAssignmentRepository $duties, TimeSlotRepository $timeSlots, AcademicYearRepository $years): Response
+    public function zones(BreakZoneRepository $zones, BreakDutyAssignmentRepository $duties, TimeSlotRepository $timeSlots, AcademicYearRepository $years, BreakDutyDemand $demand): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
 
         $year = $years->findBySchoolYear(SchoolYear::current(new \DateTimeImmutable('today')));
         $all = $zones->findAllOrdered();
+        $active = $zones->findActiveOrdered();
 
         // How many duties each zone holds: what makes archiving the honest gesture instead of deleting.
         $usage = [];
@@ -227,13 +305,95 @@ final class BreakDutyController extends AbstractController
             $usage[(int) $zone->getId()] = $duties->countByZone($zone);
         }
 
+        // How many people each cell of the week needs, resolved (zone figure unless singled out) plus a
+        // flag for the ones somebody has singled out, so the grid can show which were touched on purpose.
+        $needed = [];
+        $overridden = [];
+        foreach (BreakPeriod::inDayOrder() as $period) {
+            foreach (Weekday::schoolWeek() as $weekday) {
+                foreach ($active as $zone) {
+                    $needed[$period->value][$weekday->value][(int) $zone->getId()] = $demand->required($zone, $weekday, $period);
+                    $overridden[$period->value][$weekday->value][(int) $zone->getId()] = $demand->isOverridden($zone, $weekday, $period);
+                }
+            }
+        }
+
         return $this->render('guardia/break_zone_index.html.twig', [
             'zones' => $all,
+            'activeZones' => $active,
             'usage' => $usage,
             'breaks' => $timeSlots->findBreaksByYear($year instanceof AcademicYear ? $year : null),
             'minWeight' => BreakZone::MIN_WEIGHT,
             'maxWeight' => BreakZone::MAX_WEIGHT,
+            'weekdays' => Weekday::schoolWeek(),
+            'periods' => BreakPeriod::inDayOrder(),
+            'needed' => $needed,
+            'overridden' => $overridden,
+            'weekly' => $demand->weeklyTotals($active),
+            'maxRequired' => BreakZoneDemand::MAX_REQUIRED,
         ]);
+    }
+
+    /**
+     * Saves the whole demand grid in one submit.
+     *
+     * Only EXCEPTIONS are stored: a cell left at the zone's own figure has its row deleted rather than
+     * written. That is what keeps the table to the handful of cells somebody has deliberately singled out
+     * — and what makes changing a zone's figure still move every ordinary cell with it.
+     */
+    #[Route('/zonas/demanda', name: 'break_zone_demand_save', methods: ['POST'])]
+    public function saveDemand(Request $request, BreakZoneRepository $zones, BreakZoneDemandRepository $demands, EntityManagerInterface $em): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
+        $this->assertCsrf($request, 'break_zone_demand_save');
+
+        /** @var array<string, mixed> $submitted */
+        $submitted = $request->request->all('need');
+        $existing = [];
+        foreach ($demands->findAll() as $row) {
+            $existing[$row->getZone()->getId().':'.$row->getWeekday()->value.':'.$row->getPeriod()->value] = $row;
+        }
+
+        $changed = 0;
+        foreach ($zones->findActiveOrdered() as $zone) {
+            foreach (Weekday::schoolWeek() as $weekday) {
+                foreach (BreakPeriod::inDayOrder() as $period) {
+                    $key = $zone->getId().':'.$weekday->value.':'.$period->value;
+                    $raw = $submitted[$key] ?? null;
+                    if (!is_numeric($raw)) {
+                        continue;
+                    }
+                    $want = max(0, min(BreakZoneDemand::MAX_REQUIRED, (int) $raw));
+                    $row = $existing[$key] ?? null;
+
+                    if ($want === $zone->getRequiredTeachers()) {
+                        // Back to the zone's own figure: the exception stops existing rather than being
+                        // stored as a copy of the default, which would then not follow the zone.
+                        if (null !== $row) {
+                            $em->remove($row);
+                            ++$changed;
+                        }
+                        continue;
+                    }
+
+                    if (null === $row) {
+                        $row = (new BreakZoneDemand())->setZone($zone)->setWeekday($weekday)->setPeriod($period);
+                        $em->persist($row);
+                    }
+                    if ($row->getRequiredTeachers() !== $want) {
+                        ++$changed;
+                    }
+                    $row->setRequiredTeachers($want);
+                }
+            }
+        }
+
+        $em->flush();
+        $this->addFlash('success', 0 === $changed
+            ? 'No había ninguna casilla que cambiar.'
+            : sprintf('Guardadas %d casilla(s) de la demanda.', $changed));
+
+        return $this->redirectToRoute('break_zone_index');
     }
 
     /**
@@ -292,20 +452,26 @@ final class BreakDutyController extends AbstractController
     }
 
     /**
-     * The message for a teacher who already holds a recreo that weekday, shared by the pre-check and the
-     * race guard so both tell the person the same thing.
+     * The message for a teacher who already holds a place at that recreo of that weekday, shared by the
+     * pre-check and the race guard so both tell the person the same thing.
      *
-     * @param User    $teacher the teacher being assigned
-     * @param Weekday $weekday the weekday of the clash
+     * Names the recreo, because now only that one is taken: the same person may perfectly well watch
+     * another zone at the day's other recreo, and a message that just said "ya tiene guardia ese día"
+     * would send somebody looking for a problem that is not there.
+     *
+     * @param User        $teacher the teacher being assigned
+     * @param Weekday     $weekday the weekday of the clash
+     * @param BreakPeriod $period  the recreo of the clash
      *
      * @return string the message to flash
      */
-    private function clashMessage(User $teacher, Weekday $weekday): string
+    private function clashMessage(User $teacher, Weekday $weekday, BreakPeriod $period): string
     {
         return sprintf(
-            '%s ya tiene una guardia de recreo el %s. Edítala o cámbiala de día: una persona no puede estar en dos zonas a la vez.',
+            '%s ya vigila una zona el %s en el %s. Cámbiala de zona, de día o al otro recreo: una persona no puede estar en dos sitios a la vez.',
             $teacher->getFullName(),
             mb_strtolower($weekday->label()),
+            mb_strtolower($period->label()),
         );
     }
 

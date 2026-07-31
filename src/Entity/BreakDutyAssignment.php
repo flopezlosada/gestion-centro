@@ -5,25 +5,30 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Contract\Auditable;
-use App\Enum\BreakPeriodCoverage;
+use App\Enum\BreakDutySource;
+use App\Enum\BreakPeriod;
 use App\Enum\Weekday;
 use App\Repository\BreakDutyAssignmentRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
- * One line of the break duty rota: for a whole course, this teacher watches this zone on this weekday's
- * recreo(s).
+ * One PLACE on the break duty rota: for a whole course, this teacher watches this zone at this recreo of
+ * this weekday.
  *
  * The rota is FIXED for the course — the centre's words were "cada profe tiene su guardia durante todo
  * el curso" — so this is a weekly pattern, not a per-day record: nothing is created each morning and
  * there is no daily reshuffle like the one that covers absent colleagues ({@see GuardiaCover}).
  *
- * One row IS one guardia, whatever it spans. That is the centre's counting rule — covering both recreos
- * of the day counts as a single guardia — turned into structure: {@see $periods} says which breaks the
- * duty spans, and no query has to remember to fold two rows into one. The consequence, accepted
- * knowingly: a teacher cannot watch the patio at the first recreo and the biblioteca at the second on
- * the same day. The unique key (course, teacher, weekday) is what keeps that promise.
+ * **A row is not a guardia.** It used to be: the first cut of this model made one row span both recreos
+ * of a day, because the centre's rule was "cubrir los dos tramos cuenta como una sola guardia". The rule
+ * turned out to be a different one — **a guardia is one long recreo plus one short one, and they may
+ * fall on different days** — so a row is now one place and the guardia is a count over places
+ * ({@see BreakDutyRoster}). That also lifts the restriction the old shape imposed: somebody can watch
+ * the patio at the long recreo and the biblioteca at the short one, which the centre asked for.
+ *
+ * The unique key is (course, teacher, weekday, period): nobody can be in two zones at the same recreo,
+ * which is the only thing physically impossible here.
  *
  * What happens when the teacher is away is deliberately NOT a reassignment: the centre has nobody
  * spare, so the recreo goes uncovered and the equipo directivo is alerted to look for volunteers —
@@ -35,7 +40,8 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Table(name: 'break_duty_assignment')]
 #[ORM\Index(name: 'IDX_break_duty_year_weekday', columns: ['academic_year_id', 'weekday'])]
 #[ORM\Index(name: 'IDX_break_duty_teacher', columns: ['teacher_id'])]
-#[ORM\UniqueConstraint(name: 'UNIQ_break_duty_teacher_weekday', columns: ['academic_year_id', 'teacher_id', 'weekday'])]
+#[ORM\Index(name: 'IDX_break_duty_zone', columns: ['zone_id'])]
+#[ORM\UniqueConstraint(name: 'UNIQ_break_duty_teacher_period', columns: ['academic_year_id', 'teacher_id', 'weekday', 'period'])]
 class BreakDutyAssignment implements Auditable
 {
     #[ORM\Id]
@@ -65,9 +71,16 @@ class BreakDutyAssignment implements Auditable
     #[ORM\JoinColumn(name: 'zone_id', referencedColumnName: 'id', nullable: false, onDelete: 'RESTRICT')]
     private BreakZone $zone;
 
-    /** Which of the day's recreos the duty spans — and why both of them still count as one guardia. */
-    #[ORM\Column(name: 'periods', length: 8, enumType: BreakPeriodCoverage::class)]
-    private BreakPeriodCoverage $periods = BreakPeriodCoverage::BOTH;
+    /** Which of the day's two recreos this place is for. */
+    #[ORM\Column(name: 'period', length: 8, enumType: BreakPeriod::class)]
+    private BreakPeriod $period = BreakPeriod::FIRST;
+
+    /**
+     * Who put this place here. A new proposal replaces only what the engine placed, so a patio dirigido
+     * the equipo directivo organised by hand survives being re-proposed.
+     */
+    #[ORM\Column(name: 'source', length: 8, enumType: BreakDutySource::class, options: ['default' => 'manual'])]
+    private BreakDutySource $source = BreakDutySource::MANUAL;
 
     public function getId(): ?int
     {
@@ -122,23 +135,38 @@ class BreakDutyAssignment implements Auditable
         return $this;
     }
 
-    public function getPeriods(): BreakPeriodCoverage
+    public function getPeriod(): BreakPeriod
     {
-        return $this->periods;
+        return $this->period;
     }
 
-    public function setPeriods(BreakPeriodCoverage $periods): static
+    public function setPeriod(BreakPeriod $period): static
     {
-        $this->periods = $periods;
+        $this->period = $period;
+
+        return $this;
+    }
+
+    public function getSource(): BreakDutySource
+    {
+        return $this->source;
+    }
+
+    public function setSource(BreakDutySource $source): static
+    {
+        $this->source = $source;
 
         return $this;
     }
 
     /**
-     * What this duty adds to its teacher's equitable load: the zone's weight, counted ONCE however many
-     * recreos it spans, because the centre counts the day's two breaks as a single guardia.
+     * What this place adds to its teacher's equitable load: the zone's weight.
      *
-     * @return int the weighted load of this duty
+     * Per PLACE, not per guardia. Two places make a guardia, and pairing them is
+     * {@see BreakDutyRoster}'s job; weighing them one by one is what keeps somebody who does two spells
+     * in the patio from counting the same as somebody who does two in the biblioteca.
+     *
+     * @return int the weighted load of this place
      */
     public function load(): int
     {

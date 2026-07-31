@@ -63,6 +63,56 @@
         {% endif %}
     </div>
 
+    {% if activeZones is not empty %}
+        {# Cuánta gente pide cada zona en cada día y recreo. Lo normal es el número de la zona, y aquí solo
+           se tocan las EXCEPCIONES: poner 0 en «Patio dirigido» del recreo corto es como se le dice al
+           programa que ahí no se vigila, y bajar un día suelto es como se organizan los patios dirigidos. #}
+        <div class="card">
+            <h2>Cuánta gente hace falta en cada recreo</h2>
+            <p class="help">
+                Lo normal es lo que diga la zona arriba. Cambia solo las casillas que sean distintas: un <strong>0</strong> significa que esa zona no se vigila ese día en ese recreo. Las casillas tocadas a mano quedan marcadas.
+            </p>
+
+            {% if weekly.unpairable > 0 %}
+                <div class="callout callout--warning" role="note">
+                    Ahora mismo la semana pide <strong>{{ weekly.long }}</strong> plazas de recreo grande y <strong>{{ weekly.short }}</strong> de corto. Como una guardia es <strong>una de cada</strong>, {{ weekly.unpairable }} se quedarán sin pareja por mucho que se reparta bien. Se arregla aquí, igualando las dos cifras.
+                </div>
+            {% endif %}
+
+            <form method="post" action="{{ path('break_zone_demand_save') }}">
+                <input type="hidden" name="_token" value="{{ csrf_token('break_zone_demand_save') }}">
+                {% for period in periods %}
+                    <h3 class="tt-grid__caption">{{ period.label }}</h3>
+                    <div class="tt-scroll">
+                        <table class="tt-grid">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Zona</th>
+                                    {% for wd in weekdays %}<th scope="col">{{ wd.label }}</th>{% endfor %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for zone in activeZones %}
+                                    <tr>
+                                        <th scope="row">{{ zone.name }} <span class="muted">· normal {{ zone.requiredTeachers }}</span></th>
+                                        {% for wd in weekdays %}
+                                            {% set key = zone.id ~ ':' ~ wd.value ~ ':' ~ period.value %}
+                                            <td class="tt-cell{{ overridden[period.value][wd.value][zone.id] ? ' tt-cell--short' }}">
+                                                <label class="visually-hidden" for="need-{{ key }}">{{ zone.name }}, {{ wd.label|lower }}, {{ period.label|lower }}</label>
+                                                <input type="number" id="need-{{ key }}" name="need[{{ key }}]" value="{{ needed[period.value][wd.value][zone.id] }}" min="0" max="{{ maxRequired }}" step="1">
+                                            </td>
+                                        {% endfor %}
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% endfor %}
+                <div class="inline-form"><button type="submit" class="btn">Guardar la demanda</button></div>
+            </form>
+        </div>
+    {% endif %}
+
     <div class="card">
         <h2>Añadir zona</h2>
         <form method="post" action="{{ path('break_zone_save') }}" class="inline-form">

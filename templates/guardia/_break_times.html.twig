@@ -1,14 +1,12 @@
-{#- Las horas reales de los recreos que cubre una guardia de recreo ("11:10–11:35 y 13:25–13:35").
+{#- La hora real del recreo que cubre una plaza del cuadrante ("11:10–11:35").
 
     Vive aparte porque lo piden tres pantallas (mis guardias, apuntar ausencia y el cuadrante) y la
-    resolución no es trivial: la asignación guarda POSICIONES (primer recreo / segundo / los dos), no
-    horas, para no depender de los índices de tramo de Peñalara, que cambian de un curso a otro. Las
-    horas salen del marco horario importado, así que puede faltar alguna: en ese caso se nombra el
-    recreo por su posición en vez de mentir con una hora inventada.
+    resolución no es trivial: la plaza guarda una POSICIÓN (primer recreo o segundo), no una hora, para no
+    depender de los índices de tramo de Peñalara, que cambian de un curso a otro. La hora sale del marco
+    horario importado, así que puede faltar: en ese caso se nombra el recreo por su posición en vez de
+    mentir con una hora inventada.
 
     Espera: duty (BreakDutyAssignment) y breakSlots (list<TimeSlot>, los recreos del curso en orden). -#}
-{%- for position in duty.periods.positions -%}
-    {%- set slot = breakSlots[position] ?? null -%}
-    {{- slot ? slot.timeRange : (position + 1) ~ '.º recreo' -}}
-    {{- not loop.last ? ' y ' -}}
-{%- endfor -%}
+{%- set position = duty.period.position -%}
+{%- set slot = breakSlots[position] ?? null -%}
+{{- slot ? slot.timeRange : duty.period.label|lower -}}

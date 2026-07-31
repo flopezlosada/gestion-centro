@@ -35,7 +35,7 @@
         {% for gap in gaps %}
             <tr>
                 <td>{{ gap.date|date('d/m/Y', false) }} <span class="muted">{{ gap.assignment.weekday.label }}</span></td>
-                <td><strong>{{ gap.assignment.zone.name }}</strong> <span class="muted">{{ gap.assignment.periods.shortLabel }}</span></td>
+                <td><strong>{{ gap.assignment.zone.name }}</strong> <span class="muted">{{ gap.assignment.period.shortLabel }}</span></td>
                 <td>{{ gap.assignment.teacher.fullName }}</td>
                 {% if canManage %}
                     <td>
