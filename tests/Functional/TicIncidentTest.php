@@ -89,7 +89,7 @@ final class TicIncidentTest extends WebTestCase
         $form['tic_incident[description]'] = 'No carga.';
         $form['tic_incident[occurredAt]'] = '2026-09-15T11:30';
         $form['tic_incident[priority]'] = 'low';
-        $form['tic_incident[individualUse]']->tick();
+        $form['tic_incident[individualUse]'] = '1';
         $form['tic_incident[groupName]'] = '2ºB';
         $this->client->submit($form);
 
@@ -133,9 +133,10 @@ final class TicIncidentTest extends WebTestCase
         self::assertResponseRedirects();
         $this->em->clear();
         $reloaded = $this->em->getRepository(TicIncident::class)->find($id);
-        self::assertSame(IncidentStatus::RESOLVED, $reloaded?->getStatus());
-        self::assertSame('Cambiado el cable HDMI.', $reloaded?->getResolutionNote());
-        self::assertSame('tic@centro.test', $reloaded?->getResolvedBy()?->getEmail());
+        self::assertNotNull($reloaded);
+        self::assertSame(IncidentStatus::RESOLVED, $reloaded->getStatus());
+        self::assertSame('Cambiado el cable HDMI.', $reloaded->getResolutionNote());
+        self::assertSame('tic@centro.test', $reloaded->getResolvedBy()?->getEmail());
     }
 
     /** Cerrar sin decir qué se hizo deja el registro inservible: el servidor lo frena. */

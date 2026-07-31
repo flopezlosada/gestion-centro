@@ -109,10 +109,11 @@ final class NotificationControllerTest extends WebTestCase
         self::assertResponseRedirects('/avisos/ajustes');
         $this->em->clear();
         $saved = $this->em->getRepository(User::class)->find($id);
-        self::assertSame(NotificationChannel::PUSH, $saved?->channelFor(NotificationTopic::GUARDIA));
-        self::assertSame(NotificationChannel::EMAIL, $saved?->channelFor(NotificationTopic::TASK));
+        self::assertNotNull($saved);
+        self::assertSame(NotificationChannel::PUSH, $saved->channelFor(NotificationTopic::GUARDIA));
+        self::assertSame(NotificationChannel::EMAIL, $saved->channelFor(NotificationTopic::TASK));
         // Lo que no se toca sigue sin elegir: no se inventa un valor por rellenar el formulario.
-        self::assertNull($saved?->channelFor(NotificationTopic::MEETING));
+        self::assertNull($saved->channelFor(NotificationTopic::MEETING));
     }
 
     /**
@@ -140,8 +141,9 @@ final class NotificationControllerTest extends WebTestCase
         self::assertResponseRedirects();
         $this->em->clear();
         $saved = $this->em->getRepository(User::class)->find($id);
-        self::assertSame(NotificationChannel::EMAIL, $saved?->channelFor(NotificationTopic::TASK));
-        self::assertSame(NotificationChannel::PUSH, $saved?->channelFor(NotificationTopic::GUARDIA), 'lo que no venía en el envío no se toca');
+        self::assertNotNull($saved);
+        self::assertSame(NotificationChannel::EMAIL, $saved->channelFor(NotificationTopic::TASK));
+        self::assertSame(NotificationChannel::PUSH, $saved->channelFor(NotificationTopic::GUARDIA), 'lo que no venía en el envío no se toca');
     }
 
     /**

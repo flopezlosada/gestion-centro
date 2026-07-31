@@ -55,7 +55,10 @@ final class TaskFormData
      * takes the single assignee of the task in front of you. Callers read {@see responsibleUsers()},
      * which is the only place that knows which of the two is in play.
      *
-     * @var list<User>
+     * Con claves arbitrarias a propósito en el phpdoc: quien lo rellena es el formulario, que no promete
+     * una lista consecutiva. {@see responsibleUsers()} es quien la normaliza.
+     *
+     * @var array<array-key, User>
      */
     public array $responsibilityUsers = [];
 

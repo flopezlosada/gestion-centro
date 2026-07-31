@@ -16,6 +16,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
+use Symfony\Component\Mime\Email;
 
 /**
  * Convening a meeting and keeping its acta: a project coordinator convenes with the project's teachers
@@ -385,7 +386,10 @@ final class MeetingCrudTest extends WebTestCase
         // pidió — "envía por mail a todas las personas participantes".
         $emails = self::getMailerMessages();
         self::assertCount(2, $emails, 'un correo a cada convocado, incluido quien levanta el acta');
-        self::assertNotEmpty($emails[0]->getAttachments(), 'el acta viaja adjunta, no solo enlazada');
+        // getMailerMessages() promete RawMessage; los adjuntos son de Email, así que se estrecha primero.
+        $first = $emails[0];
+        self::assertInstanceOf(Email::class, $first);
+        self::assertNotEmpty($first->getAttachments(), 'el acta viaja adjunta, no solo enlazada');
 
         // Y ya está en el archivo de actas.
         $this->client->loginUser($attendee);
