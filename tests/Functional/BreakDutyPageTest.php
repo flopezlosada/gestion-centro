@@ -83,7 +83,7 @@ final class BreakDutyPageTest extends WebTestCase
         self::assertSame('Patio', $duties[0]->getZone()->getName());
     }
 
-    public function testASecondZoneOnTheSameDayIsRefusedWithAnExplanation(): void
+    public function testASecondZoneAtTheSameRecreoIsRefusedWithAnExplanation(): void
     {
         $this->login();
         $year = $this->currentYear();
@@ -102,11 +102,18 @@ final class BreakDutyPageTest extends WebTestCase
         $this->post('/guardias/recreo', '/guardias/recreo/asignar', $payload);
         $this->post('/guardias/recreo', '/guardias/recreo/asignar', ['zone' => (string) $biblioteca->getId()] + $payload);
 
-        // Nobody can be in two places at once: the clash is a message, not a crash.
+        // Nobody can be in two places at once: the clash is a message, not a crash. The clash is now the
+        // RECREO, not the day — the same person watching two zones on one day is fine as long as they are
+        // at different breaks, which is what the centre asked for.
         self::assertResponseRedirects();
         self::assertCount(1, $this->em->getRepository(BreakDutyAssignment::class)->findAll());
         $crawler = $this->client->followRedirect();
-        self::assertStringContainsString('ya tiene una guardia de recreo', $crawler->filter('.flash.error')->text());
+        self::assertStringContainsString('ya vigila una zona', $crawler->filter('.flash.error')->text());
+        self::assertStringContainsString('recreo grande', $crawler->filter('.flash.error')->text(), 'the message names which recreo is taken');
+
+        // And the other recreo of that same day is accepted, which the old model forbade outright.
+        $this->post('/guardias/recreo', '/guardias/recreo/asignar', ['zone' => (string) $biblioteca->getId(), 'period' => BreakPeriod::SECOND->value] + $payload);
+        self::assertCount(2, $this->em->getRepository(BreakDutyAssignment::class)->findAll());
     }
 
     public function testRemovingADutyTakesItsRecordedGapsWithIt(): void
