@@ -200,7 +200,7 @@ final class TaskFilterTest extends WebTestCase
         $this->client->loginUser($s['director']);
 
         $counters = $this->viewCounters($this->get('/tareas'));
-        self::assertSame(['abiertas', 'mias', 'validar', 'vencidas'], array_keys($counters));
+        self::assertSame(['abiertas', 'mias', 'validar', 'revision', 'vencidas'], array_keys($counters));
 
         foreach ($counters as $key => $promised) {
             self::assertSame(
@@ -419,7 +419,10 @@ final class TaskFilterTest extends WebTestCase
         self::assertGreaterThan(0, $page->filter('.tasks-table .trow--group')->count(), 'the desktop table groups too');
     }
 
-    /** A teacher commands nobody, so the supervision views are not even offered. */
+    /**
+     * A teacher commands nobody, so the supervision views are not even offered — but "Devueltas para
+     * revisar" is, because a task sent back is work waiting for whoever holds it, not for a superior.
+     */
     public function testATeacherIsOnlyOfferedTheViewsThatCanEverHaveContent(): void
     {
         $s = $this->seed();
@@ -427,7 +430,7 @@ final class TaskFilterTest extends WebTestCase
 
         $counters = $this->viewCounters($this->get('/tareas'));
 
-        self::assertSame(['abiertas', 'vencidas'], array_keys($counters), 'a teacher validates nothing, and everything in scope is already theirs');
+        self::assertSame(['abiertas', 'revision', 'vencidas'], array_keys($counters), 'a teacher validates nothing, and everything in scope is already theirs');
     }
 
     /**
@@ -555,5 +558,61 @@ final class TaskFilterTest extends WebTestCase
         self::assertCount(0, $page->filter('.tasks-table [role="cell"]'));
         self::assertSame('true', $page->filter('.trow--head')->attr('aria-hidden'), 'the decorative header is hidden');
         self::assertGreaterThan(0, $page->filter('.tasks-table a.trow[href]')->count(), 'the rows are still links');
+    }
+
+    /**
+     * "Devueltas para revisar" tiene vista propia: el estado nuevo del rework de entrega quedaba revuelto
+     * entre las decenas de "Abiertas" y no había forma de ver a quién le toca mover ficha. Se ofrece a todo
+     * el mundo, no solo a quien supervisa: una tarea devuelta la rehace su responsable.
+     */
+    public function testTasksSentBackForReviewHaveTheirOwnView(): void
+    {
+        $tutor = (new Role())->setCode('tutor')->setName('Tutor/a')->setPerDepartment(true);
+        $this->em->persist($tutor);
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($maths);
+        $member = (new User())->setFullName('Pedro Tutor')->setEmail('tutor@centro.test')->setUnit($maths)->addAssignedRole($tutor);
+        $this->em->persist($member);
+
+        $year = SchoolYear::current(new \DateTimeImmutable('today'));
+        $back = $this->task('Devuelta para rehacer', $year, new \DateTimeImmutable('today +3 days'), $maths, $member, $tutor)->setStatus(TaskStatus::IN_REVIEW);
+        $open = $this->task('Simplemente abierta', $year, new \DateTimeImmutable('today +3 days'), $maths, $member, $tutor);
+        array_map($this->em->persist(...), [$back, $open]);
+        $this->em->flush();
+        $this->client->loginUser($member);
+
+        $this->get('/tareas?vista=revision');
+
+        self::assertStringContainsString('Devuelta para rehacer', $this->html());
+        self::assertStringNotContainsString('Simplemente abierta', $this->html(), 'la vista solo trae las devueltas');
+        self::assertSame(1, $this->viewCounters($this->get('/tareas'))['revision']);
+    }
+
+    /**
+     * Una cola larga de fuera de plazo nace PLEGADA (<details> sin `open`): con 39 atrasos había que
+     * recorrer toda la página para llegar a lo que viene después, que es justo lo que hay que atender.
+     * Las pendientes de realizar salen siempre abiertas.
+     */
+    public function testALongOverdueGroupStartsCollapsed(): void
+    {
+        $tutor = (new Role())->setCode('tutor')->setName('Tutor/a')->setPerDepartment(true);
+        $this->em->persist($tutor);
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($maths);
+        $member = (new User())->setFullName('Pedro Tutor')->setEmail('tutor@centro.test')->setUnit($maths)->addAssignedRole($tutor);
+        $this->em->persist($member);
+        $year = SchoolYear::current(new \DateTimeImmutable('today'));
+
+        for ($i = 1; $i <= 9; ++$i) {
+            $this->em->persist($this->task('Atrasada '.$i, $year, new \DateTimeImmutable('today -'.$i.' days'), $maths, $member, $tutor));
+        }
+        $this->em->persist($this->task('Por venir', $year, new \DateTimeImmutable('today +4 days'), $maths, $member, $tutor));
+        $this->em->flush();
+        $this->client->loginUser($member);
+
+        $crawler = $this->get('/tareas');
+
+        self::assertCount(1, $crawler->filter('details.trow-group:not([open])'), 'la cola de atrasos nace plegada');
+        self::assertCount(1, $crawler->filter('details.trow-group[open]'), 'y lo que viene, abierto');
     }
 }

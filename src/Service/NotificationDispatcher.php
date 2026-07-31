@@ -44,6 +44,10 @@ final class NotificationDispatcher
      * reminders that fire at the very moment they are about. This is the DEFAULT, not the rule — a
      * person who explicitly asks for e-mail in that section gets it. See {@see channelFor()}.
      */
+    // `meeting.minutes` está aquí a propósito y NO es un olvido: el acta se envía aparte, por correo y con
+    // el PDF adjunto, a cada convocado ({@see \App\Service\MinutesMailer}). Si el AVISO de "ya hay acta"
+    // también fuera por correo, cada persona recibiría dos mensajes de la misma acta y el segundo, sin
+    // adjunto, sería el peor de los dos.
     private const array PUSH_ONLY_KINDS = ['event.', 'guardia.raices', 'meeting.reminder', 'meeting.minutes'];
 
     public function __construct(

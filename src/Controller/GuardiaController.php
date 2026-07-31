@@ -270,7 +270,11 @@ final class GuardiaController extends AbstractController
             'today' => $day->forDay($covers->findAssignedTo($user, $today), $slotTimes, $now),
             'upcoming' => $this->groupByDay($covers->findUpcomingAssignedTo($user, $today->modify('+1 day')), $today),
             'slotTimes' => $slotTimes,
-            'breakDuties' => $year instanceof AcademicYear ? $breakDuties->findByTeacher($year, $user) : [],
+            // El cuadrante de recreo solo se ve cuando está ANUNCIADO: mientras es borrador, el equipo
+            // directivo lo está retocando y enseñarlo haría que la gente apunte un reparto que va a cambiar.
+            'breakDuties' => $year instanceof AcademicYear && $year->isBreakRotaAnnounced()
+                ? $breakDuties->findByTeacher($year, $user)
+                : [],
             'breakSlots' => $timeSlots->findBreaksByYear($year instanceof AcademicYear ? $year : null),
             'todayWeekday' => Weekday::from((int) $today->format('N')),
         ]);

@@ -95,6 +95,27 @@ class BreakDutyAssignmentRepository extends ServiceEntityRepository
     }
 
     /**
+     * Vacía el cuadrante de un curso: TODAS sus plazas, las del motor y las puestas a mano.
+     *
+     * Existe para poder empezar de cero — probar un reparto con otros cupos o con otra demanda, o deshacer
+     * un curso mal montado —, y borra también las manuales a propósito: "de cero" con excepciones no es de
+     * cero, y un cuadrante medio vacío con restos de otro reparto es peor que ninguno. Quien lo pulsa ve
+     * antes cuántas plazas manuales va a perder.
+     *
+     * @param AcademicYear $year the course to clear
+     *
+     * @return int how many places were deleted
+     */
+    public function clearYear(AcademicYear $year): int
+    {
+        return (int) $this->createQueryBuilder('a')
+            ->delete()
+            ->andWhere('a.academicYear = :year')->setParameter('year', $year)
+            ->getQuery()
+            ->execute();
+    }
+
+    /**
      * Brings the engine's places in a course into line with a fresh set, in one transaction.
      *
      * A DIFF, not a wipe-and-rewrite, and that is not an optimisation. Every {@see BreakDutyGap} hangs off

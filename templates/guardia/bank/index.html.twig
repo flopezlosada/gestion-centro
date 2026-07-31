@@ -161,6 +161,16 @@
                     <a class="btn" href="{{ path('guardia_bank_new') }}">Añadir la primera</a>
                     <a class="btn secondary" href="{{ path('guardia_cover_show', { id: cover.id }) }}">Volver a la guardia</a>
                 </div>
+                {#- El DEPARTAMENTO viene sugerido del profesor ausente, así que puede estar escondiendo
+                    fichas que sí valen para esta clase: decirlo y ofrecer quitarlo. Un vacío provocado por
+                    un filtro que el usuario no puso es un vacío que no se puede explicar. -#}
+                {% if hiddenByDepartment > 0 %}
+                    {#- "encajan con este grupo" solo es verdad si se conoce el nivel o la materia; sin ninguno de
+                        los dos, el filtro que se quita es únicamente el del departamento y prometer encaje sería
+                        mentir. -#}
+                    <p class="bank-empty__hint">Hay {{ hiddenByDepartment }} ficha{{ hiddenByDepartment != 1 ? 's' }} de otros departamentos{% if level or subject %} que encaja{{ hiddenByDepartment != 1 ? 'n' : '' }} con este grupo{% endif %}.
+                        <a href="{{ path(self_route, app.request.query.all|merge({'depto': ''})) }}">Verlas también</a>.</p>
+                {% endif %}
                 {% if level %}
                     {#- Escape al catálogo: sale del modo eligiendo (por eso no lleva `para`), porque una
                         ficha de otra materia no se puede asignar a esta guardia — solo mirarse. -#}

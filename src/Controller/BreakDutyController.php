@@ -25,6 +25,7 @@ use App\Repository\BreakZoneRepository;
 use App\Repository\TimeSlotRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
+use App\Service\BreakRotaAnnouncer;
 use App\Util\SchoolYear;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
@@ -72,6 +73,12 @@ final class BreakDutyController extends AbstractController
         $canManage = $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $draft = $canManage && $request->query->getBoolean('propuesta');
         $proposal = ($draft && $year instanceof AcademicYear) ? $planner->propose($year) : null;
+        // Con propuesta en pantalla, la TABLA muestra la propuesta y no lo guardado: antes solo se veían sus
+        // cifras y debajo el cuadrante real, así que en un curso vacío salía todo a 0/2 y no había nada que
+        // revisar. Lo guardado sigue estando a un clic: se descarta y vuelve.
+        if (null !== $proposal) {
+            $overview['grid'] = $roster->gridFromProposal($year, $proposal->places);
+        }
 
         return $this->render('guardia/break_duty_index.html.twig', [
             'courses' => $years->findAllOrdered(),
@@ -100,6 +107,80 @@ final class BreakDutyController extends AbstractController
      * deterministic, which makes that identical — and the narrow window it buys (somebody changing a
      * quota in between) still yields the correct rota for the quotas as they stand.
      */
+    /**
+     * Vacía el cuadrante del curso para volver a empezar: todas las plazas, las del motor y las manuales.
+     *
+     * Hacía falta porque hasta ahora no había forma de deshacer un reparto: publicar sustituye lo del motor
+     * pero conserva lo manual, así que un curso montado con la demanda o los cupos equivocados arrastraba
+     * esos restos para siempre y el siguiente reparto salía sobre ellos. Borra también lo manual a
+     * propósito — "de cero" con excepciones no es de cero — y por eso la pantalla dice cuántas plazas
+     * manuales se van a perder antes de pulsar.
+     */
+    /**
+     * Anuncia el cuadrante al claustro: lo hace visible en "Mis guardias" y avisa a cada persona.
+     *
+     * Es el segundo gesto del circuito que pidió el centro (proponer → validar o modificar → enviar a los
+     * afectados). Publicar solo GUARDA: hasta que se anuncia, el reparto es un borrador que el equipo
+     * directivo puede retocar sin que nadie lo haya visto.
+     */
+    #[Route('/anunciar', name: 'break_duty_announce', methods: ['POST'])]
+    public function announce(Request $request, AcademicYearRepository $years, BreakDutyAssignmentRepository $places, EntityManagerInterface $entityManager, BreakRotaAnnouncer $announcer): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
+        $this->assertCsrf($request, 'break_duty_announce');
+
+        $curso = (string) $request->request->get('curso');
+        $year = $years->findBySchoolYear($curso);
+        if (!$year instanceof AcademicYear) {
+            $this->addFlash('error', 'Ese curso no existe.');
+
+            return $this->redirectToRoute('break_duty_index');
+        }
+        if ([] === $places->findByYear($year)) {
+            // Anunciar un cuadrante vacío mandaría sesenta avisos que no dicen nada.
+            $this->addFlash('error', 'No hay nada que anunciar: el cuadrante de ese curso está vacío.');
+
+            return $this->redirectToRoute('break_duty_index', ['curso' => $curso]);
+        }
+
+        $year->setBreakRotaAnnouncedAt(new \DateTimeImmutable());
+        $entityManager->flush();
+        $notified = $announcer->announce($year);
+
+        $this->addFlash('success', sprintf(
+            'Cuadrante anunciado: ya lo ve el profesorado en «Mis guardias»%s.',
+            $notified > 0 ? sprintf(' y se ha avisado a %d persona(s)', $notified) : '',
+        ));
+
+        return $this->redirectToRoute('break_duty_index', ['curso' => $curso]);
+    }
+
+    #[Route('/vaciar', name: 'break_duty_reset', methods: ['POST'])]
+    public function reset(Request $request, AcademicYearRepository $years, BreakDutyAssignmentRepository $places, EntityManagerInterface $entityManager): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
+        $this->assertCsrf($request, 'break_duty_reset');
+
+        $curso = (string) $request->request->get('curso');
+        $year = $years->findBySchoolYear($curso);
+        if (!$year instanceof AcademicYear) {
+            $this->addFlash('error', 'Ese curso no existe.');
+
+            return $this->redirectToRoute('break_duty_index');
+        }
+
+        $deleted = $places->clearYear($year);
+        // Un cuadrante vacío no está "anunciado": si no se quita la marca, el siguiente reparto saldría
+        // publicado a la vista de todos sin que nadie lo haya anunciado.
+        $year->setBreakRotaAnnouncedAt(null);
+        $entityManager->flush();
+        $this->addFlash('success', 0 === $deleted
+            ? 'El cuadrante de ese curso ya estaba vacío.'
+            : sprintf('Cuadrante vaciado: %d plaza(s) borrada(s). Puedes proponer uno nuevo desde cero.', $deleted));
+
+        return $this->redirectToRoute('break_duty_index', ['curso' => $curso]);
+    }
+
     #[Route('/proponer', name: 'break_duty_publish', methods: ['POST'])]
     public function publishProposal(Request $request, AcademicYearRepository $years, BreakRotaPlanner $planner): Response
     {

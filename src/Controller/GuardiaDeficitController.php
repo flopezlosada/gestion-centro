@@ -65,13 +65,19 @@ final class GuardiaDeficitController extends AbstractController
      *
      * Answers on the EFFECTIVE timetable ({@see RoomOccupancy}), the same service the Espacios module
      * uses: a room an approved space plan has just taken must not appear here as free, or two groups end
-     * up in it. Under the guardia gate rather than the Espacios one, because this is the coordinator's
-     * sheet and they may well have no permission on the spaces module.
+     * up in it.
+     *
+     * Either gate opens it: guardias, because this is the coordinator's sheet and they may well have no
+     * permission on the spaces module; espacios, because this IS the spaces module's free-rooms screen
+     * since `/espacios` was unified into it ({@see SpaceController::index()}) — asking for guardias there
+     * would have turned that redirect into a 403 for whoever manages rooms and no guardias.
      */
     #[Route('/aulas', name: 'guardia_rooms', methods: ['GET'])]
     public function rooms(Request $request, ScheduleEntryRepository $schedule, TimeSlotRepository $frames, AcademicYearRepository $years, RoomOccupancy $occupancy, RoomSynchroniser $synchroniser): Response
     {
-        $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
+        if (!$this->isGranted(AreaVoter::READ, Area::GUARDIAS)) {
+            $this->denyAccessUnlessGranted(AreaVoter::READ, Area::ESPACIOS);
+        }
 
         $date = GuardiaDate::fromRequest($request);
         $schoolYear = SchoolYear::current($date);

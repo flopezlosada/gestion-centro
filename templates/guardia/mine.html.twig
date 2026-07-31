@@ -81,7 +81,13 @@
                 <div class="today-list">
                     {% for i, item in today.items %}
                         {% set cover = item.cover %}
-                        {% set isNext = i == today.next %}
+                        {#- `same as`, no `==`: con TODAS las guardias del día ya pasadas, `today.next` es
+                            null, y `0 == null` es cierto en Twig, así que la PRIMERA fila se pintaba como
+                            "Próxima" (con su borde y su cuenta atrás) aunque hubiera terminado hacía horas.
+                            Y en móvil, donde esa fila se oculta porque se supone que ya está en el
+                            protagonista de arriba —que no se pinta si no hay próxima—, la guardia
+                            desaparecía de la pantalla. Un solo `==` escondía una guardia. -#}
+                        {% set isNext = i is same as(today.next) %}
                         <a class="today-row{{ isNext ? ' is-next' }}{{ item.done ? ' is-done' }}{{ cover.notCovered ? ' is-incident' }}" href="{{ path('guardia_cover_show', { id: cover.id }) }}">
                             <span class="today-row__slot mono">
                                 <strong>{% if item.startsAt %}{{ item.startsAt|date('H:i', false) }}{% else %}{{ cover.slotIndex + 1 }}ª{% endif %}</strong>

@@ -53,3 +53,11 @@ framework:
                 cancel:
                     from: [pending, submitted, in_review]
                     to: cancelled
+                # Reabrir una Finalizada (decisión de Paco, 2026-07-31): la pregunta llevaba abierta desde
+                # el 14 de julio. Sin esto, un cierre por error o un trabajo que hay que rehacer obligaba a
+                # crear una tarea nueva, perdiendo el hilo de la original. Vuelve a Pendiente, no a
+                # Entregada: si se reabre es porque hay algo que volver a hacer. Mismo guard que el resto
+                # del veredicto (superior por rango, o la cima de la jerarquía en su propia tarea).
+                reopen:
+                    from: validated
+                    to: pending
