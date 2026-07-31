@@ -17,22 +17,28 @@ jobs:
     env:
       APP_ENV: test
       # Real env var overrides the DDEV DSN from .env (Symfony Dotenv does not override
-      # real environment variables). Points to the CI MySQL service on 127.0.0.1.
+      # real environment variables). Points to the CI database service on 127.0.0.1.
       # Base db name is "app"; in the test environment Doctrine appends the "_test" suffix
       # (config/packages/doctrine.yaml when@test), so the effective db is "app_test" — which
-      # is the database the MySQL service below creates.
-      DATABASE_URL: 'mysql://root:root@127.0.0.1:3306/app?serverVersion=8.0&charset=utf8mb4'
+      # is the database the service below creates.
+      #
+      # MariaDB 10.11 and not MySQL, because that is what production runs (cdmon). The two
+      # are NOT interchangeable in DDL: `ALTER TABLE ... ADD period VARCHAR(8)` is valid
+      # MySQL and a syntax error on MariaDB, which has `ADD PERIOD FOR`. That exact line
+      # stopped a deploy dead on 31/07 with 18 migrations applied and 4 to go, and the step
+      # below — which exists to prove the migrations are executable — had passed it green.
+      DATABASE_URL: 'mysql://root:root@127.0.0.1:3306/app?serverVersion=mariadb-10.11.15&charset=utf8mb4'
 
     services:
-      mysql:
-        image: mysql:8.0
+      mariadb:
+        image: mariadb:10.11
         env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: app_test
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: app_test
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=15

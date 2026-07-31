@@ -1,4 +1,4 @@
-name: gestion-centro-wt
+name: gestion-centro
 type: php
 docroot: public
 php_version: "8.3"
@@ -6,9 +6,12 @@ webserver_type: nginx-fpm
 xdebug_enabled: false
 additional_hostnames: []
 additional_fqdns: []
+# MariaDB 10.11, la de producción (cdmon). No es intercambiable con MySQL en DDL: `ADD period
+# VARCHAR(8)` es MySQL válido y en MariaDB es un error de sintaxis, porque ahí existe `ADD PERIOD FOR`.
+# Con MySQL en local eso solo se descubre al desplegar.
 database:
-    type: mysql
-    version: "8.0"
+    type: mariadb
+    version: "10.11"
 use_dns_when_possible: true
 composer_version: "2"
 web_environment: []
