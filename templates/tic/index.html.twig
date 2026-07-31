@@ -1,0 +1,47 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Incidencias TIC · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Incidencias TIC{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">TIC</p>
+            <h1>Incidencias</h1>
+            <p class="lead">Lo que está roto y quién lo está mirando. Cualquiera puede avisar de una avería; resolverlas es cosa de coordinación TIC.</p>
+        </div>
+        <a class="btn" href="{{ path('tic_incident_new') }}">Avisar de una avería</a>
+    </div>
+
+    <nav class="scope-toggle" aria-label="Qué incidencias ver">
+        <a href="{{ path('tic_incident_index') }}" class="{{ showingAll ? '' : 'is-active' }}"{{ showingAll ? '' : ' aria-current="page"' }}>Sin resolver</a>
+        <a href="{{ path('tic_incident_index', { ver: 'todas' }) }}" class="{{ showingAll ? 'is-active' : '' }}"{{ showingAll ? ' aria-current="page"' : '' }}>Todas</a>
+    </nav>
+
+    {% if incidents is empty %}
+        <div class="tasks-empty">
+            <p>{% if showingAll %}Todavía no hay ninguna incidencia registrada.{% else %}No hay ninguna avería pendiente. Todo funcionando.{% endif %}</p>
+        </div>
+    {% else %}
+        <div class="card">
+            <ul class="incident-list">
+                {% for i in incidents %}
+                    <li class="incident{{ i.status.isOpen ? '' : ' is-done' }}">
+                        <a class="incident__main" href="{{ path('tic_incident_show', { id: i.id }) }}">
+                            <span class="incident__head">
+                                <span class="incident__what">{{ i.equipment }}</span>
+                                <span class="badge {{ i.priority.badgeClass }}">{{ i.priority.label }}</span>
+                                <span class="badge {{ i.status.badgeClass }}">{{ i.status.label }}</span>
+                            </span>
+                            <span class="incident__where">{{ i.whereLabel }}</span>
+                            <span class="incident__meta">
+                                <time datetime="{{ i.occurredAt|date('c') }}">{{ i.occurredAt|date('d/m/Y H:i', false) }}</time>
+                                · avisa {{ i.reportedBy ? i.reportedBy.fullName : 'alguien que ya no está en el centro' }}
+                            </span>
+                        </a>
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+{% endblock %}

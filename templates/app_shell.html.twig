@@ -23,7 +23,10 @@
                 <a href="{{ path('space_mine') }}" class="{{ route == 'space_mine' ? 'is-active' }}">Mis cambios de aula</a>
                 {# Reuniones: destino primario porque es donde viven las actas (el histórico de lo
                    acordado), no solo lo que viene — eso ya lo anticipa Inicio. #}
-                <a href="{{ path('meeting_index') }}" class="{{ route starts with 'meeting_' ? 'is-active' }}">Reuniones</a>
+                {# Dos entradas y no una: "Reuniones" es lo que viene, "Actas" es el archivo de lo que ya
+                   pasó. Se buscan en momentos distintos y por eso el centro pidió el apartado aparte. #}
+                <a href="{{ path('meeting_index') }}" class="{{ (route starts with 'meeting_' and route != 'meeting_minutes_archive') ? 'is-active' }}">Reuniones</a>
+                <a href="{{ path('meeting_minutes_archive') }}" class="{{ route == 'meeting_minutes_archive' ? 'is-active' }}">Actas</a>
                 <a href="{{ path('calendar_index') }}" class="{{ route starts with 'calendar_' ? 'is-active' }}">Calendario</a>
                 {# Abiertos a todo el claustro a propósito: el banco lo llenan los departamentos (no la
                    coordinación de guardias) y las fotocopias las pide cualquiera. #}
@@ -64,6 +67,22 @@
                     </div>
                 {% endif %}
 
+                {# Reservas: abierto a todo el mundo, como las incidencias. Pedir el carro de portátiles
+                   no es un privilegio, y esconderlo a quien tiene que pedirlo no protege nada. #}
+                <span class="nav-section-title">Reservas</span>
+                <div class="nav-group">
+                    <a href="{{ path('booking_index') }}" class="{{ route starts with 'booking_' ? 'is-active' }}">Espacios y material</a>
+                </div>
+
+                {# Incidencias TIC: aquí NO hay gate. Avisar de una avería lo puede hacer cualquiera —el
+                   que se encuentra el proyector muerto es quien tenía clase ahí—, y esconder el enlace a
+                   quien no gestiona TIC sería esconder justamente a quien tiene que avisar. El permiso
+                   solo decide quién puede resolverlas, y eso lo aplica el controlador. #}
+                <span class="nav-section-title">Incidencias</span>
+                <div class="nav-group">
+                    <a href="{{ path('tic_incident_index') }}" class="{{ route starts with 'tic_incident_' ? 'is-active' }}">Incidencias TIC</a>
+                </div>
+
                 {# Administración: alta de personas, roles/permisos y organigrama. Visible para quien
                    tenga escritura en el área Administración (el flag de administrador la concede por
                    completo); los controladores /admin aplican el mismo gate con el AreaVoter. #}
@@ -75,6 +94,8 @@
                         <a href="{{ path('admin_role_index') }}" class="{{ route starts with 'admin_role_' ? 'is-active' }}">Roles y permisos</a>
                         <a href="{{ path('admin_department_index') }}" class="{{ route starts with 'admin_department_' ? 'is-active' }}">Departamentos</a>
                         <a href="{{ path('admin_project_index') }}" class="{{ route starts with 'admin_project_' ? 'is-active' }}">Proyectos</a>
+                        <a href="{{ path('admin_meeting_type_index') }}" class="{{ route starts with 'admin_meeting_type_' ? 'is-active' }}">Tipos de reunión</a>
+                        <a href="{{ path('admin_material_index') }}" class="{{ route starts with 'admin_material_' ? 'is-active' }}">Material</a>
                         <a href="{{ path('admin_task_template_index') }}" class="{{ route starts with 'admin_task_template_' ? 'is-active' }}">Catálogo de tareas</a>
                         <a href="{{ path('admin_academic_year_index') }}" class="{{ route starts with 'admin_academic_year_' ? 'is-active' }}">Años escolares</a>
                         <a href="{{ path('admin_timetable_import') }}" class="{{ route starts with 'admin_timetable_' ? 'is-active' }}">Horario (Peñalara)</a>
