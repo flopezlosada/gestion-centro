@@ -1,0 +1,135 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Reservas · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Reservas{% endblock %}
+
+{% block body %}
+    {% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
+    {% set diaStr = day|date('Y-m-d', false) %}
+
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Espacios y material</p>
+            <h1>Reservas</h1>
+            <p class="lead">Aulas específicas y material del centro: la radio, la cámara, los carros de portátiles… Quien lo pide primero lo tiene, y aquí se ve quién.</p>
+        </div>
+    </div>
+
+    {# Navegar por días: es una pantalla de un día, como el parte de guardias. #}
+    <nav class="scope-toggle" aria-label="Día">
+        <a href="{{ path('booking_index', { fecha: day|date_modify('-1 day')|date('Y-m-d', false) }) }}">← Día anterior</a>
+        <a href="{{ path('booking_index') }}" class="{{ diaStr == 'now'|date('Y-m-d', false) ? 'is-active' }}">Hoy</a>
+        <a href="{{ path('booking_index', { fecha: day|date_modify('+1 day')|date('Y-m-d', false) }) }}">Día siguiente →</a>
+    </nav>
+
+    <h2 class="home-section__title">{{ dias[day|date('N', false)] }} {{ day|date('d/m/Y', false) }}</h2>
+
+    <div class="card">
+        {% if bookings is empty %}
+            <p class="muted">No hay nada reservado este día.</p>
+        {% else %}
+            <ul class="incident-list">
+                {% for b in bookings %}
+                    {% set times = slotTimes[b.slotIndex] ?? null %}
+                    <li class="incident">
+                        <span class="incident__main">
+                            <span class="incident__head">
+                                <span class="incident__what">{{ b.resourceName }}</span>
+                                <span class="badge {{ b.room ? 'badge--accent' : 'badge--muted' }}">{{ b.room ? 'Espacio' : 'Material' }}</span>
+                            </span>
+                            <span class="incident__where">
+                                <span class="mono">{% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}{{ b.slotIndex + 1 }}ª hora{% endif %}</span>
+                                · {{ b.purpose }}{% if b.groupName %} · {{ b.groupName }}{% endif %}
+                            </span>
+                            <span class="incident__meta">{{ b.bookedBy ? b.bookedBy.fullName : '—' }}</span>
+                        </span>
+                        {% if b.isOwnedBy(app.user) or is_granted('ROLE_ADMIN') %}
+                            <form method="post" action="{{ path('booking_delete', { id: b.id }) }}" data-confirm="¿Anular esta reserva?">
+                                <input type="hidden" name="_token" value="{{ csrf_token('booking_delete' ~ b.id) }}">
+                                <button type="submit" class="link-danger">Anular</button>
+                            </form>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <div class="page-head"><div><h2>Reservar</h2></div></div>
+        {% if rooms is empty and materials is empty %}
+            <p class="muted">No hay nada que reservar todavía. El material lo da de alta administración, en «Material».</p>
+        {% else %}
+            <form method="post" action="{{ path('booking_new') }}" class="stack-form">
+                <input type="hidden" name="_token" value="{{ csrf_token('booking_new') }}">
+                <input type="hidden" name="fecha" value="{{ diaStr }}">
+
+                <div class="field">
+                    <label for="recurso">¿Qué necesitas?</label>
+                    <select id="recurso" name="recurso" required>
+                        <option value="">— Elige —</option>
+                        {% if materials is not empty %}
+                            <optgroup label="Material">
+                                {% for m in materials %}<option value="material:{{ m.id }}">{{ m.name }}{% if m.keptAt %} ({{ m.keptAt }}){% endif %}</option>{% endfor %}
+                            </optgroup>
+                        {% endif %}
+                        {% if rooms is not empty %}
+                            <optgroup label="Espacios">
+                                {% for r in rooms %}<option value="room:{{ r.id }}">{{ r.name }}</option>{% endfor %}
+                            </optgroup>
+                        {% endif %}
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="tramo">¿A qué hora?</label>
+                    <select id="tramo" name="tramo" required>
+                        {% if slotTimes is empty %}
+                            {# Sin horario importado no hay tramos que nombrar: se ofrecen las seis horas de
+                               un día normal para que la pantalla siga sirviendo. #}
+                            {% for i in 0..5 %}<option value="{{ i }}">{{ i + 1 }}ª hora</option>{% endfor %}
+                        {% else %}
+                            {% for index, times in slotTimes %}
+                                <option value="{{ index }}">{{ index + 1 }}ª hora · {{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}</option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="motivo">¿Para qué?</label>
+                    <input type="text" id="motivo" name="motivo" maxlength="200" required placeholder="Grabación del podcast, examen de recuperación…">
+                </div>
+
+                <div class="field">
+                    <label for="grupo">Grupo <span class="muted">(si es para uno)</span></label>
+                    <input type="text" id="grupo" name="grupo" maxlength="40" placeholder="2ºB">
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn">Reservar</button>
+                </div>
+            </form>
+        {% endif %}
+    </div>
+
+    {% if mine is not empty %}
+        <div class="card">
+            <div class="page-head"><div><h2>Lo que tienes reservado</h2></div></div>
+            <ul class="incident-list">
+                {% for b in mine %}
+                    <li class="incident">
+                        <a class="incident__main" href="{{ path('booking_index', { fecha: b.date|date('Y-m-d', false) }) }}">
+                            <span class="incident__head"><span class="incident__what">{{ b.resourceName }}</span></span>
+                            <span class="incident__where">{{ b.date|date('d/m/Y', false) }} · {{ b.slotIndex + 1 }}ª hora · {{ b.purpose }}</span>
+                        </a>
+                        <form method="post" action="{{ path('booking_delete', { id: b.id }) }}" data-confirm="¿Anular esta reserva?">
+                            <input type="hidden" name="_token" value="{{ csrf_token('booking_delete' ~ b.id) }}">
+                            <button type="submit" class="link-danger">Anular</button>
+                        </form>
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+{% endblock %}

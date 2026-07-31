@@ -1,0 +1,43 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Material{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Material{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Administración</p>
+            <h1>Material reservable</h1>
+            <p class="lead">Lo que se comparte y se pide con antelación: la radio, la cámara de fotos, los carros de portátiles, el móvil de extraescolares. Los espacios no hacen falta aquí — salen solos del horario, en el catálogo de espacios.</p>
+        </div>
+        <a class="btn" href="{{ path('admin_material_new') }}">+ Nuevo material</a>
+    </div>
+
+    <div class="card">
+        {% if materials is empty %}
+            <div class="empty-state">
+                <h2>No hay material dado de alta</h2>
+                <p>Hasta que no haya, en Reservas solo se pueden pedir espacios.</p>
+                <a class="btn" href="{{ path('admin_material_new') }}">Nuevo material</a>
+            </div>
+        {% else %}
+            <table data-list-tools>
+                <thead>
+                    <tr><th>Nombre</th><th>Dónde se guarda</th><th data-filter>Estado</th><th data-nosort></th></tr>
+                </thead>
+                <tbody>
+                    {% for material in materials %}
+                        <tr>
+                            <td>{{ material.name }}</td>
+                            <td>{{ material.keptAt ?? '—' }}</td>
+                            <td>{{ material.active ? 'En uso' : 'Retirado' }}</td>
+                            <td class="row-actions"><a href="{{ path('admin_material_edit', { id: material.id }) }}">Editar</a></td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <p class="muted">El material no se borra: se marca como retirado, y así las reservas antiguas siguen sabiendo qué se reservó.</p>
+        {% endif %}
+    </div>
+{% endblock %}
