@@ -13,9 +13,10 @@ use App\Entity\User;
  * in-app + e-mail + push) la hace {@see NotificationDispatcher}, que comparte con el resto de
  * notificadores.
  *
- * La explicación que escribe coordinación al modificar una guardia viaja en estos avisos ($note): sin
- * eso quedaba solo en el histórico, que nadie abre, y el campo obligatorio de la pantalla "Modificar"
- * parecía burocracia — de ahí que el centro no entendiera para qué servía.
+ * Lo que estos avisos NO llevan es el porqué del cambio. La explicación que escribe coordinación en
+ * "Modificar guardia" es privada del equipo directivo (petición del centro) y se queda en el histórico:
+ * a los profesores se les dice QUE su guardia ha cambiado, que es lo que necesitan para organizarse,
+ * y quien coordina cuenta el motivo por su cuenta si toca.
  */
 final class GuardiaAssignmentNotifier
 {
@@ -38,9 +39,8 @@ final class GuardiaAssignmentNotifier
      * y cierra con el recordatorio de RAICES ({@see self::RAICES_REMINDER}).
      *
      * @param GuardiaCover $cover the cover just assigned (already flushed)
-     * @param string|null  $note  the coordinator's explanation, when the assignment comes from a manual change
      */
-    public function notifyAssigned(GuardiaCover $cover, ?string $note = null): void
+    public function notifyAssigned(GuardiaCover $cover): void
     {
         $recipient = $cover->getAssignedGuardia();
         if (null === $recipient) {
@@ -54,9 +54,7 @@ final class GuardiaAssignmentNotifier
             self::whatIsCovered($cover),
         );
 
-        // El recordatorio de RAICES va al FINAL, después de la explicación de coordinación: primero por
-        // qué te toca a ti, y luego lo que hay que hacer al darla.
-        $this->dispatcher->dispatch($recipient, 'guardia.assigned', $title, $body.self::explanation($note).self::RAICES_REMINDER);
+        $this->dispatcher->dispatch($recipient, 'guardia.assigned', $title, $body.self::RAICES_REMINDER);
     }
 
     /**
@@ -66,9 +64,8 @@ final class GuardiaAssignmentNotifier
      *
      * @param GuardiaCover $cover    the cover just changed (already flushed)
      * @param User         $previous the teacher who was covering it until now
-     * @param string|null  $note     the coordinator's explanation of the change
      */
-    public function notifyRelieved(GuardiaCover $cover, User $previous, ?string $note = null): void
+    public function notifyRelieved(GuardiaCover $cover, User $previous): void
     {
         $title = sprintf('Ya no tienes la guardia del %s', $cover->getDate()->format('d/m/Y'));
         $body = sprintf(
@@ -77,7 +74,7 @@ final class GuardiaAssignmentNotifier
             self::whatIsCovered($cover),
         );
 
-        $this->dispatcher->dispatch($previous, 'guardia.relieved', $title, $body.self::explanation($note));
+        $this->dispatcher->dispatch($previous, 'guardia.relieved', $title, $body);
     }
 
     /**
@@ -95,19 +92,5 @@ final class GuardiaAssignmentNotifier
             null !== $cover->getGroupName() ? sprintf(' (grupo %s)', $cover->getGroupName()) : '',
             null !== $cover->getRoomName() ? sprintf(' en el aula %s', $cover->getRoomName()) : '',
         );
-    }
-
-    /**
-     * El párrafo con la explicación de coordinación, o cadena vacía si no la hay (reparto automático).
-     *
-     * @param string|null $note the coordinator's explanation
-     *
-     * @return string the paragraph to append to the body
-     */
-    private static function explanation(?string $note): string
-    {
-        $note = null !== $note ? trim($note) : '';
-
-        return '' !== $note ? sprintf("\n\nMotivo del cambio: %s", $note) : '';
     }
 }
