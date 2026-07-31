@@ -14,6 +14,8 @@ use Symfony\Component\Form\Extension\Core\Type\IntegerType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
+use Symfony\Component\Form\FormEvent;
+use Symfony\Component\Form\FormEvents;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 
 /**
@@ -41,15 +43,7 @@ final class RoomType extends AbstractType
                 'choices' => RoomKind::inDisplayOrder(),
                 'choice_label' => static fn (RoomKind $kind): string => $kind->label(),
             ])
-            ->add('size', EnumType::class, [
-                'label' => 'Tamaño',
-                'class' => RoomSize::class,
-                'choices' => RoomSize::inDisplayOrder(),
-                'choice_label' => static fn (RoomSize $s): string => $s->label(),
-                'required' => false,
-                'placeholder' => 'Sin indicar',
-                'help' => 'Cuántos grupos caben. Es lo que usa el programa para recolocar: sin esto no puede avisar de que un grupo no cabe.',
-            ])
+            ->add('size', EnumType::class, self::sizeOptions())
             ->add('capacity', IntegerType::class, [
                 'label' => 'Plazas (opcional)',
                 'required' => false,
@@ -81,6 +75,45 @@ final class RoomType extends AbstractType
                 'help' => 'Lo que conviene saber antes de mandar a alguien: "sin proyector", "la llave está en conserjería".',
                 'attr' => ['rows' => 3],
             ]);
+
+        // The timetable's own evidence, offered as a starting point: filling the size in is then confirming
+        // or correcting a figure instead of estimating one from memory. Done in PRE_SET_DATA because it
+        // depends on the card being edited, and only when there IS evidence — an empty "según el horario"
+        // would be worse than no hint at all.
+        $builder->addEventListener(FormEvents::PRE_SET_DATA, static function (FormEvent $event): void {
+            $room = $event->getData();
+            $observed = $room instanceof Room ? $room->getObservedGroups() : null;
+            if (null === $observed) {
+                return;
+            }
+
+            $event->getForm()->add('size', EnumType::class, self::sizeOptions(sprintf(
+                'Cuántos grupos caben. El horario ha llegado a poner %d %s a la vez aquí, así que al menos esos caben; corrige si sabes más.',
+                $observed,
+                1 === $observed ? 'grupo' : 'grupos',
+            )));
+        });
+    }
+
+    /**
+     * The size field's options, declared once because the field is added twice: plainly, and again with
+     * the timetable's suggestion in its help text.
+     *
+     * @param string|null $help the help text, or null for the plain one
+     *
+     * @return array<string, mixed> the field options
+     */
+    private static function sizeOptions(?string $help = null): array
+    {
+        return [
+            'label' => 'Tamaño',
+            'class' => RoomSize::class,
+            'choices' => RoomSize::inDisplayOrder(),
+            'choice_label' => static fn (RoomSize $s): string => $s->label(),
+            'required' => false,
+            'placeholder' => 'Sin indicar',
+            'help' => $help ?? 'Cuántos grupos caben. Es lo que usa el programa para recolocar: sin esto no puede avisar de que un grupo no cabe.',
+        ];
     }
 
     public function configureOptions(OptionsResolver $resolver): void

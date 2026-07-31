@@ -1,0 +1,155 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Cupos de guardias{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_index') }}">Guardias</a><span class="sep">/</span>Cupos{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Cupos de guardias</h1>
+            <p class="lead">Cuántas guardias asume cada docente durante el curso. Lo decide el equipo directivo: el programa no lo calcula, solo reparte dentro de lo que aquí se fije. <strong>Un cupo de 0 es una exención</strong> — quien está a cero no aparecerá nunca en el cuadrante.</p>
+        </div>
+    </div>
+
+    {# Selector de curso (GET, auto-envío): los cupos son de un curso, como el horario. #}
+    <div class="card">
+        <form method="get" action="{{ path('guardia_quota_index') }}" class="inline-form">
+            <label class="field-label" for="curso">Curso</label>
+            <select id="curso" name="curso" onchange="this.form.submit()">
+                {% for c in courses %}
+                    <option value="{{ c.schoolYear }}" {{ c.schoolYear == curso ? 'selected' }}>{{ c.schoolYear }}</option>
+                {% endfor %}
+            </select>
+            <noscript><button type="submit" class="btn">Ver</button></noscript>
+        </form>
+    </div>
+
+    {# Coordinar guardias no da acceso a Administración: quien no lo tenga recibe la indicación sin
+       enlace, en vez de un atajo que le devolvería un 403. #}
+    {% set canAdmin = is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ADMINISTRATION')) %}
+    {% if year is null %}
+        <div class="card">
+            <div class="empty-state">
+                <h2>No hay curso {{ curso }} dado de alta</h2>
+                <p>Hay que crear el curso en {% if canAdmin %}<a href="{{ path('admin_academic_year_index') }}">Trimestres</a>{% else %}<strong>Administración → Trimestres</strong>{% endif %} antes de fijar los cupos.</p>
+            </div>
+        </div>
+    {% elseif rows is empty %}
+        <div class="card">
+            <div class="empty-state">
+                <h2>No hay horario importado para {{ curso }}</h2>
+                <p>Los cupos se ponen sobre el profesorado que tiene horario en el curso. Hay que importar el de Peñalara en {% if canAdmin %}<a href="{{ path('admin_timetable_import') }}">Horario (Peñalara)</a>{% else %}<strong>Administración → Horario (Peñalara)</strong>{% endif %}.</p>
+            </div>
+        </div>
+    {% else %}
+        {% if lectiveSlots == 0 %}
+            {# Sin marco horario ni actividad no se puede saber cuántas plazas hace falta cubrir, así que
+               se avisa en vez de enseñar un balance de cero que se leería como "no hacen falta guardias". #}
+            <div class="callout callout--warning" role="note">
+                No sabemos cuántos tramos lectivos tiene el día en {{ curso }}, así que no podemos calcular las plazas que hay que cubrir. Los cupos se pueden fijar igual.
+            </div>
+        {% endif %}
+
+        {# El balance es el motivo de que esta pantalla exista: enseña el desajuste MIENTRAS se teclea,
+           no en octubre cuando el cuadrante sale corto. #}
+        <div class="worklist-stats worklist-stats--3">
+            <div class="stat">
+                <span class="stat-figure">{{ summary.needed }}</span>
+                <span class="stat-label">Plazas que cubrir</span>
+            </div>
+            <div class="stat">
+                <span class="stat-figure">{{ summary.pledged }}</span>
+                <span class="stat-label">Cupos asignados</span>
+            </div>
+            {% if summary.gap > 0 %}
+                <div class="stat stat--danger">
+                    <span class="stat-figure">{{ summary.gap }}</span>
+                    <span class="stat-label">Plazas sin cupo</span>
+                </div>
+            {% elseif summary.surplus > 0 %}
+                <div class="stat stat--success">
+                    <span class="stat-figure">+{{ summary.surplus }}</span>
+                    <span class="stat-label">Cupo de sobra</span>
+                </div>
+            {% else %}
+                <div class="stat stat--success">
+                    <span class="stat-figure">0</span>
+                    <span class="stat-label">Cuadra exacto</span>
+                </div>
+            {% endif %}
+        </div>
+
+        <p class="help">
+            {% if lectiveSlots > 0 %}
+                <strong>{{ summary.needed }} plazas</strong> = {{ summary.slots }} tramos lectivos × {{ summary.days }} días × {{ summary.perSlot }} personas ({{ guardiasPerSlot }} de guardia y {{ supportPerSlot }} de apoyo).
+            {% endif %}
+            De {{ summary.teachers }} docentes con horario hay <strong>{{ summary.staffed }}</strong> con cupo{% if summary.exempt > 0 %}, {{ summary.exempt }} {{ summary.exempt == 1 ? 'exenta/o' : 'exentas/os' }}{% endif %}{% if summary.pending > 0 %} y {{ summary.pending }} sin decidir{% endif %}.
+            {% if summary.available > 0 and lectiveSlots > 0 %}Repartidas entre quienes no están exentos tocarían <strong>{{ summary.fairShare|number_format(1, ',', '.') }}</strong> por cabeza.{% endif %}
+            Los recreos van aparte: {{ summary.breakPledged }} en total, y se reparten con su propia regla (un recreo grande y uno corto hacen una guardia).
+        </p>
+
+        <form method="post" action="{{ path('guardia_quota_save') }}">
+            <input type="hidden" name="_token" value="{{ csrf_token('guardia_quota_save') }}">
+            <input type="hidden" name="curso" value="{{ curso }}">
+
+            <div class="card">
+                <div class="page-head">
+                    <h2>Profesorado con horario en {{ curso }}</h2>
+                    {# Poner el mismo cupo a todo el mundo y luego bajar las excepciones es más rápido que
+                       teclear setenta casillas. Sin JS no aparece y la tabla se rellena a mano. #}
+                    <div class="inline-form" data-quota-bulk hidden>
+                        <label class="field-label" for="bulk-value">Poner a todos</label>
+                        <input type="number" id="bulk-value" value="2" min="0" max="{{ max }}" step="1" data-quota-bulk-value>
+                        <button type="button" class="btn btn-sm secondary" data-quota-bulk-apply="lective">Guardias</button>
+                        <button type="button" class="btn btn-sm secondary" data-quota-bulk-apply="break">Recreos</button>
+                    </div>
+                </div>
+
+                <table class="worklist">
+                    <thead>
+                        <tr>
+                            <th scope="col">Docente</th>
+                            <th scope="col">Clases/semana</th>
+                            <th scope="col">Guardias</th>
+                            <th scope="col">Recreos</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in rows %}
+                            <tr>
+                                <th scope="row">
+                                    {{ row.teacher.fullName }}
+                                    {# "Exenta/o" solo si alguien lo ha decidido: un cero que nadie ha
+                                       tecleado todavía es "sin decidir", no una exención. #}
+                                    {% if row.configured and row.lective == 0 and row.break == 0 %}
+                                        <span class="badge badge--muted">Exenta/o</span>
+                                    {% elseif not row.configured %}
+                                        <span class="badge badge--muted">Sin decidir</span>
+                                    {% endif %}
+                                </th>
+                                <td class="muted">{{ row.hours }}</td>
+                                <td>
+                                    <label class="visually-hidden" for="lective-{{ row.teacher.id }}">Guardias de {{ row.teacher.fullName }}</label>
+                                    <input type="number" id="lective-{{ row.teacher.id }}" name="lective[{{ row.teacher.id }}]" value="{{ row.lective }}" min="0" max="{{ max }}" step="1" data-quota-field="lective">
+                                </td>
+                                <td>
+                                    <label class="visually-hidden" for="break-{{ row.teacher.id }}">Recreos de {{ row.teacher.fullName }}</label>
+                                    <input type="number" id="break-{{ row.teacher.id }}" name="break[{{ row.teacher.id }}]" value="{{ row.break }}" min="0" max="{{ max }}" step="1" data-quota-field="break">
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+                <div class="inline-form">
+                    <button type="submit" class="btn">Guardar cupos</button>
+                </div>
+            </div>
+        </form>
+    {% endif %}
+{% endblock %}
+
+{% block page_scripts %}
+    <script src="{{ asset_ver('/js/quota-bulk.js') }}"></script>
+{% endblock %}

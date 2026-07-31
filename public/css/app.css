@@ -2489,6 +2489,13 @@ tr.is-not-covered { background: var(--danger-weak); }
    arreglo deliberado de un error. */
 .mini-card-note { margin: 0; font-size: 12.5px; color: var(--text-faint); }
 
+/* ── Guardias · celda del cuadrante semanal ─────────────────────────────────
+   Cinco nombres por hora y día. Apilados y sin viñeta: la rejilla ya es densa
+   (6 horas × 5 días) y el bullet solo añadiría ruido a algo que se lee de un
+   vistazo, no en orden. */
+.rota-cell { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.rota-cell li { font-size: 13px; line-height: 1.35; }
+
 /* ── Guardias · alta de apoyo puntual (dentro del panel de disponibles) ─────── */
 .support-add { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
 .support-add__toggle { cursor: pointer; font-weight: 600; font-size: 13.5px; }

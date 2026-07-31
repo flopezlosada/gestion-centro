@@ -13,6 +13,7 @@ use App\Enum\ScheduleEntrySource;
 use App\Enum\Weekday;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\ORM\Query\Expr\Join;
+use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
@@ -179,136 +180,92 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
-     * Every room the course's timetable mentions, alphabetically — the universe of spaces the centre
-     * actually uses, derived from the timetable instead of from a document that goes stale. A room
-     * nobody ever has a class in is invisible here, which is the honest limit of deriving it: we can only
-     * know about the rooms somebody uses.
+     * How many groups each catalogued space has been seen holding AT ONCE — evidence of which rooms are
+     * the big ones, instead of a size somebody would have to type in and keep up to date. The assembly
+     * hall comes out at 8 because Peñalara really does put eight groups in it at the same time; an
+     * ordinary classroom comes out at 1.
      *
-     * @param AcademicYear $year the course whose timetable to read
+     * A floor, never a capacity: "has held at least this many". Which is what
+     * {@see \App\Entity\Room::observedSize()} turns into a suggested size, and why the suggestion can
+     * order a list of rooms but must not rule any of them out.
      *
-     * @return list<string> the room short names, alphabetically
+     * Keyed by room id, and deliberately NOT filtered by course: a room's size is physical, so evidence
+     * from last year's timetable is still evidence, and the catalogue itself has no course either.
+     *
+     * @return array<int, int> room id → most groups seen in it simultaneously
      */
-    public function distinctRooms(AcademicYear $year): array
-    {
-        /** @var list<array{roomName: string}> $rows */
-        $rows = $this->createQueryBuilder('s')
-            ->select('DISTINCT s.roomName AS roomName')
-            ->andWhere('s.academicYear = :year')
-            ->andWhere('s.roomName IS NOT NULL')
-            ->andWhere("s.roomName <> ''")
-            ->setParameter('year', $year)
-            ->orderBy('s.roomName', 'ASC')
-            ->getQuery()
-            ->getResult();
-
-        return array_map(static fn (array $r): string => $r['roomName'], $rows);
-    }
-
-    /**
-     * The classes taking place in a room at a weekday and period, teachers eager-loaded — who would have
-     * to be moved to free up a big room for a grouped guardia, and therefore who must be told.
-     *
-     * @param AcademicYear $year      the course whose timetable to read
-     * @param Weekday      $weekday   the weekday
-     * @param int          $slotIndex the period index within the day
-     *
-     * @return ScheduleEntry[] the lective entries that have a room then, by room and group
-     */
-    public function lectiveEntriesWithRoomAt(AcademicYear $year, Weekday $weekday, int $slotIndex): array
-    {
-        return $this->createQueryBuilder('s')
-            ->addSelect('t')
-            ->join('s.teacher', 't')
-            ->andWhere('s.academicYear = :year')
-            ->andWhere('s.weekday = :weekday')
-            ->andWhere('s.slotIndex = :slot')
-            ->andWhere('s.kind = :lective')
-            ->andWhere('s.roomName IS NOT NULL')
-            ->andWhere("s.roomName <> ''")
-            ->setParameter('year', $year)
-            ->setParameter('weekday', $weekday)
-            ->setParameter('slot', $slotIndex)
-            ->setParameter('lective', ScheduleActivityKind::LECTIVE)
-            ->orderBy('s.roomName', 'ASC')
-            ->addOrderBy('s.groupName', 'ASC')
-            ->getQuery()
-            ->getResult();
-    }
-
-    /**
-     * Which rooms are taken at each period of a weekday: period index → room short names. One query for
-     * the whole day, so the "aulas libres" sheet can list every period without a query per row.
-     *
-     * @param AcademicYear $year    the course whose timetable to read
-     * @param Weekday      $weekday the weekday
-     *
-     * @return array<int, list<string>> period index → the rooms in use then, alphabetically
-     */
-    public function occupiedRoomsBySlot(AcademicYear $year, Weekday $weekday): array
-    {
-        /** @var list<array{slotIndex: int, roomName: string}> $rows */
-        $rows = $this->createQueryBuilder('s')
-            ->select('DISTINCT s.slotIndex AS slotIndex', 's.roomName AS roomName')
-            ->andWhere('s.academicYear = :year')
-            ->andWhere('s.weekday = :weekday')
-            ->andWhere('s.kind = :lective')
-            ->andWhere('s.roomName IS NOT NULL')
-            ->andWhere("s.roomName <> ''")
-            ->setParameter('year', $year)
-            ->setParameter('weekday', $weekday)
-            ->setParameter('lective', ScheduleActivityKind::LECTIVE)
-            ->orderBy('s.slotIndex', 'ASC')
-            ->addOrderBy('s.roomName', 'ASC')
-            ->getQuery()
-            ->getResult();
-
-        $bySlot = [];
-        foreach ($rows as $row) {
-            $bySlot[(int) $row['slotIndex']][] = $row['roomName'];
-        }
-
-        return $bySlot;
-    }
-
-    /**
-     * How many groups each room has been seen holding AT ONCE anywhere in the course's timetable —
-     * evidence of which rooms are the big ones, instead of a capacity somebody would have to type in and
-     * keep up to date. The assembly hall comes out at 8 because Peñalara really does put eight groups in
-     * it at the same time; an ordinary classroom comes out at 1.
-     *
-     * Not a real capacity and not called one: it is a floor ("has held at least this many"), which is
-     * exactly what is needed to sort rooms by how much they can take. A proper capacity belongs to the
-     * spaces module, with its own entity.
-     *
-     * @param AcademicYear $year the course whose timetable to read
-     *
-     * @return array<string, int> room short name → most groups seen in it simultaneously
-     */
-    public function observedRoomCapacity(AcademicYear $year): array
+    public function observedGroupsByRoom(): array
     {
         // COUNT(DISTINCT …) is an aggregate, so it comes back as a raw scalar string, not through any
         // field type — cast it (see distinctSlots() for the same trap with MIN()).
-        /** @var list<array{roomName: string, groups: string|int}> $rows */
+        /** @var list<array{roomId: int|string, groups: string|int}> $rows */
         $rows = $this->createQueryBuilder('s')
-            ->select('s.roomName AS roomName', 'COUNT(DISTINCT s.groupName) AS groups')
-            ->andWhere('s.academicYear = :year')
+            ->select('r.id AS roomId', 'COUNT(DISTINCT s.groupName) AS groups')
+            ->join('s.room', 'r')
             ->andWhere('s.kind = :lective')
-            ->andWhere('s.roomName IS NOT NULL')
-            ->andWhere("s.roomName <> ''")
-            ->setParameter('year', $year)
+            // Cells with no group are dropped rather than counted: COUNT(DISTINCT) over them is 0, and a
+            // zero would read as "half a group fits here" ({@see RoomSize::forGroups()}) — evidence
+            // against the room, invented out of a missing field.
+            ->andWhere('s.groupName IS NOT NULL')
             ->setParameter('lective', ScheduleActivityKind::LECTIVE)
-            ->groupBy('s.roomName')
+            ->groupBy('r.id')
+            ->addGroupBy('s.academicYear')
             ->addGroupBy('s.weekday')
             ->addGroupBy('s.slotIndex')
             ->getQuery()
             ->getResult();
 
-        $capacity = [];
+        $observed = [];
         foreach ($rows as $row) {
-            $capacity[$row['roomName']] = max($capacity[$row['roomName']] ?? 0, (int) $row['groups']);
+            $roomId = (int) $row['roomId'];
+            $observed[$roomId] = max($observed[$roomId] ?? 0, (int) $row['groups']);
         }
 
-        return $capacity;
+        return $observed;
+    }
+
+    /**
+     * How many teaching periods a week each teacher has in a course, keyed by teacher id.
+     *
+     * The quota screen shows it beside the quota box: whoever decides that a colleague takes on three
+     * guardias and another one takes on one is really comparing teaching loads, and having to open the
+     * timetable in another tab to do it is how quotas end up typed at random.
+     *
+     * Periods are counted, not rows: Peñalara lists a teacher once per group when several share a slot
+     * (the Salón de Actos activities), and counting rows would make those teachers look twice as busy as
+     * they are.
+     *
+     * @param AcademicYear $year the course whose timetable to read
+     *
+     * @return array<int, int> teacher id → teaching periods a week
+     */
+    public function lectiveHoursByTeacher(AcademicYear $year): array
+    {
+        // One row per occupied (teacher, weekday, slot) and the tally done here, rather than a
+        // COUNT(DISTINCT <expression>) that would need CONCAT or arithmetic over an enumType column to
+        // fold the pair into one value. The grouped read is a few hundred rows of three small integers,
+        // and it behaves the same on every engine — this repository has already been bitten twice by
+        // DQL that looked right and hydrated wrong (see distinctSlots() and its MIN()).
+        /** @var list<array{teacher: string|int}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('IDENTITY(s.teacher) AS teacher')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.kind = :lective')
+            ->setParameter('year', $year)
+            ->setParameter('lective', ScheduleActivityKind::LECTIVE)
+            ->groupBy('s.teacher')
+            ->addGroupBy('s.weekday')
+            ->addGroupBy('s.slotIndex')
+            ->getQuery()
+            ->getResult();
+
+        $hours = [];
+        foreach ($rows as $row) {
+            $teacherId = (int) $row['teacher'];
+            $hours[$teacherId] = ($hours[$teacherId] ?? 0) + 1;
+        }
+
+        return $hours;
     }
 
     /**
@@ -398,6 +355,93 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
+     * The teaching periods of a course as teacher id → weekday → period indexes, which is the shape the
+     * rota engine needs to know who is free when.
+     *
+     * Grouped rather than counted, so a teacher listed once per group in the same period (the Salón de
+     * Actos activities Peñalara exports that way) appears once.
+     *
+     * @param AcademicYear $year the course whose timetable to read
+     *
+     * @return array<int, array<int, list<int>>> teacher id → weekday → the period indexes they teach
+     */
+    public function lectiveSlotsByTeacher(AcademicYear $year): array
+    {
+        /** @var list<array{teacher: string|int, weekday: Weekday, slotIndex: int}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('IDENTITY(s.teacher) AS teacher', 's.weekday AS weekday', 's.slotIndex AS slotIndex')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.kind = :lective')
+            ->setParameter('year', $year)
+            ->setParameter('lective', ScheduleActivityKind::LECTIVE)
+            ->groupBy('s.teacher')
+            ->addGroupBy('s.weekday')
+            ->addGroupBy('s.slotIndex')
+            ->getQuery()
+            ->getResult();
+
+        $byTeacher = [];
+        foreach ($rows as $row) {
+            // A scalar select hydrates an enumType column into its enum, so weekday arrives as a Weekday.
+            $byTeacher[(int) $row['teacher']][$row['weekday']->value][] = (int) $row['slotIndex'];
+        }
+
+        return $byTeacher;
+    }
+
+    /**
+     * Replaces every duty cell the proposal engine owns in a course with a fresh set, in one transaction.
+     *
+     * Only its own: cells a person marked by hand and cells from the export are left untouched, which is
+     * what lets a rota be re-proposed without undoing somebody's retouch.
+     *
+     * @param AcademicYear       $year    the course being redrawn
+     * @param list<ScheduleEntry> $entries the fresh duty cells to persist
+     */
+    public function replaceEngineDutyCells(AcademicYear $year, array $entries): void
+    {
+        $em = $this->getEntityManager();
+        $em->wrapInTransaction(function () use ($em, $year, $entries): void {
+            $this->createQueryBuilder('s')
+                ->delete()
+                ->where('s.academicYear = :year')
+                ->andWhere('s.source = :engine')
+                ->setParameter('year', $year)
+                ->setParameter('engine', ScheduleEntrySource::ENGINE)
+                ->getQuery()
+                ->execute();
+            foreach ($entries as $entry) {
+                $em->persist($entry);
+            }
+            $em->flush();
+        });
+    }
+
+    /**
+     * Every duty cell of a course — the current rota — with its teacher joined so a grid can print the
+     * names without a query per cell.
+     *
+     * @param AcademicYear $year the course whose rota to read
+     *
+     * @return ScheduleEntry[] the duty cells, in reading order
+     */
+    public function findDutyCells(AcademicYear $year): array
+    {
+        return $this->createQueryBuilder('s')
+            ->addSelect('t')
+            ->join('s.teacher', 't')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.kind IN (:kinds)')
+            ->setParameter('year', $year)
+            ->setParameter('kinds', [ScheduleActivityKind::GUARDIA, ScheduleActivityKind::COLLABORATOR])
+            ->orderBy('s.weekday', 'ASC')
+            ->addOrderBy('s.slotIndex', 'ASC')
+            ->addOrderBy('t.fullName', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * Every timetable cell a teacher has in a course, of any kind, ordered by weekday then period —
      * the data behind the manual "horario de guardias" grid, which shows the imported lective cells as
      * read-only context and lets the duty cells be edited.
@@ -421,17 +465,21 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
-     * The hand-marked duty cells of a course, indexed for the importer as teacher id → "weekday:slot" →
-     * row id. Read in one query (never one per teacher) so the import can tell, for every cell it is
-     * about to write, whether a person already owns that period: a duty cell is then skipped (nobody
-     * ends up in the guardia pool twice) and a lesson wins, dropping the hand-marked guardia by id.
-     * Empty when every cell in the course came from an export.
+     * The duty cells of a course an import must not overwrite — the ones a person marked by hand and the
+     * ones the proposal engine placed ({@see ScheduleEntrySource::protectedFromImport()}) — indexed for
+     * the importer as teacher id → "weekday:slot" → row id.
+     *
+     * Read in one query (never one per teacher) so the import can tell, for every cell it is about to
+     * write, whether one of them already owns that period: a duty cell is then skipped (nobody ends up in
+     * the guardia pool twice) and a lesson wins, dropping the protected guardia by id — otherwise the
+     * teacher would be left on guardia in a period they now teach. Empty when every cell in the course
+     * came from an export.
      *
      * @param AcademicYear $year the course whose timetable to read
      *
      * @return array<int, array<string, int>> teacher id → "weekday:slotIndex" → schedule entry id
      */
-    public function manualDutyCells(AcademicYear $year): array
+    public function protectedDutyCells(AcademicYear $year): array
     {
         // A scalar select still hydrates an enumType column into its enum (unlike MIN() in distinctSlots,
         // which bypasses the field type), so weekday arrives as a Weekday — read its ISO value.
@@ -439,9 +487,9 @@ class ScheduleEntryRepository extends ServiceEntityRepository
         $rows = $this->createQueryBuilder('s')
             ->select('s.id AS id', 'IDENTITY(s.teacher) AS teacherId', 's.weekday AS weekday', 's.slotIndex AS slotIndex')
             ->andWhere('s.academicYear = :year')
-            ->andWhere('s.source = :manual')
+            ->andWhere('s.source IN (:protected)')
             ->setParameter('year', $year)
-            ->setParameter('manual', ScheduleEntrySource::MANUAL)
+            ->setParameter('protected', ScheduleEntrySource::protectedFromImport())
             ->getQuery()
             ->getResult();
 
@@ -591,21 +639,58 @@ class ScheduleEntryRepository extends ServiceEntityRepository
      */
     public function occupancyAt(AcademicYear $year, Weekday $weekday, int $slotIndex): array
     {
+        return $this->occupancyQuery($year, $weekday)
+            ->andWhere('s.slotIndex = :slot')
+            ->setParameter('slot', $slotIndex)
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * The same occupancy for the WHOLE weekday in one query, grouped by period — for the screens that ask
+     * about every period at once (the printable "aulas libres" sheet). One query instead of one per
+     * period, which is the difference between a sheet that opens and an N+1.
+     *
+     * @param AcademicYear $year    the course whose timetable to read
+     * @param Weekday      $weekday the weekday
+     *
+     * @return array<int, list<ScheduleEntry>> period index → the occupying lessons, teachers joined
+     */
+    public function occupancyBySlotOn(AcademicYear $year, Weekday $weekday): array
+    {
+        /** @var list<ScheduleEntry> $entries */
+        $entries = $this->occupancyQuery($year, $weekday)->getQuery()->getResult();
+
+        $bySlot = [];
+        foreach ($entries as $entry) {
+            $bySlot[$entry->getSlotIndex()][] = $entry;
+        }
+
+        return $bySlot;
+    }
+
+    /**
+     * The shared half of {@see occupancyAt()} and {@see occupancyBySlotOn()}: the lective cells of a
+     * course and weekday that have a catalogued room, teacher and room joined.
+     *
+     * @param AcademicYear $year    the course whose timetable to read
+     * @param Weekday      $weekday the weekday
+     *
+     * @return QueryBuilder the builder, ready for a period filter
+     */
+    private function occupancyQuery(AcademicYear $year, Weekday $weekday): QueryBuilder
+    {
         return $this->createQueryBuilder('s')
             ->addSelect('t', 'r')
             ->join('s.teacher', 't')
             ->join('s.room', 'r')
             ->andWhere('s.academicYear = :year')
             ->andWhere('s.weekday = :weekday')
-            ->andWhere('s.slotIndex = :slot')
             ->andWhere('s.kind = :lective')
             ->setParameter('year', $year)
             ->setParameter('weekday', $weekday)
-            ->setParameter('slot', $slotIndex)
             ->setParameter('lective', ScheduleActivityKind::LECTIVE)
-            ->orderBy('r.code', 'ASC')
-            ->getQuery()
-            ->getResult();
+            ->orderBy('r.code', 'ASC');
     }
 
     /**

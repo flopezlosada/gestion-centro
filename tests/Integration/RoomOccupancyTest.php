@@ -165,6 +165,52 @@ final class RoomOccupancyTest extends KernelTestCase
         self::assertSame(['2IN5'], $this->codes($this->occupancy->candidatesAt($this->year, $this->monday, 0, 3)));
     }
 
+    public function testTheTimetableEvidenceOrdersTheListWhenNobodyHasClassifiedTheRooms(): void
+    {
+        // The state the centre is actually in: 40 auto-created cards, none of them classified. The order
+        // still has to be useful, and the only thing that can order it is what the timetable does.
+        $this->lective($this->teacher, Weekday::TUESDAY, 0, 'S ACTOS', 'E4A', 'Charla');
+        $this->lective($this->other, Weekday::TUESDAY, 0, 'S ACTOS', 'E4B', 'Charla');
+        $this->lective($this->teacher, Weekday::TUESDAY, 1, '0LC1', 'E1A', 'Inglés');
+        $this->sync();
+
+        $availability = $this->occupancy->at($this->year, $this->monday, 0);
+
+        self::assertSame(['S ACTOS', '0LC1'], $this->codes($availability->largestFirst()), 'the room the timetable fills with two groups comes first');
+    }
+
+    public function testTheTimetableEvidenceNeverRulesARoomOut(): void
+    {
+        // "One group has been in here" proves one fits, NOT that a second does not. Ruling the room out for
+        // a two-group request would hide the only room available on the strength of a non-answer.
+        $this->lective($this->teacher, Weekday::TUESDAY, 0, '0LC1', 'E1A', 'Inglés');
+        $this->sync();
+
+        self::assertSame(['0LC1'], $this->codes($this->occupancy->candidatesAt($this->year, $this->monday, 0, 2)));
+    }
+
+    public function testAWholeDayIsTheSameAnswerAsEachPeriodOnItsOwn(): void
+    {
+        // The printable sheet reads the day in one go; if that shortcut disagreed with the per-period
+        // answer, two screens of the same app would contradict each other.
+        $this->room('0LC1', RoomKind::CLASSROOM, 30);
+        $this->room('0LC7', RoomKind::CLASSROOM, 60);
+        $this->lective($this->teacher, Weekday::MONDAY, 0, '0LC1', 'E1A', 'Inglés');
+        $this->lective($this->teacher, Weekday::MONDAY, 1, '0LC7', 'E1A', 'Inglés');
+        $this->sync();
+
+        $day = $this->occupancy->forDay($this->year, $this->monday, [0, 1]);
+
+        self::assertSame([0, 1], array_keys($day));
+        foreach ([0, 1] as $slotIndex) {
+            self::assertSame(
+                $this->codes($this->occupancy->at($this->year, $this->monday, $slotIndex)->free),
+                $this->codes($day[$slotIndex]->free),
+                'period '.$slotIndex.' must read the same either way',
+            );
+        }
+    }
+
     /**
      * Persists a space card.
      *

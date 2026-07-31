@@ -54,7 +54,9 @@ final class DoneToastTest extends WebTestCase
         $this->em->persist($dept);
         $owner = $this->user('profe@centro.test');
         $owner->setUnit($dept);
-        $today = new \DateTimeImmutable('today', new \DateTimeZone('Europe/Madrid'));
+        // PHP's default zone, which is the one the home resolves "today" in. A fixed Europe/Madrid makes
+        // this test fail between 22:00 and midnight UTC (CI's zone), when Madrid is already on the next day.
+        $today = new \DateTimeImmutable('today');
         $task = new Task('Memoria del departamento', SchoolYear::current($today), $today, TaskType::SIMPLE);
         $task->setAssignedUser($owner)->setCreatedBy($owner);
         $this->em->persist($task);

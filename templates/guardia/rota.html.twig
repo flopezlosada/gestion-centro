@@ -1,0 +1,172 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Cuadrante de guardias{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_index') }}">Guardias</a><span class="sep">/</span>Cuadrante{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Cuadrante de guardias</h1>
+            <p class="lead">Quién está de guardia en cada hora de la semana, durante todo el curso. El programa lo <strong>propone</strong> a partir del horario y de los cupos; el equipo directivo lo revisa y lo publica.</p>
+        </div>
+        <div class="inline-form"><a class="btn secondary" href="{{ path('guardia_quota_index', {curso: curso}) }}">Cupos</a></div>
+    </div>
+
+    {# Selector de curso (GET, auto-envío): el cuadrante es de un curso, como el horario. #}
+    <div class="card">
+        <form method="get" action="{{ path('guardia_rota_index') }}" class="inline-form">
+            <label class="field-label" for="curso">Curso</label>
+            <select id="curso" name="curso" onchange="this.form.submit()">
+                {% for c in courses %}
+                    <option value="{{ c.schoolYear }}" {{ c.schoolYear == curso ? 'selected' }}>{{ c.schoolYear }}</option>
+                {% endfor %}
+            </select>
+            <noscript><button type="submit" class="btn">Ver</button></noscript>
+        </form>
+    </div>
+
+    {% if year is null %}
+        <div class="card">
+            <div class="empty-state">
+                <h2>No hay curso {{ curso }} dado de alta</h2>
+                <p>Hay que crear el curso antes de montar su cuadrante.</p>
+            </div>
+        </div>
+    {% elseif slots is empty %}
+        <div class="card">
+            <div class="empty-state">
+                <h2>No hay horario importado para {{ curso }}</h2>
+                <p>El cuadrante sale del horario del centro: sin él no se sabe ni qué horas tiene el día ni quién está libre en cada una.</p>
+            </div>
+        </div>
+    {% else %}
+        {% if isDraft %}
+            {# Que quede claro que esto todavía no existe: la rejilla de abajo se lee igual que la de
+               verdad, y confundirlas sería creer que el curso ya tiene cuadrante. #}
+            <div class="callout callout--warning" role="note">
+                <strong>Esto es una propuesta.</strong> No se ha guardado nada todavía. Revísala y pulsa «Publicar» abajo, o descártala y no pasa nada.
+            </div>
+
+            <div class="worklist-stats worklist-stats--3">
+                <div class="stat">
+                    <span class="stat-figure">{{ summary.placed }}</span>
+                    <span class="stat-label">Guardias propuestas</span>
+                </div>
+                <div class="stat{{ summary.unfilled > 0 ? ' stat--warning' : ' stat--success' }}">
+                    <span class="stat-figure">{{ summary.unfilled }}</span>
+                    <span class="stat-label">Plazas sin cubrir</span>
+                </div>
+                <div class="stat{{ summary.unusedQuota > 0 ? ' stat--warning' : '' }}{{ summary.unusedQuota == 0 ? ' is-zero' }}">
+                    <span class="stat-figure">{{ summary.unusedQuota }}</span>
+                    <span class="stat-label">Cupo sin usar</span>
+                </div>
+            </div>
+
+            <p class="help">
+                {% if summary.unfilled == 0 %}
+                    La semana queda cubierta entera.
+                {% else %}
+                    {% if gaps['quota-exhausted'] is defined %}
+                        <strong>{{ gaps['quota-exhausted'] }}</strong> plazas se quedan sin nadie porque todo el mundo ha llegado a su cupo: para cubrirlas hay que <a href="{{ path('guardia_quota_index', {curso: curso}) }}">subir cupos</a>.
+                    {% endif %}
+                    {% if gaps['nobody-free'] is defined %}
+                        <strong>{{ gaps['nobody-free'] }}</strong> se quedan sin nadie porque a esa hora ya no queda ningún docente libre sin guardia: eso no se arregla con cupos, es el horario.
+                    {% endif %}
+                    Las plazas que faltan son siempre de <strong>apoyo</strong>: los tres profesores de guardia de cada hora se completan primero.
+                {% endif %}
+            </p>
+
+            <div class="card">
+                <div class="inline-form">
+                    <form method="post" action="{{ path('guardia_rota_approve') }}" class="inline-form">
+                        <input type="hidden" name="_token" value="{{ csrf_token('guardia_rota_approve') }}">
+                        <input type="hidden" name="curso" value="{{ curso }}">
+                        <button type="submit" class="btn">Publicar el cuadrante</button>
+                    </form>
+                    <a class="btn secondary" href="{{ path('guardia_rota_index', {curso: curso}) }}">Descartar</a>
+                </div>
+                <p class="help">Al publicar se sustituyen las guardias que puso el programa en una propuesta anterior. Lo que esté marcado <strong>a mano</strong> no se toca: sale ya en la propuesta y se respeta.</p>
+            </div>
+        {% else %}
+            <div class="card">
+                <div class="inline-form">
+                    <a class="btn" href="{{ path('guardia_rota_index', {curso: curso, propuesta: 1}) }}">Proponer cuadrante</a>
+                </div>
+                <p class="help">Genera una propuesta a partir del horario y de los cupos. No guarda nada: la verás antes de decidir.</p>
+            </div>
+        {% endif %}
+
+        <div class="card">
+            <h2>{{ isDraft ? 'Propuesta' : 'Cuadrante actual' }} · {{ curso }}</h2>
+            {% if grid is empty %}
+                <p class="muted">Todavía no hay ninguna guardia en el horario de este curso.</p>
+            {% else %}
+                <table class="worklist">
+                    <thead>
+                        <tr>
+                            <th scope="col">Hora</th>
+                            {% for weekday in weekdays %}<th scope="col">{{ weekday.label }}</th>{% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for slot in slots %}
+                            <tr>
+                                <th scope="row">
+                                    {% if slotTimes[slot] is defined %}
+                                        {{ slotTimes[slot].startsAt|date('H:i', false) }}–{{ slotTimes[slot].endsAt|date('H:i', false) }}
+                                    {% else %}
+                                        {{ loop.index }}.ª hora
+                                    {% endif %}
+                                </th>
+                                {% for weekday in weekdays %}
+                                    <td>
+                                        {% set people = grid[slot][weekday.value]|default([]) %}
+                                        {% if people is empty %}
+                                            <span class="muted">—</span>
+                                        {% else %}
+                                            <ul class="rota-cell">
+                                                {% for person in people %}
+                                                    <li>
+                                                        {{ person.name }}
+                                                        {% if person.kind == 'collaborator' %}<span class="badge badge--muted">apoyo</span>{% endif %}
+                                                        {# De dónde viene la que el motor NO ha puesto: son las dos que respeta tal cual. #}
+                                                        {% if person.source == 'manual' %}<span class="badge badge--muted" title="Marcada a mano en «Horario de guardias». El programa la respeta.">a mano</span>
+                                                        {% elseif person.source == 'penalara' %}<span class="badge badge--muted" title="Viene del horario de Peñalara. El programa la respeta.">Peñalara</span>{% endif %}
+                                                    </li>
+                                                {% endfor %}
+                                            </ul>
+                                        {% endif %}
+                                    </td>
+                                {% endfor %}
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <p class="help">Cada hora lleva <strong>3 profesores de guardia</strong> y <strong>2 de apoyo</strong>, que solo entran si no llegan los de guardia. Para cambiar a alguien en concreto, se hace en <a href="{{ path('guardia_schedule_edit') }}">Horario de guardias</a>: lo que se toque ahí se respeta en la siguiente propuesta.</p>
+            {% endif %}
+        </div>
+
+        {% if isDraft and proposal.byTeacher is not empty %}
+            <div class="card">
+                <h2>Reparto por docente</h2>
+                <table class="worklist">
+                    <thead>
+                        <tr><th scope="col">Docente</th><th scope="col">Cupo</th><th scope="col">Asignadas</th><th scope="col">Sin usar</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for row in proposal.byTeacher %}
+                            <tr>
+                                <th scope="row">{{ row.name }}</th>
+                                <td>{{ row.quota }}</td>
+                                <td>{{ row.assigned }}</td>
+                                <td>{{ row.quota - row.assigned > 0 ? row.quota - row.assigned : '—' }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <p class="help">Ordenado por cupo sin usar: quien aparece arriba tiene guardias asignadas de menos, casi siempre porque su horario no le deja huecos donde hacían falta.</p>
+            </div>
+        {% endif %}
+    {% endif %}
+{% endblock %}

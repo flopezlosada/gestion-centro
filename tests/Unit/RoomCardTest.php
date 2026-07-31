@@ -55,6 +55,38 @@ final class RoomCardTest extends TestCase
         self::assertFalse($room->needsReview(), 'seats are optional; the size in groups is what decides');
     }
 
+    public function testWithNoAnswerAndNoEvidenceThereIsNoSize(): void
+    {
+        $room = (new Room())->setCode('S ACTOS')->setName('S ACTOS');
+
+        self::assertNull($room->effectiveSize(), 'nothing known is not a guess');
+        self::assertNull($room->observedSize());
+        self::assertFalse($room->isSizeConfirmed());
+    }
+
+    public function testTheTimetableEvidenceProposesASizeWithoutConfirmingIt(): void
+    {
+        // The state the catalogue is in on day one: nobody has classified anything, but the timetable has
+        // been putting groups in these rooms all year. An unclassified card is not an unknown room.
+        $room = (new Room())->setCode('S ACTOS')->setName('S ACTOS')->setObservedGroups(3);
+
+        self::assertSame(RoomSize::MANY_GROUPS, $room->observedSize());
+        self::assertSame(RoomSize::MANY_GROUPS, $room->effectiveSize(), 'and that is what the screens reason with');
+        self::assertFalse($room->isSizeConfirmed(), 'evidence is not somebody saying so');
+        self::assertTrue($room->needsReview(), 'so the card still asks to be completed');
+    }
+
+    public function testTheCentresAnswerCorrectsTheEvidenceWithoutErasingIt(): void
+    {
+        $room = (new Room())->setCode('S ACTOS')->setName('S ACTOS')
+            ->setObservedGroups(3)
+            ->setSize(RoomSize::TWO_GROUPS);
+
+        self::assertSame(RoomSize::TWO_GROUPS, $room->effectiveSize(), 'the person wins');
+        self::assertSame(RoomSize::MANY_GROUPS, $room->observedSize(), 'and the evidence is still on file');
+        self::assertTrue($room->isSizeConfirmed());
+    }
+
     public function testLabelFallsBackToTheCodeWhileNobodyHasNamedIt(): void
     {
         self::assertSame('2IN5', (new Room())->setCode('2IN5')->setName('2IN5')->getLabel());

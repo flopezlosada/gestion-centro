@@ -1,0 +1,40 @@
+{# Cómo se dice el tamaño de un espacio, en un solo sitio.
+
+   Hay dos fuentes y NO son lo mismo: lo que el centro ha clasificado en el catálogo (una respuesta) y lo
+   que se deduce del horario (una prueba: «aquí han estado dos grupos a la vez», que solo demuestra un
+   mínimo). Se distinguen siempre en el texto, porque presentar la deducción como aforo es justo lo que
+   hace que alguien mande tres grupos a un aula donde no caben.
+
+   Se importa con: import 'space/_size.html.twig' as size — y OJO: dentro de otro macro hay que
+   importarlo otra vez, porque un macro no ve el contexto de su plantilla. #}
+
+{# Etiqueta corta del tamaño («Grande (dos grupos)» o «2 grupos según el horario»), o cadena vacía
+   cuando ni el centro ni el horario dicen nada.
+
+   room: la entidad Room #}
+{% macro label(room) %}
+    {%- if room.sizeConfirmed -%}
+        {{ room.size.label }}
+    {%- elseif room.effectiveSize -%}
+        {{ room.observedGroups }} grupo{{ room.observedGroups == 1 ? '' : 's' }} según el horario
+    {%- endif -%}
+{% endmacro %}
+
+{# Distintivo del tamaño solo para las aulas que dan para más de un grupo, que es lo que se busca cuando
+   hay que juntar grupos. Vacío para un aula normal: un distintivo en todas las filas no informa de nada.
+
+   room: la entidad Room #}
+{% macro badge(room) %}
+    {%- set grupos = room.effectiveSize ? room.effectiveSize.groups : 0 -%}
+    {%- if grupos > 1 -%}
+        <span class="badge badge--accent">{{ room.sizeConfirmed ? 'hasta ' ~ grupos ~ ' grupos' : grupos ~ ' grupos según el horario' }}</span>
+    {%- endif -%}
+{% endmacro %}
+
+{# Sufijo para una opción de un desplegable: « — hasta 2 grupos». Vacío para un aula normal.
+
+   room: la entidad Room #}
+{% macro suffix(room) %}
+    {%- set grupos = room.effectiveSize ? room.effectiveSize.groups : 0 -%}
+    {%- if grupos > 1 %} — {{ room.sizeConfirmed ? 'hasta ' ~ grupos ~ ' grupos' : grupos ~ ' grupos según el horario' }}{% endif -%}
+{% endmacro %}

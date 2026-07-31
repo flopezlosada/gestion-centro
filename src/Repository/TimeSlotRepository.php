@@ -55,6 +55,28 @@ class TimeSlotRepository extends ServiceEntityRepository
     }
 
     /**
+     * The course's teaching periods, earliest first — the ones a guardia can be placed in. Six at the
+     * centre, but read from the data rather than assumed: a course whose timetable has not been imported
+     * yet has none, and the caller has to say so instead of quietly computing a balance out of zero.
+     *
+     * @param AcademicYear|null $year the course whose teaching periods to read, or null when none applies
+     *
+     * @return TimeSlot[] the teaching periods, earliest first
+     */
+    public function findLectiveByYear(?AcademicYear $year): array
+    {
+        if (null === $year) {
+            return [];
+        }
+
+        return $this->frameQuery($year)
+            ->andWhere('t.kind = :lective')
+            ->setParameter('lective', TimeSlotKind::LECTIVE)
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * Replaces a course's whole marco horario with the given periods, in one transaction so a concurrent
      * read never sees a half-written day. Called by the importer: the frame is derived data, so it is
      * rebuilt rather than merged — there is no hand-edited version of it to preserve.

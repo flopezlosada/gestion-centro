@@ -110,7 +110,7 @@ final class TimetableImporter
         $replaced = $this->schedule->countImportedFor($year, $teachers);
         $stale = $this->staleTeachers($year, $matched);
 
-        [$entries, $keptManual, $dropManualIds] = $this->buildEntries($year, $byTeacher, $matched, $this->schedule->manualDutyCells($year));
+        [$entries, $keptManual, $dropManualIds] = $this->buildEntries($year, $byTeacher, $matched, $this->schedule->protectedDutyCells($year));
         $frame = $this->buildFrame($year, $parsed->frame);
         $newRooms = [];
         if (!$dryRun) {

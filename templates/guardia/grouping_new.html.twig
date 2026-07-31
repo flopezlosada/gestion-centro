@@ -7,6 +7,8 @@
 {# Pantalla empujada: fuera la barra inferior, la salida es "Cancelar" (mismo patrón que apuntar ausencia). #}
 {% block bottomnav %}{% endblock %}
 
+{% import 'space/_size.html.twig' as size %}
+
 {% block body %}
     {% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
     {% set volver = path('guardia_index', { date: date|date('Y-m-d', false), slot: slotIndex }) %}
@@ -88,22 +90,40 @@
                     <label class="eyebrow" for="room">Aula donde se juntan</label>
                     <select id="room" name="room" required>
                         <option value="">Elige un aula…</option>
-                        {% for r in rooms %}
-                            <option value="{{ r.room }}">
-                                {{ r.room }}{% if r.capacity > 1 %} — hasta {{ r.capacity }} grupos{% endif %}
-                                {%- if not r.free %} — OCUPADA por {{ r.classes|map(cl => (cl.group ?? '—') ~ ' (' ~ cl.teacher.fullName ~ ')')|join('; ') }}{% endif %}
-                            </option>
-                        {% endfor %}
+                        {% if rooms is not empty %}
+                            <optgroup label="Libres a esta hora">
+                                {% for r in rooms %}
+                                    <option value="{{ r.code }}">{{ r.code }}{{ size.suffix(r) }}</option>
+                                {% endfor %}
+                            </optgroup>
+                        {% endif %}
+                        {% if occupied is not empty %}
+                            <optgroup label="Ocupadas (habrá que mover a quien esté)">
+                                {% for o in occupied %}
+                                    <option value="{{ o.room.code }}">{{ o.room.code }}{{ size.suffix(o.room) }} — {{ o.groups }} ({{ o.teachers }}){% if o.isPlanned %} · cambio ya aprobado{% endif %}</option>
+                                {% endfor %}
+                            </optgroup>
+                        {% endif %}
+                        {# Libres pero marcadas como «no se les asignan grupos» (pistas, gimnasio). Para
+                           aparcar tres grupos una hora sí pueden servir, así que se ofrecen al final y
+                           dichas por su nombre, en vez de desaparecer. #}
+                        {% if notAssignable is not empty %}
+                            <optgroup label="Libres, pero no son para dar clase">
+                                {% for r in notAssignable %}
+                                    <option value="{{ r.code }}">{{ r.code }}{{ size.suffix(r) }}</option>
+                                {% endfor %}
+                            </optgroup>
+                        {% endif %}
                     </select>
-                    <p class="field-help">Las más grandes primero: «hasta N grupos» es lo máximo que el horario del centro pone a la vez en esa aula. Las ocupadas también se pueden elegir — es lo normal con la biblioteca o el salón de actos — y se avisará al docente al que se le quita.</p>
+                    <p class="field-help">Las más grandes primero. Las ocupadas también se pueden elegir — es lo normal con la biblioteca o el salón de actos — y se avisará al docente al que se le quita.</p>
                 </div>
 
                 <div class="form-row">
                     <label class="eyebrow" for="displaced_to">Si el aula está ocupada, ¿a dónde pasa esa clase?</label>
                     <select id="displaced_to" name="displaced_to">
                         <option value="">Sin decidir todavía</option>
-                        {% for r in rooms|filter(r => r.free) %}
-                            <option value="{{ r.room }}">{{ r.room }}{% if r.capacity > 1 %} — hasta {{ r.capacity }} grupos{% endif %}</option>
+                        {% for r in rooms %}
+                            <option value="{{ r.code }}">{{ r.code }}{{ size.suffix(r) }}</option>
                         {% endfor %}
                     </select>
                     <p class="field-help">Solo aulas libres a esta hora. Si lo dejas sin decidir, el aviso dirá que la coordinación le indicará dónde — evita mandarlo sin decirle a dónde va.</p>

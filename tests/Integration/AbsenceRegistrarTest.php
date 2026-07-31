@@ -6,9 +6,17 @@ namespace App\Tests\Integration;
 
 use App\Entity\AcademicYear;
 use App\Entity\GuardiaCover;
+use App\Entity\Room;
 use App\Entity\ScheduleEntry;
+use App\Entity\SpacePlan;
+use App\Entity\SpacePlanAssignment;
+use App\Entity\SpacePlanOption;
 use App\Entity\User;
+use App\Enum\AssignmentKind;
+use App\Enum\ProposalStrategy;
 use App\Enum\ScheduleActivityKind;
+use App\Enum\SpacePlanStatus;
+use App\Enum\SubstitutionScope;
 use App\Enum\Weekday;
 use App\Guardia\AbsenceRegistrar;
 use Doctrine\ORM\EntityManagerInterface;
@@ -165,6 +173,72 @@ final class AbsenceRegistrarTest extends KernelTestCase
         $cover = $this->em->getRepository(GuardiaCover::class)->findOneBy(['absentTeacher' => $teacher, 'slotIndex' => 0]);
         self::assertInstanceOf(GuardiaCover::class, $cover);
         self::assertSame(31, $cover->getCopiesNeeded());
+    }
+
+    public function testTheCoverCarriesTheRoomAnApprovedPlanMovedTheClassTo(): void
+    {
+        // The parte tells the covering teacher which door to walk through. If it photographs the weekly
+        // grid while an approved plan has moved that class, it sends them to an empty classroom.
+        $entry = $this->em->getRepository(ScheduleEntry::class)->findOneBy([
+            'teacher' => $this->absent, 'weekday' => Weekday::MONDAY, 'slotIndex' => 0,
+        ]);
+        self::assertInstanceOf(ScheduleEntry::class, $entry);
+
+        $room = (new Room())->setCode('0LC7')->setName('0LC7');
+        $this->em->persist($room);
+        $plan = (new SpacePlan())
+            ->setAcademicYear($this->year)
+            ->setCreatedBy($this->absent)
+            ->setTitle('Prueba de la EOI')
+            ->setDateFrom(new \DateTimeImmutable(self::MONDAY))
+            ->setDateTo(new \DateTimeImmutable(self::MONDAY))
+            ->setStatus(SpacePlanStatus::APPROVED);
+        $option = (new SpacePlanOption())->setLabel('Opción A')->setStrategy(ProposalStrategy::NEAREST);
+        $plan->addOption($option);
+        $plan->setChosenOption($option);
+        $line = (new SpacePlanAssignment())
+            ->setDate(new \DateTimeImmutable(self::MONDAY))
+            ->setSlotIndex(0)
+            ->setKind(AssignmentKind::RELOCATION)
+            ->setRoom($room)
+            ->setOriginRoomName('A10')
+            ->setGroupNames('1ºA')
+            ->setSourceEntry($entry)
+            ->setTeacher($this->absent);
+        $option->addAssignment($line);
+        $this->em->persist($plan);
+        $this->em->persist($option);
+        $this->em->persist($line);
+        $this->em->flush();
+
+        $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), [0], null);
+
+        $covers = $this->coversFor($this->absent);
+        self::assertSame('0LC7', $covers[0]->getRoomName(), 'the parte sends the substitute where the class really is');
+        self::assertSame('1ºA', $covers[0]->getGroupName(), 'and it is still the same group');
+    }
+
+    public function testAPeriodAnApprovedPlanHasEmptiedNeedsNoCover(): void
+    {
+        // Exam week: 2º de Bachillerato has no ordinary lessons, so an absence those days leaves nothing to
+        // cover. Creating a parte line would invent a class, a task and a notice for nobody.
+        $plan = (new SpacePlan())
+            ->setAcademicYear($this->year)
+            ->setCreatedBy($this->absent)
+            ->setTitle('Exámenes de 2º de Bachillerato')
+            ->setDateFrom(new \DateTimeImmutable(self::MONDAY))
+            ->setDateTo(new \DateTimeImmutable(self::MONDAY))
+            ->setSubstitutionScope(SubstitutionScope::GROUPS)
+            ->setScopeGroupNames(['1ºA'])
+            ->setStatus(SpacePlanStatus::APPROVED);
+        $this->em->persist($plan);
+        $this->em->flush();
+
+        $result = $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), [0], null);
+
+        self::assertSame(0, $result->createdCount());
+        self::assertSame(1, $result->skippedFree, 'a lesson that does not happen is as good as a free period');
+        self::assertSame([], $this->coversFor($this->absent));
     }
 
     public function testSpecificPeriodsSkipsTheFreeOne(): void

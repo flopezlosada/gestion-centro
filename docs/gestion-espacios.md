@@ -1,7 +1,7 @@
 # Gestión de espacios — plan y modelo de datos
 
 > Diseño del apartado **C** del volcado de requisitos del centro (30-07-2026): puntos 11, 12, 13 y 14.
-> **Estado: implementado de la fase 1 a la 5** — catálogo de espacios, "aulas libres", planes con
+> **Estado: implementado de la fase 1 a la 5, y F6 a medias** — catálogo de espacios, "aulas libres", planes con
 > propuestas, edición manual, aprobación, aviso a los afectados, documento imprimible, semana de
 > exámenes y jornadas culturales (aulas y profesorado). Lo que queda son las respuestas del centro ya
 > incorporadas en §9 y la deuda de §11.
@@ -96,6 +96,8 @@ Seis entidades. Cada una existe por una razón distinta; ninguna es un contenedo
 | `name` | string(128) | Nombre humano: "Aula de Inglés 5" |
 | `kind` | enum `RoomKind` | `CLASSROOM`, `LAB`, `WORKSHOP`, `COMPUTER_ROOM`, `GYM`, `OUTDOOR`, `LIBRARY`, `ASSEMBLY_HALL`, `OTHER` |
 | `capacity` | smallint NULL | A mano. Null = desconocida (no se inventa) |
+| `room_size` | enum `RoomSize` NULL | Cuántos GRUPOS caben, la unidad del centro. Lo rellena el centro |
+| `observed_groups` | smallint NULL | Cuántos grupos mete el horario a la vez aquí. **Del sistema**, lo recalcula `RoomSynchroniser`; es una cota inferior, así que ordena y propone pero no descarta |
 | `building` | string(32) NULL | Para el criterio "no cruzar el centro" |
 | `floor` | smallint NULL (columna `floor_level`: `FLOOR()` es función SQL) | Idem |
 | `assignable` | bool, default true | ¿Puede recibir una clase reubicada? La biblioteca sí, las pistas no |
@@ -245,23 +247,28 @@ Sin esto el módulo no funciona, y es lo que más impacto tiene en el código ex
 Se calcula como: horario ordinario del día de la semana correspondiente **menos** lo sustituido por
 planes aprobados (`substitution_scope`) **más** las líneas de esos planes aprobados.
 
-**`EffectiveTimetable`** — qué le toca a alguien:
+**`EffectiveTimetable`** — qué le toca a alguien (implementada en `src/Space/EffectiveTimetable.php`):
 
-- `forGroup(group, date)`, `forTeacher(user, date)`, `forRoom(room, date)`
+- `forTeacherAt(year, teacher, date, slotIndex)` → `EffectiveLesson[]`: la celda del horario **más el
+  aula donde se da de verdad**. Devuelve vacío cuando esa clase no existe ese día porque un plan
+  aprobado sustituye el horario del grupo. Las dos formas en que el horario semanal miente sobre una
+  fecha —dónde y si— en una sola respuesta.
 
-**Consumidores** (todos los que hoy leen `ScheduleEntry` a pelo acaban aquí):
+**Consumidores** (todos los que leían `ScheduleEntry` a pelo acaban aquí):
 
-1. El motor de propuestas — para saber qué está libre.
-2. La pantalla "aulas libres" — resuelve el punto A.2 del volcado del centro.
-3. La validación al aprobar — dos planes aprobados no pueden meter dos clases en la misma aula.
-4. El documento publicable.
-5. **El parte de guardias** — hoy `AbsenceRegistrar` fotografía el aula desde `ScheduleEntry`
-   (`src/Guardia/AbsenceRegistrar.php:97`). Con un plan aprobado ese día, el aula del parte estaría mal.
-6. La agenda del docente.
+1. El motor de propuestas — para saber qué está libre. ✅
+2. La pantalla "aulas libres" (`/espacios`) y la hoja de guardias (`/guardias/aulas`). ✅
+3. La validación al aprobar — dos planes aprobados no pueden meter dos clases en la misma aula. ✅
+4. El documento publicable. ✅
+5. **El parte de guardias** — `AbsenceRegistrar` fotografía el aula desde `EffectiveTimetable`, así que
+   con un plan aprobado el parte manda al profe de guardia al aula NUEVA, y una clase que ese día no se
+   da no genera línea de parte. ✅
+6. La agenda del docente. Pendiente: hoy dibuja el horario semanal, así que el aula que ve el docente en
+   su agenda puede ser la vieja. El aviso del plan (`/espacios/mis-cambios`) sí lleva la nueva.
 
-⚠️ **Deuda que hay que asumir conscientemente**: en cuanto exista un plan aprobado, el horario tiene dos
-fuentes. Todo consumidor que no migre a `EffectiveTimetable` queda desincronizado en silencio. Por eso
-la migración de consumidores va **por fases y explícita** (§8), no "cuando toque".
+⚠️ **Lo que hay que seguir vigilando**: en cuanto existe un plan aprobado, el horario tiene dos fuentes,
+y todo consumidor NUEVO que lea `ScheduleEntry` a pelo queda desincronizado en silencio. La regla es:
+*si lo que muestras depende de una FECHA, no leas `ScheduleEntry`*.
 
 ---
 
@@ -370,7 +377,7 @@ Cada fase entrega valor por sí sola y se puede parar ahí.
 | **F3 — Aviso y documento** ✅ **HECHA** (sin el enlace público) | `SpacePlanNotifier` (un aviso por persona con SUS líneas) + `/espacios/mis-cambios` para el docente + documento imprimible en tres vistas (por grupo, por espacio, por profesor) con su CSS de impresión | El punto 12. El enlace público sin login espera la respuesta del centro (§9.2); mientras tanto se imprime a PDF desde el navegador y lo sube quien quiera |
 | **F4 — Semana de exámenes** ✅ **HECHA** | Nada específico: es un plan con `substitution_scope = GROUPS`, 4 días y una ocupación en bloque de las aulas de Inglés. Que no hiciera falta código propio es la prueba de que el mecanismo único funciona | El punto 13 |
 | **F5 — Jornadas culturales** ✅ **HECHA** | El cuadrante lo trae el centro, así que no hay motor que reparta grupos: los talleres se meten como actividades SIN aula y el mismo solver les busca una. `StaffAssigner` (puro) + `StaffScheduler` reparten el profesorado respetando su jornada, con tope por persona (`SpacePlan.staffQuota`) | El punto 14 |
-| **F6 — Integración con guardias** | El parte lee el aula efectiva; crear un plan desde el parte de guardias | Cierra los puntos A.2 y A.3 y elimina la desincronización del §5 |
+| **F6 — Integración con guardias** 🟡 **MEDIA** | ✅ El parte lee el aula efectiva ({@see EffectiveTimetable}) y la hoja de aulas libres de guardias lee `RoomOccupancy` (una sola definición de «libre» y de «grande» en toda la app). ⬜ Falta crear un plan desde el parte de guardias | Cierra el A.2 y elimina la desincronización del §5 |
 
 **F1 antes que nada.** Es la única fase que no depende de decisiones abiertas y la que más se reutiliza.
 
@@ -412,8 +419,9 @@ PDF en un minuto.
    colación de la base de datos — que no es la misma en local (MySQL 8) que en el servidor (MariaDB).
 8. ~~**¿`building`/`floor` en el catálogo?**~~ **RESUELTA: metidas** (la columna se llama `floor_level`,
    porque `FLOOR()` es una función SQL). Están vacías hasta que el centro las rellene.
-9. **Migración de consumidores a `EffectiveTimetable`** (§5): ¿se hace toda en F2 o se difiere el parte
-   de guardias a F6 asumiendo que durante ese tiempo el parte puede mostrar el aula antigua?
+9. ~~**Migración de consumidores a `EffectiveTimetable`** (§5)~~ **RESUELTA: hecha, y sin esperar a F6.**
+   El parte de guardias mostraba el aula antigua en silencio, que es la clase de fallo que se descubre con
+   un profe de guardia delante de un aula vacía. Queda solo la agenda del docente (§5, consumidor 6).
 
 ---
 
@@ -440,19 +448,32 @@ PDF en un minuto.
    libres".
 2. **Sin capacidad ni matrícula no hay control de aforo** (decisión 1).
 3. **Varias alternativas pueden ser artificiosas** cuando solo hay una salida; la UI tiene que admitirlo.
-4. **Dos fuentes para el horario** hasta que todos los consumidores migren (§5).
+4. ~~**Dos fuentes para el horario** hasta que todos los consumidores migren (§5).~~ **CERRADA para los
+   consumidores que podían dar un dato falso**: el parte de guardias, la hoja de aulas libres y la
+   pantalla de agrupar leen ya la rejilla efectiva ({@see EffectiveTimetable}, {@see RoomOccupancy}). Ver
+   la nota al final del §5.
 5. **PII en el enlace público** — cerrada: el centro dijo que no, así que no existe.
-6. **DOS "aulas libres" en la aplicación, con dos filosofías distintas.** Mientras esta rama construía
-   el catálogo de espacios, main resolvió el mismo punto A.2 por otro camino: `App\Guardia\FreeRooms`
-   deduce el tamaño de un aula de la EVIDENCIA (`observedRoomCapacity`: si el horario ha metido tres
-   grupos ahí alguna vez, caben tres), con el argumento —bueno— de que una capacidad tecleada a mano se
-   queda obsoleta y hay que mantenerla. Este módulo la toma del catálogo que rellena el centro
-   ({@see RoomSize}), con el argumento —también bueno— de que el propio centro se ofreció a darla y de
-   que la evidencia **no puede** distinguir un aula pequeña de desdoble de un aula normal: ninguna de
-   las dos ha tenido nunca dos grupos.
-   Los dos enfoques son complementarios y hoy conviven duplicados: `/espacios` (este módulo) y la hoja
-   de aulas libres del déficit de guardias. Unificarlos —probablemente usando la evidencia como valor
-   propuesto y el catálogo como corrección humana— es un trabajo propio, con las dos partes ya en main.
+6. ~~**DOS "aulas libres" en la aplicación, con dos filosofías distintas.**~~ **RESUELTA: unificadas.**
+   Había dos: `App\Guardia\FreeRooms` deducía el tamaño de la EVIDENCIA del horario (si ha metido tres
+   grupos ahí alguna vez, caben tres) y este módulo lo tomaba del catálogo que rellena el centro
+   ({@see RoomSize}). Los dos argumentos eran buenos —una capacidad tecleada a mano se queda obsoleta;
+   la evidencia no puede distinguir un aula pequeña de desdoble de un aula normal— así que se han
+   compuesto en vez de elegir:
+   - `Room.observedGroups` guarda cuántos grupos mete el horario A LA VEZ en cada espacio. Lo recalcula
+     `RoomSynchroniser` en cada importación (columna del sistema: nadie la teclea, así que reescribirla
+     no pisa el trabajo de nadie).
+   - `Room::effectiveSize()` = lo que confirmó el centro **y, si no lo ha hecho, lo que muestra el
+     horario**. Es la ÚNICA respuesta a "cuánto cabe aquí": leer `getSize()` a pelo era el footgun.
+   - La evidencia **ordena y etiqueta, nunca excluye**: es una cota inferior ("aquí ha habido dos grupos"
+     prueba que caben dos; "un grupo" no prueba nada del segundo). Solo un tamaño confirmado descarta un
+     aula en `candidates()`.
+   - `FreeRooms` está borrado: `/guardias/aulas` y la pantalla de agrupar leen `RoomOccupancy`, así que
+     ya respetan los planes aprobados (era la deuda 4 por el lado de guardias) y el aviso del docente
+     desplazado sale de la rejilla efectiva. Con `distinctRooms`, `lectiveEntriesWithRoomAt` y
+     `occupiedRoomsBySlot` se ha ido también el cruce de aulas por texto.
+   Lo que queda de esto: **si una celda del horario nombra un aula sin ficha, esa aula es invisible** y
+   saldría como libre. Se avisa en las dos pantallas con el contador de celdas sin enlazar, y se arregla
+   sincronizando el catálogo.
 
 7. **Dos fuentes para "las horas del día", y no es de este módulo.** Main introdujo `TimeSlot` (el marco
    horario importado del `<marcoHorario>`) para las guardias de recreo, porque los tramos de recreo no

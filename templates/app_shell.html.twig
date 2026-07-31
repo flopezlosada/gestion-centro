@@ -49,6 +49,11 @@
                         <a href="{{ path('break_duty_gap_index') }}" class="{{ route starts with 'break_duty_gap' ? 'is-active' }}">Recreos sin vigilar</a>
                         {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::GUARDIAS')) %}
                             <a href="{{ path('guardia_schedule_edit') }}" class="{{ route starts with 'guardia_schedule_' ? 'is-active' }}">Horario de guardias</a>
+                            {# Montar el cuadrante del curso: primero los cupos (cuántas asume cada cual)
+                               y después la propuesta. Decidir quién está exento es cosa del equipo
+                               directivo, no una lectura del parte: por eso van dentro del WRITE. #}
+                            <a href="{{ path('guardia_quota_index') }}" class="{{ route starts with 'guardia_quota_' ? 'is-active' }}">Cupos</a>
+                            <a href="{{ path('guardia_rota_index') }}" class="{{ route starts with 'guardia_rota_' ? 'is-active' }}">Cuadrante</a>
                         {% endif %}
                     </div>
                 {% endif %}
