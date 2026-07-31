@@ -68,6 +68,18 @@ class AcademicYear implements Auditable
     private \DateTimeImmutable $term3Start;
 
     /** Last teaching day of the third term (the last day of the course). */
+    /**
+     * When the break-duty rota of this course was announced to the staff, or null while it is still a draft.
+     *
+     * The rota is SAVED before it is announced: publishing the engine's proposal stores it but keeps it out
+     * of everybody's "Mis guardias" until the leadership team has retouched it and announced it. Without
+     * this, the only way to fix a proposal was to publish it first — and sixty people had already seen (and
+     * written down) a rota that was about to change. Same circuit the centre asked for on room changes:
+     * propose, validate or modify, then send it to the people affected.
+     */
+    #[ORM\Column(name: 'break_rota_announced_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $breakRotaAnnouncedAt = null;
+
     #[ORM\Column(name: 'term3_end', type: Types::DATE_IMMUTABLE)]
     #[Assert\NotNull(message: 'Indica el fin del tercer trimestre.')]
     private \DateTimeImmutable $term3End;
@@ -121,6 +133,28 @@ class AcademicYear implements Auditable
     public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function getBreakRotaAnnouncedAt(): ?\DateTimeImmutable
+    {
+        return $this->breakRotaAnnouncedAt;
+    }
+
+    /** Whether the staff can already see their break duties for this course. */
+    public function isBreakRotaAnnounced(): bool
+    {
+        return null !== $this->breakRotaAnnouncedAt;
+    }
+
+    /**
+     * Announces the rota (or takes it back to draft with null, which is what emptying it does: a rota with
+     * no places cannot be "announced").
+     */
+    public function setBreakRotaAnnouncedAt(?\DateTimeImmutable $at): static
+    {
+        $this->breakRotaAnnouncedAt = $at;
+
+        return $this;
     }
 
     public function getSchoolYear(): string

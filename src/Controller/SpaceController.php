@@ -40,46 +40,28 @@ final class SpaceController extends AbstractController
     /**
      * The free/occupied spaces at a period, with the same date-and-period picker as the guardia parte.
      */
+    /**
+     * Redirige a LA pantalla de aulas libres, la de guardias.
+     *
+     * Había dos: esta y `/guardias/aulas`. Las dos contestaban «¿qué aulas quedan libres a esta hora?» y las
+     * dos leen ya el mismo {@see RoomOccupancy}, así que no podían discrepar en el dato — pero eran dos sitios
+     * que aprender, dos diseños que mantener y dos oportunidades de divergir. Se conserva la de guardias, que
+     * está pensada para resolver con prisa (una hora a la vez, con su selector) y es la que rediseñó el
+     * handoff. Esta ruta no se borra porque hay enlaces guardados y avisos que apuntan aquí.
+     *
+     * El módulo de espacios se queda con lo que es suyo: los planes de cambio de aula y el catálogo.
+     */
     #[Route('', name: 'space_index', methods: ['GET'])]
-    public function index(
-        Request $request,
-        AcademicYearRepository $years,
-        ScheduleEntryRepository $schedule,
-        RoomOccupancy $occupancy,
-        RoomSynchroniser $synchroniser,
-        SchoolCalendar $calendar,
-    ): Response {
+    public function index(Request $request): Response
+    {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::ESPACIOS);
 
-        $date = GuardiaDate::fromRequest($request);
-        $schoolYear = SchoolYear::current($date);
-        $year = $years->findBySchoolYear($schoolYear);
-
-        // Periods and occupancy both come from the timetable of the course the date falls into; with no
-        // course imported there is nothing to answer, and the template shows the empty state.
-        $slots = null !== $year ? $schedule->distinctSlots($year) : [];
-        $slotIndex = $request->query->has('slot') ? $request->query->getInt('slot') : ($slots[0]['index'] ?? 0);
-        $availability = null !== $year ? $occupancy->at($year, $date, $slotIndex) : null;
-
-        // How many whole groups must fit — the question the guardia coordinator actually asks when
-        // several groups have to be merged into one big room. Never hides a room nobody has classified.
-        $forGroups = max(0, min(4, $request->query->getInt('grupos'))) ?: null;
-
-        return $this->render('space/index.html.twig', [
-            'date' => $date,
-            'schoolYear' => $schoolYear,
-            'slots' => $slots,
-            'slotIndex' => $slotIndex,
-            'availability' => $availability,
-            'candidates' => null !== $availability ? $availability->candidates($forGroups) : [],
-            'otherFree' => null !== $availability ? $availability->otherFree($forGroups) : [],
-            'forGroups' => $forGroups,
-            'isLective' => $calendar->isLective($date),
-            // A cell naming a room with no catalogued card is invisible to the occupancy calculation,
-            // which would report that room as free. Surface it instead of letting it be discovered as
-            // two groups sent to the same place.
-            'unlinkedCells' => $synchroniser->unlinkedCells(),
-        ]);
+        // Se pasan la fecha y el tramo que traiga la petición: quien llegue con un enlace guardado a una hora
+        // concreta tiene que aterrizar en ESA hora, no en la de ahora.
+        return $this->redirectToRoute('guardia_rooms', array_filter([
+            'fecha' => $request->query->get('fecha'),
+            'slot' => $request->query->get('slot'),
+        ], static fn ($v): bool => null !== $v && '' !== $v));
     }
 
     /**

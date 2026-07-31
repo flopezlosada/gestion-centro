@@ -64,7 +64,11 @@
                 {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::READ'), constant('App\\Enum\\Area::ESPACIOS')) %}
                     <span class="nav-section-title">Espacios</span>
                     <div class="nav-group">
-                        <a href="{{ path('space_index') }}" class="{{ route == 'space_index' ? 'is-active' }}">Aulas libres</a>
+                        {#- UNA sola pantalla de aulas libres, la de guardias: las dos respondían la misma
+                            pregunta con el mismo servicio de ocupación, y dos sitios para lo mismo obligan al
+                            claustro a aprender cuál mira cada uno y acaban divergiendo. Se conserva la de
+                            guardias porque está pensada para resolver con prisa (una hora a la vez). -#}
+                        <a href="{{ path('guardia_rooms') }}" class="{{ route == 'guardia_rooms' ? 'is-active' }}">Aulas libres</a>
                         {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ESPACIOS')) %}
                             <a href="{{ path('space_plan_index') }}" class="{{ route starts with 'space_plan_' ? 'is-active' }}">Planes de espacios</a>
                             <a href="{{ path('space_room_index') }}" class="{{ route starts with 'space_room_' ? 'is-active' }}">Catálogo de espacios</a>

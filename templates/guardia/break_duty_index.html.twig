@@ -70,6 +70,18 @@
                 {% if proposal is null %}
                     <div class="inline-form">
                         <a class="btn" href="{{ path('break_duty_index', {curso: curso, propuesta: 1}) }}">Proponer cuadrante</a>
+                        {#- Anunciar es el paso que hace VISIBLE el cuadrante al claustro. Publicar solo guarda:
+                            así el equipo directivo retoca el reparto (quitar con la ×, añadir a mano) sin que
+                            sesenta personas hayan apuntado uno que iba a cambiar. Mismo circuito que los planes
+                            de espacios: proponer → validar o modificar → enviar a los afectados. -#}
+                        {% if (grid.total ?? 0) > 0 and not year.breakRotaAnnounced %}
+                            <form method="post" action="{{ path('break_duty_announce') }}" class="inline-form"
+                                  data-confirm="¿Anunciar el cuadrante de {{ curso }}? El profesorado lo verá en «Mis guardias» y recibirá un aviso con sus recreos.">
+                                <input type="hidden" name="_token" value="{{ csrf_token('break_duty_announce') }}">
+                                <input type="hidden" name="curso" value="{{ curso }}">
+                                <button type="submit" class="btn">Anunciar al claustro</button>
+                            </form>
+                        {% endif %}
                         {#- Vaciar para empezar de cero: publicar sustituye lo del motor pero CONSERVA lo manual, así
                             que sin esto un curso montado con la demanda equivocada arrastra esos restos para siempre y
                             el siguiente reparto sale encima. Dice cuántas manuales se pierden, que son las que nadie
@@ -138,6 +150,15 @@
         <div class="card">
             <div class="page-head">
                 <div><h2>Cuadrante de {{ curso }}</h2></div>
+                {#- Qué estado tiene lo guardado: en borrador nadie más lo ve, y decirlo evita tanto publicar
+                    creyendo que ya está anunciado como retocar creyendo que el claustro no se ha enterado. -#}
+                {% if (grid.total ?? 0) > 0 %}
+                    {% if year.breakRotaAnnounced %}
+                        <p class="help">Anunciado el {{ year.breakRotaAnnouncedAt|date('d/m/Y', false) }}: el profesorado ya lo ve en «Mis guardias». Lo que cambies ahora se les nota sin avisar.</p>
+                    {% else %}
+                        <p class="alert alert--warning"><strong>Borrador.</strong> Está guardado, pero el profesorado todavía NO lo ve. Retócalo lo que necesites y pulsa «Anunciar al claustro» cuando esté listo.</p>
+                    {% endif %}
+                {% endif %}
                 {% if grid.missing > 0 or grid.extra > 0 %}
                     <div>
                         {% if grid.missing > 0 %}<span class="badge badge--warning">Faltan {{ grid.missing }} puesto(s)</span>{% endif %}
