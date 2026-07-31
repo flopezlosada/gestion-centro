@@ -10,6 +10,7 @@ use App\Entity\Notification;
 use App\Entity\Project;
 use App\Entity\Role;
 use App\Entity\User;
+use App\Enum\MeetingScope;
 use App\Service\FileUploader;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -219,7 +220,10 @@ final class MeetingCrudTest extends WebTestCase
         self::assertInstanceOf(Meeting::class, $stored);
         self::assertTrue($stored->hasMinutes());
         self::assertSame('acta.pdf', $stored->getMinutesName());
-        self::assertSame(1, $this->noticesOf($this->em->getRepository(User::class)->find($attendee->getId()), 'meeting.minutes'));
+        // Subirla la deja como BORRADOR: todavía no se le ha dicho nada a nadie. Publicar es otro paso, y
+        // es el que reparte (ver testPublishingTheActaSendsItByEmail).
+        self::assertFalse($stored->isMinutesPublished());
+        self::assertSame(0, $this->noticesOf($this->em->getRepository(User::class)->find($attendee->getId()), 'meeting.minutes'));
 
         // El acta se lee dentro del grupo convocado y en ningún otro sitio.
         $this->client->loginUser($attendee);
@@ -339,6 +343,82 @@ final class MeetingCrudTest extends WebTestCase
         self::assertTrue($stored->isAttendanceTaken());
         self::assertSame(['Pedro Vino'], array_map(static fn (User $u): string => $u->getFullName(), $stored->getAttended()->toArray()));
         self::assertSame(['Ana Faltó', 'Lucía Coordina'], array_map(static fn (User $u): string => $u->getFullName(), $stored->absentees()));
+    }
+
+    /**
+     * Los dos pasos que pidió el centro: guardar deja un borrador que no ve nadie, y PUBLICAR es el gesto
+     * que la reparte — aviso a los convocados y el PDF por correo, adjunto.
+     */
+    public function testPublishingTheActaSendsItByEmailWithThePdfAttached(): void
+    {
+        $convener = $this->user('Lucía Coordina', 'lucia20.meet@centro.test');
+        $attendee = $this->user('Pedro Convocado', 'pedro20.meet@centro.test');
+        $meeting = new Meeting($convener, 'CCP de octubre', new \DateTimeImmutable('-2 hours'));
+        $meeting->addAttendee($attendee);
+        $this->em->persist($meeting);
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+
+        // 1. Se sube el acta: borrador, nadie se entera.
+        $this->client->loginUser($convener);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $uploadUrl = '/reuniones/'.$id.'/acta';
+        $token = (string) $crawler->filter('form[action="'.$uploadUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $uploadUrl, ['_token' => $token], ['acta' => $this->actaFile()]);
+        self::assertResponseRedirects();
+        self::assertEmailCount(0, 'un borrador no se manda a nadie');
+
+        // 2. Se publica: ahí sí.
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $publishUrl = '/reuniones/'.$id.'/acta/publicar';
+        $token = (string) $crawler->filter('form[action="'.$publishUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $publishUrl, ['_token' => $token]);
+        self::assertResponseRedirects();
+
+        $this->em->clear();
+        $stored = $this->em->getRepository(Meeting::class)->find($id);
+        self::assertInstanceOf(Meeting::class, $stored);
+        self::assertTrue($stored->isMinutesPublished());
+        self::assertSame(1, $this->noticesOf($this->em->getRepository(User::class)->find($attendee->getId()), 'meeting.minutes'));
+
+        // Un correo por persona (no uno con todos en copia) y con el PDF adjunto: es lo que el centro
+        // pidió — "envía por mail a todas las personas participantes".
+        $emails = self::getMailerMessages();
+        self::assertCount(2, $emails, 'un correo a cada convocado, incluido quien levanta el acta');
+        self::assertNotEmpty($emails[0]->getAttachments(), 'el acta viaja adjunta, no solo enlazada');
+
+        // Y ya está en el archivo de actas.
+        $this->client->loginUser($attendee);
+        $this->client->request('GET', '/reuniones/actas');
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('body', 'CCP de octubre');
+
+        self::getContainer()->get(FileUploader::class)->remove((string) $stored->getMinutesPath());
+    }
+
+    /** Con familias o con alumnado no hay acta aquí: eso va a RAICES, y duplicarlo son dos medios registros. */
+    public function testAMeetingWithFamiliesKeepsNoMinutes(): void
+    {
+        $convener = $this->user('Lucía Coordina', 'lucia21.meet@centro.test');
+        $attendee = $this->user('Pedro Convocado', 'pedro21.meet@centro.test');
+        $meeting = new Meeting($convener, 'Entrevista con la familia', new \DateTimeImmutable('-2 hours'));
+        $meeting->addAttendee($attendee);
+        $meeting->setScope(MeetingScope::FAMILIES);
+        $this->em->persist($meeting);
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+
+        $this->client->loginUser($convener);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('body', 'se registran en RAICES');
+        self::assertSelectorNotExists('form[action$="/acta/generar"]', 'no se ofrece generar un acta que no existe');
+
+        // Y si alguien lo intenta a pelo, el servidor lo frena.
+        $token = (string) $crawler->filter('input[name="_token"]')->attr('value');
+        $this->client->request('POST', '/reuniones/'.$id.'/tratado', ['_token' => $token, 'tratado' => 'algo']);
+        self::assertResponseStatusCodeSame(403);
     }
 
     public function testWhatWasDiscussedBecomesTheGeneratedPdfActa(): void

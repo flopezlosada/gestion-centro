@@ -1,0 +1,47 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Tipos de reunión{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Tipos de reunión{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Administración</p>
+            <h1>Tipos de reunión</h1>
+            <p class="lead">Los que salen en el desplegable al convocar y con los que se archivan las actas: CCP, tutores, equipo directivo, AMPA/AFA, agentes externos y una entrada por cada comisión de trabajo. Añade las que hagan falta sin depender de nadie.</p>
+        </div>
+        <a class="btn" href="{{ path('admin_meeting_type_new') }}">+ Nuevo tipo</a>
+    </div>
+
+    <div class="card">
+        {% if types is empty %}
+            <div class="empty-state">
+                <h2>No hay tipos de reunión</h2>
+                <p>Sin ellos las actas se archivan sin clasificar. Crea el primero.</p>
+                <a class="btn" href="{{ path('admin_meeting_type_new') }}">Nuevo tipo</a>
+            </div>
+        {% else %}
+            <table data-list-tools>
+                <thead>
+                    <tr><th>Nombre</th><th>Acta que se aprueba</th><th data-filter>Estado</th><th data-nosort></th></tr>
+                </thead>
+                <tbody>
+                    {% for type in types %}
+                        <tr>
+                            <td>{{ type.name }}</td>
+                            <td>{{ type.minutesApprovalRequired ? 'Sí' : 'No' }}</td>
+                            <td>{{ type.active ? 'En uso' : 'Retirado' }}</td>
+                            <td class="row-actions">
+                                <a href="{{ path('admin_meeting_type_edit', { id: type.id }) }}">Editar</a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {# No hay "borrar" a propósito: un tipo retirado deja de ofrecerse pero las actas ya archivadas
+               conservan su etiqueta, que es donde se van a buscar dentro de dos cursos. #}
+            <p class="muted">Un tipo no se borra: se marca como retirado. Así deja de ofrecerse al convocar y las actas antiguas siguen sabiendo de qué reunión son.</p>
+        {% endif %}
+    </div>
+{% endblock %}

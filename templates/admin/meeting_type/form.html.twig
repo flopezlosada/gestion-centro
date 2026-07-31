@@ -1,0 +1,27 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}{{ type.id ? 'Editar tipo de reunión' : 'Nuevo tipo de reunión' }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('admin_meeting_type_index') }}">Tipos de reunión</a><span class="sep">/</span>
+    {{ type.id ? 'Editar' : 'Nuevo' }}
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <p class="eyebrow">Tipos de reunión</p>
+        <h1>{{ type.id ? 'Editar tipo de reunión' : 'Nuevo tipo de reunión' }}</h1>
+    </div>
+
+    <div class="card form-card">
+        {{ form_start(form, { attr: { novalidate: 'novalidate' } }) }}
+            {{ f.submit_error(form) }}
+            {{ form_errors(form) }}
+            {{ f.fields([form.name]) }}
+            {{ f.toggles([form.minutesApprovalRequired, form.active]) }}
+            {{ f.actions(path('admin_meeting_type_index')) }}
+        {{ form_end(form) }}
+    </div>
+{% endblock %}

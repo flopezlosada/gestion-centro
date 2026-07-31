@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Form;
 
 use App\Entity\Meeting;
+use App\Entity\MeetingType;
 use App\Entity\Project;
 use App\Entity\User;
 use App\Enum\EventReminderOffset;
+use App\Enum\MeetingScope;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
@@ -24,7 +26,19 @@ final class MeetingFormData
     #[Assert\Length(max: 200)]
     public string $title = '';
 
-    /** The agenda ("orden del día"). */
+    /**
+     * Who the meeting is with. It decides whether there is an acta at all: con alumnado o con familias se
+     * registra en RAICES, no aquí ({@see MeetingScope}).
+     */
+    public MeetingScope $scope = MeetingScope::STAFF;
+
+    /**
+     * What kind of staff meeting it is (CCP, tutores, ED, AMPA…), from the catalogue the centre keeps.
+     * Ignored when the meeting is not with staff.
+     */
+    public ?MeetingType $type = null;
+
+    /** The agenda ("orden del día"). Solo en reuniones con equipo docente. */
     public ?string $agenda = null;
 
     #[Assert\Length(max: 120)]
@@ -106,6 +120,8 @@ final class MeetingFormData
     {
         $data = new self();
         $data->title = $meeting->getTitle();
+        $data->scope = $meeting->getScope();
+        $data->type = $meeting->getType();
         $data->agenda = $meeting->getAgenda();
         $data->place = $meeting->getPlace();
         $data->day = $meeting->getStartAt()->setTime(0, 0);

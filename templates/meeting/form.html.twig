@@ -28,9 +28,15 @@
             {{ f.submit_error(form) }}
             {{ form_errors(form) }}
             {{ f.section('Qué y cuándo', [form.title, form.day, form.startTime, form.endTime, form.place, form.reminder]) }}
-            {{ f.section('Orden del día', [form.agenda]) }}
-            {{ f.section('El acta', [form.minutesTakenBy]) }}
-            {{ f.toggle(form.minutesApprovalRequired) }}
+            {# Con quién es la reunión decide el resto de la pantalla: con alumnado o con familias no hay
+               acta que rellenar aquí (va a RAICES), y meeting-form.js esconde esos bloques. Sin JS se ven
+               igual y el servidor los ignora — ver Meeting::setScope(). #}
+            {{ f.section('Con quién', [form.scope, form.type]) }}
+            <div data-staff-only="1">
+                {{ f.section('Orden del día', [form.agenda]) }}
+                {{ f.section('El acta', [form.minutesTakenBy]) }}
+                {{ f.toggle(form.minutesApprovalRequired) }}
+            </div>
             <fieldset class="form-section">
                 <legend class="form-section-title">Quién</legend>
                 {{ f.field(form.project) }}
@@ -44,4 +50,8 @@
             {{ f.actions(editing ? path('meeting_show', { id: meeting.id }) : path('meeting_index'), editing ? 'Guardar' : 'Convocar') }}
         {{ form_end(form) }}
     </div>
+{% endblock %}
+
+{% block page_scripts %}
+    <script src="{{ asset_ver('/js/meeting-form.js') }}"></script>
 {% endblock %}

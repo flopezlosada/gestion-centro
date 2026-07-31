@@ -34,6 +34,7 @@
     <table class="data">
         <tr><td class="k">Fecha y hora</td><td>{{ meeting.startAt|date('d/m/Y') }}, {{ meeting.startAt|date('H:i') }}{% if meeting.endAt %} a {{ meeting.endAt|date('H:i') }}{% endif %}</td></tr>
         <tr><td class="k">Lugar</td><td>{{ meeting.place ?: '—' }}</td></tr>
+        {% if meeting.type %}<tr><td class="k">Tipo de reunión</td><td>{{ meeting.type.name }}</td></tr>{% endif %}
         {% if meeting.project %}<tr><td class="k">Proyecto o coordinación</td><td>{{ meeting.project.name }}</td></tr>{% endif %}
         <tr><td class="k">Convoca</td><td>{{ meeting.convener ? meeting.convener.fullName : '—' }}</td></tr>
         <tr><td class="k">Levanta el acta</td><td>{{ meeting.minutesKeeper ? meeting.minutesKeeper.fullName : '—' }}</td></tr>
@@ -65,11 +66,19 @@
         <p class="none">No se fijó orden del día.</p>
     {% endif %}
 
-    <h2>Desarrollo y acuerdos</h2>
+    <h2>Desarrollo de la reunión</h2>
     {% if meeting.discussion %}
         <div class="prose">{{ meeting.discussion }}</div>
     {% else %}
-        <p class="none">No se recogió lo tratado.</p>
+        <p class="none">No se recogió el desarrollo.</p>
+    {% endif %}
+
+    {# Los acuerdos, con epígrafe propio: es la parte del acta que se busca meses después. #}
+    <h2>Acuerdos</h2>
+    {% if meeting.agreements %}
+        <div class="prose">{{ meeting.agreements }}</div>
+    {% else %}
+        <p class="none">No se recogieron acuerdos.</p>
     {% endif %}
 
     {% if meeting.minutesApprovalRequired %}

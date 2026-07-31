@@ -11,11 +11,13 @@ use App\Enum\Area;
 use App\Form\MeetingFormData;
 use App\Form\MeetingFormType;
 use App\Repository\MeetingRepository;
+use App\Repository\MeetingTypeRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
 use App\Service\FileUploader;
 use App\Service\MeetingAccess;
 use App\Service\MeetingNotifier;
+use App\Service\MinutesMailer;
 use App\Service\MinutesPdfRenderer;
 use App\Service\OrganizationHierarchy;
 use App\Support\DocumentUpload;
@@ -71,6 +73,40 @@ final class MeetingController extends AbstractController
     }
 
     /**
+     * El apartado de ACTAS: las actas publicadas, ordenadas cronológicamente y filtrables por tipo de
+     * reunión, que es exactamente lo que pidió el centro.
+     *
+     * Quién ve qué: cada persona, las de las reuniones en las que estuvo; el equipo directivo, todas.
+     * Es lo mismo que ya decidía quién puede abrir una reunión, aplicado a su archivo — el centro dejó
+     * escrito que la transparencia total ("aunque no hayan participado") está por decidir, y publicar de
+     * más no tiene vuelta atrás.
+     */
+    #[Route('/actas', name: 'meeting_minutes_archive', methods: ['GET'])]
+    public function minutesArchive(Request $request, #[CurrentUser] User $user, MeetingRepository $meetings, MeetingTypeRepository $meetingTypes, OrganizationHierarchy $hierarchy): Response
+    {
+        $types = $meetingTypes->findAllOrdered();
+        $requested = $request->query->getInt('tipo');
+        // El tipo pedido se resuelve contra la lista, no contra el repositorio: un id inventado no filtra
+        // por algo que no se ofrece, simplemente no filtra.
+        $type = null;
+        foreach ($types as $candidate) {
+            if ($candidate->getId() === $requested) {
+                $type = $candidate;
+                break;
+            }
+        }
+
+        $wholeCentre = $this->isLeadership($user, $hierarchy);
+
+        return $this->render('meeting/archive.html.twig', [
+            'minutes' => $wholeCentre ? $meetings->findPublishedMinutes($type) : $meetings->findPublishedMinutesFor($user, $type),
+            'types' => $types,
+            'currentType' => $type,
+            'wholeCentre' => $wholeCentre,
+        ]);
+    }
+
+    /**
      * Convenes a meeting. Only for whoever holds a cargo that convenes (or coordinates a project, or is an
      * admin): a plain docente gets convened, not the other way round.
      *
@@ -79,7 +115,7 @@ final class MeetingController extends AbstractController
      * department — the two meetings a centre holds most.
      */
     #[Route('/nueva', name: 'meeting_new', methods: ['GET', 'POST'])]
-    public function new(Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, MeetingNotifier $notifier): Response
+    public function new(Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, MeetingNotifier $notifier, MeetingTypeRepository $meetingTypes): Response
     {
         $isAdmin = $this->isGranted('ROLE_ADMIN');
         if (!$access->canConvene($user, $isAdmin)) {
@@ -116,6 +152,7 @@ final class MeetingController extends AbstractController
         $form = $this->createForm(MeetingFormType::class, $data, [
             'project_choices' => $projects,
             'attendee_choices' => $people,
+            'type_choices' => $meetingTypes->findActive(),
         ]);
         $form->handleRequest($request);
 
@@ -153,8 +190,9 @@ final class MeetingController extends AbstractController
             'meeting' => $meeting,
             'canManage' => $access->canManage($meeting, $user, $isAdmin),
             // Quien levanta el acta: no siempre quien convoca. Es quien sube el acta, pasa lista y la da
-            // por aprobada.
-            'keepsMinutes' => $access->canKeepMinutes($meeting, $user, $isAdmin),
+            // por aprobada. Se llama canKeepMinutes y no keepsMinutes porque Meeting::keepsMinutes() ya
+            // responde otra cosa —si ESTA REUNIÓN lleva acta— y las dos conviven en la misma plantilla.
+            'canKeepMinutes' => $access->canKeepMinutes($meeting, $user, $isAdmin),
             // Pasar lista solo tiene sentido cuando la reunión ya ha empezado: antes no hay nada que contar.
             'isHeld' => $meeting->isPast(new \DateTimeImmutable()),
         ]);
@@ -166,7 +204,7 @@ final class MeetingController extends AbstractController
      * anyone newly added gets the convocatoria.
      */
     #[Route('/{id}/editar', name: 'meeting_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
-    public function edit(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, MeetingNotifier $notifier): Response
+    public function edit(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, MeetingNotifier $notifier, MeetingTypeRepository $meetingTypes): Response
     {
         $isAdmin = $this->isGranted('ROLE_ADMIN');
         if (!$access->canManage($meeting, $user, $isAdmin)) {
@@ -192,6 +230,7 @@ final class MeetingController extends AbstractController
         $form = $this->createForm(MeetingFormType::class, $data, [
             'project_choices' => $projects,
             'attendee_choices' => $people,
+            'type_choices' => $meetingTypes->findActive(),
         ]);
         $form->handleRequest($request);
 
@@ -233,7 +272,7 @@ final class MeetingController extends AbstractController
      * file already gone.
      */
     #[Route('/{id}/acta', name: 'meeting_minutes_upload', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function uploadMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, FileUploader $uploader, MeetingNotifier $notifier): Response
+    public function uploadMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, FileUploader $uploader): Response
     {
         if (!$this->isCsrfTokenValid('meeting_minutes'.$meeting->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
@@ -257,7 +296,7 @@ final class MeetingController extends AbstractController
             return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
         }
 
-        $replaced = $this->keepMinutes($meeting, $uploader->upload($file, self::MINUTES_SUBDIR), DocumentUpload::nameOf($file), $user, $entityManager, $uploader, $notifier);
+        $replaced = $this->keepMinutes($meeting, $uploader->upload($file, self::MINUTES_SUBDIR), DocumentUpload::nameOf($file), $user, $entityManager, $uploader);
         $this->addFlash('success', $replaced ? 'Acta sustituida.' : 'Acta subida.');
 
         return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
@@ -281,10 +320,17 @@ final class MeetingController extends AbstractController
             throw $this->createAccessDeniedException('La reunión todavía no ha empezado.');
         }
 
+        if (!$meeting->keepsMinutes()) {
+            // Con alumnado o con familias no hay acta que rellenar: eso va a RAICES.
+            throw $this->createAccessDeniedException('Esta reunión no lleva acta en la aplicación.');
+        }
+
         $discussion = trim((string) $request->request->get('tratado'));
+        $agreements = trim((string) $request->request->get('acuerdos'));
         $meeting->setDiscussion('' !== $discussion ? $discussion : null);
+        $meeting->setAgreements('' !== $agreements ? $agreements : null);
         $entityManager->flush();
-        $this->addFlash('success', 'Guardado lo tratado.');
+        $this->addFlash('success', 'Guardado. Cuando esté listo, genera el acta y publícala.');
 
         return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
     }
@@ -296,7 +342,7 @@ final class MeetingController extends AbstractController
      * meeting (replacing a previous file, uploaded or generated).
      */
     #[Route('/{id}/acta/generar', name: 'meeting_minutes_generate', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function generateMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, FileUploader $uploader, MinutesPdfRenderer $renderer, MeetingNotifier $notifier): Response
+    public function generateMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, FileUploader $uploader, MinutesPdfRenderer $renderer): Response
     {
         if (!$this->isCsrfTokenValid('meeting_minutes'.$meeting->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
@@ -309,8 +355,45 @@ final class MeetingController extends AbstractController
         }
 
         $path = $uploader->store($renderer->render($meeting), self::MINUTES_SUBDIR, 'pdf');
-        $replaced = $this->keepMinutes($meeting, $path, $renderer->fileNameFor($meeting), $user, $entityManager, $uploader, $notifier);
-        $this->addFlash('success', $replaced ? 'Acta generada; sustituye a la anterior.' : 'Acta generada en PDF.');
+        $replaced = $this->keepMinutes($meeting, $path, $renderer->fileNameFor($meeting), $user, $entityManager, $uploader);
+        $this->addFlash('success', $replaced ? 'Acta generada; sustituye a la anterior. Revísala y publícala.' : 'Acta generada en PDF. Revísala y, cuando esté, publícala.');
+
+        return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
+    }
+
+    /**
+     * PUBLISHES the acta: la da por definitiva, la manda por correo con el PDF adjunto a todas las
+     * personas convocadas y la pone en su apartado de actas.
+     *
+     * Es el segundo de los dos pasos que pidió el centro ("hay que dar opción de guardar y de publicar").
+     * Guardar deja un borrador que solo ve quien levanta el acta; publicar es el gesto único y deliberado
+     * que la reparte. Volver a subir o regenerar el acta la devuelve a borrador
+     * ({@see Meeting::attachMinutes()}), así que lo publicado y lo que hay siempre coinciden.
+     */
+    #[Route('/{id}/acta/publicar', name: 'meeting_minutes_publish', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function publishMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, MeetingNotifier $notifier, MinutesMailer $mailer): Response
+    {
+        if (!$this->isCsrfTokenValid('meeting_minutes'.$meeting->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+        if (!$access->canKeepMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
+            throw $this->createAccessDeniedException('El acta la publica quien la levanta.');
+        }
+
+        if (!$meeting->publishMinutes($user)) {
+            $this->addFlash('error', 'Primero sube o genera el acta; después se publica.');
+
+            return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
+        }
+        $entityManager->flush();
+
+        // Dos entregas distintas y a propósito: el AVISO (in-app, móvil o correo, según lo que cada cual
+        // haya elegido) dice que ya está; el CORREO lleva el PDF adjunto, que es lo que el centro pidió.
+        $people = $meeting->people();
+        $notifier->notifyMinutes($meeting, $people);
+        $sent = $mailer->send($meeting, $people);
+
+        $this->addFlash('success', sprintf('Acta publicada. Enviada por correo a %d persona%s.', $sent, 1 === $sent ? '' : 's'));
 
         return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
     }
@@ -467,7 +550,12 @@ final class MeetingController extends AbstractController
     private function applyFormData(Meeting $meeting, MeetingFormData $data): array
     {
         \assert(null !== $data->day);
-        $meeting->setTitle($data->title)
+        // El ámbito va PRIMERO: setScope() limpia lo que solo tienen las reuniones de equipo docente
+        // (tipo, orden del día, desarrollo y acuerdos), así que aplicarlo después borraría lo que se
+        // acaba de escribir.
+        $meeting->setScope($data->scope)
+            ->setType($data->type)
+            ->setTitle($data->title)
             ->setAgenda($data->agenda)
             ->setPlace($data->place)
             ->setEndAt(null !== $data->endTime ? CalendarDate::at($data->day, $data->endTime) : null)
@@ -482,9 +570,14 @@ final class MeetingController extends AbstractController
     }
 
     /**
-     * Attaches a stored file as the acta, deletes the one it replaced and tells the people convened. Shared
-     * by the two ways an acta arrives — uploaded by hand and generated as PDF — so the notice, the flush
-     * order and the orphan-file cleanup cannot differ between them.
+     * Attaches a stored file as the acta and deletes the one it replaced. Shared by the two ways an acta
+     * arrives — uploaded by hand and generated as PDF — so the flush order and the orphan-file cleanup
+     * cannot differ between them.
+     *
+     * It does NOT tell anybody: what arrives here is a DRAFT. Telling the whole staff about each of the
+     * two or three regenerations it takes to get an acta right is how people learn to ignore the notice —
+     * announcing it is what {@see publishMinutes()} is for, and it is a deliberate, separate press of a
+     * button ("hay que dar opción de guardar y de publicar").
      *
      * The old file is removed only AFTER the flush: a failed flush must never leave the meeting pointing at
      * a file already gone from disk.
@@ -495,19 +588,16 @@ final class MeetingController extends AbstractController
      * @param User                   $by            who put it there
      * @param EntityManagerInterface $entityManager the entity manager
      * @param FileUploader           $uploader      the private-storage uploader
-     * @param MeetingNotifier        $notifier      the meeting notifier
      *
      * @return bool true when it replaced a previous acta
      */
-    private function keepMinutes(Meeting $meeting, string $path, string $name, User $by, EntityManagerInterface $entityManager, FileUploader $uploader, MeetingNotifier $notifier): bool
+    private function keepMinutes(Meeting $meeting, string $path, string $name, User $by, EntityManagerInterface $entityManager, FileUploader $uploader): bool
     {
         $replaced = $meeting->attachMinutes($path, $name, $by, new \DateTimeImmutable());
         $entityManager->flush();
         if (null !== $replaced) {
             $uploader->remove($replaced);
         }
-
-        $notifier->notifyMinutes($meeting, array_values($meeting->getAttendees()->toArray()));
 
         return null !== $replaced;
     }

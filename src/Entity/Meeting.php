@@ -6,6 +6,7 @@ namespace App\Entity;
 
 use App\Contract\Auditable;
 use App\Enum\EventReminderOffset;
+use App\Enum\MeetingScope;
 use App\Repository\MeetingRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
@@ -63,13 +64,38 @@ class Meeting implements Auditable
     private ?string $agenda = null;
 
     /**
-     * What was actually discussed and agreed, written in the app after the meeting ("recoger lo tratado").
-     * It is the RAW MATERIAL of the acta: from it (plus the roll and the agenda) the app can generate the
-     * acta as a PDF on demand. Free text and one single field on purpose — an acta is prose, and splitting
-     * it into "tratado"/"acuerdos"/"varios" would impose a structure the centre never asked for.
+     * What was actually discussed, written in the app after the meeting ("desarrollo de la reunión").
+     * Together with {@see $agenda} and {@see $agreements} it is the RAW MATERIAL of the acta, from which
+     * (plus the roll) the app generates the PDF.
+     *
+     * It used to be ONE field holding everything, on the grounds that an acta is prose. The centre then
+     * asked for the three boxes by name — "orden del día, desarrollo de la reunión y acuerdos" — which is
+     * how their own acta template is laid out, so they are three.
      */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $discussion = null;
+
+    /**
+     * What was agreed ("acuerdos"). Kept apart from {@see $discussion} because it is the part anybody
+     * reads the acta FOR, and the part that has to be findable months later.
+     */
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    private ?string $agreements = null;
+
+    /**
+     * Who the meeting is with. It decides whether it keeps minutes at all: a meeting with families or
+     * students is recorded in RAICES, so here it is only an appointment ({@see MeetingScope}).
+     */
+    #[ORM\Column(length: 20, enumType: MeetingScope::class, options: ['default' => 'staff'])]
+    private MeetingScope $scope = MeetingScope::STAFF;
+
+    /**
+     * What kind of staff meeting it is (CCP, tutores, ED, AMPA…), from the catalogue the centre keeps.
+     * Null for a meeting that is none of them, and always null for a meeting that is not with staff.
+     */
+    #[ORM\ManyToOne(targetEntity: MeetingType::class)]
+    #[ORM\JoinColumn(name: 'meeting_type_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?MeetingType $type = null;
 
     /** Where it takes place ("sala de profesores", "aula 12", "videollamada"). Optional. */
     #[ORM\Column(length: 120, nullable: true)]
@@ -168,6 +194,23 @@ class Meeting implements Auditable
     #[ORM\Column(name: 'minutes_uploaded_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $minutesUploadedAt = null;
 
+    /**
+     * When the acta was PUBLISHED, or null while it is still a draft.
+     *
+     * The centre asked for the two steps by name ("hay que dar opción de guardar y de publicar"), and the
+     * distinction is real: a generated PDF is a draft that the person keeping the minutes re-reads and
+     * regenerates two or three times, and telling everybody about each of those drafts is how people
+     * learn to ignore the notice. Publishing is the single, deliberate act that sends the acta out and
+     * puts it in everyone's archive.
+     */
+    #[ORM\Column(name: 'minutes_published_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $minutesPublishedAt = null;
+
+    /** Who published it (a historical fact). */
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'minutes_published_by_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?User $minutesPublishedBy = null;
+
     /** Who uploaded the minutes (a historical fact, kept even if they later stop coordinating). */
     #[ORM\ManyToOne(targetEntity: User::class)]
     #[ORM\JoinColumn(name: 'minutes_uploaded_by_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
@@ -257,6 +300,112 @@ class Meeting implements Auditable
         $this->discussion = $discussion;
 
         return $this;
+    }
+
+    public function getAgreements(): ?string
+    {
+        return $this->agreements;
+    }
+
+    public function setAgreements(?string $agreements): static
+    {
+        $this->agreements = $agreements;
+
+        return $this;
+    }
+
+    public function getScope(): MeetingScope
+    {
+        return $this->scope;
+    }
+
+    /**
+     * Sets who the meeting is with. Moving it AWAY from staff drops the kind and everything the acta is
+     * made of: a meeting with families keeps no minutes here (it goes into RAICES), so leaving an agenda
+     * and some agreements hanging off it would be a half-acta nobody would ever finish.
+     */
+    public function setScope(MeetingScope $scope): static
+    {
+        // Con un acta ya adjunta el ámbito se queda como está. La alternativa —dejarlo cambiar— abría un
+        // agujero: la ficha escondía el bloque del acta (porque la reunión ya "no lleva acta") pero el
+        // fichero seguía publicado, descargable y listado en el archivo. Y la otra alternativa —borrar el
+        // acta al cambiar un desplegable— es peor todavía. Quien de verdad se equivocó de ámbito puede
+        // quitar el acta primero, que es un gesto explícito y avisa de lo que hace.
+        if ($this->hasMinutes() && !$scope->keepsMinutes()) {
+            return $this;
+        }
+
+        $this->scope = $scope;
+
+        if (!$scope->keepsMinutes()) {
+            $this->type = null;
+            $this->agenda = null;
+            $this->discussion = null;
+            $this->agreements = null;
+        }
+
+        return $this;
+    }
+
+    public function getType(): ?MeetingType
+    {
+        return $this->type;
+    }
+
+    public function setType(?MeetingType $type): static
+    {
+        // Un tipo solo tiene sentido en una reunión de equipo docente: los tipos SON los del claustro.
+        $this->type = $this->scope->keepsMinutes() ? $type : null;
+
+        return $this;
+    }
+
+    /**
+     * Whether this meeting keeps minutes in the application at all ({@see MeetingScope::keepsMinutes()}).
+     * The single predicate the screens ask, instead of comparing the scope by hand in six templates.
+     */
+    public function keepsMinutes(): bool
+    {
+        return $this->scope->keepsMinutes();
+    }
+
+    public function getMinutesPublishedAt(): ?\DateTimeImmutable
+    {
+        return $this->minutesPublishedAt;
+    }
+
+    public function getMinutesPublishedBy(): ?User
+    {
+        return $this->minutesPublishedBy;
+    }
+
+    /**
+     * Whether the acta is published — visible in everyone's archive and already sent out — as opposed to
+     * a draft that only whoever keeps the minutes can see.
+     */
+    public function isMinutesPublished(): bool
+    {
+        return null !== $this->minutesPublishedAt;
+    }
+
+    /**
+     * Publishes the acta. Refuses to do it without a file, because publishing is precisely "esto ya es el
+     * acta": there has to be an acta.
+     *
+     * @param User $by who publishes it
+     *
+     * @return bool true when it was published, false when there is no file to publish
+     */
+    public function publishMinutes(User $by): bool
+    {
+        if (null === $this->minutesPath) {
+            return false;
+        }
+
+        $this->minutesPublishedAt = new \DateTimeImmutable();
+        $this->minutesPublishedBy = $by;
+
+        return true;
     }
 
     public function getPlace(): ?string
@@ -668,6 +817,10 @@ class Meeting implements Auditable
         $this->minutesName = $name;
         $this->minutesUploadedBy = $by;
         $this->minutesUploadedAt = $at;
+        // Un acta nueva vuelve a ser borrador: lo que se publicó ya no es lo que hay, y dejar la marca de
+        // publicada haría creer al claustro que lo que tienen por correo es esto.
+        $this->minutesPublishedAt = null;
+        $this->minutesPublishedBy = null;
 
         return $replaced;
     }
@@ -686,6 +839,8 @@ class Meeting implements Auditable
         $this->minutesName = null;
         $this->minutesUploadedBy = null;
         $this->minutesUploadedAt = null;
+        $this->minutesPublishedAt = null;
+        $this->minutesPublishedBy = null;
 
         return $removed;
     }
