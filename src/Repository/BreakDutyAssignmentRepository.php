@@ -8,6 +8,7 @@ use App\Entity\AcademicYear;
 use App\Entity\BreakDutyAssignment;
 use App\Entity\BreakZone;
 use App\Entity\User;
+use App\Enum\BreakPeriod;
 use App\Enum\Weekday;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
@@ -93,17 +94,19 @@ class BreakDutyAssignmentRepository extends ServiceEntityRepository
     }
 
     /**
-     * A teacher's duty on a given weekday of a course, if they have one. At most one row exists by
-     * construction (the unique key on course + teacher + weekday), which is what lets an absence resolve
-     * "does this person have a recreo today?" with a single lookup.
+     * A teacher's places on a given weekday of a course — up to two, one per recreo.
+     *
+     * A list, not a single row: since a place belongs to one recreo, somebody can watch the patio at the
+     * long one and the biblioteca at the short one. The old single-row version would now throw the moment
+     * anybody did.
      *
      * @param AcademicYear $year    the course whose rota to read
      * @param User         $teacher the teacher
      * @param Weekday      $weekday the weekday
      *
-     * @return BreakDutyAssignment|null the duty, or null when they have none that day
+     * @return BreakDutyAssignment[] their places that day, earliest recreo first
      */
-    public function findForTeacherAndWeekday(AcademicYear $year, User $teacher, Weekday $weekday): ?BreakDutyAssignment
+    public function findAllForTeacherAndWeekday(AcademicYear $year, User $teacher, Weekday $weekday): array
     {
         return $this->createQueryBuilder('a')
             ->addSelect('z')
@@ -114,6 +117,35 @@ class BreakDutyAssignmentRepository extends ServiceEntityRepository
             ->setParameter('year', $year)
             ->setParameter('teacher', $teacher)
             ->setParameter('weekday', $weekday)
+            ->orderBy('a.period', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * The place a teacher holds at one specific recreo of a weekday, if any — what the pre-check before
+     * adding a place asks, since that is the only clash the unique key forbids.
+     *
+     * @param AcademicYear $year    the course whose rota to read
+     * @param User         $teacher the teacher
+     * @param Weekday      $weekday the weekday
+     * @param BreakPeriod  $period  which recreo
+     *
+     * @return BreakDutyAssignment|null the place, or null when they have none there
+     */
+    public function findForTeacherWeekdayAndPeriod(AcademicYear $year, User $teacher, Weekday $weekday, BreakPeriod $period): ?BreakDutyAssignment
+    {
+        return $this->createQueryBuilder('a')
+            ->addSelect('z')
+            ->join('a.zone', 'z')
+            ->andWhere('a.academicYear = :year')
+            ->andWhere('a.teacher = :teacher')
+            ->andWhere('a.weekday = :weekday')
+            ->andWhere('a.period = :period')
+            ->setParameter('year', $year)
+            ->setParameter('teacher', $teacher)
+            ->setParameter('weekday', $weekday)
+            ->setParameter('period', $period)
             ->getQuery()
             ->getOneOrNullResult();
     }

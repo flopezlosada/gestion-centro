@@ -8,7 +8,7 @@
     <div class="page-head">
         <div>
             <h1>Cuadrante de recreo</h1>
-            <p class="lead">Quién vigila cada zona en los recreos. Se hace <strong>una vez por curso</strong> y vale todo el año: cada profesor tiene su día fijo. Si alguien falta, el recreo <strong>no se reasigna</strong>: salta un aviso al equipo directivo para buscar un voluntario.</p>
+            <p class="lead">Quién vigila cada zona en los recreos. Se hace <strong>una vez por curso</strong> y vale todo el año. Si alguien falta, el recreo <strong>no se reasigna</strong>: salta un aviso al equipo directivo para buscar un voluntario.</p>
         </div>
         {% if canManage %}
             <div class="inline-form"><a class="btn secondary" href="{{ path('break_zone_index') }}">Zonas y pesos</a></div>
@@ -49,7 +49,7 @@
                 {% for slot in grid.breaks %}
                     <strong>{{ loop.index }}.º</strong> {{ slot.startsAt|date('H:i', false) }}–{{ slot.endsAt|date('H:i', false) }}{{ not loop.last ? ' · ' }}
                 {% endfor %}
-                · Cubrir los dos cuenta como <strong>una sola</strong> guardia.
+                · Una guardia son <strong>un grande y un corto</strong>, y pueden ser de días distintos.
             </p>
         {% endif %}
 
@@ -83,47 +83,57 @@
                     {% if canManage %}<p><a class="btn" href="{{ path('break_zone_index') }}">Configurar zonas</a></p>{% endif %}
                 </div>
             {% else %}
-                <div class="tt-scroll">
-                    <table class="tt-grid">
-                        <thead>
-                            <tr>
-                                <th scope="col">Zona</th>
-                                {% for wd in grid.weekdays %}<th scope="col">{{ wd.label }}</th>{% endfor %}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for zone in grid.zones %}
+                {# Una rejilla POR RECREO. Antes bastaba una porque la fila cubría los dos tramos; ahora una
+                   plaza es de un recreo concreto y la misma persona puede estar en el patio en el grande y
+                   en la biblioteca en el corto. Apilarlas en una sola celda haría ilegible justo lo que hay
+                   que leer de un vistazo: quién vigila qué, en cada recreo. #}
+                {% for period in grid.periods %}
+                    {% set slot = grid.breaks[period.position] ?? null %}
+                    <h3 class="tt-grid__caption">
+                        {{ period.label }}
+                        <span class="muted">{{ slot ? ' · ' ~ slot.timeRange : '' }}</span>
+                    </h3>
+                    <div class="tt-scroll">
+                        <table class="tt-grid">
+                            <thead>
                                 <tr>
-                                    <th scope="row">
-                                        {{ zone.name }}
-                                        <span class="muted"> · peso {{ zone.weight }}{% if zone.requiredTeachers > 1 %} · {{ zone.requiredTeachers }} pers.{% endif %}</span>
-                                    </th>
-                                    {% for wd in grid.weekdays %}
-                                        {% set duties = grid.cells[wd.value][zone.id] %}
-                                        {% set short = grid.shortfall[wd.value][zone.id] %}
-                                        <td class="tt-cell {{ short > 0 ? 'tt-cell--short' }}">
-                                            {% for duty in duties %}
-                                                <span class="duty-chip">
-                                                    {{ duty.teacher.fullName }}
-                                                    <span class="muted">{{ duty.periods.shortLabel }}</span>
-                                                    {% if canManage %}
-                                                        <form method="post" action="{{ path('break_duty_remove', {id: duty.id}) }}" class="duty-chip__remove">
-                                                            <input type="hidden" name="_token" value="{{ csrf_token('break_duty_remove' ~ duty.id) }}">
-                                                            <button type="submit" class="chip-x" title="Quitar a {{ duty.teacher.fullName }} de {{ zone.name }} los {{ wd.label|lower }}" aria-label="Quitar a {{ duty.teacher.fullName }} de {{ zone.name }} los {{ wd.label|lower }}">×</button>
-                                                        </form>
-                                                    {% endif %}
-                                                </span>
-                                            {% endfor %}
-                                            {% if short > 0 %}
-                                                <span class="muted">Falta{{ short > 1 ? 'n' }} {{ short }}</span>
-                                            {% endif %}
-                                        </td>
-                                    {% endfor %}
+                                    <th scope="col">Zona</th>
+                                    {% for wd in grid.weekdays %}<th scope="col">{{ wd.label }}</th>{% endfor %}
                                 </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+                            <tbody>
+                                {% for zone in grid.zones %}
+                                    <tr>
+                                        <th scope="row">
+                                            {{ zone.name }}
+                                            <span class="muted"> · peso {{ zone.weight }}</span>
+                                        </th>
+                                        {% for wd in grid.weekdays %}
+                                            {% set duties = grid.cells[period.value][wd.value][zone.id] %}
+                                            {% set short = grid.shortfall[period.value][wd.value][zone.id] %}
+                                            <td class="tt-cell {{ short > 0 ? 'tt-cell--short' }}">
+                                                {% for duty in duties %}
+                                                    <span class="duty-chip">
+                                                        {{ duty.teacher.fullName }}
+                                                        {% if canManage %}
+                                                            <form method="post" action="{{ path('break_duty_remove', {id: duty.id}) }}" class="duty-chip__remove">
+                                                                <input type="hidden" name="_token" value="{{ csrf_token('break_duty_remove' ~ duty.id) }}">
+                                                                <button type="submit" class="chip-x" title="Quitar a {{ duty.teacher.fullName }} de {{ zone.name }} los {{ wd.label|lower }} en el {{ period.label|lower }}" aria-label="Quitar a {{ duty.teacher.fullName }} de {{ zone.name }} los {{ wd.label|lower }} en el {{ period.label|lower }}">×</button>
+                                                            </form>
+                                                        {% endif %}
+                                                    </span>
+                                                {% endfor %}
+                                                {% if short > 0 %}
+                                                    <span class="muted">Falta{{ short > 1 ? 'n' }} {{ short }}</span>
+                                                {% endif %}
+                                            </td>
+                                        {% endfor %}
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% endfor %}
             {% endif %}
         </div>
 
@@ -150,14 +160,14 @@
                         {% for z in zones %}<option value="{{ z.id }}">{{ z.name }}</option>{% endfor %}
                     </select>
 
-                    <label class="field-label" for="periods">Recreos</label>
-                    <select id="periods" name="periods" required>
-                        {% for c in coverages %}<option value="{{ c.value }}" {{ c.value == 'both' ? 'selected' }}>{{ c.label }}</option>{% endfor %}
+                    <label class="field-label" for="period">Recreo</label>
+                    <select id="period" name="period" required>
+                        {% for p in periods %}<option value="{{ p.value }}">{{ p.label }}</option>{% endfor %}
                     </select>
 
                     <button type="submit" class="btn">Añadir</button>
                 </form>
-                <p class="help">Cada profesor puede tener <strong>una</strong> zona por día: no puede estar en dos sitios a la vez. Cubrir los dos recreos del día cuenta como una guardia, no como dos.</p>
+                <p class="help">Cada profesor puede tener <strong>una zona por recreo</strong>: no puede estar en dos sitios a la vez, pero sí vigilar una zona en el recreo grande y otra en el corto. Una guardia son <strong>un recreo grande y uno corto</strong>, y no tienen que caer el mismo día.</p>
             </div>
         {% endif %}
 
@@ -177,20 +187,21 @@
 
                 <table class="worklist">
                     <thead>
-                        <tr><th scope="col">Profesor</th><th scope="col">Guardias</th><th scope="col">Peso</th><th scope="col">Zonas</th></tr>
+                        <tr><th scope="col">Profesor</th><th scope="col">Guardias</th><th scope="col">Sueltas</th><th scope="col">Peso</th><th scope="col">Zonas</th></tr>
                     </thead>
                     <tbody>
                         {% for row in equity.rows %}
                             <tr>
                                 <td>{{ row.teacher.fullName }}</td>
-                                <td>{{ row.duties }}</td>
+                                <td>{{ row.guardias }}</td>
+                                <td>{% if row.halves > 0 %}<span class="badge badge--muted">{{ row.halves }} media{{ row.halves > 1 ? 's' }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
                                 <td><strong>{{ row.load }}</strong></td>
                                 <td class="muted">{{ row.zones|join(', ') }}</td>
                             </tr>
                         {% endfor %}
                     </tbody>
                 </table>
-                <p class="help">El peso suma la exigencia de cada zona y cuenta <strong>una vez</strong> por día, aunque se cubran los dos recreos. Los pesos se ajustan en <a href="{{ path('break_zone_index') }}">Zonas y pesos</a>.</p>
+                <p class="help">Una <strong>guardia</strong> es un recreo grande más uno corto, aunque caigan en días distintos; lo que queda sin pareja sale como <strong>media</strong>. El <strong>peso</strong> suma la exigencia de cada zona, plaza a plaza, y es lo que mide si el reparto es justo. Los pesos se ajustan en <a href="{{ path('break_zone_index') }}">Zonas y pesos</a>.</p>
             {% endif %}
         </div>
     {% endif %}

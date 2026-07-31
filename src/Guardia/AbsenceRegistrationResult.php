@@ -18,9 +18,11 @@ final class AbsenceRegistrationResult
      * @param list<int>          $createdSlots    period indices for which a cover was created
      * @param int                $skippedFree     periods skipped because the teacher had no class then
      * @param int                $skippedExisting periods skipped because a cover already existed
-     * @param BreakDutyGap|null  $breakGap        the recreo left unwatched by this absence, when the
-     *                                            teacher was on the break rota that day — recorded, never
-     *                                            re-covered, and alerted to the equipo directivo
+     * @param list<BreakDutyGap> $breakGaps       the recreos left unwatched by this absence — recorded,
+     *                                            never re-covered, and alerted to the equipo directivo.
+     *                                            A list because a teacher can hold a place at each of the
+     *                                            day's two recreos, and missing both is two searches for
+     *                                            a volunteer, not one
      * @param list<int>          $relievedSlots   periods where this teacher was covering somebody else's
      *                                            class and has now been taken off it — the other half of
      *                                            an absence, and the half that used to be missed
@@ -29,9 +31,19 @@ final class AbsenceRegistrationResult
         public readonly array $createdSlots,
         public readonly int $skippedFree,
         public readonly int $skippedExisting,
-        public readonly ?BreakDutyGap $breakGap = null,
+        public readonly array $breakGaps = [],
         public readonly array $relievedSlots = [],
     ) {
+    }
+
+    /**
+     * The names of the zones this absence leaves unwatched, in order, for the message that says so.
+     *
+     * @return list<string> the zone names
+     */
+    public function uncoveredZones(): array
+    {
+        return array_map(static fn (BreakDutyGap $gap): string => $gap->getAssignment()->getZone()->getName(), $this->breakGaps);
     }
 
     /**

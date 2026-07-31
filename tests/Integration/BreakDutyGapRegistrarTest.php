@@ -12,7 +12,7 @@ use App\Entity\Notification;
 use App\Entity\Role;
 use App\Entity\ScheduleEntry;
 use App\Entity\User;
-use App\Enum\BreakPeriodCoverage;
+use App\Enum\BreakPeriod;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use App\Guardia\AbsenceRegistrar;
@@ -79,7 +79,7 @@ final class BreakDutyGapRegistrarTest extends KernelTestCase
             ->setTeacher($this->onDuty)
             ->setWeekday(Weekday::MONDAY)
             ->setZone($this->patio)
-            ->setPeriods(BreakPeriodCoverage::BOTH);
+            ->setPeriod(BreakPeriod::FIRST);
         $this->em->persist($this->duty);
 
         $this->em->flush();
@@ -87,9 +87,12 @@ final class BreakDutyGapRegistrarTest extends KernelTestCase
 
     public function testRecordsTheGapAndAlertsOnlyTheLeadershipTeam(): void
     {
-        $gap = $this->registrar->register($this->year, $this->onDuty, new \DateTimeImmutable(self::MONDAY));
+        $gaps = $this->registrar->register($this->year, $this->onDuty, new \DateTimeImmutable(self::MONDAY));
 
-        self::assertInstanceOf(BreakDutyGap::class, $gap);
+        // One place, one gap. A teacher holding both recreos of a day would produce two, which is two
+        // volunteers to find and not one.
+        self::assertCount(1, $gaps);
+        $gap = $gaps[0];
         self::assertFalse($gap->isCovered(), 'a fresh gap has no volunteer, which is the normal state');
         self::assertSame($this->duty->getId(), $gap->getAssignment()->getId());
 
@@ -105,7 +108,7 @@ final class BreakDutyGapRegistrarTest extends KernelTestCase
         $first = $this->registrar->register($this->year, $this->onDuty, $date);
         $second = $this->registrar->register($this->year, $this->onDuty, $date);
 
-        self::assertSame($first?->getId(), $second?->getId(), 'the second pass finds the recorded gap');
+        self::assertSame($first[0]->getId(), $second[0]->getId(), 'the second pass finds the recorded gap');
         self::assertCount(1, $this->em->getRepository(BreakDutyGap::class)->findAll());
         self::assertCount(1, $this->alerts(), 'the equipo directivo is told once per unwatched recreo, not once per edit');
     }
@@ -113,9 +116,9 @@ final class BreakDutyGapRegistrarTest extends KernelTestCase
     public function testATeacherWithNoDutyThatWeekdayProducesNothing(): void
     {
         // Same teacher, a Tuesday: their duty is on Mondays.
-        $gap = $this->registrar->register($this->year, $this->onDuty, new \DateTimeImmutable('2025-11-04'));
+        $gaps = $this->registrar->register($this->year, $this->onDuty, new \DateTimeImmutable('2025-11-04'));
 
-        self::assertNull($gap);
+        self::assertSame([], $gaps);
         self::assertSame([], $this->em->getRepository(BreakDutyGap::class)->findAll());
         self::assertSame([], $this->alerts(), 'nobody is bothered when no recreo is affected');
     }
@@ -132,8 +135,8 @@ final class BreakDutyGapRegistrarTest extends KernelTestCase
         $result = $this->absences->register($this->year, $this->onDuty, new \DateTimeImmutable(self::MONDAY), [0], null, [], true);
 
         self::assertSame(1, $result->createdCount(), 'the taught period still becomes a cover');
-        self::assertNotNull($result->breakGap, 'the recreo is recorded as a gap');
-        self::assertNull($result->breakGap->getVolunteer(), 'and nobody is assigned to it: it is not re-covered');
+        self::assertCount(1, $result->breakGaps, 'the recreo is recorded as a gap');
+        self::assertNull($result->breakGaps[0]->getVolunteer(), 'and nobody is assigned to it: it is not re-covered');
         self::assertCount(1, $this->alerts());
     }
 
@@ -144,7 +147,7 @@ final class BreakDutyGapRegistrarTest extends KernelTestCase
         $result = $this->absences->register($this->year, $this->onDuty, new \DateTimeImmutable(self::MONDAY), [], null, [], true);
 
         self::assertSame(0, $result->createdCount());
-        self::assertNotNull($result->breakGap);
+        self::assertCount(1, $result->breakGaps);
         self::assertCount(1, $this->alerts());
     }
 
@@ -153,7 +156,7 @@ final class BreakDutyGapRegistrarTest extends KernelTestCase
         // The flag is explicit: a teacher who only misses one class does not lose their recreo.
         $result = $this->absences->register($this->year, $this->onDuty, new \DateTimeImmutable(self::MONDAY), [0], null, [], false);
 
-        self::assertNull($result->breakGap);
+        self::assertSame([], $result->breakGaps);
         self::assertSame([], $this->em->getRepository(BreakDutyGap::class)->findAll());
     }
 

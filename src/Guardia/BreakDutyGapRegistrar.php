@@ -39,51 +39,64 @@ final class BreakDutyGapRegistrar
     }
 
     /**
-     * Records that a teacher's absence leaves their break duty unattended, and alerts the leadership team.
-     * Does nothing when the teacher has no duty that weekday, or when the day is already recorded.
+     * Records that a teacher's absence leaves their break duties unattended, and alerts the leadership
+     * team. Does nothing when the teacher has no duty that weekday.
+     *
+     * A LIST, because a teacher can hold a place at each of the day's two recreos: being away leaves both
+     * unwatched, and reporting only one would send the equipo directivo looking for half the volunteers
+     * they need. Days already recorded are returned as they are, so registering an absence in two goes
+     * never alerts twice.
      *
      * @param AcademicYear       $year    the course the date falls into (whose rota to read)
      * @param User               $teacher the absent teacher
      * @param \DateTimeImmutable $date    the day of the absence
      *
-     * @return BreakDutyGap|null the gap (fresh or already recorded), or null when there is no duty to miss
+     * @return list<BreakDutyGap> the gaps (fresh or already recorded); empty when there is nothing to miss
      */
-    public function register(AcademicYear $year, User $teacher, \DateTimeImmutable $date): ?BreakDutyGap
+    public function register(AcademicYear $year, User $teacher, \DateTimeImmutable $date): array
     {
-        $duty = $this->duties->findForTeacherAndWeekday($year, $teacher, Weekday::from((int) $date->format('N')));
-        if (null === $duty) {
-            return null;
+        $gaps = [];
+        $fresh = [];
+        foreach ($this->duties->findAllForTeacherAndWeekday($year, $teacher, Weekday::from((int) $date->format('N'))) as $duty) {
+            $existing = $this->gaps->findForAssignmentAndDate($duty, $date);
+            if (null !== $existing) {
+                $gaps[] = $existing;
+                continue;
+            }
+
+            $gap = (new BreakDutyGap())->setAssignment($duty)->setDate($date);
+            $this->em->persist($gap);
+            $gaps[] = $gap;
+            $fresh[] = $gap;
         }
 
-        $existing = $this->gaps->findForAssignmentAndDate($duty, $date);
-        if (null !== $existing) {
-            return $existing;
+        if ([] === $fresh) {
+            return $gaps;
         }
-
-        $gap = (new BreakDutyGap())->setAssignment($duty)->setDate($date);
-        $this->em->persist($gap);
         $this->em->flush();
 
-        // Only after the gap is committed: the alert says "this is unattended", and it would be a lie if
-        // the row that makes it true had not been written.
-        $this->notifier->notifyUncovered($gap);
+        // Only after the gaps are committed: the alert says "this is unattended", and it would be a lie
+        // if the row that makes it true had not been written.
+        foreach ($fresh as $gap) {
+            $this->notifier->notifyUncovered($gap);
+        }
 
-        return $gap;
+        return $gaps;
     }
 
     /**
-     * Whether a teacher has a break duty on a given day — what the "apuntar ausencia" screen asks so it
-     * can offer the recreo as something the absence also affects, instead of guessing from the periods
+     * The break duties a teacher has on a given day — what the "apuntar ausencia" screen asks so it can
+     * offer the recreos as something the absence also affects, instead of guessing from the periods
      * ticked (a recreo is not one of them).
      *
      * @param AcademicYear       $year    the course the date falls into
      * @param User               $teacher the teacher
      * @param \DateTimeImmutable $date    the day
      *
-     * @return BreakDutyAssignment|null their duty that day, or null when they have none
+     * @return BreakDutyAssignment[] their duties that day, earliest recreo first
      */
-    public function dutyOn(AcademicYear $year, User $teacher, \DateTimeImmutable $date): ?BreakDutyAssignment
+    public function dutiesOn(AcademicYear $year, User $teacher, \DateTimeImmutable $date): array
     {
-        return $this->duties->findForTeacherAndWeekday($year, $teacher, Weekday::from((int) $date->format('N')));
+        return $this->duties->findAllForTeacherAndWeekday($year, $teacher, Weekday::from((int) $date->format('N')));
     }
 }

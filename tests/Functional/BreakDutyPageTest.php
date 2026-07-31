@@ -11,7 +11,7 @@ use App\Entity\BreakZone;
 use App\Entity\Role;
 use App\Entity\User;
 use App\Enum\Area;
-use App\Enum\BreakPeriodCoverage;
+use App\Enum\BreakPeriod;
 use App\Enum\PermissionLevel;
 use App\Enum\Weekday;
 use App\Util\SchoolYear;
@@ -73,13 +73,13 @@ final class BreakDutyPageTest extends WebTestCase
             'teacher' => (string) $teacher->getId(),
             'zone' => (string) $zone->getId(),
             'weekday' => (string) Weekday::MONDAY->value,
-            'periods' => BreakPeriodCoverage::BOTH->value,
+            'period' => BreakPeriod::FIRST->value,
         ]);
 
         self::assertResponseRedirects();
         $duties = $this->em->getRepository(BreakDutyAssignment::class)->findAll();
         self::assertCount(1, $duties);
-        self::assertSame(BreakPeriodCoverage::BOTH, $duties[0]->getPeriods());
+        self::assertSame(BreakPeriod::FIRST, $duties[0]->getPeriod());
         self::assertSame('Patio', $duties[0]->getZone()->getName());
     }
 
@@ -97,7 +97,7 @@ final class BreakDutyPageTest extends WebTestCase
             'teacher' => (string) $teacher->getId(),
             'zone' => (string) $patio->getId(),
             'weekday' => (string) Weekday::MONDAY->value,
-            'periods' => BreakPeriodCoverage::FIRST->value,
+            'period' => BreakPeriod::FIRST->value,
         ];
         $this->post('/guardias/recreo', '/guardias/recreo/asignar', $payload);
         $this->post('/guardias/recreo', '/guardias/recreo/asignar', ['zone' => (string) $biblioteca->getId()] + $payload);
@@ -188,7 +188,7 @@ final class BreakDutyPageTest extends WebTestCase
             'teacher' => (string) $teacher->getId(),
             'zone' => (string) $zone->getId(),
             'weekday' => (string) Weekday::MONDAY->value,
-            'periods' => BreakPeriodCoverage::BOTH->value,
+            'period' => BreakPeriod::FIRST->value,
         ]);
 
         self::assertResponseStatusCodeSame(403);
@@ -306,7 +306,7 @@ final class BreakDutyPageTest extends WebTestCase
             ->setTeacher($teacher)
             ->setWeekday(Weekday::MONDAY)
             ->setZone($zone)
-            ->setPeriods(BreakPeriodCoverage::BOTH);
+            ->setPeriod(BreakPeriod::FIRST);
         $this->em->persist($duty);
 
         return $duty;

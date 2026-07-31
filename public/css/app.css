@@ -2536,6 +2536,10 @@ tr.is-not-covered { background: var(--danger-weak); }
 
 /* ── Guardias · rejilla del horario manual ─────────────────────────────────── */
 .tt-scroll { overflow-x: auto; margin-top: 12px; }
+/* Título de cada rejilla del cuadrante de recreo: son DOS tablas seguidas (recreo grande y corto) y sin
+   un encabezado que las separe se leen como una sola de diez filas. */
+.tt-grid__caption { margin: 20px 0 0; font-size: 15px; font-weight: 600; }
+.tt-grid__caption:first-of-type { margin-top: 8px; }
 .tt-grid { border-collapse: collapse; width: 100%; }
 .tt-grid th, .tt-grid td { border: 1px solid var(--border); padding: 6px; text-align: center; }
 .tt-grid thead th { font-family: var(--font-mono); font-size: .8rem; color: var(--text-muted); white-space: nowrap; font-weight: 600; }

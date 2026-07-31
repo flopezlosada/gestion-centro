@@ -675,9 +675,9 @@ final class GuardiaController extends AbstractController
         // Offered as its own tick rather than inferred: a recreo is nobody's teaching period, so it is
         // absent from the class list above, and the centre's rule (it is NOT re-covered, the equipo
         // directivo is alerted) makes it something the person registering should see they are triggering.
-        $breakDuty = ($selected instanceof User && $year instanceof AcademicYear)
-            ? $breakGaps->dutyOn($year, $selected, $date)
-            : null;
+        $breakDuties = ($selected instanceof User && $year instanceof AcademicYear)
+            ? $breakGaps->dutiesOn($year, $selected, $date)
+            : [];
 
         // The guardias this teacher was going to cover that day, offered as ticks of their own.
         // Without them the screen answered "no da clase, no hay nada que registrar" to precisely the
@@ -695,7 +695,7 @@ final class GuardiaController extends AbstractController
             // Name of the chosen teacher, so the picker can show their monogram next to the select.
             'selectedTeacherName' => $selected?->getFullName(),
             'dayClasses' => $dayClasses,
-            'breakDuty' => $breakDuty,
+            'breakDuties' => $breakDuties,
             'ownGuardias' => $ownGuardias,
             'breakSlots' => $timeSlots->findBreaksByYear($year instanceof AcademicYear ? $year : null),
         ]);
@@ -823,7 +823,7 @@ final class GuardiaController extends AbstractController
 
         // When the only consequence was an unwatched recreo, the parte has nothing new to show: land on
         // the gaps screen, which is where somebody has to go looking for a volunteer.
-        if ([] === $result->createdSlots && null !== $result->breakGap) {
+        if ([] === $result->createdSlots && [] !== $result->breakGaps) {
             return $this->redirectToRoute('break_duty_gap_index');
         }
 
@@ -842,8 +842,14 @@ final class GuardiaController extends AbstractController
         // The recreo is reported apart from the covers, because it is the opposite of a cover: nothing was
         // assigned and nothing will be. Saying so here is what stops "no se generó ninguna guardia" from
         // reading as "nothing happened" on a day whose only consequence was an unwatched zone.
-        $breakNote = null !== $result->breakGap
-            ? sprintf(' El recreo de %s se queda sin vigilar: avisado el equipo directivo para buscar un voluntario.', $result->breakGap->getAssignment()->getZone()->getName())
+        $breakNote = [] !== $result->breakGaps
+            ? sprintf(
+                ' Se %s sin vigilar %s (%s): avisado el equipo directivo para buscar %s.',
+                1 === \count($result->breakGaps) ? 'queda' : 'quedan',
+                1 === \count($result->breakGaps) ? 'un recreo' : \count($result->breakGaps).' recreos',
+                implode(', ', $result->uncoveredZones()),
+                1 === \count($result->breakGaps) ? 'un voluntario' : 'voluntarios',
+            )
             : '';
 
         // Las guardias que esta persona iba a cubrir y ya no cubre. Se cuenta aparte porque puede ser la

@@ -61,7 +61,7 @@
             {# Paso 2 · clases reales de ese día del profesor elegido. #}
             {% if selectedTeacher is null %}
                 <p class="muted step-hint">Elige un profesor para ver sus clases del {{ weekday.label|lower }}.</p>
-            {% elseif dayClasses is empty and breakDuty is null and ownGuardias is empty %}
+            {% elseif dayClasses is empty and breakDuties is empty and ownGuardias is empty %}
                 <div class="empty-state">
                     <h2>No tiene nada el {{ weekday.label|lower }}</h2>
                     <p>Ese día no da ninguna clase, no le toca guardia y no tiene guardia de recreo, así que no hay nada que registrar. Prueba con otro día.</p>
@@ -167,19 +167,24 @@
                         </div>
                     {% endif %}
 
-                    {% if breakDuty %}
-                        {# El recreo va aparte de las clases a propósito: no es una hora que nadie dé, así que
-                           no aparece en la lista de arriba, y su consecuencia es la contraria — no se genera
-                           guardia ninguna, se avisa al equipo directivo. Marcado por defecto porque si falta,
-                           falta; desmarcarlo es para el caso de que venga solo a hacer el recreo. #}
+                    {% if breakDuties is not empty %}
+                        {# Los recreos van aparte de las clases a propósito: no son horas que nadie dé, así
+                           que no aparecen en la lista de arriba, y su consecuencia es la contraria — no se
+                           genera guardia ninguna, se avisa al equipo directivo. Marcado por defecto porque
+                           si falta, falta; desmarcarlo es para el caso de que venga solo a hacer el recreo.
+                           Pueden ser DOS (el grande y el corto), y faltar a los dos son dos voluntarios que
+                           buscar, no uno. #}
                         <div class="form-row field--break">
-                            <label class="eyebrow">Guardia de recreo</label>
+                            <label class="eyebrow">{{ breakDuties|length == 1 ? 'Guardia de recreo' : 'Guardias de recreo' }}</label>
                             <label class="choice">
                                 <input type="checkbox" name="misses_break" value="1" checked>
-                                También falta al recreo: <strong>{{ breakDuty.zone.name }}</strong>
-                                <span class="muted"> · {{ include('guardia/_break_times.html.twig', {duty: breakDuty, breakSlots: breakSlots}) }}</span>
+                                También falta
+                                {% for d in breakDuties %}
+                                    {{ loop.first ? 'al' : 'y al' }} {{ d.period.label|lower }}: <strong>{{ d.zone.name }}</strong>
+                                    <span class="muted"> · {{ include('guardia/_break_times.html.twig', {duty: d, breakSlots: breakSlots}) }}</span>
+                                {% endfor %}
                             </label>
-                            <p class="field-help">Ese recreo <strong>no se reasigna</strong> (no hay personal): se avisa al equipo directivo para que busque un voluntario, y queda registrado en «Recreos sin vigilar».</p>
+                            <p class="field-help">{{ breakDuties|length == 1 ? 'Ese recreo' : 'Esos recreos' }} <strong>no se {{ breakDuties|length == 1 ? 'reasigna' : 'reasignan' }}</strong> (no hay personal): se avisa al equipo directivo para que busque {{ breakDuties|length == 1 ? 'un voluntario' : 'voluntarios' }}, y queda registrado en «Recreos sin vigilar».</p>
                         </div>
                     {% endif %}
 
