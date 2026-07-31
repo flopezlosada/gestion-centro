@@ -12,7 +12,10 @@ use App\Entity\User;
 use App\Enum\Area;
 use App\Enum\BreakPeriod;
 use App\Enum\Weekday;
+use App\Guardia\BreakDutyDemand;
 use App\Guardia\BreakDutyRoster;
+use App\Guardia\BreakRotaPlanner;
+use App\Guardia\BreakRotaProposal;
 use App\Repository\AcademicYearRepository;
 use App\Repository\BreakDutyAssignmentRepository;
 use App\Repository\BreakDutyGapRepository;
@@ -49,7 +52,7 @@ final class BreakDutyController extends AbstractController
      * people, and the weighted equity reading of how the turns are spread.
      */
     #[Route('', name: 'break_duty_index', methods: ['GET'])]
-    public function index(Request $request, AcademicYearRepository $years, BreakDutyRoster $roster, BreakZoneRepository $zones, UserRepository $users, BreakDutyGapRepository $gaps): Response
+    public function index(Request $request, AcademicYearRepository $years, BreakDutyRoster $roster, BreakZoneRepository $zones, UserRepository $users, BreakDutyGapRepository $gaps, BreakRotaPlanner $planner, BreakDutyDemand $demand): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
@@ -57,6 +60,12 @@ final class BreakDutyController extends AbstractController
         $curso = (string) ($request->query->get('curso') ?: SchoolYear::current($today));
         $year = $years->findBySchoolYear($curso);
         $overview = $year instanceof AcademicYear ? $roster->overview($year) : null;
+
+        // La propuesta se pide con ?propuesta=1 y NO se guarda en ningún sitio: el motor es determinista,
+        // así que el borrador se reconstruye idéntico en vez de aparcarlo en una tabla o en la sesión.
+        // Mismo trato que el cuadrante lectivo.
+        $draft = $request->query->getBoolean('propuesta');
+        $proposal = ($draft && $year instanceof AcademicYear) ? $planner->propose($year) : null;
 
         return $this->render('guardia/break_duty_index.html.twig', [
             'courses' => $years->findAllOrdered(),
@@ -70,7 +79,69 @@ final class BreakDutyController extends AbstractController
             'periods' => BreakPeriod::inDayOrder(),
             'todayGaps' => $gaps->findByDate($today),
             'canManage' => $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS),
+            'proposal' => $proposal,
+            'proposalGrid' => null !== $proposal ? $this->proposalGrid($proposal) : null,
+            'summary' => $proposal?->summary(),
+            'gaps' => $proposal?->gapsByReason() ?? [],
+            'weekly' => $demand->weeklyTotals($zones->findActiveOrdered()),
         ]);
+    }
+
+    /**
+     * Approves the proposal: asks the engine for it again and writes it into the rota.
+     *
+     * Nothing was stored between the two clicks, so this recomputes rather than reads back. The engine is
+     * deterministic, which makes that identical — and the narrow window it buys (somebody changing a
+     * quota in between) still yields the correct rota for the quotas as they stand.
+     */
+    #[Route('/proponer', name: 'break_duty_publish', methods: ['POST'])]
+    public function publishProposal(Request $request, AcademicYearRepository $years, BreakRotaPlanner $planner): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
+        $this->assertCsrf($request, 'break_duty_publish');
+
+        $curso = (string) $request->request->get('curso');
+        $year = $years->findBySchoolYear($curso);
+        if (!$year instanceof AcademicYear) {
+            $this->addFlash('error', 'Ese curso no existe.');
+
+            return $this->redirectToRoute('break_duty_index');
+        }
+
+        $proposal = $planner->propose($year);
+        $written = $planner->publish($year, $proposal->places);
+        $summary = $proposal->summary();
+
+        $this->addFlash('success', sprintf(
+            'Cuadrante de recreo publicado: %d plazas repartidas, %d guardias completas%s.',
+            $written,
+            $summary['guardias'],
+            $summary['halves'] > 0 ? sprintf(' y %d media(s) sin pareja', $summary['halves']) : '',
+        ));
+
+        return $this->redirectToRoute('break_duty_index', ['curso' => $curso]);
+    }
+
+    /**
+     * A proposal laid out the way the rota grid reads it: recreo → weekday → zone → the people proposed.
+     *
+     * Every cell exists even when empty, so the template can index it without existence checks.
+     *
+     * @param BreakRotaProposal $proposal the draft
+     *
+     * @return array<string, array<int, array<int, list<array{teacherId: int, fixed: bool}>>>> the grid
+     */
+    private function proposalGrid(BreakRotaProposal $proposal): array
+    {
+        $grid = [];
+        foreach ($proposal->places as $place) {
+            $grid[$place['period']][$place['weekday']][$place['zoneId']][] = [
+                'teacherId' => $place['teacherId'],
+                'fixed' => $place['fixed'],
+            ];
+        }
+
+        return $grid;
     }
 
     /**

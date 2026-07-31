@@ -166,9 +166,18 @@ final class BreakRotaProposer
                 continue;
             }
 
+            // Completar una guardia va PRIMERO, antes que la equidad del peso. Sin esto, con más
+            // profesorado que plazas el motor le daba una plaza a cada uno para igualar la carga y no
+            // emparejaba ni una: medido sobre el claustro real, 77 personas y 55 plazas salían 0 guardias
+            // y 55 medias. Una guardia solo existe si hay pareja, así que primero se cierran las que hay
+            // a medias y después se reparte lo demás.
+            $mine = $perBreak[$id][$place['period']->value] ?? 0;
+            $other = $perBreak[$id][$this->otherBreak($place['period'])->value] ?? 0;
+
             $score = [
+                $other > $mine ? 0 : 1,
                 $load[$id] ?? 0,
-                $perBreak[$id][$place['period']->value] ?? 0,
+                $mine,
                 isset($zonesHeld[$id][$place['zoneId']]) ? 1 : 0,
                 $perDay[$id][$place['weekday']] ?? 0,
                 mb_strtolower($candidate->name),
@@ -205,6 +214,18 @@ final class BreakRotaProposer
         }
 
         return self::GAP_NOBODY_LEFT;
+    }
+
+    /**
+     * The other recreo of the day — the one a place at this recreo would pair with.
+     *
+     * @param BreakPeriod $period the recreo
+     *
+     * @return BreakPeriod the other one
+     */
+    private function otherBreak(BreakPeriod $period): BreakPeriod
+    {
+        return BreakPeriod::FIRST === $period ? BreakPeriod::SECOND : BreakPeriod::FIRST;
     }
 
     /**

@@ -65,6 +65,63 @@
             </div>
         {% endif %}
 
+        {% if canManage %}
+            <div class="card">
+                {% if proposal is null %}
+                    <div class="inline-form">
+                        <a class="btn" href="{{ path('break_duty_index', {curso: curso, propuesta: 1}) }}">Proponer cuadrante</a>
+                    </div>
+                    <p class="help">
+                        Reparte las plazas entre quien tenga cupo de recreo, dando primero las zonas más exigentes a quien menos carga lleva. No guarda nada: la verás antes de decidir.
+                        {% if weekly.unpairable > 0 %}
+                            <br><strong>Aviso de aritmética:</strong> la semana tiene {{ weekly.long }} plazas de recreo grande y {{ weekly.short }} de corto, así que <strong>{{ weekly.unpairable }}</strong> se quedarán sin pareja hagas lo que hagas. Eso se arregla en la demanda de las zonas, no en el reparto.
+                        {% endif %}
+                    </p>
+                {% else %}
+                    <div class="callout callout--warning" role="note">
+                        <strong>Esto es una propuesta.</strong> No se ha guardado nada todavía. Revísala y pulsa «Publicar», o descártala y no pasa nada.
+                    </div>
+
+                    <div class="worklist-stats worklist-stats--3">
+                        <div class="stat">
+                            <span class="stat-figure">{{ summary.guardias }}</span>
+                            <span class="stat-label">Guardias completas</span>
+                        </div>
+                        <div class="stat{{ summary.halves > 0 ? ' stat--warning' : ' is-zero' }}">
+                            <span class="stat-figure">{{ summary.halves }}</span>
+                            <span class="stat-label">Medias sin pareja</span>
+                        </div>
+                        <div class="stat{{ summary.unfilled > 0 ? ' stat--danger' : ' stat--success' }}">
+                            <span class="stat-figure">{{ summary.unfilled }}</span>
+                            <span class="stat-label">Plazas sin cubrir</span>
+                        </div>
+                    </div>
+
+                    <p class="help">
+                        {% if summary.halves > 0 %}
+                            Las <strong>medias</strong> no son un fallo del reparto: la semana pide {{ weekly.long }} plazas de recreo grande y {{ weekly.short }} de corto, y una guardia necesita una de cada. Para que cuadren hay que igualar la demanda de las zonas.
+                        {% endif %}
+                        {% if gaps['quota-exhausted'] is defined %}
+                            <strong>{{ gaps['quota-exhausted'] }}</strong> plazas se quedan sin nadie porque se ha agotado el cupo: se sube en <a href="{{ path('guardia_quota_index', {curso: curso}) }}">Cupos</a>.
+                        {% endif %}
+                        {% if gaps['nobody-left'] is defined %}
+                            <strong>{{ gaps['nobody-left'] }}</strong> se quedan sin nadie porque a ese recreo ya está todo el mundo colocado en otra zona: hace falta más gente en el cuadrante, no más cupo.
+                        {% endif %}
+                    </p>
+
+                    <div class="inline-form">
+                        <form method="post" action="{{ path('break_duty_publish') }}" class="inline-form">
+                            <input type="hidden" name="_token" value="{{ csrf_token('break_duty_publish') }}">
+                            <input type="hidden" name="curso" value="{{ curso }}">
+                            <button type="submit" class="btn">Publicar el cuadrante</button>
+                        </form>
+                        <a class="btn secondary" href="{{ path('break_duty_index', {curso: curso}) }}">Descartar</a>
+                    </div>
+                    <p class="help">Al publicar se sustituyen las plazas que puso el programa en una propuesta anterior. Lo que hayas puesto <strong>a mano</strong> (los patios dirigidos, por ejemplo) no se toca: ya sale en la propuesta y se respeta.</p>
+                {% endif %}
+            </div>
+        {% endif %}
+
         {# La rejilla: zonas en filas, días en columnas, como el cuadrante de papel del centro. #}
         <div class="card">
             <div class="page-head">

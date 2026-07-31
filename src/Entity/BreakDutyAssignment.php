@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Contract\Auditable;
+use App\Enum\BreakDutySource;
 use App\Enum\BreakPeriod;
 use App\Enum\Weekday;
 use App\Repository\BreakDutyAssignmentRepository;
@@ -74,6 +75,13 @@ class BreakDutyAssignment implements Auditable
     #[ORM\Column(name: 'period', length: 8, enumType: BreakPeriod::class)]
     private BreakPeriod $period = BreakPeriod::FIRST;
 
+    /**
+     * Who put this place here. A new proposal replaces only what the engine placed, so a patio dirigido
+     * the equipo directivo organised by hand survives being re-proposed.
+     */
+    #[ORM\Column(name: 'source', length: 8, enumType: BreakDutySource::class, options: ['default' => 'manual'])]
+    private BreakDutySource $source = BreakDutySource::MANUAL;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -135,6 +143,18 @@ class BreakDutyAssignment implements Auditable
     public function setPeriod(BreakPeriod $period): static
     {
         $this->period = $period;
+
+        return $this;
+    }
+
+    public function getSource(): BreakDutySource
+    {
+        return $this->source;
+    }
+
+    public function setSource(BreakDutySource $source): static
+    {
+        $this->source = $source;
 
         return $this;
     }

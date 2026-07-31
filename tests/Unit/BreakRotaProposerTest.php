@@ -110,6 +110,28 @@ final class BreakRotaProposerTest extends TestCase
         self::assertSame(2, $summary['halves'], 'the other two are halves, and the report says so');
     }
 
+    public function testWithMorePeopleThanPlacesItStillPairsInsteadOfGivingEveryoneAHalf(): void
+    {
+        // The bug the real claustro exposed and no small fixture could. With 77 teachers and 55 places,
+        // spreading weight first gave one place to each and paired NOTHING: 0 guardias, 55 halves. A
+        // guardia only exists if it pairs, so closing an open one comes before starting a new one.
+        $places = $this->week([
+            [1, BreakPeriod::FIRST, 10, 2], [1, BreakPeriod::SECOND, 10, 2],
+            [2, BreakPeriod::FIRST, 10, 2], [2, BreakPeriod::SECOND, 10, 2],
+        ]);
+        $candidates = [];
+        for ($i = 1; $i <= 10; ++$i) {
+            $candidates[] = new BreakRotaCandidate($i, sprintf('Docente %02d', $i), 1);
+        }
+
+        $proposal = $this->proposer->propose($places, $candidates);
+
+        $summary = $proposal->summary();
+        self::assertSame(4, $summary['placed']);
+        self::assertSame(2, $summary['guardias'], 'two whole guardias, not four halves spread over four people');
+        self::assertSame(0, $summary['halves']);
+    }
+
     public function testGuardiasAreSpreadAcrossTheWeekRatherThanPiledOnOneDay(): void
     {
         // One person, four long places over four days: they should not all land on Monday — and cannot,

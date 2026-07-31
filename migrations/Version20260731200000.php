@@ -64,6 +64,11 @@ final class Version20260731200000 extends AbstractMigration
         // llega con su recreo puesto, y dejarlo haría que el esquema no cuadrase con la entidad.
         $this->addSql('ALTER TABLE break_duty_assignment CHANGE period period VARCHAR(8) NOT NULL');
 
+        // Quién puso cada plaza. Todo lo que ya existe lo puso una persona a mano, que es justo lo que el
+        // motor debe respetar: al proponer de nuevo solo se reemplaza lo que puso él. Aquí el default SÍ
+        // se queda, porque la entidad también lo declara.
+        $this->addSql("ALTER TABLE break_duty_assignment ADD source VARCHAR(8) DEFAULT 'manual' NOT NULL");
+
         $this->addSql('CREATE TABLE break_zone_demand (id INT AUTO_INCREMENT NOT NULL, zone_id INT NOT NULL, weekday SMALLINT NOT NULL, period VARCHAR(8) NOT NULL, required_teachers SMALLINT NOT NULL, UNIQUE INDEX UNIQ_break_demand_cell (zone_id, weekday, period), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4');
         $this->addSql('ALTER TABLE break_zone_demand ADD CONSTRAINT FK_break_demand_zone FOREIGN KEY (zone_id) REFERENCES break_zone (id) ON DELETE CASCADE');
     }
@@ -71,6 +76,7 @@ final class Version20260731200000 extends AbstractMigration
     public function down(Schema $schema): void
     {
         $this->addSql('DROP TABLE break_zone_demand');
+        $this->addSql('ALTER TABLE break_duty_assignment DROP source');
 
         $this->addSql("ALTER TABLE break_duty_assignment ADD periods VARCHAR(8) DEFAULT 'both' NOT NULL");
         $this->addSql('UPDATE break_duty_assignment SET periods = period');

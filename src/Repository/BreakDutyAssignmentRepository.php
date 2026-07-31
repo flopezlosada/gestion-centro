@@ -8,6 +8,7 @@ use App\Entity\AcademicYear;
 use App\Entity\BreakDutyAssignment;
 use App\Entity\BreakZone;
 use App\Entity\User;
+use App\Enum\BreakDutySource;
 use App\Enum\BreakPeriod;
 use App\Enum\Weekday;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
@@ -91,6 +92,34 @@ class BreakDutyAssignmentRepository extends ServiceEntityRepository
             ->addOrderBy('t.fullName', 'ASC')
             ->getQuery()
             ->getResult();
+    }
+
+    /**
+     * Replaces every place the proposal engine owns in a course with a fresh set, in one transaction.
+     *
+     * Only its own: places somebody added by hand — the patios dirigidos the equipo directivo organises
+     * by day — are left alone, which is what lets a rota be re-proposed without undoing their work.
+     *
+     * @param AcademicYear              $year   the course being redrawn
+     * @param list<BreakDutyAssignment> $places the fresh places to persist
+     */
+    public function replaceEnginePlaces(AcademicYear $year, array $places): void
+    {
+        $em = $this->getEntityManager();
+        $em->wrapInTransaction(function () use ($em, $year, $places): void {
+            $this->createQueryBuilder('a')
+                ->delete()
+                ->where('a.academicYear = :year')
+                ->andWhere('a.source = :engine')
+                ->setParameter('year', $year)
+                ->setParameter('engine', BreakDutySource::ENGINE)
+                ->getQuery()
+                ->execute();
+            foreach ($places as $place) {
+                $em->persist($place);
+            }
+            $em->flush();
+        });
     }
 
     /**
