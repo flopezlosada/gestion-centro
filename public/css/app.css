@@ -65,6 +65,15 @@
     --personal-icon: #6A5C99;
     --personal-weak: #E6E0F1;
     --accent-bright: #00AA00;  /* verde del logo: dot pulsante, "disponible" */
+    /* Ancla oscura de Inicio (próxima guardia): TOSTADO profundo, no el naranja de la marca. El naranja
+       pleno se reserva a UNA acción por pantalla —aquí, el botón del propio hero—, y un bloque entero
+       relleno de marca se la comía. Mismos valores en los dos temas: es un marrón oscuro que ya contrasta
+       sobre papel y sobre tinta, así que invertirlo solo lo haría irreconocible. */
+    --hero: #7A3D0A;
+    --on-hero: #FFF6EA;       /* tinta principal sobre el tostado */
+    --on-hero-soft: #EBCFAE;  /* texto secundario sobre el tostado */
+    --on-hero-dim: #E3B784;   /* rótulo mono sobre el tostado */
+    --hero-accent: #F2A93B;   /* acento legible sobre el tostado (punto, aviso "sin tarea") */
     /* Módulos "de gestión" (zona aparte según rol): caja con banda de cabecera. */
     --module-bg: #EFEADB;
     --module-band: #E9E2CF;
@@ -148,6 +157,13 @@
     --personal-icon: #B0A2DA;
     --personal-weak: #241F33;
     --accent-bright: #35C13A;
+    /* El tostado del hero no se invierte (ver el comentario del tema claro): sigue siendo el bloque
+       distinto de la pantalla, y en oscuro destaca por ser MÁS claro que el lienzo en vez de más oscuro. */
+    --hero: #7A3D0A;
+    --on-hero: #FFF6EA;
+    --on-hero-soft: #EBCFAE;
+    --on-hero-dim: #E3B784;
+    --hero-accent: #F2A93B;
     --module-bg: #262117;
     --module-band: #2E2818;
     --module-border: #3A3324;
@@ -2602,10 +2618,15 @@ tr.is-not-covered { background: var(--danger-weak); }
 .tt-cell--short { background: var(--warning-weak); }
 
 /* =============================================================================
-   Inicio ("qué me toca hoy") — rediseño handoff. Lista abierta sobre el fondo con
-   un único ancla oscura (próxima guardia) y módulos con caja para lo demás.
+   Inicio ("qué me toca hoy") — rediseño handoff_dashboard.
+   El orden de la pantalla es siempre el mismo: lo PERSONAL primero, la gestión del
+   centro al final y más apagada. Y la jerarquía la marca el CONTENEDOR, no la
+   tipografía: lo tuyo va en paneles con borde bajo una cabecera mono con contador,
+   y los módulos de gestión son cajas planas bajo un rótulo tenue. Antes era al
+   revés (lo personal al aire, la gestión con caja, banda e icono) y lo del centro
+   se leía como el contenido principal de la pantalla.
    ============================================================================= */
-.home { display: flex; flex-direction: column; gap: 24px; max-width: 600px; }
+.home { display: flex; flex-direction: column; gap: 22px; max-width: 600px; }
 
 /* ---- Cabecera: fecha + saludo + avatar ---- */
 .home-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
@@ -2617,30 +2638,54 @@ tr.is-not-covered { background: var(--danger-weak); }
     font-family: var(--font-mono); font-weight: 600; font-size: 14px;
 }
 
-/* ---- Hero: próxima guardia (único ancla oscura) ---- */
+/* ---- Hero: próxima guardia (único bloque oscuro de la pantalla) ----
+   En TOSTADO y no en naranja pleno: el naranja de la marca es para una sola acción por pantalla, que
+   aquí es su propio botón. Sin sombra: ya destaca por ser el único bloque oscuro. */
 .guardia-hero {
-    display: block; text-decoration: none;
-    background: var(--accent); color: var(--on-accent);
-    border-radius: var(--radius-lg); padding: 20px 22px;
-    box-shadow: var(--shadow-hero);
-    --on-soft: color-mix(in srgb, var(--on-accent) 60%, transparent);
+    display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap;
+    background: var(--hero); color: var(--on-hero-soft);
+    border-radius: 18px; padding: 20px 22px;
 }
-.guardia-hero__top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.guardia-hero__main { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; text-decoration: none; color: inherit; }
 .guardia-hero__eyebrow {
     font-family: var(--font-mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase;
-    color: var(--on-soft); display: inline-flex; align-items: center; gap: 7px;
+    color: var(--on-hero-dim); display: inline-flex; align-items: center; gap: 7px;
 }
 .guardia-hero__pulse {
-    width: 7px; height: 7px; border-radius: 999px; background: var(--accent-bright);
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-bright) 22%, transparent);
+    flex: none; width: 7px; height: 7px; border-radius: 999px; background: var(--hero-accent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--hero-accent) 24%, transparent);
 }
-.guardia-hero__in { font-family: var(--font-mono); font-size: 12px; color: var(--on-soft); }
-.guardia-hero__line { display: flex; align-items: baseline; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
-.guardia-hero__time { font-family: var(--font-mono); font-weight: 600; font-size: 32px; color: var(--on-accent); }
-.guardia-hero__where { font-family: var(--font-display); font-size: 21px; color: var(--on-accent); }
-.guardia-hero__sub { font-size: 13px; color: color-mix(in srgb, var(--on-accent) 80%, transparent); margin-top: 6px; }
-.guardia-hero__task { color: var(--amber-border); }
-.guardia-hero__notask { color: var(--on-soft); }
+.guardia-hero__line { display: flex; align-items: baseline; gap: 12px; margin-top: 11px; flex-wrap: wrap; }
+.guardia-hero__time { font-family: var(--font-mono); font-weight: 600; font-size: 28px; color: var(--on-hero); }
+.guardia-hero__where { font-family: var(--font-display); font-size: 21px; color: var(--on-hero); }
+.guardia-hero__sub { font-size: 13.5px; color: var(--on-hero-soft); margin-top: 5px; }
+.guardia-hero__sub b { color: var(--on-hero); font-weight: 600; }
+.guardia-hero__task { color: var(--on-hero); }
+/* Lo que hay que resolver antes de entrar al aula: el único acento cálido del bloque. */
+.guardia-hero__notask { color: var(--hero-accent); }
+.guardia-hero__main:hover .guardia-hero__where { text-decoration: underline; }
+
+/* La acción de la pantalla. Naranja pleno solo cuando hay algo que resolver (coger tarea del banco);
+   si la guardia ya la tiene, el botón solo lleva a mirarla y baja a fantasma. */
+.hero-cta {
+    flex: none; text-decoration: none;
+    background: var(--accent); color: var(--on-accent);
+    border: 1.5px solid transparent; border-radius: 12px; padding: 11px 18px;
+    font: 600 14px var(--font-body);
+    box-shadow: 0 10px 20px -14px rgba(180, 110, 10, .8);
+}
+.hero-cta:hover { background: var(--accent-hover); color: var(--on-accent); }
+.hero-cta--ghost {
+    background: transparent; color: var(--on-hero); box-shadow: none;
+    border-color: color-mix(in srgb, var(--on-hero) 38%, transparent);
+}
+.hero-cta--ghost:hover { background: color-mix(in srgb, var(--on-hero) 12%, transparent); color: var(--on-hero); }
+/* En móvil el botón baja a ancho completo: al lado del texto se quedaría en una franja estrecha, justo el
+   sitio donde peor se acierta con el pulgar. */
+@media (max-width: 560px) {
+    .guardia-hero { border-radius: 22px; }
+    .hero-cta { width: 100%; text-align: center; margin-top: 4px; }
+}
 
 /* ---- Tira "sin guardia hoy" (estado tranquilo) ---- */
 .no-guardia {
@@ -2657,48 +2702,109 @@ tr.is-not-covered { background: var(--danger-weak); }
 .no-guardia__meta { font-size: 12px; color: var(--text-faint); }
 .no-guardia__cta { flex: none; font-size: 12px; color: var(--success); font-weight: 600; }
 
-/* ---- Resto de las guardias de hoy (todas, no solo la próxima) ----
-   Acompaña al ancla sin competir con ella: el hero es la caja oscura, esto son filas sobre la caja
-   hundida. Las que ya han pasado se atenúan, pero SIGUEN listadas — un día con tres guardias tiene
-   que leerse como tres. Comparte la columna de hora monoespaciada de .agenda-row, pero no reusa esa
-   clase: allí la hora va en malva (= privado) y una guardia es del centro. */
-.guardia-rest {
-    background: var(--surface-sunken); border: 1px solid var(--border); border-radius: 16px;
-    padding: 12px 4px 4px;
+/* ---- Cabecera de sección personal: rótulo mono + contador + salida ----
+   Mono en mayúsculas y NO serif: en esta pantalla el serif es del saludo, y dos serifs seguidos
+   competían. El peso de la sección lo da su panel con borde, no el tamaño de su rótulo. El contador
+   evita la pregunta "¿esto es todo lo que tengo?" cuando la lista está recortada a tres filas. */
+.sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.sec-head__ident { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.sec-head__label {
+    font-family: var(--font-mono); font-weight: 600; font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--text-muted);
 }
-.guardia-rest__title {
-    font-family: var(--font-mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
-    color: var(--text-faint); margin: 0 0 4px; padding: 0 14px;
+.sec-head__count { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
+.sec-head__more { flex: none; font-size: 12.5px; font-weight: 600; color: var(--accent-ink); text-decoration: none; }
+.sec-head__more:hover { text-decoration: underline; }
+
+/* ---- Panel: el contenedor de una sección personal ---- */
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+.panel__foot {
+    display: block; text-align: center; padding: 12px;
+    font-size: 12.5px; font-weight: 600; color: var(--accent-ink); text-decoration: none;
+    background: var(--surface-alt); border-top: 1px solid var(--separator);
 }
-.guardia-rest__list { list-style: none; margin: 0; padding: 0; }
-.guardia-rest__row { display: flex; align-items: center; gap: 13px; padding: 11px 14px; text-decoration: none; border-radius: 12px; }
-.guardia-rest__row:hover { background: var(--surface); }
-.guardia-rest__list li + li .guardia-rest__row { border-top: 1px solid var(--separator); border-radius: 0; }
-.guardia-rest__time { flex: none; width: 46px; font-family: var(--font-mono); font-weight: 600; font-size: 14px; color: var(--accent-ink); }
-.guardia-rest__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.guardia-rest__where { font-size: 14px; font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.guardia-rest__who { font-size: 12px; color: var(--text-faint); }
-.guardia-rest__flag { flex: none; font-family: var(--font-mono); font-size: 11px; color: var(--success); }
-.guardia-rest__row.is-done .guardia-rest__time { color: var(--text-faint); font-weight: 400; }
-.guardia-rest__row.is-done .guardia-rest__where { color: var(--text-muted); font-weight: 400; }
+.panel__foot:hover { background: var(--surface-sunken); }
+.panel-empty { margin: 0; padding: 15px 16px; font-size: 13.5px; color: var(--text-muted); display: flex; align-items: center; gap: 10px; }
+.panel-empty--ok { color: var(--success-text); }
+.panel-empty__check {
+    flex: none; width: 24px; height: 24px; border-radius: 8px;
+    background: var(--success-weak); color: var(--success); display: grid; place-items: center;
+}
+.panel-empty__check svg { width: 15px; height: 15px; }
 
-/* ---- Secciones (eyebrow + "ver todas") ---- */
-.home-section__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-.home-section__more { font-size: 12px; color: var(--success); font-weight: 600; text-decoration: none; }
-.home-empty { color: var(--text-muted); font-size: 14px; margin: 4px 0; }
+/* ---- Fila resumen de "fuera de plazo" ----
+   UNA fila colapsada, nunca N filas rojas: si todo grita, nada grita, y el muro de alertas empujaba el
+   resto de la pantalla bajo el pliegue. Va en el rojo teja de --warning como en el resto de la app: el
+   prototipo la pintaba en dorado, pero ahí el dorado ya significa "tarea con entregable", y que "fuera de
+   plazo" cambie de color según la pantalla es peor que desviarse del hex. */
+.overdue-line {
+    display: flex; align-items: center; gap: 12px; padding: 13px 16px; text-decoration: none;
+    background: var(--warning-weak); border-bottom: 1px solid var(--warning-border); color: var(--warning-text);
+}
+.overdue-line:hover { background: color-mix(in srgb, var(--warning-weak) 80%, var(--warning)); color: var(--warning-text); }
+.overdue-line__icon {
+    flex: none; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--warning) 18%, var(--warning-weak)); color: var(--warning);
+}
+.overdue-line__icon svg { width: 15px; height: 15px; }
+.overdue-line__text { flex: 1; min-width: 0; font-size: 13.5px; }
+.overdue-line__text b { font-weight: 600; }
+.overdue-line__cta { flex: none; font-size: 12.5px; font-weight: 600; }
+.overdue-line__chevron { flex: none; display: grid; place-items: center; }
+.overdue-line__chevron svg { width: 14px; height: 14px; }
 
-/* ---- Mis tareas: lista abierta; casilla circular; vencida = fila de alerta ---- */
+/* ---- Filas de "Próximos 7 días": lo que hay que atender, con el icono de su tipo ---- */
+.panel-row { display: flex; align-items: center; gap: 13px; padding: 13px 16px; text-decoration: none; color: inherit; }
+.panel-row + .panel-row { border-top: 1px solid var(--separator); }
+.panel-row:hover { background: var(--surface-sunken); }
+.panel-row__icon { flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; }
+.panel-row__icon svg { width: 15px; height: 15px; }
+.panel-row__icon--guardia { background: var(--accent-weak); color: var(--accent-ink); }
+.panel-row__icon--meeting { background: var(--review-weak); color: var(--review-text); }
+.panel-row__icon--personal { background: var(--personal-weak); color: var(--personal-icon); }
+.panel-row__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.panel-row__title { font-size: 13.5px; font-weight: 500; color: var(--text); }
+.panel-row__meta { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
+.panel-row__chevron { flex: none; color: var(--text-tenue); font-size: 17px; line-height: 1; }
+
+/* ---- "Tu día": una línea temporal con las reuniones, las citas privadas y las guardias de hoy ----
+   Antes eran dos bloques ("Reuniones de hoy" y la caja malva "Con hora") que se leían por separado y
+   dejaban media columna vacía. La privacidad ya no la marca la caja: la marca el cuadrado malva de cada
+   fila, que es lo que permite mezclar sin confundir de quién es cada cosa. */
+.panel--day { padding: 2px 16px 6px; }
+.day-row { position: relative; display: flex; align-items: flex-start; gap: 13px; padding: 12px 0; text-decoration: none; color: inherit; }
+.day-row + .day-row { border-top: 1px solid var(--separator); }
+.day-row__time { flex: none; width: 46px; font-family: var(--font-mono); font-weight: 600; font-size: 12.5px; color: var(--text-faint); }
+.day-row__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.day-row__title { font-size: 13.5px; color: var(--text); }
+.day-row__sub { font-size: 11.5px; color: var(--text-faint); }
+.day-row:hover .day-row__title { text-decoration: underline; }
+/* Marca de tipo: la forma dice de quién es (círculo = guardia del centro, cuadrado malva = tu agenda,
+   cuadrado teal = reunión convocada), en el mismo criterio que usa el calendario. */
+.day-row__kind { flex: none; width: 8px; height: 8px; border-radius: 2px; margin-top: 6px; }
+.day-row__kind--guardia { border-radius: 999px; background: var(--accent); }
+.day-row__kind--meeting { background: var(--review); }
+.day-row__kind--personal { background: var(--personal); }
+/* Lo ya pasado no desaparece —eso se lee como "no lo tenías"— pero se aparta del camino. */
+.day-row.is-past { opacity: .6; }
+.day-row.is-past .day-row__time { text-decoration: line-through; }
+.day-row.is-past .day-row__kind { background: var(--border-strong); }
+/* Lo siguiente que hay que atender, con filo: es la respuesta a "¿y ahora qué?". */
+.day-row.is-now::before {
+    content: ""; position: absolute; left: -16px; top: 12px; bottom: 12px;
+    width: 3px; border-radius: 999px; background: var(--accent);
+}
+.day-row.is-now .day-row__time { color: var(--accent-ink); }
+.day-row.is-now .day-row__title { font-weight: 600; }
+.day-row.is-now .day-row__sub { color: var(--accent-ink); }
+
+/* ---- Mis tareas: lista con casilla circular ----
+   Ya no existe la variante "fila de alerta" para las vencidas: en Inicio se resumen en una sola línea
+   (.overdue-line) y en /tareas tienen su propia tarjeta, así que un muro de filas rojas no se puede
+   volver a pintar por descuido. */
 .tasklist { list-style: none; margin: 0; padding: 0; }
 .tasklist__item { display: flex; gap: 13px; align-items: flex-start; padding: 14px 2px; }
 .tasklist__item + .tasklist__item { border-top: 1px solid var(--separator); }
-.tasklist__item.is-overdue {
-    position: relative; border-top: 0; margin-bottom: 4px;
-    background: var(--warning-weak); border-radius: 14px; padding: 14px 15px 14px 17px;
-}
-.tasklist__item.is-overdue + .tasklist__item { border-top: 0; }
-.tasklist__item.is-overdue::before {
-    content: ""; position: absolute; left: 0; top: 11px; bottom: 11px; width: 4px; border-radius: 999px; background: var(--warning);
-}
 .tasklist__check-form { flex: none; margin: 0; }
 .tick {
     flex: none; width: 24px; height: 24px; border-radius: 999px; margin-top: 0;
@@ -2711,7 +2817,6 @@ tr.is-not-covered { background: var(--danger-weak); }
 .tick::before { content: ""; position: absolute; inset: -10px; }
 .tick svg { width: 14px; height: 14px; }
 .tick.is-checked { background: var(--accent); border-color: var(--accent); }
-.is-overdue .tick { border-color: color-mix(in srgb, var(--warning) 55%, var(--border-strong)); }
 /* Tarea que NO se cierra con la casilla (necesita entregar su documento): ocupa el mismo hueco para no
    romper la columna, pero pierde el círculo — un aro apagado sería un botón que no responde. El clip
    tiene otra forma, así que no promete cerrarse de un toque. */
@@ -2724,7 +2829,6 @@ tr.is-not-covered { background: var(--danger-weak); }
    parche invisible solo sería una zona muerta estorbando el camino al enlace de la fila. */
 .tick--doc::before,
 .tick--elsewhere::before { content: none; }
-.is-overdue .tick--doc { color: var(--warning-text); }
 /* Ni casilla ni documento: se resuelve en su ficha. Aro DISCONTINUO — se lee "aquí no se cierra" sin
    prometer un documento que no existe. */
 .tick--elsewhere { border: 0; cursor: default; color: var(--text-faint); }
@@ -2732,54 +2836,56 @@ tr.is-not-covered { background: var(--danger-weak); }
 /* Chevron de "esto se resuelve en otra pantalla": solo en esas filas, la asimetría es el mensaje. */
 .tasklist__go { flex: none; align-self: center; color: var(--text-faint); font-size: 18px; line-height: 1; }
 /* Recordatorio personal (malva) dentro de "Por hacer": distingue de un vistazo lo tuyo/privado de una
-   tarea del centro (verde). Conserva el malva incluso vencido, porque el color marca el TIPO, no el estado. */
+   tarea del centro. El color marca el TIPO, no el estado. */
 .tick--personal { border-color: var(--personal); }
 .tick--personal.is-checked { background: var(--personal); border-color: var(--personal); }
-.is-overdue .tick--personal { border-color: var(--personal); }
-/* Guardia en "Próximos 7 días": ESCUDO, la misma forma con la que el calendario la distingue de la
-   tarea (círculo) y del evento (cuadrado). Sin aro ni área táctil: no se marca, se va a ella. */
-.tick--guardia { border: 0; cursor: default; color: var(--accent-ink); }
-.tick--guardia::before { content: none; }
-.tick--guardia svg { width: 20px; height: 20px; }
 .tasklist__body { flex: 1; min-width: 0; text-decoration: none; display: flex; flex-direction: column; gap: 5px; }
 .tasklist__title { font-size: 14.5px; line-height: 1.35; color: var(--text); font-weight: 500; }
 .tasklist__meta { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-faint); }
-.is-overdue .tasklist__meta { color: var(--warning-text); }
+
+/* ---- La misma lista, dentro de un panel de Inicio ----
+   Cambia el encuadre (padding lateral y separador de fila), no el componente: /reuniones sigue usando
+   .tasklist suelta sobre el fondo. */
+.tasklist--panel .tasklist__item { padding: 14px 16px; }
+.tasklist--panel .tasklist__meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* La casilla de lo que NO vence hoy se apaga un poco: el aro más marcado es de lo que hay que cerrar
+   antes de acabar el día, no de todo. */
+.tasklist--panel .tick { border-color: color-mix(in srgb, var(--border-strong) 55%, var(--surface)); }
+.tasklist--panel .tick--today { border-color: var(--border-strong); }
+.tasklist--panel .tick--personal { border-color: var(--personal); }
+/* Y la marcada recupera el suyo: las tres reglas de arriba tienen la MISMA especificidad que
+   `.tick.is-checked` y van después en el fichero, así que sin esto la casilla recién marcada se quedaba
+   rellena de naranja con el borde apagado. */
+.tasklist--panel .tick.is-checked { border-color: var(--accent); }
+.tasklist--panel .tick--personal.is-checked { border-color: var(--personal); }
+.tasklist__when { color: var(--text-faint); }
+.tasklist__when.is-today { color: var(--accent-ink); font-weight: 600; }
+.tasklist__sep { color: var(--text-tenue); }
+
+/* Chip neutro de dato ("adjuntar documento"): dice de qué va la tarea sin competir con la fecha, que es
+   lo que manda en la fila. Neutro a propósito — el dorado de --amber ya se gasta en la ficha. */
+.chip-neutral {
+    display: inline-flex; align-items: center;
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--text-muted); background: var(--surface-sunken);
+    border: 1px solid var(--border); padding: 2px 7px; border-radius: 999px;
+}
 
 /* =============================================================================
-   Módulos con caja (zona aparte según rol): agenda personal, mi departamento, el centro
+   Módulo con caja y banda de cabecera. Queda para /avisos (el panel de "avisos en este dispositivo");
+   Inicio ya no lo usa: sus módulos de gestión son las cajas planas de .mgmt, más abajo.
    ============================================================================= */
 .module {
     background: var(--module-bg); border: 1px solid var(--module-border); border-radius: var(--radius-lg);
     overflow: hidden; box-shadow: var(--shadow-card);
 }
-.module--personal { background: var(--module-personal-bg); border-color: var(--module-personal-border); }
 .module__head {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
     padding: 16px 18px 13px; background: var(--module-band); border-bottom: 1px solid var(--module-border);
 }
-.module--personal .module__head { background: var(--module-personal-band); border-bottom-color: var(--module-personal-border); }
-.module__ident { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.module__icon {
-    flex: none; width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center;
-    background: var(--accent); color: var(--on-accent);
-}
-.module__icon svg { width: 17px; height: 17px; }
-.module__icon--personal { background: var(--personal-weak); color: var(--personal-icon); }
-.module__icon--personal svg { width: 16px; height: 16px; }
 .module__title { font-family: var(--font-display); font-size: 18px; color: var(--text); }
 .module__sub { font-size: 11.5px; color: var(--text-faint); }
-.module__action { flex: none; font-size: 12px; color: var(--success); font-weight: 600; text-decoration: none; }
 .module__empty { padding: 14px 18px; color: var(--text-faint); font-size: 13px; margin: 0; }
-
-/* Filas de agenda dentro del módulo personal */
-.agenda-rows { list-style: none; margin: 0; padding: 0; }
-.agenda-row { display: flex; align-items: center; gap: 13px; padding: 13px 18px; }
-.agenda-row + .agenda-row { border-top: 1px solid var(--module-personal-border); }
-.agenda-row__time { flex: none; width: 46px; font-family: var(--font-mono); font-weight: 600; font-size: 14px; color: var(--personal-icon); }
-.agenda-row__time.is-allday { font-weight: 400; font-size: 12px; color: var(--text-faint); }
-.agenda-row__title { flex: 1; min-width: 0; font-size: 14px; color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.agenda-row__dot { flex: none; width: 9px; height: 9px; border-radius: 3px; background: var(--event-color, var(--personal)); }
 
 /* Subtítulo de rol bajo el saludo */
 .home-role { font-size: 12px; color: var(--text-faint); margin: 2px 0 0; }
@@ -2787,106 +2893,118 @@ tr.is-not-covered { background: var(--danger-weak); }
 /* "+ Nueva tarea" en la cabecera: solo escritorio (en móvil se crea desde Tareas). */
 .home-newtask { display: none; }
 
-/* Las secciones personales ("Por hacer", "Próximos 7 días") anuncian el contenido MÁS importante de la
-   pantalla y llevaban la tipografía más débil del sistema (eyebrow mono de 11px en --text-muted), mientras
-   los módulos de gestión —secundarios— lucían título serif, icono y caja: la jerarquía estaba invertida.
-   Pasan a TÍTULO, que es lo que DESIGN.md ya contemplaba para "Mi agenda", y a encabezado real (la página
-   no tenía ninguno). El contraste con los módulos lo sigue dando la ausencia de caja, no la debilidad. */
+/* Título de sección en serif. Lo usan /reuniones y /reservas; Inicio pasó a .sec-head (mono + contador)
+   porque ahí el serif ya lo lleva el saludo y dos serifs seguidos competían entre ellos. */
 .home-section__title {
     margin: 0; font-family: var(--font-display); font-weight: 500; font-size: 19px; line-height: 1.2;
     color: var(--text);
 }
 
-/* Debajo del hero: columna única en móvil; en escritorio, dos columnas que aprovechan el ancho. */
-.home-cols { display: flex; flex-direction: column; gap: 24px; }
+/* ---- Reparto en columnas ----
+   El ORDEN DEL DOM es el de móvil, que es el que manda: Por hacer → Tu día → Próximos 7 días → Gestión
+   (lo tuyo primero, hoy antes que la semana, el centro al final). En escritorio, cada .home-col recupera
+   su caja y se reparten en dos columnas; en móvil las columnas se disuelven con `display: contents` y las
+   secciones se recolocan con `order`, que es la única forma de intercalar hijos de columnas distintas sin
+   escribir el bloque dos veces en la plantilla. */
+.home-cols { display: flex; flex-direction: column; gap: 22px; }
+.home-col { display: contents; }
+.home-section--todos { order: 1; }
+.home-section--day { order: 2; }
+.home-section--upcoming { order: 3; }
+.mgmt { order: 4; }
 @media (min-width: 900px) {
-    .home { max-width: 1000px; }
+    .home { max-width: 1080px; }
     .home-head { align-items: center; }
+    /* Secundario: borde y no relleno. La acción plena de la pantalla es la del hero, y dos botones
+       naranjas a la vez dejan la pantalla sin foco. */
     .home-newtask {
         display: inline-flex; align-items: center; margin-left: auto; margin-right: 14px; order: 2;
-        background: var(--accent); color: var(--on-accent); border-radius: 11px; padding: 11px 18px;
-        font: 600 14px var(--font-body); text-decoration: none;
+        background: transparent; color: var(--text-muted);
+        border: 1.5px solid var(--border-strong); border-radius: 11px; padding: 10px 16px;
+        font: 600 13.5px var(--font-body); text-decoration: none;
     }
-    .home-newtask:hover { background: var(--accent-hover); color: var(--on-accent); }
+    .home-newtask:hover { border-color: var(--text-faint); color: var(--text); }
     .home-avatar { order: 3; }
-    /* Dos columnas con intención: una principal (ancha) con el trabajo —mis tareas y los
-       módulos de gestión— y una lateral (estrecha) con la agenda personal. Antes era 1fr 1fr
-       con auto-flow, y como la agenda es lo único que caía a la derecha, quedaba un hueco
-       muerto bajo ella. Ahora se colocan por columna explícitamente. */
+    .home-greeting { font-size: 30px; }
+    /* Dos columnas con intención: la ancha lleva lo que hay que hacer, la estrecha cuándo es tu día y,
+       debajo, la gestión del centro. */
     .home-cols {
         display: grid;
-        grid-template-columns: minmax(0, 1.55fr) minmax(280px, 1fr);
-        gap: 20px;
+        grid-template-columns: minmax(0, 1.35fr) minmax(280px, 1fr);
+        gap: 24px;
         align-items: start;
     }
-    .home-cols > * { grid-column: 1; }
-    .home-cols > .module--personal { grid-column: 2; grid-row: 1; position: sticky; top: 20px; }
-    /* Las secciones dentro de la rejilla no arrastran su margen inferior (lo da el gap). */
-    .home-cols > .home-section, .home-cols > .module { margin: 0; }
+    .home-col { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
 }
 
-/* ---- Contenido de los módulos de gestión (mi departamento / el centro) ---- */
-.module__tiles { display: flex; gap: 10px; padding: 14px 18px 12px; }
-.module-tile { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; }
-.module-tile__num { font-family: var(--font-mono); font-weight: 600; font-size: 22px; line-height: 1; }
-.module-tile__num--amber { color: var(--amber-text); }
-.module-tile__num--accent { color: var(--accent-ink); }
-.module-tile__label { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
-
-.module__eyebrow {
-    font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
-    color: var(--text-faint); padding: 4px 18px 6px;
+/* =============================================================================
+   Gestión del centro (según rol): al final de la pantalla y en cajas PLANAS.
+   Antes eran los módulos con banda, icono grande y sombra, y pesaban más que la agenda: lo del centro
+   se leía como el contenido principal. Aquí el rótulo es el más tenue de la pantalla y las cajas no
+   compiten con los paneles personales — mismas cifras, otra altura de voz.
+   ============================================================================= */
+.mgmt { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.mgmt__label {
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--text-tenue); margin: 4px 0 1px;
 }
-.module-row {
-    display: flex; align-items: center; gap: 12px; padding: 12px 18px;
-    border-top: 1px solid var(--module-border); text-decoration: none; color: inherit;
+.mgmt-card {
+    display: block; background: var(--module-bg); border: 1px solid var(--border); border-radius: 14px;
+    overflow: hidden; text-decoration: none; color: inherit;
 }
-.module-row:hover { background: color-mix(in srgb, var(--module-band) 60%, var(--surface)); }
-.module-row__avatar {
+.mgmt-card--row { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
+.mgmt-card--row:hover { background: var(--module-band); }
+.mgmt-card__icon { flex: none; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; }
+.mgmt-card__icon svg { width: 15px; height: 15px; }
+.mgmt-card__icon--ok { background: var(--success-weak); color: var(--success); }
+.mgmt-card__icon--warn { background: var(--warning-weak); color: var(--warning); }
+.mgmt-card__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.mgmt-card__head { padding: 13px 16px 10px; display: flex; flex-direction: column; gap: 1px; }
+.mgmt-card__title { font-size: 13.5px; font-weight: 500; color: var(--text); }
+.mgmt-card__meta { font-size: 11.5px; color: var(--text-faint); margin: 0; }
+.mgmt-card__meta b { color: var(--warning-text); font-weight: 600; }
+.mgmt-card__cta { flex: none; font-size: 12px; font-weight: 600; color: var(--accent-ink); }
+.mgmt-card__progress { padding: 13px 16px 12px; }
+.mgmt-card__progress-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.mgmt-card__pct { font-family: var(--font-mono); font-weight: 600; font-size: 13px; color: var(--accent-ink); }
+.mgmt-card__progress .mgmt-card__meta { font-family: var(--font-mono); font-size: 10.5px; margin-top: 6px; }
+.mgmt-row {
+    display: flex; align-items: center; gap: 11px; padding: 11px 16px;
+    border-top: 1px solid var(--border); text-decoration: none; color: inherit;
+}
+.mgmt-row:hover { background: var(--module-band); }
+.mgmt-row__stat {
+    flex: none; min-width: 30px; height: 26px; padding: 0 6px; border-radius: 7px;
+    display: grid; place-items: center; font-family: var(--font-mono); font-weight: 600; font-size: 12px;
+    background: var(--surface-sunken); color: var(--text-muted);
+}
+.mgmt-row__stat--amber { background: var(--amber-weak); color: var(--amber-text); }
+/* Rojo teja = fuera de plazo, el mismo de /tareas y de la línea de resumen. El rojo --danger queda
+   reservado a lo destructivo/ausente. */
+.mgmt-row__stat--warning { background: var(--warning-weak); color: var(--warning-text); }
+.mgmt-row__label { flex: 1; min-width: 0; font-size: 12.5px; color: var(--text-muted); display: flex; flex-direction: column; gap: 1px; }
+.mgmt-row__title { font-size: 13px; font-weight: 500; color: var(--text); }
+.mgmt-row__sub { font-size: 11px; color: var(--text-faint); }
+.mgmt-row__chevron { flex: none; color: var(--text-tenue); font-size: 16px; line-height: 1; }
+.mgmt-row__avatar {
     flex: none; width: 28px; height: 28px; border-radius: 999px;
     background: var(--amber-weak); color: var(--amber-text);
     display: grid; place-items: center; font-size: 10px; font-weight: 700;
 }
-.module-row__stat {
-    flex: none; width: 34px; height: 34px; border-radius: 10px;
-    display: grid; place-items: center; font-family: var(--font-mono); font-weight: 600; font-size: 15px;
+.mgmt-card__foot {
+    display: block; text-align: center; padding: 11px; border-top: 1px solid var(--border);
+    font-size: 12px; font-weight: 600; color: var(--accent-ink); text-decoration: none;
 }
-.module-row__stat--amber { background: var(--amber-weak); color: var(--amber-text); }
-/* Naranja = urgencia (vencido/sin cubrir), coherente con las filas de tarea vencida.
-   El rojo (--danger) queda reservado a lo destructivo/ausente, no a un vencimiento. */
-.module-row__stat--warning { background: var(--warning-weak); color: var(--warning-text); }
-.module-row__stat--danger { background: var(--danger-weak); color: var(--danger-text); }
-.module-row__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.module-row__title { font-size: 14px; color: var(--text); font-weight: 500; }
-.module-row__sub { font-size: 11.5px; color: var(--text-faint); }
-.module-row__chevron { flex: none; color: var(--text-tenue); font-size: 18px; }
+.mgmt-card__foot:hover { background: var(--module-band); }
 .pill-validate {
     flex: none; font-family: var(--font-mono); font-size: 9px; font-weight: 600; letter-spacing: .04em;
     text-transform: uppercase; color: var(--amber-text); background: var(--amber-weak);
     border: 1px solid var(--amber-border); padding: 3px 8px; border-radius: 999px;
 }
-.module__foot {
-    display: block; text-align: center; font-size: 12.5px; color: var(--success); font-weight: 600;
-    text-decoration: none; padding: 13px; border-top: 1px solid var(--module-border);
-}
 
-/* Módulo "Guardias de hoy" (coordinación) */
-.guardias-today { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; }
-.guardias-today__count { display: flex; align-items: center; gap: 10px; }
-.guardias-today__dot { width: 9px; height: 9px; border-radius: 999px; background: var(--warning); flex: none; }
-.guardias-today__num { font-family: var(--font-mono); font-weight: 600; font-size: 24px; color: var(--warning-text); }
-.guardias-today__label { font-size: 14px; color: var(--text); font-weight: 500; }
-.guardias-today__ok { font-size: 14px; color: var(--success-text); font-weight: 500; }
-.btn-mini { flex: none; background: var(--accent); color: var(--on-accent); border: 0; border-radius: 10px; padding: 9px 14px; font: 600 12.5px var(--font-body); text-decoration: none; cursor: pointer; }
-.btn-mini:hover { background: var(--accent-hover); color: var(--on-accent); }
-
-/* Barra de progreso del módulo "El centro" */
-.progress-block { padding: 14px 18px 12px; }
-.progress-block__head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; font-size: 12.5px; color: var(--text-muted); }
-.progress-block__pct { font-family: var(--font-mono); font-weight: 600; font-size: 14px; color: var(--accent-ink); }
-.progress-bar { height: 9px; background: color-mix(in srgb, var(--accent) 16%, var(--surface)); border-radius: 999px; overflow: hidden; }
-.progress-bar__fill { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--success)); }
-.progress-block__meta { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); margin-top: 6px; }
+/* Barra de avance del curso (módulo de dirección) */
+.progress-bar { height: 7px; background: color-mix(in srgb, var(--accent) 16%, var(--surface)); border-radius: 999px; overflow: hidden; }
+.progress-bar__fill { display: block; height: 100%; background: var(--accent); }
 
 /* =============================================================================
    Tareas del centro (lista) — tarjeta por fila, chips de estado, agrupación por urgencia

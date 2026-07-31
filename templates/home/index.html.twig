@@ -3,7 +3,23 @@
 {% block title %}Inicio · {{ app_organization_name }}{% endblock %}
 {% block breadcrumb %}Inicio{% endblock %}
 
+{#- Cabecera de sección: rótulo mono en mayúsculas + contador + enlace de salida. Es el patrón que iguala
+    a las tres secciones personales, y va en una macro porque escribirlo tres veces es la forma de que
+    dejen de ser iguales. Va en mono y NO en serif —al contrario de lo que hacía esta pantalla— porque el
+    serif se reserva ahora al saludo: lo que da peso a lo personal es su CONTENEDOR, no su tipografía, y
+    dos serifs seguidos competían entre ellos. Ver DESIGN.md § Inicio. -#}
+{% macro section_head(rotulo, contador, enlace, url) %}
+    <div class="sec-head">
+        <div class="sec-head__ident">
+            <span class="sec-head__label">{{ rotulo }}</span>
+            {% if contador %}<span class="sec-head__count">{{ contador }}</span>{% endif %}
+        </div>
+        {% if url %}<a class="sec-head__more" href="{{ url }}">{{ enlace }}</a>{% endif %}
+    </div>
+{% endmacro %}
+
 {% block body %}
+    {% import _self as ui %}
     {% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
     {% set nombre = app.user.fullName|trim|split(' ')|first %}
     {% set iniciales = app.user.fullName|initials %}
@@ -20,6 +36,8 @@
                 <h1 class="home-greeting">{{ saludo }}, {{ nombre }}</h1>
                 {% if roleSubtitle %}<p class="home-role">{{ roleSubtitle }}</p>{% endif %}
             </div>
+            {# Secundario a propósito: la acción PLENA de esta pantalla es la del hero, y dos botones
+               naranjas compitiendo dejan la pantalla sin foco. #}
             <a class="home-newtask" href="{{ path('task_new') }}">+ Nueva tarea</a>
             <span class="home-avatar" aria-hidden="true">{{ iniciales }}</span>
         </header>
@@ -40,27 +58,47 @@
             </a>
         {% endif %}
 
-        {# ---- Ancla: próxima guardia (hero) o tira "sin guardia" ---- #}
+        {# ---- Ancla: próxima guardia (hero) o tira "sin guardia" ----
+               Es el único bloque oscuro de la pantalla, y va en TOSTADO, no en naranja pleno: el naranja
+               de la marca queda reservado a UNA acción por pantalla, que aquí es el botón de la derecha.
+               Ya no es un enlace envolviendo todo, porque lleva dentro su propia acción (un botón dentro
+               de un enlace es HTML inválido y en la práctica se acaba pulsando el equivocado). ---- #}
         {% if nextGuardia %}
             {% set g = nextGuardia.cover %}
-            <a class="guardia-hero" href="{{ path('guardia_mine') }}">
-                <div class="guardia-hero__top">
-                    <span class="guardia-hero__eyebrow"><span class="guardia-hero__pulse"></span>Tu próxima guardia</span>
-                    {% if nextGuardia.minutesUntil is not null %}<span class="guardia-hero__in">en {{ nextGuardia.minutesUntil }} min</span>{% endif %}
-                </div>
-                <div class="guardia-hero__line">
-                    {% if nextGuardia.startsAt %}<span class="guardia-hero__time">{{ nextGuardia.startsAt|date('H:i') }}</span>{% endif %}
-                    {#- effectiveRoomName, no roomName: si a este grupo lo han juntado con otros en un aula
-                        grande, el sitio al que hay que ir es ESE. Inicio no puede decir un aula distinta
-                        de la que dicen "Mis guardias" y el detalle. -#}
-                    <span class="guardia-hero__where">{{ g.effectiveRoomName ?: 'Aula por asignar' }}{% if g.groupName %} · {{ g.groupName }}{% endif %}</span>
-                </div>
-                <div class="guardia-hero__sub">Cubres a {{ g.absentTeacher.fullName }} · {% if g.hasTask %}<span class="guardia-hero__task">tiene tarea</span>{% else %}<span class="guardia-hero__notask">sin tarea</span>{% endif %}</div>
-            </a>
+            <section class="guardia-hero">
+                {# Al DETALLE de esa guardia, no al listado: lo que se necesita al pulsarla es el aula, la
+                   tarea del grupo y el aviso de RAICES, y pasar por "Mis guardias" era un clic de peaje. #}
+                <a class="guardia-hero__main" href="{{ path('guardia_cover_show', { id: g.id }) }}">
+                    {#- Una guardia que ya está pasando no es "tu próxima guardia": el rótulo lo dice. -#}
+                    <span class="guardia-hero__eyebrow">
+                        <span class="guardia-hero__pulse"></span>
+                        {%- if nextGuardia.inProgress -%}Tu guardia · ahora
+                        {%- else -%}Tu próxima guardia{% if nextGuardia.minutesUntil is not null %} · en {{ nextGuardia.minutesUntil }} min{% endif %}
+                        {%- endif -%}
+                    </span>
+                    <span class="guardia-hero__line">
+                        {% if nextGuardia.startsAt %}<span class="guardia-hero__time">{{ nextGuardia.startsAt|date('H:i') }}</span>{% endif %}
+                        {#- effectiveRoomName, no roomName: si a este grupo lo han juntado con otros en un aula
+                            grande, el sitio al que hay que ir es ESE. Inicio no puede decir un aula distinta
+                            de la que dicen "Mis guardias" y el detalle. -#}
+                        <span class="guardia-hero__where">{{ g.effectiveRoomName ?: 'Aula por asignar' }}{% if g.groupName %} · {{ g.groupName }}{% endif %}</span>
+                    </span>
+                    <span class="guardia-hero__sub">Cubres a <b>{{ g.absentTeacher.fullName }}</b> · {% if g.hasTask %}<span class="guardia-hero__task">tiene tarea</span>{% else %}<span class="guardia-hero__notask">sin tarea asignada</span>{% endif %}</span>
+                </a>
+                {#- La salida que faltaba: una guardia sin tarea deja al profesorado con una clase que
+                    improvisar, y el banco ya tiene trabajo preparado por nivel. Se abre con el nivel y la
+                    materia de ESTA clase ya fijados (?para=). Se pregunta por el MISMO permiso que exige el
+                    controlador, para que el botón y la acción no puedan discrepar. -#}
+                {% if not g.hasTask and is_granted(constant('App\\Security\\Voter\\GuardiaCoverVoter::WORK_ON_TASK'), g) %}
+                    <a class="hero-cta" href="{{ path('guardia_bank_index', { para: g.id }) }}">Elegir tarea del banco</a>
+                {% else %}
+                    <a class="hero-cta hero-cta--ghost" href="{{ path('guardia_cover_show', { id: g.id }) }}">Ver la guardia</a>
+                {% endif %}
+            </section>
         {% else %}
             {#- Sin guardia PENDIENTE hoy. Dos casos que no son el mismo: no tenías ninguna, o ya las has
-                hecho todas (y entonces siguen listadas debajo, así que decir "hoy no tienes guardia"
-                contradiría la lista). -#}
+                hecho todas (y entonces siguen listadas en "Tu día", así que decir "hoy no tienes guardia"
+                contradiría la lista). Nunca un hueco: una tira discreta. -#}
             <a class="no-guardia" href="{{ path('guardia_mine') }}">
                 <span class="no-guardia__icon" aria-hidden="true">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
@@ -79,351 +117,334 @@
             </a>
         {% endif %}
 
-        {# ---- El resto de tus guardias de hoy. El centro pidió que aparezcan TODAS, no solo la próxima:
-               un día con tres guardias tiene que leerse como tres. Las ya pasadas siguen aquí, marcadas
-               como hechas, porque desaparecer sin más se lee como "no la tenías". Cada fila lleva a SU
-               guardia (la tarea del grupo y el aviso de RAICES viven en el detalle). ---- #}
-        {% if otherGuardiasToday is not empty %}
-            <section class="guardia-rest">
-                <h2 class="guardia-rest__title">{{ nextGuardia ? 'Resto de tus guardias de hoy' : 'Tus guardias de hoy' }}</h2>
-                <ul class="guardia-rest__list">
-                    {% for item in otherGuardiasToday %}
-                        {% set c = item.cover %}
-                        <li>
-                            <a class="guardia-rest__row{{ item.done ? ' is-done' }}" href="{{ path('guardia_cover_show', { id: c.id }) }}">
-                                <span class="guardia-rest__time">{% if item.startsAt %}{{ item.startsAt|date('H:i', false) }}{% else %}{{ c.slotIndex + 1 }}ª{% endif %}</span>
-                                <span class="guardia-rest__body">
-                                    <span class="guardia-rest__where">{{ [c.effectiveRoomName, c.groupName]|filter(v => v)|join(' · ') ?: 'Sin especificar' }}</span>
-                                    <span class="guardia-rest__who">{{ item.done ? 'Cubriste' : 'Cubres' }} a {{ c.absentTeacher.fullName }}</span>
-                                </span>
-                                {% if c.notCovered %}<span class="badge badge--danger" data-tone="danger">Incidencia</span>
-                                {% elseif item.done %}<span class="guardia-rest__flag">✓ Hecha</span>
-                                {% elseif c.hasTask %}<span class="badge badge--warning" data-tone="warning">Tarea</span>{% endif %}
-                            </a>
-                        </li>
-                    {% endfor %}
-                </ul>
-            </section>
-        {% endif %}
-
-        {# En escritorio, todo lo de debajo del hero se reparte en dos columnas (rejilla responsive);
-           en móvil es una sola columna apilada. #}
+        {# En escritorio son dos columnas con intención: a la izquierda lo que TIENES QUE HACER, a la
+           derecha CUÁNDO es tu día y, al final y más apagado, la gestión del centro. En móvil es una sola
+           columna en ese mismo orden. #}
         <div class="home-cols">
-        {# ---- Por hacer: tareas del centro (fecha límite) + recordatorios sin hora, como checklist.
-               Lo que está fuera de plazo primero. Las citas con hora NO están aquí: viven en "Con hora". ---- #}
-        <section class="home-section">
-            <div class="home-section__head">
-                <h2 class="home-section__title">Por hacer</h2>
-                <a class="home-section__more" href="{{ path('task_index') }}">Ver tareas</a>
-            </div>
+            <div class="home-col">
+                {# ================= Por hacer ================= #}
+                <section class="home-section home-section--todos">
+                    {{ ui.section_head('Por hacer', todosTotal ~ (todosTotal == 1 ? ' pendiente' : ' pendientes'), 'Ver tareas', path('task_index')) }}
 
-            {% if todos is empty %}
-                <p class="home-empty">Nada pendiente para hoy. Todo en orden.</p>
-            {% else %}
-                <ul class="tasklist">
-                    {% for entry in todos %}
-                        {% if entry.kind == 'task' %}
-                            {% set t = entry.task %}
-                            {% set overdue = t.dueDate|date('Y-m-d') < hoyStr %}
-                            <li class="tasklist__item{{ overdue ? ' is-overdue' }}">
-                                {% if t.requiresCheckbox %}
-                                    <form method="post" action="{{ path('task_toggle_done', { id: t.id }) }}" class="tasklist__check-form">
-                                        <input type="hidden" name="_token" value="{{ csrf_token('toggle_done' ~ t.id) }}">
-                                        <button type="submit" class="tick{{ t.checkboxDone ? ' is-checked' }}" aria-pressed="{{ t.checkboxDone ? 'true' : 'false' }}" aria-label="Marcar «{{ t.title }}» como {{ t.checkboxDone ? 'no hecha' : 'hecha' }}">
-                                            {% if t.checkboxDone %}<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10.5 l3.2 3.2 L15 6.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>{% endif %}
-                                        </button>
-                                    </form>
-                                {% elseif t.requiresDocument %}
-                                    {#- Esta tarea NO se cierra con la casilla: se cierra entregando su
-                                        documento y validando. Un círculo apagado sería un botón que no
-                                        responde, sin decir por qué; un CLIP tiene otra forma, así que no
-                                        promete cerrarse de un toque y anuncia de qué va. Misma idea que en
-                                        el calendario (círculo=tarea, cuadrado=evento, escudo=guardia): la
-                                        forma dice qué es. El camino real está en la ficha, a la que ya
-                                        lleva la fila entera. -#}
-                                    <span class="tick tick--doc" role="img" aria-label="«{{ t.title }}»: se cierra entregando el documento, no con la casilla">
-                                        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 5.5 7 11a2.1 2.1 0 0 0 3 3l5.5-5.5a3.6 3.6 0 0 0-5-5L4.8 9.2a5 5 0 0 0 7 7l3.7-3.7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                                    </span>
-                                {% else %}
-                                    {#- Ni casilla ni documento: se resuelve entera desde su ficha. No lleva
-                                        clip porque no hay nada que adjuntar — el marcador diría algo falso.
-                                        Este estado no se puede pedir desde el formulario (no ofrece la
-                                        casilla), pero sí existe en filas que lo grabaron cuando editar una
-                                        tarea con documento corrompía `requires_checkbox`, así que la
-                                        pantalla tiene que saber contarlo en vez de pintar un aro muerto. -#}
-                                    <span class="tick tick--elsewhere" role="img" aria-label="«{{ t.title }}»: se gestiona desde su ficha, no con la casilla">
-                                        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 2.6"/></svg>
-                                    </span>
-                                {% endif %}
-                                <a class="tasklist__body" href="{{ path('task_show', { id: t.id }) }}">
-                                    <span class="tasklist__title">{{ t.title }}</span>
-                                    <span class="tasklist__meta">
-                                        {%- if overdue %}VENCIÓ {{ t.dueDate|date('d/m') }}{% else %}HOY{% endif -%}
-                                        {%- if t.unit %} · {{ t.unit.name }}{% endif -%}
-                                        {%- if t.requiresDocument %} · adjuntar documento{% endif -%}
-                                    </span>
-                                </a>
-                                {#- Chevron solo en estas filas: la asimetría es el mensaje — esta no se
-                                    resuelve aquí, te lleva a otro sitio. -#}
-                                {% if not t.requiresCheckbox %}<span class="tasklist__go" aria-hidden="true">›</span>{% endif %}
-                            </li>
-                        {% else %}
-                            {# Recordatorio personal sin hora: misma checklist, pero es tuyo y privado. #}
-                            {% set e = entry.event %}
-                            {% set overdue = e.startAt|date('Y-m-d') < hoyStr %}
-                            <li class="tasklist__item{{ overdue ? ' is-overdue' }}">
-                                <form method="post" action="{{ path('personal_event_toggle_done', { id: e.id }) }}" class="tasklist__check-form">
-                                    <input type="hidden" name="_token" value="{{ csrf_token('personal_event_done' ~ e.id) }}">
-                                    <button type="submit" class="tick tick--personal{{ e.done ? ' is-checked' }}" aria-pressed="{{ e.done ? 'true' : 'false' }}" aria-label="Marcar «{{ e.title }}» como {{ e.done ? 'no hecho' : 'hecho' }}">
-                                        {% if e.done %}<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10.5 l3.2 3.2 L15 6.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>{% endif %}
-                                    </button>
-                                </form>
-                                <a class="tasklist__body" href="{{ path('personal_event_edit', { id: e.id }) }}">
-                                    <span class="tasklist__title">{{ e.title }}</span>
-                                    <span class="tasklist__meta">
-                                        {%- if overdue %}VENCIÓ {{ e.startAt|date('d/m') }}{% else %}HOY{% endif -%}
-                                         · recordatorio{% if e.category %} · {{ e.category.name }}{% endif %}
-                                    </span>
-                                </a>
-                            </li>
+                    <div class="panel">
+                        {#- Lo de FUERA DE PLAZO, en UNA fila colapsada y nunca en N filas rojas: si todo grita,
+                            nada grita. Dice cuántas son y desde cuándo arrastra la más antigua —la medida real
+                            del retraso— y lleva a la lista filtrada, que es donde se trabaja una cola. -#}
+                        {% if overdueCount > 0 %}
+                            <a class="overdue-line" href="{{ path('task_index', { vista: 'vencidas' }) }}">
+                                <span class="overdue-line__icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5l3 2"/></svg>
+                                </span>
+                                <span class="overdue-line__text">
+                                    <b>{{ overdueCount }} {{ overdueCount == 1 ? 'pendiente' : 'pendientes' }} fuera de plazo</b>{% if overdueOldest %} · la más antigua desde el {{ overdueOldest|date('d/m') }}{% endif %}
+                                </span>
+                                <span class="overdue-line__cta">Revisar</span>
+                                <span class="overdue-line__chevron" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+                                </span>
+                            </a>
                         {% endif %}
-                    {% endfor %}
-                </ul>
-            {% endif %}
-        </section>
 
-        {# ---- Con hora: tus citas con hora de HOY (privadas, malva). Los recordatorios sin hora no van
-               aquí, sino a "Por hacer". ---- #}
-        <section class="module module--personal">
-            <div class="module__head">
-                <div class="module__ident">
-                    <span class="module__icon module__icon--personal" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
-                    </span>
-                    <div>
-                        {# Sin subtítulo: la caja malva ya significa "privado" en el sistema, y la frase
-                           competía con su propio título. #}
-                        <div class="module__title">Con hora</div>
+                        {% if todos is empty %}
+                            {#- El vacío no se deja como hueco: si no hay nada por delante se dice, y se dice en
+                                positivo. Se mantiene el contenedor para que la pantalla no cambie de forma según
+                                el día. Cuando SÍ hay retrasos, la fila de arriba ya ha dado la noticia y decir
+                                "todo al día" sería mentira. -#}
+                            {% if overdueCount > 0 %}
+                                <p class="panel-empty">Nada más por delante: solo queda lo de arriba.</p>
+                            {% else %}
+                                <p class="panel-empty panel-empty--ok">
+                                    <span class="panel-empty__check" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-11"/></svg>
+                                    </span>Todo al día · no tienes tareas pendientes
+                                </p>
+                            {% endif %}
+                        {% else %}
+                            <ul class="tasklist tasklist--panel">
+                                {% for entry in todos %}
+                                    {% if entry.kind == 'task' %}
+                                        {% set t = entry.task %}
+                                        {% set vence_hoy = t.dueDate|date('Y-m-d') == hoyStr %}
+                                        <li class="tasklist__item">
+                                            {% if t.requiresCheckbox %}
+                                                <form method="post" action="{{ path('task_toggle_done', { id: t.id }) }}" class="tasklist__check-form">
+                                                    <input type="hidden" name="_token" value="{{ csrf_token('toggle_done' ~ t.id) }}">
+                                                    <button type="submit" class="tick{{ vence_hoy ? ' tick--today' }}{{ t.checkboxDone ? ' is-checked' }}" aria-pressed="{{ t.checkboxDone ? 'true' : 'false' }}" aria-label="Marcar «{{ t.title }}» como {{ t.checkboxDone ? 'no hecha' : 'hecha' }}">
+                                                        {% if t.checkboxDone %}<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10.5 l3.2 3.2 L15 6.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>{% endif %}
+                                                    </button>
+                                                </form>
+                                            {% elseif t.requiresDocument %}
+                                                {#- Esta tarea NO se cierra con la casilla: se cierra entregando su
+                                                    documento y validando. Un círculo apagado sería un botón que no
+                                                    responde, sin decir por qué; un CLIP tiene otra forma, así que no
+                                                    promete cerrarse de un toque y anuncia de qué va. Misma idea que en
+                                                    el calendario (círculo=tarea, cuadrado=evento, escudo=guardia): la
+                                                    forma dice qué es. El camino real está en la ficha, a la que ya
+                                                    lleva la fila entera. -#}
+                                                <span class="tick tick--doc" role="img" aria-label="«{{ t.title }}»: se cierra entregando el documento, no con la casilla">
+                                                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 5.5 7 11a2.1 2.1 0 0 0 3 3l5.5-5.5a3.6 3.6 0 0 0-5-5L4.8 9.2a5 5 0 0 0 7 7l3.7-3.7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                                </span>
+                                            {% else %}
+                                                {#- Ni casilla ni documento: se resuelve entera desde su ficha. No lleva
+                                                    clip porque no hay nada que adjuntar — el marcador diría algo falso.
+                                                    Este estado no se puede pedir desde el formulario (no ofrece la
+                                                    casilla), pero sí existe en filas que lo grabaron cuando editar una
+                                                    tarea con documento corrompía `requires_checkbox`, así que la
+                                                    pantalla tiene que saber contarlo en vez de pintar un aro muerto. -#}
+                                                <span class="tick tick--elsewhere" role="img" aria-label="«{{ t.title }}»: se gestiona desde su ficha, no con la casilla">
+                                                    <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 2.6"/></svg>
+                                                </span>
+                                            {% endif %}
+                                            <a class="tasklist__body" href="{{ path('task_show', { id: t.id }) }}">
+                                                <span class="tasklist__title">{{ t.title }}</span>
+                                                <span class="tasklist__meta">
+                                                    {#- La fecha manda, y "HOY" se destaca porque es lo único que exige algo
+                                                        antes de acabar el día. Las de fuera de plazo no llegan a esta lista:
+                                                        van resumidas en la fila de arriba. -#}
+                                                    {% if vence_hoy %}<span class="tasklist__when is-today">HOY</span>{% else %}<span class="tasklist__when">{{ dias[t.dueDate|date('N')]|slice(0, 3)|upper }} {{ t.dueDate|date('d/m') }}</span>{% endif %}
+                                                    {%- if t.unit %}<span class="tasklist__sep">·</span>{{ t.unit.name }}{% endif -%}
+                                                    {%- if t.requiresDocument %}<span class="chip-neutral">adjuntar documento</span>{% endif -%}
+                                                </span>
+                                            </a>
+                                            {#- Chevron solo en estas filas: la asimetría es el mensaje — esta no se
+                                                resuelve aquí, te lleva a otro sitio. -#}
+                                            {% if not t.requiresCheckbox %}<span class="tasklist__go" aria-hidden="true">›</span>{% endif %}
+                                        </li>
+                                    {% else %}
+                                        {# Recordatorio personal sin hora: misma checklist, pero es tuyo y privado. #}
+                                        {% set e = entry.event %}
+                                        {% set vence_hoy = e.startAt|date('Y-m-d') == hoyStr %}
+                                        <li class="tasklist__item">
+                                            <form method="post" action="{{ path('personal_event_toggle_done', { id: e.id }) }}" class="tasklist__check-form">
+                                                <input type="hidden" name="_token" value="{{ csrf_token('personal_event_done' ~ e.id) }}">
+                                                <button type="submit" class="tick tick--personal{{ e.done ? ' is-checked' }}" aria-pressed="{{ e.done ? 'true' : 'false' }}" aria-label="Marcar «{{ e.title }}» como {{ e.done ? 'no hecho' : 'hecho' }}">
+                                                    {% if e.done %}<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10.5 l3.2 3.2 L15 6.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>{% endif %}
+                                                </button>
+                                            </form>
+                                            <a class="tasklist__body" href="{{ path('personal_event_edit', { id: e.id }) }}">
+                                                <span class="tasklist__title">{{ e.title }}</span>
+                                                <span class="tasklist__meta">
+                                                    {% if vence_hoy %}<span class="tasklist__when is-today">HOY</span>{% else %}<span class="tasklist__when">{{ dias[e.startAt|date('N')]|slice(0, 3)|upper }} {{ e.startAt|date('d/m') }}</span>{% endif %}
+                                                    <span class="tasklist__sep">·</span>recordatorio{% if e.category %} · {{ e.category.name }}{% endif %}
+                                                </span>
+                                            </a>
+                                        </li>
+                                    {% endif %}
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
+
+                        {#- Pie solo cuando queda algo por ver: cerrar la lista con un enlace que no añade nada
+                            es una fila de ruido. -#}
+                        {% if todosTotal > todos|length %}
+                            <a class="panel__foot" href="{{ path('task_index') }}">Ver {{ todosTotal }} pendientes</a>
+                        {% endif %}
                     </div>
-                </div>
-                <a class="module__action" href="{{ path('personal_event_new') }}">+ Nuevo</a>
-            </div>
+                </section>
 
-            {% if timedToday is empty %}
-                <p class="module__empty">Sin citas con hora hoy.</p>
-            {% else %}
-                <ul class="agenda-rows">
-                    {% for entry in timedToday %}
-                        {% set e = entry.event %}
-                        <li class="agenda-row">
-                            <span class="agenda-row__time{{ e.allDay ? ' is-allday' }}">{{ e.allDay ? '—' : e.startAt|date('H:i') }}</span>
-                            <a class="agenda-row__title" href="{{ path('personal_event_edit', { id: e.id }) }}">{{ e.title }}</a>
-                            <span class="agenda-row__dot {{ e.category ? e.category.color.cssClass }}" aria-hidden="true"></span>
-                        </li>
-                    {% endfor %}
-                </ul>
-            {% endif %}
-        </section>
-
-        {# ---- Reuniones de hoy: convocatorias del centro (no son privadas, así que NO van en la caja
-               malva "Con hora"; y no son un "por hacer", así que no llevan casilla). Solo aparece la
-               sección si hay alguna: una sección vacía todos los días enseña a ignorarla. ---- #}
-        {% if meetingsToday is not empty %}
-        <section class="home-section">
-            <div class="home-section__head">
-                <h2 class="home-section__title">Reuniones de hoy</h2>
-                <a class="home-section__more" href="{{ path('meeting_index') }}">Ver reuniones</a>
-            </div>
-            <ul class="tasklist">
-                {% for entry in meetingsToday %}
-                    {% set m = entry.meeting %}
-                    <li class="tasklist__item upcoming-item">
-                        <a class="tasklist__body" href="{{ path('meeting_show', { id: m.id }) }}">
-                            <span class="tasklist__title">{{ m.title }}</span>
-                            <span class="tasklist__meta">
-                                {{- m.startAt|date('H:i') -}}
-                                {%- if m.place %} · {{ m.place }}{% endif -%}
-                                {%- if m.project %} · {{ m.project.name }}{% endif -%}
-                            </span>
-                        </a>
-                        <span class="tasklist__go" aria-hidden="true">›</span>
-                    </li>
-                {% endfor %}
-            </ul>
-        </section>
-        {% endif %}
-
-        {# ---- Próximos 7 días: anticipo compacto y tipado (tareas, eventos y reuniones juntos por día). El marcador
-               es estático (no accionable): es un vistazo, no el trabajo de hoy. Lo más lejano vive en el
-               Calendario, a un clic desde el pie. Reutiliza la checklist (.tasklist). ---- #}
-        {% if upcoming is not empty %}
-        <section class="home-section">
-            <div class="home-section__head">
-                <h2 class="home-section__title">Próximos 7 días</h2>
-                <a class="home-section__more" href="{{ path('calendar_index', { vista: 'semana' }) }}">Ver semana</a>
-            </div>
-            <ul class="tasklist">
-                {% for entry in upcoming %}
-                    {% if entry.kind == 'task' %}
-                        {% set t = entry.task %}
-                        <li class="tasklist__item upcoming-item">
-                            <a class="tasklist__body" href="{{ path('task_show', { id: t.id }) }}">
-                                <span class="tasklist__title">{{ t.title }}</span>
-                                <span class="tasklist__meta">{{ dias[t.dueDate|date('N')]|slice(0, 3) }} {{ t.dueDate|date('d/m') }} · tarea{% if t.unit %} · {{ t.unit.name }}{% endif %}</span>
-                            </a>
-                        </li>
-                    {% elseif entry.kind == 'guardia' %}
-                        {#- Una guardia de los próximos días. Lleva ESCUDO, la misma forma con la que el
-                            calendario la distingue de la tarea (círculo) y del evento (cuadrado); aquí sí
-                            ocupa la columna del marcador porque no es decorativo, es lo que dice de qué
-                            tipo de compromiso se trata. La fecha va sin convertir de zona (|date(...,false)):
-                            el instante se compuso con la fecha del cover, no hay que moverlo. -#}
-                        {% set c = entry.guardia %}
-                        <li class="tasklist__item upcoming-item">
-                            <span class="tick tick--guardia" role="img" aria-label="Guardia">
-                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                            </span>
-                            <a class="tasklist__body" href="{{ path('guardia_cover_show', { id: c.id }) }}">
-                                <span class="tasklist__title">Guardia{% if c.effectiveRoomName or c.groupName %} · {{ [c.effectiveRoomName, c.groupName]|filter(v => v)|join(' · ') }}{% endif %}</span>
-                                <span class="tasklist__meta">{{ dias[entry.date|date('N', false)]|slice(0, 3) }} {{ entry.date|date('d/m', false) }} · cubres a {{ c.absentTeacher.fullName }}{% if c.hasTask %} · tiene tarea{% endif %}</span>
-                            </a>
-                            <span class="tasklist__go" aria-hidden="true">›</span>
-                    {% elseif entry.kind == 'meeting' %}
-                        {% set m = entry.meeting %}
-                        <li class="tasklist__item upcoming-item">
-                            <a class="tasklist__body" href="{{ path('meeting_show', { id: m.id }) }}">
-                                <span class="tasklist__title">{{ m.title }}</span>
-                                <span class="tasklist__meta">{{ dias[m.startAt|date('N')]|slice(0, 3) }} {{ m.startAt|date('d/m') }} · {{ m.startAt|date('H:i') }} · reunión{% if m.place %} · {{ m.place }}{% endif %}</span>
-                            </a>
-
-                        </li>
-                    {% else %}
-                        {% set e = entry.event %}
-                        <li class="tasklist__item upcoming-item">
-                            <a class="tasklist__body" href="{{ path('personal_event_edit', { id: e.id }) }}">
-                                <span class="tasklist__title">{{ e.title }}</span>
-                                <span class="tasklist__meta">{{ dias[e.startAt|date('N')]|slice(0, 3) }} {{ e.startAt|date('d/m') }}{% if not e.allDay %} · {{ e.startAt|date('H:i') }}{% endif %} · evento{% if e.category %} · {{ e.category.name }}{% endif %}</span>
-                            </a>
-                        </li>
-                    {% endif %}
-                {% endfor %}
-            </ul>
-        </section>
-        {% endif %}
-
-        {# ---- MÓDULO por rol: Guardias de hoy (coordinación) ---- #}
-        {% if modules.guardiasToday is defined %}
-            {% set g = modules.guardiasToday %}
-            <section class="module">
-                <div class="module__head">
-                    <div class="module__ident">
-                        <span class="module__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>
-                        <div>
-                            <div class="module__title">Guardias de hoy</div>
-                            <div class="module__sub">Coordinación de guardias</div>
+                {# ================= Próximos 7 días =================
+                   Lo que hay que ATENDER en los días siguientes (guardias, reuniones y citas), no lo que
+                   hay que HACER: las tareas de esta semana ya están arriba, y contarlas en los dos sitios
+                   hacía leer dos compromisos donde hay uno. Lo más lejano vive en el Calendario. #}
+                {% if upcoming is not empty %}
+                    <section class="home-section home-section--upcoming">
+                        {{ ui.section_head('Próximos 7 días', upcomingTotal ~ (upcomingTotal == 1 ? ' cita' : ' citas'), 'Ver semana', path('calendar_index', { vista: 'semana' })) }}
+                        <div class="panel">
+                            {% for entry in upcoming %}
+                                {% if entry.kind == 'guardia' %}
+                                    {% set c = entry.guardia %}
+                                    {#- La fecha va sin convertir de zona (|date(...,false)): el instante se compuso
+                                        con la fecha del cover, no hay que moverlo. -#}
+                                    <a class="panel-row upcoming-item" href="{{ path('guardia_cover_show', { id: c.id }) }}">
+                                        <span class="panel-row__icon panel-row__icon--guardia" aria-hidden="true">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5l3 2"/></svg>
+                                        </span>
+                                        <span class="panel-row__body">
+                                            <span class="panel-row__title">Guardia{% if c.effectiveRoomName or c.groupName %} · {{ [c.effectiveRoomName, c.groupName]|filter(v => v)|join(' · ') }}{% endif %}</span>
+                                            <span class="panel-row__meta">{{ dias[entry.date|date('N', false)]|slice(0, 3)|upper }} {{ entry.date|date('d/m', false) }} · cubres a {{ c.absentTeacher.fullName }}{% if c.hasTask %} · tiene tarea{% endif %}</span>
+                                        </span>
+                                        <span class="panel-row__chevron" aria-hidden="true">›</span>
+                                    </a>
+                                {% elseif entry.kind == 'meeting' %}
+                                    {% set m = entry.meeting %}
+                                    <a class="panel-row upcoming-item" href="{{ path('meeting_show', { id: m.id }) }}">
+                                        <span class="panel-row__icon panel-row__icon--meeting" aria-hidden="true">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20v-2a4 4 0 0 1 4-4h2M15 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM14 20v-1a4 4 0 0 1 8 0v1"/><circle cx="9" cy="8" r="3"/></svg>
+                                        </span>
+                                        <span class="panel-row__body">
+                                            <span class="panel-row__title">{{ m.title }}</span>
+                                            <span class="panel-row__meta">{{ dias[m.startAt|date('N')]|slice(0, 3)|upper }} {{ m.startAt|date('d/m') }} · {{ m.startAt|date('H:i') }} · reunión{% if m.place %} · {{ m.place }}{% endif %}</span>
+                                        </span>
+                                        <span class="panel-row__chevron" aria-hidden="true">›</span>
+                                    </a>
+                                {% else %}
+                                    {% set e = entry.event %}
+                                    <a class="panel-row upcoming-item" href="{{ path('personal_event_edit', { id: e.id }) }}">
+                                        <span class="panel-row__icon panel-row__icon--personal" aria-hidden="true">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+                                        </span>
+                                        <span class="panel-row__body">
+                                            <span class="panel-row__title">{{ e.title }}</span>
+                                            <span class="panel-row__meta">{{ dias[e.startAt|date('N')]|slice(0, 3)|upper }} {{ e.startAt|date('d/m') }}{% if not e.allDay %} · {{ e.startAt|date('H:i') }}{% endif %} · solo tú lo ves{% if e.category %} · {{ e.category.name }}{% endif %}</span>
+                                        </span>
+                                        <span class="panel-row__chevron" aria-hidden="true">›</span>
+                                    </a>
+                                {% endif %}
+                            {% endfor %}
                         </div>
-                    </div>
-                </div>
-                <div class="guardias-today">
-                    {% if g.uncovered > 0 %}
-                        <div class="guardias-today__count"><span class="guardias-today__dot"></span><span class="guardias-today__num">{{ g.uncovered }}</span><span class="guardias-today__label">ausencia{{ g.uncovered == 1 ? '' : 's' }} sin cubrir</span></div>
-                        <a class="btn-mini" href="{{ path('guardia_index') }}">Repartir</a>
-                    {% else %}
-                        <div class="guardias-today__ok">✓ Todo cubierto hoy</div>
-                        <a class="module__action" href="{{ path('guardia_index') }}">Ver parte</a>
-                    {% endif %}
-                </div>
-            </section>
-        {% endif %}
-
-        {# ---- MÓDULO por rol: Mi departamento (jefe de departamento) ---- #}
-        {% if modules.department is defined %}
-            {% set d = modules.department %}
-            <section class="module">
-                <div class="module__head">
-                    <div class="module__ident">
-                        <span class="module__icon" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20v-2a4 4 0 0 1 4-4h2M15 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM14 20v-1a4 4 0 0 1 8 0v1"/><circle cx="9" cy="8" r="3"/></svg>
-                        </span>
-                        <div>
-                            <div class="module__title">Mi departamento</div>
-                            <div class="module__sub">{{ d.dept.name }} · {{ d.people }} persona{{ d.people == 1 ? '' : 's' }}</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="module__tiles">
-                    <div class="module-tile">
-                        <div class="module-tile__num module-tile__num--amber">{{ d.toValidate }}</div>
-                        <div class="module-tile__label">por validar</div>
-                    </div>
-                    <div class="module-tile">
-                        <div class="module-tile__num module-tile__num--accent">{{ d.teamOpen }}</div>
-                        <div class="module-tile__label">pendientes equipo</div>
-                    </div>
-                </div>
-
-                {% if d.pending is not empty %}
-                    <div class="module__eyebrow">Pendientes de tu validación</div>
-                    {% for t in d.pending %}
-                        <a class="module-row" href="{{ path('task_show', { id: t.id }) }}">
-                            <span class="module-row__avatar" aria-hidden="true">{{ t.resolveResponsible ? t.resolveResponsible.fullName|initials : '·' }}</span>
-                            <span class="module-row__body">
-                                <span class="module-row__title">{{ t.title }}</span>
-                                <span class="module-row__sub">{% if t.resolveResponsible %}{{ t.resolveResponsible.fullName }} · {% endif %}entregada</span>
-                            </span>
-                            <span class="pill-validate">Validar</span>
-                        </a>
-                    {% endfor %}
+                    </section>
                 {% endif %}
-                <a class="module__foot" href="{{ path('task_index') }}">Ver todo mi departamento</a>
-            </section>
-        {% endif %}
+            </div>
 
-        {# ---- MÓDULO por rol: El centro (dirección / jefatura) ---- #}
-        {% if modules.centre is defined %}
-            {% set c = modules.centre %}
-            <section class="module">
-                <div class="module__head">
-                    <div class="module__ident">
-                        <span class="module__icon" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V8l7-4 7 4v13M9 21v-5h6v5"/></svg>
-                        </span>
-                        <div>
-                            <div class="module__title">El centro</div>
-                            <div class="module__sub">Curso en vigor</div>
-                        </div>
+            <div class="home-col">
+                {# ================= Tu día =================
+                   Las reuniones convocadas, tus citas privadas y tus guardias de hoy en UNA línea
+                   temporal: la pregunta "¿qué tengo hoy a una hora?" es una sola, y antes se contestaba en
+                   dos bloques que además dejaban media pantalla vacía. Lo privado ya no se marca con una
+                   caja malva alrededor, sino con la marca de tipo de cada fila. #}
+                <section class="home-section home-section--day">
+                    {{ ui.section_head('Tu día', dayTimeline|length ~ (dayTimeline|length == 1 ? ' cita' : ' citas'), '+ Nuevo', path('personal_event_new')) }}
+
+                    <div class="panel panel--day">
+                        {% if dayTimeline is empty %}
+                            <p class="panel-empty">Sin citas con hora hoy.</p>
+                        {% else %}
+                            {% for row in dayTimeline %}
+                                {% set entry = row.entry %}
+                                {% if entry.kind == 'guardia' %}
+                                    {% set c = entry.guardia %}
+                                    {% set url = path('guardia_cover_show', { id: c.id }) %}
+                                    {% set titulo = 'Guardia' ~ ((c.effectiveRoomName or c.groupName) ? ' · ' ~ [c.effectiveRoomName, c.groupName]|filter(v => v)|join(' · ') : '') %}
+                                    {% set sub = (row.minutesUntil is not null ? 'en ' ~ row.minutesUntil ~ ' min · ' : '') ~ (c.hasTask ? 'tiene tarea' : 'sin tarea') %}
+                                    {% set tipo = 'guardia' %}
+                                {% elseif entry.kind == 'meeting' %}
+                                    {% set m = entry.meeting %}
+                                    {% set url = path('meeting_show', { id: m.id }) %}
+                                    {% set titulo = m.title %}
+                                    {% set sub = 'Reunión' ~ (m.place ? ' · ' ~ m.place : '') %}
+                                    {% set tipo = 'meeting' %}
+                                {% else %}
+                                    {% set e = entry.event %}
+                                    {% set url = path('personal_event_edit', { id: e.id }) %}
+                                    {% set titulo = e.title %}
+                                    {% set sub = 'Tu agenda · solo tú la ves' %}
+                                    {% set tipo = 'personal' %}
+                                {% endif %}
+                                <a class="day-row is-{{ row.state }}" href="{{ url }}">
+                                    {#- Sin horario importado no se sabe la hora del tramo, así que la guardia
+                                        enseña su ordinal ("2ª") en lugar del reloj: dejarla fuera por no saber a
+                                        qué hora es sería perder una guardia real. -#}
+                                    <span class="day-row__time">
+                                        {%- if row.startsAt -%}{{ row.startsAt|date('H:i') }}
+                                        {%- elseif entry.kind == 'guardia' -%}{{ entry.guardia.slotIndex + 1 }}ª
+                                        {%- else -%}—{%- endif -%}
+                                    </span>
+                                    <span class="day-row__body">
+                                        <span class="day-row__title">{{ titulo }}</span>
+                                        <span class="day-row__sub">{{ sub }}</span>
+                                    </span>
+                                    <span class="day-row__kind day-row__kind--{{ tipo }}" aria-hidden="true"></span>
+                                </a>
+                            {% endfor %}
+                        {% endif %}
                     </div>
-                </div>
+                </section>
 
-                <div class="progress-block">
-                    <div class="progress-block__head">
-                        <span>Avance de tareas del curso</span>
-                        <span class="progress-block__pct">{{ c.pct }}%</span>
+                {# ================= Gestión del centro =================
+                   Va al FINAL y con el rótulo más apagado de la pantalla: es lo del centro, no lo tuyo.
+                   Rótulo tenue y sin contador a propósito —no es una sección que se recorra— y módulos
+                   planos, sin banda ni icono grande, para que no vuelvan a pesar más que la agenda. Un
+                   docente sin cargo no ve nada de esto. #}
+                {% if modules is not empty %}
+                    <div class="mgmt">
+                        <p class="mgmt__label">Gestión del centro</p>
+
+                        {# ---- Coordinación de guardias: cómo va el parte de hoy ---- #}
+                        {% if modules.guardiasToday is defined %}
+                            {% set gt = modules.guardiasToday %}
+                            <a class="mgmt-card mgmt-card--row" href="{{ path('guardia_index') }}">
+                                {% if gt.uncovered > 0 %}
+                                    <span class="mgmt-card__icon mgmt-card__icon--warn" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5l3 2"/></svg>
+                                    </span>
+                                    <span class="mgmt-card__body">
+                                        <span class="mgmt-card__title">Guardias de hoy</span>
+                                        <span class="mgmt-card__meta"><b>{{ gt.uncovered }} sin cubrir</b> · {{ gt.covered }} de {{ gt.total }} repartidas</span>
+                                    </span>
+                                    <span class="mgmt-card__cta">Repartir</span>
+                                {% else %}
+                                    <span class="mgmt-card__icon mgmt-card__icon--ok" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-11"/></svg>
+                                    </span>
+                                    <span class="mgmt-card__body">
+                                        <span class="mgmt-card__title">Guardias de hoy</span>
+                                        <span class="mgmt-card__meta">{% if gt.total > 0 %}Todo cubierto · {{ gt.total }} de {{ gt.total }}{% else %}Hoy no hay ausencias{% endif %}</span>
+                                    </span>
+                                    <span class="mgmt-card__cta">Ver parte</span>
+                                {% endif %}
+                            </a>
+                        {% endif %}
+
+                        {# ---- Jefatura de departamento: lo que espera tu validación ---- #}
+                        {% if modules.department is defined %}
+                            {% set d = modules.department %}
+                            <div class="mgmt-card">
+                                <div class="mgmt-card__head">
+                                    <span class="mgmt-card__title">Mi departamento</span>
+                                    <span class="mgmt-card__meta">{{ d.dept.name }} · {{ d.people }} persona{{ d.people == 1 ? '' : 's' }}</span>
+                                </div>
+                                <a class="mgmt-row" href="{{ path('task_index') }}">
+                                    <span class="mgmt-row__stat mgmt-row__stat--amber">{{ d.toValidate }}</span>
+                                    <span class="mgmt-row__label">Pendientes de tu validación</span>
+                                    <span class="mgmt-row__chevron" aria-hidden="true">›</span>
+                                </a>
+                                <a class="mgmt-row" href="{{ path('task_index') }}">
+                                    <span class="mgmt-row__stat">{{ d.teamOpen }}</span>
+                                    <span class="mgmt-row__label">Abiertas en el equipo</span>
+                                    <span class="mgmt-row__chevron" aria-hidden="true">›</span>
+                                </a>
+                                {% for t in d.pending %}
+                                    <a class="mgmt-row" href="{{ path('task_show', { id: t.id }) }}">
+                                        <span class="mgmt-row__avatar" aria-hidden="true">{{ t.resolveResponsible ? t.resolveResponsible.fullName|initials : '·' }}</span>
+                                        <span class="mgmt-row__label">
+                                            <span class="mgmt-row__title">{{ t.title }}</span>
+                                            <span class="mgmt-row__sub">{% if t.resolveResponsible %}{{ t.resolveResponsible.fullName }} · {% endif %}entregada</span>
+                                        </span>
+                                        <span class="pill-validate">Validar</span>
+                                    </a>
+                                {% endfor %}
+                                <a class="mgmt-card__foot" href="{{ path('task_index') }}">Ver todo mi departamento</a>
+                            </div>
+                        {% endif %}
+
+                        {# ---- Dirección / jefatura: cómo va el curso ---- #}
+                        {% if modules.centre is defined %}
+                            {% set c = modules.centre %}
+                            <div class="mgmt-card">
+                                <div class="mgmt-card__progress">
+                                    <div class="mgmt-card__progress-head">
+                                        <span class="mgmt-card__title">Avance del curso</span>
+                                        <span class="mgmt-card__pct">{{ c.pct }}%</span>
+                                    </div>
+                                    <div class="progress-bar"><span class="progress-bar__fill" style="width: {{ c.pct }}%"></span></div>
+                                    <p class="mgmt-card__meta">{{ c.finalized }} de {{ c.total }} tareas finalizadas</p>
+                                </div>
+                                <a class="mgmt-row" href="{{ path('task_index') }}">
+                                    <span class="mgmt-row__stat mgmt-row__stat--amber">{{ c.toValidate }}</span>
+                                    <span class="mgmt-row__label">Pendientes de tu validación</span>
+                                    <span class="mgmt-row__chevron" aria-hidden="true">›</span>
+                                </a>
+                                <a class="mgmt-row" href="{{ path('task_index', { vista: 'vencidas' }) }}">
+                                    <span class="mgmt-row__stat mgmt-row__stat--warning">{{ c.overdue }}</span>
+                                    <span class="mgmt-row__label">Tareas del centro fuera de plazo</span>
+                                    <span class="mgmt-row__chevron" aria-hidden="true">›</span>
+                                </a>
+                                <a class="mgmt-card__foot" href="{{ path('task_index') }}">Ver panel del centro</a>
+                            </div>
+                        {% endif %}
                     </div>
-                    <div class="progress-bar"><span class="progress-bar__fill" style="width: {{ c.pct }}%"></span></div>
-                    <div class="progress-block__meta">{{ c.finalized }} de {{ c.total }} finalizadas</div>
-                </div>
-
-                <a class="module-row" href="{{ path('task_index') }}">
-                    <span class="module-row__stat module-row__stat--amber">{{ c.toValidate }}</span>
-                    <span class="module-row__body">
-                        <span class="module-row__title">Pendientes de validación</span>
-                        <span class="module-row__sub">entregadas esperando tu OK</span>
-                    </span>
-                    <span class="module-row__chevron" aria-hidden="true">›</span>
-                </a>
-                <a class="module-row" href="{{ path('task_index') }}">
-                    <span class="module-row__stat module-row__stat--warning">{{ c.overdue }}</span>
-                    <span class="module-row__body">
-                        <span class="module-row__title">Tareas del centro fuera de plazo</span>
-                        <span class="module-row__sub">abiertas con fecha pasada</span>
-                    </span>
-                    <span class="module-row__chevron" aria-hidden="true">›</span>
-                </a>
-                <a class="module__foot" href="{{ path('task_index') }}">Ver panel del centro</a>
-            </section>
-        {% endif %}
+                {% endif %}
+            </div>
         </div>{# /.home-cols #}
     </div>
 {% endblock %}

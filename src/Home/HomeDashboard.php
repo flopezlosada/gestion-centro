@@ -22,22 +22,38 @@ use App\Support\TaskStatus;
 use App\Util\SchoolYear;
 
 /**
- * Assembles the "qué me toca hoy" home view for a user: every guardia they cover today (the next one as
- * the single dark anchor of the design, the rest listed under it), their institutional tasks due today
- * or overdue, and their private agenda for today and the coming week. Reuses {@see PersonalAgenda} for
- * the task/event merge+bucket logic (single source) and only splits the result back by kind, since the
- * redesign shows tasks and personal events apart.
+ * Assembles the "qué me toca hoy" home view for a user: the guardia they cover next as the single dark
+ * anchor, what they still have to do, the clock of their day, and a preview of the coming week. Reuses
+ * {@see PersonalAgenda} for the task/event merge+bucket logic (single source) and splits the result by
+ * what each block of the screen answers.
  *
- * Guardias ride along the two blocks instead of joining one of them: the day's blocks are "Con hora"
- * (private appointments) and "Por hacer" (checklist), and a guardia is neither private nor tickable.
- * They keep their own anchor above the blocks and, for later days, appear as a third kind of
- * {@see AgendaEntry} in "Próximos 7 días" — where the point is only "what is coming".
+ * The split is by NATURE, not by date, which is what keeps the same thing from appearing twice:
+ *  - "Por hacer" gets what you WORK ON — tasks with a deadline and undated personal reminders — with the
+ *    overdue ones collapsed into a single summary line instead of a wall of red rows;
+ *  - "Tu día" gets what you TURN UP TO today, on the clock: guardias, convened meetings and timed
+ *    private appointments in one timeline, each marked with its own kind;
+ *  - "Próximos 7 días" gets the same "turn up to" kinds, for the days after today.
+ *
+ * Guardias DO belong in "Tu día", unlike in the previous design: back then the block was "Con hora", a
+ * malva box that meant PRIVATE in the design system, and a guardia is imposed by the centre. The box is
+ * gone — privacy is now marked per row — so the reason to keep them out went with it. They still keep
+ * their own anchor above, because the next one is the single most time-critical thing on the screen.
  *
  * Role-aware modules (mi departamento, el centro, guardias de hoy) are layered on top elsewhere; this
  * builds the base every role shares.
  */
 final readonly class HomeDashboard
 {
+    /**
+     * Cuántas filas de "Por hacer" se pintan. Tres, no ocho: el bloque tiene que caber por encima del
+     * pliegue junto al resto de la pantalla, y lo que no cabe no se esconde — se cuenta en la cabecera y
+     * en el pie, que llevan a la lista completa.
+     */
+    private const int TODOS_SHOWN = 3;
+
+    /** Cuántas filas se pintan en "Próximos 7 días". Es un anticipo, no la semana entera: eso es el Calendario. */
+    private const int UPCOMING_SHOWN = 6;
+
     public function __construct(
         private PersonalAgenda $agenda,
         private GuardiaCoverRepository $covers,
@@ -60,66 +76,162 @@ final readonly class HomeDashboard
      * @param \DateTimeImmutable $now   the current instant (for "en X min" and done detection)
      *
      * @return array{
-     *     nextGuardia: array{cover: GuardiaCover, done: bool, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable, minutesUntil: ?int}|null,
-     *     otherGuardiasToday: list<array{cover: GuardiaCover, done: bool, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable, minutesUntil: ?int}>,
+     *     nextGuardia: array{cover: GuardiaCover, done: bool, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable, minutesUntil: ?int, inProgress: bool}|null,
      *     guardiasTodayCount: int,
      *     upcomingGuardia: array{cover: GuardiaCover, startsAt: ?\DateTimeImmutable}|null,
-     *     timedToday: AgendaEntry[],
-     *     meetingsToday: AgendaEntry[],
+     *     dayTimeline: list<array{entry: AgendaEntry, startsAt: ?\DateTimeImmutable, minutesUntil: ?int, state: string}>,
      *     todos: AgendaEntry[],
-     *     upcoming: AgendaEntry[]
+     *     todosTotal: int,
+     *     overdueCount: int,
+     *     overdueOldest: ?\DateTimeImmutable,
+     *     upcoming: AgendaEntry[],
+     *     upcomingTotal: int,
+     *     roleSubtitle: ?string
      * }
      */
     public function baseFor(User $user, \DateTimeImmutable $today, \DateTimeImmutable $now): array
     {
         $buckets = $this->agenda->bucketsFor($user, $today);
+        $guardias = $this->guardias($user, $today, $now);
 
-        $isTask = static fn (AgendaEntry $e): bool => AgendaEntry::KIND_TASK === $e->kind;
-        // Una cita: un evento CON hora (no un recordatorio de todo el día). Va al bloque "Con hora".
-        $isTimedEvent = static fn (AgendaEntry $e): bool => AgendaEntry::KIND_EVENT === $e->kind && null !== $e->event && !$e->event->isAllDay();
-        // Un "por hacer": una tarea del centro (fecha límite) o un recordatorio personal sin hora.
-        $isTodo = static fn (AgendaEntry $e): bool => $isTask($e) || (AgendaEntry::KIND_EVENT === $e->kind && null !== $e->event && $e->event->isAllDay());
         $isMeeting = static fn (AgendaEntry $e): bool => AgendaEntry::KIND_MEETING === $e->kind;
+        // Un "por hacer": una tarea del centro (fecha límite) o un recordatorio personal sin hora. Lo que
+        // se trabaja y se tacha, frente a lo que se atiende a una hora.
+        $isTodo = static fn (AgendaEntry $e): bool => AgendaEntry::KIND_TASK === $e->kind
+            || (AgendaEntry::KIND_EVENT === $e->kind && null !== $e->event && $e->event->isAllDay());
 
-        // "Con hora": tu horario de HOY — las citas con hora, en orden de reloj (los buckets ya vienen
-        // ordenados por su instante). Una cita no se "hace con casilla"; se cumple estando.
-        $timedToday = array_values(array_filter($buckets['today'], $isTimedEvent));
-
-        // Las reuniones convocadas de HOY van aparte, no dentro de "Con hora": esa caja significa
-        // PRIVADO en el sistema de diseño (candado, malva) y una convocatoria del centro no lo es.
-        $meetingsToday = array_values(array_filter($buckets['today'], $isMeeting));
-
-        // "Por hacer": lo pendiente en tu plato hoy, como checklist — vencidas (de cualquier tipo) primero,
-        // luego las tareas de hoy y los recordatorios sin hora. Las citas con hora NO entran aquí.
+        // ---- "Por hacer" -------------------------------------------------------------------------
+        // Lo de FUERA DE PLAZO no se pinta fila a fila: se resume en UNA línea con el total y la más
+        // antigua. Con el arrastre de un curso, un muro de ocho alertas rojas empujaba fuera de pantalla
+        // las tareas del día, y si todo grita no grita nada. La línea lleva a la lista filtrada, así que
+        // resumir no es esconder.
         //
         // Las reuniones se excluyen EXPLÍCITAMENTE de las vencidas, aunque hoy la agenda no traiga
         // ninguna pasada: una reunión no es un pendiente que se arrastre (no puedes ir ya) y la checklist
         // no sabe pintarla, así que si alguien amplía la consulta hacia atrás debe verlo aquí y no en un
         // error de plantilla.
-        $todos = \array_slice([
-            ...array_values(array_filter($buckets['overdue'], static fn (AgendaEntry $e): bool => !$isMeeting($e))),
-            ...array_values(array_filter($buckets['today'], $isTodo)),
-        ], 0, 8);
+        $overdueTodos = array_values(array_filter($buckets['overdue'], static fn (AgendaEntry $e): bool => !$isMeeting($e)));
+        // Y las que quedan por delante, en orden de fecha: las de hoy, las de la semana y las lejanas. Las
+        // tres cestas y no solo la de hoy, porque el bloque se llama "Por hacer" y no "hoy": un día sin
+        // nada que venza mostraría el contenedor vacío teniendo trabajo esperando el lunes.
+        $ahead = array_values(array_filter(
+            [...$buckets['today'], ...$buckets['week'], ...$buckets['later']],
+            $isTodo,
+        ));
 
-        $guardias = $this->guardias($user, $today, $now);
-
-        // "Próximos 7 días": un vistazo compacto y tipado (tareas, eventos, guardias y reuniones juntos
-        // por día, en orden); lo lejano vive en el Calendario, al que se sale desde el pie de la sección.
-        $upcoming = [...$buckets['week'], ...$guardias['weekEntries']];
+        // ---- "Próximos 7 días" -------------------------------------------------------------------
+        // Lo que se atiende a una hora en los días siguientes: guardias, reuniones y citas privadas. Las
+        // tareas NO entran aquí aunque venzan esta semana — ya están en "Por hacer", y contarlas dos veces
+        // hacía leer dos compromisos donde hay uno. Lo lejano vive en el Calendario.
+        $upcoming = [
+            ...array_filter($buckets['week'], static fn (AgendaEntry $e): bool => !$isTodo($e)),
+            ...$guardias['weekEntries'],
+        ];
         usort($upcoming, static fn (AgendaEntry $a, AgendaEntry $b): int => $a->date <=> $b->date);
-        $upcoming = \array_slice($upcoming, 0, 6);
 
         return [
             'nextGuardia' => $guardias['next'],
-            'otherGuardiasToday' => $guardias['others'],
             'guardiasTodayCount' => $guardias['todayCount'],
             'upcomingGuardia' => $guardias['upcomingGuardia'],
-            'timedToday' => $timedToday,
-            'meetingsToday' => $meetingsToday,
-            'todos' => $todos,
-            'upcoming' => $upcoming,
+            'dayTimeline' => $this->dayTimeline($guardias['todayItems'], $buckets['today'], $now),
+            'todos' => \array_slice($ahead, 0, self::TODOS_SHOWN),
+            // Todo lo que hay por hacer, no lo que se pinta: es la cifra de la cabecera y del pie, y los
+            // dos llevan a la lista donde está entero.
+            'todosTotal' => \count($overdueTodos) + \count($ahead),
+            'overdueCount' => \count($overdueTodos),
+            // La más antigua da la medida del retraso ("desde el 12/11"), que un número solo no da. Las
+            // cestas vienen en orden cronológico, así que es la primera.
+            'overdueOldest' => $overdueTodos[0]->date ?? null,
+            'upcoming' => \array_slice($upcoming, 0, self::UPCOMING_SHOWN),
+            // El contador de la cabecera cuenta la SEMANA, no las filas pintadas: leerlo del recorte diría
+            // "6 citas" en una semana de nueve, y el contador está justamente para que no haya que
+            // preguntarse si la lista está completa.
+            'upcomingTotal' => \count($upcoming),
             'roleSubtitle' => $this->roleSubtitle($user),
         ];
+    }
+
+    /**
+     * "Tu día": todo lo de HOY que tiene hora, en una sola línea temporal — las guardias asignadas, las
+     * reuniones a las que se convoca al usuario y sus citas privadas. Antes eran dos bloques ("Reuniones
+     * de hoy" y "Con hora") que se leían por separado y dejaban media pantalla vacía, cuando la pregunta
+     * es una sola: ¿qué tengo hoy a una hora?
+     *
+     * Cada fila lleva su estado respecto al reloj, que es lo que la plantilla necesita para atenuar lo
+     * pasado y marcar con un filo lo que viene ahora:
+     *  - `past`: ya terminó. Para una guardia lo decide {@see TeacherGuardiaDay} (sabe la hora de fin del
+     *    tramo, y sin horario importado no da nada por terminado); para lo demás, su hora de fin si la
+     *    tiene y su hora de inicio si no.
+     *  - `now`: la PRIMERA que no ha terminado. No es "está ocurriendo": es lo próximo que hay que
+     *    atender, que es lo que se busca al entrar. Si la anterior sigue en curso, esa es la marcada.
+     *  - `future`: el resto.
+     *
+     * Las que no tienen hora conocida (una guardia de un centro sin horario importado) entran igual y
+     * conservan el orden de tramo: la plantilla enseña el ordinal ("2ª") en lugar del reloj. Sacarlas
+     * sería perder guardias reales por no saber a qué hora son.
+     *
+     * @param list<array{cover: GuardiaCover, done: bool, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable, minutesUntil: ?int}> $guardiaItems today's covers as {@see TeacherGuardiaDay} reads them
+     * @param AgendaEntry[]                                                                                                              $todayEntries the agenda's "today" bucket (meetings and events are taken from it)
+     * @param \DateTimeImmutable                                                                                                         $now          the current instant
+     *
+     * @return list<array{entry: AgendaEntry, startsAt: ?\DateTimeImmutable, minutesUntil: ?int, state: string}> the day's rows, earliest first
+     */
+    private function dayTimeline(array $guardiaItems, array $todayEntries, \DateTimeImmutable $now): array
+    {
+        $minutesUntil = static fn (?\DateTimeImmutable $startsAt): ?int => null !== $startsAt && $startsAt > $now
+            ? intdiv($startsAt->getTimestamp() - $now->getTimestamp(), 60)
+            : null;
+
+        $rows = [];
+        foreach ($guardiaItems as $item) {
+            $rows[] = [
+                'entry' => AgendaEntry::fromGuardia($item['cover'], $item['startsAt']),
+                'startsAt' => $item['startsAt'],
+                'minutesUntil' => $item['minutesUntil'],
+                'over' => $item['done'],
+            ];
+        }
+        foreach ($todayEntries as $entry) {
+            $startsAt = match ($entry->kind) {
+                AgendaEntry::KIND_MEETING => $entry->meeting?->getStartAt(),
+                // Un recordatorio de todo el día no tiene hora: es un "por hacer", y vive en el otro bloque.
+                AgendaEntry::KIND_EVENT => null !== $entry->event && !$entry->event->isAllDay() ? $entry->event->getStartAt() : null,
+                default => null,
+            };
+            if (null === $startsAt) {
+                continue;
+            }
+            $endsAt = AgendaEntry::KIND_MEETING === $entry->kind
+                ? $entry->meeting?->getEndAt()
+                : $entry->event?->getEndAt();
+            $rows[] = [
+                'entry' => $entry,
+                'startsAt' => $startsAt,
+                'minutesUntil' => $minutesUntil($startsAt),
+                'over' => ($endsAt ?? $startsAt) < $now,
+            ];
+        }
+
+        usort($rows, static fn (array $a, array $b): int => $a['entry']->date <=> $b['entry']->date);
+
+        $markedNow = false;
+        $timeline = [];
+        foreach ($rows as $row) {
+            $state = match (true) {
+                $row['over'] => 'past',
+                !$markedNow => 'now',
+                default => 'future',
+            };
+            $markedNow = $markedNow || 'now' === $state;
+            $timeline[] = [
+                'entry' => $row['entry'],
+                'startsAt' => $row['startsAt'],
+                'minutesUntil' => $row['minutesUntil'],
+                'state' => $state,
+            ];
+        }
+
+        return $timeline;
     }
 
     /**
@@ -128,7 +240,7 @@ final readonly class HomeDashboard
      * The task figures come from a single {@see CentreDashboard::overview()} pass over the year's tasks.
      *
      * @return array{
-     *     guardiasToday?: array{uncovered: int},
+     *     guardiasToday?: array{total: int, covered: int, uncovered: int},
      *     department?: array{dept: \App\Entity\Department, people: int, toValidate: int, teamOpen: int, pending: Task[]},
      *     centre?: array{pct: int, finalized: int, total: int, toValidate: int, overdue: int}
      * }
@@ -142,9 +254,16 @@ final readonly class HomeDashboard
         }
 
         $modules = [];
-        // Coordinación de guardias: las ausencias de HOY todavía sin cubrir.
+        // Coordinación de guardias: cómo va el parte de HOY. No solo los huecos — un día resuelto también
+        // es noticia ("todo cubierto · 12 de 12"), y sin el total el cero no se distingue de "hoy no hay
+        // ausencias", que son dos días muy distintos para quien reparte.
         if ($isGuardiaCoordinator) {
-            $modules['guardiasToday'] = ['uncovered' => $this->covers->countUnassignedOn($today)];
+            $coverage = $this->covers->coverageOn($today);
+            $modules['guardiasToday'] = [
+                'total' => $coverage['total'],
+                'covered' => $coverage['total'] - $coverage['uncovered'],
+                'uncovered' => $coverage['uncovered'],
+            ];
         }
         // Los módulos de tareas necesitan las tareas del curso; si no toca ninguno, evita el fetch.
         if (null === $dept && !$commandsSchool) {
@@ -221,8 +340,9 @@ final readonly class HomeDashboard
      * Every guardia the user has coming, split into what each part of Inicio needs — the centre asked
      * for ALL of them to show up in the agenda, not just the next one:
      *  - `next`: the first one today not yet over, the hero;
-     *  - `others`: the REST of today, listed under the hero (the ones already over included, flagged
-     *    done — a day with three guardias must read as three);
+     *  - `todayItems`: ALL of today's, in period order and each flagged done or not, for the "Tu día"
+     *    timeline (the ones already over included: a day with three guardias must read as three, and
+     *    seeing a finished one greyed out is the difference between "hecha" and "no la tenías");
      *  - `todayCount`: how many there are today at all, so the "hoy no tienes guardia" strip can tell
      *    "no tienes ninguna" apart from "ya las has hecho todas";
      *  - `upcomingGuardia`: the next future one, for that same strip, at ANY distance (a guardia three
@@ -233,8 +353,8 @@ final readonly class HomeDashboard
      * come from the slot index via the course's timetable.
      *
      * @return array{
-     *     next: array{cover: GuardiaCover, done: bool, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable, minutesUntil: ?int}|null,
-     *     others: list<array{cover: GuardiaCover, done: bool, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable, minutesUntil: ?int}>,
+     *     next: array{cover: GuardiaCover, done: bool, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable, minutesUntil: ?int, inProgress: bool}|null,
+     *     todayItems: list<array{cover: GuardiaCover, done: bool, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable, minutesUntil: ?int}>,
      *     todayCount: int,
      *     upcomingGuardia: array{cover: GuardiaCover, startsAt: ?\DateTimeImmutable}|null,
      *     weekEntries: list<AgendaEntry>
@@ -262,11 +382,13 @@ final readonly class HomeDashboard
         // cuál es "tu próxima guardia" ni sobre cuáles ya han pasado.
         $day = $this->guardiaDay->forDay($todayCovers, $slotTimes, $now);
         $next = null !== $day['next'] ? $day['items'][$day['next']] : null;
-        $others = [];
-        foreach ($day['items'] as $i => $item) {
-            if ($i !== $day['next']) {
-                $others[] = $item;
-            }
+        if (null !== $next) {
+            // "En curso" y "aún por llegar" no se dicen igual: el hero de una guardia que YA está pasando
+            // no puede llamarse "tu próxima guardia". Se deduce de lo que el reloj ya sabe en vez de
+            // volver a compararlo: si se conoce la hora de inicio y no queda ninguna cuenta atrás, es que
+            // empezó; y si hubiera terminado no sería "next" ({@see TeacherGuardiaDay}). Sin horario
+            // importado no hay hora y no se afirma nada.
+            $next['inProgress'] = null !== $next['startsAt'] && null === $next['minutesUntil'];
         }
 
         $weekEntries = [];
@@ -279,7 +401,7 @@ final readonly class HomeDashboard
 
         return [
             'next' => $next,
-            'others' => $others,
+            'todayItems' => $day['items'],
             'todayCount' => $day['counts']['assigned'],
             'upcomingGuardia' => (null === $next && [] !== $future)
                 ? ['cover' => $future[0], 'startsAt' => $this->startOf($future[0], $slotTimes)]
