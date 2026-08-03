@@ -35,6 +35,7 @@ final class BreakDutyPageTest extends WebTestCase
     {
         $this->client = static::createClient();
         $this->em = self::getContainer()->get(EntityManagerInterface::class);
+        $this->emptyTheZoneCatalogue();
     }
 
     public function testAPlainTeacherCannotReachTheRota(): void
@@ -264,6 +265,19 @@ final class BreakDutyPageTest extends WebTestCase
         $this->em->persist($year);
 
         return $year;
+    }
+
+    /**
+     * Empties the zone catalogue, so this test owns it for its scenario.
+     *
+     * Hace falta desde que las 5 zonas del centro se siembran por MIGRACIÓN (antes estaban en unas
+     * fixtures que en producción no se pueden cargar, y el módulo llegaba muerto). Como la migración
+     * corre también sobre la base de datos de test, `break_zone` ya NO nace vacía: sin esto, crear
+     * "Patio" choca con el UNIQUE del nombre y los recuentos de zonas cuentan las sembradas.
+     */
+    private function emptyTheZoneCatalogue(): void
+    {
+        $this->em->createQuery('DELETE FROM App\Entity\BreakZone')->execute();
     }
 
     /**

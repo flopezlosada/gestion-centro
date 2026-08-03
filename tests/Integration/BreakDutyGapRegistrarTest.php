@@ -47,6 +47,9 @@ final class BreakDutyGapRegistrarTest extends KernelTestCase
         $this->em = self::getContainer()->get(EntityManagerInterface::class);
         $this->registrar = self::getContainer()->get(BreakDutyGapRegistrar::class);
         $this->absences = self::getContainer()->get(AbsenceRegistrar::class);
+        // Las 5 zonas del centro se siembran por MIGRACIÓN, así que `break_zone` ya no nace vacía en la
+        // base de datos de test, y crear "Patio" chocaría con el UNIQUE del nombre.
+        $this->em->createQuery('DELETE FROM App\Entity\BreakZone')->execute();
 
         $this->year = (new AcademicYear())
             ->setSchoolYear('2025-2026')

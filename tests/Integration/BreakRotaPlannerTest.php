@@ -35,6 +35,10 @@ final class BreakRotaPlannerTest extends KernelTestCase
         self::bootKernel();
         $this->em = self::getContainer()->get(EntityManagerInterface::class);
         $this->planner = self::getContainer()->get(BreakRotaPlanner::class);
+        // Las 5 zonas del centro se siembran por MIGRACIÓN, así que `break_zone` ya no nace vacía en la
+        // base de datos de test. Este escenario es dueño del catálogo: el motor recorre TODAS las zonas
+        // y una sembrada de más cambia las cuentas de plazas de la semana.
+        $this->em->createQuery('DELETE FROM App\Entity\BreakZone')->execute();
 
         $this->year = (new AcademicYear())
             ->setSchoolYear('2025-2026')

@@ -38,6 +38,10 @@ final class BreakDutyRosterTest extends KernelTestCase
         self::bootKernel();
         $this->em = self::getContainer()->get(EntityManagerInterface::class);
         $this->roster = self::getContainer()->get(BreakDutyRoster::class);
+        // Las 5 zonas del centro se siembran por MIGRACIÓN, así que `break_zone` ya no nace vacía en la
+        // base de datos de test. Este escenario es dueño del catálogo: la equidad suma los PESOS de las
+        // zonas, y una sembrada de más falsea la media, la mediana y el Gini.
+        $this->em->createQuery('DELETE FROM App\Entity\BreakZone')->execute();
 
         $this->year = (new AcademicYear())
             ->setSchoolYear('2025-2026')
