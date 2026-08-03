@@ -19,6 +19,7 @@ use App\Repository\PersonalEventRepository;
 use App\Repository\TaskRepository;
 use App\Service\SchoolCalendar;
 use App\Service\TaskVisibility;
+use App\Util\AppTime;
 use App\Util\CalendarDate;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -36,9 +37,6 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
  */
 final class CalendarController extends AbstractController
 {
-    /** Application time zone: the school lives in peninsular Spain, so "today" is Madrid's. */
-    private const string TIME_ZONE = 'Europe/Madrid';
-
     /** The day, week, month and year views, and the one used when "vista" is missing or unknown. */
     private const array VIEWS = ['dia', 'semana', 'mes', 'anio'];
     private const string DEFAULT_VIEW = 'mes';
@@ -80,7 +78,10 @@ final class CalendarController extends AbstractController
     #[Route('/calendario', name: 'calendar_index', methods: ['GET'])]
     public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility, NonLectiveDayRepository $nonLectiveDays, SchoolCalendar $schoolCalendar, AcademicYearRepository $academicYears, PersonalEventRepository $personalEvents, GuardiaCoverRepository $covers, MeetingRepository $meetings): Response
     {
-        $timeZone = new \DateTimeZone(self::TIME_ZONE);
+        // Explicit zone because the grid parses a "YYYY-MM-DD" from the query string into a midnight;
+        // it is the SAME zone PHP now defaults to ({@see \App\Kernel}), so this no longer decides
+        // anything the rest of the app might decide differently — it only says it out loud.
+        $timeZone = AppTime::zone();
         $today = new \DateTimeImmutable('today', $timeZone);
         $view = $this->resolveView($request->query->getString('vista'));
         $anchor = $this->resolveDate($request->query->getString('fecha'), $today, $timeZone);

@@ -25,6 +25,10 @@ final class HomeController extends AbstractController
     #[Route('/', name: 'app_homepage', methods: ['GET'])]
     public function index(#[CurrentUser] User $user, HomeDashboard $dashboard): Response
     {
+        // Sin zona explícita a propósito: la por defecto de PHP YA es la del centro
+        // ({@see \App\Kernel}, {@see \App\Util\AppTime}), la misma en la que Doctrine hidrata las fechas y en la
+        // que el calendario arma su rejilla. Poner aquí un Europe/Madrid a mano no arreglaría nada y
+        // volvería a abrir la puerta a que Inicio y el Calendario contestaran días distintos.
         $today = new \DateTimeImmutable('today');
         $now = new \DateTimeImmutable('now');
 
