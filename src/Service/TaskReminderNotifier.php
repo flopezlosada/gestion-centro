@@ -9,7 +9,6 @@ use App\Entity\Task;
 use App\Entity\User;
 use App\Repository\NotificationRepository;
 use App\Repository\TaskRepository;
-use App\Repository\UserRepository;
 
 /**
  * The reminder engine. Run daily (see {@see \App\Command\SendTaskRemindersCommand}), it:
@@ -42,7 +41,6 @@ final class TaskReminderNotifier
 
     public function __construct(
         private readonly TaskRepository $tasks,
-        private readonly UserRepository $users,
         private readonly OrganizationHierarchy $hierarchy,
         private readonly NotificationDispatcher $dispatcher,
         private readonly NotificationRepository $notifications,
@@ -214,11 +212,11 @@ final class TaskReminderNotifier
             return [$task->getAssignedUser()];
         }
 
-        if (null !== $task->getAssignedRole()) {
-            return array_values($this->users->findActiveByRole($task->getAssignedRole()));
-        }
-
-        return [];
+        // Nobody concrete: whoever holds the structural responsibility right now. Read from the
+        // responsibility itself and not from the role catalogue, because that is what narrows a
+        // per-department post to ITS department — reminding every jefe de departamento in the centre
+        // about one department's memoria is how a useful reminder becomes noise people learn to ignore.
+        return $task->getResponsibility()?->holders() ?? [];
     }
 
     /**

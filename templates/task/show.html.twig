@@ -93,7 +93,7 @@
        contra el que mide el controlador. Preguntárselo aquí otra vez con el `date()` de Twig era abrir la
        puerta a que el chip y la fecha discreparan por una diferencia de zona horaria. #}
     {% set overdue = view.overdueDays > 0 %}
-    {% set responsibleRole = task.responsibility ? task.responsibility.role.name : (task.assignedRole ? task.assignedRole.name : null) %}
+    {% set responsibleRole = task.responsibleRole ? task.responsibleRole.name : null %}
     {% set who = task.responsibleForDisplay %}
     {% set canValidate = 'validate' in actions %}
     {# El papel de quien mira decide la tarjeta de decisión, y lo resuelve TaskDetailView leyendo las
