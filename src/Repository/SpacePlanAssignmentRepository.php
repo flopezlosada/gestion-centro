@@ -7,6 +7,7 @@ namespace App\Repository;
 use App\Entity\SpacePlan;
 use App\Entity\SpacePlanAssignment;
 use App\Entity\User;
+use App\Enum\AssignmentKind;
 use App\Enum\SpacePlanStatus;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\ORM\QueryBuilder;
@@ -73,6 +74,49 @@ class SpacePlanAssignmentRepository extends ServiceEntityRepository
         }
 
         return $bySlot;
+    }
+
+    /**
+     * The lines in force at one period that put a teacher in FRONT of something — an exam they accompany, a
+     * workshop of the cultural days —, keyed by teacher id. A relocated lesson does not count: that teacher
+     * is teaching their own class, somewhere else, which the timetable already says.
+     *
+     * The guardia module reads this to know who is not available: somebody accompanying the 2º de
+     * Bachillerato exams cannot also be on guardia, and until this existed the rota happily handed them a
+     * group ({@see \App\Guardia\GuardiaScheduler}). Keyed by teacher because both callers ask
+     * "¿está esta persona al frente de algo?", and one line per teacher is enough to answer it.
+     *
+     * @param \DateTimeImmutable $date      the day
+     * @param int                $slotIndex the period index
+     *
+     * @return array<int, SpacePlanAssignment> teacher id → one of the lines that occupies them then
+     */
+    public function supervisedActivitiesAt(\DateTimeImmutable $date, int $slotIndex): array
+    {
+        /** @var SpacePlanAssignment[] $rows */
+        $rows = $this->inForceQuery()
+            // See inForceForTeacher(): 'p' cannot be hydrated without its parent alias 'o'.
+            ->addSelect('r', 't', 'o', 'p')
+            ->leftJoin('a.room', 'r')
+            ->join('a.teacher', 't')
+            ->andWhere('a.date = :date')
+            ->andWhere('a.slotIndex = :slot')
+            ->andWhere('a.kind = :activity')
+            ->setParameter('date', $date)
+            ->setParameter('slot', $slotIndex)
+            ->setParameter('activity', AssignmentKind::ACTIVITY)
+            ->getQuery()
+            ->getResult();
+
+        $byTeacher = [];
+        foreach ($rows as $row) {
+            $id = $row->getTeacher()?->getId();
+            if (null !== $id) {
+                $byTeacher[(int) $id] ??= $row;
+            }
+        }
+
+        return $byTeacher;
     }
 
     /**

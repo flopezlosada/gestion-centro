@@ -39,21 +39,32 @@ final class BreakDutyGapRegistrar
     }
 
     /**
-     * Records that a teacher's absence leaves their break duties unattended, and alerts the leadership
-     * team. Does nothing when the teacher has no duty that weekday.
+     * Records that a teacher's absence leaves their break duties unattended. Does nothing when the teacher
+     * has no duty that weekday.
      *
      * A LIST, because a teacher can hold a place at each of the day's two recreos: being away leaves both
      * unwatched, and reporting only one would send the equipo directivo looking for half the volunteers
-     * they need. Days already recorded are returned as they are, so registering an absence in two goes
-     * never alerts twice.
+     * they need. Days already recorded come back as they are, so registering an absence in two goes never
+     * alerts twice.
+     *
+     * ⚠️ It NEITHER flushes NOR alerts, on purpose. {@see BreakDutyGap} carries a UNIQUE on (duty, day), and
+     * two people registering the same absence at the same instant can lose that race — so its INSERT has to
+     * ride in the caller's own flush, not in one of its own afterwards. Otherwise the caller's "nothing was
+     * written, send it again" recovery would be a lie: the absence and its covers would already be committed
+     * while the collision came from a later flush. See {@see AbsenceRegistrar::register()} and
+     * [[doctrine-flush-closes-em-trap]] — a failed flush closes the entity manager, so there is no retrying
+     * in place, and the only honest recovery is for one flush to be the whole atomic boundary.
+     *
+     * The caller flushes and then calls {@see announce()} with the fresh gaps.
      *
      * @param AcademicYear       $year    the course the date falls into (whose rota to read)
      * @param User               $teacher the absent teacher
      * @param \DateTimeImmutable $date    the day of the absence
      *
-     * @return list<BreakDutyGap> the gaps (fresh or already recorded); empty when there is nothing to miss
+     * @return array{gaps: list<BreakDutyGap>, fresh: list<BreakDutyGap>} every unattended recreo of that day,
+     *                                                                   and the subset this pass created
      */
-    public function register(AcademicYear $year, User $teacher, \DateTimeImmutable $date): array
+    public function record(AcademicYear $year, User $teacher, \DateTimeImmutable $date): array
     {
         $gaps = [];
         $fresh = [];
@@ -70,18 +81,21 @@ final class BreakDutyGapRegistrar
             $fresh[] = $gap;
         }
 
-        if ([] === $fresh) {
-            return $gaps;
-        }
-        $this->em->flush();
+        return ['gaps' => $gaps, 'fresh' => $fresh];
+    }
 
-        // Only after the gaps are committed: the alert says "this is unattended", and it would be a lie
-        // if the row that makes it true had not been written.
+    /**
+     * Alerts the leadership team about the recreos this pass has just left unattended. To be called only
+     * AFTER the caller has committed them: the alert says "this is unattended", and it would be a lie if the
+     * row that makes it true had not been written.
+     *
+     * @param list<BreakDutyGap> $fresh the gaps created in this pass ({@see record()})
+     */
+    public function announce(array $fresh): void
+    {
         foreach ($fresh as $gap) {
             $this->notifier->notifyUncovered($gap);
         }
-
-        return $gaps;
     }
 
     /**

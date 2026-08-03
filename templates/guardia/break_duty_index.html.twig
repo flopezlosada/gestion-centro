@@ -8,7 +8,7 @@
     <div class="page-head">
         <div>
             <h1>Cuadrante de recreo</h1>
-            <p class="lead">Quién vigila cada zona en los recreos. Se hace <strong>una vez por curso</strong> y vale todo el año. Si alguien falta, el recreo <strong>no se reasigna</strong>: salta un aviso al equipo directivo para buscar un voluntario.</p>
+            <p class="lead">Quién vigila cada zona en los recreos. Se hace <strong>una vez por curso</strong> y vale todo el año. Si alguien falta, el recreo <strong>no se reasigna</strong>: salta un aviso al equipo directivo para buscar una persona voluntaria.</p>
         </div>
         {% if canManage %}
             <div class="inline-form"><a class="btn secondary" href="{{ path('break_zone_index') }}">Zonas y pesos</a></div>
@@ -61,7 +61,7 @@
                         <li>{{ gap.assignment.zone.name }} — falta {{ gap.assignment.teacher.fullName }}{% if gap.covered %}, lo cubre {{ gap.volunteer.fullName }}{% endif %}</li>
                     {% endfor %}
                 </ul>
-                <p><a href="{{ path('break_duty_gap_index', {curso: curso}) }}">Ver y apuntar voluntarios</a></p>
+                <p><a href="{{ path('break_duty_gap_index', {curso: curso}) }}">Ver y apuntar quién lo cubre</a></p>
             </div>
         {% endif %}
 
@@ -206,7 +206,7 @@
                                             {{ zone.name }}
                                             {% set needs = grid.zoneNeeds[zone.id] ?? null %}
                                             {% if needs %}
-                                                <span class="zone-needs">{% if needs.min == needs.max %}{{ needs.min }}{% else %}{{ needs.min }}–{{ needs.max }}{% endif %} profesor{{ needs.max != 1 ? 'es' }}</span>
+                                                <span class="zone-needs">{% if needs.min == needs.max %}{{ needs.min }}{% else %}{{ needs.min }}–{{ needs.max }}{% endif %} docente{{ needs.max != 1 ? 's' }}</span>
                                             {% endif %}
                                             <span class="zone-weight">peso {{ zone.weight }}</span>
                                         </th>
@@ -255,7 +255,7 @@
                     <input type="hidden" name="_token" value="{{ csrf_token('break_duty_assign') }}">
                     <input type="hidden" name="curso" value="{{ curso }}">
 
-                    <label class="field-label" for="teacher">Profesor</label>
+                    <label class="field-label" for="teacher">Docente</label>
                     <select id="teacher" name="teacher" required>
                         <option value="">— elige —</option>
                         {% for t in teachers %}<option value="{{ t.id }}">{{ t.fullName }}</option>{% endfor %}
@@ -278,7 +278,7 @@
 
                     <button type="submit" class="btn">Añadir</button>
                 </form>
-                <p class="help">Cada profesor puede tener <strong>una zona por recreo</strong>: no puede estar en dos sitios a la vez, pero sí vigilar una zona en el recreo grande y otra en el corto. Una guardia son <strong>un recreo grande y uno corto</strong>, y no tienen que caer el mismo día.</p>
+                <p class="help">Cada docente puede tener <strong>una zona por recreo</strong>: no puede estar en dos sitios a la vez, pero sí vigilar una zona en el recreo grande y otra en el corto. Una guardia son <strong>un recreo grande y uno corto</strong>, y no tienen que caer el mismo día.</p>
             </div>
         {% endif %}
 
@@ -290,7 +290,7 @@
                 <p class="muted">Nadie tiene guardia de recreo en {{ curso }} todavía.</p>
             {% else %}
                 <dl class="cover-summary">
-                    <div><dt>Profesores en el cuadrante</dt><dd><strong>{{ equity.equity.count }}</strong></dd></div>
+                    <div><dt>Docentes en el cuadrante</dt><dd><strong>{{ equity.equity.count }}</strong></dd></div>
                     <div><dt>Carga media</dt><dd><strong>{{ equity.equity.mean }}</strong> de peso</dd></div>
                     <div><dt>De {{ equity.equity.min }} a {{ equity.equity.max }}</dt><dd>{{ equity.equity.spread }} de diferencia</dd></div>
                     <div><dt>Equilibrio</dt><dd><strong>{{ equity.equity.label }}</strong></dd></div>
@@ -298,7 +298,7 @@
 
                 <table class="worklist">
                     <thead>
-                        <tr><th scope="col">Profesor</th><th scope="col">Guardias</th><th scope="col">Sueltas</th><th scope="col">Peso</th><th scope="col">Zonas</th></tr>
+                        <tr><th scope="col">Docente</th><th scope="col">Guardias</th><th scope="col">Sueltas</th><th scope="col">Peso</th><th scope="col">Zonas</th></tr>
                     </thead>
                     <tbody>
                         {% for row in equity.rows %}

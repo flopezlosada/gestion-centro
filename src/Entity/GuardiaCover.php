@@ -181,6 +181,29 @@ class GuardiaCover implements Auditable
     private ?\DateTimeImmutable $raicesReminderSentAt = null;
 
     /**
+     * When the "mañana tienes guardia" reminder went out for this cover, or null if it has not.
+     *
+     * Its twin below is the "hoy tienes guardia" one. Two stamps because the centre asked for TWO
+     * reminders — the evening before and that same morning ({@see \App\Enum\GuardiaReminderTrigger}) — and
+     * the requirement that comes with them is not to duplicate WITHIN each: one shared stamp would mean the
+     * second reminder never fires.
+     *
+     * Per cover and not per teacher on purpose: an absence registered at nine at night gives somebody who
+     * already had their evening notice one more guardia, and that one does have to be announced. Stamping
+     * the cover lets the new one through and keeps the old ones quiet.
+     *
+     * Same discipline as {@see $raicesReminderSentAt}: no setter, written ONLY by
+     * {@see GuardiaCoverRepository::markReminderSent()} as a bulk update, because this entity is
+     * {@see Auditable} and machine bookkeeping has no business in a guardia's history.
+     */
+    #[ORM\Column(name: 'evening_reminder_sent_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $eveningReminderSentAt = null;
+
+    /** When the "hoy tienes guardia" reminder went out for this cover. See {@see $eveningReminderSentAt}. */
+    #[ORM\Column(name: 'morning_reminder_sent_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $morningReminderSentAt = null;
+
+    /**
      * The grouping this class was folded into, when several groups of the same period were sent to one
      * room so a single teacher could mind them all. Null in the ordinary case — the group stays in its
      * own room. Purely additive: {@see $roomName} still holds where the class WOULD have been, so undoing
@@ -437,6 +460,16 @@ class GuardiaCover implements Auditable
     public function getRaicesReminderSentAt(): ?\DateTimeImmutable
     {
         return $this->raicesReminderSentAt;
+    }
+
+    public function getEveningReminderSentAt(): ?\DateTimeImmutable
+    {
+        return $this->eveningReminderSentAt;
+    }
+
+    public function getMorningReminderSentAt(): ?\DateTimeImmutable
+    {
+        return $this->morningReminderSentAt;
     }
 
     public function getGrouping(): ?GuardiaGrouping

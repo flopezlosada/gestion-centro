@@ -72,7 +72,7 @@ final class GuardiaScheduleController extends AbstractController
         $teacher = $users->find((int) $request->request->get('teacher'));
 
         if (!$year instanceof AcademicYear || !$teacher instanceof User) {
-            $this->addFlash('error', 'Elige un curso y un profesor válidos.');
+            $this->addFlash('error', 'Elige un curso y un docente válidos.');
 
             return $this->redirectToRoute('guardia_schedule_edit', ['curso' => $curso]);
         }

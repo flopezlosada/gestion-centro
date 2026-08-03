@@ -148,7 +148,7 @@ final class GuardiaDeficitController extends AbstractController
         $slotIndex = (int) $request->request->get('slot');
         $teacher = $users->find((int) $request->request->get('teacher'));
         if (!$teacher instanceof User) {
-            $this->addFlash('error', 'Elige el profesor que va a hacer el apoyo.');
+            $this->addFlash('error', 'Elige a quien va a hacer el apoyo.');
 
             return $this->backToParte($date, $slotIndex);
         }
@@ -260,6 +260,13 @@ final class GuardiaDeficitController extends AbstractController
     /**
      * Creates the grouping and tells everybody it touches: the guardia teachers who will mind the groups
      * together, and — when the room chosen was in use — the colleague whose class has to make way.
+     *
+     * The lines are read and written inside ONE transaction, holding a write lock on them
+     * ({@see GuardiaCoverRepository::lockUngroupedForGrouping()}). Without it, two coordinators grouping the
+     * same class into two different rooms at the same time both succeeded — no UNIQUE was broken, since the
+     * rooms differed — and the one who lost got a success message for a room nobody would be in. Which is
+     * also why nothing here reads the covers before the lock is taken: the identity map would serve the
+     * stale copy and the lock would be guarding rows nobody looks at.
      */
     #[Route('/agrupar', name: 'guardia_grouping_create', methods: ['POST'])]
     public function createGrouping(Request $request, GuardiaCoverRepository $covers, AbsenceRepository $absences, ScheduleEntryRepository $schedule, AcademicYearRepository $years, RoomRepository $rooms, RoomOccupancy $occupancy, GuardiaRoomChangeNotifier $notifier, EntityManagerInterface $em): Response
@@ -285,18 +292,6 @@ final class GuardiaDeficitController extends AbstractController
             return $this->backToGrouping($date, $slotIndex);
         }
 
-        // Re-read the lines from the database rather than trusting the posted ids: only lines of THIS
-        // date and period, and only ones not already grouped, may go in.
-        $selected = array_values(array_filter(
-            $covers->findForParte($date, $slotIndex),
-            static fn (GuardiaCover $c): bool => \in_array($c->getId(), $coverIds, true) && null === $c->getGrouping(),
-        ));
-        if (\count($selected) < 2) {
-            $this->addFlash('error', 'Esos grupos ya no se pueden juntar: alguno está ya agrupado o no es de esta hora.');
-
-            return $this->backToGrouping($date, $slotIndex);
-        }
-
         $year = $years->findBySchoolYear(SchoolYear::current($date));
         if (!$year instanceof AcademicYear) {
             $this->addFlash('error', sprintf('No hay horario importado para el curso %s.', SchoolYear::current($date)));
@@ -317,6 +312,8 @@ final class GuardiaDeficitController extends AbstractController
 
         // Who is in the chosen room at that moment, on the EFFECTIVE timetable: an approved space plan may
         // have emptied it or filled it, and either way the ordinary timetable alone would answer wrong.
+        // Read before the lock is taken, and safe to: this looks at the timetable and the plans, never at
+        // the parte ({@see RoomOccupancy}).
         $occupation = $this->occupationOf($occupancy->at($year, $date, $slotIndex), $target);
         $displaced = null !== $occupation ? $occupation->entries : [];
 
@@ -328,13 +325,32 @@ final class GuardiaDeficitController extends AbstractController
             ->setNote((string) $request->request->get('note'));
 
         try {
-            $em->persist($grouping);
-            foreach ($selected as $cover) {
-                $cover->setGrouping($grouping);
-            }
-            $em->flush();
+            // Re-read the lines from the database rather than trusting the posted ids — only lines of THIS
+            // date and period, and only ones not already grouped, may go in — and hold them until commit,
+            // so a coordinator arriving a second later waits and then reads the truth instead of
+            // overwriting it. Fewer than two left means somebody got there first: nothing is persisted, so
+            // the transaction commits an empty change and the caller says so.
+            $selected = $em->wrapInTransaction(function () use ($covers, $coverIds, $date, $slotIndex, $grouping, $em): ?array {
+                $locked = $covers->lockUngroupedForGrouping($coverIds, $date, $slotIndex);
+                if (\count($locked) < 2) {
+                    return null;
+                }
+
+                $em->persist($grouping);
+                foreach ($locked as $cover) {
+                    $cover->setGrouping($grouping);
+                }
+
+                return $locked;
+            });
         } catch (UniqueConstraintViolationException) {
             $this->addFlash('error', sprintf('Ya hay una agrupación en %s a esta hora. Deshazla antes de crear otra.', $room));
+
+            return $this->backToGrouping($date, $slotIndex);
+        }
+
+        if (!\is_array($selected)) {
+            $this->addFlash('error', 'Esos grupos ya no se pueden juntar: alguno está ya agrupado o no es de esta hora.');
 
             return $this->backToGrouping($date, $slotIndex);
         }

@@ -86,7 +86,7 @@ enum NotificationTopic: string
     {
         return match ($this) {
             self::TASK => 'Cuando te asignan una tarea, cuando se acerca la fecha y cuando hay que revisarla.',
-            self::GUARDIA => 'Guardias que te tocan, cambios, recreos y el recordatorio de RAICES.',
+            self::GUARDIA => 'Guardias que te tocan, sus recordatorios, cambios, recreos y el aviso de RAICES.',
             self::MEETING => 'Convocatorias, cambios de hora y actas publicadas.',
             self::AGENDA => 'Los recordatorios de tus propios eventos, poco antes de empezar.',
             self::SPACE => 'Cuando un cambio de aula te afecta.',
@@ -99,9 +99,9 @@ enum NotificationTopic: string
      * porque llegan cuando la cosa está pasando, y el resto van también por correo.
      *
      * ⚠️ Espejo de `NotificationDispatcher::PUSH_ONLY_KINDS` (hoy `event.`, `guardia.raices`,
-     * `meeting.reminder` y `meeting.minutes`): si esa lista cambia, este texto miente. Antes había UNA
-     * frase copiada en las cinco secciones que hablaba de "recordatorios de última hora", y era falsa en
-     * Tareas y en Cambios de aula, donde no hay ninguno.
+     * `guardia.reminder`, `meeting.reminder` y `meeting.minutes`): si esa lista cambia, este texto miente.
+     * Antes había UNA frase copiada en las cinco secciones que hablaba de "recordatorios de última hora", y
+     * era falsa en Tareas y en Cambios de aula, donde no hay ninguno.
      *
      * @return string the Spanish description of the default routing
      */
@@ -109,7 +109,7 @@ enum NotificationTopic: string
     {
         return match ($this) {
             self::TASK, self::SPACE => 'Al móvil y al correo.',
-            self::GUARDIA => 'Al móvil y al correo, salvo el aviso de apuntar las ausencias en RAICES, que solo va al móvil porque llega durante la propia hora.',
+            self::GUARDIA => 'Al móvil y al correo, salvo los recordatorios —los de la tarde anterior y esa misma mañana, y el de apuntar las ausencias en RAICES—, que solo van al móvil: cuando te asignan la guardia ya te ha llegado un correo.',
             self::MEETING => 'Al móvil y al correo, salvo el recordatorio de justo antes de empezar y el aviso de acta publicada, que solo van al móvil (el acta la recibes igualmente por correo, con el PDF adjunto).',
             self::AGENDA => 'Solo al móvil: cuando llega, tu evento está a punto de empezar.',
         };

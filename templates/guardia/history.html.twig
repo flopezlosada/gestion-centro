@@ -11,7 +11,7 @@
     <div class="page-head">
         <div>
             <h1>Histórico de guardias</h1>
-            <p class="lead">Qué profesor cubrió cada grupo y cuándo. Busca, filtra por columna u ordena pulsando la cabecera.</p>
+            <p class="lead">Quién cubrió cada grupo y cuándo. Busca, filtra por columna u ordena pulsando la cabecera.</p>
             {% if years|length > 1 %}
                 <nav class="year-nav" aria-label="Curso">
                     {% for y in years %}
@@ -36,7 +36,7 @@
                         <th data-filter="Tramo">Tramo</th>
                         <th data-filter="Grupo">Grupo</th>
                         <th>Aula</th>
-                        <th data-filter="Ausente">Profesor ausente</th>
+                        <th data-filter="Ausente">Docente ausente</th>
                         <th data-filter="Guardia">Guardia</th>
                         <th data-filter="Estado">Estado</th>
                         {% if canEdit %}<th></th>{% endif %}

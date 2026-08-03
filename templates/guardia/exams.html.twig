@@ -1,0 +1,170 @@
+{% extends 'app_shell.html.twig' %}
+
+{# Semana de exámenes de 2º de Bachillerato, desde las guardias (apartado A.5 del centro).
+
+   La pantalla responde a una sola frase: «las guardias de quien acompaña un examen las cubre el
+   profesorado del nivel que se queda libre». De ahí las decisiones de maqueta:
+   1. UNA hora por bloque, y las dos listas de esa hora JUNTAS — quien acompaña (con las guardias que hay
+      que pasar) y quien queda libre. Separarlas en dos tablas obligaría a cruzarlas con la vista.
+   2. Las casillas nacen MARCADAS: el programa propone y lo que se espera de quien valida es desmarcar lo
+      que no cuadre. Una lista vacía haría que "propone" fuera mentira.
+   3. Un solo botón para todo el día, al final. Aplicar hora por hora repartiría seis veces y cada reparto
+      vería un pool distinto del anterior.
+   Sin CSS propio: todo reutiliza .card / .worklist / .callout / .badge / .choice / .cover-summary. #}
+
+{% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
+
+{% block title %}Semana de exámenes{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_index') }}">Guardias</a><span class="sep">/</span>Semana de exámenes{% endblock %}
+
+{% block body %}
+    {% set ymd = date|date('Y-m-d', false) %}
+    {% set periods = proposal.relevantPeriods() %}
+    {% set totals = proposal.summary() %}
+
+    <div class="page-head">
+        <div>
+            <h1>Semana de exámenes</h1>
+            <p class="lead">Quien acompaña un examen no puede hacer su guardia, y quien da clase solo a los grupos que se examinan se queda libre. Aquí se pasan las unas a las otras.</p>
+        </div>
+    </div>
+
+    {# Navegador de día, el mismo gesto que el parte: flechas, fecha con auto-submit y «Hoy». #}
+    <div class="card">
+        <div class="day-nav">
+            <a class="day-nav-arrow" href="{{ path('guardia_exam_index', { date: date|date_modify('-1 day')|date('Y-m-d', false) }) }}" aria-label="Día anterior">‹</a>
+            <form method="get" action="{{ path('guardia_exam_index') }}" class="day-nav-date">
+                <label class="visually-hidden" for="date">Fecha</label>
+                <input type="date" id="date" name="date" value="{{ ymd }}" onchange="this.form.submit()">
+                <noscript><button type="submit" class="btn btn-sm">Ir</button></noscript>
+            </form>
+            <a class="day-nav-arrow" href="{{ path('guardia_exam_index', { date: date|date_modify('+1 day')|date('Y-m-d', false) }) }}" aria-label="Día siguiente">›</a>
+            <span class="muted">{{ dias[date|date('N', false)] }} {{ date|date('d/m/Y', false) }}</span>
+            {% if ymd != 'now'|date('Y-m-d', false) %}
+                <a class="btn btn-sm secondary" href="{{ path('guardia_exam_index') }}">Hoy</a>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if not hasTimetable %}
+        <div class="card">
+            <p class="empty-state">No hay horario importado para el curso {{ schoolYear }}. Sin horario no se puede saber quién da clase a los grupos que se examinan.</p>
+        </div>
+    {% elseif not proposal.isActive() %}
+        {# El "interruptor" de esta pantalla es aprobar el plan de exámenes en Espacios, y se dice aquí para
+           que nadie busque un ajuste que no existe. #}
+        <div class="card">
+            <p class="empty-state">Ese día no hay ningún plan de exámenes aprobado.</p>
+            <p class="help">Esta pantalla se activa sola en cuanto el equipo directivo aprueba en <strong>Espacios → Planes de espacios</strong> un plan que deje sin clase a los grupos que se examinan. Mientras no lo haya, no hay nada que repartir.</p>
+        </div>
+    {% else %}
+        <div class="callout callout--accent">
+            <p><strong>{{ proposal.plans|map(p => p.title)|join(' · ') }}</strong></p>
+            {% if proposal.examGroups() is not empty %}
+                <p>Se examinan: {{ proposal.examGroups()|join(', ') }}. Esos grupos no tienen sus clases habituales, así que su profesorado queda libre.</p>
+            {% else %}
+                <p>Ese día no hay horario ordinario para nadie, así que el profesorado que no acompañe un examen queda libre.</p>
+            {% endif %}
+        </div>
+
+        <dl class="cover-summary">
+            <div><dt>Guardias que hay que pasar</dt><dd><strong>{{ totals.handOver }}</strong></dd></div>
+            <div><dt>Personas libres por los exámenes</dt><dd><strong>{{ totals.available }}</strong></dd></div>
+            <div><dt>Líneas del parte sin cubrir</dt><dd><strong>{{ totals.uncovered }}</strong></dd></div>
+        </dl>
+
+        {% if periods is empty %}
+            <div class="card">
+                <p class="empty-state">Nada que hacer ese día: nadie acompaña un examen a las horas del plan, nadie se queda libre y no falta nadie por cubrir.</p>
+            </div>
+        {% else %}
+            <form method="post" action="{{ path('guardia_exam_apply') }}">
+                <input type="hidden" name="_token" value="{{ csrf_token('guardia_exam_apply') }}">
+                <input type="hidden" name="date" value="{{ ymd }}">
+
+                {% for slot in periods %}
+                    <div class="card">
+                        <div class="page-head">
+                            <div>
+                                <h2>{{ slot.label() }}</h2>
+                                {% if slot.uncovered > 0 %}
+                                    <p class="lead">{{ slot.uncovered }} línea(s) del parte sin nadie a esta hora.</p>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <h3>Acompañan un examen</h3>
+                        {% if slot.supervising is empty %}
+                            <p class="muted">Nadie del claustro está al frente de un examen a esta hora.</p>
+                        {% else %}
+                            <table class="worklist">
+                                <thead>
+                                    <tr><th scope="col">Docente</th><th scope="col">Dónde</th><th scope="col">Guardias que tiene puestas</th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in slot.supervising %}
+                                        <tr>
+                                            <td><strong>{{ row.teacher.fullName }}</strong></td>
+                                            <td>{{ row.what }}{% if row.room %} <span class="muted mono">· {{ row.room }}</span>{% endif %}</td>
+                                            <td>
+                                                {% if row.covers is empty %}
+                                                    <span class="muted">Ninguna</span>
+                                                {% else %}
+                                                    {% for cover in row.covers %}
+                                                        <span class="badge badge--warning">{{ cover.groupName ?? 'sin grupo' }}{% if cover.effectiveRoomName %} · {{ cover.effectiveRoomName }}{% endif %}</span>
+                                                    {% endfor %}
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                            {% if slot.guardiasToHandOver() > 0 %}
+                                <p class="help">Al aplicar se les retiran esas guardias y se avisa a cada persona, porque a esa hora están en el examen. Después se reparten entre quien esté disponible.</p>
+                            {% endif %}
+                        {% endif %}
+
+                        <h3>Quedan libres por los exámenes</h3>
+                        {% if slot.freed is empty %}
+                            <p class="muted">Nadie: a esta hora, todo el profesorado que da clase tiene algún grupo que no se examina.</p>
+                        {% else %}
+                            <div class="slot-checks">
+                                {% for row in slot.freed %}
+                                    {% if row.alreadySupport %}
+                                        <p class="choice">
+                                            <span class="badge badge--ok">Ya de alta</span>
+                                            {{ row.teacher.fullName }}
+                                            <span class="muted">— {{ row.groups|join(', ') }}</span>
+                                        </p>
+                                    {% elseif canApply %}
+                                        <label class="choice">
+                                            <input type="checkbox" name="support[{{ slot.slotIndex }}][]" value="{{ row.teacher.id }}" checked>
+                                            {{ row.teacher.fullName }}
+                                            <span class="muted">— da clase a {{ row.groups|join(', ') }}, que se examinan</span>
+                                        </label>
+                                    {% else %}
+                                        <p class="choice">{{ row.teacher.fullName }} <span class="muted">— {{ row.groups|join(', ') }}</span></p>
+                                    {% endif %}
+                                {% endfor %}
+                            </div>
+                            {% if canApply %}
+                                <p class="help">Vienen marcadas: desmarca a quien no puedas contar (una reunión, una salida). Quien no aparezca aquí es que ya está en el cuadrante de guardias de esta hora, acompaña un examen o falta ese día.</p>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                {% endfor %}
+
+                {% if canApply %}
+                    <div class="card">
+                        <div class="form-actions">
+                            <button type="submit" class="btn">Aplicar la propuesta del día</button>
+                            <a class="btn secondary" href="{{ path('guardia_index', { date: ymd }) }}">Ir al parte</a>
+                        </div>
+                        <p class="help">Se da de alta el apoyo marcado, se retiran las guardias de quien acompaña un examen y se vuelve a repartir. Todo es deshacible desde el parte.</p>
+                    </div>
+                {% endif %}
+            </form>
+        {% endif %}
+    {% endif %}
+{% endblock %}

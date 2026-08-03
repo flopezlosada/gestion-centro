@@ -8,7 +8,7 @@
     <div class="page-head">
         <div>
             <h1>Horario de guardias</h1>
-            <p class="lead">Marca a mano en qué día y hora hace guardia cada profesor. Úsalo solo si Peñalara importó el horario pero <strong>no</strong> las guardias: el horario lectivo y los tramos vienen de Peñalara y aquí no se tocan.</p>
+            <p class="lead">Marca a mano en qué día y hora hace guardia cada docente. Úsalo solo si Peñalara importó el horario pero <strong>no</strong> las guardias: el horario lectivo y los tramos vienen de Peñalara y aquí no se tocan.</p>
         </div>
     </div>
 
@@ -22,9 +22,9 @@
                 {% endfor %}
             </select>
 
-            <label class="field-label" for="teacher">Profesor</label>
+            <label class="field-label" for="teacher">Docente</label>
             <select id="teacher" name="teacher" onchange="this.form.submit()">
-                <option value="">— elige un profesor —</option>
+                <option value="">— elige un docente —</option>
                 {% for t in teachers %}
                     <option value="{{ t.id }}" {{ selectedTeacher and selectedTeacher.id == t.id ? 'selected' }}>{{ t.fullName }}</option>
                 {% endfor %}
@@ -45,7 +45,7 @@
                 </div>
             </div>
         {% elseif not selectedTeacher %}
-            <div class="card"><p class="muted">Elige un profesor para ver y editar su horario de guardias.</p></div>
+            <div class="card"><p class="muted">Elige un docente para ver y editar su horario de guardias.</p></div>
         {% endif %}
     {% else %}
         <form method="post" action="{{ path('guardia_schedule_save') }}">
@@ -59,9 +59,9 @@
                     <div class="inline-form"><button type="submit" class="btn">Guardar horario de guardias</button></div>
                 </div>
 
-                <p class="help">Las horas en las que da clase se muestran atenuadas y no se pueden cambiar. En las horas libres elige <strong>Guardia</strong> o <strong>Colaborador</strong>. Al guardar se reemplazan solo las guardias de este profesor en este curso.</p>
+                <p class="help">Las horas en las que da clase se muestran atenuadas y no se pueden cambiar. En las horas libres elige <strong>Guardia</strong> o <strong>Colaborador</strong>. Al guardar se reemplazan solo las guardias de este docente en este curso.</p>
                 <div class="callout callout--warning" role="note">
-                    Al guardar, las guardias de este profesor pasan a ser <strong>vuestras</strong>: las siguientes importaciones de Peñalara actualizarán sus clases pero ya no tocarán estas guardias. La única excepción es que el horario nuevo le ponga clase a esa hora, en cuyo caso la guardia se quita (nadie puede estar de guardia y dando clase a la vez).
+                    Al guardar, las guardias de este docente pasan a ser <strong>vuestras</strong>: las siguientes importaciones de Peñalara actualizarán sus clases pero ya no tocarán estas guardias. La única excepción es que el horario nuevo le ponga clase a esa hora, en cuyo caso la guardia se quita (nadie puede estar de guardia y dando clase a la vez).
                 </div>
 
                 <div class="tt-scroll">
