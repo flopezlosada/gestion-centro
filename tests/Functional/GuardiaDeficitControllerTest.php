@@ -467,6 +467,9 @@ final class GuardiaDeficitControllerTest extends WebTestCase
         $this->em->persist($already);
         $taken = $this->cover('1ºA', $this->user('Falta Uno', 'f1@centro.test'))->setGrouping($already);
         $free = $this->cover('1ºB', $this->user('Falta Dos', 'f2@centro.test'));
+        // Una tercera sin agrupar, para que la pantalla llegue a pintar el formulario: con una sola clase
+        // libre dice «hacen falta al menos dos» y no hay nada que enviar (grouping_new.html.twig:49).
+        $this->cover('1ºC', $this->user('Falta Tres', 'f3@centro.test'));
         $this->em->flush();
         [$takenId, $alreadyId] = [(int) $taken->getId(), (int) $already->getId()];
 
