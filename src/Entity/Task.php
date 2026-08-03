@@ -179,24 +179,34 @@ class Task implements Auditable
      * only ever reads the responsibility, so a task straight from the catalogue had NOBODY above it —
      * no validator, no escalation — and it did not say so anywhere.
      *
-     * No department is set: a template names a function ("jefatura de departamento"), not which
-     * department's. Splitting a per-department template into one task per department is a separate,
-     * still-open question for {@see \App\Service\TaskGenerator}.
+     * A template names a FUNCTION ("jefatura de departamento"), not whose: which department this
+     * particular instance is for is decided by {@see \App\Service\TaskGenerator}, which expands a
+     * per-department template into one task per department and passes each one here. Null for a
+     * centre-wide function (dirección, secretaría), which has exactly one instance.
+     *
+     * No assignee is set, on purpose. Leaving it null lets the responsibility resolve the person LIVE
+     * ({@see resolveResponsible()}), so a task generated in September and a change of jefatura in
+     * January need no reconciliation — and a department with no holder reads as "Sin asignar" instead
+     * of freezing whoever happened to hold the post the day the course was generated.
      *
      * @param TaskTemplate       $template   the recurring template
      * @param string             $schoolYear the target course in "YYYY-YYYY" form
      * @param \DateTimeImmutable $dueDate     the deadline for this instance
+     * @param Department|null    $department the department this instance is for, or null for centre-wide
      *
      * @return self the new task instance
      */
-    public static function fromTemplate(TaskTemplate $template, string $schoolYear, \DateTimeImmutable $dueDate): self
+    public static function fromTemplate(TaskTemplate $template, string $schoolYear, \DateTimeImmutable $dueDate, ?Department $department = null): self
     {
         $task = new self($template->getTitle(), $schoolYear, $dueDate, $template->getType());
         $task->template = $template;
         $task->description = $template->getDescription();
         $task->mandatory = $template->isMandatory();
         $role = $template->getResponsibleRole();
-        $task->responsibility = null !== $role ? new TaskResponsibility($role) : null;
+        $task->responsibility = null !== $role ? new TaskResponsibility($role, $department) : null;
+        // Mirrored onto the task's own unit, like the form does: it is the context the hierarchy and
+        // the visibility scope fall back to when there is no responsibility at all.
+        $task->unit = $department;
         $task->deliverable = $template->getDeliverable();
         $task->requiresCheckbox = $template->requiresCheckbox();
 

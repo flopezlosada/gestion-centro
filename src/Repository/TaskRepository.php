@@ -8,6 +8,7 @@ use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\Department;
 use App\Entity\User;
+use App\Service\TaskGenerator;
 use App\Support\TaskStatus;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
@@ -233,18 +234,27 @@ class TaskRepository extends ServiceEntityRepository
     }
 
     /**
-     * The set of "templateId|Y-m-d" keys already generated for a course, so the yearly generation can
-     * skip re-creating a task it already produced (idempotent re-runs). One query, no per-item lookup.
+     * The set of keys already generated for a course, so the yearly generation can skip re-creating a
+     * task it already produced (idempotent re-runs). One query, no per-item lookup.
+     *
+     * The DEPARTMENT is part of the key ({@see \App\Service\TaskGenerator::keyFor()}), because one
+     * template and one date legitimately produce one task per department. Keyed by template and date
+     * alone, a re-run would find the first department's task and skip the other twenty as if they had
+     * been generated — which is how twenty departments silently lose their memoria.
      *
      * @param string $schoolYear the course in "YYYY-YYYY" form
      *
-     * @return array<string, true> a lookup set keyed by "templateId|dueDate"
+     * @return array<string, true> a lookup set keyed by "templateId|dueDate|departmentId"
      */
     public function generatedKeysFor(string $schoolYear): array
     {
-        /** @var list<array{tpl: int, due: \DateTimeImmutable}> $rows */
+        // The department is read from the responsibility, which is where the generator puts it, and
+        // NOT from t.unit: the two are mirrored today, but the responsibility is the one the model
+        // treats as authoritative, so a task edited later cannot drift out of its own key.
+        /** @var list<array{tpl: int, due: \DateTimeImmutable, unit: int|null}> $rows */
         $rows = $this->createQueryBuilder('t')
-            ->select('IDENTITY(t.template) AS tpl', 't.dueDate AS due')
+            ->leftJoin('t.responsibility', 'resp')
+            ->select('IDENTITY(t.template) AS tpl', 't.dueDate AS due', 'IDENTITY(resp.unit) AS unit')
             ->andWhere('t.schoolYear = :year')
             ->andWhere('t.template IS NOT NULL')
             ->setParameter('year', $schoolYear)
@@ -253,7 +263,7 @@ class TaskRepository extends ServiceEntityRepository
 
         $keys = [];
         foreach ($rows as $row) {
-            $keys[$row['tpl'].'|'.$row['due']->format('Y-m-d')] = true;
+            $keys[TaskGenerator::keyFor($row['tpl'], $row['due'], $row['unit'])] = true;
         }
 
         return $keys;

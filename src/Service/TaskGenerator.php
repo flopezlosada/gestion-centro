@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Service;
 
 use App\Entity\AcademicYear;
+use App\Entity\Department;
 use App\Entity\Task;
+use App\Entity\TaskTemplate;
 use App\Entity\User;
+use App\Repository\DepartmentRepository;
 use App\Repository\TaskRepository;
 use App\Repository\TaskTemplateRepository;
 use Doctrine\ORM\EntityManagerInterface;
@@ -26,6 +29,7 @@ final class TaskGenerator
     public function __construct(
         private readonly TaskRepository $tasks,
         private readonly TaskTemplateRepository $templates,
+        private readonly DepartmentRepository $departments,
         private readonly SchoolCalendar $calendar,
         private readonly EntityManagerInterface $em,
     ) {
@@ -55,29 +59,84 @@ final class TaskGenerator
                 continue;
             }
 
+            // A template for a per-department function is not ONE task: it is one per department.
+            // "Memoria del departamento" is twenty-one different memorias, each delivered, commented
+            // and validated on its own — the same reason the task form creates one task per person
+            // instead of one shared row. A single task here would be held by every jefe de
+            // departamento in the centre at once, and the first one to deliver would speak for all.
+            $departments = $this->scopesFor($template);
+
             foreach ($rule->resolve($year) as $date) {
                 $dueDate = $this->calendar->onOrBeforeLectiveDay($date);
-                $key = $template->getId().'|'.$dueDate->format('Y-m-d');
-                if (isset($existing[$key])) {
-                    ++$skippedExisting;
-                    continue;
-                }
 
-                $task = Task::fromTemplate($template, $schoolYear, $dueDate);
-                if (null !== $createdBy) {
-                    $task->setCreatedBy($createdBy);
-                }
-                $this->em->persist($task);
+                foreach ($departments as $department) {
+                    $key = self::keyFor($template->getId(), $dueDate, $department?->getId());
+                    if (isset($existing[$key])) {
+                        ++$skippedExisting;
+                        continue;
+                    }
 
-                // Guard against two of this template's dates snapping onto the same teaching day
-                // within a single run.
-                $existing[$key] = true;
-                ++$created;
+                    $task = Task::fromTemplate($template, $schoolYear, $dueDate, $department);
+                    if (null !== $createdBy) {
+                        $task->setCreatedBy($createdBy);
+                    }
+                    $this->em->persist($task);
+
+                    // Guard against two of this template's dates snapping onto the same teaching day
+                    // within a single run.
+                    $existing[$key] = true;
+                    ++$created;
+                }
             }
         }
 
         $this->em->flush();
 
         return new GenerationResult($created, $skippedExisting, $skippedWithoutRule);
+    }
+
+    /**
+     * The departments a template expands into: every active one when its function is per-department,
+     * or a single null (one centre-wide task) otherwise.
+     *
+     * Every department, INCLUDING the ones with nobody holding the post. Skipping those would make a
+     * department quietly disappear from the course plan the year its jefatura falls vacant — the one
+     * year somebody most needs to notice. Generated with no assignee, such a task resolves to nobody
+     * and reads as "Sin asignar" in the list, which is a hole dirección can see and fill; the moment
+     * the post is filled, the task follows the new holder on its own, with nothing to re-run.
+     *
+     * A template with no responsible role at all is centre-wide too: there is no function to spread.
+     *
+     * @param TaskTemplate $template the template being generated
+     *
+     * @return list<Department|null> the scopes to generate one task for each
+     */
+    private function scopesFor(TaskTemplate $template): array
+    {
+        if (true !== $template->getResponsibleRole()?->isPerDepartment()) {
+            return [null];
+        }
+
+        $departments = $this->departments->findActiveDepartments();
+
+        // A centre with no departments configured yet still gets its task, rather than silently
+        // generating nothing at all.
+        return [] !== $departments ? $departments : [null];
+    }
+
+    /**
+     * The idempotency key of one generated instance. The department is part of it because the same
+     * template and date now legitimately produce twenty-one tasks: keyed by template and date alone,
+     * a re-run would see the first department's task and skip the other twenty.
+     *
+     * @param int|null                $templateId   the template's id
+     * @param \DateTimeImmutable      $dueDate      the resolved deadline
+     * @param int|null                $departmentId the department's id, or null for centre-wide
+     *
+     * @return string the lookup key
+     */
+    public static function keyFor(?int $templateId, \DateTimeImmutable $dueDate, ?int $departmentId): string
+    {
+        return $templateId.'|'.$dueDate->format('Y-m-d').'|'.$departmentId;
     }
 }

@@ -7,6 +7,7 @@ namespace App\Tests\Integration;
 use App\DueDate\FixedDate;
 use App\DueDate\PerTerm;
 use App\Entity\AcademicYear;
+use App\Entity\Department;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskTemplate;
@@ -140,6 +141,96 @@ final class TaskGeneratorTest extends KernelTestCase
         // Nobody was picked by hand, so the holder of the role is on the hook — resolved live.
         self::assertSame($holder, $task->resolveResponsible());
         self::assertTrue($task->isOwnedBy($holder));
+    }
+
+    /**
+     * A per-department template is not one task: it is one per department, each with its own holder.
+     *
+     * "Memoria del departamento" is twenty-one different memorias — delivered, commented and validated
+     * separately. Generated as a single task it would have been held by every jefe de departamento at
+     * once, and whoever delivered first would have spoken for all of them.
+     */
+    public function testAPerDepartmentTemplateGeneratesOneTaskPerDepartment(): void
+    {
+        $year = $this->year();
+        $role = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true);
+        $this->em->persist($role);
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
+        $lengua = (new Department())->setCode('lengua')->setName('Lengua');
+        $this->em->persist($maths);
+        $this->em->persist($lengua);
+        $mathsHead = (new User())->setFullName('María Mates')->setEmail('mates@centro.test')->setUnit($maths)->addAssignedRole($role);
+        $lenguaHead = (new User())->setFullName('Lola Lengua')->setEmail('lengua@centro.test')->setUnit($lengua)->addAssignedRole($role);
+        $this->em->persist($mathsHead);
+        $this->em->persist($lenguaHead);
+        $this->template('Memoria del departamento', true, new FixedDate(6, 30))->setResponsibleRole($role);
+        $this->em->flush();
+
+        $result = $this->generator->generate($year, null);
+
+        self::assertSame(2, $result->created, 'una memoria por departamento, no una compartida');
+
+        $tasks = $this->em->getRepository(Task::class)->findBy(['schoolYear' => '2026-2027']);
+        $byDepartment = [];
+        foreach ($tasks as $task) {
+            $byDepartment[(string) $task->getResponsibility()?->getUnit()?->getCode()] = $task;
+        }
+        self::assertSame(['maths', 'lengua'], array_keys($byDepartment));
+        // Cada una resuelve a SU jefatura, en vivo y sin asignado congelado.
+        self::assertSame($mathsHead, $byDepartment['maths']->resolveResponsible());
+        self::assertSame($lenguaHead, $byDepartment['lengua']->resolveResponsible());
+        self::assertTrue($byDepartment['maths']->isOwnedBy($mathsHead));
+        self::assertFalse($byDepartment['maths']->isOwnedBy($lenguaHead), 'la memoria de Mates no es de la jefa de Lengua');
+    }
+
+    /**
+     * Y la re-ejecución sigue siendo idempotente con la expansión: la clave lleva el departamento, y
+     * sin él la segunda pasada encontraría la tarea del primer departamento y daría por generadas las
+     * de los otros veinte.
+     */
+    public function testTheExpansionStaysIdempotentPerDepartment(): void
+    {
+        $year = $this->year();
+        $role = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true);
+        $this->em->persist($role);
+        foreach (['maths' => 'Matemáticas', 'lengua' => 'Lengua', 'arts' => 'Plástica'] as $code => $name) {
+            $this->em->persist((new Department())->setCode($code)->setName($name));
+        }
+        $this->template('Memoria del departamento', true, new FixedDate(6, 30))->setResponsibleRole($role);
+        $this->em->flush();
+
+        self::assertSame(3, $this->generator->generate($year, null)->created);
+
+        $second = $this->generator->generate($year, null);
+        self::assertSame(0, $second->created, 'nada nuevo en la segunda pasada');
+        self::assertSame(3, $second->skippedExisting, 'las TRES se reconocen, no solo la primera');
+        self::assertCount(3, $this->em->getRepository(Task::class)->findBy(['schoolYear' => '2026-2027']));
+    }
+
+    /**
+     * Un departamento sin jefatura genera igual su tarea, sin responsable. Decisión de Paco
+     * (2026-08-03): saltárselo haría desaparecer del plan del curso justo al departamento cuyo hueco
+     * hay que ver. Sale como "Sin asignar", y en cuanto se nombre titular la tarea le sigue sola.
+     */
+    public function testADepartmentWithNoHolderStillGetsItsTaskUnassigned(): void
+    {
+        $year = $this->year();
+        $role = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true);
+        $this->em->persist($role);
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
+        $orphan = (new Department())->setCode('arts')->setName('Plástica');
+        $this->em->persist($maths);
+        $this->em->persist($orphan);
+        $this->em->persist((new User())->setFullName('María Mates')->setEmail('mates@centro.test')->setUnit($maths)->addAssignedRole($role));
+        $this->template('Memoria del departamento', true, new FixedDate(6, 30))->setResponsibleRole($role);
+        $this->em->flush();
+
+        self::assertSame(2, $this->generator->generate($year, null)->created, 'el departamento sin jefatura también genera');
+
+        $tasks = $this->em->getRepository(Task::class)->findBy(['schoolYear' => '2026-2027']);
+        $orphanTask = array_values(array_filter($tasks, static fn (Task $t): bool => $orphan === $t->getResponsibility()?->getUnit()));
+        self::assertCount(1, $orphanTask);
+        self::assertNull($orphanTask[0]->resolveResponsible(), 'sin titular, la tarea se lee como "Sin asignar"');
     }
 
     /**
