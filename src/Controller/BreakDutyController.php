@@ -17,6 +17,7 @@ use App\Guardia\BreakDutyDemand;
 use App\Guardia\BreakDutyRoster;
 use App\Guardia\BreakRotaPlanner;
 use App\Guardia\BreakRotaProposal;
+use App\Guardia\BreakRotaProposer;
 use App\Repository\AcademicYearRepository;
 use App\Repository\BreakDutyAssignmentRepository;
 use App\Repository\BreakDutyGapRepository;
@@ -53,9 +54,14 @@ final class BreakDutyController extends AbstractController
     /**
      * The rota of a course as a weekday × zone grid, with the recreos it covers, where it is short of
      * people, and the weighted equity reading of how the turns are spread.
+     *
+     * One screen with two very different uses, which is why it also resolves a weekday and the current
+     * user's own places: drawing the rota up is a September afternoon at a computer, and looking it up
+     * ("who is on the patio today?", "when is my turn?") happens all year from a phone. The grid is the
+     * desktop answer; the weekday picked with {@code ?dia=} is the phone one.
      */
     #[Route('', name: 'break_duty_index', methods: ['GET'])]
-    public function index(Request $request, AcademicYearRepository $years, BreakDutyRoster $roster, BreakZoneRepository $zones, UserRepository $users, BreakDutyGapRepository $gaps, BreakRotaPlanner $planner, BreakDutyDemand $demand): Response
+    public function index(Request $request, AcademicYearRepository $years, BreakDutyRoster $roster, BreakZoneRepository $zones, UserRepository $users, BreakDutyGapRepository $gaps, BreakRotaPlanner $planner, BreakDutyDemand $demand, BreakDutyAssignmentRepository $places): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
@@ -63,6 +69,16 @@ final class BreakDutyController extends AbstractController
         $curso = (string) ($request->query->get('curso') ?: SchoolYear::current($today));
         $year = $years->findBySchoolYear($curso);
         $overview = $year instanceof AcademicYear ? $roster->overview($year) : null;
+
+        // El día que se consulta en el móvil, donde la rejilla entera no cabe: la semana no se enseña de
+        // golpe, se pregunta por un día. Por defecto, HOY — quien mira el cuadrante desde el pasillo quiere
+        // saber quién está en el patio ahora, no el lunes. El fin de semana no tiene recreo, así que cae al
+        // lunes en vez de dejar la pantalla vacía.
+        $weekdays = Weekday::schoolWeek();
+        $dia = Weekday::tryFrom($request->query->getInt('dia')) ?? Weekday::from((int) $today->format('N'));
+        if (!\in_array($dia, $weekdays, true)) {
+            $dia = Weekday::MONDAY;
+        }
 
         // La propuesta se pide con ?propuesta=1 y NO se guarda en ningún sitio: el motor es determinista,
         // así que el borrador se reconstruye idéntico en vez de aparcarlo en una tabla o en la sesión.
@@ -76,9 +92,30 @@ final class BreakDutyController extends AbstractController
         // Con propuesta en pantalla, la TABLA muestra la propuesta y no lo guardado: antes solo se veían sus
         // cifras y debajo el cuadrante real, así que en un curso vacío salía todo a 0/2 y no había nada que
         // revisar. Lo guardado sigue estando a un clic: se descarta y vuelve.
+        // La rejilla Y el reparto, los dos: leer uno de la propuesta y el otro de lo guardado hacía que la
+        // misma pantalla se contradijese (31 guardias arriba, 30 en el panel) y que la tabla del reparto
+        // describiera un reparto distinto del que estaba a la vista.
         if (null !== $proposal) {
-            $overview['grid'] = $roster->gridFromProposal($year, $proposal->places);
+            $overview = $roster->overviewFromProposal($year, $proposal->places);
         }
+
+        $activeZones = $zones->findActiveOrdered();
+        $user = $this->getUser();
+
+        // El "+ añadir" de una celda incompleta lleva a la barra de añadir con el día, la zona y el recreo
+        // YA elegidos: son datos que la celda pulsada conoce y quien la pulsa no tiene por qué volver a
+        // teclear. Viaja por la URL en vez de por JavaScript para que el atajo funcione igual sin scripts.
+        $prefill = [
+            'zone' => $request->query->getInt('zona') ?: null,
+            'weekday' => Weekday::tryFrom($request->query->getInt('d'))?->value,
+            'period' => BreakPeriod::tryFrom((string) $request->query->get('recreo'))?->value,
+        ];
+
+        // Montar el cuadrante A MANO, sin pasar por el motor. En un curso sin nada, la rejilla son cincuenta
+        // celdas vacías ofreciendo "+ añadir" y le disputan la pantalla a lo único que hay que hacer
+        // (proponer), así que se pide: es la vía de «empezar en blanco», y basta con haber añadido una plaza
+        // para que la rejilla se quede ya.
+        $blank = $canManage && $request->query->getBoolean('enblanco');
 
         return $this->render('guardia/break_duty_index.html.twig', [
             'courses' => $years->findAllOrdered(),
@@ -86,18 +123,99 @@ final class BreakDutyController extends AbstractController
             'year' => $year,
             'grid' => $overview['grid'] ?? null,
             'equity' => $overview['equity'] ?? null,
-            'zones' => $zones->findActiveOrdered(),
+            'zones' => $activeZones,
             'teachers' => $users->findBy(['active' => true], ['fullName' => 'ASC']),
-            'weekdays' => Weekday::schoolWeek(),
+            'weekdays' => $weekdays,
+            'dia' => $dia,
             'periods' => BreakPeriod::inDayOrder(),
             'todayGaps' => $gaps->findByDate($today),
             'canManage' => $canManage,
             'proposal' => $proposal,
-            'proposalGrid' => null !== $proposal ? $this->proposalGrid($proposal) : null,
             'summary' => $proposal?->summary(),
             'gaps' => $proposal?->gapsByReason() ?? [],
-            'weekly' => $demand->weeklyTotals($zones->findActiveOrdered()),
+            // Lo que falta antes de publicar, hueco a hueco: un contador dice que algo no cuadra, no dónde
+            // ni qué hacer con ello.
+            'todo' => null !== $proposal ? $this->proposalTodo($proposal, $activeZones) : [],
+            'weekly' => $demand->weeklyTotals($activeZones),
+            'prefill' => $prefill,
+            'blank' => $blank,
+            // "Mi recreo este curso": es lo que se viene a mirar desde el móvil, y son dos filas de dato que
+            // ya están leídas. Solo lo GUARDADO — una propuesta en pantalla no es el turno de nadie todavía.
+            'mine' => ($year instanceof AcademicYear && $user instanceof User) ? $places->findByTeacher($year, $user) : [],
         ]);
+    }
+
+    /**
+     * What still stands between a proposal and a rota worth publishing, one row per thing to fix.
+     *
+     * Two kinds of row, because the two have different answers. An unfilled place is a cell nobody could
+     * take, and the fix is either more quota or more people on the rota — so those are grouped by zone and
+     * recreo with their weekdays listed, which is how somebody reads "Pistas is short at the short recreo"
+     * instead of five separate lines. A HALF is a person holding one recreo with no partner: their fix is
+     * never the person, it is the week's arithmetic (the zones' demand), because a week that asks for more
+     * long places than short ones cannot pair them however well anything is distributed.
+     *
+     * @param BreakRotaProposal $proposal the draft
+     * @param list<BreakZone>   $zones    the active zones, to name them
+     *
+     * @return list<array{what: string, detail: string, why: string, fix: string}> the rows, gaps first
+     */
+    private function proposalTodo(BreakRotaProposal $proposal, array $zones): array
+    {
+        $zoneNames = [];
+        foreach ($zones as $zone) {
+            $zoneNames[(int) $zone->getId()] = $zone->getName();
+        }
+
+        $grouped = [];
+        foreach ($proposal->unfilled as $gap) {
+            $key = $gap['zoneId'].':'.$gap['period'].':'.$gap['reason'];
+            $grouped[$key]['zone'] = $zoneNames[$gap['zoneId']] ?? 'Zona archivada';
+            $grouped[$key]['period'] = BreakPeriod::from($gap['period']);
+            $grouped[$key]['reason'] = $gap['reason'];
+            $grouped[$key]['days'][] = mb_strtolower(Weekday::from($gap['weekday'])->label());
+        }
+
+        $rows = [];
+        foreach ($grouped as $gap) {
+            $missing = \count($gap['days']);
+            $rows[] = [
+                'what' => $gap['zone'],
+                'detail' => sprintf('%s · %s', mb_strtolower($gap['period']->label()), implode(', ', $gap['days'])),
+                'why' => sprintf(
+                    '%s sin nadie: %s',
+                    1 === $missing ? '1 plaza' : $missing.' plazas',
+                    BreakRotaProposer::GAP_QUOTA_EXHAUSTED === $gap['reason']
+                        ? 'quien podría ya está en su cupo.'
+                        : 'a ese recreo ya está todo el mundo colocado en otra zona.',
+                ),
+                'fix' => BreakRotaProposer::GAP_QUOTA_EXHAUSTED === $gap['reason'] ? 'quota' : 'people',
+            ];
+        }
+
+        // Qué recreo tiene cada quien, para poder decir cuál le falta. La propuesta lleva las plazas con
+        // ids, así que se cuentan aquí en vez de pedirle otro dato al motor.
+        $held = [];
+        foreach ($proposal->places as $place) {
+            $held[$place['teacherId']][$place['period']] = ($held[$place['teacherId']][$place['period']] ?? 0) + 1;
+        }
+        foreach ($proposal->byTeacher as $row) {
+            if ($row['halves'] < 1) {
+                continue;
+            }
+            $long = $held[$row['teacherId']][BreakPeriod::FIRST->value] ?? 0;
+            $short = $held[$row['teacherId']][BreakPeriod::SECOND->value] ?? 0;
+            $spare = $long > $short ? BreakPeriod::FIRST : BreakPeriod::SECOND;
+            $needs = $long > $short ? BreakPeriod::SECOND : BreakPeriod::FIRST;
+            $rows[] = [
+                'what' => $row['name'],
+                'detail' => sprintf('solo %s', mb_strtolower($spare->label())),
+                'why' => sprintf('Le falta %s para completar la guardia.', mb_strtolower($needs->label())),
+                'fix' => 'demand',
+            ];
+        }
+
+        return $rows;
     }
 
     /**
@@ -207,28 +325,6 @@ final class BreakDutyController extends AbstractController
         ));
 
         return $this->redirectToRoute('break_duty_index', ['curso' => $curso]);
-    }
-
-    /**
-     * A proposal laid out the way the rota grid reads it: recreo → weekday → zone → the people proposed.
-     *
-     * Every cell exists even when empty, so the template can index it without existence checks.
-     *
-     * @param BreakRotaProposal $proposal the draft
-     *
-     * @return array<string, array<int, array<int, list<array{teacherId: int, fixed: bool}>>>> the grid
-     */
-    private function proposalGrid(BreakRotaProposal $proposal): array
-    {
-        $grid = [];
-        foreach ($proposal->places as $place) {
-            $grid[$place['period']][$place['weekday']][$place['zoneId']][] = [
-                'teacherId' => $place['teacherId'],
-                'fixed' => $place['fixed'],
-            ];
-        }
-
-        return $grid;
     }
 
     /**

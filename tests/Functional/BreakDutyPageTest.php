@@ -155,6 +155,126 @@ final class BreakDutyPageTest extends WebTestCase
         self::assertSame('Se ofrece él mismo', $reloaded->getNote());
     }
 
+    public function testThePhoneViewOpensOnTodayAndTakesTheDayFromTheUrl(): void
+    {
+        // En el móvil la rejilla no cabe y se consulta UN día. Por defecto hoy, porque quien mira el
+        // cuadrante desde el pasillo quiere saber quién está en el patio ahora.
+        $this->login(PermissionLevel::READ);
+        $year = $this->currentYear();
+        $zone = $this->zone('Patio');
+        $ana = $this->user('Ana Patio Ruiz', 'ana.patio@centro.test');
+        $luis = $this->user('Luis Lunes Soto', 'luis.lunes@centro.test');
+        $this->duty($year, $ana, $zone, Weekday::MONDAY);
+        $this->duty($year, $luis, $zone, Weekday::FRIDAY);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/recreo?curso='.$year->getSchoolYear().'&dia='.Weekday::FRIDAY->value);
+
+        self::assertResponseIsSuccessful();
+        $day = implode(' ', $crawler->filter('.recreo-phone .recreo-zone')->each(static fn ($node): string => $node->text()));
+        self::assertStringContainsString('Luis Lunes Soto', $day);
+        self::assertStringNotContainsString('Ana Patio Ruiz', $day, 'la consulta es de un día, no de la semana');
+        self::assertSame('page', $crawler->filter('.recreo-day.is-active')->attr('aria-current'));
+        self::assertStringContainsString('Viernes', $crawler->filter('.recreo-day.is-active')->text());
+    }
+
+    public function testAWeekendOrNonsenseDayFallsBackToMondayInsteadOfAnEmptyScreen(): void
+    {
+        $this->login(PermissionLevel::READ);
+        $year = $this->currentYear();
+        $this->zone('Patio');
+        $this->em->flush();
+
+        // Sábado (no tiene recreo) y un valor que no es un día: los dos caen al lunes, que es el primer día
+        // con cuadrante, en vez de dejar la pantalla en blanco o reventar al indexar la rejilla.
+        foreach ([Weekday::SATURDAY->value, 99] as $dia) {
+            $crawler = $this->client->request('GET', '/guardias/recreo?curso='.$year->getSchoolYear().'&dia='.$dia);
+            self::assertResponseIsSuccessful();
+            self::assertStringContainsString('Lunes', $crawler->filter('.recreo-day.is-active')->text(), sprintf('dia=%s debería caer al lunes', $dia));
+        }
+    }
+
+    public function testACourseWithNoRotaOffersTheTwoWaysInAndNoEmptyGrid(): void
+    {
+        // Dos tablas de veinticinco celdas vacías no son un cuadrante: le disputaban la pantalla a lo único
+        // que hay que hacer ahí. La rejilla se pide, con «Empezar en blanco», para montarlo a mano.
+        $this->login();
+        $year = $this->currentYear();
+        $this->zone('Patio');
+        $this->em->flush();
+
+        $vacio = $this->client->request('GET', '/guardias/recreo?curso='.$year->getSchoolYear());
+        self::assertResponseIsSuccessful();
+        self::assertCount(0, $vacio->filter('table.recreo-grid'), 'sin cuadrante no se dibuja la rejilla');
+        self::assertCount(0, $vacio->filter('form[action="/guardias/recreo/asignar"]'));
+        self::assertStringContainsString('Todavía no hay cuadrante', $vacio->filter('.recreo-start__title')->text());
+
+        $enBlanco = $this->client->request('GET', '/guardias/recreo?curso='.$year->getSchoolYear().'&enblanco=1');
+        self::assertCount(2, $enBlanco->filter('table.recreo-grid'), 'una rejilla por recreo, ya pedidas');
+        self::assertCount(1, $enBlanco->filter('form[action="/guardias/recreo/asignar"]'));
+    }
+
+    public function testReadAccessGetsNoWayToChangeTheRota(): void
+    {
+        // Quien solo consulta ve el cuadrante entero, pero ni el panel de quitar ni la barra de añadir: el
+        // controlador rechazaría la acción, y ofrecerla sería mandar a alguien contra un 403.
+        $this->login(PermissionLevel::READ);
+        $year = $this->currentYear();
+        $duty = $this->duty($year, $this->user('Ana Patio Ruiz', 'ana.patio@centro.test'), $this->zone('Patio'));
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/recreo?curso='.$year->getSchoolYear());
+
+        self::assertStringContainsString('Ana Patio Ruiz', $crawler->filter('table.recreo-grid')->first()->text());
+        self::assertCount(0, $crawler->filter('form[action="/guardias/recreo/'.$duty->getId().'/quitar"]'));
+        self::assertCount(0, $crawler->filter('form[action="/guardias/recreo/asignar"]'));
+        self::assertCount(0, $crawler->filter('form[action="/guardias/recreo/anunciar"]'));
+    }
+
+    public function testTheAddBarComesPreFilledFromTheCellThatWasClicked(): void
+    {
+        // El "+ añadir" de una celda incompleta trae día, zona y recreo resueltos: son datos que la celda
+        // conoce y quien la pulsa no tiene por qué volver a teclear.
+        $this->login();
+        $year = $this->currentYear();
+        $patio = $this->zone('Patio');
+        $biblioteca = $this->zone('Biblioteca');
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', sprintf(
+            '/guardias/recreo?curso=%s&zona=%d&d=%d&recreo=%s',
+            $year->getSchoolYear(),
+            $biblioteca->getId(),
+            Weekday::THURSDAY->value,
+            BreakPeriod::SECOND->value,
+        ));
+
+        self::assertResponseIsSuccessful();
+        $form = $crawler->filter('form[action="/guardias/recreo/asignar"]')->form();
+        self::assertSame((string) $biblioteca->getId(), $form['zone']->getValue());
+        self::assertSame((string) Weekday::THURSDAY->value, $form['weekday']->getValue());
+        self::assertSame(BreakPeriod::SECOND->value, $form['period']->getValue());
+        self::assertNotSame((string) $patio->getId(), $form['zone']->getValue());
+    }
+
+    public function testAProposalOnScreenSaysSoAndDoesNotOfferToAnnounceWhatIsStored(): void
+    {
+        // Anunciar mientras se mira una propuesta anunciaría lo GUARDADO, que no es lo que está en pantalla.
+        $this->login();
+        $year = $this->currentYear();
+        $this->duty($year, $this->user('Ana Patio Ruiz', 'ana.patio@centro.test'), $this->zone('Patio'));
+        $this->em->flush();
+
+        $guardado = $this->client->request('GET', '/guardias/recreo?curso='.$year->getSchoolYear());
+        self::assertStringContainsString('Borrador', $guardado->filter('.recreo-state')->text());
+        self::assertGreaterThan(0, $guardado->filter('form[action="/guardias/recreo/anunciar"]')->count());
+
+        $propuesta = $this->client->request('GET', '/guardias/recreo?curso='.$year->getSchoolYear().'&propuesta=1');
+        self::assertStringContainsString('Propuesta', $propuesta->filter('.recreo-state')->text());
+        self::assertCount(0, $propuesta->filter('form[action="/guardias/recreo/anunciar"]'), 'no se anuncia lo que no se está mirando');
+        self::assertCount(0, $propuesta->filter('.recreo-anchor .recreo-figure'), 'las cifras de la propuesta las da su panel, y solo él');
+    }
+
     public function testDuplicateZoneNameIsRefusedWithAnExplanation(): void
     {
         $this->login();
@@ -298,22 +418,24 @@ final class BreakDutyPageTest extends WebTestCase
     }
 
     /**
-     * Persists one Monday rota line.
+     * Persists one rota line, on Monday's long recreo unless told otherwise.
      *
      * @param AcademicYear $year    the course
      * @param User         $teacher the teacher on duty
      * @param BreakZone    $zone    the zone to watch
+     * @param Weekday      $weekday the weekday, Monday by default
+     * @param BreakPeriod  $period  which recreo, the long one by default
      *
      * @return BreakDutyAssignment the persisted duty
      */
-    private function duty(AcademicYear $year, User $teacher, BreakZone $zone): BreakDutyAssignment
+    private function duty(AcademicYear $year, User $teacher, BreakZone $zone, Weekday $weekday = Weekday::MONDAY, BreakPeriod $period = BreakPeriod::FIRST): BreakDutyAssignment
     {
         $duty = (new BreakDutyAssignment())
             ->setAcademicYear($year)
             ->setTeacher($teacher)
-            ->setWeekday(Weekday::MONDAY)
+            ->setWeekday($weekday)
             ->setZone($zone)
-            ->setPeriod(BreakPeriod::FIRST);
+            ->setPeriod($period);
         $this->em->persist($duty);
 
         return $duty;
