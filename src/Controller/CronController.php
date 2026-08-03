@@ -43,9 +43,9 @@ final class CronController extends AbstractController
     {
         $this->denyUnlessCronToken($request);
 
-        // Reference DAY in the centre's timezone: this sweep matches whole days, so anchoring it to
-        // Madrid keeps "today" from drifting to UTC near midnight.
-        $result = $sweep->run(new \DateTimeImmutable('now', new \DateTimeZone('Europe/Madrid')));
+        // Reference DAY in the centre's timezone, which is now PHP's default one ({@see \App\Kernel}):
+        // this sweep matches whole days, and that anchoring keeps "today" from drifting near midnight.
+        $result = $sweep->run(new \DateTimeImmutable('now'));
 
         return new Response(\sprintf('%d avisos enviados, %d caducados retirados.', $result['sent'], $result['purged']));
     }

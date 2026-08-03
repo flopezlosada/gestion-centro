@@ -51,6 +51,12 @@ final class RoleFixtures extends AbstractGoldenFixture
             // Espacios: the equipo directivo is who decides where a group goes and who completes the
             // room catalogue (size, type), so it is the one role that writes here by default.
             ->setLevel(Area::ESPACIOS, PermissionLevel::WRITE)
+            // Incidencias TIC: bus factor. El rol TIC ya llega por ser superusuario, así que esto es para
+            // que cerrar una avería no dependa de que esté esa única persona. Tiene que estar aquí Y en
+            // `Version20260803180000`: la migración arregla las bases ya poblada (producción), y esta
+            // fixture es la que ve un entorno nuevo — si solo estuviera en una, dev y prod darían
+            // permisos distintos y el 403 aparecería en el sitio donde nadie lo busca.
+            ->setLevel(Area::TIC, PermissionLevel::WRITE)
             ->setHierarchyLevel(40)
             ->setCanConvene(true);
         $catalog = [

@@ -6,6 +6,7 @@ namespace App\Tests\Functional;
 
 use App\Entity\Role;
 use App\Entity\Task;
+use App\Entity\TaskResponsibility;
 use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
@@ -122,7 +123,9 @@ final class TaskScopeTest extends WebTestCase
 
         $year = SchoolYear::current(new \DateTimeImmutable());
         $title = 'Acta de la CCP';
-        $task = (new Task($title, $year, new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE))->setUnit($unit)->setAssignedRole($role);
+        $task = (new Task($title, $year, new \DateTimeImmutable('2026-06-30'), TaskType::SIMPLE))
+            ->setUnit($unit)
+            ->setResponsibility(new TaskResponsibility($role));
         $this->em->persist($task);
         $this->em->flush();
 

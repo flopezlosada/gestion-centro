@@ -38,11 +38,18 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * El CSV se pasa como argumento a propósito: NO está en el repositorio (lleva el trabajo interno de
  * dirección) y hay que subirlo al servidor. Con `--dry-run` no escribe nada y enseña lo que haría.
  *
- * Aviso que el comando da en voz alta y conviene entender: el catálogo dice CUÁNDO en texto libre, y
- * solo «inicio de curso», «fin de curso» y «cada evaluación» se pueden anclar al calendario. El resto
- * recibe una fecha REPARTIDA por el año que no la dice el centro, y de las fechas salen recordatorios
- * por correo y por móvil. El resumen separa unas de otras para que dirección repase las inventadas
+ * Aviso que el comando da en voz alta y conviene entender: el catálogo dice CUÁNDO en texto libre, y no
+ * todas las formas se pueden anclar al calendario del curso. Lo que no se puede recibe una fecha
+ * REPARTIDA por el año que no la dice el centro, y de las fechas salen recordatorios por correo y por
+ * móvil. El resumen separa unas de otras para que dirección repase las inventadas
  * → ver {@see CentreTaskCatalog}.
+ *
+ * **Deuda, ahora ya desbloqueada:** lo correcto sería sembrar {@see \App\Entity\TaskTemplate} y dejar
+ * que la generación anual ponga las fechas — el CSV es literalmente un catálogo de tareas «Recurrente»,
+ * y así el centro no volvería a importar nada el curso que viene. Cuando esto se escribió no se podía,
+ * porque `Task::fromTemplate()` rellenaba el campo legacy `assignedRole` y dejaba las tareas generadas a
+ * medias; el refactor de responsabilidad ya cerró ese agujero y hoy escribe `TaskResponsibility`. O sea
+ * que el impedimento desapareció y esto es un cambio pendiente, no un imposible.
  */
 #[AsCommand(
     name: 'app:import-centre-tasks',
@@ -162,11 +169,12 @@ final class ImportCentreTasksCommand extends Command
     private function resolveYear(InputInterface $input, SymfonyStyle $io): ?AcademicYear
     {
         $requested = $input->getOption('curso');
-        // Zona del centro, como el resto de los barridos: cerca del 1 de septiembre "en qué curso
-        // estamos" cambia de respuesta según la zona horaria del proceso.
+        // «Ahora» a secas: la zona del centro ya es la de PHP desde el arranque ({@see \App\Kernel}), y
+        // aquí importa de verdad — cerca del 1 de septiembre «en qué curso estamos» cambia de respuesta
+        // según la zona del proceso.
         $schoolYear = null !== $requested
             ? (string) $requested
-            : SchoolYear::current(new \DateTimeImmutable('now', new \DateTimeZone('Europe/Madrid')));
+            : SchoolYear::current(new \DateTimeImmutable('now'));
 
         $year = $this->years->findBySchoolYear($schoolYear);
         if (null === $year) {

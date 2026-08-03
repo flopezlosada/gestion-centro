@@ -31,9 +31,11 @@ final class SendTaskRemindersCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        // Fix the reference day to the centre's timezone, so "today" does not drift to UTC near
-        // midnight regardless of the host's default timezone.
-        $result = $this->sweep->run(new \DateTimeImmutable('now', new \DateTimeZone('Europe/Madrid')));
+        // «Ahora» a secas, sin repetir la zona: el arranque ya ancla la del centro como zona por defecto
+        // de PHP ({@see \App\Kernel}), y {@see \App\Util\AppTime} es explícito en que esparcir un
+        // 'Europe/Madrid' a mano es justo lo que hay que dejar de hacer — un valor anclado en Madrid
+        // comparado contra una columna hidratada en otra zona sale desplazado por el offset.
+        $result = $this->sweep->run(new \DateTimeImmutable('now'));
 
         (new SymfonyStyle($input, $output))->success(sprintf(
             '%d avisos enviados. %d avisos caducados retirados (leídos a los %d días, sin abrir a los %d).',
