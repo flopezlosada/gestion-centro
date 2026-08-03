@@ -126,7 +126,9 @@ final class BreakDutyRosterTest extends KernelTestCase
         $totals = $this->roster->grid($this->year)['periodTotals'];
 
         self::assertSame(1, $totals[BreakPeriod::FIRST->value]['extra'], 'la biblioteca pide 1 y hay 2');
-        self::assertSame(13, $totals[BreakPeriod::FIRST->value]['missing'], 'lo que sobra no tapa lo que falta');
+        // 15 plazas menos la única que se cubre: la segunda persona de la biblioteca NO descuenta de lo que
+        // falta en otra celda. Lo que sobra y lo que falta se cuentan por separado.
+        self::assertSame(14, $totals[BreakPeriod::FIRST->value]['missing'], 'lo que sobra no tapa lo que falta');
     }
 
     public function testEquityAddsUpTheHeadlineFiguresOfTheWholeRota(): void

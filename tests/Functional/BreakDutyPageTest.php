@@ -68,7 +68,7 @@ final class BreakDutyPageTest extends WebTestCase
         $teacher = $this->user('Ana Patio Ruiz', 'ana.patio@centro.test');
         $this->em->flush();
 
-        $this->post('/guardias/recreo', '/guardias/recreo/asignar', [
+        $this->post('/guardias/recreo?enblanco=1', '/guardias/recreo/asignar', [
             'curso' => $year->getSchoolYear(),
             'teacher' => (string) $teacher->getId(),
             'zone' => (string) $zone->getId(),
@@ -99,8 +99,8 @@ final class BreakDutyPageTest extends WebTestCase
             'weekday' => (string) Weekday::MONDAY->value,
             'period' => BreakPeriod::FIRST->value,
         ];
-        $this->post('/guardias/recreo', '/guardias/recreo/asignar', $payload);
-        $this->post('/guardias/recreo', '/guardias/recreo/asignar', ['zone' => (string) $biblioteca->getId()] + $payload);
+        $this->post('/guardias/recreo?enblanco=1', '/guardias/recreo/asignar', $payload);
+        $this->post('/guardias/recreo?enblanco=1', '/guardias/recreo/asignar', ['zone' => (string) $biblioteca->getId()] + $payload);
 
         // Nobody can be in two places at once: the clash is a message, not a crash. The clash is now the
         // RECREO, not the day — the same person watching two zones on one day is fine as long as they are
@@ -112,7 +112,7 @@ final class BreakDutyPageTest extends WebTestCase
         self::assertStringContainsString('recreo grande', $crawler->filter('.flash.error')->text(), 'the message names which recreo is taken');
 
         // And the other recreo of that same day is accepted, which the old model forbade outright.
-        $this->post('/guardias/recreo', '/guardias/recreo/asignar', ['zone' => (string) $biblioteca->getId(), 'period' => BreakPeriod::SECOND->value] + $payload);
+        $this->post('/guardias/recreo?enblanco=1', '/guardias/recreo/asignar', ['zone' => (string) $biblioteca->getId(), 'period' => BreakPeriod::SECOND->value] + $payload);
         self::assertCount(2, $this->em->getRepository(BreakDutyAssignment::class)->findAll());
     }
 
@@ -182,7 +182,8 @@ final class BreakDutyPageTest extends WebTestCase
     {
         $this->login(PermissionLevel::READ);
         $year = $this->currentYear();
-        $this->zone('Patio');
+        // Con una plaza, porque los chips de día son de la consulta y esa solo existe con cuadrante.
+        $this->duty($year, $this->user('Ana Patio Ruiz', 'ana.patio@centro.test'), $this->zone('Patio'));
         $this->em->flush();
 
         // Sábado (no tiene recreo) y un valor que no es un día: los dos caen al lunes, que es el primer día
@@ -241,8 +242,10 @@ final class BreakDutyPageTest extends WebTestCase
         $biblioteca = $this->zone('Biblioteca');
         $this->em->flush();
 
+        // Con `enblanco`, que es la vía de montarlo a mano en un curso todavía vacío: es exactamente donde
+        // más falta hace no volver a teclear los tres datos que la celda ya conoce.
         $crawler = $this->client->request('GET', sprintf(
-            '/guardias/recreo?curso=%s&zona=%d&d=%d&recreo=%s',
+            '/guardias/recreo?curso=%s&enblanco=1&zona=%d&d=%d&recreo=%s',
             $year->getSchoolYear(),
             $biblioteca->getId(),
             Weekday::THURSDAY->value,
