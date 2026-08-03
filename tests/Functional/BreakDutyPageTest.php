@@ -15,6 +15,7 @@ use App\Enum\BreakPeriod;
 use App\Enum\PermissionLevel;
 use App\Enum\Weekday;
 use App\Util\SchoolYear;
+use App\Tests\Support\OwnsTheBreakZoneCatalogue;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -28,6 +29,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class BreakDutyPageTest extends WebTestCase
 {
+    use OwnsTheBreakZoneCatalogue;
+
     private KernelBrowser $client;
     private EntityManagerInterface $em;
 
@@ -35,6 +38,9 @@ final class BreakDutyPageTest extends WebTestCase
     {
         $this->client = static::createClient();
         $this->em = self::getContainer()->get(EntityManagerInterface::class);
+        // Crear "Patio" chocaría con el UNIQUE del nombre, y los recuentos de zonas contarían las
+        // sembradas: este escenario es dueño del catálogo.
+        $this->emptyTheBreakZoneCatalogue($this->em);
     }
 
     public function testAPlainTeacherCannotReachTheRota(): void

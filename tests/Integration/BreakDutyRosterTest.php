@@ -13,6 +13,7 @@ use App\Enum\BreakPeriod;
 use App\Enum\TimeSlotKind;
 use App\Enum\Weekday;
 use App\Guardia\BreakDutyRoster;
+use App\Tests\Support\OwnsTheBreakZoneCatalogue;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
@@ -27,6 +28,8 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  */
 final class BreakDutyRosterTest extends KernelTestCase
 {
+    use OwnsTheBreakZoneCatalogue;
+
     private EntityManagerInterface $em;
     private BreakDutyRoster $roster;
     private AcademicYear $year;
@@ -38,6 +41,9 @@ final class BreakDutyRosterTest extends KernelTestCase
         self::bootKernel();
         $this->em = self::getContainer()->get(EntityManagerInterface::class);
         $this->roster = self::getContainer()->get(BreakDutyRoster::class);
+        // La equidad suma los PESOS de las zonas, así que una sembrada de más falsea la media, la mediana
+        // y el Gini: este escenario es dueño del catálogo.
+        $this->emptyTheBreakZoneCatalogue($this->em);
 
         $this->year = (new AcademicYear())
             ->setSchoolYear('2025-2026')

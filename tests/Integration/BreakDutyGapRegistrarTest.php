@@ -17,6 +17,7 @@ use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use App\Guardia\AbsenceRegistrar;
 use App\Guardia\BreakDutyGapRegistrar;
+use App\Tests\Support\OwnsTheBreakZoneCatalogue;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
@@ -30,6 +31,8 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  */
 final class BreakDutyGapRegistrarTest extends KernelTestCase
 {
+    use OwnsTheBreakZoneCatalogue;
+
     private EntityManagerInterface $em;
     private BreakDutyGapRegistrar $registrar;
     private AbsenceRegistrar $absences;
@@ -47,6 +50,7 @@ final class BreakDutyGapRegistrarTest extends KernelTestCase
         $this->em = self::getContainer()->get(EntityManagerInterface::class);
         $this->registrar = self::getContainer()->get(BreakDutyGapRegistrar::class);
         $this->absences = self::getContainer()->get(AbsenceRegistrar::class);
+        $this->emptyTheBreakZoneCatalogue($this->em);
 
         $this->year = (new AcademicYear())
             ->setSchoolYear('2025-2026')
