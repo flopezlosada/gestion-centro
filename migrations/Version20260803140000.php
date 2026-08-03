@@ -43,7 +43,13 @@ final class Version20260803140000 extends AbstractMigration
         // que varias tareas acabarían COMPARTIENDO una responsabilidad que el modelo declara 1:1
         // (OneToOne con orphanRemoval), y borrar una tarea dejaría a las otras sin responsable. Con la
         // columna, cada fila sabe a quién pertenece y el enganche es exacto.
-        $this->addSql('ALTER TABLE task_responsibility ADD source_task_id INT DEFAULT NULL');
+        //
+        // `IF NOT EXISTS` porque el DDL en MariaDB hace COMMIT implícito y se sale de la transacción
+        // que envuelve la migración: si el INSERT de abajo fallara con datos que el clon de pruebas no
+        // tenía, la columna se quedaría creada, la migración figuraría como NO ejecutada, y el
+        // reintento moriría en este mismo ALTER por columna duplicada — arreglable solo a mano en la
+        // base de producción. Con la guarda, el reintento sigue adelante. Comprobado en MariaDB 10.11.
+        $this->addSql('ALTER TABLE task_responsibility ADD COLUMN IF NOT EXISTS source_task_id INT DEFAULT NULL');
 
         // Una responsabilidad por cada tarea que solo tenía el rol suelto. El departamento sale de la
         // propia tarea: para un rol de centro es NULL, y para uno de departamento es el suyo.
@@ -57,7 +63,7 @@ final class Version20260803140000 extends AbstractMigration
             SET t.responsibility_id = r.id
             WHERE t.responsibility_id IS NULL');
 
-        $this->addSql('ALTER TABLE task_responsibility DROP source_task_id');
+        $this->addSql('ALTER TABLE task_responsibility DROP COLUMN IF EXISTS source_task_id');
 
         $this->addSql('ALTER TABLE task DROP FOREIGN KEY FK_527EDB25DC9B9A23');
         $this->addSql('DROP INDEX IDX_527EDB25DC9B9A23 ON task');

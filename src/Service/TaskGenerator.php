@@ -12,6 +12,7 @@ use App\Entity\User;
 use App\Repository\DepartmentRepository;
 use App\Repository\TaskRepository;
 use App\Repository\TaskTemplateRepository;
+use App\Support\TaskGenerationKey;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
@@ -47,6 +48,9 @@ final class TaskGenerator
     {
         $schoolYear = $year->getSchoolYear();
         $existing = $this->tasks->generatedKeysFor($schoolYear);
+        // Read ONCE for the whole run, not once per template: the list is the same for all of them,
+        // and the repository does not cache, so asking inside the loop was the same query five times.
+        $allDepartments = $this->departments->findActiveDepartments();
 
         $created = 0;
         $skippedExisting = 0;
@@ -64,13 +68,13 @@ final class TaskGenerator
             // and validated on its own — the same reason the task form creates one task per person
             // instead of one shared row. A single task here would be held by every jefe de
             // departamento in the centre at once, and the first one to deliver would speak for all.
-            $departments = $this->scopesFor($template);
+            $departments = $this->scopesFor($template, $allDepartments);
 
             foreach ($rule->resolve($year) as $date) {
                 $dueDate = $this->calendar->onOrBeforeLectiveDay($date);
 
                 foreach ($departments as $department) {
-                    $key = self::keyFor($template->getId(), $dueDate, $department?->getId());
+                    $key = TaskGenerationKey::for($template->getId(), $dueDate, $department?->getId());
                     if (isset($existing[$key])) {
                         ++$skippedExisting;
                         continue;
@@ -107,36 +111,19 @@ final class TaskGenerator
      *
      * A template with no responsible role at all is centre-wide too: there is no function to spread.
      *
-     * @param TaskTemplate $template the template being generated
+     * @param TaskTemplate     $template    the template being generated
+     * @param list<Department> $departments the centre's active departments, read once for the whole run
      *
      * @return list<Department|null> the scopes to generate one task for each
      */
-    private function scopesFor(TaskTemplate $template): array
+    private function scopesFor(TaskTemplate $template, array $departments): array
     {
         if (true !== $template->getResponsibleRole()?->isPerDepartment()) {
             return [null];
         }
 
-        $departments = $this->departments->findActiveDepartments();
-
         // A centre with no departments configured yet still gets its task, rather than silently
         // generating nothing at all.
         return [] !== $departments ? $departments : [null];
-    }
-
-    /**
-     * The idempotency key of one generated instance. The department is part of it because the same
-     * template and date now legitimately produce twenty-one tasks: keyed by template and date alone,
-     * a re-run would see the first department's task and skip the other twenty.
-     *
-     * @param int|null                $templateId   the template's id
-     * @param \DateTimeImmutable      $dueDate      the resolved deadline
-     * @param int|null                $departmentId the department's id, or null for centre-wide
-     *
-     * @return string the lookup key
-     */
-    public static function keyFor(?int $templateId, \DateTimeImmutable $dueDate, ?int $departmentId): string
-    {
-        return $templateId.'|'.$dueDate->format('Y-m-d').'|'.$departmentId;
     }
 }
