@@ -72,7 +72,7 @@ enum GuardiaDutyBand: string
     {
         return match ($this) {
             self::GUARDIA => null,
-            self::COLLABORATOR => 'Colaborador: solo entra si no llegan los profesores de guardia',
+            self::COLLABORATOR => 'Colaborador: solo entra si no llega el profesorado de guardia',
             self::SUPPORT => 'Apoyo puntual dado de alta a mano para este día',
         };
     }

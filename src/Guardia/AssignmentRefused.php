@@ -21,9 +21,9 @@ final class AssignmentRefused extends \RuntimeException
     public static function alreadyCovered(GuardiaCover $cover): self
     {
         return new self(sprintf(
-            '%s ya está cubierta por %s. Para cambiarlo usa "Modificar", que te pedirá explicar el cambio y avisará a los dos profesores.',
+            '%s ya está cubierta por %s. Para cambiarlo usa "Modificar", que te pedirá explicar el cambio y avisará a las dos personas.',
             $cover->getGroupName() ?? 'Esta ausencia',
-            $cover->getAssignedGuardia()?->getFullName() ?? 'otro profesor',
+            $cover->getAssignedGuardia()?->getFullName() ?? 'otra persona',
         ));
     }
 

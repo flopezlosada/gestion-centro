@@ -6,6 +6,7 @@ namespace App\Controller;
 
 use App\Service\DailyNotificationSweep;
 use App\Service\EventReminderNotifier;
+use App\Service\GuardiaDutyReminder;
 use App\Service\GuardiaRaicesReminder;
 use App\Service\MeetingReminderNotifier;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -51,9 +52,10 @@ final class CronController extends AbstractController
     }
 
     /**
-     * Every few minutes: the three sweeps that carry a minute-level antelación — push reminders for
-     * personal agenda events about to start, the "apunta las ausencias en RAICES" reminder for the guardias
-     * being covered right now, and the reminder for a meeting about to begin.
+     * Every few minutes: the sweeps that carry a minute-level antelación — push reminders for personal
+     * agenda events about to start, the "apunta las ausencias en RAICES" reminder for the guardias being
+     * covered right now, the double guardia reminder (the evening before and that same morning) and the
+     * reminder for a meeting about to begin.
      *
      * They share ONE endpoint on purpose. All of them want the same cadence, and splitting them would make
      * each new one depend on somebody remembering to add another entry to the host's cron table — a silent
@@ -65,7 +67,7 @@ final class CronController extends AbstractController
      * and retried five minutes later. Better all fail loudly together than one fail quietly alone.
      */
     #[Route('/cron/event-reminders', name: 'cron_event_reminders', methods: ['GET'])]
-    public function eventReminders(Request $request, EventReminderNotifier $notifier, GuardiaRaicesReminder $raices, MeetingReminderNotifier $meetings): Response
+    public function eventReminders(Request $request, EventReminderNotifier $notifier, GuardiaRaicesReminder $raices, GuardiaDutyReminder $duties, MeetingReminderNotifier $meetings): Response
     {
         $this->denyUnlessCronToken($request);
 
@@ -74,9 +76,10 @@ final class CronController extends AbstractController
         $now = new \DateTimeImmutable('now');
         $events = $notifier->sendDue($now);
         $guardias = $raices->sendDue($now);
+        $dutyCount = $duties->sendDue($now);
         $meetingCount = $meetings->sendDue($now);
 
-        return new Response(\sprintf('%d avisos de agenda, %d de RAICES y %d de reuniones enviados.', $events, $guardias, $meetingCount));
+        return new Response(\sprintf('%d avisos de agenda, %d de RAICES, %d recordatorios de guardia y %d de reuniones enviados.', $events, $guardias, $dutyCount, $meetingCount));
     }
 
     /**

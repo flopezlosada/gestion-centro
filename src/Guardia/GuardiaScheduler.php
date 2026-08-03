@@ -15,6 +15,7 @@ use App\Repository\AbsenceRepository;
 use App\Repository\GuardiaCoverRepository;
 use App\Repository\GuardiaSupportRepository;
 use App\Repository\ScheduleEntryRepository;
+use App\Repository\SpacePlanAssignmentRepository;
 use App\Service\GuardiaAssignmentNotifier;
 use Doctrine\ORM\EntityManagerInterface;
 
@@ -23,11 +24,17 @@ use Doctrine\ORM\EntityManagerInterface;
  * cover balance (assigned covers with no incident) for a date and period, and fills the
  * still-unassigned parte lines.
  *
- * One rule it enforces on top of the pure ordering: a teacher who is themselves absent that period is
- * dropped from the pool — that is not a preference, it is impossible. Everyone else is offered to the
- * assigner along with how many groups they are ALREADY covering that period, and the assigner decides:
- * while there are enough people, nobody is double-booked; when the absences outnumber the guardia
- * teachers, somebody has to mind two groups and it goes to whoever carries least.
+ * Two rules it enforces on top of the pure ordering, and both for the same reason — they are not
+ * preferences, they are impossibilities:
+ *  - a teacher who is themselves absent that period is dropped from the pool;
+ *  - so is a teacher who is IN FRONT OF something an approved {@see \App\Entity\SpacePlan} puts them at that
+ *    very period: accompanying the 2º de Bachillerato exams, running a workshop of the cultural days. They
+ *    are in the building, which is exactly why the timetable and the absences both say they are free, and
+ *    they are the one group of people who cannot possibly walk into a classroom.
+ *
+ * Everyone else is offered to the assigner along with how many groups they are ALREADY covering that period,
+ * and the assigner decides: while there are enough people, nobody is double-booked; when the absences
+ * outnumber the guardia teachers, somebody has to mind two groups and it goes to whoever carries least.
  */
 final class GuardiaScheduler
 {
@@ -36,6 +43,7 @@ final class GuardiaScheduler
         private readonly GuardiaCoverRepository $covers,
         private readonly AbsenceRepository $absences,
         private readonly GuardiaSupportRepository $support,
+        private readonly SpacePlanAssignmentRepository $activities,
         private readonly GuardiaAssigner $assigner,
         private readonly EntityManagerInterface $em,
         private readonly GuardiaAssignmentNotifier $notifier,
@@ -168,7 +176,12 @@ final class GuardiaScheduler
     private function candidates(AcademicYear $year, \DateTimeImmutable $date, int $slotIndex, array $hereLoad): array
     {
         $weekday = Weekday::from((int) $date->format('N'));
-        $absentIds = $this->absences->absentTeacherIdsAt($date, $slotIndex);
+        // Away, or in front of an activity of an approved plan (accompanying an exam, running a workshop):
+        // either way they cannot cover a group, so they never reach the assigner.
+        $unavailableIds = [
+            ...$this->absences->absentTeacherIdsAt($date, $slotIndex),
+            ...array_keys($this->activities->supervisedActivitiesAt($date, $slotIndex)),
+        ];
         $slotLoad = $this->covers->loadBySlot($slotIndex);
         $totalLoad = $this->covers->totalLoad();
 
@@ -190,7 +203,7 @@ final class GuardiaScheduler
 
         $candidates = [];
         foreach ($bands as $teacherId => [$teacher, $band]) {
-            if (0 === $teacherId || \in_array($teacherId, $absentIds, true)) {
+            if (0 === $teacherId || \in_array($teacherId, $unavailableIds, true)) {
                 continue;
             }
             $candidates[] = new GuardiaCandidate(

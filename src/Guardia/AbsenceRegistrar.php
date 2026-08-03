@@ -15,6 +15,7 @@ use App\Repository\ScheduleEntryRepository;
 use App\Service\GuardiaAssignmentNotifier;
 use App\Space\EffectiveLesson;
 use App\Space\EffectiveTimetable;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
@@ -72,6 +73,18 @@ final class AbsenceRegistrar
      *                                   skipped-free both when the timetable leaves it free and when an
      *                                   approved plan has taken the lesson away, because either way there
      *                                   is nothing to cover
+     *
+     * @throws UniqueConstraintViolationException when somebody else registers the same (teacher, day), the
+     *                                           same period of it, or the same unattended recreo, between
+     *                                           the read and the write. "¿Existe ya?" y "créalo" no pueden
+     *                                           ser atómicos desde PHP, así que la última palabra la tiene
+     *                                           el UNIQUE de la tabla. NOTHING is written when it happens:
+     *                                           every insert this method makes rides in ONE flush, which is
+     *                                           the only one that can collide, and it either lands whole or
+     *                                           not at all. Doctrine CLOSES the entity manager, so it cannot
+     *                                           be retried in place: the caller has to turn it into "vuelve
+     *                                           a enviarlo" — see
+     *                                           {@see \App\Controller\GuardiaController::createAbsence()}
      */
     public function register(AcademicYear $year, User $teacher, \DateTimeImmutable $date, ?array $slotIndexes, ?string $reason, array $taskBySlot = [], bool $missesBreakDuty = false): AbsenceRegistrationResult
     {
@@ -144,6 +157,15 @@ final class AbsenceRegistrar
         if ((null !== $reason && '' !== trim($reason)) && ([] !== $spanned || !$absenceIsNew)) {
             $absence->setReason($reason);
         }
+
+        // The unattended recreos join THIS flush, before it happens, and are alerted after. They are a
+        // separate consequence of the absence, but they cannot be a separate flush: {@see BreakDutyGap}
+        // carries a UNIQUE on (duty, day), so two people registering the same absence at once can collide on
+        // it — and a collision in a LATER flush would leave the absence and its covers already committed
+        // while the caller told the user "nothing was written, send it again" and deleted the task documents
+        // those very covers point at. One flush, one atomic boundary: every collision now aborts everything.
+        $breaks = $missesBreakDuty ? $this->breakGaps->record($year, $teacher, $date) : ['gaps' => [], 'fresh' => []];
+
         $this->em->flush();
 
         // Now that the absence is on record, take back the guardias this teacher was due to cover today
@@ -160,12 +182,12 @@ final class AbsenceRegistrar
             $this->scheduler->autoAssign($year, $date, $slotIndex);
         }
 
-        // The recreo is a separate consequence of the same absence: it is never re-covered, only recorded
-        // and alerted. It stands on its own — a teacher whose day holds no lesson at all (so no cover was
-        // created) still leaves their zone unwatched.
-        $breakGaps = $missesBreakDuty ? $this->breakGaps->register($year, $teacher, $date) : [];
+        // The recreo is never re-covered, only recorded and alerted, and the alert goes out once the row that
+        // makes it true is committed. It stands on its own — a teacher whose day holds no lesson at all (so
+        // no cover was created) still leaves their zone unwatched.
+        $this->breakGaps->announce($breaks['fresh']);
 
-        return new AbsenceRegistrationResult($createdSlots, $skippedFree, $skippedExisting, $breakGaps, $relievedSlots);
+        return new AbsenceRegistrationResult($createdSlots, $skippedFree, $skippedExisting, $breaks['gaps'], $relievedSlots);
     }
 
     /**

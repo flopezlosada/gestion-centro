@@ -447,6 +447,49 @@ final class GuardiaDeficitControllerTest extends WebTestCase
         self::assertCount(0, $this->em->getRepository(GuardiaGrouping::class)->findAll());
     }
 
+    /**
+     * A class already sitting in a grouping cannot be dragged into a second one. This is the visible half
+     * of the race the write lock closes: the losing coordinator's form was rendered before the winner's
+     * grouping existed, so it still offers that class — and grouping it AGAIN into a different room used
+     * to succeed (no UNIQUE was broken, the rooms differ), leaving the winner with a success message for a
+     * room nobody would be in. Now the class is not among the lines the transaction locks, so there is
+     * nothing to group and the screen says exactly that.
+     */
+    public function testGroupingRefusesAClassAlreadyGroupedElsewhere(): void
+    {
+        $this->login();
+        $this->room('BIBL');
+        $this->room('A11');
+        $already = (new GuardiaGrouping())
+            ->setDate(new \DateTimeImmutable(self::MONDAY))
+            ->setSlotIndex(0)
+            ->setRoomName('A11');
+        $this->em->persist($already);
+        $taken = $this->cover('1ºA', $this->user('Falta Uno', 'f1@centro.test'))->setGrouping($already);
+        $free = $this->cover('1ºB', $this->user('Falta Dos', 'f2@centro.test'));
+        // Una tercera sin agrupar, para que la pantalla llegue a pintar el formulario: con una sola clase
+        // libre dice «hacen falta al menos dos» y no hay nada que enviar (grouping_new.html.twig:49).
+        $this->cover('1ºC', $this->user('Falta Tres', 'f3@centro.test'));
+        $this->em->flush();
+        [$takenId, $alreadyId] = [(int) $taken->getId(), (int) $already->getId()];
+
+        $crawler = $this->client->request('GET', '/guardias/agrupar?date='.self::MONDAY.'&slot=0');
+        $this->client->request('POST', '/guardias/agrupar', [
+            '_token' => $this->tokenFrom($crawler, '/guardias/agrupar'),
+            'date' => self::MONDAY,
+            'slot' => '0',
+            'covers' => [(string) $takenId, (string) $free->getId()],
+            'room' => 'BIBL',
+        ]);
+
+        self::assertResponseRedirects('/guardias/agrupar?date='.self::MONDAY.'&slot=0');
+        $this->em->clear();
+        self::assertCount(1, $this->em->getRepository(GuardiaGrouping::class)->findAll(), 'no second grouping is created');
+        $reloaded = $this->em->getRepository(GuardiaCover::class)->find($takenId);
+        self::assertInstanceOf(GuardiaCover::class, $reloaded);
+        self::assertSame($alreadyId, $reloaded->getGrouping()?->getId(), 'la clase sigue donde ya estaba');
+    }
+
     public function testUndoingAGroupingReturnsEveryClassToItsRoomAndSaysSo(): void
     {
         $this->login();

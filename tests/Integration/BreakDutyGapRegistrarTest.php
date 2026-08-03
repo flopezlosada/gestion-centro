@@ -89,9 +89,29 @@ final class BreakDutyGapRegistrarTest extends KernelTestCase
         $this->em->flush();
     }
 
+    /**
+     * Lo que hace el registrador cuando quien lo llama ya ha cerrado su propio flush: apunta el hueco y avisa.
+     *
+     * Va por este helper y no por un `register()` de una pieza a propósito. {@see BreakDutyGap} lleva UNIQUE
+     * sobre (plaza, día), así que su INSERT tiene que viajar en el flush de quien llama: si fuese un flush
+     * aparte y posterior, una colisión dejaría la ausencia y sus guardias ya escritas mientras
+     * {@see \App\Controller\GuardiaController::createAbsence()} dice "no se ha guardado nada" y borra los
+     * documentos de tarea que esas guardias referencian. El orden que se prueba aquí es el de verdad.
+     *
+     * @return list<BreakDutyGap> los huecos de ese día (recién creados o ya apuntados)
+     */
+    private function recordAndAnnounce(\DateTimeImmutable $date): array
+    {
+        $result = $this->registrar->record($this->year, $this->onDuty, $date);
+        $this->em->flush();
+        $this->registrar->announce($result['fresh']);
+
+        return $result['gaps'];
+    }
+
     public function testRecordsTheGapAndAlertsOnlyTheLeadershipTeam(): void
     {
-        $gaps = $this->registrar->register($this->year, $this->onDuty, new \DateTimeImmutable(self::MONDAY));
+        $gaps = $this->recordAndAnnounce(new \DateTimeImmutable(self::MONDAY));
 
         // One place, one gap. A teacher holding both recreos of a day would produce two, which is two
         // volunteers to find and not one.
@@ -109,8 +129,8 @@ final class BreakDutyGapRegistrarTest extends KernelTestCase
     public function testRegisteringTheSameDayTwiceNeitherDuplicatesTheGapNorTheAlert(): void
     {
         $date = new \DateTimeImmutable(self::MONDAY);
-        $first = $this->registrar->register($this->year, $this->onDuty, $date);
-        $second = $this->registrar->register($this->year, $this->onDuty, $date);
+        $first = $this->recordAndAnnounce($date);
+        $second = $this->recordAndAnnounce($date);
 
         self::assertSame($first[0]->getId(), $second[0]->getId(), 'the second pass finds the recorded gap');
         self::assertCount(1, $this->em->getRepository(BreakDutyGap::class)->findAll());
@@ -120,7 +140,7 @@ final class BreakDutyGapRegistrarTest extends KernelTestCase
     public function testATeacherWithNoDutyThatWeekdayProducesNothing(): void
     {
         // Same teacher, a Tuesday: their duty is on Mondays.
-        $gaps = $this->registrar->register($this->year, $this->onDuty, new \DateTimeImmutable('2025-11-04'));
+        $gaps = $this->recordAndAnnounce(new \DateTimeImmutable('2025-11-04'));
 
         self::assertSame([], $gaps);
         self::assertSame([], $this->em->getRepository(BreakDutyGap::class)->findAll());

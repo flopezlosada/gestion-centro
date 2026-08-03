@@ -48,7 +48,12 @@ final class NotificationDispatcher
     // el PDF adjunto, a cada convocado ({@see \App\Service\MinutesMailer}). Si el AVISO de "ya hay acta"
     // también fuera por correo, cada persona recibiría dos mensajes de la misma acta y el segundo, sin
     // adjunto, sería el peor de los dos.
-    private const array PUSH_ONLY_KINDS = ['event.', 'guardia.raices', 'meeting.reminder', 'meeting.minutes'];
+    //
+    // `guardia.reminder` (el doble recordatorio: la tarde anterior y esa misma mañana) tampoco es un olvido.
+    // Que te asignan una guardia ya se avisa por correo cuando se asigna ({@see GuardiaAssignmentNotifier}),
+    // así que estos dos no traen información nueva: recuerdan. Por correo serían dos mensajes más por
+    // guardia —el triple de correo del módulo— para decir lo mismo, y el centro ya se queja del correo.
+    private const array PUSH_ONLY_KINDS = ['event.', 'guardia.raices', 'guardia.reminder', 'meeting.reminder', 'meeting.minutes'];
 
     public function __construct(
         private readonly EntityManagerInterface $entityManager,

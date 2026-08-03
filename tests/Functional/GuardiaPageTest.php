@@ -339,10 +339,49 @@ final class GuardiaPageTest extends WebTestCase
         self::assertResponseRedirects();
         self::assertTrue($this->reload($id)->isNotCovered());
 
-        // Submitting again without the box clears the flag.
+        // Submitting again with the box unticked clears the flag. The value posted is the one the browser
+        // sends for an unticked box: the hidden `0` the form carries in front of it (see the template).
+        // "Sin la casilla" NO vale para esto, y es justo el punto del test siguiente.
         $crawler = $this->client->request('GET', $action);
-        $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action), 'guardia' => (string) $guardia->getId(), 'motivo' => 'Al final sí se cubrió.']);
+        $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action), 'guardia' => (string) $guardia->getId(), 'not_covered' => '0', 'motivo' => 'Al final sí se cubrió.']);
         self::assertFalse($this->reload($id)->isNotCovered());
+    }
+
+    /**
+     * A POST that does not carry a field leaves that field ALONE. This is the footgun the screen used to
+     * have: every value was read straight off the request, so any partial submit silently blanked the task
+     * description, the copies and — worst of all — the private reason of the absence, which is SHARED by
+     * every period of that day. It also dropped the substitute, because a missing "guardia" read as "".
+     *
+     * Asserted against a hand-made POST rather than the rendered form on purpose: the form does send
+     * everything, so it can never catch this. What can is the next partial form somebody adds.
+     */
+    public function testAPartialPostLeavesTheFieldsItDoesNotCarryAlone(): void
+    {
+        $this->login();
+        $year = $this->academicYear('2025-2026');
+        $this->em->persist($year);
+        $guardia = $this->user('Guardia Intacta', 'intacta@centro.test');
+        $absent = $this->user('Ausente Diez', 'a10@centro.test');
+        $date = new \DateTimeImmutable('2025-11-10');
+        $this->guardiaEntry($year, $guardia, $date);
+        $cover = $this->cover($date, 0, $absent, $guardia, true);
+        $cover->setTaskDescription('Ejercicios 3 y 4 de la página 88.')->setCopiesNeeded(28);
+        $cover->getAbsence()->setReason('Cita médica.');
+        $this->em->flush();
+        $id = (int) $cover->getId();
+        $action = '/guardias/'.$id.'/modificar';
+
+        $crawler = $this->client->request('GET', $action);
+        $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action), 'motivo' => '']);
+        self::assertResponseRedirects();
+
+        $reloaded = $this->reload($id);
+        self::assertSame($guardia->getId(), $reloaded->getAssignedGuardia()?->getId(), 'un POST sin "guardia" no retira al sustituto');
+        self::assertTrue($reloaded->isNotCovered(), 'un POST sin la casilla no desmarca "no se cubrió"');
+        self::assertSame('Ejercicios 3 y 4 de la página 88.', $reloaded->getTaskDescription());
+        self::assertSame(28, $reloaded->getCopiesNeeded());
+        self::assertSame('Cita médica.', $reloaded->getAbsence()->getReason(), 'el motivo es de TODAS las horas del día: un POST parcial no lo puede borrar');
     }
 
     /**
@@ -480,6 +519,45 @@ final class GuardiaPageTest extends WebTestCase
     }
 
     /**
+     * Editing the private reason of the absence lands in the guardia's event log. It is the one thing on
+     * these screens that travels to nobody — no notice, no e-mail, no second copy — so without a trail a
+     * silent rewrite of "cita médica" into anything else was unaccountable. It lives on the shared
+     * {@see Absence} (so it cannot diverge between the day's periods), which is precisely why its trail
+     * has to be pulled into the log of every cover that hangs off it.
+     */
+    public function testEditingThePrivateReasonLandsInTheGuardiaLog(): void
+    {
+        $this->login();
+        $year = $this->academicYear('2025-2026');
+        $this->em->persist($year);
+        $guardia = $this->user('Guardia Once', 'g11@centro.test');
+        $absent = $this->user('Ausente Once', 'a11@centro.test');
+        $date = new \DateTimeImmutable('2025-11-10');
+        $this->guardiaEntry($year, $guardia, $date);
+        $cover = $this->cover($date, 0, $absent, $guardia);
+        $cover->getAbsence()->setReason('Cita médica.');
+        $this->em->flush();
+        $action = '/guardias/'.$cover->getId().'/modificar';
+
+        $crawler = $this->client->request('GET', $action);
+        $this->client->request('POST', $action, [
+            '_token' => $this->tokenFrom($crawler, $action),
+            'guardia' => (string) $guardia->getId(),
+            'absence_reason' => 'Asuntos propios.',
+            'motivo' => '',
+        ]);
+        self::assertResponseRedirects();
+
+        $crawler = $this->client->request('GET', $action);
+        self::assertResponseIsSuccessful();
+        $timeline = $crawler->filter('.obj-timeline')->text();
+        self::assertStringContainsString('Cambio en la ausencia del día', $timeline, 'un cambio de la falta NO se lee igual que un cambio del parte');
+        self::assertStringContainsString('Motivo de la ausencia', $timeline);
+        self::assertStringContainsString('Cita médica.', $timeline, 'el histórico dice qué decía antes');
+        self::assertStringContainsString('Asuntos propios.', $timeline);
+    }
+
+    /**
      * The screen names the field for what it does — no second "motivo" to confuse with the private
      * reason of the absence — and says out loud WHO reads it: only the leadership team.
      */
@@ -495,7 +573,7 @@ final class GuardiaPageTest extends WebTestCase
         self::assertResponseIsSuccessful();
         self::assertSelectorTextContains('label[for="motivo"]', '¿Por qué haces este cambio?');
         self::assertSelectorTextContains('.field--change-note .field-help--lead', 'solo el equipo directivo');
-        self::assertSelectorTextContains('.field--change-note .field-help--lead', 'No se envía a los profesores');
+        self::assertSelectorTextContains('.field--change-note .field-help--lead', 'No se envía al profesorado');
     }
 
     /**

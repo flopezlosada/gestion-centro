@@ -29,7 +29,7 @@
                     Documento:
                     {% if cover.taskDocumentPath %}
                         <a href="{{ path('guardia_task_download', { id: cover.id }) }}">{{ cover.printableDocumentName ?: 'documento' }}</a>
-                        <span class="help">Lo dejó el profesor ausente.</span>
+                        <span class="help">Lo dejó el docente ausente.</span>
                     {% else %}
                         <a href="{{ path('guardia_bank_download', { id: cover.bankItem.id }) }}">{{ cover.printableDocumentName ?: 'documento' }}</a>
                         <span class="help">Del banco de tareas: «{{ cover.bankItem.title }}».</span>
