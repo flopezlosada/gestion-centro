@@ -38,7 +38,6 @@ class TaskRepository extends ServiceEntityRepository
             ->leftJoin('t.unit', 'unit')->addSelect('unit')
             ->leftJoin('t.assignedUser', 'assignedUser')->addSelect('assignedUser')
             ->leftJoin('t.delegatedTo', 'delegatedTo')->addSelect('delegatedTo')
-            ->leftJoin('t.assignedRole', 'assignedRole')->addSelect('assignedRole')
             ->leftJoin('t.responsibility', 'resp')->addSelect('resp')
             ->leftJoin('resp.role', 'respRole')->addSelect('respRole')
             ->leftJoin('resp.unit', 'respUnit')->addSelect('respUnit')
@@ -107,7 +106,6 @@ class TaskRepository extends ServiceEntityRepository
         return $this->createQueryBuilder('t')
             ->leftJoin('t.unit', 'unit')->addSelect('unit')
             ->leftJoin('t.assignedUser', 'assignedUser')->addSelect('assignedUser')
-            ->leftJoin('t.assignedRole', 'assignedRole')->addSelect('assignedRole')
             ->leftJoin('t.responsibility', 'resp')->addSelect('resp')
             ->leftJoin('resp.role', 'respRole')->addSelect('respRole')
             ->leftJoin('resp.unit', 'respUnit')->addSelect('respUnit')
@@ -138,24 +136,33 @@ class TaskRepository extends ServiceEntityRepository
         // Las canceladas se quedan fuera: no son ni pendientes ni un logro, así que no ocupan la agenda.
         // Las finalizadas sí se traen: caen en el bucket "Hechas" (ver AgendaEntry::fromTask).
         $qb = $this->createQueryBuilder('t')
+            ->leftJoin('t.responsibility', 'resp')
             ->andWhere('t.schoolYear = :year')
             ->andWhere('t.status != :cancelled')
             ->setParameter('year', $schoolYear)
             ->setParameter('cancelled', TaskStatus::CANCELLED)
             ->orderBy('t.dueDate', 'ASC')
-            ->addOrderBy('t.id', 'ASC');
+            ->addOrderBy('t.id', 'ASC')
+            ->setParameter('user', $user);
 
         // La agenda es "lo MÍO que hacer" = el responsable ACTUAL. Si la tarea está delegada, el
         // responsable es SOLO el delegado: una que yo delegué hacia abajo deja de ser mi pendiente y
-        // sale de mi agenda; una delegada A mí entra. Sin delegación, el asignado (o el titular del
-        // rol). Es la misma noción que Task::isOwnedBy, llevada a la consulta.
+        // sale de mi agenda; una delegada A mí entra. Sin delegación manda el asignado concreto y, si
+        // no hay ninguno, quien tenga la responsabilidad estructural.
+        //
+        // Es {@see \App\Entity\Task::isOwnedBy()} llevado a SQL, PASO POR PASO y no "parecido": antes
+        // esta consulta miraba el rol legacy sin exigir `assignedUser IS NULL`, así que una tarea
+        // reasignada a otra persona seguía apareciendo en la agenda de todo el que tuviera el rol,
+        // mientras que la ficha de esa misma tarea decía que no era suya. La condición del
+        // departamento reproduce el filtro de TaskResponsibility::holders(): un rol de departamento
+        // solo es tuyo en el TUYO.
+        $ownRole = '(t.assignedUser IS NULL AND resp.role IN (:roles) AND (resp.unit IS NULL OR resp.unit = :unit))';
         if ([] === $roleIds) {
-            $qb->andWhere('t.delegatedTo = :user OR (t.delegatedTo IS NULL AND t.assignedUser = :user)')
-                ->setParameter('user', $user);
+            $qb->andWhere('t.delegatedTo = :user OR (t.delegatedTo IS NULL AND t.assignedUser = :user)');
         } else {
-            $qb->andWhere('t.delegatedTo = :user OR (t.delegatedTo IS NULL AND (t.assignedUser = :user OR IDENTITY(t.assignedRole) IN (:roles)))')
-                ->setParameter('user', $user)
-                ->setParameter('roles', $roleIds);
+            $qb->andWhere("t.delegatedTo = :user OR (t.delegatedTo IS NULL AND (t.assignedUser = :user OR {$ownRole}))")
+                ->setParameter('roles', $roleIds)
+                ->setParameter('unit', $user->getUnit());
         }
 
         return $qb->getQuery()->getResult();
@@ -172,11 +179,16 @@ class TaskRepository extends ServiceEntityRepository
      */
     public function findOpenDueOn(\DateTimeImmutable $day, array $openPlaces): array
     {
-        // Fetch-join the associations the reminder engine reads per task, to avoid an N+1.
+        // Fetch-join the associations the reminder engine reads per task, to avoid an N+1 — including
+        // the responsibility and its role, which is where an unassigned task's recipients now come from
+        // ({@see \App\Service\TaskReminderNotifier}); without it the nightly sweep would fire two extra
+        // queries for every task nobody is concretely on the hook for.
         return $this->createQueryBuilder('t')
             ->leftJoin('t.assignedUser', 'assignedUser')->addSelect('assignedUser')
-            ->leftJoin('t.assignedRole', 'assignedRole')->addSelect('assignedRole')
             ->leftJoin('t.unit', 'unit')->addSelect('unit')
+            ->leftJoin('t.responsibility', 'resp')->addSelect('resp')
+            ->leftJoin('resp.role', 'respRole')->addSelect('respRole')
+            ->leftJoin('resp.unit', 'respUnit')->addSelect('respUnit')
             ->andWhere('t.dueDate = :day')
             ->andWhere('t.status IN (:open)')
             ->setParameter('day', $day->format('Y-m-d'))

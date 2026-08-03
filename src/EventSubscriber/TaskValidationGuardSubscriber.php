@@ -104,7 +104,7 @@ final class TaskValidationGuardSubscriber
      */
     private function isTopOfTheChart(Task $task): bool
     {
-        $role = $task->getResponsibility()?->getRole() ?? $task->getAssignedRole();
+        $role = $task->responsibleRole();
         if (null === $role || !$role->isHierarchical()) {
             return false;
         }

@@ -68,11 +68,6 @@ class Task implements Auditable
     #[ORM\Column(length: 30)]
     private string $status;
 
-    /** The role responsible for the task, if assigned by role. */
-    #[ORM\ManyToOne(targetEntity: Role::class)]
-    #[ORM\JoinColumn(name: 'assigned_role_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
-    private ?Role $assignedRole = null;
-
     /** The specific person responsible, if assigned to an individual. */
     #[ORM\ManyToOne(targetEntity: User::class)]
     #[ORM\JoinColumn(name: 'assigned_user_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
@@ -84,10 +79,17 @@ class Task implements Auditable
     private ?Department $unit = null;
 
     /**
-     * What structurally makes this task someone's job: a post (unit's manager), a specific person, or
-     * a role. Resolved live, so a cargo task follows the current post-holder. Owned by the task
-     * (cascade + orphan removal). Nullable during the transition from the old assignedRole/assignedUser
-     * columns; {@see resolveResponsible()} and {@see isOwnedBy()} fall back to those while it is null.
+     * What structurally makes this task someone's job: a role, plus the department when the role is
+     * scoped to one. Resolved live, so the task follows whoever holds the post today. Owned by the task
+     * (cascade + orphan removal).
+     *
+     * The single structural answer since the legacy `assigned_role_id` column went away: a task now
+     * either has a responsibility or has nobody, and there is no second, weaker way of being someone's
+     * job that half the codebase did not know how to read.
+     *
+     * Still nullable, because a task genuinely can have no responsible — a post nobody holds, a row
+     * imported before the model existed — and {@see resolveResponsible()} says so by returning null
+     * rather than by inventing one.
      */
     #[ORM\OneToOne(targetEntity: TaskResponsibility::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
     #[ORM\JoinColumn(name: 'responsibility_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
@@ -171,6 +173,16 @@ class Task implements Auditable
      * Builds a task instance from a recurring template for a given course. Copies the definition but
      * NOT the date (fixed here, never inherited).
      *
+     * The template's role becomes a real {@see TaskResponsibility}, the same backbone an ad-hoc task
+     * gets from the form. It used to be written into a separate `assignedRole` column instead, and
+     * that made a generated task a second-class citizen of the model: {@see \App\Service\OrganizationHierarchy}
+     * only ever reads the responsibility, so a task straight from the catalogue had NOBODY above it —
+     * no validator, no escalation — and it did not say so anywhere.
+     *
+     * No department is set: a template names a function ("jefatura de departamento"), not which
+     * department's. Splitting a per-department template into one task per department is a separate,
+     * still-open question for {@see \App\Service\TaskGenerator}.
+     *
      * @param TaskTemplate       $template   the recurring template
      * @param string             $schoolYear the target course in "YYYY-YYYY" form
      * @param \DateTimeImmutable $dueDate     the deadline for this instance
@@ -183,7 +195,8 @@ class Task implements Auditable
         $task->template = $template;
         $task->description = $template->getDescription();
         $task->mandatory = $template->isMandatory();
-        $task->assignedRole = $template->getResponsibleRole();
+        $role = $template->getResponsibleRole();
+        $task->responsibility = null !== $role ? new TaskResponsibility($role) : null;
         $task->deliverable = $template->getDeliverable();
         $task->requiresCheckbox = $template->requiresCheckbox();
 
@@ -361,16 +374,17 @@ class Task implements Auditable
         return ($this->requiresCheckbox() && $this->checkboxDone) || TaskStatus::VALIDATED === $this->status;
     }
 
-    public function getAssignedRole(): ?Role
+    /**
+     * The role this task is structurally the job of, or null when it has no responsibility. The single
+     * place that answers "¿de qué rol es esta tarea?", shared by the list filter, the detail screen and
+     * the two workflow subscribers — each of which used to spell out the same two-step fallback, so a
+     * fix to one of them would silently have left the others behind.
+     *
+     * @return Role|null the responsible role, or null
+     */
+    public function responsibleRole(): ?Role
     {
-        return $this->assignedRole;
-    }
-
-    public function setAssignedRole(?Role $assignedRole): static
-    {
-        $this->assignedRole = $assignedRole;
-
-        return $this;
+        return $this->responsibility?->getRole();
     }
 
     public function getAssignedUser(): ?User
@@ -407,13 +421,11 @@ class Task implements Auditable
             return $this->assignedUser === $user;
         }
 
-        // No concrete assignee (e.g. a vacated post): fall back to the structural responsibility's
-        // current holders, then to the legacy role, for rows not driven by an assignee.
-        if (null !== $this->responsibility) {
-            return $this->responsibility->isHeldBy($user);
-        }
-
-        return null !== $this->assignedRole && $user->holdsRole($this->assignedRole);
+        // No concrete assignee (e.g. a post nobody holds yet, or a task straight from the catalogue):
+        // whoever holds the structural responsibility right now. Kept in step with the SQL in
+        // {@see \App\Repository\TaskRepository::findAgendaFor()}, which asks the same question of the
+        // whole course at once.
+        return $this->responsibility?->isHeldBy($user) ?? false;
     }
 
     /**

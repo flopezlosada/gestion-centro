@@ -7,8 +7,10 @@ namespace App\Tests\Integration;
 use App\DueDate\FixedDate;
 use App\DueDate\PerTerm;
 use App\Entity\AcademicYear;
+use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskTemplate;
+use App\Entity\User;
 use App\Enum\TaskType;
 use App\Enum\TermBoundary;
 use App\Service\TaskGenerator;
@@ -103,5 +105,58 @@ final class TaskGeneratorTest extends KernelTestCase
 
         self::assertSame(0, $result->created);
         self::assertCount(0, $this->em->getRepository(Task::class)->findBy(['schoolYear' => '2026-2027']));
+    }
+
+    /**
+     * A generated task carries the template's role as a real responsibility, and so is a first-class
+     * task: it has a responsible, the detail screen can name a role, and the chain of command can find
+     * somebody above it.
+     *
+     * This is the regression that mattered. The role used to land in a separate `assigned_role_id`
+     * column that only three places knew how to read — {@see \App\Service\OrganizationHierarchy} was
+     * not one of them — so a task straight from the catalogue had NOBODY above it: no validator on the
+     * detail, no escalation when it went overdue, and no sign on screen that anything was missing.
+     */
+    public function testAGeneratedTaskGetsTheTemplateRoleAsItsResponsibility(): void
+    {
+        $year = $this->year();
+        $role = (new Role())->setCode('head_of_studies')->setName('Jefatura de estudios')->setHierarchyLevel(30);
+        $this->em->persist($role);
+        $holder = (new User())->setFullName('Luis Jefatura')->setEmail('jefatura@centro.test')->addAssignedRole($role);
+        $this->em->persist($holder);
+        $this->template('Memoria', true, new FixedDate(6, 30))->setResponsibleRole($role);
+        $this->em->flush();
+
+        $this->generator->generate($year, null);
+
+        $tasks = $this->em->getRepository(Task::class)->findBy(['schoolYear' => '2026-2027']);
+        self::assertCount(1, $tasks);
+        $task = $tasks[0];
+
+        self::assertNotNull($task->getResponsibility(), 'the template role becomes a real responsibility');
+        self::assertSame($role, $task->responsibleRole());
+        // Sin `?->`: el assertNotNull de arriba ya estrechó el tipo y PHPStan rechaza el nullsafe.
+        self::assertNull($task->getResponsibility()->getUnit(), 'a template names a function, not a department');
+        // Nobody was picked by hand, so the holder of the role is on the hook — resolved live.
+        self::assertSame($holder, $task->resolveResponsible());
+        self::assertTrue($task->isOwnedBy($holder));
+    }
+
+    /**
+     * A template with no responsible role still generates: the task simply has nobody yet, and says so
+     * by resolving to null instead of pretending.
+     */
+    public function testATemplateWithoutARoleGeneratesATaskWithNoResponsibility(): void
+    {
+        $year = $this->year();
+        $this->template('Memoria sin dueño', true, new FixedDate(6, 30));
+        $this->em->flush();
+
+        $this->generator->generate($year, null);
+
+        $tasks = $this->em->getRepository(Task::class)->findBy(['schoolYear' => '2026-2027']);
+        self::assertCount(1, $tasks);
+        self::assertNull($tasks[0]->getResponsibility());
+        self::assertNull($tasks[0]->resolveResponsible());
     }
 }

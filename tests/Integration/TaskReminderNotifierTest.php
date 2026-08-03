@@ -7,6 +7,7 @@ namespace App\Tests\Integration;
 use App\Entity\Notification;
 use App\Entity\Role;
 use App\Entity\Task;
+use App\Entity\TaskResponsibility;
 use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
@@ -272,7 +273,7 @@ final class TaskReminderNotifierTest extends KernelTestCase
         $inactive = $this->user('baja@centro.test')->setActive(false)->addAssignedRole($role);
         $this->em->persist($inactive);
 
-        $this->task($today->modify('+15 days'), $unit)->setAssignedRole($role);
+        $this->task($today->modify('+15 days'), $unit)->setResponsibility(new TaskResponsibility($role));
         $this->em->flush();
 
         self::assertSame(0, $this->notifier->sendDue($today), 'an inactive role holder is not a recipient');

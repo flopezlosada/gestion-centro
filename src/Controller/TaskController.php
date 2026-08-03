@@ -322,12 +322,12 @@ final class TaskController extends AbstractController
     }
 
     /**
-     * The name of the role responsible for a task: its responsibility's role, or a legacy assigned role.
-     * Null when neither is set. Used by the task list filter (Rol) and its options.
+     * The name of the role responsible for a task, or null when it has none. Used by the task list
+     * filter (Rol) and to build its options.
      */
     private static function roleNameOf(Task $task): ?string
     {
-        return $task->getResponsibility()?->getRole()->getName() ?? $task->getAssignedRole()?->getName();
+        return $task->responsibleRole()?->getName();
     }
 
     /**
