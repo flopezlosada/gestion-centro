@@ -589,11 +589,11 @@ final class TaskFilterTest extends WebTestCase
     }
 
     /**
-     * Una cola larga de fuera de plazo nace PLEGADA (<details> sin `open`): con 39 atrasos había que
-     * recorrer toda la página para llegar a lo que viene después, que es justo lo que hay que atender.
-     * Las pendientes de realizar salen siempre abiertas.
+     * Los dos grupos nacen ABIERTOS, también una cola larga de fuera de plazo: plegarla escondía la mayor
+     * parte de la lista y la pantalla prometía un recuento que no mostraba. Se puede plegar a mano, pero
+     * nunca por defecto. Este caso (9 atrasos) es exactamente el que antes nacía plegado.
      */
-    public function testALongOverdueGroupStartsCollapsed(): void
+    public function testBothGroupsStartOpenEvenWithALongOverdueQueue(): void
     {
         $tutor = (new Role())->setCode('tutor')->setName('Tutor/a')->setPerDepartment(true);
         $this->em->persist($tutor);
@@ -612,7 +612,8 @@ final class TaskFilterTest extends WebTestCase
 
         $crawler = $this->get('/tareas');
 
-        self::assertCount(1, $crawler->filter('details.trow-group:not([open])'), 'la cola de atrasos nace plegada');
-        self::assertCount(1, $crawler->filter('details.trow-group[open]'), 'y lo que viene, abierto');
+        self::assertCount(0, $crawler->filter('details.trow-group:not([open])'), 'ningún grupo nace plegado');
+        self::assertCount(2, $crawler->filter('details.trow-group[open]'), 'los dos grupos nacen abiertos');
+        self::assertSelectorTextContains('.trow-group .trow--group.is-warning', 'Fuera de plazo · 9');
     }
 }
