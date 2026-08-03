@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Service\DailyNotificationSweep;
 use App\Service\EventReminderNotifier;
 use App\Service\GuardiaRaicesReminder;
 use App\Service\MeetingReminderNotifier;
-use App\Service\TaskReminderNotifier;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Request;
@@ -34,18 +34,20 @@ final class CronController extends AbstractController
     }
 
     /**
-     * Daily: reminders for tasks about to be due and escalations for the overdue ones.
+     * Daily: reminders for tasks about to be due, escalations for the overdue ones, and the purge of
+     * the notices that have expired. Shares {@see DailyNotificationSweep} with the CLI command so the
+     * two ways of running the same daily job can never drift apart.
      */
     #[Route('/cron/task-reminders', name: 'cron_task_reminders', methods: ['GET'])]
-    public function taskReminders(Request $request, TaskReminderNotifier $notifier): Response
+    public function taskReminders(Request $request, DailyNotificationSweep $sweep): Response
     {
         $this->denyUnlessCronToken($request);
 
         // Reference DAY in the centre's timezone: this sweep matches whole days, so anchoring it to
         // Madrid keeps "today" from drifting to UTC near midnight.
-        $count = $notifier->sendDue(new \DateTimeImmutable('now', new \DateTimeZone('Europe/Madrid')));
+        $result = $sweep->run(new \DateTimeImmutable('now', new \DateTimeZone('Europe/Madrid')));
 
-        return new Response(\sprintf('%d avisos enviados.', $count));
+        return new Response(\sprintf('%d avisos enviados, %d caducados retirados.', $result['sent'], $result['purged']));
     }
 
     /**

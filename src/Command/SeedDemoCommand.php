@@ -17,8 +17,8 @@ use App\Entity\Task;
 use App\Entity\TaskResponsibility;
 use App\Entity\User;
 use App\Enum\CategoryColor;
-use App\Enum\DeliverableRequirement;
 use App\Enum\TaskType;
+use App\Service\CentreTaskCatalog;
 use App\Service\SchoolCalendar;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
@@ -75,12 +75,10 @@ final class SeedDemoCommand extends Command
     /** Invented absences to generate per term, spread across weekdays, slots and teachers. */
     private const int GUARDIAS_PER_TERM = 45;
 
-    /** Words in a catalog title that mark it as a deliverable task (produces a document). */
-    private const string DELIVERABLE_PATTERN = '/memoria|programaci|informe|calendario|publicar|presupuesto|\bpga\b|horario|\bacta|protocolo|proyecto|plan\b|documento|listado|cuadrante/iu';
-
     public function __construct(
         private readonly EntityManagerInterface $em,
         private readonly SchoolCalendar $calendar,
+        private readonly CentreTaskCatalog $catalog,
         #[Autowire('%kernel.environment%')] private readonly string $env,
         #[Autowire('%kernel.project_dir%')] private readonly string $projectDir,
     ) {
@@ -144,7 +142,14 @@ final class SeedDemoCommand extends Command
         $categories = $this->seedCategories();
         $director = $this->firstHolder($roles['direction']);
 
-        $centre = $this->seedCentreTasks($academicYear, $roles, $departments, $director);
+        // El CSV del catálogo NO está en git (es trabajo interno de dirección), así que un clon limpio
+        // no lo tiene. Eso no puede tumbar el resto de la siembra: se avisa y se sigue.
+        try {
+            $centre = $this->seedCentreTasks($academicYear, $roles, $departments, $director);
+        } catch (\RuntimeException $e) {
+            $io->warning($e->getMessage().' Se siembra el resto sin las tareas de centro.');
+            $centre = 0;
+        }
         $agenda = $this->seedPersonalAgenda($users, $categories, $academicYear->getSchoolYear(), $director);
         $notifications = $this->seedNotifications($agenda);
         // Guardias en TODOS los cursos sembrados, para poder comparar un año con otro en las estadísticas.
@@ -307,10 +312,14 @@ final class SeedDemoCommand extends Command
     }
 
     /**
-     * Instantiates the real centre-task catalog for the given course: one {@see Task} per valid row,
-     * mapping the free-text "Responsable" to a role (and department for per-department roles), spreading
-     * deadlines across the course calendar and varying workflow status. Rows flagged "Dudoso" or "NO"
-     * are skipped.
+     * Layers invented workflow activity on top of the REAL centre-task catalog for the given course.
+     *
+     * The catalog reading and the responsibility/deadline mapping are NOT here: they live in
+     * {@see CentreTaskCatalog}, shared with {@see ImportCentreTasksCommand}, precisely because keeping
+     * them locked inside this command is what left production unable to seed its own task catalog. What
+     * belongs to the demo, and only to the demo, is what this method does: vary the workflow state so
+     * the screens show every place of the lifecycle, and attach a plausible deliverable to whatever is
+     * already handed in.
      *
      * @param AcademicYear        $academicYear the course to stamp the tasks into
      * @param array<string, Role> $roles        the role catalog by code
@@ -321,231 +330,28 @@ final class SeedDemoCommand extends Command
      */
     private function seedCentreTasks(AcademicYear $academicYear, array $roles, array $departments, ?User $director): int
     {
-        $rows = $this->readCatalog();
-        $total = \count($rows);
-        $year = $academicYear->getSchoolYear();
+        $path = $this->projectDir.'/catalogo/catalogo-tareas-para-direccion.csv';
+        $drafts = $this->catalog->plan($this->catalog->read($path), $academicYear, $roles, $departments);
 
-        foreach ($rows as $index => $row) {
-            [$role, $department] = $this->resolveResponsibility($row['responsable'], $roles, $departments, $index);
-            $responsibility = new TaskResponsibility($role, $department);
-            $holders = $responsibility->holders();
-
-            $type = preg_match(self::DELIVERABLE_PATTERN, $row['tarea']) ? TaskType::WITH_DELIVERABLE : TaskType::SIMPLE;
-            $dueDate = $this->dueDateFor($row['bloque'], $row['cuando'], $index, $total, $academicYear);
-
-            $task = new Task(mb_substr($row['tarea'], 0, 200), $year, $dueDate, $type);
-            $task->setResponsibility($responsibility)
-                ->setUnit($department)
-                ->setAssignedUser($holders[0] ?? null)
-                // Las de demo con entregable piden un ENLACE, que es lo que después rellenan más abajo.
-                ->setDeliverable(TaskType::WITH_DELIVERABLE === $type ? DeliverableRequirement::LINK : DeliverableRequirement::NONE)
-                ->setCreatedBy($director)
-                ->setDescription($this->describe($row));
+        foreach ($drafts as $index => $draft) {
+            $task = $draft->task;
+            $task->setCreatedBy($director);
 
             $status = $this->statusFor($index);
             $task->setStatus($status);
             // Invariante: una tarea con entregable ya entregada/finalizada tiene referencia (al entregar
             // se adjunta), así que los datos demo también la llevan.
-            if (TaskType::WITH_DELIVERABLE === $type && \in_array($status, ['submitted', 'validated'], true)) {
-                $task->setDeliverableReference('https://cloud.educa.madrid.org/'.$row['id']);
+            if (TaskType::WITH_DELIVERABLE === $task->getType() && \in_array($status, ['submitted', 'validated'], true)) {
+                $task->setDeliverableReference('https://cloud.educa.madrid.org/'.$draft->catalogId);
             }
             if ('validated' === $status) {
-                $task->setCompletedBy($holders[0] ?? null);
+                $task->setCompletedBy($draft->responsibility->holders()[0] ?? null);
             }
 
             $this->em->persist($task);
         }
 
-        return $total;
-    }
-
-    /**
-     * Reads the valid rows of the real centre-task catalog CSV, dropping the "Dudoso" ones and any
-     * explicitly marked as not valid.
-     *
-     * @return list<array{id: string, bloque: string, tarea: string, responsable: string, cuando: string, tipo: string, origen: string}>
-     */
-    private function readCatalog(): array
-    {
-        $handle = fopen($this->projectDir.'/catalogo/catalogo-tareas-para-direccion.csv', 'r');
-        if (false === $handle) {
-            return [];
-        }
-
-        fgetcsv($handle); // header
-        $rows = [];
-        while (false !== ($line = fgetcsv($handle))) {
-            if (\count($line) < 7 || '' === trim((string) $line[2])) {
-                continue;
-            }
-            $tipo = trim((string) $line[5]);
-            $valida = mb_strtoupper(trim((string) ($line[7] ?? '')));
-            if ('Dudoso' === $tipo || 'NO' === $valida) {
-                continue;
-            }
-            $rows[] = [
-                'id' => trim((string) $line[0]),
-                'bloque' => trim((string) $line[1]),
-                'tarea' => trim((string) $line[2]),
-                'responsable' => trim((string) $line[3]),
-                'cuando' => trim((string) $line[4]),
-                'tipo' => $tipo,
-                'origen' => trim((string) $line[6]),
-            ];
-        }
-        fclose($handle);
-
-        return $rows;
-    }
-
-    /**
-     * Maps a free-text "Responsable" cell to a responsibility: a role plus, for per-department roles, a
-     * department that actually has a holder (rotated by row index for an even spread). Falls back to
-     * Jefatura de Estudios, the operational coordinator, for coordination cells with no clear role.
-     *
-     * @param string              $responsable the raw responsible text
-     * @param array<string, Role> $roles       the role catalog by code
-     * @param list<Department>    $departments the real departments
-     * @param int                 $index       the row index, used to rotate department choice
-     *
-     * @return array{0: Role, 1: Department|null} the role and its department (null for centre-wide roles)
-     */
-    private function resolveResponsibility(string $responsable, array $roles, array $departments, int $index): array
-    {
-        $text = $this->fold($responsable);
-
-        if (str_contains($text, 'direccion') || str_contains($text, 'directiv')) {
-            return [$roles['direction'], null];
-        }
-        if (str_contains($text, 'secretar')) {
-            return [$roles['secretary'], null];
-        }
-        // Head of studies before the department branches: "Jefatura de Estudios / departamentos" is
-        // jefatura's, not a head-of-department task.
-        if (str_contains($text, 'jefatura de estudios') || str_contains($text, 'jefe de estudios') || str_contains($text, 'jefa de estudios')) {
-            return [$roles['head_of_studies'], null];
-        }
-        if ((str_contains($text, 'jefe') && str_contains($text, 'departamento')) || str_contains($text, 'jefes') || str_contains($text, 'departamento')) {
-            return [$roles['head_dept'], $this->deptFromText($text, $roles['head_dept'], $departments, $index)];
-        }
-        if (str_contains($text, 'tutor')) {
-            return [$roles['tutor'], $this->deptWithHolder($roles['tutor'], $departments, $index)];
-        }
-        if (str_contains($text, 'orientacion')) {
-            return [$roles['head_dept'], $this->deptByName('Orientación', $departments) ?? $this->deptWithHolder($roles['head_dept'], $departments, $index)];
-        }
-        if (str_contains($text, 'profesorado') || str_contains($text, 'claustro') || str_contains($text, 'materia')) {
-            return [$roles['teacher'], $this->deptWithHolder($roles['teacher'], $departments, $index)];
-        }
-
-        // CCP, convivencia, extraescolares, coordinación… → jefatura de estudios coordinates them.
-        return [$roles['head_of_studies'], null];
-    }
-
-    /**
-     * Picks the department for a per-department head task: a specific one named in the text if
-     * recognised, otherwise a department that has a head, rotated by index.
-     *
-     * @param string           $text        the folded responsible text
-     * @param Role             $role        the per-department role
-     * @param list<Department> $departments the real departments
-     * @param int              $index       the row index for rotation
-     *
-     * @return Department|null the chosen department, or null if none has a holder
-     */
-    private function deptFromText(string $text, Role $role, array $departments, int $index): ?Department
-    {
-        // Longer, more specific fragments first so "educación física" is not swallowed by "física".
-        $fragments = ['educacion fisica' => 'Educación Física', 'matemat' => 'Matemáticas', 'lengua' => 'Lengua', 'economia' => 'Economía', 'fisica' => 'Física', 'latin' => 'Latín', 'musica' => 'Música', 'ingl' => 'Ingles', 'biolog' => 'Biología', 'tecnolog' => 'Tecnología', 'geografia' => 'Geografía'];
-        foreach ($fragments as $needle => $name) {
-            if (str_contains($text, $needle)) {
-                $match = $this->deptByName($name, $departments);
-                if (null !== $match) {
-                    return $match;
-                }
-            }
-        }
-
-        return $this->deptWithHolder($role, $departments, $index);
-    }
-
-    /**
-     * The first department whose name contains the given fragment (accent-insensitive).
-     *
-     * @param string           $fragment    the name fragment to look for
-     * @param list<Department> $departments the real departments
-     *
-     * @return Department|null the match, or null
-     */
-    private function deptByName(string $fragment, array $departments): ?Department
-    {
-        $needle = $this->fold($fragment);
-        foreach ($departments as $department) {
-            if (str_contains($this->fold($department->getName()), $needle)) {
-                return $department;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * A department that currently has an active holder of the given role, rotated by index for an even
-     * spread across the demo. Falls back to any department when none matches.
-     *
-     * @param Role             $role        the role that needs a holder
-     * @param list<Department> $departments the real departments
-     * @param int              $index       the row index for rotation
-     *
-     * @return Department|null the chosen department, or null when there are none
-     */
-    private function deptWithHolder(Role $role, array $departments, int $index): ?Department
-    {
-        $withHolder = array_values(array_filter(
-            $departments,
-            static fn (Department $d): bool => [] !== array_filter(
-                $role->getUsers()->toArray(),
-                static fn (User $u): bool => $u->isActive() && $u->getUnit() === $d,
-            ),
-        ));
-        $pool = [] !== $withHolder ? $withHolder : $departments;
-
-        return $pool[$index % \count($pool)] ?? null;
-    }
-
-    /**
-     * Computes a deadline for a catalog row inside the course: anchored near the start for "inicio de
-     * curso" rows, near the end for "fin de curso", to a term end for "cada evaluación", and otherwise
-     * spread evenly across the year by row index. The result is nudged onto a teaching day and clamped
-     * to the course bounds.
-     *
-     * @param string        $bloque       the catalog block
-     * @param string        $cuando       the free-text timing
-     * @param int           $index        the row index
-     * @param int           $total        the total number of rows (for the even spread)
-     * @param AcademicYear  $academicYear the course structure
-     *
-     * @return \DateTimeImmutable the deadline, on a teaching day within the course
-     */
-    private function dueDateFor(string $bloque, string $cuando, int $index, int $total, AcademicYear $academicYear): \DateTimeImmutable
-    {
-        $start = $academicYear->getYearStart();
-        $end = $academicYear->getYearEnd();
-        $context = $this->fold($bloque.' '.$cuando);
-
-        $date = match (true) {
-            str_contains($context, 'inicio de curso'), str_contains($context, 'principio de curso'), str_contains($context, 'septiembre') => $start->modify('+'.(5 + $index % 10).' days'),
-            str_contains($context, 'fin de curso'), str_contains($context, 'final de curso') => $end->modify('-'.(3 + $index % 10).' days'),
-            str_contains($context, 'evaluacion') => $academicYear->getTermEnd(1 + $index % 3)->modify('-'.($index % 4).' days'),
-            default => $start->modify('+'.(int) floor(($index / max(1, $total - 1)) * (int) $start->diff($end)->days).' days'),
-        };
-
-        $date = $this->calendar->onOrBeforeLectiveDay($date);
-        if ($date < $start) {
-            return $start;
-        }
-
-        return $date > $end ? $end : $date;
+        return \count($drafts);
     }
 
     /**
@@ -565,24 +371,6 @@ final class SeedDemoCommand extends Command
             8 => 'cancelled',
             default => 'pending',
         };
-    }
-
-    /**
-     * Builds a short description for a catalog task from its block, timing and source act.
-     *
-     * @param array{bloque: string, cuando: string, origen: string} $row the catalog row
-     *
-     * @return string|null the description, or null when there is nothing to say
-     */
-    private function describe(array $row): ?string
-    {
-        $parts = array_filter([
-            '' !== $row['bloque'] ? $row['bloque'] : null,
-            '' !== $row['cuando'] ? 'Cuándo: '.$row['cuando'] : null,
-            '' !== $row['origen'] ? 'Origen: '.$row['origen'] : null,
-        ]);
-
-        return [] !== $parts ? implode(' · ', $parts) : null;
     }
 
     /**
@@ -885,17 +673,5 @@ final class SeedDemoCommand extends Command
         }
 
         return null;
-    }
-
-    /**
-     * Lowercases and strips Spanish accents for accent-insensitive matching.
-     *
-     * @param string $text the text to fold
-     *
-     * @return string the folded text
-     */
-    private function fold(string $text): string
-    {
-        return strtr(mb_strtolower($text, 'UTF-8'), ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n', 'ü' => 'u']);
     }
 }
