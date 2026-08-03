@@ -135,7 +135,7 @@ final class CentreTaskCatalog
                 ->setDeliverable(TaskType::WITH_DELIVERABLE === $type ? DeliverableRequirement::LINK : DeliverableRequirement::NONE)
                 ->setDescription($this->describe($row));
 
-            $drafts[] = new CentreTaskDraft($row['id'], $task, $responsibility, $derived);
+            $drafts[] = new CentreTaskDraft($row['id'], $task, $derived);
         }
 
         return $drafts;
@@ -281,18 +281,25 @@ final class CentreTaskCatalog
         $end = $year->getYearEnd();
         $context = $this->fold($bloque.' '.$cuando);
 
-        // null = el catálogo no dice nada anclable; se distingue del reparto de relleno de abajo.
-        // Primero los hitos gruesos del BLOQUE, y solo si no dicen nada, lo que diga la celda «Cuándo»,
-        // que es donde el centro es específico (trimestre, mes o día exacto).
-        $anchored = match (true) {
+        // Lo ESPECÍFICO gana a lo grueso, y el orden importa de verdad: 9 filas del catálogo real llevan
+        // un bloque grueso Y un «cuándo» concreto («Inicio de curso» + «Octubre», «Fin de curso» +
+        // «~19 de junio»). Al revés, esas cuatro «Octubre» recibían mediados de SEPTIEMBRE —un mes antes
+        // de lo que dice el centro— y encima se contaban como fecha deducida, así que no aparecían en la
+        // lista a repasar. null = el catálogo no dice nada anclable, y ahí sí entra el relleno.
+        $anchored = $this->anchorFromTiming($cuando, $year) ?? match (true) {
             str_contains($context, 'inicio de curso'), str_contains($context, 'principio de curso'), str_contains($context, 'septiembre') => $start->modify('+'.(5 + $index % 10).' days'),
             str_contains($context, 'fin de curso'), str_contains($context, 'final de curso') => $end->modify('-'.(3 + $index % 10).' days'),
-            str_contains($context, 'evaluacion') => $year->getTermEnd(1 + $index % 3)->modify('-'.($index % 4).' days'),
-            default => $this->anchorFromTiming($cuando, $year),
+            default => null,
         };
         $derived = null !== $anchored;
 
-        $date = $this->calendar->onOrBeforeLectiveDay($anchored ?? $this->spreadAcrossYear($start, $end, $index, $total));
+        // «Cada evaluación» sin decir cuál: el trimestre sale del ÍNDICE DE FILA, así que es tan inventado
+        // como el reparto por el año. Se coloca, pero como NO deducida, para que dirección lo repase.
+        $anchored ??= str_contains($context, 'evaluacion')
+            ? $year->getTermEnd(1 + $index % 3)->modify('-'.($index % 4).' days')
+            : $this->spreadAcrossYear($start, $end, $index, $total);
+
+        $date = $this->calendar->onOrBeforeLectiveDay($anchored);
         if ($date < $start) {
             $date = $start;
         } elseif ($date > $end) {
@@ -325,16 +332,19 @@ final class CentreTaskCatalog
     {
         $text = $this->fold($cuando);
 
-        if (str_contains($text, 'trimestre')) {
-            $term = match (true) {
-                str_contains($text, '1'), str_contains($text, 'primer') => 1,
-                str_contains($text, '2'), str_contains($text, 'segundo') => 2,
-                str_contains($text, '3'), str_contains($text, 'tercer') => 3,
-                default => null,
-            };
-            if (null !== $term) {
-                return $year->getTermEnd($term);
-            }
+        // El ordinal tiene que ir PEGADO a «trimestre». Buscar el dígito suelto por toda la celda haría
+        // que «30 de octubre, cada trimestre» se leyera como tercer trimestre (por el 3 del 30) y acabara
+        // a finales de junio. Hoy no hay ninguna fila así en el catálogo; con el dígito suelto, la primera
+        // que apareciera daría una fecha absurda presentada como deducida del catálogo.
+        if (1 === preg_match('/([123])\s*(?:\.?(?:º|o|er|a))?\s*trimestre/u', $text, $ordinal)) {
+            return $year->getTermEnd((int) $ordinal[1]);
+        }
+        if (1 === preg_match('/(primer|segundo|tercer)\w*\s+trimestre/u', $text, $written)) {
+            return $year->getTermEnd(match ($written[1]) {
+                'primer' => 1,
+                'segundo' => 2,
+                default => 3,
+            });
         }
 
         $months = ['enero' => 1, 'febrero' => 2, 'marzo' => 3, 'abril' => 4, 'mayo' => 5, 'junio' => 6, 'julio' => 7, 'agosto' => 8, 'septiembre' => 9, 'octubre' => 10, 'noviembre' => 11, 'diciembre' => 12];
@@ -347,14 +357,21 @@ final class CentreTaskCatalog
             return $this->inCourseYear($year, $month, min(31, max(1, (int) $match[1])));
         }
 
-        // Solo el mes: el plazo es el final de ese mes.
-        foreach ($months as $name => $month) {
-            if (str_contains($text, $name)) {
-                return $this->inCourseYear($year, $month, 1)->modify('last day of this month');
-            }
+        // Solo el mes: el plazo es el final de ese mes. Se elige el que aparece ANTES EN EL TEXTO, no el
+        // primero del array: recorrer enero→diciembre haría que «Diciembre-enero» diera el 31 de enero
+        // (del año siguiente) en vez del 31 de diciembre.
+        $positions = array_filter(array_map(
+            static fn (string $name): int|false => mb_strpos($text, $name),
+            array_combine(array_keys($months), array_keys($months)),
+        ), static fn (int|false $at): bool => false !== $at);
+
+        if ([] === $positions) {
+            return null;
         }
 
-        return null;
+        $first = array_search(min($positions), $positions, true);
+
+        return $this->inCourseYear($year, $months[(string) $first], 1)->modify('last day of this month');
     }
 
     /**

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Service;
 
 use App\Entity\Task;
-use App\Entity\TaskResponsibility;
 
 /**
  * Una fila del catálogo de tareas del centro ya convertida en {@see Task}, todavía sin persistir, más
@@ -20,15 +19,17 @@ use App\Entity\TaskResponsibility;
 final readonly class CentreTaskDraft
 {
     /**
-     * @param string             $catalogId       identificador de la fila en el catálogo (p. ej. "A1-01")
-     * @param Task               $task            la tarea lista para persistir, sin estado de flujo
-     * @param TaskResponsibility $responsibility  de quién es la tarea (rol y, si toca, departamento)
-     * @param bool               $deadlineDerived si la fecha límite se deduce del catálogo (true) o es un relleno (false)
+     * La responsabilidad NO se repite aquí: ya cuelga de la tarea
+     * ({@see Task::getResponsibility()}), y tenerla en dos sitios solo da una copia que se puede
+     * desincronizar.
+     *
+     * @param string $catalogId       identificador de la fila en el catálogo (p. ej. "A1-01")
+     * @param Task   $task            la tarea lista para persistir, sin estado de flujo
+     * @param bool   $deadlineDerived si la fecha límite se deduce del catálogo (true) o es un relleno (false)
      */
     public function __construct(
         public string $catalogId,
         public Task $task,
-        public TaskResponsibility $responsibility,
         public bool $deadlineDerived,
     ) {
     }

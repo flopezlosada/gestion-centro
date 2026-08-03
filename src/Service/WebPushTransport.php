@@ -8,6 +8,7 @@ use App\Entity\PushSubscription;
 use Minishlink\WebPush\MessageSentReport;
 use Minishlink\WebPush\Subscription;
 use Minishlink\WebPush\WebPush;
+use Symfony\Component\DependencyInjection\Attribute\AsAlias;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
@@ -21,16 +22,23 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * {@see MessageSentReport::isSubscriptionExpired()} (HTTP 404 or 410 from the push service) and
  * nothing else, so a timeout or a 5xx never costs somebody their device.
  */
+// Alias explícito y no por la magia de "interfaz con una sola implementación": el día que alguien añada
+// un transporte de mentira para dev, el contenedor dejaría de saber a quién inyectar y el error saldría
+// lejos de aquí.
+#[AsAlias(PushTransport::class)]
 final class WebPushTransport implements PushTransport
 {
     /**
      * Seconds a push service keeps the message for a device that is offline. Three days: long enough
      * to reach a phone that was briefly off, short enough not to pop a stale alert days later.
+     *
+     * Public so the diagnostic command ({@see \App\Command\PushTestCommand}) sends with the SAME options
+     * production does — si divergen, la herramienta de diagnóstico miente sobre lo que pasa de verdad.
      */
-    private const int TTL_SECONDS = 259200;
+    public const int TTL_SECONDS = 259200;
 
     /** Seconds to wait on the push service, so one hung endpoint cannot stall a whole reminder batch. */
-    private const int TIMEOUT_SECONDS = 10;
+    public const int TIMEOUT_SECONDS = 10;
 
     public function __construct(
         #[Autowire('%env(VAPID_PUBLIC_KEY)%')]

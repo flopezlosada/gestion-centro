@@ -83,10 +83,15 @@ class NotificationRepository extends ServiceEntityRepository
      */
     public function deleteExpired(\DateTimeImmutable $readBefore, \DateTimeImmutable $createdBefore): int
     {
-        return (int) $this->createQueryBuilder('n')
-            ->delete()
-            // Parenthesised explicitly: this must be (leído y viejo) OR (sin leer y muy viejo), and
-            // leaving it to operator precedence is one refactor away from purging the whole inbox.
+        return (int) $this->getEntityManager()->createQueryBuilder()
+            ->delete(Notification::class, 'n')
+            // Las dos mitades del OR llevan su comprobación de `readAt` y ninguna es de adorno. La de
+            // ABAJO es la que hay que cuidar: sin `n.readAt IS NULL`, un aviso creado hace tres meses y
+            // abierto HOY se borraría el mismo día en que se leyó, que es justo lo que el centro pidió
+            // que no pasara. Tiene test propio en NotificationPurgerTest.
+            // (Los paréntesis son explícitos por legibilidad; Doctrine ya envuelve toda parte con ` AND `
+            // al componer el OR — Expr\Composite::processQueryPart, fix DDC-1237 — y en SQL el AND liga
+            // más fuerte de todas formas.)
             ->where('(n.readAt IS NOT NULL AND n.readAt < :readBefore)')
             ->orWhere('(n.readAt IS NULL AND n.createdAt < :createdBefore)')
             ->setParameter('readBefore', $readBefore)

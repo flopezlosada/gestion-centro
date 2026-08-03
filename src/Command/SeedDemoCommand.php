@@ -126,7 +126,9 @@ final class SeedDemoCommand extends Command
         }
 
         $roles = $this->rolesByCode();
-        foreach (['direction', 'head_of_studies', 'secretary', 'head_dept', 'tutor', 'teacher'] as $code) {
+        // Los mismos que exige el import de producción: una sola lista, en CentreTaskCatalog, para que no
+        // se pueda quedar desparejada de lo que el reparto de responsabilidades necesita de verdad.
+        foreach (CentreTaskCatalog::requiredRoleCodes() as $code) {
             if (!isset($roles[$code])) {
                 $io->error(sprintf('Falta el rol golden "%s". Carga la golden antes de sembrar.', $code));
 
@@ -345,7 +347,7 @@ final class SeedDemoCommand extends Command
                 $task->setDeliverableReference('https://cloud.educa.madrid.org/'.$draft->catalogId);
             }
             if ('validated' === $status) {
-                $task->setCompletedBy($draft->responsibility->holders()[0] ?? null);
+                $task->setCompletedBy($task->getResponsibility()?->holders()[0] ?? null);
             }
 
             $this->em->persist($task);

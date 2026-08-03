@@ -93,6 +93,24 @@ final class NotificationPurgerTest extends KernelTestCase
         self::assertSame(0, $this->purger->purge($when));
     }
 
+    public function testAnOldNoticeReadTodayGetsItsOwnWeek(): void
+    {
+        // EL caso que separa de verdad las dos mitades del WHERE, y el único que no se puede montar
+        // moviendo el reloj: creado hace 100 días (fuera del plazo de los SIN ABRIR) pero abierto HOY.
+        // Sin la guarda `readAt IS NULL` en la mitad de los no leídos, este aviso se borraría el mismo día
+        // en que se leyó — exactamente lo que el centro pidió que no pasara («genera confusión»).
+        $user = $this->user('vieja-leida-hoy@centro.test');
+        $notice = $this->notice($user, 'De hace tres meses, abierta hoy', read: true);
+        $this->em->flush();
+        $this->age($notice, days: 100);
+
+        self::assertSame(0, $this->purger->purge($this->inDays(1)), 'Recién leída: le quedan sus 7 días.');
+        self::assertCount(1, $this->notifications->findRecentFor($user));
+
+        // Y a la semana de leerla sí se va, por su propio plazo.
+        self::assertSame(1, $this->purger->purge($this->inDays(NotificationPurger::READ_DAYS + 1)));
+    }
+
     public function testNothingIsPurgedWhenNothingHasExpired(): void
     {
         $user = $this->user('recientes@centro.test');
@@ -140,8 +158,31 @@ final class NotificationPurgerTest extends KernelTestCase
     }
 
     /**
-     * El instante de referencia del barrido, tantos días por delante de ahora. Mover el reloj del
-     * barrido en vez de envejecer las filas es lo que permite no tocar `createdAt` por reflexión.
+     * Envejece la FECHA DE CREACIÓN de un aviso, por SQL directo.
+     *
+     * `createdAt` lo fija el constructor y no tiene setter, a propósito: nadie debe poder falsear cuándo
+     * se avisó. Para el resto de los casos basta mover el reloj del barrido, pero hay uno que no se puede
+     * montar así —creado hace mucho y leído hoy— porque exige que `createdAt` y `readAt` sean distintos.
+     * Se hace con un UPDATE y no por reflexión para no depender del nombre de un campo privado.
+     *
+     * @param Notification $notification el aviso a envejecer (ya persistido y con id)
+     * @param int          $days         cuántos días atrás mover su creación
+     */
+    private function age(Notification $notification, int $days): void
+    {
+        $this->em->getConnection()->executeStatement(
+            'UPDATE notification SET created_at = :createdAt WHERE id = :id',
+            [
+                'createdAt' => $this->inDays(-$days)->format('Y-m-d H:i:s'),
+                'id' => $notification->getId(),
+            ],
+        );
+    }
+
+    /**
+     * El instante de referencia del barrido, tantos días por delante de ahora (o por detrás, con un
+     * número negativo). Mover el reloj del barrido en vez de envejecer las filas es lo que permite no
+     * tocar `createdAt` en casi todos los casos.
      *
      * @param int $days días a sumar a ahora
      *
@@ -149,6 +190,7 @@ final class NotificationPurgerTest extends KernelTestCase
      */
     private function inDays(int $days): \DateTimeImmutable
     {
-        return (new \DateTimeImmutable())->modify(sprintf('+%d days', $days));
+        // `%+d` y no `+%d`: con un número negativo lo segundo daría «+-100 days», que modify() no entiende.
+        return (new \DateTimeImmutable())->modify(sprintf('%+d days', $days));
     }
 }

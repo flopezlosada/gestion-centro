@@ -81,7 +81,12 @@ final class ImportCentreTasksCommand extends Command
         $missing = array_values(array_diff(CentreTaskCatalog::requiredRoleCodes(), array_keys($roles)));
         if ([] !== $missing) {
             $io->error(sprintf('Faltan roles en el catálogo del centro: %s.', implode(', ', $missing)));
-            $io->note('El catálogo de roles lo crea "app:import-roster". Impórtalo antes de sembrar las tareas.');
+            // Ojo con la instrucción: `app:import-roster` NO crea el catálogo entero. Solo da de alta los
+            // cargos que aparecen en el listado del claustro (dirección, jefaturas, secretaría, tutorías y
+            // docente); `head_dept` lo dice el propio comando de roster («los jefes de departamento no
+            // vienen en el origen»), y `tic` y `guardias` tampoco están ahí. Mandar a la gente a
+            // reimportar el roster para arreglar esto la haría dar vueltas.
+            $io->note('Los cargos del listado del claustro los crea "app:import-roster", pero jefatura de departamento, TIC y coordinación de guardias NO vienen en ese origen: créalos en /admin/roles.');
 
             return Command::FAILURE;
         }
@@ -103,9 +108,14 @@ final class ImportCentreTasksCommand extends Command
             return Command::FAILURE;
         }
         if ([] === $rows) {
-            $io->warning('El catálogo no tiene ninguna fila válida. ¿Es el fichero correcto?');
+            // FAILURE y no SUCCESS: el caso típico es un CSV reexportado desde Excel en español, que sale
+            // separado por `;` — `fgetcsv` devuelve una sola columna por línea, se descartan todas y el
+            // comando habría dicho «bien» tras sembrar cero tareas. En un script de despliegue eso es
+            // justo el fallo silencioso que este comando existe para quitar.
+            $io->error('El catálogo no tiene ninguna fila válida.');
+            $io->note('Comprueba que es el fichero correcto y que está separado por COMAS: un CSV exportado desde Excel en español suele venir con punto y coma.');
 
-            return Command::SUCCESS;
+            return Command::FAILURE;
         }
 
         $drafts = $this->catalog->plan($rows, $year, $roles, $departments);

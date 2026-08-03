@@ -16,6 +16,7 @@ use App\Enum\BreakPeriod;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use App\Guardia\BreakRotaPlanner;
+use App\Tests\Support\OwnsTheBreakZoneCatalogue;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
@@ -25,6 +26,8 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  */
 final class BreakRotaPlannerTest extends KernelTestCase
 {
+    use OwnsTheBreakZoneCatalogue;
+
     private EntityManagerInterface $em;
     private BreakRotaPlanner $planner;
     private AcademicYear $year;
@@ -35,10 +38,9 @@ final class BreakRotaPlannerTest extends KernelTestCase
         self::bootKernel();
         $this->em = self::getContainer()->get(EntityManagerInterface::class);
         $this->planner = self::getContainer()->get(BreakRotaPlanner::class);
-        // Las 5 zonas del centro se siembran por MIGRACIÓN, así que `break_zone` ya no nace vacía en la
-        // base de datos de test. Este escenario es dueño del catálogo: el motor recorre TODAS las zonas
-        // y una sembrada de más cambia las cuentas de plazas de la semana.
-        $this->em->createQuery('DELETE FROM App\Entity\BreakZone')->execute();
+        // El motor recorre TODAS las zonas, así que una sembrada de más cambia las cuentas de plazas de
+        // la semana: este escenario es dueño del catálogo.
+        $this->emptyTheBreakZoneCatalogue($this->em);
 
         $this->year = (new AcademicYear())
             ->setSchoolYear('2025-2026')
