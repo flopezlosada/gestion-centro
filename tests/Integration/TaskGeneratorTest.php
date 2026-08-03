@@ -175,7 +175,12 @@ final class TaskGeneratorTest extends KernelTestCase
         foreach ($tasks as $task) {
             $byDepartment[(string) $task->getResponsibility()?->getUnit()?->getCode()] = $task;
         }
-        self::assertSame(['maths', 'lengua'], array_keys($byDepartment));
+        // Ordenado antes de comparar: lo que se afirma es QUÉ departamentos tienen tarea, no en qué
+        // orden los devuelve el repositorio (los ordena por nombre, así que "Lengua" va antes que
+        // "Matemáticas" y fijar el orden aquí era atar el test a un detalle que no se está probando).
+        $codes = array_keys($byDepartment);
+        sort($codes);
+        self::assertSame(['lengua', 'maths'], $codes);
         // Cada una resuelve a SU jefatura, en vivo y sin asignado congelado.
         self::assertSame($mathsHead, $byDepartment['maths']->resolveResponsible());
         self::assertSame($lenguaHead, $byDepartment['lengua']->resolveResponsible());
