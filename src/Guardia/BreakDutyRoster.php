@@ -71,6 +71,7 @@ final class BreakDutyRoster
      *         surplus: array<string, array<int, array<int, int>>>,
      *         required: array<string, array<int, array<int, int>>>,
      *         zoneNeeds: array<int, array{min: int, max: int}>,
+     *         periodTotals: array<string, array{places: int, filled: int, missing: int, extra: int}>,
      *         total: int,
      *         manualCount: int,
      *         extra: int,
@@ -106,6 +107,7 @@ final class BreakDutyRoster
      *     surplus: array<string, array<int, array<int, int>>>,
      *     required: array<string, array<int, array<int, int>>>,
      *     zoneNeeds: array<int, array{min: int, max: int}>,
+     *     periodTotals: array<string, array{places: int, filled: int, missing: int, extra: int}>,
      *     total: int,
      *     manualCount: int,
      *     extra: int,
@@ -124,6 +126,7 @@ final class BreakDutyRoster
      *
      * @return array{
      *     rows: list<array{teacher: User, guardias: int, halves: int, places: int, load: int, zones: list<string>}>,
+     *     totals: array{guardias: int, halves: int},
      *     equity: array{count: int, mean: float, median: float, min: int, max: int, spread: int, gini: float, label: string}
      * } the per-teacher totals and the spread
      */
@@ -155,6 +158,7 @@ final class BreakDutyRoster
      *     surplus: array<string, array<int, array<int, int>>>,
      *     required: array<string, array<int, array<int, int>>>,
      *     zoneNeeds: array<int, array{min: int, max: int}>,
+     *     periodTotals: array<string, array{places: int, filled: int, missing: int, extra: int}>,
      *     total: int,
      *     manualCount: int,
      *     extra: int,
@@ -197,9 +201,15 @@ final class BreakDutyRoster
         // quien mira el cuadrante ("¿cuántos tiene que haber en el patio?"). Se guarda el mínimo y el máximo
         // porque la demanda puede variar por día y por recreo; si coinciden es un número y si no, un rango.
         $zoneNeeds = [];
+        // Cuántas plazas pide cada RECREO y cuántas están cubiertas: la rejilla se dibuja una por recreo,
+        // y su cabecera tiene que poder decir "30 plazas · completo" o "faltan 2" sin que quien mira sume
+        // cincuenta celdas a ojo. El total de la semana, que es el que ya había, no sirve para eso: dice
+        // que falta algo pero no en cuál de las dos tablas.
+        $periodTotals = [];
         $missing = 0;
         $extra = 0;
         foreach ($periods as $period) {
+            $periodTotals[$period->value] = ['places' => 0, 'filled' => 0, 'missing' => 0, 'extra' => 0];
             foreach ($weekdays as $weekday) {
                 foreach ($zones as $zone) {
                     $zoneId = (int) $zone->getId();
@@ -212,6 +222,10 @@ final class BreakDutyRoster
                     $surplus[$period->value][$weekday->value][$zoneId] = max(0, $have - $needed);
                     $missing += max(0, $needed - $have);
                     $extra += max(0, $have - $needed);
+                    $periodTotals[$period->value]['places'] += $needed;
+                    $periodTotals[$period->value]['filled'] += $have;
+                    $periodTotals[$period->value]['missing'] += max(0, $needed - $have);
+                    $periodTotals[$period->value]['extra'] += max(0, $have - $needed);
                 }
             }
         }
@@ -226,6 +240,7 @@ final class BreakDutyRoster
             'surplus' => $surplus,
             'required' => $required,
             'zoneNeeds' => $zoneNeeds,
+            'periodTotals' => $periodTotals,
             // Para el botón de vaciar: cuántas plazas hay y cuántas puso una persona (las que nadie puede
             // recuperar sola si se borran).
             'total' => \count($duties),
@@ -236,24 +251,43 @@ final class BreakDutyRoster
     }
 
     /**
-     * The same grid, but drawn from a PROPOSAL instead of from what is stored — so the draft can actually be
-     * reviewed before publishing it.
+     * The same reading, but of a PROPOSAL instead of what is stored — so the draft can actually be reviewed
+     * before publishing it.
      *
      * It existed only as headline figures ("30 guardias completas, 0 plazas sin cubrir") while the table
      * underneath kept showing the saved rota, which on an empty course meant the whole grid at 0/2: numbers
      * to trust blindly and nothing to validate. The centre asked to "validar la propuesta y/o modificarla",
      * and you cannot validate what you cannot see.
      *
-     * The proposal carries plain ids ({@see BreakRotaProposal}), so they are turned into unsaved
-     * {@see BreakDutyAssignment} objects: throwaway objects, never persisted, only so the grid can be built
-     * by the SAME code that draws the real one — two drawings of the same thing would drift apart.
+     * It returns the equity reading too, and not only the grid, because a screen showing a proposal must not
+     * mix the two: with the grid drawn from the draft and the counters read from what is stored, the same
+     * screen said "31 guardias" at the top and "30" in the panel, and the share-out table listed a
+     * distribution that was not the one on display.
      *
      * @param AcademicYear                                                                        $year   the course
      * @param list<array{weekday: int, period: string, zoneId: int, teacherId: int, fixed: bool}> $places the proposed places
      *
-     * @return array<string, mixed> the grid, in the same shape {@see overview()} returns
+     * @return array<string, mixed> the grid and the equity reading, in the same shape {@see overview()} returns
      */
-    public function gridFromProposal(AcademicYear $year, array $places): array
+    public function overviewFromProposal(AcademicYear $year, array $places): array
+    {
+        $duties = $this->dutiesFromProposal($year, $places);
+
+        return ['grid' => $this->gridFrom($year, $duties), 'equity' => $this->equityFrom($duties)];
+    }
+
+    /**
+     * The proposal's places as unsaved {@see BreakDutyAssignment} objects.
+     *
+     * Throwaway objects, never persisted, only so the grid and the equity reading can be built by the SAME
+     * code that reads the real rota — two readings of the same thing would drift apart.
+     *
+     * @param AcademicYear                                                                        $year   the course
+     * @param list<array{weekday: int, period: string, zoneId: int, teacherId: int, fixed: bool}> $places the proposed places
+     *
+     * @return list<BreakDutyAssignment> the unsaved places
+     */
+    private function dutiesFromProposal(AcademicYear $year, array $places): array
     {
         $teachers = [];
         foreach ($this->users->findActive() as $user) {
@@ -280,7 +314,7 @@ final class BreakDutyRoster
                 ->setSource($place['fixed'] ? BreakDutySource::MANUAL : BreakDutySource::ENGINE);
         }
 
-        return $this->gridFrom($year, $duties);
+        return $duties;
     }
 
     /**
@@ -300,6 +334,7 @@ final class BreakDutyRoster
      *
      * @return array{
      *     rows: list<array{teacher: User, guardias: int, halves: int, places: int, load: int, zones: list<string>}>,
+     *     totals: array{guardias: int, halves: int},
      *     equity: array{count: int, mean: float, median: float, min: int, max: int, spread: int, gini: float, label: string}
      * } the per-teacher totals (heaviest first) and the spread
      */
@@ -334,6 +369,13 @@ final class BreakDutyRoster
 
         return [
             'rows' => $rows,
+            // Las dos cifras de titular del cuadrante guardado, sumadas donde están los datos: cuántas
+            // guardias completas hay y cuántas plazas se han quedado sin pareja. Recorrer las filas en la
+            // plantilla para sumarlas es justo lo que un lector de datos existe para evitar.
+            'totals' => [
+                'guardias' => array_sum(array_column($rows, 'guardias')),
+                'halves' => array_sum(array_column($rows, 'halves')),
+            ],
             'equity' => $this->statistics->equity(array_map(static fn (array $row): int => $row['load'], $rows)),
         ];
     }

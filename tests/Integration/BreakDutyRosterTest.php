@@ -103,6 +103,77 @@ final class BreakDutyRosterTest extends KernelTestCase
         self::assertSame(29, $grid['missing']);
     }
 
+    public function testEachRecreoReportsItsOwnPlacesAndWhatItIsMissing(): void
+    {
+        // La rejilla se dibuja UNA POR RECREO, así que su cabecera necesita el total de ese recreo: el de la
+        // semana dice que falta algo pero no en cuál de las dos tablas.
+        $ana = $this->user('Ana Patio Ruiz', 'ana.patio@educa.madrid.org');
+        $this->duty($ana, Weekday::MONDAY, $this->patio, BreakPeriod::FIRST);
+
+        $totals = $this->roster->grid($this->year)['periodTotals'];
+
+        // 5 días × (2 del patio + 1 de la biblioteca) = 15 plazas en cada recreo.
+        self::assertSame(15, $totals[BreakPeriod::FIRST->value]['places']);
+        self::assertSame(1, $totals[BreakPeriod::FIRST->value]['filled']);
+        self::assertSame(14, $totals[BreakPeriod::FIRST->value]['missing']);
+        self::assertSame(15, $totals[BreakPeriod::SECOND->value]['missing'], 'el otro recreo sigue entero por cubrir');
+        self::assertSame(0, $totals[BreakPeriod::SECOND->value]['extra']);
+    }
+
+    public function testTooManyPeopleInACellCountAsSurplusOfThatRecreo(): void
+    {
+        // Sobrar no es "completo": son plazas gastadas donde no hacen falta, y se cuentan aparte de las que
+        // faltan para que la cabecera no pueda decir "completo" con la zona desbordada.
+        $ana = $this->user('Ana Patio Ruiz', 'ana.patio@educa.madrid.org');
+        $luis = $this->user('Luis Biblio Soto', 'luis.biblio@educa.madrid.org');
+        $this->duty($ana, Weekday::MONDAY, $this->biblioteca, BreakPeriod::FIRST);
+        $this->duty($luis, Weekday::MONDAY, $this->biblioteca, BreakPeriod::FIRST);
+
+        $totals = $this->roster->grid($this->year)['periodTotals'];
+
+        self::assertSame(1, $totals[BreakPeriod::FIRST->value]['extra'], 'la biblioteca pide 1 y hay 2');
+        // 15 plazas menos la única que se cubre: la segunda persona de la biblioteca NO descuenta de lo que
+        // falta en otra celda. Lo que sobra y lo que falta se cuentan por separado.
+        self::assertSame(14, $totals[BreakPeriod::FIRST->value]['missing'], 'lo que sobra no tapa lo que falta');
+    }
+
+    public function testEquityAddsUpTheHeadlineFiguresOfTheWholeRota(): void
+    {
+        // Las dos cifras del ancla. Se suman aquí, donde están los datos, y no recorriendo las filas en la
+        // plantilla — que es justo lo que un lector de datos existe para evitar.
+        $ana = $this->user('Ana Patio Ruiz', 'ana.patio@educa.madrid.org');
+        $luis = $this->user('Luis Biblio Soto', 'luis.biblio@educa.madrid.org');
+        $this->duty($ana, Weekday::MONDAY, $this->patio, BreakPeriod::FIRST);
+        $this->duty($ana, Weekday::TUESDAY, $this->patio, BreakPeriod::SECOND);
+        $this->duty($luis, Weekday::MONDAY, $this->biblioteca, BreakPeriod::FIRST);
+
+        $totals = $this->roster->equity($this->year)['totals'];
+
+        self::assertSame(1, $totals['guardias'], 'solo Ana tiene un grande y un corto');
+        self::assertSame(1, $totals['halves'], 'el recreo suelto de Luis sale como media');
+    }
+
+    public function testAProposalIsReadWholeSoTheScreenCannotMixItWithWhatIsStored(): void
+    {
+        // Con una propuesta en pantalla, la rejilla ES la propuesta: si el reparto se leyera de lo guardado,
+        // la misma pantalla describiría dos cuadrantes distintos a la vez.
+        $ana = $this->user('Ana Patio Ruiz', 'ana.patio@educa.madrid.org');
+        $luis = $this->user('Luis Biblio Soto', 'luis.biblio@educa.madrid.org');
+        $this->duty($ana, Weekday::MONDAY, $this->patio, BreakPeriod::FIRST);
+
+        $overview = $this->roster->overviewFromProposal($this->year, [
+            ['weekday' => Weekday::FRIDAY->value, 'period' => BreakPeriod::FIRST->value, 'zoneId' => (int) $this->biblioteca->getId(), 'teacherId' => (int) $luis->getId(), 'fixed' => false],
+            ['weekday' => Weekday::FRIDAY->value, 'period' => BreakPeriod::SECOND->value, 'zoneId' => (int) $this->biblioteca->getId(), 'teacherId' => (int) $luis->getId(), 'fixed' => false],
+        ]);
+
+        // Lo de Ana está guardado y NO sale: lo que se está mirando es la propuesta.
+        self::assertSame([], $overview['grid']['cells'][BreakPeriod::FIRST->value][Weekday::MONDAY->value][(int) $this->patio->getId()]);
+        self::assertCount(1, $overview['grid']['cells'][BreakPeriod::FIRST->value][Weekday::FRIDAY->value][(int) $this->biblioteca->getId()]);
+        self::assertSame(1, $overview['equity']['equity']['count'], 'el reparto es el de la propuesta, no el de lo guardado');
+        self::assertSame('Luis Biblio Soto', $overview['equity']['rows'][0]['teacher']->getFullName());
+        self::assertSame(1, $overview['equity']['totals']['guardias']);
+    }
+
     public function testAnArchivedZoneLeavesTheGridButItsDutiesAreNotLost(): void
     {
         $ana = $this->user('Ana Patio Ruiz', 'ana.patio@educa.madrid.org');

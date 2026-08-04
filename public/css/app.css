@@ -2586,7 +2586,7 @@ tr.is-not-covered { background: var(--danger-weak); }
 
 /* ── Guardias · rejilla del horario manual ─────────────────────────────────── */
 .tt-scroll { overflow-x: auto; margin-top: 12px; }
-/* Título de cada rejilla del cuadrante de recreo: son DOS tablas seguidas (recreo grande y corto) y sin
+/* Título de cada rejilla de la demanda de zonas: son DOS tablas seguidas (recreo grande y corto) y sin
    un encabezado que las separe se leen como una sola de diez filas. */
 .tt-grid__caption { margin: 20px 0 0; font-size: 15px; font-weight: 600; }
 .tt-grid__caption:first-of-type { margin-top: 8px; }
@@ -2600,45 +2600,10 @@ tr.is-not-covered { background: var(--danger-weak); }
 .tt-lective-label { font-size: .8rem; }
 .tt-duty { background: var(--accent-weak, color-mix(in srgb, var(--accent) 14%, transparent)); }
 
-/* ── Guardias · cuadrante de recreo ────────────────────────────────────────────
-   La misma rejilla (zonas × días), pero sus celdas no llevan un desplegable: llevan las personas
-   asignadas, que son varias por celda cuando la zona necesita más de una. De ahí el chip: cada
-   nombre es una unidad con su propia acción de quitar, en lugar de una lista suelta donde no se
-   sabe a quién quita la × que tienes al lado. */
-.duty-chip {
-    display: inline-flex; align-items: center; gap: 6px;
-    margin: 2px; padding: 3px 4px 3px 9px;
-    border: 1px solid var(--border); border-radius: 999px;
-    background: var(--surface); font-size: 12.5px; white-space: nowrap;
-}
-.duty-chip .muted { font-size: 11.5px; }
-.duty-chip__remove { display: inline; }
-.chip-x {
-    border: 0; background: transparent; cursor: pointer;
-    color: var(--text-faint); font-size: 15px; line-height: 1; padding: 0 4px;
-    border-radius: 999px;
-}
-.chip-x:hover { color: var(--danger-text); background: var(--danger-weak); }
-/* Falta gente en esa zona ese día. Naranja de "sin cubrir", el mismo que el parte usa para lo que
-   aún no está resuelto — no rojo: un cuadrante a medio hacer en septiembre no es un error. */
+/* Falta gente en esa zona ese día (rejilla de demanda de zonas). Naranja de "sin cubrir", el mismo que el
+   parte usa para lo que aún no está resuelto — no rojo: un cuadrante a medio hacer en septiembre no es un
+   error. */
 .tt-cell--short { background: var(--warning-weak); }
-/* Contador "hay/pide" de cada celda del cuadrante: el dato que se escanea. Monoespaciado y arriba, para que
-   la columna de números se lea en vertical sin tropezar con los nombres. Neutro cuando cuadra: si todo se
-   pinta, nada destaca. */
-.cell-count {
-    display: block; margin-bottom: 5px;
-    font-family: var(--font-mono); font-size: 10px; letter-spacing: .06em;
-    color: var(--text-faint);
-}
-.cell-count.is-short { color: var(--warning-text); font-weight: 600; }
-.cell-count.is-over { color: var(--text-muted); font-weight: 600; }
-/* En la fila de la zona: cuánta gente hace falta (el dato que se busca) y, detrás y más apagado, el peso
-   con el que se reparte. Dos líneas para que no se lean como un solo número pegado al nombre. */
-.zone-needs { display: block; font-size: 11.5px; font-weight: 500; color: var(--text-muted); }
-.zone-weight { display: block; font-family: var(--font-mono); font-size: 10px; color: var(--text-faint); }
-/* Sobrar es un problema DISTINTO de faltar, y menos grave: son plazas gastadas donde no hacen falta, no un
-   recreo sin vigilar. Mismo fondo tenue pero en el ámbar de "atención", no en el rojo de "falta". */
-.tt-cell--over { background: color-mix(in srgb, var(--warning-weak) 45%, var(--surface)); }
 
 /* =============================================================================
    Inicio ("qué me toca hoy") — rediseño handoff_dashboard.
@@ -4657,4 +4622,370 @@ tr.is-not-covered { background: var(--danger-weak); }
     .rooms-empty { padding: 64px 24px; }
     .rooms-empty__title { font-size: 23px; }
     .rooms-empty__ways { flex-direction: row; max-width: 520px; }
+}
+
+/* ── Guardias · cuadrante de recreo — handoff catalogo/handoff_cuadrante_recreo ────────────────
+   (24a escritorio · 24b móvil · 24c propuesta sin publicar)
+   -----------------------------------------------------------------------------------------------
+   Una pantalla, dos usos que no se parecen: se MONTA una tarde de septiembre en el ordenador y se
+   CONSULTA todo el curso desde el móvil. El CSS es el que los separa — no hay dos plantillas ni dos
+   rutas: por debajo de 900px la rejilla y todas las acciones de edición desaparecen y queda la
+   consulta de un día. Las reglas que no conviene deshacer sin pensarlo:
+   1. UN solo bloque oscuro (el ancla) y UN solo naranja pleno por estado de pantalla.
+   2. Los nombres de la rejilla son TEXTO alineado a la izquierda, no cápsulas centradas, y la acción
+      de quitar vive DENTRO del nombre: sesenta × permanentes son sesenta ruidos en una tabla que se
+      lee en vertical.
+   3. El cupo se dice una vez, en el raíl de la zona; la celda solo lleva gente.
+   4. El cero se atenúa. Un número que reclama atención solo se marca cuando de verdad hay algo que
+      impide publicar.
+   Dos divergencias del handoff, deliberadas:
+   - El rojo teja del handoff (#B0492F) sobre el tostado del ancla (#7A3D0A) queda a 1.4:1, ilegible.
+     Sobre el ancla la señal la da el acento cálido (--hero-accent), que es el token que el sistema ya
+     tiene para eso; el rojo teja se usa donde funciona: en el panel claro de la propuesta.
+   - El panel de "quitar" va EN FLUJO, no flotando: el contenedor de la rejilla recorta (necesita
+     redondear la tabla) y un panel absoluto se cortaría por el borde de la tabla. Al abrirse crece la
+     fila, que es lo que un <details> hace y no engaña a nadie.
+   DEUDA: los chips de día (.recreo-day) repiten la estética de .rooms-tab. Cuando haya una tercera
+   pantalla con chips, toca extraer un componente de navegación por chips y que las tres lo usen.
+   ============================================================================================== */
+.recreo { display: flex; flex-direction: column; }
+
+/* ---- Ancla: el curso, el estado y las cifras --------------------------------
+   A sangre (los márgenes negativos son el padding de .page) y en tostado profundo, como el ancla del
+   parte y la de aulas libres. Los pesos de tinta sobre el tostado son tokens del sistema; lo propio de
+   esta pantalla es la tinta ATENUADA, que es la que hace que un cero no pese lo que un total. */
+.recreo-anchor {
+    margin: -22px -16px 0; padding: 14px 16px 15px;
+    background: var(--accent-deep); color: var(--on-accent-deep);
+    /* Tinta ATENUADA del ancla: la que hace que un cero no pese lo que un total. El handoff la fija en
+       #C79A63, que sobre el tostado da 3.9:1 y se queda corta para texto pequeño; al 68% de la tinta crema
+       sale 4.5:1 (AA) sin dejar de leerse como apagada al lado de --on-hero-soft. */
+    --recreo-faint: color-mix(in srgb, var(--on-accent-deep) 68%, transparent);
+    --recreo-surface: color-mix(in srgb, var(--on-accent-deep) 13%, transparent);
+    --recreo-hair: color-mix(in srgb, var(--on-accent-deep) 30%, transparent);
+}
+.recreo-anchor__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.recreo-anchor__what { min-width: 0; }
+.recreo-anchor__eyebrow {
+    margin: 0; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--on-hero-dim);
+}
+.recreo-anchor__row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; margin-top: 6px; }
+.recreo-anchor__course { font-family: var(--font-display); font-weight: 500; font-size: 20px; }
+/* La regla del cuadrante, solo en escritorio: en el móvil se lleva dos líneas de lo más caro que hay en
+   un teléfono para decir algo que ahí no se puede accionar. */
+.recreo-anchor__rule { display: none; margin: 7px 0 0; max-width: 62ch; font-size: 12.5px; line-height: 1.5; color: var(--on-hero-soft); }
+
+/* Cambiar de curso: contexto, no formulario. <details> nativo (funciona sin JS) con los cursos como
+   enlaces; el panel va absoluto porque el ancla no recorta. */
+.recreo-years { position: relative; }
+.recreo-years > summary {
+    list-style: none; cursor: pointer;
+    padding: 3px 9px; border: 1px solid var(--recreo-hair); border-radius: var(--radius-sm);
+    background: var(--recreo-surface); color: var(--on-hero);
+    font-family: var(--font-mono); font-size: 11px;
+}
+.recreo-years > summary::-webkit-details-marker { display: none; }
+.recreo-years > summary::after {
+    content: " ▾"; color: var(--on-hero-soft);
+}
+.recreo-years > summary:hover { border-color: var(--on-hero); }
+.recreo-years__list {
+    position: absolute; z-index: 30; top: calc(100% + 5px); left: 0; min-width: 140px;
+    display: flex; flex-direction: column; padding: 5px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow-card);
+}
+.recreo-years__list a {
+    padding: 7px 10px; border-radius: var(--radius-sm);
+    font-family: var(--font-mono); font-size: 12.5px; color: var(--text); text-decoration: none;
+}
+.recreo-years__list a:hover { background: var(--surface-sunken); }
+.recreo-years__list a.is-current { background: var(--accent-weak); color: var(--accent-ink); font-weight: 600; }
+
+/* Montar el cuadrante es cosa del ordenador: en móvil esta columna no existe. */
+.recreo-anchor__actions { display: none; flex: none; align-items: center; gap: 9px; }
+.recreo-anchor__announce { display: inline-flex; margin: 0; }
+.recreo-anchor__ghost {
+    display: inline-flex; align-items: center; padding: 9px 14px;
+    background: transparent; border: 1.5px solid var(--recreo-hair); border-radius: var(--radius);
+    font: 600 13px var(--font-body); color: var(--on-hero-soft); text-decoration: none;
+}
+.recreo-anchor__ghost:hover { border-color: var(--on-hero); color: var(--on-hero); }
+
+/* «Mi recreo este curso»: lo primero del móvil, porque es lo que se viene a mirar. */
+.recreo-anchor__mine { margin-top: 12px; }
+.recreo-anchor__mine-title { margin: 0; font-family: var(--font-display); font-weight: 500; font-size: 19px; }
+.recreo-anchor__mine-none { margin: 6px 0 0; font-size: 13px; color: var(--recreo-faint); }
+.recreo-mine { display: flex; flex-direction: column; gap: 8px; margin: 11px 0 0; }
+.recreo-mine > div { display: flex; align-items: baseline; gap: 10px; }
+.recreo-mine dt {
+    flex: none; width: 74px;
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--recreo-faint);
+}
+.recreo-mine dd { margin: 0; font-size: 14.5px; color: var(--on-hero); }
+
+/* Estado + cifras en UNA línea. Antes eran tres tarjetas a todo el ancho con el número en serif de
+   60px: un tercio de la pantalla para tres cifras, dos de ellas un cero. */
+.recreo-anchor__figures {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
+    margin-top: 13px; padding-top: 12px; border-top: 1px solid color-mix(in srgb, var(--on-accent-deep) 18%, transparent);
+}
+.recreo-state {
+    display: inline-flex; align-items: center; padding: 4px 11px;
+    background: var(--recreo-surface); border: 1px solid var(--recreo-hair); border-radius: 999px;
+    font-family: var(--font-mono); font-size: 11px; color: var(--on-hero);
+}
+.recreo-figure { display: inline-flex; align-items: baseline; gap: 6px; font-size: 13px; color: var(--on-hero-soft); }
+.recreo-figure b { font-family: var(--font-mono); font-size: 15px; font-weight: 600; color: var(--on-hero); }
+/* En cero no reclama nada: número y etiqueta se van juntos a la tinta atenuada. */
+.recreo-figure.is-zero, .recreo-figure.is-zero b { color: var(--recreo-faint); }
+/* Y cuando hay algo que impide publicar, la señal la da el acento cálido: es el único token que se lee
+   sobre el tostado (ver la nota de divergencia de arriba). */
+.recreo-figure.is-warn b { color: var(--hero-accent); }
+/* Las tres cifras son de MONTAJE (¿puedo publicar ya?), y montar es cosa del ordenador: en el teléfono se
+   llevaban dos líneas de ancla para responder algo que ahí no se puede accionar. Se queda la píldora de
+   estado, que sí importa desde cualquier sitio (si el claustro lo ve o no). Y la línea de horas también
+   sobra en móvil: cada bloque del cuerpo ya lleva la suya. */
+.recreo-anchor .recreo-figure, .recreo-anchor__when { display: none; }
+.recreo-anchor__when { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--recreo-faint); }
+
+.recreo-body { padding-top: 18px; }
+.recreo-body > .callout { margin-bottom: 16px; }
+
+/* ---- Empezar: sin cuadrante o volver a proponer ---------------------------- */
+.recreo-start { display: none; flex-direction: column; margin-bottom: 22px; }
+.recreo-start--empty {
+    padding: 26px 22px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+}
+.recreo-start__title { margin: 0 0 8px; font-family: var(--font-display); font-weight: 500; font-size: 22px; }
+.recreo-start__text { margin: 0 0 16px; max-width: 70ch; font-size: 13.5px; line-height: 1.55; color: var(--text-muted); }
+.recreo-start__ways { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.recreo-start__ways form { display: inline-flex; margin: 0; }
+
+/* ---- 24c: la propuesta sin guardar -----------------------------------------
+   Aviso NARANJA tostado con barra a la izquierda, no una banda roja a todo el ancho: no es un error, es
+   un estado de trabajo. El rojo se reserva para avisos reales. */
+.recreo-draft {
+    display: none; flex-direction: column; gap: 15px; max-width: 860px; margin-bottom: 24px;
+    padding: 20px 22px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+}
+.recreo-draft__note {
+    padding: 13px 15px; background: var(--amber-weak); border: 1px solid var(--amber-border);
+    border-left: 4px solid var(--accent); border-radius: var(--radius);
+}
+.recreo-draft__title { margin: 0 0 4px; font-size: 14.5px; font-weight: 600; color: var(--accent-deep); }
+.recreo-draft__text { margin: 0; font-size: 13px; line-height: 1.55; color: var(--amber-text); }
+/* Las mismas cifras que el ancla, pero sobre papel: aquí el rojo teja SÍ se lee, y es el que dice qué
+   bloquea publicar. */
+.recreo-draft__figures {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px;
+    padding-bottom: 15px; border-bottom: 1px solid var(--border);
+}
+.recreo-draft__figures .recreo-figure { color: var(--text-muted); }
+.recreo-draft__figures .recreo-figure b { font-size: 17px; color: var(--text); }
+.recreo-draft__figures .recreo-figure.is-zero, .recreo-draft__figures .recreo-figure.is-zero b { color: var(--text-faint); }
+.recreo-draft__figures .recreo-figure.is-warn b { color: var(--warning-text); }
+.recreo-draft__figures .recreo-figure.is-quiet b { color: var(--text-faint); }
+.recreo-draft__ways { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.recreo-draft__ways form { display: inline-flex; margin: 0; }
+.recreo-draft__aside { flex: 1 1 100%; margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-faint); }
+
+/* Lo que falta antes de publicar: una fila por cosa que arreglar, con el sitio donde se arregla. Un
+   contador («1 plaza sin cubrir») dice que algo no cuadra, no dónde ni qué hacer. */
+.recreo-todo { display: flex; flex-direction: column; gap: 8px; }
+.recreo-todo__label {
+    margin: 0; font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--text-faint);
+}
+.recreo-todo__row {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    padding: 11px 14px; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 11px;
+}
+.recreo-todo__what { margin: 0; font-size: 14px; color: var(--text); }
+.recreo-todo__why { margin: 2px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--text-faint); }
+
+/* ---- ESCRITORIO: la rejilla ------------------------------------------------ */
+.recreo-desk { display: none; }
+.recreo-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0 0 10px; }
+.recreo-head__title { margin: 0; font-family: var(--font-display); font-weight: 500; font-size: 22px; }
+.recreo-head__meta { margin: 0; font-family: var(--font-mono); font-size: 12px; color: var(--text-faint); }
+.recreo-head__meta b { font-family: var(--font-body); font-weight: 600; color: var(--text); }
+.recreo-head__meta .is-warn { color: var(--warning-text); font-weight: 600; }
+/* La instrucción se dice UNA vez, en la primera rejilla, no encima de las dos. */
+.recreo-head__hint { margin: 0 0 0 auto; font-size: 12.5px; color: var(--text-faint); }
+
+/* El borde y el redondeo los pone el envoltorio y la tabla solo dibuja separadores: así el radio recorta
+   limpio y no hay bordes dobles en las esquinas. */
+.recreo-grid-wrap {
+    margin-bottom: 28px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+}
+.recreo-grid { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.recreo-grid thead th {
+    padding: 9px 12px; text-align: left; background: var(--surface-sunken);
+    border-bottom: 1px solid var(--border);
+    font-family: var(--font-mono); font-weight: 600; font-size: 10.5px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--text-muted);
+}
+.recreo-grid thead th:first-child { width: 176px; color: var(--text-faint); font-weight: 500; }
+.recreo-grid tbody tr + tr th, .recreo-grid tbody tr + tr td { border-top: 1px solid var(--separator); }
+/* Raíl de zona: quién manda en la fila. Lleva el cupo y el peso, y por eso la celda solo lleva gente. */
+.recreo-grid__rail {
+    padding: 12px 14px; text-align: left; vertical-align: top;
+    background: color-mix(in srgb, var(--surface-sunken) 45%, var(--surface));
+    border-right: 1px solid var(--border);
+}
+.recreo-grid__zone { display: block; font-size: 14px; font-weight: 600; color: var(--text); }
+.recreo-grid__cupo { display: block; margin-top: 3px; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint); }
+.recreo-cell { padding: 8px 10px; vertical-align: top; border-right: 1px solid var(--separator); }
+.recreo-cell:last-child { border-right: 0; }
+/* Falta gente en esa zona ese día: fondo ámbar y el hueco ofrecido como botón punteado. No rojo — un
+   cuadrante a medio montar en septiembre no es un error. */
+.recreo-cell.is-short { background: var(--amber-weak); }
+/* Sobrar es otro problema, y menor: son plazas gastadas donde no hacen falta. */
+.recreo-cell.is-over { background: color-mix(in srgb, var(--amber-weak) 45%, var(--surface)); }
+.recreo-cell__empty { font-family: var(--font-mono); font-size: 12px; color: var(--text-tenue); }
+.recreo-cell__add {
+    display: block; margin-top: 3px; padding: 4px 6px;
+    border: 1.5px dashed var(--amber-border); border-radius: 6px;
+    font-size: 12px; color: var(--amber-text); text-decoration: none; text-align: left;
+}
+.recreo-cell__add:hover { border-color: var(--accent); color: var(--accent-ink); background: var(--surface); }
+
+/* El nombre es texto, y la acción vive dentro de él. */
+.recreo-name { display: block; }
+.recreo-name > summary,
+.recreo-name--flat {
+    display: block; list-style: none; cursor: pointer;
+    padding: 4px 6px; border-radius: 6px;
+    font-size: 12.5px; line-height: 1.25; color: var(--text);
+}
+.recreo-name--flat { cursor: default; }
+.recreo-name > summary::-webkit-details-marker { display: none; }
+.recreo-name > summary:hover { background: var(--accent-weak); color: var(--accent-ink); }
+.recreo-name[open] > summary { background: var(--accent-weak); color: var(--accent-ink); font-weight: 600; }
+.recreo-name > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+/* En flujo, no flotando (ver la nota de divergencia de arriba): al abrirse crece la fila. */
+.recreo-name__menu {
+    margin: 4px 0 2px; padding: 9px 10px;
+    background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-card);
+}
+.recreo-name__who { margin: 0 0 7px; font-size: 11.5px; line-height: 1.35; color: var(--text-faint); }
+.recreo-name__menu form { margin: 0; }
+.recreo-name__remove {
+    width: 100%; padding: 7px 9px; cursor: pointer; text-align: left;
+    background: transparent; border: 1px solid var(--danger-border); border-radius: var(--radius-sm);
+    font: 600 12.5px var(--font-body); color: var(--danger-text);
+}
+.recreo-name__remove:hover { background: var(--danger-weak); }
+
+/* ---- Añadir al cuadrante: UNA línea ---------------------------------------- */
+.recreo-add {
+    display: none; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin: 0;
+    padding: 12px 14px;
+    background: color-mix(in srgb, var(--surface-sunken) 45%, var(--surface));
+    border: 1px solid var(--border); border-radius: var(--radius);
+}
+.recreo-add__field { display: flex; flex-direction: column; gap: 4px; width: 150px; }
+.recreo-add__field--wide { flex: 1; min-width: 230px; width: auto; }
+.recreo-add__field label {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--text-faint);
+}
+.recreo-add__field select, .recreo-add__field .cselect { width: 100%; }
+.recreo-rule { margin: 9px 2px 26px; max-width: 84ch; font-size: 12.5px; line-height: 1.55; color: var(--text-faint); }
+.recreo-rule strong { color: var(--text-muted); }
+
+/* ---- Reparto: el peso como barra de puntos ---------------------------------
+   La barra es lo que hace visible el desequilibrio de un vistazo: seis puntos al lado de dos. El número
+   va detrás porque comparar longitudes es más rápido que comparar cifras. */
+.recreo-share { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
+.recreo-share__row {
+    display: grid; align-items: center; gap: 14px;
+    grid-template-columns: minmax(0, 1fr) 120px 150px minmax(0, 1fr);
+    padding: 9px 4px; border-bottom: 1px solid var(--separator);
+}
+.recreo-share__who { font-size: 13.5px; color: var(--text); }
+.recreo-share__count { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-faint); }
+.recreo-share__load { display: flex; align-items: center; gap: 7px; }
+.recreo-share__load b { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.recreo-bars { display: flex; gap: 2px; }
+/* Naranja tostado a medio camino entre la marca y el dorado: el borde ámbar solo (que es un filete) se
+   pierde sobre el papel y la barra dejaba de leerse como una medida. */
+.recreo-bars i { width: 7px; height: 14px; border-radius: 2px; background: color-mix(in srgb, var(--accent) 62%, var(--amber)); }
+.recreo-share__zones { font-size: 12.5px; color: var(--text-faint); }
+.recreo-share__more { margin-top: 12px; }
+.recreo-share__more > summary {
+    display: inline-flex; list-style: none; cursor: pointer;
+    padding: 8px 15px; border: 1.5px solid var(--border-strong); border-radius: var(--radius);
+    font: 600 13px var(--font-body); color: var(--text-muted);
+}
+.recreo-share__more > summary::-webkit-details-marker { display: none; }
+.recreo-share__more > summary:hover { color: var(--text); }
+.recreo-share__more .recreo-share { margin-top: 10px; }
+
+/* ---- Rehacer el cuadrante (pie del escritorio) -----------------------------
+   Bajo un rótulo tenue y con las dos acciones en secundario: se llevan por delante trabajo hecho, así que
+   no pueden tener el mismo aspecto que «Añadir». */
+.recreo-redo { margin-top: 30px; padding-top: 18px; border-top: 1px solid var(--border); }
+.recreo-redo__label {
+    margin: 0 0 10px; font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--text-faint);
+}
+.recreo-redo__ways { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.recreo-redo__ways form { display: inline-flex; margin: 0; }
+.recreo-redo__aside { margin: 0; font-size: 12.5px; color: var(--text-faint); }
+
+/* ---- MÓVIL: consultar un día ----------------------------------------------- */
+.recreo-days {
+    display: flex; gap: 7px; margin: 0 -16px 16px; padding: 0 16px 14px;
+    border-bottom: 1px solid var(--separator); overflow-x: auto; scrollbar-width: none;
+}
+.recreo-days::-webkit-scrollbar { height: 0; }
+.recreo-day {
+    flex: none; display: inline-flex; align-items: center; min-height: 44px; padding: 9px 14px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 11px;
+    font-size: 13px; color: var(--text-muted); text-decoration: none;
+}
+.recreo-day:hover { border-color: var(--border-strong); color: var(--text); }
+.recreo-day.is-active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+.recreo-day:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.recreo-phone__head { display: flex; align-items: baseline; gap: 9px; margin: 0 0 12px; }
+.recreo-phone__label {
+    font-family: var(--font-mono); font-weight: 600; font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--text-muted);
+}
+.recreo-phone__when { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
+/* Los nombres son LÍNEAS DE TEXTO a ancho completo: cero scroll lateral y cero nombres truncados, que
+   es lo que hacían las cápsulas con × cortadas por el borde. */
+.recreo-zones { list-style: none; margin: 0 0 26px; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.recreo-zone { padding-bottom: 13px; border-bottom: 1px solid var(--separator); }
+.recreo-zone__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+.recreo-zone__name { font-size: 14.5px; font-weight: 600; color: var(--text); }
+.recreo-zone__weight { flex: none; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-tenue); }
+.recreo-zone__who { margin: 0; font-size: 14.5px; line-height: 1.35; color: var(--text-muted); }
+.recreo-zone__none { margin: 0; font-size: 13.5px; color: var(--text-tenue); }
+.recreo-phone__foot { margin: 20px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--text-faint); }
+.recreo-phone__foot strong { color: var(--text-muted); }
+.recreo-phone__pending { margin: 0; padding: 18px 0; font-size: 13.5px; line-height: 1.55; color: var(--text-muted); }
+
+/* ---- Escritorio: la rejilla manda y la consulta por día desaparece ---------
+   El corte del handoff (~900px) es también el del sidebar: por debajo, la pantalla es un teléfono y
+   montar un cuadrante anual con el pulgar no es un caso de uso. */
+@media (min-width: 900px) {
+    .recreo-anchor { margin: -42px -56px 0; padding: 16px 30px 15px; }
+    .recreo-anchor__course { font-size: 22px; }
+    .recreo-anchor__rule { display: block; }
+    .recreo-anchor__actions { display: flex; }
+    .recreo-anchor__mine { display: none; }
+    .recreo-anchor .recreo-figure { display: inline-flex; }
+    .recreo-anchor__when { display: block; }
+    .recreo-body { padding-top: 24px; }
+    .recreo-start, .recreo-draft, .recreo-desk { display: flex; }
+    .recreo-desk { flex-direction: column; }
+    .recreo-add { display: flex; }
+    .recreo-days, .recreo-phone { display: none; }
 }

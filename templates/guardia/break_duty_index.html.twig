@@ -1,319 +1,542 @@
 {% extends 'app_shell.html.twig' %}
 
+{# Cuadrante de recreo — handoff catalogo/handoff_cuadrante_recreo
+   (24a escritorio · 24b móvil · 24c propuesta sin publicar).
+
+   La pantalla tiene DOS usos que no se parecen en nada, y de ahí sale casi todo el diseño:
+   1. MONTARLO: una tarde de septiembre, en el ordenador, la coordinación de guardias. La rejilla es la
+      pantalla; el curso, el estado y las tres cifras viven en el ancla, no en tarjetas gigantes con un
+      cero de 60px.
+   2. CONSULTARLO: muchas veces durante el curso, casi siempre desde el móvil, para saber quién está hoy
+      en cada zona. En móvil la rejilla no se encoge: se SUSTITUYE por la consulta de un día (chips L–V) y
+      las acciones de edición desaparecen. Nadie monta un cuadrante anual con el pulgar.
+   El ancla móvil empieza por «Mi recreo este curso» porque es lo que se viene a mirar.
+
+   Cuatro reglas del sistema que conviene no deshacer sin pensarlo:
+   - UN solo bloque oscuro (el ancla tostada) y UN solo naranja pleno por estado de pantalla.
+   - Los nombres son TEXTO alineado a la izquierda, no cápsulas centradas, y la × no está siempre: pulsar
+     el nombre abre el panel de quitar. Sesenta × permanentes son sesenta ruidos.
+   - El cupo de una zona se dice UNA vez, en su raíl, no cincuenta veces en cada celda.
+   - Una propuesta sin guardar se avisa en NARANJA tostado, no en rojo: no es un error, es un estado de
+     trabajo. El rojo teja se reserva a las cifras que impiden publicar.
+
+   Lo que aquí divergimos del handoff, a propósito:
+   - Se conservan dos avisos que el handoff no conocía porque no salen en las capturas: los recreos sin
+     vigilar de HOY (operativa del día, con su enlace para apuntar voluntariado) y el aviso de que no hay
+     tramos de recreo importados (sin ellos no se pueden decir las horas).
+   - En la propuesta, «lo que falta» no lleva un botón por fila que resuelva el hueco: la propuesta no
+     está guardada todavía, así que no hay ninguna plaza que retocar. Cada fila enlaza a donde el problema
+     se arregla de verdad (cupos o demanda de las zonas) y el retoque a mano se hace después, sobre el
+     borrador ya guardado. #}
+
 {% block title %}Cuadrante de recreo{% endblock %}
 
-{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Cuadrante de recreo{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_index') }}">Guardias</a><span class="sep">/</span>Cuadrante de recreo{% endblock %}
 
 {% block body %}
-    <div class="page-head">
-        <div>
-            <h1>Cuadrante de recreo</h1>
-            <p class="lead">Quién vigila cada zona en los recreos. Se hace <strong>una vez por curso</strong> y vale todo el año. Si alguien falta, el recreo <strong>no se reasigna</strong>: salta un aviso al equipo directivo para buscar una persona voluntaria.</p>
-        </div>
-        {% if canManage %}
-            <div class="inline-form"><a class="btn secondary" href="{{ path('break_zone_index') }}">Zonas y pesos</a></div>
-        {% endif %}
-    </div>
+    {% import _self as ui %}
+    {% set guardado = (grid.total ?? 0) > 0 %}
+    {% set anunciado = year and year.breakRotaAnnounced %}
+    {% set totales = equity.totals ?? { guardias: 0, halves: 0 } %}
 
-    {# Selector de curso (GET, auto-envío): el cuadrante es de un curso concreto. #}
-    <div class="card">
-        <form method="get" action="{{ path('break_duty_index') }}" class="inline-form">
-            <label class="field-label" for="curso">Curso</label>
-            <select id="curso" name="curso" onchange="this.form.submit()">
-                {% for c in courses %}
-                    <option value="{{ c.schoolYear }}" {{ c.schoolYear == curso ? 'selected' }}>{{ c.schoolYear }}</option>
-                {% endfor %}
-            </select>
-            <noscript><button type="submit" class="btn">Ver</button></noscript>
-        </form>
-    </div>
+    <div class="recreo">
+        {# ---- Ancla: el curso, el estado y las tres cifras ------------------------------------------
+           A sangre y en tostado profundo, el único bloque oscuro de la pantalla (mismo papel que el ancla
+           del parte y de aulas libres). Fuera del scroll: es el marco, no contenido. #}
+        <header class="recreo-anchor">
+            <div class="recreo-anchor__top">
+                <div class="recreo-anchor__what">
+                    <p class="recreo-anchor__eyebrow">Cuadrante de recreo</p>
+                    <div class="recreo-anchor__row">
+                        <span class="recreo-anchor__course">Curso {{ curso }}</span>
+                        {#- El curso es CONTEXTO, no un formulario: era una tarjeta propia con un select a
+                            todo el ancho para elegir entre tres opciones. Un <details> nativo con los cursos
+                            como enlaces hace lo mismo, cabe en el ancla y funciona sin JavaScript. -#}
+                        {% if courses|length > 1 %}
+                            <details class="recreo-years">
+                                <summary>cambiar de curso</summary>
+                                <div class="recreo-years__list">
+                                    {% for c in courses %}
+                                        <a href="{{ path('break_duty_index', {curso: c.schoolYear}) }}"
+                                           class="{{ c.schoolYear == curso ? 'is-current' }}"
+                                           {{ c.schoolYear == curso ? 'aria-current=true' }}>{{ c.schoolYear }}</a>
+                                    {% endfor %}
+                                </div>
+                            </details>
+                        {% endif %}
+                    </div>
+                    <p class="recreo-anchor__rule">Vale todo el año. Si alguien falta, el recreo no se reasigna: salta un aviso a dirección para buscar quien lo cubra.</p>
+                </div>
 
-    {% if grid is null %}
-        <div class="card">
-            <div class="empty-state">
-                <h2>No hay curso {{ curso }} dado de alta</h2>
-                <p>Crea el curso en <a href="{{ path('admin_academic_year_index') }}">Trimestres</a> e importa su horario: de ahí salen las horas de los recreos.</p>
-            </div>
-        </div>
-    {% else %}
-        {% if grid.breaks is empty %}
-            {# El cuadrante se puede montar igual (día + zona no dependen de la hora), pero sin los tramos
-               importados no podemos decir a qué hora es cada recreo, así que se avisa en vez de mostrar
-               una tabla que parece completa. #}
-            <div class="callout callout--warning" role="note">
-                No hay tramos de recreo importados para {{ curso }}, así que no podemos mostrar las horas. Importa el horario de Peñalara de este curso: el planificador marca cuáles de sus tramos son recreo.
-            </div>
-        {% else %}
-            <p class="help">
-                Recreos de {{ curso }}:
-                {% for slot in grid.breaks %}
-                    <strong>{{ loop.index }}.º</strong> {{ slot.startsAt|date('H:i', false) }}–{{ slot.endsAt|date('H:i', false) }}{{ not loop.last ? ' · ' }}
-                {% endfor %}
-                · Una guardia son <strong>un grande y un corto</strong>, y pueden ser de días distintos.
-            </p>
-        {% endif %}
-
-        {% if todayGaps is not empty %}
-            <div class="callout callout--warning" role="alert">
-                <p><strong>Hoy hay {{ todayGaps|length }} recreo(s) sin vigilar.</strong></p>
-                <ul>
-                    {% for gap in todayGaps %}
-                        <li>{{ gap.assignment.zone.name }} — falta {{ gap.assignment.teacher.fullName }}{% if gap.covered %}, lo cubre {{ gap.volunteer.fullName }}{% endif %}</li>
-                    {% endfor %}
-                </ul>
-                <p><a href="{{ path('break_duty_gap_index', {curso: curso}) }}">Ver y apuntar quién lo cubre</a></p>
-            </div>
-        {% endif %}
-
-        {% if canManage %}
-            <div class="card">
-                {% if proposal is null %}
-                    <div class="inline-form">
-                        <a class="btn" href="{{ path('break_duty_index', {curso: curso, propuesta: 1}) }}">Proponer cuadrante</a>
-                        {#- Anunciar es el paso que hace VISIBLE el cuadrante al claustro. Publicar solo guarda:
-                            así el equipo directivo retoca el reparto (quitar con la ×, añadir a mano) sin que
-                            sesenta personas hayan apuntado uno que iba a cambiar. Mismo circuito que los planes
-                            de espacios: proponer → validar o modificar → enviar a los afectados. -#}
-                        {% if (grid.total ?? 0) > 0 and not year.breakRotaAnnounced %}
-                            <form method="post" action="{{ path('break_duty_announce') }}" class="inline-form"
+                {#- Las acciones de montar el cuadrante solo en escritorio (ver la nota de arriba): en móvil
+                    esta columna entera se oculta. -#}
+                {% if canManage %}
+                    <div class="recreo-anchor__actions">
+                        <a class="recreo-anchor__ghost" href="{{ path('break_zone_index') }}">Zonas y pesos</a>
+                        {#- Anunciar es lo que hace VISIBLE el cuadrante al claustro, y es un paso aparte de
+                            guardarlo: así se retoca el reparto sin que sesenta personas hayan apuntado uno
+                            que iba a cambiar. Por eso es el único naranja pleno del ancla.
+                            Con una propuesta a la vista no aparece: anunciaría lo GUARDADO, que no es lo que
+                            se está mirando, y además le disputaría el naranja a «Guardar como borrador». -#}
+                        {% if guardado and not anunciado and proposal is null %}
+                            <form method="post" action="{{ path('break_duty_announce') }}" class="recreo-anchor__announce"
                                   data-confirm="¿Anunciar el cuadrante de {{ curso }}? El profesorado lo verá en «Mis guardias» y recibirá un aviso con sus recreos.">
                                 <input type="hidden" name="_token" value="{{ csrf_token('break_duty_announce') }}">
                                 <input type="hidden" name="curso" value="{{ curso }}">
                                 <button type="submit" class="btn">Anunciar al claustro</button>
                             </form>
                         {% endif %}
-                        {#- Vaciar para empezar de cero: publicar sustituye lo del motor pero CONSERVA lo manual, así
-                            que sin esto un curso montado con la demanda equivocada arrastra esos restos para siempre y
-                            el siguiente reparto sale encima. Dice cuántas manuales se pierden, que son las que nadie
-                            puede recuperar solo. -#}
-                        {% if grid and grid.manualCount is defined and (grid.total ?? 0) > 0 %}
-                            <form method="post" action="{{ path('break_duty_reset') }}" class="inline-form"
-                                  data-confirm="¿Vaciar el cuadrante de {{ curso }}? Se borran las {{ grid.total }} plaza(s), incluidas {{ grid.manualCount }} puesta(s) a mano.">
-                                <input type="hidden" name="_token" value="{{ csrf_token('break_duty_reset') }}">
-                                <input type="hidden" name="curso" value="{{ curso }}">
-                                <button type="submit" class="btn secondary">Vaciar y empezar de cero</button>
-                            </form>
-                        {% endif %}
                     </div>
-                    <p class="help">
-                        Reparte las plazas entre quien tenga cupo de recreo, dando primero las zonas más exigentes a quien menos carga lleva. No guarda nada: la verás antes de decidir.
-                        {% if weekly.unpairable > 0 %}
-                            <br><strong>Aviso de aritmética:</strong> la semana tiene {{ weekly.long }} plazas de recreo grande y {{ weekly.short }} de corto, así que <strong>{{ weekly.unpairable }}</strong> se quedarán sin pareja hagas lo que hagas. Eso se arregla en la demanda de las zonas, no en el reparto.
-                        {% endif %}
-                    </p>
-                {% else %}
-                    <div class="callout callout--warning" role="note">
-                        <strong>Esto es una propuesta.</strong> No se ha guardado nada todavía. Revísala y pulsa «Publicar», o descártala y no pasa nada.
-                    </div>
-
-                    <div class="worklist-stats worklist-stats--3">
-                        <div class="stat">
-                            <span class="stat-figure">{{ summary.guardias }}</span>
-                            <span class="stat-label">Guardias completas</span>
-                        </div>
-                        <div class="stat{{ summary.halves > 0 ? ' stat--warning' : ' is-zero' }}">
-                            <span class="stat-figure">{{ summary.halves }}</span>
-                            <span class="stat-label">Medias sin pareja</span>
-                        </div>
-                        <div class="stat{{ summary.unfilled > 0 ? ' stat--danger' : ' stat--success' }}">
-                            <span class="stat-figure">{{ summary.unfilled }}</span>
-                            <span class="stat-label">Plazas sin cubrir</span>
-                        </div>
-                    </div>
-
-                    <p class="help">
-                        {% if summary.halves > 0 %}
-                            Las <strong>medias</strong> no son un fallo del reparto: la semana pide {{ weekly.long }} plazas de recreo grande y {{ weekly.short }} de corto, y una guardia necesita una de cada. Para que cuadren hay que igualar la demanda de las zonas.
-                        {% endif %}
-                        {% if gaps['quota-exhausted'] is defined %}
-                            <strong>{{ gaps['quota-exhausted'] }}</strong> plazas se quedan sin nadie porque se ha agotado el cupo: se sube en <a href="{{ path('guardia_quota_index', {curso: curso}) }}">Cupos</a>.
-                        {% endif %}
-                        {% if gaps['nobody-left'] is defined %}
-                            <strong>{{ gaps['nobody-left'] }}</strong> se quedan sin nadie porque a ese recreo ya está todo el mundo colocado en otra zona: hace falta más gente en el cuadrante, no más cupo.
-                        {% endif %}
-                    </p>
-
-                    <div class="inline-form">
-                        <form method="post" action="{{ path('break_duty_publish') }}" class="inline-form">
-                            <input type="hidden" name="_token" value="{{ csrf_token('break_duty_publish') }}">
-                            <input type="hidden" name="curso" value="{{ curso }}">
-                            <button type="submit" class="btn">Publicar el cuadrante</button>
-                        </form>
-                        <a class="btn secondary" href="{{ path('break_duty_index', {curso: curso}) }}">Descartar</a>
-                    </div>
-                    <p class="help">Al publicar se sustituyen las plazas que puso el programa en una propuesta anterior. Lo que hayas puesto <strong>a mano</strong> (los patios dirigidos, por ejemplo) no se toca: ya sale en la propuesta y se respeta.</p>
                 {% endif %}
             </div>
-        {% endif %}
 
-        {# La rejilla: zonas en filas, días en columnas, como el cuadrante de papel del centro. #}
-        <div class="card">
-            <div class="page-head">
-                <div><h2>Cuadrante de {{ curso }}</h2></div>
-                {#- Qué estado tiene lo guardado: en borrador nadie más lo ve, y decirlo evita tanto publicar
-                    creyendo que ya está anunciado como retocar creyendo que el claustro no se ha enterado. -#}
-                {% if (grid.total ?? 0) > 0 %}
-                    {% if year.breakRotaAnnounced %}
-                        <p class="help">Anunciado el {{ year.breakRotaAnnouncedAt|date('d/m/Y', false) }}: el profesorado ya lo ve en «Mis guardias». Lo que cambies ahora se les nota sin avisar.</p>
-                    {% else %}
-                        <p class="alert alert--warning"><strong>Borrador.</strong> Está guardado, pero el profesorado todavía NO lo ve. Retócalo lo que necesites y pulsa «Anunciar al claustro» cuando esté listo.</p>
+            {# ---- «Mi recreo este curso» (solo móvil) ----
+               Es el 95% de las visitas desde el teléfono, así que va primero y en grande. Solo lo GUARDADO:
+               una propuesta en pantalla no es el turno de nadie todavía. #}
+            <div class="recreo-anchor__mine">
+                <p class="recreo-anchor__mine-title">Mi recreo este curso</p>
+                {% if mine is empty %}
+                    <p class="recreo-anchor__mine-none">Este curso no te toca ningún recreo.</p>
+                {% else %}
+                    <dl class="recreo-mine">
+                        {% for duty in mine %}
+                            {% set slot = grid ? (grid.breaks[duty.period.position] ?? null) : null %}
+                            <div>
+                                <dt>{{ duty.period == constant('App\\Enum\\BreakPeriod::FIRST') ? 'Grande' : 'Corto' }}</dt>
+                                <dd><b>{{ duty.weekday.label }}</b> · {{ duty.zone.name }}{{ slot ? ' · ' ~ slot.startsAt|date('H:i', false) }}</dd>
+                            </div>
+                        {% endfor %}
+                    </dl>
+                {% endif %}
+            </div>
+
+            {# ---- Estado y cifras ----
+               Un cero no merece el mismo peso visual que el total: los que están a cero se atenúan y solo
+               pasan a rojo teja cuando de verdad hay algo que impide publicar. #}
+            <div class="recreo-anchor__figures">
+                {#- Qué se está mirando. Con una propuesta en pantalla la rejilla NO es el cuadrante guardado,
+                    y decir «Borrador» ahí llevaría a retocar creyendo que se está tocando lo guardado. -#}
+                {% if proposal is not null %}
+                    <span class="recreo-state">Propuesta · sin guardar</span>
+                {% elseif guardado %}
+                    <span class="recreo-state{{ anunciado ? ' is-live' }}">
+                        {%- if anunciado -%}
+                            Publicado · {{ year.breakRotaAnnouncedAt|date('d/m', false) }}
+                        {%- else -%}
+                            Borrador · el claustro no lo ve
+                        {%- endif -%}
+                    </span>
+                {% endif %}
+                {% if grid %}
+                    {#- Las cifras de una propuesta las da su panel, y solo él: repetirlas aquí las ponía dos
+                        veces en la misma pantalla, que es una de más para que puedan discrepar. -#}
+                    {% if proposal is null %}
+                        <span class="recreo-figure"><b>{{ totales.guardias }}</b> guardias completas</span>
+                        <span class="recreo-figure{{ totales.halves > 0 ? ' is-warn' : ' is-zero' }}"><b>{{ totales.halves }}</b> medias sin pareja</span>
+                        <span class="recreo-figure{{ grid.missing > 0 ? ' is-warn' : ' is-zero' }}"><b>{{ grid.missing }}</b> plazas sin cubrir</span>
+                        {% if grid.extra > 0 %}
+                            <span class="recreo-figure is-warn"><b>{{ grid.extra }}</b> plazas de sobra</span>
+                        {% endif %}
+                    {% endif %}
+                    {% if grid.breaks is not empty %}
+                        <span class="recreo-anchor__when">recreos · {% for slot in grid.breaks %}{{ slot.timeRange }}{{ not loop.last ? ' y ' }}{% endfor %}</span>
                     {% endif %}
                 {% endif %}
-                {% if grid.missing > 0 or grid.extra > 0 %}
-                    <div>
-                        {% if grid.missing > 0 %}<span class="badge badge--warning">Faltan {{ grid.missing }} puesto(s)</span>{% endif %}
-                        {% if grid.extra > 0 %}<span class="badge badge--warning">Sobran {{ grid.extra }} puesto(s)</span>{% endif %}
-                    </div>
-                {% else %}
-                    <div><span class="badge badge--ok">Cuadrante completo</span></div>
-                {% endif %}
             </div>
+        </header>
 
-            {% if grid.zones is empty %}
+        <div class="recreo-body">
+            {% if grid is null %}
                 <div class="empty-state">
-                    <h3>Todavía no hay zonas</h3>
-                    <p>Las zonas son los sitios que hay que vigilar (patio, pasillo, biblioteca, pistas, patio dirigido). Cada una lleva un peso, y el reparto equitativo lo tiene en cuenta.</p>
-                    {% if canManage %}<p><a class="btn" href="{{ path('break_zone_index') }}">Configurar zonas</a></p>{% endif %}
+                    <h2>No hay curso {{ curso }} dado de alta</h2>
+                    <p>Crea el curso en <a href="{{ path('admin_academic_year_index') }}">Años escolares</a> e importa su horario: de ahí salen las horas de los recreos.</p>
                 </div>
             {% else %}
-                {# Una rejilla POR RECREO. Antes bastaba una porque la fila cubría los dos tramos; ahora una
-                   plaza es de un recreo concreto y la misma persona puede estar en el patio en el grande y
-                   en la biblioteca en el corto. Apilarlas en una sola celda haría ilegible justo lo que hay
-                   que leer de un vistazo: quién vigila qué, en cada recreo. #}
-                {% for period in grid.periods %}
-                    {% set slot = grid.breaks[period.position] ?? null %}
-                    <h3 class="tt-grid__caption">
-                        {{ period.label }}
-                        <span class="muted">{{ slot ? ' · ' ~ slot.timeRange : '' }}</span>
-                    </h3>
-                    <div class="tt-scroll">
-                        <table class="tt-grid">
-                            <thead>
-                                <tr>
-                                    <th scope="col">Zona</th>
-                                    {% for wd in grid.weekdays %}<th scope="col">{{ wd.label }}</th>{% endfor %}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for zone in grid.zones %}
-                                    <tr>
-                                        <th scope="row">
-                                            {#- Lo PRIMERO que se pregunta quien mira una fila es cuánta gente tiene que
-                                                haber ahí, así que va en la fila y con la palabra entera ("2 profesores"),
-                                                no un número suelto. Un rango si la demanda cambia según el día. El peso
-                                                va detrás y en gris: es del reparto, no del cuadrante — y antes, puesto
-                                                solo, se leía como si fuera el número de personas. -#}
-                                            {{ zone.name }}
-                                            {% set needs = grid.zoneNeeds[zone.id] ?? null %}
-                                            {% if needs %}
-                                                <span class="zone-needs">{% if needs.min == needs.max %}{{ needs.min }}{% else %}{{ needs.min }}–{{ needs.max }}{% endif %} docente{{ needs.max != 1 ? 's' }}</span>
-                                            {% endif %}
-                                            <span class="zone-weight">peso {{ zone.weight }}</span>
-                                        </th>
-                                        {% for wd in grid.weekdays %}
-                                            {% set duties = grid.cells[period.value][wd.value][zone.id] %}
-                                            {% set short = grid.shortfall[period.value][wd.value][zone.id] %}
-                                            {% set over = grid.surplus[period.value][wd.value][zone.id] %}
-                                            {% set pide = grid.required[period.value][wd.value][zone.id] %}
-                                            <td class="tt-cell {{ short > 0 ? 'tt-cell--short' }}{{ over > 0 ? ' tt-cell--over' }}" title="Esta zona pide {{ pide }} persona{{ pide != 1 ? 's' }} este día en este recreo">
-                                                {#- "2/3" = hay 2 de las 3 que pide la zona. Un contador se escanea en
-                                                    vertical de un vistazo; la frase "Faltan 2 de 3" pegada al último
-                                                    nombre se leía como parte del nombre. -#}
-                                                <span class="cell-count{{ short > 0 ? ' is-short' }}{{ over > 0 ? ' is-over' }}"
-                                                      title="{{ duties|length }} asignada(s) · esta zona pide {{ pide }}{{ short > 0 ? ' · falta ' ~ short : (over > 0 ? ' · sobra ' ~ over : ' · completa') }}">{{ duties|length }}/{{ pide }}</span>
-                                                {% for duty in duties %}
-                                                    <span class="duty-chip">
-                                                        {{ duty.teacher.fullName }}
-                                                        {#- `duty.id`: las plazas de una PROPUESTA no están guardadas y no
-                                                            tienen id, así que no se les puede ofrecer "quitar" (y pedir la
-                                                            ruta con id vacío reventaba la página). En una propuesta no hay
-                                                            nada que quitar todavía: se publica o se descarta. -#}
-                                                        {% if canManage and duty.id %}
-                                                            <form method="post" action="{{ path('break_duty_remove', {id: duty.id}) }}" class="duty-chip__remove">
-                                                                <input type="hidden" name="_token" value="{{ csrf_token('break_duty_remove' ~ duty.id) }}">
-                                                                <button type="submit" class="chip-x" title="Quitar a {{ duty.teacher.fullName }} de {{ zone.name }} los {{ wd.label|lower }} en el {{ period.label|lower }}" aria-label="Quitar a {{ duty.teacher.fullName }} de {{ zone.name }} los {{ wd.label|lower }} en el {{ period.label|lower }}">×</button>
-                                                            </form>
-                                                        {% endif %}
-                                                    </span>
-                                                {% endfor %}
-
-                                            </td>
-                                        {% endfor %}
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+                {% if grid.breaks is empty %}
+                    {# El cuadrante se puede montar igual (día y zona no dependen de la hora), pero sin los
+                       tramos importados no podemos decir a qué hora es cada recreo, así que se avisa en vez
+                       de mostrar una tabla que parece completa. #}
+                    <div class="callout callout--warning" role="note">
+                        No hay tramos de recreo importados para {{ curso }}, así que no podemos mostrar las horas. Importa el horario de Peñalara de este curso: el planificador marca cuáles de sus tramos son recreo.
                     </div>
-                {% endfor %}
-            {% endif %}
-        </div>
+                {% endif %}
 
-        {% if canManage and grid.zones is not empty %}
-            <div class="card">
-                <h2>Añadir al cuadrante</h2>
-                <form method="post" action="{{ path('break_duty_assign') }}" class="inline-form">
-                    <input type="hidden" name="_token" value="{{ csrf_token('break_duty_assign') }}">
-                    <input type="hidden" name="curso" value="{{ curso }}">
+                {% if todayGaps is not empty %}
+                    {# Operativa del día, no del cuadrante: alguien falta HOY y su recreo no se reasigna. #}
+                    <div class="callout callout--warning" role="alert">
+                        <p><strong>Hoy hay {{ todayGaps|length }} recreo{{ todayGaps|length == 1 ? '' : 's' }} sin vigilar.</strong></p>
+                        <ul>
+                            {% for gap in todayGaps %}
+                                <li>{{ gap.assignment.zone.name }} — falta {{ gap.assignment.teacher.fullName }}{% if gap.covered %}, lo cubre {{ gap.volunteer.fullName }}{% endif %}</li>
+                            {% endfor %}
+                        </ul>
+                        <p><a href="{{ path('break_duty_gap_index', {curso: curso}) }}">Ver y apuntar quien lo cubra</a></p>
+                    </div>
+                {% endif %}
 
-                    <label class="field-label" for="teacher">Docente</label>
-                    <select id="teacher" name="teacher" required>
-                        <option value="">— elige —</option>
-                        {% for t in teachers %}<option value="{{ t.id }}">{{ t.fullName }}</option>{% endfor %}
-                    </select>
+                {% if grid.zones is empty %}
+                    <div class="empty-state">
+                        <h2>Todavía no hay zonas</h2>
+                        <p>Las zonas son los sitios que hay que vigilar (patio, pasillo, biblioteca, pistas, patio dirigido). Cada una lleva un peso, y el reparto equitativo lo tiene en cuenta.</p>
+                        {% if canManage %}<p><a class="btn" href="{{ path('break_zone_index') }}">Configurar zonas</a></p>{% endif %}
+                    </div>
+                {% else %}
+                    {% if canManage %}
+                        {% if proposal is null %}
+                            {# ---- Sin cuadrante: proponer es lo único que hace falta ----
+                               Con el cuadrante ya montado, proponer y vaciar dejan de ser el principio de la
+                               pantalla y bajan al pie como mantenimiento: lo primero que hay que ver entonces
+                               es el cuadrante, no dos botones que lo rehacen. #}
+                            {% if not guardado %}
+                                <div class="recreo-start recreo-start--empty">
+                                    <h2 class="recreo-start__title">Todavía no hay cuadrante de {{ curso }}</h2>
+                                    <p class="recreo-start__text">
+                                        El programa reparte las plazas entre quien tenga cupo de recreo, dando primero las zonas más exigentes a quien menos carga lleva. No guarda nada: la verás antes de decidir.
+                                        {% if weekly.unpairable > 0 %}
+                                            <br><strong>Aviso de aritmética:</strong> la semana pide {{ weekly.long }} plazas de recreo grande y {{ weekly.short }} de corto, así que <strong>{{ weekly.unpairable }}</strong> se quedarán sin pareja hagas lo que hagas. Eso se arregla en la <a href="{{ path('break_zone_index') }}">demanda de las zonas</a>, no en el reparto.
+                                        {% endif %}
+                                    </p>
+                                    <div class="recreo-start__ways">
+                                        <a class="btn" href="{{ path('break_duty_index', {curso: curso, propuesta: 1}) }}">Proponer un cuadrante</a>
+                                        {#- La otra vía: montarlo a mano. Enseña la rejilla vacía y la barra de
+                                            añadir, que hasta que se piden son cincuenta celdas ofreciendo
+                                            «+ añadir» por encima de lo único que hay que hacer aquí. -#}
+                                        {% if not blank %}
+                                            <a class="btn secondary" href="{{ path('break_duty_index', {curso: curso, enblanco: 1}) }}">Empezar en blanco</a>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            {% endif %}
+                        {% else %}
+                            {# ---- 24c: la propuesta, sin guardar ----
+                               Un aviso naranja tostado y una lista de lo que falta, no tres tarjetas con un
+                               cero enorme y una banda roja de alarma. #}
+                            <section class="recreo-draft" aria-labelledby="propuesta-titulo">
+                                <div class="recreo-draft__note">
+                                    <p class="recreo-draft__title" id="propuesta-titulo">Esto es una propuesta. Todavía no se ha guardado nada.</p>
+                                    <p class="recreo-draft__text">
+                                        El programa ha repartido <b>{{ summary.placed }} de {{ summary.needed }}</b> plazas, dando primero las zonas más exigentes a quien menos carga lleva. Lo que pusiste <b>a mano</b> —los patios dirigidos, por ejemplo— sigue igual.
+                                    </p>
+                                </div>
 
-                    <label class="field-label" for="weekday">Día</label>
-                    <select id="weekday" name="weekday" required>
-                        {% for wd in weekdays %}<option value="{{ wd.value }}">{{ wd.label }}</option>{% endfor %}
-                    </select>
+                                <div class="recreo-draft__figures">
+                                    <span class="recreo-figure"><b>{{ summary.guardias }}</b> guardias completas</span>
+                                    <span class="recreo-figure{{ summary.halves > 0 ? ' is-warn' : ' is-zero' }}"><b>{{ summary.halves }}</b> medias sin pareja</span>
+                                    <span class="recreo-figure{{ summary.unfilled > 0 ? ' is-quiet' : ' is-zero' }}"><b>{{ summary.unfilled }}</b> plazas sin cubrir</span>
+                                </div>
 
-                    <label class="field-label" for="zone">Zona</label>
-                    <select id="zone" name="zone" required>
-                        {% for z in zones %}<option value="{{ z.id }}">{{ z.name }}</option>{% endfor %}
-                    </select>
+                                {% if todo is not empty %}
+                                    <div class="recreo-todo">
+                                        <p class="recreo-todo__label">Lo que falta antes de publicar</p>
+                                        {% for row in todo %}
+                                            <div class="recreo-todo__row">
+                                                <div>
+                                                    <p class="recreo-todo__what"><b>{{ row.what }}</b> · {{ row.detail }}</p>
+                                                    <p class="recreo-todo__why">{{ row.why }}</p>
+                                                </div>
+                                                {#- Dónde se arregla de verdad. La propuesta no está guardada,
+                                                    así que aquí no hay ninguna plaza que retocar a mano: eso se
+                                                    hace después, en la rejilla del borrador. -#}
+                                                {% if row.fix == 'quota' %}
+                                                    <a class="btn secondary" href="{{ path('guardia_quota_index', {curso: curso}) }}">Subir cupos</a>
+                                                {% else %}
+                                                    <a class="btn secondary" href="{{ path('break_zone_index') }}">Ver la demanda</a>
+                                                {% endif %}
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
 
-                    <label class="field-label" for="period">Recreo</label>
-                    <select id="period" name="period" required>
-                        {% for p in periods %}<option value="{{ p.value }}">{{ p.label }}</option>{% endfor %}
-                    </select>
+                                <div class="recreo-draft__ways">
+                                    <form method="post" action="{{ path('break_duty_publish') }}">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('break_duty_publish') }}">
+                                        <input type="hidden" name="curso" value="{{ curso }}">
+                                        <button type="submit" class="btn">Guardar como borrador</button>
+                                    </form>
+                                    <a class="btn secondary" href="{{ path('break_duty_index', {curso: curso}) }}">Descartar la propuesta</a>
+                                    <p class="recreo-draft__aside">Anunciar al claustro es un paso aparte, desde el borrador. Al guardar se sustituyen las plazas que puso el programa en una propuesta anterior; lo puesto a mano no se toca.</p>
+                                </div>
+                            </section>
+                        {% endif %}
+                    {% endif %}
 
-                    <button type="submit" class="btn">Añadir</button>
-                </form>
-                <p class="help">Cada docente puede tener <strong>una zona por recreo</strong>: no puede estar en dos sitios a la vez, pero sí vigilar una zona en el recreo grande y otra en el corto. Una guardia son <strong>un recreo grande y uno corto</strong>, y no tienen que caer el mismo día.</p>
-            </div>
-        {% endif %}
+                    {# ---- ESCRITORIO: la rejilla, una por recreo ------------------------------------
+                       Zonas en filas y días en columnas, como el cuadrante de papel del centro. Dos tablas
+                       porque una plaza es de UN recreo: la misma persona puede estar en el patio en el
+                       grande y en la biblioteca en el corto, y apilar las dos en una celda haría ilegible
+                       justo lo que hay que leer de un vistazo.
 
-        {# Reparto: la carga se mide en PESO, no en número de turnos, porque el centro dijo que no todas
-           las zonas cuestan igual. #}
-        <div class="card">
-            <h2>Reparto entre el profesorado</h2>
-            {% if equity.rows is empty %}
-                <p class="muted">Nadie tiene guardia de recreo en {{ curso }} todavía.</p>
-            {% else %}
-                <dl class="cover-summary">
-                    <div><dt>Docentes en el cuadrante</dt><dd><strong>{{ equity.equity.count }}</strong></dd></div>
-                    <div><dt>Carga media</dt><dd><strong>{{ equity.equity.mean }}</strong> de peso</dd></div>
-                    <div><dt>De {{ equity.equity.min }} a {{ equity.equity.max }}</dt><dd>{{ equity.equity.spread }} de diferencia</dd></div>
-                    <div><dt>Equilibrio</dt><dd><strong>{{ equity.equity.label }}</strong></dd></div>
-                </dl>
+                       En un curso SIN nada y sin propuesta no se dibuja: dos tablas de veinticinco celdas
+                       vacías no son un cuadrante, y le disputaban la pantalla a la única cosa que hay que
+                       hacer ahí. Se piden con «Empezar en blanco». #}
+                    {% if guardado or blank or proposal is not null %}
+                    <div class="recreo-desk">
+                        {% for period in grid.periods %}
+                            {% set slot = grid.breaks[period.position] ?? null %}
+                            {% set totals = grid.periodTotals[period.value] %}
+                            <div class="recreo-head">
+                                <h2 class="recreo-head__title">{{ period.label }}</h2>
+                                <p class="recreo-head__meta">
+                                    {{ slot ? slot.timeRange ~ ' · ' }}{{ totals.places }} plaza{{ totals.places == 1 ? '' : 's' }} ·
+                                    {%- if totals.missing > 0 %} <span class="is-warn">faltan {{ totals.missing }}</span>
+                                    {%- elseif totals.extra > 0 %} <span class="is-warn">sobran {{ totals.extra }}</span>
+                                    {%- else %} completo
+                                    {%- endif %}
+                                </p>
+                                {#- La instrucción, una sola vez y solo cuando hay nombres que pulsar. -#}
+                                {% if canManage and loop.first and guardado and proposal is null %}
+                                    <p class="recreo-head__hint">Pulsa un nombre para quitarlo del cuadrante.</p>
+                                {% endif %}
+                            </div>
 
-                <table class="worklist">
-                    <thead>
-                        <tr><th scope="col">Docente</th><th scope="col">Guardias</th><th scope="col">Sueltas</th><th scope="col">Peso</th><th scope="col">Zonas</th></tr>
-                    </thead>
-                    <tbody>
-                        {% for row in equity.rows %}
-                            <tr>
-                                <td>{{ row.teacher.fullName }}</td>
-                                <td>{{ row.guardias }}</td>
-                                <td>{% if row.halves > 0 %}<span class="badge badge--muted">{{ row.halves }} media{{ row.halves > 1 ? 's' }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
-                                <td><strong>{{ row.load }}</strong></td>
-                                <td class="muted">{{ row.zones|join(', ') }}</td>
-                            </tr>
+                            <div class="recreo-grid-wrap">
+                                <table class="recreo-grid">
+                                    <caption class="visually-hidden">{{ period.label }}{{ slot ? ', de ' ~ slot.timeRange }}: quién vigila cada zona cada día de la semana.</caption>
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">Zona</th>
+                                            {% for wd in grid.weekdays %}<th scope="col">{{ wd.label }}</th>{% endfor %}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for zone in grid.zones %}
+                                            <tr>
+                                                {#- El cupo de la zona vive UNA vez, aquí, y no repetido en las
+                                                    cincuenta celdas: es un dato de la zona, no de la celda. Un
+                                                    rango si la demanda cambia según el día. El peso va detrás y
+                                                    en gris: es del reparto, no del cuadrante. -#}
+                                                <th scope="row" class="recreo-grid__rail">
+                                                    <span class="recreo-grid__zone">{{ zone.name }}</span>
+                                                    {% set needs = grid.zoneNeeds[zone.id] ?? null %}
+                                                    <span class="recreo-grid__cupo">
+                                                        {%- if needs %}{% if needs.min == needs.max %}{{ needs.min }}{% else %}{{ needs.min }}–{{ needs.max }}{% endif %} docente{{ needs.max == 1 ? '' : 's' }} · {% endif -%}
+                                                        peso {{ zone.weight }}
+                                                    </span>
+                                                </th>
+                                                {% for wd in grid.weekdays %}
+                                                    {% set duties = grid.cells[period.value][wd.value][zone.id] %}
+                                                    {% set short = grid.shortfall[period.value][wd.value][zone.id] %}
+                                                    {% set over = grid.surplus[period.value][wd.value][zone.id] %}
+                                                    {% set pide = grid.required[period.value][wd.value][zone.id] %}
+                                                    <td class="recreo-cell{{ short > 0 ? ' is-short' }}{{ over > 0 ? ' is-over' }}">
+                                                        {% for duty in duties %}
+                                                            {#- El nombre es texto alineado y la acción está
+                                                                dentro, no una × permanente al lado: en sesenta
+                                                                celdas la × es ruido y aquí solo aparece cuando se
+                                                                pulsa. <details> nativo a propósito: funciona sin
+                                                                JavaScript y el teclado ya sabe manejarlo.
+                                                                `duty.id`: las plazas de una PROPUESTA no están
+                                                                guardadas y no tienen id, así que no se les puede
+                                                                ofrecer quitar (y pedir la ruta con id vacío
+                                                                reventaba la página). En una propuesta no hay nada
+                                                                que quitar: se guarda o se descarta. -#}
+                                                            {% if canManage and duty.id %}
+                                                                <details class="recreo-name">
+                                                                    <summary>{{ duty.teacher.fullName }}</summary>
+                                                                    <div class="recreo-name__menu">
+                                                                        <p class="recreo-name__who">{{ duty.teacher.fullName }} · {{ zone.name }} · {{ wd.label|lower }}</p>
+                                                                        <form method="post" action="{{ path('break_duty_remove', {id: duty.id}) }}">
+                                                                            <input type="hidden" name="_token" value="{{ csrf_token('break_duty_remove' ~ duty.id) }}">
+                                                                            <button type="submit" class="recreo-name__remove">Quitar del cuadrante</button>
+                                                                        </form>
+                                                                    </div>
+                                                                </details>
+                                                            {% else %}
+                                                                <span class="recreo-name recreo-name--flat">{{ duty.teacher.fullName }}</span>
+                                                            {% endif %}
+                                                        {% endfor %}
+                                                        {#- Una celda incompleta se ve por el fondo y ofrece el
+                                                            hueco: el atajo lleva a la barra de añadir con el día,
+                                                            la zona y el recreo ya elegidos. -#}
+                                                        {% if canManage and short > 0 and proposal is null %}
+                                                            <a class="recreo-cell__add" href="{{ path('break_duty_index', {curso: curso, zona: zone.id, d: wd.value, recreo: period.value}) }}#anadir"
+                                                               aria-label="Añadir a {{ zone.name }} los {{ wd.label|lower }} en el {{ period.label|lower }}">+ añadir</a>
+                                                        {% elseif duties is empty %}
+                                                            <span class="recreo-cell__empty" aria-label="Sin nadie: esta zona pide {{ pide }}">—</span>
+                                                        {% endif %}
+                                                    </td>
+                                                {% endfor %}
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
                         {% endfor %}
-                    </tbody>
-                </table>
-                <p class="help">Una <strong>guardia</strong> es un recreo grande más uno corto, aunque caigan en días distintos; lo que queda sin pareja sale como <strong>media</strong>. El <strong>peso</strong> suma la exigencia de cada zona, plaza a plaza, y es lo que mide si el reparto es justo. Los pesos se ajustan en <a href="{{ path('break_zone_index') }}">Zonas y pesos</a>.</p>
+
+                        {% if canManage %}
+                            {# ---- Añadir al cuadrante: UNA línea ----
+                               Cuatro campos cortos no necesitan cuatro filas a pantalla completa. #}
+                            <form method="post" action="{{ path('break_duty_assign') }}" class="recreo-add" id="anadir">
+                                <input type="hidden" name="_token" value="{{ csrf_token('break_duty_assign') }}">
+                                <input type="hidden" name="curso" value="{{ curso }}">
+
+                                <div class="recreo-add__field recreo-add__field--wide">
+                                    <label for="teacher">Docente</label>
+                                    <select id="teacher" name="teacher" required>
+                                        <option value="">— elige —</option>
+                                        {% for t in teachers %}<option value="{{ t.id }}">{{ t.fullName }}</option>{% endfor %}
+                                    </select>
+                                </div>
+                                <div class="recreo-add__field">
+                                    <label for="weekday">Día</label>
+                                    <select id="weekday" name="weekday" required>
+                                        {% for wd in weekdays %}<option value="{{ wd.value }}" {{ wd.value == prefill.weekday ? 'selected' }}>{{ wd.label }}</option>{% endfor %}
+                                    </select>
+                                </div>
+                                <div class="recreo-add__field">
+                                    <label for="zone">Zona</label>
+                                    <select id="zone" name="zone" required>
+                                        {% for z in zones %}<option value="{{ z.id }}" {{ z.id == prefill.zone ? 'selected' }}>{{ z.name }}</option>{% endfor %}
+                                    </select>
+                                </div>
+                                <div class="recreo-add__field">
+                                    <label for="period">Recreo</label>
+                                    <select id="period" name="period" required>
+                                        {% for p in periods %}<option value="{{ p.value }}" {{ p.value == prefill.period ? 'selected' }}>{{ p.label }}</option>{% endfor %}
+                                    </select>
+                                </div>
+                                <button type="submit" class="btn">Añadir</button>
+                            </form>
+                            <p class="recreo-rule">Una zona por recreo y persona: puede vigilar una en el grande y otra en el corto, no dos a la vez. Una guardia son <strong>un recreo grande y uno corto</strong>, y no tienen que caer el mismo día.</p>
+                        {% endif %}
+
+                        {# ---- Reparto entre el profesorado ----
+                           La carga se mide en PESO, no en número de turnos, porque el centro dijo que no
+                           todas las zonas cuestan igual. La barra de puntos es lo que hace visible el
+                           desequilibrio de un vistazo: seis barras al lado de dos. #}
+                        <div class="recreo-head">
+                            <h2 class="recreo-head__title">Reparto entre el profesorado</h2>
+                            {% if equity.rows is not empty %}
+                                <p class="recreo-head__meta">
+                                    {#- La media con coma decimal, que es como se escribe en español: el float
+                                        de PHP sale con punto y aquí se lee como si fuera otro número. -#}
+                                    {{ equity.equity.count }} persona{{ equity.equity.count == 1 ? '' : 's' }} · media {{ equity.equity.mean|number_format(1, ',', '.') }} de peso ·
+                                    <b>{{ equity.equity.label|lower }}</b> (de {{ equity.equity.min }} a {{ equity.equity.max }})
+                                </p>
+                            {% endif %}
+                        </div>
+
+                        {% if equity.rows is empty %}
+                            <p class="muted">Nadie tiene guardia de recreo en {{ curso }} todavía.</p>
+                        {% else %}
+                            {#- Se muestran las primeras filas (las de más carga, que es el punto de la
+                                tabla) y el resto se despliega: treinta filas de tabla debajo de la rejilla
+                                empujaban fuera de pantalla lo que se está montando. -#}
+                            {% set corte = 6 %}
+                            <ul class="recreo-share">
+                                {% for row in equity.rows|slice(0, corte) %}
+                                    {{ ui.share_row(row) }}
+                                {% endfor %}
+                            </ul>
+                            {% if equity.rows|length > corte %}
+                                <details class="recreo-share__more">
+                                    <summary>Ver las {{ equity.rows|length }} personas</summary>
+                                    <ul class="recreo-share">
+                                        {% for row in equity.rows|slice(corte) %}
+                                            {{ ui.share_row(row) }}
+                                        {% endfor %}
+                                    </ul>
+                                </details>
+                            {% endif %}
+                            <p class="recreo-rule">Una <strong>guardia</strong> es un recreo grande más uno corto, aunque caigan en días distintos; lo que queda sin pareja sale como <strong>media</strong>. El <strong>peso</strong> suma la exigencia de cada zona, plaza a plaza, y es lo que mide si el reparto es justo. Los pesos se ajustan en <a href="{{ path('break_zone_index') }}">Zonas y pesos</a>.</p>
+                        {% endif %}
+
+                        {# ---- Rehacer el cuadrante: al pie, porque rehacerlo no es lo que se viene a hacer ----
+                           Las dos son acciones que se llevan por delante trabajo hecho, así que no compiten
+                           con la rejilla arriba: quien las busca sabe que existen. #}
+                        {% if canManage and guardado and proposal is null %}
+                            <div class="recreo-redo">
+                                <p class="recreo-redo__label">Rehacer el cuadrante</p>
+                                <div class="recreo-redo__ways">
+                                    <a class="btn secondary" href="{{ path('break_duty_index', {curso: curso, propuesta: 1}) }}">Volver a proponer</a>
+                                    {#- Vaciar para empezar de cero: guardar una propuesta sustituye lo del motor
+                                        pero CONSERVA lo manual, así que sin esto un curso montado con la demanda
+                                        equivocada arrastra esos restos para siempre y el siguiente reparto sale
+                                        encima. Dice cuántas manuales se pierden, que son las que nadie puede
+                                        recuperar solo. -#}
+                                    <form method="post" action="{{ path('break_duty_reset') }}"
+                                          data-confirm="¿Vaciar el cuadrante de {{ curso }}? Se borran las {{ grid.total }} plaza(s), incluidas {{ grid.manualCount }} puesta(s) a mano.">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('break_duty_reset') }}">
+                                        <input type="hidden" name="curso" value="{{ curso }}">
+                                        <button type="submit" class="btn secondary">Vaciar y empezar de cero</button>
+                                    </form>
+                                    <p class="recreo-redo__aside">Volver a proponer respeta lo que hayas puesto a mano; vaciar se lo lleva todo.</p>
+                                </div>
+                            </div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
+                    {# ---- MÓVIL: consultar un día -------------------------------------------------
+                       La rejilla no se encoge ni se hace scrollable: se sustituye por el día que se pide,
+                       con los nombres como líneas de texto a ancho completo. Cero scroll lateral, cero
+                       nombres truncados, cero cápsulas cortadas por el borde. #}
+                    <div class="recreo-phone">
+                        {% if not guardado %}
+                            {#- Sin cuadrante, cinco zonas diciendo «sin nadie» diez veces no informan de
+                                nada: parecen un cuadrante roto en vez de uno que aún no existe. -#}
+                            <p class="recreo-phone__pending">Todavía no hay cuadrante de {{ curso }}. Se monta <strong>desde el ordenador</strong>, con el reparto que propone el programa.</p>
+                        {% else %}
+                        <nav class="recreo-days" aria-label="Día de la semana">
+                            {% for wd in grid.weekdays %}
+                                <a class="recreo-day{{ wd == dia ? ' is-active' }}" href="{{ path('break_duty_index', {curso: curso, dia: wd.value}) }}"
+                                   {{ wd == dia ? 'aria-current=page' }}>{{ wd.label }}</a>
+                            {% endfor %}
+                        </nav>
+
+                        {% for period in grid.periods %}
+                            {% set slot = grid.breaks[period.position] ?? null %}
+                            <div class="recreo-phone__head">
+                                <span class="recreo-phone__label">{{ period.label }}</span>
+                                {% if slot %}<span class="recreo-phone__when">{{ slot.timeRange }}</span>{% endif %}
+                            </div>
+                            <ul class="recreo-zones">
+                                {% for zone in grid.zones %}
+                                    {% set duties = grid.cells[period.value][dia.value][zone.id] %}
+                                    <li class="recreo-zone">
+                                        <div class="recreo-zone__head">
+                                            <span class="recreo-zone__name">{{ zone.name }}</span>
+                                            <span class="recreo-zone__weight">peso {{ zone.weight }}</span>
+                                        </div>
+                                        {% if duties is empty %}
+                                            <p class="recreo-zone__none">Sin nadie</p>
+                                        {% else %}
+                                            {% for duty in duties %}
+                                                <p class="recreo-zone__who">{{ duty.teacher.fullName }}</p>
+                                            {% endfor %}
+                                        {% endif %}
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% endfor %}
+
+                        <p class="recreo-phone__foot">El cuadrante se monta y se retoca <strong>desde el ordenador</strong>. Aquí solo se consulta.</p>
+                        {% endif %}
+                    </div>
+                {% endif %}
             {% endif %}
         </div>
-    {% endif %}
+    </div>
 {% endblock %}
+
+{# Una fila del reparto: quién, cuántas guardias, el peso como barra de puntos y en qué zonas.
+   Macro y no un include para que la misma fila sirva a la lista corta y a la desplegada sin repetir
+   el marcado ni pagar una plantilla por fila. #}
+{% macro share_row(row) %}
+    <li class="recreo-share__row">
+        <span class="recreo-share__who">{{ row.teacher.fullName }}</span>
+        <span class="recreo-share__count">
+            {{ row.guardias }} guardia{{ row.guardias == 1 ? '' : 's' }}
+            {%- if row.halves > 0 %} · {{ row.halves }} media{{ row.halves == 1 ? '' : 's' }}{% endif %}
+        </span>
+        <span class="recreo-share__load">
+            {#- La barra se corta a 14 puntos para que no se salga de su columna; el número de al lado dice
+                siempre el peso real, así que un peso descomunal se lee igual. -#}
+            <span class="recreo-bars" aria-hidden="true">
+                {% if row.load > 0 %}{% for i in 1..min(row.load, 14) %}<i></i>{% endfor %}{% endif %}
+            </span>
+            <b>{{ row.load }}</b>
+        </span>
+        <span class="recreo-share__zones">{{ row.zones|join(', ') }}</span>
+    </li>
+{% endmacro %}
