@@ -73,7 +73,7 @@
                     {% if gaps['nobody-free'] is defined %}
                         <strong>{{ gaps['nobody-free'] }}</strong> se quedan sin nadie porque a esa hora ya no queda ningún docente libre sin guardia: eso no se arregla con cupos, es el horario.
                     {% endif %}
-                    Las plazas que faltan son siempre de <strong>apoyo</strong>: los tres profesores de guardia de cada hora se completan primero.
+                    Las plazas que faltan son siempre de <strong>apoyo</strong>: las tres plazas de guardia de cada hora se completan primero.
                 {% endif %}
             </p>
 
@@ -143,7 +143,7 @@
                         {% endfor %}
                     </tbody>
                 </table>
-                <p class="help">Cada hora lleva <strong>3 profesores de guardia</strong> y <strong>2 de apoyo</strong>, que solo entran si no llegan los de guardia. Para cambiar a alguien en concreto, se hace en <a href="{{ path('guardia_schedule_edit') }}">Horario de guardias</a>: lo que se toque ahí se respeta en la siguiente propuesta.</p>
+                <p class="help">Cada hora lleva <strong>3 plazas de guardia</strong> y <strong>2 de apoyo</strong>, que solo entran si no llegan los de guardia. Para cambiar a alguien en concreto, se hace en <a href="{{ path('guardia_schedule_edit') }}">Horario de guardias</a>: lo que se toque ahí se respeta en la siguiente propuesta.</p>
             {% endif %}
         </div>
 

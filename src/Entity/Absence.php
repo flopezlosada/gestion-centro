@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Contract\Auditable;
 use App\Repository\AbsenceRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
@@ -28,11 +29,18 @@ use Doctrine\ORM\Mapping as ORM;
  * have TAUGHT — so a teacher away during a period where they were on guardia left no trace at all, and
  * the rota happily kept the guardia on them or handed them another. Storing the periods makes "who is
  * away at this period" a fact to read instead of a shape to guess.
+ *
+ * {@see Auditable}, and it has to be: the two things it owns are the ones somebody edits AFTER the fact
+ * and then has to be able to account for. The private reason travels to nobody — it stays in the app for
+ * the leadership team — so if it is silently rewritten there is no e-mail, no notice and no second copy
+ * anywhere to compare it against. And the periods decide who the rota may hand a guardia to. Both used
+ * to change without leaving a trace, on an entity every cover of the day hangs off. Its trail is shown
+ * on each of those covers' "modificar guardia" screen, which is the only place it would be looked for.
  */
 #[ORM\Entity(repositoryClass: AbsenceRepository::class)]
 #[ORM\Table(name: 'guardia_absence')]
 #[ORM\UniqueConstraint(name: 'UNIQ_guardia_absence', columns: ['absent_teacher_id', 'absence_date'])]
-class Absence
+class Absence implements Auditable
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]

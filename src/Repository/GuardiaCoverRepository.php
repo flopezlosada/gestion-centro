@@ -6,7 +6,9 @@ namespace App\Repository;
 
 use App\Entity\GuardiaCover;
 use App\Entity\User;
+use App\Enum\GuardiaReminderTrigger;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\DBAL\LockMode;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
@@ -103,6 +105,51 @@ class GuardiaCoverRepository extends ServiceEntityRepository
             ->setParameter('slot', $slotIndex)
             ->orderBy('absent.fullName', 'ASC')
             ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * The still-ungrouped parte lines of a date and period among the given ids, LOCKED FOR UPDATE.
+     *
+     * This is what makes grouping safe when two people do it at once. {@code grouping_id} is the one field
+     * of a cover that two coordinators can plausibly write in the same seconds — a bad morning has both of
+     * them staring at the same shortage — and the check-then-write it used to do lost the race silently:
+     * each read the line as ungrouped, each grouped it into a DIFFERENT room (so no UNIQUE was violated),
+     * the second write won, and the first coordinator walked away with a success message and three groups
+     * sent to a room where nobody would be.
+     *
+     * Locking these rows, rather than versioning {@see GuardiaCover}, is deliberate. An {@code @ORM\Version}
+     * column would put optimistic-lock failures on EVERY write path of the parte — assigning, incidents,
+     * the reminder stamps, the nightly sweeps — to protect one field, and each of those paths would then
+     * need to handle an exception it has no honest answer for. Here the loser simply waits, re-reads, finds
+     * the line already grouped and is told so.
+     *
+     * MUST be called inside a transaction (Doctrine refuses the lock mode otherwise), and the covers MUST
+     * NOT have been loaded earlier in the request: the identity map would hand back the stale objects and
+     * the lock would be guarding a copy nobody reads.
+     *
+     * @param list<int>          $ids       the posted cover ids (anything else is ignored)
+     * @param \DateTimeImmutable $date      the day
+     * @param int                $slotIndex the period index within the day
+     *
+     * @return GuardiaCover[] the lines that may still be grouped, locked until the transaction ends
+     */
+    public function lockUngroupedForGrouping(array $ids, \DateTimeImmutable $date, int $slotIndex): array
+    {
+        if ([] === $ids) {
+            return [];
+        }
+
+        return $this->createQueryBuilder('c')
+            ->andWhere('c.id IN (:ids)')
+            ->andWhere('c.date = :date')
+            ->andWhere('c.slotIndex = :slot')
+            ->andWhere('c.grouping IS NULL')
+            ->setParameter('ids', $ids)
+            ->setParameter('date', $date, 'date_immutable')
+            ->setParameter('slot', $slotIndex)
+            ->getQuery()
+            ->setLockMode(LockMode::PESSIMISTIC_WRITE)
             ->getResult();
     }
 
@@ -307,6 +354,65 @@ class GuardiaCoverRepository extends ServiceEntityRepository
         return (int) $this->createQueryBuilder('c')
             ->update()
             ->set('c.raicesReminderSentAt', ':at')
+            ->andWhere('c.id IN (:ids)')
+            ->setParameter('at', $at)
+            ->setParameter('ids', $ids)
+            ->getQuery()
+            ->execute();
+    }
+
+    /**
+     * The covers of one day still waiting for the reminder of a given trigger ("mañana tienes guardia" /
+     * "hoy tienes guardia"): assigned to somebody, without an incident already registered, and not yet
+     * stamped for THAT trigger.
+     *
+     * Per trigger and not "not reminded at all", because the centre asked for two reminders and the rule is
+     * only that neither repeats within itself — see {@see GuardiaReminderTrigger}. The grouping and the
+     * absent teacher come eager-loaded: the notice says where the guardia actually happens
+     * ({@see GuardiaCover::effectiveRoomName()}) and whom it covers, and one query per line would turn a
+     * day's sweep into dozens.
+     *
+     * @param \DateTimeImmutable      $date    the day whose guardias to announce
+     * @param GuardiaReminderTrigger  $trigger which of the two reminders is being sent
+     *
+     * @return GuardiaCover[] the covers to announce, earliest period first
+     */
+    public function findRemindableOn(\DateTimeImmutable $date, GuardiaReminderTrigger $trigger): array
+    {
+        return $this->createQueryBuilder('c')
+            ->addSelect('guardia', 'absent', 'grouping')
+            ->join('c.assignedGuardia', 'guardia')
+            ->join('c.absentTeacher', 'absent')
+            ->leftJoin('c.grouping', 'grouping')
+            ->andWhere('c.date = :date')
+            ->andWhere('c.notCovered = false')
+            ->andWhere(sprintf('c.%s IS NULL', $trigger->stampField()))
+            ->setParameter('date', $date, 'date_immutable')
+            ->orderBy('c.slotIndex', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Stamps one of the two guardia reminders as sent on the given covers, in one query. Same reasoning as
+     * {@see markRaicesReminderSent()}: a bulk update, so machine bookkeeping never lands in the guardia's
+     * history as an authorless "modificada".
+     *
+     * @param list<int>              $ids     the covers to stamp
+     * @param GuardiaReminderTrigger $trigger which reminder went out
+     * @param \DateTimeImmutable     $at      the instant to record
+     *
+     * @return int the number of covers stamped
+     */
+    public function markReminderSent(array $ids, GuardiaReminderTrigger $trigger, \DateTimeImmutable $at): int
+    {
+        if ([] === $ids) {
+            return 0;
+        }
+
+        return (int) $this->createQueryBuilder('c')
+            ->update()
+            ->set(sprintf('c.%s', $trigger->stampField()), ':at')
             ->andWhere('c.id IN (:ids)')
             ->setParameter('at', $at)
             ->setParameter('ids', $ids)

@@ -29,7 +29,7 @@
             {# Paso 1 · quién y qué día. Cambiar cualquiera recarga la lista de clases (GET). #}
             <form method="get" action="{{ path('guardia_absence_new') }}" class="absence-picker">
                 <div class="pickfield">
-                    <label class="eyebrow" for="absent_teacher">Profesor ausente</label>
+                    <label class="eyebrow" for="absent_teacher">Docente ausente</label>
                     {% if allTeachers|length == 1 %}
                         <input type="hidden" name="teacher" value="{{ allTeachers[0].id }}">
                         <div class="pickrow">
@@ -40,7 +40,7 @@
                         <div class="pickrow pickrow--select">
                             {% if selectedTeacherName %}<span class="pickrow__avatar" aria-hidden="true">{{ selectedTeacherName|initials }}</span>{% endif %}
                             <select id="absent_teacher" name="teacher" onchange="this.form.submit()">
-                                <option value="">Elige un profesor…</option>
+                                <option value="">Elige un docente…</option>
                                 {% for teacher in allTeachers %}
                                     <option value="{{ teacher.id }}" {{ teacher.id == selectedTeacher ? 'selected' }}>{{ teacher.fullName }}</option>
                                 {% endfor %}
@@ -58,9 +58,9 @@
                 <noscript><button type="submit" class="btn secondary">Ver clases</button></noscript>
             </form>
 
-            {# Paso 2 · clases reales de ese día del profesor elegido. #}
+            {# Paso 2 · clases reales de ese día del docente elegido. #}
             {% if selectedTeacher is null %}
-                <p class="muted step-hint">Elige un profesor para ver sus clases del {{ weekday.label|lower }}.</p>
+                <p class="muted step-hint">Elige un docente para ver sus clases del {{ weekday.label|lower }}.</p>
             {% elseif dayClasses is empty and breakDuties is empty and ownGuardias is empty %}
                 <div class="empty-state">
                     <h2>No tiene nada el {{ weekday.label|lower }}</h2>
@@ -68,7 +68,7 @@
                 </div>
             {% else %}
                 <form method="post" action="{{ path('guardia_absence_create') }}" class="absence-form" enctype="multipart/form-data" data-absence-form
-                      data-confirm="{% if dayClasses is empty and ownGuardias is not empty %}Se le retirarán las guardias que iba a cubrir y se repartirán entre el resto. ¿Continuar?{% elseif dayClasses is empty %}Se avisará al equipo directivo de que su recreo se queda sin vigilar. ¿Continuar?{% else %}Se generarán {{ dayClasses|length }} guardia{{ dayClasses|length == 1 ? '' : 's' }} y se avisará a los profesores asignados. ¿Continuar?{% endif %}">
+                      data-confirm="{% if dayClasses is empty and ownGuardias is not empty %}Se le retirarán las guardias que iba a cubrir y se repartirán entre el resto. ¿Continuar?{% elseif dayClasses is empty %}Se avisará al equipo directivo de que su recreo se queda sin vigilar. ¿Continuar?{% else %}Se generarán {{ dayClasses|length }} guardia{{ dayClasses|length == 1 ? '' : 's' }} y se avisará a quienes las cubran. ¿Continuar?{% endif %}">
                     <input type="hidden" name="_token" value="{{ csrf_token('guardia_absence_create') }}">
                     <input type="hidden" name="absent_teacher" value="{{ selectedTeacher }}">
                     <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
@@ -184,14 +184,14 @@
                                     <span class="muted"> · {{ include('guardia/_break_times.html.twig', {duty: d, breakSlots: breakSlots}) }}</span>
                                 {% endfor %}
                             </label>
-                            <p class="field-help">{{ breakDuties|length == 1 ? 'Ese recreo' : 'Esos recreos' }} <strong>no se {{ breakDuties|length == 1 ? 'reasigna' : 'reasignan' }}</strong> (no hay personal): se avisa al equipo directivo para que busque {{ breakDuties|length == 1 ? 'un voluntario' : 'voluntarios' }}, y queda registrado en «Recreos sin vigilar».</p>
+                            <p class="field-help">{{ breakDuties|length == 1 ? 'Ese recreo' : 'Esos recreos' }} <strong>no se {{ breakDuties|length == 1 ? 'reasigna' : 'reasignan' }}</strong> (no hay personal): se avisa al equipo directivo para que busque {{ breakDuties|length == 1 ? 'una persona voluntaria' : 'personas voluntarias' }}, y queda registrado en «Recreos sin vigilar».</p>
                         </div>
                     {% endif %}
 
                     <div class="form-row field--reason">
                         <label class="eyebrow" for="absence_reason">Motivo de la ausencia · privado</label>
                         <textarea id="absence_reason" name="reason" rows="2" maxlength="500"
-                                  placeholder="Solo lo veréis el profesor ausente y la coordinación de guardias. El profesor de guardia no lo ve."></textarea>
+                                  placeholder="Solo lo veréis el docente ausente y la coordinación de guardias. Quien cubra la guardia no lo ve."></textarea>
                         <p class="field-help">Opcional. Queda guardado con la ausencia y no se muestra a quien cubre la clase.</p>
                     </div>
 

@@ -8,6 +8,7 @@ use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\Department;
 use App\Entity\User;
+use App\Support\TaskGenerationKey;
 use App\Support\TaskStatus;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
@@ -38,7 +39,6 @@ class TaskRepository extends ServiceEntityRepository
             ->leftJoin('t.unit', 'unit')->addSelect('unit')
             ->leftJoin('t.assignedUser', 'assignedUser')->addSelect('assignedUser')
             ->leftJoin('t.delegatedTo', 'delegatedTo')->addSelect('delegatedTo')
-            ->leftJoin('t.assignedRole', 'assignedRole')->addSelect('assignedRole')
             ->leftJoin('t.responsibility', 'resp')->addSelect('resp')
             ->leftJoin('resp.role', 'respRole')->addSelect('respRole')
             ->leftJoin('resp.unit', 'respUnit')->addSelect('respUnit')
@@ -107,7 +107,6 @@ class TaskRepository extends ServiceEntityRepository
         return $this->createQueryBuilder('t')
             ->leftJoin('t.unit', 'unit')->addSelect('unit')
             ->leftJoin('t.assignedUser', 'assignedUser')->addSelect('assignedUser')
-            ->leftJoin('t.assignedRole', 'assignedRole')->addSelect('assignedRole')
             ->leftJoin('t.responsibility', 'resp')->addSelect('resp')
             ->leftJoin('resp.role', 'respRole')->addSelect('respRole')
             ->leftJoin('resp.unit', 'respUnit')->addSelect('respUnit')
@@ -138,24 +137,38 @@ class TaskRepository extends ServiceEntityRepository
         // Las canceladas se quedan fuera: no son ni pendientes ni un logro, así que no ocupan la agenda.
         // Las finalizadas sí se traen: caen en el bucket "Hechas" (ver AgendaEntry::fromTask).
         $qb = $this->createQueryBuilder('t')
+            // `unit` se trae SELECCIONADO porque Inicio lo pinta en cada fila de la agenda
+            // (home/index.html.twig: `t.unit.name`): sin esto es una consulta lazy por departamento
+            // distinto, en la primera pantalla que abre todo el mundo cada mañana. La responsabilidad,
+            // en cambio, se une solo para filtrar — el WHERE la necesita, la plantilla no.
+            ->leftJoin('t.unit', 'unit')->addSelect('unit')
+            ->leftJoin('t.responsibility', 'resp')
             ->andWhere('t.schoolYear = :year')
             ->andWhere('t.status != :cancelled')
             ->setParameter('year', $schoolYear)
             ->setParameter('cancelled', TaskStatus::CANCELLED)
             ->orderBy('t.dueDate', 'ASC')
-            ->addOrderBy('t.id', 'ASC');
+            ->addOrderBy('t.id', 'ASC')
+            ->setParameter('user', $user);
 
         // La agenda es "lo MÍO que hacer" = el responsable ACTUAL. Si la tarea está delegada, el
         // responsable es SOLO el delegado: una que yo delegué hacia abajo deja de ser mi pendiente y
-        // sale de mi agenda; una delegada A mí entra. Sin delegación, el asignado (o el titular del
-        // rol). Es la misma noción que Task::isOwnedBy, llevada a la consulta.
+        // sale de mi agenda; una delegada A mí entra. Sin delegación manda el asignado concreto y, si
+        // no hay ninguno, quien tenga la responsabilidad estructural.
+        //
+        // Es {@see \App\Entity\Task::isOwnedBy()} llevado a SQL, PASO POR PASO y no "parecido": antes
+        // esta consulta miraba el rol legacy sin exigir `assignedUser IS NULL`, así que una tarea
+        // reasignada a otra persona seguía apareciendo en la agenda de todo el que tuviera el rol,
+        // mientras que la ficha de esa misma tarea decía que no era suya. La condición del
+        // departamento reproduce el filtro de TaskResponsibility::holders(): un rol de departamento
+        // solo es tuyo en el TUYO.
+        $ownRole = '(t.assignedUser IS NULL AND resp.role IN (:roles) AND (resp.unit IS NULL OR resp.unit = :unit))';
         if ([] === $roleIds) {
-            $qb->andWhere('t.delegatedTo = :user OR (t.delegatedTo IS NULL AND t.assignedUser = :user)')
-                ->setParameter('user', $user);
+            $qb->andWhere('t.delegatedTo = :user OR (t.delegatedTo IS NULL AND t.assignedUser = :user)');
         } else {
-            $qb->andWhere('t.delegatedTo = :user OR (t.delegatedTo IS NULL AND (t.assignedUser = :user OR IDENTITY(t.assignedRole) IN (:roles)))')
-                ->setParameter('user', $user)
-                ->setParameter('roles', $roleIds);
+            $qb->andWhere("t.delegatedTo = :user OR (t.delegatedTo IS NULL AND (t.assignedUser = :user OR {$ownRole}))")
+                ->setParameter('roles', $roleIds)
+                ->setParameter('unit', $user->getUnit());
         }
 
         return $qb->getQuery()->getResult();
@@ -172,11 +185,20 @@ class TaskRepository extends ServiceEntityRepository
      */
     public function findOpenDueOn(\DateTimeImmutable $day, array $openPlaces): array
     {
-        // Fetch-join the associations the reminder engine reads per task, to avoid an N+1.
+        // Fetch-join the associations the reminder engine reads per task, to avoid an N+1 — including
+        // the responsibility and its role, which is where an unassigned task's recipients now come from
+        // ({@see \App\Service\TaskReminderNotifier}); without it the nightly sweep would fire two extra
+        // queries for every task nobody is concretely on the hook for.
+        //
+        // The role's HOLDERS are deliberately left lazy. Selecting them would need a join across a
+        // many-to-many that multiplies rows by holder, and the identity map already bounds the cost to
+        // one query per DISTINCT role among the day's unassigned tasks — a handful, not one per task.
         return $this->createQueryBuilder('t')
             ->leftJoin('t.assignedUser', 'assignedUser')->addSelect('assignedUser')
-            ->leftJoin('t.assignedRole', 'assignedRole')->addSelect('assignedRole')
             ->leftJoin('t.unit', 'unit')->addSelect('unit')
+            ->leftJoin('t.responsibility', 'resp')->addSelect('resp')
+            ->leftJoin('resp.role', 'respRole')->addSelect('respRole')
+            ->leftJoin('resp.unit', 'respUnit')->addSelect('respUnit')
             ->andWhere('t.dueDate = :day')
             ->andWhere('t.status IN (:open)')
             ->setParameter('day', $day->format('Y-m-d'))
@@ -221,18 +243,27 @@ class TaskRepository extends ServiceEntityRepository
     }
 
     /**
-     * The set of "templateId|Y-m-d" keys already generated for a course, so the yearly generation can
-     * skip re-creating a task it already produced (idempotent re-runs). One query, no per-item lookup.
+     * The set of keys already generated for a course, so the yearly generation can skip re-creating a
+     * task it already produced (idempotent re-runs). One query, no per-item lookup.
+     *
+     * The DEPARTMENT is part of the key ({@see \App\Support\TaskGenerationKey::for()}), because one
+     * template and one date legitimately produce one task per department. Keyed by template and date
+     * alone, a re-run would find the first department's task and skip the other twenty as if they had
+     * been generated — which is how twenty departments silently lose their memoria.
      *
      * @param string $schoolYear the course in "YYYY-YYYY" form
      *
-     * @return array<string, true> a lookup set keyed by "templateId|dueDate"
+     * @return array<string, true> a lookup set keyed by "templateId|dueDate|departmentId"
      */
     public function generatedKeysFor(string $schoolYear): array
     {
-        /** @var list<array{tpl: int, due: \DateTimeImmutable}> $rows */
+        // The department is read from the responsibility, which is where the generator puts it, and
+        // NOT from t.unit: the two are mirrored today, but the responsibility is the one the model
+        // treats as authoritative, so a task edited later cannot drift out of its own key.
+        /** @var list<array{tpl: int, due: \DateTimeImmutable, unit: int|null}> $rows */
         $rows = $this->createQueryBuilder('t')
-            ->select('IDENTITY(t.template) AS tpl', 't.dueDate AS due')
+            ->leftJoin('t.responsibility', 'resp')
+            ->select('IDENTITY(t.template) AS tpl', 't.dueDate AS due', 'IDENTITY(resp.unit) AS unit')
             ->andWhere('t.schoolYear = :year')
             ->andWhere('t.template IS NOT NULL')
             ->setParameter('year', $schoolYear)
@@ -241,7 +272,7 @@ class TaskRepository extends ServiceEntityRepository
 
         $keys = [];
         foreach ($rows as $row) {
-            $keys[$row['tpl'].'|'.$row['due']->format('Y-m-d')] = true;
+            $keys[TaskGenerationKey::for($row['tpl'], $row['due'], $row['unit'])] = true;
         }
 
         return $keys;

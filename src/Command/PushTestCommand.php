@@ -7,6 +7,7 @@ namespace App\Command;
 use App\Entity\User;
 use App\Repository\PushSubscriptionRepository;
 use App\Repository\UserRepository;
+use App\Service\WebPushTransport;
 use Minishlink\WebPush\Subscription;
 use Minishlink\WebPush\WebPush;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -78,10 +79,14 @@ final class PushTestCommand extends Command
             'url' => '/guardias/mias',
         ], \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE);
 
+        // Mismas opciones que el envío de verdad, leídas de {@see WebPushTransport}: una herramienta de
+        // diagnóstico con un TTL o un timeout distintos del de producción no diagnostica producción.
+        // Sigue construyendo su propio WebPush a propósito, porque necesita el status HTTP y la razón en
+        // crudo por dispositivo, que el transporte esconde detrás de su propio informe.
         $webPush = new WebPush(
             ['VAPID' => ['subject' => $this->vapidSubject, 'publicKey' => $this->vapidPublicKey, 'privateKey' => $this->vapidPrivateKey]],
-            ['urgency' => 'high', 'TTL' => 259200],
-            10,
+            ['urgency' => 'high', 'TTL' => WebPushTransport::TTL_SECONDS],
+            WebPushTransport::TIMEOUT_SECONDS,
             ['allow_redirects' => false],
         );
         foreach ($subscriptions as $subscription) {

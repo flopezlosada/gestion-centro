@@ -65,6 +65,42 @@ class NotificationRepository extends ServiceEntityRepository
     }
 
     /**
+     * Deletes the notices that have expired, in one bulk statement: those already READ before
+     * {@code $readBefore}, and those NEVER opened created before {@code $createdBefore}. The two
+     * windows are different on purpose and the policy that picks them lives in
+     * {@see \App\Service\NotificationPurger}; this only executes it.
+     *
+     * A bulk DQL DELETE rather than hydrating and removing: the table is the one thing in the system
+     * that grows for ever, and there is nothing to cascade — a notice is a pointer, not a record (see
+     * the purger for why there is no history). No dedicated index: the volume is a few thousand rows
+     * per course and this runs once a day, so a scan of a small table is cheaper than an index that
+     * every single insert would then have to maintain.
+     *
+     * @param \DateTimeImmutable $readBefore    cut-off for notices that were opened
+     * @param \DateTimeImmutable $createdBefore cut-off for notices that never were
+     *
+     * @return int how many rows were deleted
+     */
+    public function deleteExpired(\DateTimeImmutable $readBefore, \DateTimeImmutable $createdBefore): int
+    {
+        return (int) $this->getEntityManager()->createQueryBuilder()
+            ->delete(Notification::class, 'n')
+            // Las dos mitades del OR llevan su comprobación de `readAt` y ninguna es de adorno. La de
+            // ABAJO es la que hay que cuidar: sin `n.readAt IS NULL`, un aviso creado hace tres meses y
+            // abierto HOY se borraría el mismo día en que se leyó, que es justo lo que el centro pidió
+            // que no pasara. Tiene test propio en NotificationPurgerTest.
+            // (Los paréntesis son explícitos por legibilidad; Doctrine ya envuelve toda parte con ` AND `
+            // al componer el OR — Expr\Composite::processQueryPart, fix DDC-1237 — y en SQL el AND liga
+            // más fuerte de todas formas.)
+            ->where('(n.readAt IS NOT NULL AND n.readAt < :readBefore)')
+            ->orWhere('(n.readAt IS NULL AND n.createdAt < :createdBefore)')
+            ->setParameter('readBefore', $readBefore)
+            ->setParameter('createdBefore', $createdBefore)
+            ->getQuery()
+            ->execute();
+    }
+
+    /**
      * How many unread notifications a person has (for the inbox badge).
      *
      * @param User $user the recipient

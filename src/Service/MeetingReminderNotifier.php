@@ -24,8 +24,9 @@ use App\Repository\MeetingRepository;
  *
  * ### On the sweep instant and time zones
  * Same rule as {@see EventReminderNotifier}: `meeting.remind_at` is written and read by Doctrine in PHP's
- * default time zone without converting, so the caller must pass a "now" in that same zone. Forcing
- * Europe/Madrid here would shift every reminder by the offset between them.
+ * default time zone without converting, so the caller must pass a "now" in that same zone — plain
+ * `new \DateTimeImmutable('now')`. That zone is the centre's, anchored at boot by {@see \App\Kernel}; do
+ * NOT hand over a zone of your own here, since any other one shifts every reminder by the offset.
  */
 final class MeetingReminderNotifier
 {

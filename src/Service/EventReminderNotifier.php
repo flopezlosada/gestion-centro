@@ -20,10 +20,10 @@ use App\Repository\PersonalEventRepository;
  * The reminder compares an instant against `personal_event.remind_at`, and Doctrine stores/reads a
  * `datetime_immutable` in PHP's default time zone WITHOUT converting it. So the caller must pass a
  * "now" in that same default zone — which is what {@see \App\Command\SendEventRemindersCommand} does.
- * Forcing Europe/Madrid here (as the daily task reminder does) would be a bug, not a fix: that one
- * only ever compares midnight-anchored DAYS, where the zone cancels out; this one compares clock
- * times, where a mismatched zone shifts every reminder by the offset. The deployment is what has to
- * put PHP in the centre's zone.
+ * Handing over a zone of your own here would be a bug, not a fix: a day-matching sweep can get away
+ * with it (the zone cancels out at midnight), but this one compares clock times, where a mismatched
+ * zone shifts every reminder by the offset. There is nothing to force anyway — PHP's default zone IS
+ * the centre's, anchored at boot by {@see \App\Kernel} instead of being left to the deployment.
  */
 final class EventReminderNotifier
 {

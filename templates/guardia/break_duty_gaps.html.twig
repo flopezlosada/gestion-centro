@@ -8,7 +8,7 @@
     <div class="page-head">
         <div>
             <h1>Recreos sin vigilar</h1>
-            <p class="lead">Días en los que quien tiene la guardia de recreo falta. No se reasigna a nadie: hay que buscar un voluntario y apuntarlo aquí.</p>
+            <p class="lead">Días en los que quien tiene la guardia de recreo falta. No se reasigna a nadie: hay que buscar una persona voluntaria y apuntarla aquí.</p>
         </div>
     </div>
 
@@ -26,7 +26,7 @@
 
     <dl class="cover-summary">
         <div><dt>Recreos sin su vigilante</dt><dd><strong>{{ summary.total }}</strong> en {{ curso }}</dd></div>
-        <div><dt>Los cubrió un voluntario</dt><dd><strong>{{ summary.covered }}</strong></dd></div>
+        <div><dt>Los cubrió alguien voluntario</dt><dd><strong>{{ summary.covered }}</strong></dd></div>
         <div><dt>Se quedaron sin nadie</dt><dd><strong>{{ summary.total - summary.covered }}</strong></dd></div>
     </dl>
 
@@ -41,9 +41,9 @@
                     <td>
                         <form method="post" action="{{ path('break_duty_gap_update', {id: gap.id}) }}" class="inline-form">
                             <input type="hidden" name="_token" value="{{ csrf_token('break_duty_gap' ~ gap.id) }}">
-                            <label class="visually-hidden" for="volunteer-{{ gap.id }}">Voluntario para el {{ gap.date|date('d/m/Y', false) }}</label>
+                            <label class="visually-hidden" for="volunteer-{{ gap.id }}">Quién lo cubre el {{ gap.date|date('d/m/Y', false) }}</label>
                             <select id="volunteer-{{ gap.id }}" name="volunteer">
-                                <option value="">— sin voluntario —</option>
+                                <option value="">— sin cubrir —</option>
                                 {% for t in teachers %}
                                     <option value="{{ t.id }}" {{ gap.volunteer and gap.volunteer.id == t.id ? 'selected' }}>{{ t.fullName }}</option>
                                 {% endfor %}
@@ -58,7 +58,7 @@
                         {% if gap.covered %}
                             <span class="badge badge--ok">{{ gap.volunteer.fullName }}</span>
                         {% else %}
-                            <span class="badge badge--warning">Sin voluntario</span>
+                            <span class="badge badge--warning">Sin cubrir</span>
                         {% endif %}
                         {% if gap.note %}<span class="muted"> · {{ gap.note }}</span>{% endif %}
                     </td>
@@ -74,7 +74,7 @@
         {% else %}
             <table class="worklist">
                 <thead>
-                    <tr><th scope="col">Día</th><th scope="col">Zona</th><th scope="col">Falta</th><th scope="col">{{ canManage ? 'Voluntario' : 'Estado' }}</th></tr>
+                    <tr><th scope="col">Día</th><th scope="col">Zona</th><th scope="col">Falta</th><th scope="col">{{ canManage ? 'Quién lo cubre' : 'Estado' }}</th></tr>
                 </thead>
                 <tbody>{{ _self.gap_rows(pending, teachers, canManage) }}</tbody>
             </table>
@@ -86,7 +86,7 @@
             <h2>Ya pasados</h2>
             <table class="worklist">
                 <thead>
-                    <tr><th scope="col">Día</th><th scope="col">Zona</th><th scope="col">Faltó</th><th scope="col">{{ canManage ? 'Voluntario' : 'Estado' }}</th></tr>
+                    <tr><th scope="col">Día</th><th scope="col">Zona</th><th scope="col">Faltó</th><th scope="col">{{ canManage ? 'Quién lo cubrió' : 'Estado' }}</th></tr>
                 </thead>
                 <tbody>{{ _self.gap_rows(past, teachers, canManage) }}</tbody>
             </table>

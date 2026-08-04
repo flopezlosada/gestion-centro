@@ -39,6 +39,12 @@ final class TaskActivityPresenter
         'dueDate' => ['label' => 'Fecha límite', 'kind' => 'date'],
         'mandatory' => ['label' => 'Obligatoria', 'kind' => 'bool'],
         'status' => ['label' => 'Estado', 'kind' => 'status'],
+        // `assignedRole` ya NO es un campo de Task: la columna se retiró al unificar la responsabilidad
+        // en TaskResponsibility. Se queda en el diccionario a propósito, porque esto describe el
+        // HISTÓRICO y no la entidad de hoy: el rastro de auditoría es inmutable y sigue lleno de
+        // entradas con ese campo (359 solo en la base local). Un campo que no está aquí se salta EN
+        // SILENCIO ({@see friendlyChanges()}), así que borrarlo no daría ningún error — simplemente
+        // haría desaparecer del histórico legible cambios que de verdad ocurrieron.
         'assignedRole' => ['label' => 'Rol responsable', 'kind' => 'ref', 'class' => Role::class],
         'assignedUser' => ['label' => 'Responsable', 'kind' => 'ref', 'class' => User::class],
         'delegatedTo' => ['label' => 'Delegada a', 'kind' => 'ref', 'class' => User::class],

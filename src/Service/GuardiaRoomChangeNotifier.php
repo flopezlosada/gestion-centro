@@ -53,7 +53,7 @@ final class GuardiaRoomChangeNotifier
                 'room.changed',
                 sprintf('Cambio de aula: %s', $grouping->getDate()->format('d/m/Y')),
                 sprintf(
-                    'Por motivos organizativos, el %s%s tu clase%s no se da en %s: se necesita esa aula para reunir varios grupos que se quedan sin profesor. %s%s',
+                    'Por motivos organizativos, el %s%s tu clase%s no se da en %s: se necesita esa aula para reunir varios grupos que se quedan sin docente. %s%s',
                     $grouping->getDate()->format('d/m/Y'),
                     $this->at($timeLabel),
                     '' !== $groups ? sprintf(' de %s', $groups) : '',

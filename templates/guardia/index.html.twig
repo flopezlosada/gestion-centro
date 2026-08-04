@@ -34,7 +34,7 @@
     <details class="assignsheet">
         {# «profesor» sobra en la tabla de escritorio, donde la columna ya se llama «Cubre»; en la tarjeta de
            móvil el botón va a ancho completo y sin él quedaría un verbo suelto. #}
-        <summary class="assignsheet__toggle">Asignar<span class="assignsheet__toggleword"> profesor</span></summary>
+        <summary class="assignsheet__toggle">Asignar<span class="assignsheet__toggleword"> docente</span></summary>
         <div class="assignsheet__panel">
             <div class="assignsheet__grip" aria-hidden="true"></div>
             <div class="assignsheet__head">
@@ -68,13 +68,17 @@
                         <button type="submit" class="btn btn-sm{{ (c.doublingUp or c.slotLoad > 0) ? ' secondary' : '' }}">{{ c.doublingUp ? 'Doblar' : 'Asignar' }}</button>
                     </form>
                 {% else %}
-                    <p class="muted">Nadie libre en este tramo: todos los profesores de guardia ya cubren un grupo o faltan hoy.</p>
+                    <p class="muted">Nadie libre en este tramo: todo el profesorado de guardia ya cubre un grupo o falta hoy.</p>
                 {% endfor %}
 
-                {# No disponibles: del pool del tramo, quien falta hoy o ya cubre otro grupo y NO se
-                   ofrece arriba (en déficit los que doblan sí se ofrecen, así que no se repiten aquí). #}
+                {# No disponibles: del pool del tramo, quien falta hoy, quien está al frente de una actividad
+                   de un plan aprobado (acompañando un examen, dando un taller) o quien ya cubre otro grupo,
+                   y NO se ofrece arriba (en déficit los que doblan sí se ofrecen, así que no se repiten
+                   aquí). Los tres motivos tienen que estar: el motor ya no ofrece a quien acompaña una
+                   actividad, así que si aquí tampoco saliera, esa persona desaparecería de la hoja sin que
+                   nada explicara por qué. #}
                 {% set ofrecidos = libres|map(c => c.teacher.id) %}
-                {% set ocupados = pool|filter(p => (p.absent or p.groups) and p.teacher.id not in ofrecidos) %}
+                {% set ocupados = pool|filter(p => (p.absent or p.supervising or p.groups) and p.teacher.id not in ofrecidos) %}
                 {% if ocupados is not empty %}
                     <div class="assignsheet__sep"></div>
                     <div class="eyebrow assignsheet__seplabel">No disponibles</div>
@@ -84,6 +88,8 @@
                             <span class="assignsheet__name">{{ p.teacher.fullName }}</span>
                             {% if p.absent %}
                                 <span class="badge badge--danger">Ausente</span>
+                            {% elseif p.supervising %}
+                                <span class="badge badge--danger" title="Está al frente de una actividad de un plan aprobado a esta hora">Acompaña una actividad</span>
                             {% else %}
                                 <span class="badge badge--muted">→ {{ p.groups|join(', ') }}</span>
                             {% endif %}
@@ -223,13 +229,13 @@
             {% if deficit.missing > 0 or deficit.doubled > 0 %}
                 <div class="callout callout--warning parte-deficit">
                     <div>
-                        <strong>No hay profesores de guardia para todas las ausencias de esta hora.</strong>
+                        <strong>No hay profesorado de guardia para todas las ausencias de esta hora.</strong>
                         <p>
                             {{ deficit.uncovered }} ausencia{{ deficit.uncovered == 1 ? '' : 's' }} sin cubrir ·
-                            {{ deficit.free }} profesor{{ deficit.free == 1 ? '' : 'es' }} libre{{ deficit.free == 1 ? '' : 's' }}
-                            {%- if deficit.doubled > 0 %} · {{ deficit.doubled }} profesor{{ deficit.doubled == 1 ? '' : 'es' }} con {{ deficit.extra }} guardia{{ deficit.extra == 1 ? '' : 's' }} de más{% endif %}
+                            {{ deficit.free }} docente{{ deficit.free == 1 ? '' : 's' }} libre{{ deficit.free == 1 ? '' : 's' }}
+                            {%- if deficit.doubled > 0 %} · {{ deficit.doubled }} docente{{ deficit.doubled == 1 ? '' : 's' }} con {{ deficit.extra }} guardia{{ deficit.extra == 1 ? '' : 's' }} de más{% endif %}
                         </p>
-                        <p class="muted">El reparto da varios grupos al mismo profesor cuando no queda nadie libre, empezando por quien menos lleva. Júntalos en un aula grande —así cuenta como una sola guardia— o da de alta apoyo puntual.</p>
+                        <p class="muted">El reparto da varios grupos al mismo docente cuando no queda nadie libre, empezando por quien menos lleva. Júntalos en un aula grande —así cuenta como una sola guardia— o da de alta apoyo puntual.</p>
                     </div>
                     {% if canWrite %}
                         <div class="parte-deficit__actions">
@@ -338,7 +344,7 @@
                     {# ================= ESCRITORIO: la tabla ================= #}
                     <table class="parte-table">
                         <thead>
-                            <tr><th>Grupo · Aula</th><th>Profesor ausente</th><th>Tarea para el grupo</th><th>Cubre</th><th></th></tr>
+                            <tr><th>Grupo · Aula</th><th>Docente ausente</th><th>Tarea para el grupo</th><th>Cubre</th><th></th></tr>
                             {# El "motivo" junto al ausente es el motivo de la ausencia (privado): solo aquí y en el detalle del coordinador. #}
                         </thead>
                         <tbody>
@@ -453,13 +459,20 @@
                         </div>
                         <div class="duty-grid">
                             {% for p in pool %}
-                                {% set libre = not p.absent and not p.groups %}
+                                {% set libre = not p.absent and not p.supervising and not p.groups %}
                                 <div class="duty-card {{ libre ? 'is-free' : 'is-off' }}">
                                     <div class="duty-card__what">
                                         <div class="duty-card__name">{{ p.teacher.fullName }}</div>
                                         <div class="duty-card__tags">
                                             {% if p.absent %}
                                                 <span class="duty-tag duty-tag--absent">Ausente</span>
+                                            {% elseif p.supervising %}
+                                                {# Está en el centro, así que ni falta ni tiene clase, y aun así es
+                                                   la única persona del panel que NO puede entrar a un aula: está
+                                                   al frente de una actividad de un plan aprobado (acompañando un
+                                                   examen de 2º de Bach, dando un taller). Mismo tinte que
+                                                   «Ausente» porque significa lo mismo para quien reparte. #}
+                                                <span class="duty-tag duty-tag--absent" title="Está al frente de una actividad de un plan aprobado a esta hora, así que no puede cubrir">Acompaña una actividad</span>
                                             {% elseif p.groups|length > 1 %}
                                                 {# Aviso solo si son sitios distintos; ya juntos en un aula es una guardia. #}
                                                 <span class="duty-tag {{ (workUnits[p.teacher.id] ?? 1) > 1 ? 'duty-tag--over' : '' }}" title="Cubre {{ p.groups|join(', ') }} a esta hora">→ {{ p.groups|length }} grupos</span>
@@ -496,8 +509,8 @@
                                 <input type="hidden" name="_token" value="{{ csrf_token('guardia_support_add') }}">
                                 <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
                                 <input type="hidden" name="slot" value="{{ slotIndex }}">
-                                <p class="support-add__lead">Para compañeros que hoy están libres a esta hora aunque su horario diga otra cosa (2º de Bachillerato o CFGB ya han terminado las clases). Vale solo para este día y esta hora.</p>
-                                <label class="field-label" for="support-teacher">Profesor</label>
+                                <p class="support-add__lead">Para quien hoy esté libre a esta hora aunque su horario diga otra cosa (2º de Bachillerato o CFGB ya han terminado las clases). Vale solo para este día y esta hora.</p>
+                                <label class="field-label" for="support-teacher">Docente</label>
                                 <select id="support-teacher" name="teacher" required>
                                     <option value="">— Elige —</option>
                                     {% for u in supportPicker %}

@@ -38,19 +38,19 @@
     </table>
 {% endmacro %}
 
-{# Desglose por departamento y por profesor ausente (matrices), común a un periodo y a la comparativa. #}
+{# Desglose por departamento y por docente ausente (matrices), común a un periodo y a la comparativa. #}
 {% macro breakdown(byDepartment, absentRanking, periods) %}
     {% import _self as s %}
     {% if byDepartment is not empty %}
         <div class="card">
-            <div class="page-head"><div><h2>Ausencias por departamento</h2><p class="lead">Según el departamento del profesor ausente.</p></div></div>
+            <div class="page-head"><div><h2>Ausencias por departamento</h2><p class="lead">Según el departamento del docente ausente.</p></div></div>
             {{ s.matrix(byDepartment, periods, 'Departamento') }}
         </div>
     {% endif %}
     {% if absentRanking is not empty %}
         <div class="card">
-            <div class="page-head"><div><h2>Profesores con más ausencias</h2><p class="lead">Top {{ absentRanking|length }} por ausencias registradas en los periodos elegidos.</p></div></div>
-            {{ s.matrix(absentRanking, periods, 'Profesor') }}
+            <div class="page-head"><div><h2>Quién falta más</h2><p class="lead">Top {{ absentRanking|length }} por ausencias registradas en los periodos elegidos.</p></div></div>
+            {{ s.matrix(absentRanking, periods, 'Docente') }}
         </div>
     {% endif %}
 {% endmacro %}
@@ -110,7 +110,7 @@
                 <button type="button" class="tab" role="tab" id="tab-evolucion" aria-controls="panel-evolucion" aria-selected="false">Evolución</button>
                 <button type="button" class="tab" role="tab" id="tab-equidad" aria-controls="panel-equidad" aria-selected="false">Equidad</button>
                 <button type="button" class="tab" role="tab" id="tab-heatmap" aria-controls="panel-heatmap" aria-selected="false">Días y tramos</button>
-                {% if hasBreakdown %}<button type="button" class="tab" role="tab" id="tab-desglose" aria-controls="panel-desglose" aria-selected="false">Departamentos y profesores</button>{% endif %}
+                {% if hasBreakdown %}<button type="button" class="tab" role="tab" id="tab-desglose" aria-controls="panel-desglose" aria-selected="false">Departamentos y docentes</button>{% endif %}
             </nav>
 
             <div class="tabpanel" role="tabpanel" id="panel-cobertura" aria-labelledby="tab-cobertura">
@@ -140,7 +140,7 @@
                 <div class="card">
                     <div class="page-head"><div>
                         <h2>Equidad del reparto</h2>
-                        <p class="lead">Entre los {{ equity.count }} profesores que han hecho alguna guardia.</p>
+                        <p class="lead">Entre las {{ equity.count }} personas que han hecho alguna guardia.</p>
                     </div></div>
                     <div class="worklist-stats worklist-stats--4">
                         <div class="stat"><span class="stat-figure">{{ equity.mean }}</span><span class="stat-label">Media</span></div>
@@ -153,7 +153,7 @@
                     </div>
                     {% if ranking is not empty %}
                         <table>
-                            <thead><tr><th>Profesor</th><th style="width: 55%">Guardias cubiertas</th><th class="mono">Total</th><th class="mono">vs media</th></tr></thead>
+                            <thead><tr><th>Docente</th><th style="width: 55%">Guardias cubiertas</th><th class="mono">Total</th><th class="mono">vs media</th></tr></thead>
                             <tbody>
                                 {% for row in ranking %}
                                     {% set diff = (row.total - equity.mean)|round(1) %}
@@ -223,7 +223,7 @@
             <nav class="tabs" role="tablist" aria-label="Apartados de estadísticas">
                 <button type="button" class="tab is-active" role="tab" id="tab-comparativa" aria-controls="panel-comparativa" aria-selected="true">Comparativa</button>
                 <button type="button" class="tab" role="tab" id="tab-evolucion" aria-controls="panel-evolucion" aria-selected="false">Evolución</button>
-                {% if hasBreakdown %}<button type="button" class="tab" role="tab" id="tab-desglose" aria-controls="panel-desglose" aria-selected="false">Departamentos y profesores</button>{% endif %}
+                {% if hasBreakdown %}<button type="button" class="tab" role="tab" id="tab-desglose" aria-controls="panel-desglose" aria-selected="false">Departamentos y docentes</button>{% endif %}
             </nav>
 
             <div class="tabpanel" role="tabpanel" id="panel-comparativa" aria-labelledby="tab-comparativa">

@@ -7,6 +7,7 @@ namespace App\Tests\Integration;
 use App\Entity\Notification;
 use App\Entity\Role;
 use App\Entity\Task;
+use App\Entity\TaskResponsibility;
 use App\Entity\Department;
 use App\Entity\User;
 use App\Enum\TaskType;
@@ -272,9 +273,38 @@ final class TaskReminderNotifierTest extends KernelTestCase
         $inactive = $this->user('baja@centro.test')->setActive(false)->addAssignedRole($role);
         $this->em->persist($inactive);
 
-        $this->task($today->modify('+15 days'), $unit)->setAssignedRole($role);
+        $this->task($today->modify('+15 days'), $unit)->setResponsibility(new TaskResponsibility($role));
         $this->em->flush();
 
         self::assertSame(0, $this->notifier->sendDue($today), 'an inactive role holder is not a recipient');
+    }
+
+    /**
+     * El recordatorio de una tarea sin persona concreta va a quien tiene ese rol EN SU departamento, no
+     * a todos los titulares del centro.
+     *
+     * Antes salía del catálogo de roles a secas, que no sabe de departamentos: la memoria de
+     * Matemáticas despertaba a las veintiuna jefaturas del claustro. Veinte avisos sobre algo que no es
+     * tuyo es exactamente como se enseña a la gente a ignorar los avisos.
+     */
+    public function testAPerDepartmentTaskOnlyRemindsTheHolderOfItsOwnDepartment(): void
+    {
+        $today = new \DateTimeImmutable('2026-01-10');
+        $maths = (new Department())->setCode('maths')->setName('Matemáticas');
+        $arts = (new Department())->setCode('arts')->setName('Plástica');
+        $this->em->persist($maths);
+        $this->em->persist($arts);
+
+        $role = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true);
+        $this->em->persist($role);
+        $mathsHead = $this->user('mates@centro.test')->setUnit($maths)->addAssignedRole($role);
+        $artsHead = $this->user('plastica@centro.test')->setUnit($arts)->addAssignedRole($role);
+
+        $this->task($today->modify('+15 days'), $maths)->setResponsibility(new TaskResponsibility($role, $maths));
+        $this->em->flush();
+
+        self::assertSame(1, $this->notifier->sendDue($today), 'un solo aviso, no uno por jefatura del centro');
+        self::assertCount(1, $this->notifications->findRecentFor($mathsHead));
+        self::assertCount(0, $this->notifications->findRecentFor($artsHead), 'la memoria de Mates no se le avisa a Plástica');
     }
 }

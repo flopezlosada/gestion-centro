@@ -48,7 +48,7 @@ final class TaskSelfClosingSubscriber
         // Y la tarea tiene que ser de un PUESTO CON RANGO. "Nadie por encima" también es cierto en un centro
         // donde la jerarquía no está configurada, y ahí cerrar al entregar convertiría CUALQUIER entrega en
         // un cierre sin validación — el mismo matiz que aplica {@see TaskValidationGuardSubscriber}.
-        $role = $task->getResponsibility()?->getRole() ?? $task->getAssignedRole();
+        $role = $task->responsibleRole();
         if (null === $role || !$role->isHierarchical()) {
             return;
         }

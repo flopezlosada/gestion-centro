@@ -193,12 +193,12 @@
             <div class="tasks-mobile">
                 {% if grouped %}
                     {#- Grupos PLEGABLES con <details> nativo: sin JavaScript, con teclado, y el navegador
-                        se encarga del estado. Nace plegado cuando la cola es larga (más de
-                        `collapseFrom`): con 39 fuera de plazo había que recorrer toda la página para
-                        llegar a lo que viene después, que es justo lo que hay que atender. -#}
-                    {% set collapseFrom = 8 %}
+                        se encarga del estado. Nacen SIEMPRE abiertos, también la cola de atrasos: plegarla
+                        por defecto escondía 13 de 14 tareas y la pantalla decía "Mías 14" mostrando una.
+                        Quien solo quiera ver lo que viene tiene «Acotar» y la vista «Vencidas»; esconder
+                        lo que hay que atender no es reducir ruido. -#}
                     {% if overdueTasks is not empty %}
-                        <details class="tasks-group"{{ overdueTasks|length <= collapseFrom ? ' open' : '' }}>
+                        <details class="tasks-group" open>
                             <summary class="tasks-group__head is-warning"><span class="tasks-group__dot"></span>Fuera de plazo · {{ overdueTasks|length }}</summary>
                             <div class="tasks-cards">
                                 {% for t in overdueTasks %}{{ ui.task_card(t, todayStr) }}{% endfor %}
@@ -226,9 +226,8 @@
                     <span>Tarea</span><span>Departamento</span><span>Responsable</span><span>Fecha límite</span><span>Estado</span>
                 </div>
                 {% if grouped %}
-                    {% set collapseFrom = 8 %}
                     {% if overdueTasks is not empty %}
-                        <details class="trow-group"{{ overdueTasks|length <= collapseFrom ? ' open' : '' }}>
+                        <details class="trow-group" open>
                             <summary class="trow trow--group is-warning">Fuera de plazo · {{ overdueTasks|length }}</summary>
                             {% for t in overdueTasks %}{{ ui.task_row(t, todayStr) }}{% endfor %}
                         </details>

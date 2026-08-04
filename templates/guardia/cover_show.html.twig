@@ -11,7 +11,7 @@
     {% import '_macros/time.html.twig' as fmt %}
     {% set times = slotTimes[cover.slotIndex] ?? null %}
     {# Mismo voter que exigen las rutas: los botones que se pintan y lo que el servidor acepta no pueden
-       separarse (quien cubre, el profesor ausente o la coordinación de guardias). #}
+       separarse (quien cubre, el docente ausente o la coordinación de guardias). #}
     {% set canWorkOnTask = is_granted(constant('App\\Security\\Voter\\GuardiaCoverVoter::WORK_ON_TASK'), cover) %}
     {# Tres estados excluyentes, en este orden: una incidencia manda sobre lo demás (la guardia no ocurrió);
        después "ya pasó", que lo dice el RELOJ y no una casilla ({@see App\Guardia\TeacherGuardiaDay}); y por
@@ -82,7 +82,7 @@
             {% elseif not cover.hasBankTask %}
                 <div class="guardia-empty">
                     <span class="guardia-empty__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span>
-                    <div class="guardia-empty__title">El profesor no ha dejado tarea</div>
+                    <div class="guardia-empty__title">No han dejado tarea</div>
                     {# La invitación solo si aún se puede aceptar: en una guardia ya pasada, "coge una del
                        banco" es pedir algo que no se puede hacer. #}
                     {% if canChangeTask %}
@@ -92,7 +92,7 @@
                 </div>
             {% endif %}
 
-            {# Tarea sacada del banco: se presenta aparte, porque no la dejó el profesor ausente. #}
+            {# Tarea sacada del banco: se presenta aparte, porque no la dejó el docente ausente. #}
             {% if cover.hasBankTask %}
                 {% set bank = cover.bankItem %}
                 <div class="bank-task">
@@ -223,7 +223,7 @@
             <div class="side-card">
                 <div class="side-card__label">Motivo de la ausencia · privado</div>
                 <p class="detail-prose">{{ cover.absence.reason|nl2br }}</p>
-                <p class="help">Solo visible para la coordinación de guardias y el profesor ausente.</p>
+                <p class="help">Solo visible para la coordinación de guardias y el docente ausente.</p>
             </div>
         {% endif %}
       </aside>{# /detail-aside #}

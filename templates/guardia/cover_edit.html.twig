@@ -9,14 +9,14 @@
     <div class="page-head">
         <div>
             <h1>Modificar guardia</h1>
-            <p class="lead">El reparto es automático: usa esto solo cuando algo se sale de lo normal. Si cambias de sustituto avisamos a los dos profesores, y todo queda en el histórico.</p>
+            <p class="lead">El reparto es automático: usa esto solo cuando algo se sale de lo normal. Si cambias de sustitución avisamos a las dos personas, y todo queda en el histórico.</p>
         </div>
     </div>
 
     <div class="card">
         <dl class="cover-summary">
             <div><dt>Grupo</dt><dd><strong>{{ cover.groupName ?? '—' }}</strong>{% if cover.roomName %} <span class="muted mono">· {{ cover.roomName }}</span>{% endif %}</dd></div>
-            <div><dt>Profesor ausente</dt><dd>{{ cover.absentTeacher.fullName }}</dd></div>
+            <div><dt>Docente ausente</dt><dd>{{ cover.absentTeacher.fullName }}</dd></div>
             <div><dt>Día y hora</dt><dd>{{ cover.date|date('d/m/Y', false) }}{% if times %} · <span class="mono">{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}</span>{% else %} · {{ cover.slotIndex + 1 }}ª hora{% endif %}</dd></div>
         </dl>
 
@@ -24,9 +24,9 @@
             <input type="hidden" name="_token" value="{{ csrf_token('guardia_cover_update' ~ cover.id) }}">
 
             <div class="field">
-                <label for="guardia">Profesor de guardia asignado</label>
+                <label for="guardia">Docente de guardia asignado</label>
                 {% if pool is empty %}
-                    <p class="pill-value muted">No hay ningún profesor de guardia en el horario para este tramo.</p>
+                    <p class="pill-value muted">No hay nadie de guardia en el horario para este tramo.</p>
                     <input type="hidden" name="guardia" value="{{ cover.assignedGuardia ? cover.assignedGuardia.id }}">
                 {% else %}
                     <select id="guardia" name="guardia">
@@ -53,10 +53,10 @@
             <div class="field">
                 <label for="task_description">Descripción de la guardia</label>
                 <textarea id="task_description" name="task_description" rows="3" maxlength="1000" placeholder="Lo que no venga en el documento: página, ejercicios, dónde está el examen…">{{ cover.taskDescription }}</textarea>
-                <p class="field-help">La ve el profesor de guardia. Déjalo vacío si no hace falta.</p>
+                <p class="field-help">La ve quien cubre la guardia. Déjalo vacío si no hace falta.</p>
             </div>
 
-            {# Guardia sobrevenida: si el profesor ausente no dejó dicho cuántas copias, lo anota aquí quien coordina. #}
+            {# Guardia sobrevenida: si el docente ausente no dejó dicho cuántas copias, lo anota aquí quien coordina. #}
             <div class="field">
                 <label for="copies_needed">Copias que hacen falta</label>
                 <input type="number" id="copies_needed" name="copies_needed" min="1" max="500" inputmode="numeric" value="{{ cover.copiesNeeded }}" placeholder="p. ej. 28">
@@ -65,35 +65,39 @@
 
             <div class="field">
                 <label for="absence_reason">Motivo de la ausencia <span class="muted">(privado)</span></label>
-                <textarea id="absence_reason" name="absence_reason" rows="2" maxlength="500" placeholder="Solo lo ve la coordinación y el profesor ausente.">{{ cover.absence.reason }}</textarea>
-                <p class="field-help">No se muestra al profesor de guardia. Es común a todas las horas de esta ausencia.</p>
+                <textarea id="absence_reason" name="absence_reason" rows="2" maxlength="500" placeholder="Solo lo ve la coordinación y el docente ausente.">{{ cover.absence.reason }}</textarea>
+                <p class="field-help">No se muestra a quien cubre la guardia. Es común a todas las horas de esta ausencia.</p>
             </div>
 
+            {# El hidden a 0 va DELANTE de la casilla a propósito: así `not_covered` viaja siempre y el
+               servidor puede distinguir «desmarcada» de «este POST no trae ese campo» (que es lo que no
+               debe borrar nada). Marcada, el navegador manda las dos y PHP se queda con la última. #}
             <div class="field">
+                <input type="hidden" name="not_covered" value="0">
                 <label class="choice"><input type="checkbox" name="not_covered" value="1" {{ cover.notCovered ? 'checked' }}> No se cubrió</label>
-                <p class="field-help">Márcalo si al final nadie cubrió la guardia (el sustituto no vino, o el profesor ausente sí apareció). No cuenta para el reparto equitativo.</p>
+                <p class="field-help">Márcalo si al final nadie cubrió la guardia (quien iba a cubrirla no vino, o el docente ausente sí apareció). No cuenta para el reparto equitativo.</p>
             </div>
 
             {# La única palabra "Motivo" que queda arriba es la de la ausencia (privada). Este campo no la
                usa a propósito: tener dos "motivos" en la misma pantalla era lo que despistaba al centro.
 
-               El asterisco nace oculto y solo aparece si se cambia de profesor (change-note-presets.js):
+               El asterisco nace oculto y solo aparece si se cambia de docente (change-note-presets.js):
                es exactamente el caso en que el campo es obligatorio. Sin JS no se pierde nada — quien
                manda de verdad es el servidor. #}
             <div class="field field--change-note">
                 <label for="motivo">¿Por qué haces este cambio? <span class="req" data-change-note-req hidden>*</span></label>
-                <p class="field-help field-help--lead">Privado: esto lo lee <strong>solo el equipo directivo</strong>. No se envía a los profesores.</p>
+                <p class="field-help field-help--lead">Privado: esto lo lee <strong>solo el equipo directivo</strong>. No se envía al profesorado.</p>
                 {# Atajos: rellenan el campo de un clic y siguen siendo editables. Ocultos sin JS (no harían
                    nada), y el campo se escribe a mano igual: mejora progresiva, no requisito. #}
                 <div class="change-note__presets" data-change-note-presets hidden role="group" aria-labelledby="change-note-presets-label">
                     <span class="muted" id="change-note-presets-label">Casos habituales:</span>
-                    <button type="button">El sustituto asignado también falta hoy</button>
-                    <button type="button">Cambio acordado entre compañeros</button>
+                    <button type="button">Quien tenía la guardia también falta hoy</button>
+                    <button type="button">Cambio acordado entre docentes</button>
                     <button type="button">Corrijo un error del reparto</button>
                     <button type="button">Al final no se cubrió</button>
                 </div>
-                <textarea id="motivo" name="motivo" rows="3" maxlength="500" placeholder="Ej.: lo cubre otro compañero porque el asignado tiene una reunión fuera del centro."></textarea>
-                <p class="field-help">Obligatorio solo si cambias de profesor de guardia. A los dos afectados —al que entra y al que deja de hacerla— les avisamos del cambio, pero no les llega este texto.</p>
+                <textarea id="motivo" name="motivo" rows="3" maxlength="500" placeholder="Ej.: lo cubre otra persona porque a quien le tocaba le ha surgido una reunión fuera del centro."></textarea>
+                <p class="field-help">Obligatorio solo si cambias de docente de guardia. A las dos personas afectadas —quien entra y quien deja de hacerla— les avisamos del cambio, pero no les llega este texto.</p>
             </div>
 
             <div class="form-actions">

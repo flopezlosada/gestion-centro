@@ -15,12 +15,21 @@ use Doctrine\ORM\EntityManagerInterface;
  * human "motivo" a coordinator left when they changed something by hand. Creation/deletion collapse
  * to a one-line summary; only real field changes are listed for updates.
  *
+ * It presents ONE timeline out of two subjects: the cover itself and the {@see \App\Entity\Absence} it
+ * belongs to (see {@see \App\Controller\GuardiaController::coverTrail()}). They are the same story from
+ * the reader's point of view — "qué ha pasado con esta guardia" — and the fields of both are labelled
+ * here side by side, which is why the map below mixes them.
+ *
  * The counterpart of {@see TaskActivityPresenter} for {@see \App\Entity\GuardiaCover}: names are
  * resolved in a single batched query to avoid an N+1 over the trail.
  */
 final class GuardiaActivityPresenter
 {
-    /** Guardia cover fields shown in the friendly diff, with their label and value formatter. */
+    /**
+     * The fields shown in the friendly diff, with their label and value formatter. Covers the guardia
+     * cover's own fields and the two the shared absence owns ({@code reason}, {@code slotIndexes}) —
+     * anything unmapped is dropped, so a field nobody needs to read never leaks into the timeline.
+     */
     private const array FIELDS = [
         'assignedGuardia' => ['label' => 'Sustituto', 'kind' => 'user'],
         'notCovered' => ['label' => 'Sin cubrir', 'kind' => 'bool'],
@@ -30,15 +39,32 @@ final class GuardiaActivityPresenter
         'copiesNeeded' => ['label' => 'Copias que hacen falta', 'kind' => 'text'],
         'groupName' => ['label' => 'Grupo', 'kind' => 'text'],
         'roomName' => ['label' => 'Aula', 'kind' => 'text'],
+        // De la ausencia (compartida por todas las horas de ese día).
+        'reason' => ['label' => 'Motivo de la ausencia', 'kind' => 'text'],
+        'slotIndexes' => ['label' => 'Horas en las que falta', 'kind' => 'slots'],
     ];
 
     private const string BLANK = '—';
 
-    /** @var array<string, string> */
+    /**
+     * Cómo se lee cada movimiento, por sujeto y verbo. El sujeto importa: un `updated` de la guardia es
+     * un cambio del parte, y uno de la ausencia es un cambio de la falta —el motivo, o las horas que
+     * abarca—, que afecta a la vez a TODAS las guardias de ese día. Llamar «Cambio manual» a los dos
+     * dejaría al lector sin saber qué acaba de cambiar de sitio.
+     *
+     * @var array<string, array<string, string>>
+     */
     private const array VERB_LABELS = [
-        'created' => 'Ausencia registrada',
-        'updated' => 'Cambio manual',
-        'deleted' => 'Línea eliminada',
+        'guardia_cover' => [
+            'created' => 'Ausencia registrada',
+            'updated' => 'Cambio manual',
+            'deleted' => 'Línea eliminada',
+        ],
+        'absence' => [
+            'created' => 'Ausencia registrada',
+            'updated' => 'Cambio en la ausencia del día',
+            'deleted' => 'Ausencia retirada',
+        ],
     ];
 
     public function __construct(private readonly EntityManagerInterface $entityManager)
@@ -59,12 +85,12 @@ final class GuardiaActivityPresenter
         $actors = $this->resolveActorNames($entries);
 
         return array_map(function (AuditLog $entry) use ($userNames, $bankTitles, $actors): array {
-            $parts = explode('.', $entry->getAction());
-            $verb = end($parts);
+            // La acción es "<sujeto>.<verbo>" ({@see \App\EventSubscriber\EntityAuditSubscriber}).
+            [$subject, $verb] = array_pad(explode('.', $entry->getAction(), 2), 2, '');
             $actor = $entry->getActor();
 
             return [
-                'verbLabel' => self::VERB_LABELS[$verb] ?? $entry->getAction(),
+                'verbLabel' => self::VERB_LABELS[$subject][$verb] ?? $entry->getAction(),
                 'actor' => null === $actor || '' === $actor ? null : ($actors[$actor] ?? $actor),
                 'occurredAt' => $entry->getOccurredAt(),
                 'motivo' => $entry->getSummary(),
@@ -121,8 +147,31 @@ final class GuardiaActivityPresenter
             'bool' => $value ? 'Sí' : 'No',
             'user' => $userNames[(int) $value] ?? sprintf('#%d (eliminado)', (int) $value),
             'bank' => $bankTitles[(int) $value] ?? sprintf('#%d (borrada del banco)', (int) $value),
+            'slots' => self::ordinals($value),
             default => (string) $value,
         };
+    }
+
+    /**
+     * A list of period indexes as ordinals ("1.ª, 3.ª, 5.ª"). Ordinals and not clock times on purpose:
+     * the trail is read long after the fact and the timetable may have been re-imported since, so a
+     * time taken from today's grid could describe a period that no longer starts then. The ordinal is
+     * what the index means and cannot go stale.
+     *
+     * @param mixed $value the stored value — a list of 0-based indexes, or anything else if the shape changed
+     *
+     * @return string the ordinals, or the blank marker when there are none
+     */
+    private static function ordinals(mixed $value): string
+    {
+        if (!\is_array($value) || [] === $value) {
+            return self::BLANK;
+        }
+
+        $slots = array_map(static fn (mixed $slot): int => (int) $slot, array_values($value));
+        sort($slots);
+
+        return implode(', ', array_map(static fn (int $slot): string => ($slot + 1).'.ª', $slots));
     }
 
     /**
