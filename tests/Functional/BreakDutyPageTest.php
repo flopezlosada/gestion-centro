@@ -161,10 +161,11 @@ final class BreakDutyPageTest extends WebTestCase
         self::assertSame('Se ofrece él mismo', $reloaded->getNote());
     }
 
-    public function testThePhoneViewOpensOnTodayAndTakesTheDayFromTheUrl(): void
+    public function testThePhoneViewShowsOneDayAndTakesItFromTheUrl(): void
     {
-        // En el móvil la rejilla no cabe y se consulta UN día. Por defecto hoy, porque quien mira el
-        // cuadrante desde el pasillo quiere saber quién está en el patio ahora.
+        // En el móvil la rejilla no cabe y se consulta UN día (por defecto hoy, porque quien mira el
+        // cuadrante desde el pasillo quiere saber quién está en el patio ahora). Aquí se pide uno concreto:
+        // el defecto depende del reloj y no se afirma en un test.
         $this->login(PermissionLevel::READ);
         $year = $this->currentYear();
         $zone = $this->zone('Patio');
@@ -184,7 +185,7 @@ final class BreakDutyPageTest extends WebTestCase
         self::assertStringContainsString('Viernes', $crawler->filter('.recreo-day.is-active')->text());
     }
 
-    public function testAWeekendOrNonsenseDayFallsBackToMondayInsteadOfAnEmptyScreen(): void
+    public function testAWeekendDayFallsBackToMondayInsteadOfAnEmptyScreen(): void
     {
         $this->login(PermissionLevel::READ);
         $year = $this->currentYear();
@@ -192,13 +193,30 @@ final class BreakDutyPageTest extends WebTestCase
         $this->duty($year, $this->user('Ana Patio Ruiz', 'ana.patio@centro.test'), $this->zone('Patio'));
         $this->em->flush();
 
-        // Sábado (no tiene recreo) y un valor que no es un día: los dos caen al lunes, que es el primer día
-        // con cuadrante, en vez de dejar la pantalla en blanco o reventar al indexar la rejilla.
-        foreach ([Weekday::SATURDAY->value, 99] as $dia) {
-            $crawler = $this->client->request('GET', '/guardias/recreo?curso='.$year->getSchoolYear().'&dia='.$dia);
-            self::assertResponseIsSuccessful();
-            self::assertStringContainsString('Lunes', $crawler->filter('.recreo-day.is-active')->text(), sprintf('dia=%s debería caer al lunes', $dia));
-        }
+        // El sábado no tiene recreo, así que pedirlo cae al lunes en vez de dejar la pantalla en blanco o
+        // reventar al indexar una rejilla que no tiene ese día.
+        $crawler = $this->client->request('GET', '/guardias/recreo?curso='.$year->getSchoolYear().'&dia='.Weekday::SATURDAY->value);
+
+        self::assertResponseIsSuccessful();
+        self::assertStringContainsString('Lunes', $crawler->filter('.recreo-day.is-active')->text());
+    }
+
+    public function testANonsenseDayIsIgnoredAndTheScreenOpensOnItsDefault(): void
+    {
+        // Un `dia` que no es un día se descarta y manda el defecto (hoy), no un valor inventado. El test NO
+        // afirma qué día es hoy a propósito: la versión anterior decía «cae al lunes» y solo pasaba los
+        // lunes — verde el 03/08 y roja el 04/08. Lo que hay que garantizar es que la pantalla responde y
+        // que queda UN día elegido, no cero ni dos.
+        $this->login(PermissionLevel::READ);
+        $year = $this->currentYear();
+        $this->duty($year, $this->user('Ana Patio Ruiz', 'ana.patio@centro.test'), $this->zone('Patio'));
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/recreo?curso='.$year->getSchoolYear().'&dia=99');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(1, $crawler->filter('.recreo-day.is-active'));
+        self::assertCount(\count(Weekday::schoolWeek()), $crawler->filter('.recreo-day'));
     }
 
     public function testACourseWithNoRotaOffersTheTwoWaysInAndNoEmptyGrid(): void
