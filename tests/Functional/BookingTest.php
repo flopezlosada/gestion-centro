@@ -4,14 +4,18 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
+use App\Entity\AcademicYear;
 use App\Entity\Booking;
 use App\Entity\Material;
 use App\Entity\Role;
 use App\Entity\Room;
+use App\Entity\TimeSlot;
 use App\Entity\User;
 use App\Enum\Area;
 use App\Enum\PermissionLevel;
 use App\Enum\RoomKind;
+use App\Enum\TimeSlotKind;
+use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -273,6 +277,102 @@ final class BookingTest extends WebTestCase
         self::assertSelectorTextContains('table', '2ºB');
         self::assertSelectorTextContains('table', 'Profe Test');
         self::assertSelectorTextContains('table', 'Miércoles 16/09');
+    }
+
+    /**
+     * Las horas que se ofrecen son los tramos LECTIVOS del centro, con sus índices reales — y si el curso
+     * en marcha no tiene horario importado todavía, los del último curso que sí lo tenga.
+     *
+     * Es el caso del 1 de septiembre: el curso nuevo arranca sin marco horario (el de Peñalara llega
+     * semanas después) y antes esta pantalla ofrecía «1ª a 6ª hora» con los índices 0 a 5 seguidos. En este
+     * centro el día tiene OCHO índices de los que dos son recreos (3 y 6), así que aquel sexto índice no
+     * era la sexta clase: toda reserva tomada antes del import salía corrida una hora en cuanto el marco
+     * real aparecía. Lo que se comprueba es justo eso — que se ofrecen 0,1,2,4,5,7 y no 0..5.
+     */
+    public function testThePeriodsOfferedAreTheCentresRealOnesBorrowedFromTheLastCourseWithATimetable(): void
+    {
+        $teacher = $this->user('profe@centro.test');
+        $this->material('Radio');
+
+        // Los dos cursos se DERIVAN del día que se va a reservar, nunca escritos a mano: con etiquetas
+        // fijas, el día en que el reloj llegase al curso del marco este caso dejaría de probar el respaldo
+        // —serían las horas propias— y fallaría por una razón ajena a lo que prueba.
+        $current = SchoolYear::current(new \DateTimeImmutable(self::futureDay()));
+        $previous = SchoolYear::previous($current);
+
+        // El curso pasado, con el marco horario real del centro: seis clases y dos recreos entre ellas.
+        $lastYear = $this->academicYear($previous);
+        $this->em->persist($lastYear);
+        foreach ([
+            [0, '08:25', '09:20', TimeSlotKind::LECTIVE],
+            [1, '09:20', '10:15', TimeSlotKind::LECTIVE],
+            [2, '10:15', '11:10', TimeSlotKind::LECTIVE],
+            [3, '11:10', '11:35', TimeSlotKind::BREAK_TIME],
+            [4, '11:35', '12:30', TimeSlotKind::LECTIVE],
+            [5, '12:30', '13:25', TimeSlotKind::LECTIVE],
+            [6, '13:25', '13:35', TimeSlotKind::BREAK_TIME],
+            [7, '13:35', '14:30', TimeSlotKind::LECTIVE],
+        ] as [$index, $from, $to, $kind]) {
+            $this->em->persist((new TimeSlot())
+                ->setAcademicYear($lastYear)
+                ->setSlotIndex($index)
+                ->setStartsAt(new \DateTimeImmutable($from))
+                ->setEndsAt(new \DateTimeImmutable($to))
+                ->setKind($kind));
+        }
+
+        // Y el curso en marcha dado de alta pero SIN marco: el estado real del servidor el 1 de septiembre.
+        $this->em->persist($this->academicYear($current));
+        $this->em->flush();
+
+        $this->client->loginUser($teacher);
+        $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay());
+
+        self::assertResponseIsSuccessful();
+        $offered = $crawler->filter('#tramo option')->each(static fn ($option): string => (string) $option->attr('value'));
+        self::assertSame(['0', '1', '2', '4', '5', '7'], $offered, 'los seis tramos lectivos, con los recreos fuera');
+
+        // Con su hora de reloj, que es lo que identifica el tramo cuando el índice no es su ordinal.
+        self::assertStringContainsString('13:35', $crawler->filter('#tramo')->html());
+        // Y se dice de dónde salen las horas, para que nadie las lea como las de este curso.
+        self::assertSelectorTextContains('body', 'Horas del curso '.$previous);
+    }
+
+    /**
+     * Sin marco horario en NINGÚN curso —una base sin un solo import— la pantalla sigue sirviendo con seis
+     * horas genéricas, y lo dice. Es el único caso en el que no hay numeración del centro que respetar.
+     */
+    public function testWithNoTimetableAnywhereTheGenericHoursAreOfferedAndSaidToBeGeneric(): void
+    {
+        $teacher = $this->user('profe@centro.test');
+        $this->material('Radio');
+        $this->em->flush();
+
+        $this->client->loginUser($teacher);
+        $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay());
+
+        $offered = $crawler->filter('#tramo option')->each(static fn ($option): string => (string) $option->attr('value'));
+        self::assertSame(['0', '1', '2', '3', '4', '5'], $offered);
+        self::assertSelectorTextContains('body', 'estas seis horas son genéricas');
+    }
+
+    /**
+     * A course with the term dates the entity requires; only its label and its frame matter here.
+     *
+     * @param string $schoolYear the course label, e.g. "2025-2026"
+     */
+    private function academicYear(string $schoolYear): AcademicYear
+    {
+        $start = (int) substr($schoolYear, 0, 4);
+
+        return (new AcademicYear())
+            ->setSchoolYear($schoolYear)
+            ->setTerm1Start(new \DateTimeImmutable($start.'-09-08'))
+            ->setTerm1End(new \DateTimeImmutable($start.'-12-19'))
+            ->setTerm2Start(new \DateTimeImmutable(($start + 1).'-01-08'))
+            ->setTerm2End(new \DateTimeImmutable(($start + 1).'-03-27'))
+            ->setTerm3Start(new \DateTimeImmutable(($start + 1).'-04-07'))
+            ->setTerm3End(new \DateTimeImmutable(($start + 1).'-06-19'));
     }
 
     public function testOnlyTheOwnerCancelsTheirBooking(): void

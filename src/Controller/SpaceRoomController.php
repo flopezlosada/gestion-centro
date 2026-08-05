@@ -6,6 +6,8 @@ namespace App\Controller;
 
 use App\Entity\Room;
 use App\Enum\Area;
+use App\Enum\RoomKind;
+use App\Enum\RoomSize;
 use App\Form\RoomType;
 use App\Repository\RoomRepository;
 use App\Repository\ScheduleEntryRepository;
@@ -76,6 +78,114 @@ final class SpaceRoomController extends AbstractController
         return $this->redirectToRoute('space_room_index');
     }
 
+    /**
+     * The whole catalogue as one editable table: name, kind, size and the two switches, per space.
+     *
+     * It exists because the per-card form does not scale to the job it is for. Completing this centre's
+     * catalogue means classifying forty spaces, and one card at a time that is forty round trips through a
+     * ten-field form — which is why, measured on the server, thirty-nine of the forty cards were still
+     * unclassified weeks after the data was asked for. Nothing here is guessed: every selector starts on
+     * "sin indicar" and the centre answers, exactly as in the card. What changes is the cost of answering.
+     *
+     * Only the spaces in use are listed. A retired one still has a card (the old timetable names it) but
+     * classifying it informs no decision, and its row would push the ones that matter down the table.
+     */
+    #[Route('/clasificar', name: 'space_room_classify', methods: ['GET'])]
+    public function classify(RoomRepository $rooms): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ESPACIOS);
+
+        $catalogue = $rooms->findAllOrdered();
+        $active = array_values(array_filter($catalogue, static fn (Room $room): bool => $room->isActive()));
+
+        return $this->render('space/room/classify.html.twig', [
+            'rooms' => $active,
+            'retired' => \count($catalogue) - \count($active),
+            'kinds' => RoomKind::inDisplayOrder(),
+            'sizes' => RoomSize::inDisplayOrder(),
+        ]);
+    }
+
+    /**
+     * Saves the whole table in one submit.
+     *
+     * The rows are walked from the DATABASE and not from the submitted ids, like the quota screen: the
+     * form is the list of what may be classified here, so a request naming a retired space — or one that
+     * does not exist — is ignored rather than trusted.
+     *
+     * A row the request says nothing about is left exactly as it was, which is what the hidden "presente"
+     * marker is for. It cannot be inferred from the other fields: an unticked checkbox sends NOTHING, so
+     * without the marker a partial POST would be indistinguishable from "the centre unticked everything"
+     * and would quietly close forty spaces to booking.
+     *
+     * A row whose kind or size does not name a real value is rejected WHOLE and reported, rather than
+     * half-applied: the two answers are one decision about the space, and saving the half that parsed
+     * would leave a card nobody can tell apart from a completed one.
+     */
+    #[Route('/clasificar', name: 'space_room_classify_save', methods: ['POST'])]
+    public function saveClassification(Request $request, RoomRepository $rooms, EntityManagerInterface $em): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ESPACIOS);
+        if (!$this->isCsrfTokenValid('space_room_classify', (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+
+        $submitted = $request->request->all('presente');
+        $names = $request->request->all('nombre');
+        $kinds = $request->request->all('tipo');
+        $sizes = $request->request->all('tamano');
+        $reservable = $request->request->all('reservable');
+        $assignable = $request->request->all('asignable');
+
+        $changed = 0;
+        $rejected = [];
+        foreach ($rooms->findActive() as $room) {
+            $id = (int) $room->getId();
+            if (!\array_key_exists($id, $submitted)) {
+                continue;
+            }
+
+            $kind = RoomKind::tryFrom((string) ($kinds[$id] ?? ''));
+            $rawSize = (string) ($sizes[$id] ?? '');
+            $size = '' === $rawSize ? null : RoomSize::tryFrom($rawSize);
+            // El nombre en blanco es «llámalo como el horario», que es lo que hace el sincronizador al
+            // crear la ficha: así vaciar el campo no deja un espacio sin nombre que enseñar.
+            $name = trim((string) ($names[$id] ?? ''));
+            $name = '' !== $name ? $name : $room->getCode();
+
+            if (null === $kind || ('' !== $rawSize && null === $size) || mb_strlen($name) > 128) {
+                $rejected[] = $room->getCode();
+
+                continue;
+            }
+
+            $before = self::snapshot($room);
+            $room->setName($name)
+                ->setKind($kind)
+                ->setSize($size)
+                ->setReservable(\array_key_exists($id, $reservable))
+                ->setAssignable(\array_key_exists($id, $assignable));
+
+            if ($before !== self::snapshot($room)) {
+                ++$changed;
+            }
+        }
+
+        $em->flush();
+
+        $this->addFlash('success', 0 === $changed
+            ? 'No había nada que cambiar: el catálogo ya decía eso.'
+            : sprintf('Catálogo guardado: %d espacio(s) actualizado(s).', $changed));
+        if ([] !== $rejected) {
+            $this->addFlash('warning', sprintf(
+                'No se guardó %s: el tipo o el tamaño no eran válidos, o el nombre pasaba de 128 caracteres.',
+                implode(', ', $rejected),
+            ));
+        }
+
+        return $this->redirectToRoute('space_room_classify');
+    }
+
     #[Route('/nuevo', name: 'space_room_new', methods: ['GET', 'POST'])]
     public function new(Request $request, EntityManagerInterface $em): Response
     {
@@ -117,6 +227,19 @@ final class SpaceRoomController extends AbstractController
         $this->addFlash('success', 'Espacio eliminado.');
 
         return $this->redirectToRoute('space_room_index');
+    }
+
+    /**
+     * The fields the bulk table can change, as a comparable value — so "how many did I actually change"
+     * is answered by comparing before and after, and not by asking Doctrine's unit of work what it thinks.
+     *
+     * @param Room $room the space to photograph
+     *
+     * @return array<int, mixed> the comparable snapshot
+     */
+    private static function snapshot(Room $room): array
+    {
+        return [$room->getName(), $room->getKind(), $room->getSize(), $room->isReservable(), $room->isAssignable()];
     }
 
     /**

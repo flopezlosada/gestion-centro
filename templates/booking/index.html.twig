@@ -3,6 +3,18 @@
 {% block title %}Reservas · {{ app_organization_name }}{% endblock %}
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Reservas{% endblock %}
 
+{# Cómo se nombra la hora de una reserva, en un solo sitio: la hora de RELOJ cuando se conoce el marco
+   horario, y el ordinal del tramo solo como último recurso.
+
+   El orden importa y no es cosmético: el índice del tramo no es su ordinal en el día —los recreos también
+   ocupan índice, así que en este centro la sexta clase es el tramo 7— y «8ª hora» no le dice nada a nadie.
+   Mientras haya marco (propio o prestado, ver TimeSlotRepository::lectiveTimesWithFallback) el reloj lo
+   identifica sin ambigüedad. #}
+{% macro hora(slotTimes, index) %}
+    {%- set times = slotTimes[index] ?? null -%}
+    {%- if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}{{ index + 1 }}ª hora{% endif -%}
+{% endmacro %}
+
 {% block body %}
     {% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
     {% set diaStr = day|date('Y-m-d', false) %}
@@ -51,7 +63,6 @@
         {% else %}
             <ul class="incident-list">
                 {% for b in bookings %}
-                    {% set times = slotTimes[b.slotIndex] ?? null %}
                     <li class="incident">
                         <span class="incident__main">
                             <span class="incident__head">
@@ -59,7 +70,7 @@
                                 <span class="badge {{ b.room ? 'badge--accent' : 'badge--muted' }}">{{ b.room ? 'Espacio' : 'Material' }}</span>
                             </span>
                             <span class="incident__where">
-                                <span class="mono">{% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}{{ b.slotIndex + 1 }}ª hora{% endif %}</span>
+                                <span class="mono">{{ _self.hora(slotTimes, b.slotIndex) }}</span>
                                 · {{ b.purpose }}{% if b.groupName %} · {{ b.groupName }}{% endif %}
                             </span>
                             <span class="incident__meta">{{ b.bookedBy ? b.bookedBy.fullName : '—' }}</span>
@@ -84,7 +95,10 @@
         {% if isPast %}
             <p class="muted">Este día ya ha pasado. Para reservar, vuelve a <a href="{{ path('booking_index') }}">hoy</a> o elige un día por venir.</p>
         {% elseif rooms is empty and materials is empty %}
-            <p class="muted">No hay nada que reservar todavía. El material lo da de alta administración, en «Material»; los espacios se abren a reservas desde su ficha del catálogo.</p>
+            {# Con el permiso, el enlace directo a donde se arregla; sin él, el nombre de la pantalla, para
+               que quien lo lea sepa a quién pedirlo en vez de encontrarse un 403. #}
+            {% set puedeEspacios = is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ESPACIOS')) %}
+            <p class="muted">No hay nada que reservar todavía. El material lo da de alta administración, en «Material»; los espacios se abren a reservas {% if puedeEspacios %}en <a href="{{ path('space_room_classify') }}">Clasificar los espacios</a>{% else %}desde <strong>Espacios → Catálogo</strong>{% endif %}.</p>
         {% else %}
             <form method="post" action="{{ path('booking_new') }}" class="stack-form">
                 <input type="hidden" name="_token" value="{{ csrf_token('booking_new') }}">
@@ -111,15 +125,26 @@
                     <label for="tramo">¿A qué hora?</label>
                     <select id="tramo" name="tramo" required>
                         {% if slotTimes is empty %}
-                            {# Sin horario importado no hay tramos que nombrar: se ofrecen las seis horas de
-                               un día normal para que la pantalla siga sirviendo. #}
+                            {# Ningún curso tiene marco horario todavía (base recién montada, sin un solo
+                               import): se ofrecen seis horas seguidas para que la pantalla sirva, y el aviso
+                               de debajo advierte de que puede que no sean vuestros tramos. En cuanto haya UN
+                               curso con marco, esta rama no se usa — BookingController toma prestado el del
+                               último curso que lo tenga, que es lo que mantiene los tramos en su sitio. #}
                             {% for i in 0..5 %}<option value="{{ i }}">{{ i + 1 }}ª hora</option>{% endfor %}
                         {% else %}
+                            {# La etiqueta va por ORDEN en la lista y no por índice + 1: los recreos también
+                               ocupan índice, así que en el centro la sexta clase es el tramo 7 y «8ª hora»
+                               no le diría nada a nadie. La hora de reloj es lo que la identifica. #}
                             {% for index, times in slotTimes %}
-                                <option value="{{ index }}">{{ index + 1 }}ª hora · {{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}</option>
+                                <option value="{{ index }}">{{ loop.index }}ª hora · {{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}</option>
                             {% endfor %}
                         {% endif %}
                     </select>
+                    {% if periodsBorrowedFrom %}
+                        <p class="help">Horas del curso {{ periodsBorrowedFrom }}: el horario de este curso todavía no está importado. Se guarda el tramo, no la hora, así que si el horario nuevo mueve los timbres las reservas ya hechas se verán con las horas nuevas.</p>
+                    {% elseif slotTimes is empty %}
+                        <p class="help">Todavía no hay ningún horario importado, así que estas seis horas son genéricas y puede que no coincidan con los tramos del centro.</p>
+                    {% endif %}
                 </div>
 
                 <div class="field">
@@ -147,7 +172,7 @@
                     <li class="incident">
                         <a class="incident__main" href="{{ path('booking_index', { fecha: b.date|date('Y-m-d', false) }) }}">
                             <span class="incident__head"><span class="incident__what">{{ b.resourceName }}</span></span>
-                            <span class="incident__where">{{ b.date|date('d/m/Y', false) }} · {{ b.slotIndex + 1 }}ª hora · {{ b.purpose }}</span>
+                            <span class="incident__where">{{ b.date|date('d/m/Y', false) }} · {{ _self.hora(slotTimes, b.slotIndex) }} · {{ b.purpose }}</span>
                         </a>
                         <form method="post" action="{{ path('booking_delete', { id: b.id }) }}" data-confirm="¿Anular esta reserva?">
                             <input type="hidden" name="_token" value="{{ csrf_token('booking_delete' ~ b.id) }}">
