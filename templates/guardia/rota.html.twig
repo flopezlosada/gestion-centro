@@ -69,9 +69,15 @@
                 {# Nadie con cupo es la ÚNICA razón cuando se da, así que corta aquí: enumerar las otras dos
                    sería repetir la misma causa con tres nombres. Y sobre todo, NO puede caer en el mensaje
                    de «es el horario»: eso es lo que vio el centro el 05-08-2026 con la tabla de cupos
-                   vacía, y le decía justo lo contrario de lo que había que hacer. #}
-                {% elseif gaps['no-quota-set'] is defined %}
-                    Todavía no hay <strong>ningún cupo</strong> asignado, así que el programa no tiene a quién poner de guardia y la propuesta sale vacía: las <strong>{{ summary.unfilled }}</strong> plazas de la semana se quedan sin nadie. Esto no es el horario — hay que <a href="{{ path('guardia_quota_index', {curso: curso}) }}">poner los cupos</a> y volver a proponer.
+                   vacía, y le decía justo lo contrario de lo que había que hacer.
+
+                   Dice «nadie tiene cupo» y NO «los cupos están sin poner»: el motor ve un 0 y no puede
+                   saber si es que nadie lo tecleó o si el equipo directivo puso a todo el mundo a cero
+                   (basta con guardar la pantalla de cupos sin escribir nada para que existan las 58 filas
+                   a cero). Esa diferencia la lleva la pantalla de cupos, que es donde se actúa sobre ella;
+                   desde aquí el siguiente paso es el mismo en los dos casos. #}
+                {% elseif gaps['nobody-on-quota'] is defined %}
+                    <strong>Nadie tiene cupo</strong> de guardias en este curso —sin poner o a cero—, así que el programa no tiene a quién colocar y la propuesta sale vacía: las <strong>{{ summary.unfilled }}</strong> plazas de la semana se quedan sin nadie. Esto no es el horario — hay que <a href="{{ path('guardia_quota_index', {curso: curso}) }}">revisar los cupos</a> y volver a proponer.
                 {% else %}
                     {% if gaps['quota-exhausted'] is defined %}
                         <strong>{{ gaps['quota-exhausted'] }}</strong> plazas se quedan sin nadie porque todo el mundo ha llegado a su cupo: para cubrirlas hay que <a href="{{ path('guardia_quota_index', {curso: curso}) }}">subir cupos</a>.

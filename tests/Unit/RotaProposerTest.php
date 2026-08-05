@@ -186,27 +186,43 @@ final class RotaProposerTest extends TestCase
 
     public function testWithNobodyOnAQuotaTheGapsBlameTheQuotasAndNotTheTimetable(): void
     {
-        // The state every centre starts in, and the one the real screen was caught in on 05-08-2026: the
-        // timetable is loaded and the quota table is empty. whyNobody() cannot answer this one — with no
-        // eligible candidate to look at, both of its tests are vacuously true and it falls through to
-        // "nobody free", which the screen renders as "eso no se arregla con cupos, es el horario". The
-        // exact opposite of what has to be done, so the engine has to say it itself.
+        // The state the real screen was caught in on 05-08-2026: the timetable is loaded and nobody is on
+        // a quota. whyNobody() cannot answer this one — with no eligible candidate to look at, both of its
+        // tests are vacuously true and it would fall through to "nobody free", which the screen renders as
+        // "eso no se arregla con cupos, es el horario". The exact opposite of what has to be done.
         $sinCupo = new RotaCandidate(1, 'Ana', 0, []);
 
         $proposal = $this->proposer->propose([0], [$sinCupo]);
 
         self::assertSame([], $proposal->placements);
         self::assertSame(
-            [RotaProposer::GAP_NO_QUOTA_SET => RotaDemand::perSlot() * 5],
+            [RotaProposer::GAP_NOBODY_ON_QUOTA => RotaDemand::perSlot() * 5],
             $proposal->gapsByReason(),
             'every place of the week has to name the quotas, and nothing else',
         );
     }
 
+    public function testOneTeacherOnAQuotaIsEnoughToStopBlamingTheQuotaTable(): void
+    {
+        // The boundary of the flag, and the reason it is not "somebody has a zero": with one real quota in
+        // the course the engine does have somebody to place, so the gaps are the ordinary ones and the
+        // screen must not send anybody back to the quota screen as if it were empty.
+        $ana = new RotaCandidate(1, 'Ana', 1, []);
+        $sinCupo = new RotaCandidate(2, 'Luis', 0, []);
+
+        $reasons = $this->proposer->propose([0], [$ana, $sinCupo])->gapsByReason();
+
+        self::assertArrayNotHasKey(RotaProposer::GAP_NOBODY_ON_QUOTA, $reasons);
+        // Ana takes Monday's first place; the rest of Monday is "nobody free" (she cannot be put in the
+        // same period twice) and the other four days are "out of quota". Luis is not part of this rota.
+        self::assertSame(RotaDemand::perSlot() - 1, $reasons[RotaProposer::GAP_NOBODY_FREE]);
+        self::assertSame(RotaDemand::perSlot() * 4, $reasons[RotaProposer::GAP_QUOTA_EXHAUSTED]);
+    }
+
     public function testAnEmptyStaffIsTheTimetableTalkingAndNotAMissingQuota(): void
     {
-        // No candidates AT ALL is a different thing from candidates without a quota: there is no quota to
-        // type, so pointing at the quota screen would send somebody to a page with no rows on it.
+        // No candidates AT ALL is a different thing from candidates who are all on zero: there is no quota
+        // to go and look at, so pointing at the quota screen would send somebody to a page with no rows.
         $proposal = $this->proposer->propose([0], []);
 
         self::assertSame(

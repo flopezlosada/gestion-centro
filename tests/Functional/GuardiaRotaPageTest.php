@@ -163,7 +163,7 @@ final class GuardiaRotaPageTest extends WebTestCase
         $this->client->request('GET', self::URL.'?curso=2025-2026&propuesta=1');
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('body', 'no hay ningún cupo');
+        self::assertSelectorTextContains('body', 'Nadie tiene cupo');
         // The exact sentence that misled the centre. Asserted whole rather than by a fragment like "es el
         // horario", which the sidebar's own links could satisfy by accident.
         self::assertSelectorTextNotContains('body', 'eso no se arregla con cupos', 'the screen blamed the timetable for an empty quota table');

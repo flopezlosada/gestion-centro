@@ -114,7 +114,7 @@ final class GuardiaRotaController extends AbstractController
         $written = $planner->publish($year, $proposal->placements);
 
         if (0 === $written) {
-            $this->addFlash('error', 'No se ha publicado nada: la propuesta no coloca a nadie. Revisa los cupos antes de publicar — sin cupo, el programa no tiene a quién poner de guardia.');
+            $this->addFlash('error', 'No se ha publicado nada: la propuesta no añade ninguna guardia. Revisa los cupos antes de publicar — si nadie tiene cupo, el programa no tiene a quién colocar.');
 
             return $this->redirectToRoute('guardia_rota_index', ['curso' => $curso, 'propuesta' => 1]);
         }

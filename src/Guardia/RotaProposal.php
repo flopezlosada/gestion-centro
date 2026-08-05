@@ -83,11 +83,10 @@ final class RotaProposal
     }
 
     /**
-     * Why the week came up short, in the terms a human can act on: nobody has been given a quota yet,
-     * or there was nobody free at all, or there were people free but all of them had used up their
-     * quota. The three call for different responses — type the quota table, redraw the timetable, or
-     * raise somebody's quota — so they are never merged. See the GAP_* constants of
-     * {@see RotaProposer}.
+     * Why the week came up short, in the terms a human can act on: nobody is on a quota at all, or there
+     * was nobody free at all, or there were people free but all of them had used up their quota. The three
+     * call for different responses — go through the quota table, redraw the timetable, or raise somebody's
+     * quota — so they are never merged. See the GAP_* constants of {@see RotaProposer}.
      *
      * @return array<string, int> reason → how many places it accounts for
      */

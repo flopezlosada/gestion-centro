@@ -54,14 +54,21 @@ final class RotaProposer
     public const GAP_QUOTA_EXHAUSTED = 'quota-exhausted';
 
     /**
-     * Nobody has been given a quota yet, so the engine had nobody to place anywhere and the whole week
-     * comes back empty. Not a shortage and not the timetable: the quota table has simply never been
-     * filled in, and typing it is the only thing that changes anything.
+     * Not one teacher carries a guardia quota above zero, so the engine had nobody to place anywhere and
+     * the whole week comes back empty. Neither a shortage nor the timetable: the quota table is what has
+     * to be looked at, and it is the only thing that changes anything.
+     *
+     * Deliberately says "nobody is on a quota" and not "the quotas have not been typed", because the
+     * engine cannot tell those apart and must not pretend to: a teacher with no row and one the equipo
+     * directivo deliberately set to zero both arrive here as a plain 0 ({@see RotaPlanner::candidates()}).
+     * That distinction is real and {@see \App\Guardia\GuardiaQuotaBalance} keeps it — pending is not
+     * exempt — but it belongs on the quota screen, which is where somebody acts on it. From here the next
+     * step is the same either way: go and look at the quotas.
      *
      * A reason of its own because the other two are answers about a period, and this is an answer about
      * the course — see the note in {@see propose()} for the bug that its absence caused.
      */
-    public const GAP_NO_QUOTA_SET = 'no-quota-set';
+    public const GAP_NOBODY_ON_QUOTA = 'nobody-on-quota';
 
     /**
      * Draws up the week.
@@ -80,15 +87,20 @@ final class RotaProposer
         // later step, rather than relying on every comparison to remember to skip them.
         $eligible = array_values(array_filter($candidates, static fn (RotaCandidate $c): bool => $c->quota > 0));
 
-        // "Nobody has a quota" is decided HERE, where both lists are still in hand, and not per period
-        // down in whyNobody(). Once the engine is reduced to $eligible there is nothing left to look at:
-        // every test whyNobody() runs over an empty list is vacuously true, so it falls through to
-        // GAP_NOBODY_FREE — which the screen renders as "eso no se arregla con cupos, es el horario".
-        // Exactly backwards, and not hypothetical: on 05-08-2026 the centre's rota screen reported all
-        // 150 places of the week as a timetable problem when the real state was 0 rows in guardia_quota.
-        // Distinguishing it from "no candidates at all" matters too: with an empty timetable there is no
-        // quota to type, and GAP_NOBODY_FREE is then literally true.
-        $noQuotaSet = [] === $eligible && [] !== $candidates;
+        // With nobody eligible the answer is the same for the whole week, so it is decided HERE, once, and
+        // whyNobody() is never asked. It could not answer anyway: both of its tests over an empty list are
+        // vacuously true, so it falls through to GAP_NOBODY_FREE — which the screen renders as "eso no se
+        // arregla con cupos, es el horario". Exactly backwards, and not hypothetical: on 05-08-2026 the
+        // centre's rota screen reported all 150 places of the week as a timetable problem when the real
+        // state was an empty guardia_quota.
+        //
+        // Which of the two it is depends on the FULL list, not the eligible one: teachers on the timetable
+        // but none of them on a quota is the quota table; no teachers at all is a timetable with nobody in
+        // it, and there is then no quota to go and type.
+        $reasonWhenNobodyEligible = null;
+        if ([] === $eligible) {
+            $reasonWhenNobodyEligible = [] !== $candidates ? self::GAP_NOBODY_ON_QUOTA : self::GAP_NOBODY_FREE;
+        }
 
         $assigned = [];
         $perDay = [];
@@ -133,9 +145,8 @@ final class RotaProposer
                         'weekday' => $weekday,
                         'slot' => $slot,
                         'kind' => $round->value,
-                        'reason' => $noQuotaSet
-                            ? self::GAP_NO_QUOTA_SET
-                            : $this->whyNobody($eligible, $weekday, $slot, $inCell[$key] ?? [], $assigned),
+                        'reason' => $reasonWhenNobodyEligible
+                            ?? $this->whyNobody($eligible, $weekday, $slot, $inCell[$key] ?? [], $assigned),
                     ];
                     continue;
                 }
