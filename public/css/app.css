@@ -337,7 +337,9 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 500; color: var(--te
 .nav a:hover { background: var(--accent-weak); color: var(--text); }
 .nav a.is-active { background: var(--accent); color: var(--on-accent); }
 
-.nav-group { display: flex; flex-direction: column; gap: 2px; }
+/* Sin gap entre los enlaces de un grupo, al contrario que en .nav: el padding del enlace ya deja
+   aire, y apretar DENTRO es lo que hace que se note el aire ENTRE grupos (ver .nav-subtitle). */
+.nav-group { display: flex; flex-direction: column; }
 
 /* Jerarquía visual de la barra lateral, de fuera adentro:
    1) navegación primaria (Inicio y todo lo de "Mi día" y "El centro"): hijos DIRECTOS de .nav, con
@@ -345,8 +347,11 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 500; color: var(--te
    2) cabecera de sección: etiqueta "eyebrow" en mayúsculas, estática (.nav-section-title) para las
       zonas siempre abiertas, o plegable (.nav-label, el <summary> de un <details>) para los bloques
       de gestión: Coordinar guardias, Espacios y Administración;
-   3) enlaces dentro de un bloque: sangrados bajo una guía vertical y atenuados, como subnivel;
-   4) .nav-subtitle, para partir un bloque largo por naturaleza sin plegar otra vez. */
+   3) .nav-subtitle, rótulo del grupo, colgado a la izquierda de la guía (ver su regla más abajo);
+   4) enlaces dentro de un bloque: sangrados bajo una guía vertical y atenuados, como subnivel.
+   Un bloque con rótulos lleva UN .nav-group por rótulo, no uno solo para todo: la guía vertical
+   tiene que cortarse en cada grupo. Con una guía continua de catorce enlaces la línea decía "esto
+   es una sola lista" justo mientras los rótulos decían "son cuatro grupos". */
 .nav > a { color: var(--text); font-weight: 500; }
 .nav-group { margin-left: 1.1rem; border-left: 1px solid var(--border); }
 .nav-group a { padding-left: 14px; }
@@ -1819,8 +1824,8 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     width: 100%; margin: .7rem 0 .3rem; padding: 4px .9rem;
     background: transparent; border: 0; cursor: pointer; text-align: left;
-    font-family: inherit; font-size: 11px; font-weight: 600; letter-spacing: .04em;
-    text-transform: uppercase; color: var(--text-faint);
+    font-family: inherit; font-size: 11px; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--text-muted);
 }
 .nav-label:hover { color: var(--text-muted); }
 /* Fuera el triangulito del navegador: el chevron lo dibujamos nosotros. Hacen falta las dos reglas
@@ -1838,15 +1843,19 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 /* El foco se pinta en el summary, que es lo que recibe el teclado (el <details> no es focusable). */
 .nav-label:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius); }
 
-/* Subtítulo dentro de un grupo: tercer nivel de la barra lateral, para partir listas largas por
-   naturaleza ("Personas", "Curso escolar", "Preparar el curso") sin abrir otro bloque plegable.
-   Más pequeño y sin mayúsculas para que no compita con la cabecera del bloque que lo contiene. */
+/* Rótulo de grupo: tercer nivel de la barra lateral, para partir listas largas por naturaleza
+   ("Personas", "Curso escolar", "Preparar el curso") sin abrir otro bloque plegable.
+   Va FUERA de la guía vertical de su grupo y alineado con la cabecera del bloque, no con los
+   enlaces: cuando estaba a los mismos 14px de sangrado que ellos se leía como un enlace más, solo
+   pequeño. Y se distingue de la cabecera por canales distintos a la vez —minúsculas frente a
+   mayúsculas, un punto menos de cuerpo y un color más tenue—, no solo por el text-transform: con
+   los mismos 11px/600/faint que .nav-label los dos niveles pesaban exactamente igual. */
 .nav-subtitle {
-    display: block; margin: .6rem 0 .15rem; padding: 0 14px;
-    font-size: 11px; font-weight: 600; color: var(--text-faint);
+    display: block; margin: 1.5rem 0 .3rem; padding: 0 .9rem;
+    font-size: 10.5px; font-weight: 600; color: var(--text-faint);
 }
-/* El primero no separa de nada por arriba: la cabecera del bloque ya deja aire. */
-.nav-subtitle:first-child { margin-top: .15rem; }
+/* El primero de un bloque no separa de nada por arriba: el <summary> ya deja aire. */
+.nav-block > .nav-label + .nav-subtitle { margin-top: .2rem; }
 
 /* --- Obligations cockpit ("Qué toca" y "Estructura SGA") --- */
 /* Conmutador de ámbito (Mías / Todas): pastillas, misma estética que .theme-toggle. */
