@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\User;
-use App\Enum\Area;
 use App\Repository\AcademicYearRepository;
 use App\Repository\ScheduleEntryRepository;
 use App\Repository\SpacePlanAssignmentRepository;
-use App\Security\Voter\AreaVoter;
 use App\Service\SchoolCalendar;
 use App\Space\RoomOccupancy;
 use App\Space\RoomSynchroniser;
@@ -47,12 +45,16 @@ final class SpaceController extends AbstractController
      * handoff. Esta ruta no se borra porque hay enlaces guardados y avisos que apuntan aquí.
      *
      * El módulo de espacios se queda con lo que es suyo: los planes de cambio de aula y el catálogo.
+     *
+     * Sin gate, igual que su destino: «Aulas libres» se abrió a todo el claustro (ver
+     * {@see GuardiaDeficitController::rooms()}, que explica por qué). Dejar aquí el `espacios: read` habría
+     * hecho que un docente con un enlace guardado a `/espacios` recibiera un 403 justo delante de una
+     * pantalla que ya puede ver — el fallo más difícil de diagnosticar de todos, porque el enlace del menú
+     * funciona y el guardado no.
      */
     #[Route('', name: 'space_index', methods: ['GET'])]
     public function index(Request $request): Response
     {
-        $this->denyAccessUnlessGranted(AreaVoter::READ, Area::ESPACIOS);
-
         // Se pasan la fecha y el tramo que traiga la petición: quien llegue con un enlace guardado a una hora
         // concreta tiene que aterrizar en ESA hora, no en la de ahora. Los nombres son los que lee
         // {@see GuardiaDate::fromRequest()} —`date`, no `fecha`—, que son además los que usaba esta pantalla.

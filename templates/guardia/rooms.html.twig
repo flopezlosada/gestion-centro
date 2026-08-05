@@ -18,7 +18,10 @@
 
 {% block title %}Aulas libres{% endblock %}
 
-{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_index') }}">Guardias</a><span class="sep">/</span>Aulas libres{% endblock %}
+{#- La miga de pan pasa por «Guardias» solo si quien mira puede entrar ahí. La hoja está abierta a todo el
+    claustro, pero el parte del día sigue siendo de coordinación: un docente tendría en pantalla, siempre
+    visible, un enlace que le devuelve un 403. -#}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>{% if is_granted(constant('App\\Security\\Voter\\AreaVoter::READ'), constant('App\\Enum\\Area::GUARDIAS')) %}<a href="{{ path('guardia_index') }}">Guardias</a><span class="sep">/</span>{% endif %}Aulas libres{% endblock %}
 
 {% block body %}
     {% set ymd = date|date('Y-m-d', false) %}
@@ -27,6 +30,9 @@
     {# Juntar grupos es una acción de coordinación: quien solo consulta la hoja ve las mismas aulas, pero
        sus tarjetas no llevan a ninguna parte (el destino le daría un 403). #}
     {% set canGroup = is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::GUARDIAS')) %}
+    {# Y el parte del día pide LECTURA en guardias. Desde que la hoja está abierta a todo el claustro hay que
+       comprobarlo: antes cualquiera que llegara aquí tenía por fuerza una de las dos áreas. #}
+    {% set canSeeParte = is_granted(constant('App\\Security\\Voter\\AreaVoter::READ'), constant('App\\Enum\\Area::GUARDIAS')) %}
 
     <div class="rooms">
         {# ---- Ancla: el día y la hora elegida --------------------------------------------------
@@ -107,12 +113,16 @@
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V9l7-5 7 5v12"/><path d="M9 21v-6h6v6"/></svg>
                     </span>
                     <h1 class="rooms-empty__title">Ninguna aula libre de {{ actual.startsAt|date('H:i', false) }} a {{ actual.endsAt|date('H:i', false) }}</h1>
-                    <p class="rooms-empty__text">A esta hora está todo ocupado. Prueba con otro tramo o mira el parte para repartir de otra forma.</p>
+                    {# El parte solo se nombra a quien puede abrirlo: para el resto del claustro «mira el
+                       parte» es una salida que acaba en un 403. #}
+                    <p class="rooms-empty__text">A esta hora está todo ocupado. Prueba con otro tramo{% if canSeeParte %} o mira el parte para repartir de otra forma{% endif %}.</p>
                     <div class="rooms-empty__ways">
                         {% if siguiente %}
                             <a class="btn-lg btn-lg--primary" href="{{ path('guardia_rooms', { date: ymd, slot: siguiente.index }) }}">Ver el tramo de {{ siguiente.startsAt|date('H:i', false) }} · {{ siguiente.count }} aula{{ siguiente.count == 1 ? '' : 's' }}</a>
                         {% endif %}
-                        <a class="btn-lg btn-lg--muted" href="{{ path('guardia_index', { date: ymd, slot: actual.index }) }}">Ir al parte del día</a>
+                        {% if canSeeParte %}
+                            <a class="btn-lg btn-lg--muted" href="{{ path('guardia_index', { date: ymd, slot: actual.index }) }}">Ir al parte del día</a>
+                        {% endif %}
                     </div>
                 </div>
             </div>

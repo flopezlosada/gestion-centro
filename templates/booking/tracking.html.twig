@@ -1,0 +1,75 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Seguimiento de reservas · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('booking_index') }}">Reservas</a><span class="sep">/</span>Seguimiento{% endblock %}
+
+{% block body %}
+    {% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
+
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Reservas</p>
+            <h1>Seguimiento de reservas</h1>
+            <p class="lead">Qué se ha reservado esta semana, quién lo tenía y con qué grupo. Sirve para saber a quién preguntar cuando aparece un desperfecto en un aula o en el material.</p>
+        </div>
+    </div>
+
+    {# Semana a semana, no día a día: una avería se descubre días después de causarse, así que la pantalla
+       tiene que abarcar más de lo que abarca la de reservar. Mismo selector de fecha que /reservas —
+       date-field.js lo realza— y aquí SÍ hay flecha hacia atrás: mirar el pasado es justo para lo que está. #}
+    <div class="toolbar">
+        <nav class="scope-toggle" aria-label="Semana">
+            <a href="{{ path('booking_tracking', { fecha: monday|date_modify('-7 days')|date('Y-m-d', false) }) }}">← Semana anterior</a>
+            <a href="{{ path('booking_tracking') }}" class="{{ 'now'|date('Y-m-d', false) >= monday|date('Y-m-d', false) and 'now'|date('Y-m-d', false) <= sunday|date('Y-m-d', false) ? 'is-active' }}">Esta semana</a>
+            <a href="{{ path('booking_tracking', { fecha: monday|date_modify('+7 days')|date('Y-m-d', false) }) }}">Semana siguiente →</a>
+        </nav>
+        <form method="get" action="{{ path('booking_tracking') }}">
+            <label for="fecha" class="visually-hidden">Ir a la semana de un día</label>
+            <input type="date" id="fecha" name="fecha" value="{{ monday|date('Y-m-d', false) }}" onchange="this.form.submit()">
+            <noscript><button type="submit" class="btn secondary">Ir</button></noscript>
+        </form>
+    </div>
+
+    <h2 class="home-section__title">Del {{ monday|date('d/m/Y', false) }} al {{ sunday|date('d/m/Y', false) }}</h2>
+
+    <div class="card">
+        {% if bookings is empty %}
+            <p class="muted">No hay ninguna reserva en esta semana.</p>
+        {% else %}
+            {# Una sola tabla con la columna «Día» en vez de una tabla por día: así el buscador y los filtros
+               de table-tools actúan sobre la SEMANA entera, que es como se investiga un desperfecto («¿quién
+               tuvo el carro 2?»). data-filter en las tres columnas por las que se pregunta.
+               La celda del día lleva data-sort con la fecha en número (AAAAMMDD) porque «Lunes 03/08» ordena
+               alfabéticamente por el nombre del día, no por la fecha. #}
+            <table data-list-tools>
+                <thead>
+                    <tr>
+                        <th>Día</th>
+                        <th>Hora</th>
+                        <th data-filter="Qué">Qué</th>
+                        <th data-filter="Tipo">Tipo</th>
+                        <th>Grupo</th>
+                        <th data-filter="Quién">Quién</th>
+                        <th>Para qué</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for b in bookings %}
+                        {% set times = slotTimes[b.slotIndex] ?? null %}
+                        <tr>
+                            <td data-sort="{{ b.date|date('Ymd', false) }}">{{ dias[b.date|date('N', false)] }} {{ b.date|date('d/m', false) }}</td>
+                            <td class="mono">{% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}{{ b.slotIndex + 1 }}ª{% endif %}</td>
+                            <td><strong>{{ b.resourceName }}</strong></td>
+                            <td>{{ b.room ? 'Espacio' : 'Material' }}</td>
+                            <td>{{ b.groupName ?? '—' }}</td>
+                            {# Quien reservó puede haber sido dado de baja: la reserva sobrevive (booked_by es
+                               SET NULL) y entonces esta pantalla no puede decir a quién preguntar. Se dice. #}
+                            <td>{{ b.bookedBy ? b.bookedBy.fullName : 'Persona dada de baja' }}</td>
+                            <td class="muted">{{ b.purpose }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}

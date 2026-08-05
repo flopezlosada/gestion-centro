@@ -60,7 +60,12 @@
                                 {% if not room.active %}<span class="badge badge--muted">Sin uso</span>
                                 {% elseif room.needsReview %}<span class="badge badge--warning">Sin completar</span>
                                 {% else %}<span class="badge badge--ok">Completo</span>{% endif %}
+                                {# Los dos avisos solo tienen sentido en un espacio en uso: de uno retirado ya
+                                   lo dice todo «Sin uso». Son preguntas distintas y se marcan por separado
+                                   (ver el javadoc de Room): al gimnasio se le pueden mandar grupos y no se
+                                   reserva; un almacén ni una cosa ni la otra. #}
                                 {% if room.active and not room.assignable %}<span class="badge badge--muted" title="No se le envían grupos">No asignable</span>{% endif %}
+                                {% if room.active and not room.reservable %}<span class="badge badge--muted" title="No se ofrece en «Reservas»">No reservable</span>{% endif %}
                             </td>
                             <td class="row-actions">
                                 <a href="{{ path('space_room_edit', { id: room.id }) }}">Editar</a>

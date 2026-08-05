@@ -8,11 +8,13 @@ use App\Entity\Booking;
 use App\Entity\Material;
 use App\Entity\Room;
 use App\Entity\User;
+use App\Enum\Area;
 use App\Repository\AcademicYearRepository;
 use App\Repository\BookingRepository;
 use App\Repository\MaterialRepository;
 use App\Repository\RoomRepository;
 use App\Repository\ScheduleEntryRepository;
+use App\Security\Voter\AreaVoter;
 use App\Util\CalendarDate;
 use App\Util\SchoolYear;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
@@ -36,6 +38,14 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
  * El choque no se comprueba y ya está: lo impide un índice único en la base de datos
  * ({@see Booking::$resourceKey}). Dos personas pidiendo el mismo carro en el mismo segundo es raro, pero
  * "raro" no es "imposible", y el día que pase discutirían en el pasillo.
+ *
+ * NO todos los espacios entran: solo los que el catálogo marca reservables ({@see Room::$reservable}). El
+ * centro no reserva laboratorios, talleres, gimnasio ni pistas — los organiza su departamento —, y ofrecerlos
+ * en la misma lista que el salón de actos era invitar a un choque que la aplicación no puede arbitrar.
+ *
+ * Dos pantallas y no una: el DÍA, abierta a todo el mundo, que es donde se reserva; y el SEGUIMIENTO de la
+ * semana ({@see tracking()}), para el equipo directivo, que es donde se mira atrás cuando aparece un
+ * desperfecto.
  */
 #[Route('/reservas')]
 final class BookingController extends AbstractController
@@ -60,12 +70,61 @@ final class BookingController extends AbstractController
 
         return $this->render('booking/index.html.twig', [
             'day' => $day,
+            // Un día ya pasado se puede MIRAR (para eso está el selector), pero no se reserva: la pantalla
+            // esconde el formulario y {@see create()} rechaza el POST, para que las dos cosas no discrepen.
+            'isPast' => $day < new \DateTimeImmutable('today'),
             'bookings' => $bookings->findForDay($day),
             'mine' => $bookings->findUpcomingFor($user, new \DateTimeImmutable('today')),
-            // Solo lo que se puede reservar: un aula retirada del catálogo o una cámara rota no se ofrecen.
-            'rooms' => array_values(array_filter($rooms->findAllOrdered(), static fn (Room $r): bool => $r->isActive())),
+            // Solo lo que se puede reservar: un aula retirada del catálogo, una cámara rota o un espacio que
+            // el centro no abre a reservas (laboratorios, gimnasio, pistas) no se ofrecen.
+            'rooms' => $rooms->findReservable(),
             'materials' => $materials->findActive(),
             'slotTimes' => $schedule->slotTimes($year),
+        ]);
+    }
+
+    /**
+     * Seguimiento de reservas para el equipo directivo: la SEMANA entera de un golpe, con día, hora, qué se
+     * cogió, para qué grupo y quién lo cogió.
+     *
+     * Existe por el material: cuando aparece un desperfecto en un aula o en un carro de portátiles, lo
+     * primero que hace falta es saber quién estuvo allí y con qué grupo, y eso en la pantalla del día se
+     * consulta a base de ir pinchando «Día siguiente». Por eso el rango es una semana y no un día: una
+     * avería se descubre días después de causarse.
+     *
+     * Una pantalla APARTE de {@see index()} y no un modo suyo, aunque los datos se parezcan: el día es para
+     * reservar (y ahí el pasado no interesa), esto es para mirar atrás y sin poder tocar nada. Mezclarlas
+     * habría metido un permiso dentro de la pantalla que usa todo el claustro.
+     *
+     * Puerta: escritura en el área ESPACIOS. La lectura no basta a propósito — esto dice quién cogió qué y
+     * cuándo, o sea el rastro de trabajo de cada compañero, y eso no es información de consulta general.
+     */
+    #[Route('/seguimiento', name: 'booking_tracking', methods: ['GET'])]
+    public function tracking(
+        Request $request,
+        BookingRepository $bookings,
+        ScheduleEntryRepository $schedule,
+        AcademicYearRepository $years,
+    ): Response {
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ESPACIOS);
+
+        $anchor = CalendarDate::parse($request->query->getString('fecha'), new \DateTimeZone(date_default_timezone_get()))
+            ?? new \DateTimeImmutable('today');
+        // Semana de lunes a domingo. El fin de semana entra porque las actividades extraescolares se llevan
+        // el material justamente entonces, que es cuando más se rompe.
+        //
+        // Retrocediendo con el número de día (N: 1 lunes … 7 domingo) y NO con `modify('monday this week')`:
+        // ese texto relativo tiene una semántica que hay que ir a buscar a la documentación para saber qué
+        // hace un domingo —¿el lunes anterior o el siguiente?—, y aquí la respuesta correcta es el anterior.
+        // La resta se lee sola y no admite dos lecturas.
+        $monday = $anchor->modify('-'.((int) $anchor->format('N') - 1).' days');
+        $sunday = $monday->modify('+6 days');
+
+        return $this->render('booking/tracking.html.twig', [
+            'monday' => $monday,
+            'sunday' => $sunday,
+            'bookings' => $bookings->findForRange($monday, $sunday),
+            'slotTimes' => $schedule->slotTimes($years->findBySchoolYear(SchoolYear::current($monday))),
         ]);
     }
 
@@ -92,6 +151,17 @@ final class BookingController extends AbstractController
             return $this->back($day);
         }
 
+        // El pasado no se reserva. Comprobado aquí y no solo escondiendo el formulario: se llega a un día
+        // viejo con el selector de fecha o con un enlace guardado, y una reserva de ayer no sirve a nadie —
+        // ocupa el hueco en el histórico y desaparece de «lo que tienes reservado», así que quien la hace no
+        // se enteraría de haberse equivocado. Se compara por DÍA (no por hora): reservar 1ª hora a las 8:05
+        // es tarde, pero es del día de hoy y es asunto de quien reserva, no del programa.
+        if ($day < new \DateTimeImmutable('today')) {
+            $this->addFlash('error', 'Ese día ya ha pasado: elige hoy o un día por venir.');
+
+            return $this->back($day);
+        }
+
         // Los límites se comprueban AQUÍ y no solo con el maxlength del formulario: esta acción no pasa
         // por un FormType (son cuatro campos), así que sin esto un POST a mano con un motivo de 300
         // caracteres reventaría contra la columna VARCHAR(200) con un error de driver, no con un aviso.
@@ -102,12 +172,14 @@ final class BookingController extends AbstractController
             return $this->back($day);
         }
 
-        // Lo retirado del catálogo no se ofrece en la pantalla, pero eso no es una regla: sin esta
-        // comprobación se podía reservar un aula dada de baja mandando su id a mano.
+        // Lo que la pantalla no ofrece no es una regla hasta que se comprueba aquí: sin esto se podía
+        // reservar un aula dada de baja —o el gimnasio, que el centro no abre a reservas— mandando su id a
+        // mano. Se pregunta con {@see Room::canBeBooked()} y no con las dos condiciones sueltas: escritas a
+        // mano aquí, la regla dependía de que quien las copie a la siguiente pantalla se acuerde de las dos.
         $room = 'room' === $kind ? $rooms->find((int) $id) : null;
         $material = 'material' === $kind ? $materials->find((int) $id) : null;
         $booking = match (true) {
-            $room instanceof Room && $room->isActive() => Booking::forRoom($user, $room, $day, $slot, $purpose),
+            $room instanceof Room && $room->canBeBooked() => Booking::forRoom($user, $room, $day, $slot, $purpose),
             $material instanceof Material && $material->isActive() => Booking::forMaterial($user, $material, $day, $slot, $purpose),
             default => null,
         };

@@ -47,6 +47,28 @@ class RoomRepository extends ServiceEntityRepository
     }
 
     /**
+     * The spaces the staff may BOOK: in use and marked reservable — what the /reservas form offers.
+     *
+     * A query of its own rather than filtering {@see findActive()} in the controller, so no screen has to
+     * remember the condition to avoid quietly offering the gym.
+     *
+     * The two conditions duplicate {@see Room::canBeBooked()}, which is the canonical definition of the rule
+     * — DQL cannot call a method on the entity. If that method ever grows a third condition, it has to be
+     * mirrored here, and this is the ONLY place where that is true.
+     *
+     * @return Room[] the bookable spaces, code ascending
+     */
+    public function findReservable(): array
+    {
+        return $this->createQueryBuilder('r')
+            ->andWhere('r.active = true')
+            ->andWhere('r.reservable = true')
+            ->orderBy('r.code', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * Every space keyed by its (normalised) code, in one query. What the synchroniser compares the
      * timetable against, so discovering rooms never costs a query per room name.
      *

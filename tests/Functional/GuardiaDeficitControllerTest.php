@@ -171,13 +171,48 @@ final class GuardiaDeficitControllerTest extends WebTestCase
         self::assertStringContainsString('room=S ACTOS', $href, 'with the room already chosen');
     }
 
-    public function testFreeRoomsSheetIsDeniedWithoutReadAccess(): void
+    /**
+     * La hoja de aulas libres NO tiene puerta: un docente sin permiso de guardias ni de espacios entra. Era
+     * un 403 y por eso nadie del claustro podía preguntar dónde meter a su grupo. Lo que sigue cerrado con
+     * escritura es todo lo que CAMBIA algo, y eso lo prueban los dos casos de abajo.
+     */
+    public function testFreeRoomsSheetIsOpenToAnyTeacher(): void
     {
         $this->login(coordinator: false);
 
         $this->client->request('GET', '/guardias/aulas');
 
-        self::assertResponseStatusCodeSame(403);
+        self::assertResponseIsSuccessful();
+    }
+
+    /**
+     * Y entrando no se le ofrece ninguna salida que acabe en un 403: el parte del día pide lectura en
+     * guardias, así que ni la miga de pan ni el botón del estado vacío lo nombran a quien no la tiene.
+     *
+     * Se prueba con la pantalla en su estado VACÍO —el único que pinta ese botón— y con un docente sin
+     * permiso, que es la combinación que no existía en este fichero: los demás casos entran como
+     * coordinación, así que invertir cualquiera de las dos condiciones pasaría desapercibido y el enlace
+     * roto volvería justo donde estaba.
+     */
+    public function testFreeRoomsSheetOffersNoWayIntoTheParteWithoutGuardiaAccess(): void
+    {
+        $this->login(coordinator: false);
+        $teacher = $this->user('Docente Aula', 'aula@centro.test');
+        // Mismo montaje que el caso del estado vacío: la única aula del catálogo está ocupada a 0ª y la 1ª
+        // existe porque alguien tiene guardia entonces, así que la hoja tiene una hora a la que apuntar.
+        $this->lective($teacher, 0, '1ºA', 'A10', Weekday::MONDAY);
+        $this->guardiaEntry($teacher, 1);
+        $this->syncRooms();
+
+        $crawler = $this->client->request('GET', '/guardias/aulas?date='.self::MONDAY.'&slot=0');
+
+        self::assertResponseIsSuccessful();
+        // Se cuentan los enlaces del estado vacío en vez de buscar el href del parte: con permiso son DOS
+        // (hora siguiente + parte) y sin él uno, así que el conteo falla igual si alguien invierte la
+        // condición, y no depende de cómo se escriba esa URL.
+        self::assertCount(1, $crawler->filter('.rooms-empty__ways a'), 'solo la salida que no pide permiso');
+        self::assertCount(1, $crawler->filter('.rooms-empty .btn-lg--primary'), 'y es la de la hora siguiente');
+        self::assertSelectorTextNotContains('.breadcrumb', 'Guardias', 'ni la miga de pan pasa por el parte');
     }
 
     public function testGroupingScreenIsDeniedWithoutWriteAccess(): void
