@@ -6,6 +6,7 @@ namespace App\Tests\Functional;
 
 use App\Entity\Department;
 use App\Entity\Meeting;
+use App\Entity\MeetingRemark;
 use App\Entity\Notification;
 use App\Entity\Project;
 use App\Entity\Role;
@@ -344,7 +345,7 @@ final class MeetingCrudTest extends WebTestCase
         $this->em->persist($meeting);
         $this->em->flush();
         $id = (int) $meeting->getId();
-        $action = '/reuniones/'.$id.'/asistencia';
+        $action = '/reuniones/'.$id.'/acta/registro';
 
         $this->client->loginUser($convener);
         $crawler = $this->client->request('GET', '/reuniones/'.$id);
@@ -359,6 +360,214 @@ final class MeetingCrudTest extends WebTestCase
         self::assertTrue($stored->isAttendanceTaken());
         self::assertSame(['Pedro Vino'], array_map(static fn (User $u): string => $u->getFullName(), $stored->getAttended()->toArray()));
         self::assertSame(['Ana Faltó', 'Lucía Coordina'], array_map(static fn (User $u): string => $u->getFullName(), $stored->absentees()));
+    }
+
+    /**
+     * EL FALLO que traía la pantalla: el desarrollo y la asistencia eran dos formularios en el mismo bloque,
+     * así que «Guardar asistencia» mandaba solo las casillas y el texto recién escrito se quedaba sin
+     * enviar. Ahora es UN formulario y un POST guarda las dos cosas.
+     */
+    public function testSavingTheActaKeepsTheTextAndTheRollTogether(): void
+    {
+        $convener = $this->user('Lucía Coordina', 'lucia30.meet@centro.test');
+        $came = $this->user('Pedro Vino', 'pedro30.meet@centro.test');
+        $meeting = new Meeting($convener, 'Reunión de departamento', new \DateTimeImmutable('-2 hours'));
+        $meeting->addAttendee($came);
+        $this->em->persist($meeting);
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+
+        $this->client->loginUser($convener);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+
+        // Un solo formulario para todo el bloque: el textarea del desarrollo y las casillas de asistencia
+        // están DENTRO del mismo, que es lo que hace que se envíen juntos.
+        $form = $crawler->selectButton('Guardar el acta')->form();
+        self::assertStringEndsWith('/acta/registro', $form->getUri());
+        self::assertCount(1, $crawler->filter('form[action$="/acta/registro"] textarea[name="tratado"]'));
+        self::assertCount(1, $crawler->filter('form[action$="/acta/registro"] textarea[name="acuerdos"]'));
+        self::assertGreaterThan(0, $crawler->filter('form[action$="/acta/registro"] input[name="asistentes[]"]')->count());
+
+        // Se envía como lo haría el navegador con el formulario entero (getPhpValues: las casillas
+        // expandidas no se pueden asignar por índice, ver domcrawler-expanded-checkboxes).
+        $values = $form->getPhpValues();
+        $values['tratado'] = 'Se abre la sesión a las 12:00.';
+        $values['acuerdos'] = '1. Se aprueba la programación.';
+        $values['asistentes'] = [(string) $came->getId()];
+        $this->client->request('POST', $form->getUri(), $values);
+        self::assertResponseRedirects();
+
+        $this->em->clear();
+        $stored = $this->em->getRepository(Meeting::class)->find($id);
+        self::assertInstanceOf(Meeting::class, $stored);
+        self::assertSame('Se abre la sesión a las 12:00.', $stored->getDiscussion(), 'el desarrollo ya no se pierde al guardar la lista');
+        self::assertSame('1. Se aprueba la programación.', $stored->getAgreements());
+        self::assertTrue($stored->isAttendanceTaken());
+        self::assertCount(1, $stored->getAttended());
+    }
+
+    /**
+     * El candado del acta publicada y su desahogo: quien asistió no la reescribe, pero puede puntualizarla,
+     * y el aviso llega a quien puede corregirla.
+     */
+    public function testAnAttendeeCannotRewriteAPublishedActaButMayRemarkOnIt(): void
+    {
+        $convener = $this->user('Lucía Coordina', 'lucia31.meet@centro.test');
+        $attendee = $this->user('Pedro Convocado', 'pedro31.meet@centro.test');
+        $stranger = $this->user('Ajena Nada', 'ajena31.meet@centro.test');
+        $meeting = new Meeting($convener, 'CCP de noviembre', new \DateTimeImmutable('-2 hours'));
+        $meeting->addAttendee($attendee);
+        $this->em->persist($meeting);
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+
+        // Se escribe, se genera y se publica.
+        $this->client->loginUser($convener);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $recordUrl = '/reuniones/'.$id.'/acta/registro';
+        $token = (string) $crawler->filter('form[action="'.$recordUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $recordUrl, ['_token' => $token, 'tratado' => 'Lo tratado.', 'asistentes' => [(string) $attendee->getId()]]);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $generateUrl = '/reuniones/'.$id.'/acta/generar';
+        $token = (string) $crawler->filter('form[action="'.$generateUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $generateUrl, ['_token' => $token]);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $publishUrl = '/reuniones/'.$id.'/acta/publicar';
+        $token = (string) $crawler->filter('form[action="'.$publishUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $publishUrl, ['_token' => $token]);
+        self::assertResponseRedirects();
+
+        // Quien asistió: no se le ofrece escribir el acta, y el POST a pelo se rechaza.
+        $this->client->loginUser($attendee);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        self::assertSelectorNotExists('textarea[name="tratado"]', 'quien asistió no reescribe el acta publicada');
+        $this->client->request('POST', $recordUrl, ['_token' => 'irrelevante', 'tratado' => 'Lo que me apetezca.']);
+        self::assertResponseStatusCodeSame(403);
+
+        // Pero sí puede puntualizarla.
+        $remarkUrl = '/reuniones/'.$id.'/acta/observacion';
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $token = (string) $crawler->filter('form[action="'.$remarkUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $remarkUrl, ['_token' => $token, 'observacion' => 'En el punto 3 se acordó aplazarlo, no aprobarlo.']);
+        self::assertResponseRedirects();
+
+        $this->em->clear();
+        $stored = $this->em->getRepository(Meeting::class)->find($id);
+        self::assertInstanceOf(Meeting::class, $stored);
+        self::assertCount(1, $this->em->getRepository(MeetingRemark::class)->findBy(['meeting' => $stored]));
+        // El aviso va a quien puede corregirla, no a todo el grupo.
+        self::assertSame(1, $this->noticesOf($this->em->getRepository(User::class)->find($convener->getId()), 'meeting.remark'));
+        self::assertSame(0, $this->noticesOf($this->em->getRepository(User::class)->find($attendee->getId()), 'meeting.remark'), 'a quien la escribe no se le avisa de lo suyo');
+
+        // Y la observación se lee en la ficha, dentro del grupo y en ningún otro sitio.
+        $this->client->request('GET', '/reuniones/'.$id);
+        self::assertSelectorTextContains('body', 'se acordó aplazarlo');
+        $this->client->loginUser($stranger);
+        $this->client->request('POST', $remarkUrl, ['_token' => 'irrelevante', 'observacion' => 'Yo opino.']);
+        self::assertResponseStatusCodeSame(403);
+
+        self::getContainer()->get(FileUploader::class)->remove((string) $stored->getMinutesPath());
+    }
+
+    /**
+     * El camino completo de una corrección, que es donde estaba el agujero: el acta la levantó la secretaría
+     * y la publicó; quien CONVOCÓ la corrige, regenera el PDF —lo que la devuelve a borrador— y la vuelve a
+     * publicar. Con el permiso colgado de "está publicada ahora" se quedaba tirado en el paso 3, con el acta
+     * fuera del archivo y el claustro teniendo por correo la versión mala.
+     */
+    public function testWhoeverConvenedCanFinishCorrectingAPublishedActaEndToEnd(): void
+    {
+        $convener = $this->user('Ana Directora', 'ana33.meet@centro.test');
+        $secretary = $this->user('Sara Secretaría', 'sara33.meet@centro.test');
+        $meeting = new Meeting($convener, 'CCP de diciembre', new \DateTimeImmutable('-2 hours'));
+        $meeting->addAttendee($secretary);
+        $meeting->setMinutesTakenBy($secretary);
+        $this->em->persist($meeting);
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+        $recordUrl = '/reuniones/'.$id.'/acta/registro';
+        $generateUrl = '/reuniones/'.$id.'/acta/generar';
+        $publishUrl = '/reuniones/'.$id.'/acta/publicar';
+
+        // 1. La secretaría la escribe, la genera y la publica.
+        $this->client->loginUser($secretary);
+        foreach ([[$recordUrl, ['tratado' => 'Versión con el dato mal.']], [$generateUrl, []], [$publishUrl, []]] as [$url, $extra]) {
+            $crawler = $this->client->request('GET', '/reuniones/'.$id);
+            $token = (string) $crawler->filter('form[action="'.$url.'"] input[name="_token"]')->attr('value');
+            $this->client->request('POST', $url, ['_token' => $token] + $extra);
+            self::assertResponseRedirects();
+        }
+
+        // 2. Quien convocó no la tocaba mientras era borrador, pero ya ha salido: ahora sí la corrige.
+        $this->client->loginUser($convener);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $token = (string) $crawler->filter('form[action="'.$recordUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $recordUrl, ['_token' => $token, 'tratado' => 'Versión corregida.']);
+        self::assertResponseRedirects();
+
+        // 3. Y regenera el PDF, que la devuelve a borrador…
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $token = (string) $crawler->filter('form[action="'.$generateUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $generateUrl, ['_token' => $token]);
+        self::assertResponseRedirects();
+
+        // 4. …y la ficha le SIGUE ofreciendo publicarla. Esto es lo que se rompía.
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        self::assertSelectorExists('form[action="'.$publishUrl.'"]', 'quien convocó tiene que poder terminar la corrección');
+        $token = (string) $crawler->filter('form[action="'.$publishUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $publishUrl, ['_token' => $token]);
+        self::assertResponseRedirects();
+
+        $this->em->clear();
+        $stored = $this->em->getRepository(Meeting::class)->find($id);
+        self::assertInstanceOf(Meeting::class, $stored);
+        self::assertTrue($stored->isMinutesPublished(), 'la corrección ha salido');
+        self::assertSame('Versión corregida.', $stored->getDiscussion());
+        // Y vuelve a estar en el archivo de actas, que es de donde la había sacado el regenerado.
+        $this->client->request('GET', '/reuniones/actas');
+        self::assertSelectorTextContains('body', 'CCP de diciembre');
+
+        self::getContainer()->get(FileUploader::class)->remove((string) $stored->getMinutesPath());
+    }
+
+    /** Corregir un acta ya publicada deja el PDF que la gente recibió diciendo otra cosa: la ficha lo dice. */
+    public function testCorrectingAPublishedActaWarnsThatTheFileIsNowOutOfDate(): void
+    {
+        $convener = $this->user('Lucía Coordina', 'lucia32.meet@centro.test');
+        $attendee = $this->user('Pedro Convocado', 'pedro32.meet@centro.test');
+        $meeting = new Meeting($convener, 'Claustro de noviembre', new \DateTimeImmutable('-2 hours'));
+        $meeting->addAttendee($attendee);
+        $this->em->persist($meeting);
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+        $recordUrl = '/reuniones/'.$id.'/acta/registro';
+
+        $this->client->loginUser($convener);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $token = (string) $crawler->filter('form[action="'.$recordUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $recordUrl, ['_token' => $token, 'tratado' => 'Primera versión.', 'asistentes' => [(string) $attendee->getId()]]);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $generateUrl = '/reuniones/'.$id.'/acta/generar';
+        $token = (string) $crawler->filter('form[action="'.$generateUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $generateUrl, ['_token' => $token]);
+
+        // Recién generada, el archivo coincide con el texto: no hay nada que avisar.
+        $this->client->request('GET', '/reuniones/'.$id);
+        self::assertSelectorTextNotContains('body', 'se ha modificado después de generar el PDF');
+
+        // Se corrige el texto sin regenerar: ahí sí.
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $token = (string) $crawler->filter('form[action="'.$recordUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $recordUrl, ['_token' => $token, 'tratado' => 'Versión corregida.', 'asistentes' => [(string) $attendee->getId()]]);
+        $this->client->request('GET', '/reuniones/'.$id);
+
+        self::assertSelectorTextContains('body', 'se ha modificado después de generar el PDF');
+
+        $this->em->clear();
+        $stored = $this->em->getRepository(Meeting::class)->find($id);
+        self::assertInstanceOf(Meeting::class, $stored);
+        self::assertTrue($stored->minutesOutdated());
+        self::getContainer()->get(FileUploader::class)->remove((string) $stored->getMinutesPath());
     }
 
     /**
@@ -418,8 +627,12 @@ final class MeetingCrudTest extends WebTestCase
         self::getContainer()->get(FileUploader::class)->remove((string) $stored->getMinutesPath());
     }
 
-    /** Con familias o con alumnado no hay acta aquí: eso va a RAICES, y duplicarlo son dos medios registros. */
-    public function testAMeetingWithFamiliesKeepsNoMinutes(): void
+    /**
+     * Con familias o con alumnado no hay acta aquí: eso va a RAICES, y duplicarlo son dos medios registros.
+     * Pero sí queda quién vino, que es un dato de la cita — así que la pantalla ofrece la lista y solo la
+     * lista, y un POST con texto no puede colar media acta.
+     */
+    public function testAMeetingWithFamiliesKeepsTheRollButNoMinutes(): void
     {
         $convener = $this->user('Lucía Coordina', 'lucia21.meet@centro.test');
         $attendee = $this->user('Pedro Convocado', 'pedro21.meet@centro.test');
@@ -429,6 +642,7 @@ final class MeetingCrudTest extends WebTestCase
         $this->em->persist($meeting);
         $this->em->flush();
         $id = (int) $meeting->getId();
+        $recordUrl = '/reuniones/'.$id.'/acta/registro';
 
         $this->client->loginUser($convener);
         $crawler = $this->client->request('GET', '/reuniones/'.$id);
@@ -436,11 +650,19 @@ final class MeetingCrudTest extends WebTestCase
         self::assertResponseIsSuccessful();
         self::assertSelectorTextContains('body', 'se registran en RAICES');
         self::assertSelectorNotExists('form[action$="/acta/generar"]', 'no se ofrece generar un acta que no existe');
+        self::assertSelectorNotExists('textarea[name="tratado"]', 'ni escribir un desarrollo que no va aquí');
 
-        // Y si alguien lo intenta a pelo, el servidor lo frena.
-        $token = (string) $crawler->filter('input[name="_token"]')->attr('value');
-        $this->client->request('POST', '/reuniones/'.$id.'/tratado', ['_token' => $token, 'tratado' => 'algo']);
-        self::assertResponseStatusCodeSame(403);
+        // La lista sí se ofrece, y guardarla no arrastra el texto que se cuele en el POST.
+        $token = (string) $crawler->filter('form[action="'.$recordUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $recordUrl, ['_token' => $token, 'tratado' => 'algo', 'asistentes' => [(string) $attendee->getId()]]);
+        self::assertResponseRedirects();
+
+        $this->em->clear();
+        $stored = $this->em->getRepository(Meeting::class)->find($id);
+        self::assertInstanceOf(Meeting::class, $stored);
+        self::assertNull($stored->getDiscussion(), 'el desarrollo no se guarda en una reunión sin acta');
+        self::assertTrue($stored->isAttendanceTaken());
+        self::assertCount(1, $stored->getAttended());
     }
 
     public function testWhatWasDiscussedBecomesTheGeneratedPdfActa(): void
@@ -453,12 +675,12 @@ final class MeetingCrudTest extends WebTestCase
         $this->em->flush();
         $id = (int) $meeting->getId();
 
-        // 1. Se recoge lo tratado.
+        // 1. Se escribe el acta.
         $this->client->loginUser($convener);
         $crawler = $this->client->request('GET', '/reuniones/'.$id);
-        $discussionAction = '/reuniones/'.$id.'/tratado';
-        $token = (string) $crawler->filter('form[action="'.$discussionAction.'"] input[name="_token"]')->attr('value');
-        $this->client->request('POST', $discussionAction, ['_token' => $token, 'tratado' => "1. Se aprueba la programación.\n2. Se acuerda repetir en mayo."]);
+        $recordAction = '/reuniones/'.$id.'/acta/registro';
+        $token = (string) $crawler->filter('form[action="'.$recordAction.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $recordAction, ['_token' => $token, 'tratado' => "1. Se aprueba la programación.\n2. Se acuerda repetir en mayo."]);
         self::assertResponseRedirects();
 
         // 2. Se pide el acta en PDF: no es automática, sale de lo recogido.
@@ -509,7 +731,8 @@ final class MeetingCrudTest extends WebTestCase
         $this->client->loginUser($attendee);
         $this->client->request('GET', '/reuniones/'.$id);
         self::assertSelectorNotExists('textarea[name="tratado"]', 'a quien solo asiste no se le ofrece escribir el acta');
-        $this->client->request('POST', '/reuniones/'.$id.'/tratado', ['_token' => 'irrelevante', 'tratado' => 'Lo que me apetezca.']);
+        self::assertSelectorNotExists('input[name="asistentes[]"]', 'ni pasar lista, que ahora es parte del mismo acta');
+        $this->client->request('POST', '/reuniones/'.$id.'/acta/registro', ['_token' => 'irrelevante', 'tratado' => 'Lo que me apetezca.']);
         self::assertResponseStatusCodeSame(403);
         $this->client->request('POST', '/reuniones/'.$id.'/acta/generar', ['_token' => 'irrelevante']);
         self::assertResponseStatusCodeSame(403);
@@ -540,9 +763,9 @@ final class MeetingCrudTest extends WebTestCase
         $this->client->loginUser($convener);
         // La ficha no ofrece el formulario…
         $this->client->request('GET', '/reuniones/'.$id);
-        self::assertSelectorNotExists('form[action="/reuniones/'.$id.'/asistencia"]');
+        self::assertSelectorNotExists('form[action="/reuniones/'.$id.'/acta/registro"]');
         // …y el POST a pelo tampoco vale.
-        $this->client->request('POST', '/reuniones/'.$id.'/asistencia', ['_token' => 'irrelevante', 'asistentes' => []]);
+        $this->client->request('POST', '/reuniones/'.$id.'/acta/registro', ['_token' => 'irrelevante', 'asistentes' => []]);
         self::assertResponseStatusCodeSame(403);
     }
 

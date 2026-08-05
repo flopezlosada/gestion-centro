@@ -198,8 +198,10 @@ class MeetingRepository extends ServiceEntityRepository
      */
     private function orderedArchive(QueryBuilder $qb, ?MeetingType $type): array
     {
-        // El tipo se pinta en cada fila del archivo: se trae en la misma consulta (evita un N+1).
-        $qb->leftJoin('m.type', 'type')->addSelect('type');
+        // El tipo y el proyecto se pintan en cada fila del archivo: se traen en la misma consulta (evita
+        // dos N+1, uno por columna).
+        $qb->leftJoin('m.type', 'type')->addSelect('type')
+            ->leftJoin('m.project', 'project')->addSelect('project');
 
         if (null !== $type) {
             $qb->andWhere('m.type = :type')->setParameter('type', $type);

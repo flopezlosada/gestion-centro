@@ -34,6 +34,10 @@
                             <span class="incident__head">
                                 <span class="incident__what">{{ m.title }}</span>
                                 {% if m.type %}<span class="badge badge--muted">{{ m.type.name }}</span>{% endif %}
+                                {#- El proyecto, cuando la reunión es de uno: es lo que identifica el acta de
+                                    una reunión periódica de proyecto, que no tiene por qué llevar tipo del
+                                    catálogo (el proyecto YA dice de qué es, y con cuál). -#}
+                                {% if m.project %}<span class="badge badge--muted">{{ m.project.name }}</span>{% endif %}
                                 {% if m.areMinutesApproved %}<span class="badge badge--success">Aprobada</span>{% endif %}
                             </span>
                             <span class="incident__where">{{ m.startAt|date('d/m/Y', false) }}{% if m.place %} · {{ m.place }}{% endif %}</span>

@@ -8,6 +8,8 @@ use App\Entity\Meeting;
 use App\Entity\Project;
 use App\Entity\Role;
 use App\Entity\User;
+use App\Enum\Area;
+use App\Enum\PermissionLevel;
 use App\Repository\ProjectRepository;
 use App\Repository\UserRepository;
 
@@ -15,22 +17,62 @@ use App\Repository\UserRepository;
  * Who may do what with a meeting. The SINGLE place that answers it, so the screen that offers an action
  * and the controller that performs it can never disagree.
  *
- * Three different powers on purpose, because the centre keeps them apart:
+ * Four different powers on purpose, because the centre keeps them apart:
  *  - **convocar**: any cargo does it ({@see Role::canConvene()}: jefaturas, tutorías, TIC, secretaría,
  *    coordinaciones…), plus whoever coordinates a project. A plain docente does not convene: they get
  *    convened. It is a flag on the role, so the centre can move it without a code change;
  *  - **gestionar** la reunión (moverla, cambiar la convocatoria, cancelarla): only whoever convened it;
- *  - **el acta** (subirla, pasar lista, darla por aprobada): whoever LEVANTA EL ACTA, who is not always
- *    the convener — in a collegiate body it is the secretary. See {@see Meeting::minutesKeeper()}.
+ *  - **el acta** (escribirla, pasar lista, darla por aprobada): whoever LEVANTA EL ACTA, who is not always
+ *    the convener — in a collegiate body it is the secretary. See {@see Meeting::minutesKeeper()};
+ *  - **puntualizar** el acta publicada: anybody the meeting concerns ({@see canRemark()}). Reading a
+ *    published acta and disagreeing with a line of it is not the same power as writing it.
  *
- * The admin flag ({@see Role::isAdmin()}) bypasses all three, as it does everywhere else.
+ * The **equipo directivo** ({@see isLeadership()}) also lives here, and not in the controller as it used
+ * to: it widens what can be READ and which projects can be convened for, and having it in two places is
+ * how dirección ended up able to read every acta but unable to convene a single project meeting.
+ *
+ * The admin flag ({@see Role::isAdmin()}) bypasses all of them, as it does everywhere else.
  */
 final readonly class MeetingAccess
 {
     public function __construct(
         private ProjectRepository $projects,
         private UserRepository $users,
+        private OrganizationHierarchy $hierarchy,
     ) {
+    }
+
+    /**
+     * Whether the person is on the **equipo directivo**, the one group the centre puts above a single
+     * meeting: they read every acta and they convene for any project of the centre.
+     *
+     * Read from the MODEL and never from a list of role codes: a centre-wide ranked role (dirección,
+     * jefatura de estudios and its adjunta), or read access to the administration area (which is how
+     * secretaría gets it), or the admin flag. A new cargo in the catalogue is covered the day the centre
+     * gives it its rank or its permission, with no code change.
+     *
+     * Note that dirección is deliberately NOT an admin ({@see \App\DataFixtures\RoleFixtures}): it manages
+     * through the permission matrix. Anything that gates on `$isAdmin` alone therefore leaves dirección
+     * out, which is precisely the bug this method exists to stop repeating.
+     *
+     * @param User $user    the person
+     * @param bool $isAdmin whether they hold an admin role
+     *
+     * @return bool true if they are on the leadership team
+     */
+    public function isLeadership(User $user, bool $isAdmin): bool
+    {
+        if ($isAdmin || $this->hierarchy->commandsWholeSchool($user)) {
+            return true;
+        }
+
+        foreach ($user->getAssignedRoles() as $role) {
+            if ($role->allows(Area::ADMINISTRATION, PermissionLevel::READ)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -93,34 +135,101 @@ final readonly class MeetingAccess
     }
 
     /**
+     * Whether the person may WRITE the acta right now: el desarrollo, los acuerdos y la asistencia.
+     *
+     * While the acta has never gone out that is exactly {@see canKeepMinutes()}. Once it HAS gone out the
+     * centre widens it by one person — "una vez enviada, solo la modifica quien coordina o quien convocó, y
+     * solo para corregir errores" — so whoever convened the body gets in too. It is a bus-factor rule, not a
+     * loosening: the acta of a CCP that goes out with the wrong figure must not wait for the secretary to
+     * come back from sick leave, and whoever convened the body is who answers for its record.
+     *
+     * Deliberately NOT applied before that: writing the acta is delegated work and the centre delegates it
+     * explicitly ({@see Meeting::getMinutesTakenBy()}), so the convener who handed it over does not get to
+     * write it back. Correcting a record the whole staff already has is the different, narrower act.
+     *
+     * The condition is {@see Meeting::wereMinutesEverPublished()} and NOT "está publicada ahora mismo".
+     * Correcting an acta means regenerating its PDF, and that returns it to draft on purpose — so gating on
+     * the current state took the permission away halfway through the correction and left the acta as a draft
+     * nobody present could send.
+     *
+     * Nothing needs to police "solo para corregir errores": {@see Meeting} is {@see \App\Contract\Auditable},
+     * so every change to a published acta is already trailed field by field with its author.
+     *
+     * @param Meeting $meeting the meeting
+     * @param User    $user    the person
+     * @param bool    $isAdmin whether they hold an admin role
+     *
+     * @return bool true if they may write this meeting's acta
+     */
+    public function canWriteMinutes(Meeting $meeting, User $user, bool $isAdmin): bool
+    {
+        return $this->canKeepMinutes($meeting, $user, $isAdmin)
+            || ($meeting->wereMinutesEverPublished() && $this->canManage($meeting, $user, $isAdmin));
+    }
+
+    /**
+     * Whether the person may add an observation to the acta ({@see \App\Entity\MeetingRemark}): anybody the
+     * meeting CONCERNS, once the acta is published.
+     *
+     * It is the answer to "los asistentes no editan el acta, pero sí pueden puntualizar". Two boundaries,
+     * both deliberate:
+     *  - only once the acta has GONE OUT ({@see Meeting::wereMinutesEverPublished()}), because a
+     *    puntualización is about the acta you have read; there is nothing to object to while it is still
+     *    being written. "Ever" and not "is published right now" for the same reason as
+     *    {@see canWriteMinutes()}: while somebody regenerates the corrected PDF the acta is briefly a draft
+     *    again, and that must not gag the people whose objection prompted the correction — nor make the
+     *    thread they wrote disappear off the screen;
+     *  - only {@see Meeting::concerns()}, so the equipo directivo — which reads every acta — does not get to
+     *    annotate a meeting it was not at. Reading the centre's records is not taking part in them.
+     *
+     * @param Meeting $meeting the meeting
+     * @param User    $user    the person
+     *
+     * @return bool true if they may write an observation
+     */
+    public function canRemark(Meeting $meeting, User $user): bool
+    {
+        return $meeting->wereMinutesEverPublished() && $meeting->keepsMinutes() && $meeting->concerns($user);
+    }
+
+    /**
      * Whether the person may open the meeting and read its minutes: it concerns them (they convened it or
      * were convened), or they are on the leadership team. A meeting is not public — an acta may record
      * decisions about people, so it stays inside the group that was called, with one deliberate exception
      * the centre asked for: the **equipo directivo** reads every acta, because they answer for the centre's
      * records and the project detail in /admin lists them.
      *
-     * "Equipo directivo" is read from the model, not from a list of names: a centre-wide ranked role
-     * (dirección, jefatura de estudios and its adjunta) or read access to the administration area (which is
-     * how secretaría gets it), or the admin flag.
+     * "Equipo directivo" is {@see isLeadership()}, read from the model and not from a list of names — and
+     * asked HERE, from the admin flag, instead of taken as a second boolean from the caller. It used to be
+     * a `bool $isLeadership` parameter that every caller had to compose for itself, which is a gate that
+     * opens with a `false` typed by mistake; now every method of this class takes the same one flag.
      *
      * Note this is READING only: {@see canManage()} and {@see canKeepMinutes()} stay with the people of the
      * meeting, so nobody else rewrites or deletes somebody else's acta.
      *
-     * @param Meeting $meeting     the meeting
-     * @param User    $user        the person
-     * @param bool    $isLeadership whether they are on the leadership team (see the class doc)
+     * @param Meeting $meeting the meeting
+     * @param User    $user    the person
+     * @param bool    $isAdmin whether they hold an admin role
      *
      * @return bool true if they may see the meeting
      */
-    public function canSee(Meeting $meeting, User $user, bool $isLeadership): bool
+    public function canSee(Meeting $meeting, User $user, bool $isAdmin): bool
     {
-        return $isLeadership || $meeting->concerns($user);
+        return $meeting->concerns($user) || $this->isLeadership($user, $isAdmin);
     }
 
     /**
-     * The projects the person may convene a meeting for: the live ones they coordinate (every live one for
-     * an admin). Only used to offer the shortcut that brings a project's teachers already ticked — anybody
-     * who convenes may convene anyone, so this never limits WHO can be called.
+     * The projects the person may convene a meeting for: the live ones they coordinate, or every live one
+     * for the **equipo directivo** ({@see isLeadership()}).
+     *
+     * The leadership branch used to be `$isAdmin`, and that was wrong in the one case it mattered:
+     * dirección is deliberately not an admin (it manages through the permission matrix), so the person who
+     * convenes half the meetings of the centre got an empty list and no way to tell a meeting was a
+     * project's. Same notion of "equipo directivo" as the one that already lets them read every acta —
+     * asked once, in one place.
+     *
+     * Only used to offer the shortcut that brings a project's teachers already ticked; anybody who convenes
+     * may convene anyone, so this never limits WHO can be called.
      *
      * @param User $user    the person
      * @param bool $isAdmin whether they hold an admin role
@@ -129,7 +238,7 @@ final readonly class MeetingAccess
      */
     public function convenableProjects(User $user, bool $isAdmin): array
     {
-        return $isAdmin
+        return $this->isLeadership($user, $isAdmin)
             ? $this->projects->findActiveWithMembers()
             : $this->projects->findActiveCoordinatedBy($user);
     }

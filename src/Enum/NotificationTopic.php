@@ -87,7 +87,7 @@ enum NotificationTopic: string
         return match ($this) {
             self::TASK => 'Cuando te asignan una tarea, cuando se acerca la fecha y cuando hay que revisarla.',
             self::GUARDIA => 'Guardias que te tocan, sus recordatorios, cambios, recreos y el aviso de RAICES.',
-            self::MEETING => 'Convocatorias, cambios de hora y actas publicadas.',
+            self::MEETING => 'Convocatorias, cambios de hora, actas publicadas y observaciones a un acta.',
             self::AGENDA => 'Los recordatorios de tus propios eventos, poco antes de empezar.',
             self::SPACE => 'Cuando un cambio de aula te afecta.',
         };

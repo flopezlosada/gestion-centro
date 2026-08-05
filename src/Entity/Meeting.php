@@ -132,7 +132,7 @@ class Meeting implements Auditable
 
     /**
      * Who actually attended, recorded after the meeting. A subset of {@see people()} — enforced by
-     * {@see recordAttendance()}, the only way in — so "asistió alguien que no estaba convocado" is not
+     * {@see recordSession()}, the only way in — so "asistió alguien que no estaba convocado" is not
      * representable. Empty is ambiguous on its own, which is why {@see $attendanceTakenAt} exists: no
      * timestamp means nobody took the roll, not that nobody came.
      *
@@ -145,6 +145,25 @@ class Meeting implements Auditable
     /** When the roll was taken, or null while nobody has. Distinguishes "nadie vino" from "no se pasó lista". */
     #[ORM\Column(name: 'attendance_taken_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $attendanceTakenAt = null;
+
+    /**
+     * Whether the acta ON FILE no longer says what the acta SAYS: somebody wrote or corrected the
+     * desarrollo, los acuerdos or the roll after the PDF was produced.
+     *
+     * It answers a question the app could not answer before. Correcting a published acta is allowed and
+     * expected ("solo para corregir errores"), but the corrected text does not reach the file that was
+     * e-mailed to everybody — so the screen has to be able to say so instead of showing two versions and
+     * calling both "el acta".
+     *
+     * **A recorded fact and not a comparison of two timestamps**, which is what it was first. Both stamps
+     * live in `DATETIME` columns with one-second resolution, so writing the acta and generating its PDF
+     * inside the same second compared as EQUAL and the acta read as up to date when it was not — and
+     * loosening the comparison to `>=` would have cried stale on every freshly generated acta instead. The
+     * two operations know the answer exactly at the moment they happen ({@see recordSession()} makes it
+     * stale, {@see attachMinutes()} makes it fresh); no clock has to be consulted at all.
+     */
+    #[ORM\Column(name: 'minutes_stale', options: ['default' => false])]
+    private bool $minutesStale = false;
 
     /**
      * Who keeps the minutes ("quien levanta el acta"), which the centre says is NOT always whoever
@@ -205,6 +224,22 @@ class Meeting implements Auditable
      */
     #[ORM\Column(name: 'minutes_published_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $minutesPublishedAt = null;
+
+    /**
+     * When the acta went out for the FIRST time, or null if it never did. Unlike {@see $minutesPublishedAt}
+     * this is never cleared: "esta acta ya salió" is a fact about the past, and replacing the file does not
+     * unmake it.
+     *
+     * It is what the permissions and the observations hang from ({@see wereMinutesEverPublished()}), and the
+     * reason is a hole the first version of the correction flow had. Dirección corrected a published acta,
+     * regenerated the PDF — which returns it to draft, deliberately — and at that instant lost the very
+     * permission it was using: "publicada" had become false, so it could no longer publish the correction.
+     * The acta was left as a draft only the (absent) secretary could send, off the archive, with the whole
+     * staff still holding the wrong PDF by e-mail. A permission must not depend on a state that the
+     * permitted action itself destroys.
+     */
+    #[ORM\Column(name: 'minutes_first_published_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $minutesFirstPublishedAt = null;
 
     /** Who published it (a historical fact). */
     #[ORM\ManyToOne(targetEntity: User::class)]
@@ -283,9 +318,16 @@ class Meeting implements Auditable
         return $this->agenda;
     }
 
+    /**
+     * Sets the agenda. Ignored when the meeting keeps no minutes here, same guard as {@see setType()} and
+     * the mirror of what {@see setScope()} clears: the three boxes of the acta only exist for a staff
+     * meeting, so writing one into a meeting with families cannot be reached from anywhere.
+     */
     public function setAgenda(?string $agenda): static
     {
-        $this->agenda = $agenda;
+        if ($this->scope->keepsMinutes()) {
+            $this->agenda = $agenda;
+        }
 
         return $this;
     }
@@ -295,23 +337,9 @@ class Meeting implements Auditable
         return $this->discussion;
     }
 
-    public function setDiscussion(?string $discussion): static
-    {
-        $this->discussion = $discussion;
-
-        return $this;
-    }
-
     public function getAgreements(): ?string
     {
         return $this->agreements;
-    }
-
-    public function setAgreements(?string $agreements): static
-    {
-        $this->agreements = $agreements;
-
-        return $this;
     }
 
     public function getScope(): MeetingScope
@@ -389,6 +417,27 @@ class Meeting implements Auditable
     }
 
     /**
+     * Whether this acta has EVER been sent out, even if what is on file right now is a draft again because
+     * somebody is correcting it. The predicate that says "el claustro ya tiene un acta de esta reunión", and
+     * therefore the one that decides who may correct it ({@see \App\Service\MeetingAccess::canWriteMinutes()})
+     * and who may object to it ({@see \App\Service\MeetingAccess::canRemark()}).
+     *
+     * NOT {@see isMinutesPublished()}, which answers "lo que hay ahora mismo está publicado" and goes back
+     * to false the moment the file is replaced — see {@see $minutesFirstPublishedAt} for what that cost.
+     *
+     * @return bool true once the acta has gone out at least once
+     */
+    public function wereMinutesEverPublished(): bool
+    {
+        return null !== $this->minutesFirstPublishedAt;
+    }
+
+    public function getMinutesFirstPublishedAt(): ?\DateTimeImmutable
+    {
+        return $this->minutesFirstPublishedAt;
+    }
+
+    /**
      * Publishes the acta. Refuses to do it without a file, because publishing is precisely "esto ya es el
      * acta": there has to be an acta.
      *
@@ -404,6 +453,8 @@ class Meeting implements Auditable
 
         $this->minutesPublishedAt = new \DateTimeImmutable();
         $this->minutesPublishedBy = $by;
+        // Solo la PRIMERA vez: republicar una corrección no reescribe cuándo salió el acta.
+        $this->minutesFirstPublishedAt ??= $this->minutesPublishedAt;
 
         return true;
     }
@@ -713,13 +764,71 @@ class Meeting implements Auditable
     }
 
     /**
+     * Writes the acta: lo tratado, los acuerdos and the roll, in ONE operation.
+     *
+     * The three used to be two operations behind two endpoints, and the screen showed them as two forms
+     * inside one block. Pressing the second button posted only its own fields, so the desarrollo somebody
+     * had just typed was dropped on the floor without a word — the browser was doing exactly what two
+     * forms mean. There is now one way in, and "media acta guardada" is not representable.
+     *
+     * **What that does to the roll's timestamp, on purpose.** {@see $attendanceTakenAt} exists so that "no
+     * vino nadie" (an empty list, a real answer) does not read as "no se pasó lista". Merging the forms
+     * means every save now stamps it, and that is the correct reading and not a side effect: after the
+     * merge, saving the acta IS declaring the roll — the list of people is on screen, above the button, and
+     * the button says it saves the acta. The state "acta escrita sin lista pasada" stops existing because
+     * the roll is part of the acta, not an optional extra step; "no consta la asistencia" is now reserved
+     * for an acta nobody ever wrote, which is exactly when it is true.
+     *
+     * The text is ignored for a meeting that keeps no minutes here (con alumnado o con familias, which go
+     * to RAICES) while the roll is still recorded: who turned up to an entrevista con la familia is a fact
+     * about this appointment, and it is the only half of the block that screen shows.
+     *
+     * @param string|null        $discussion what was discussed, or null for nothing recorded
+     * @param string|null        $agreements what was agreed, or null for nothing recorded
+     * @param list<User>         $present    the people who came
+     * @param \DateTimeImmutable $at         when it was written
+     */
+    public function recordSession(?string $discussion, ?string $agreements, array $present, \DateTimeImmutable $at): static
+    {
+        if ($this->scope->keepsMinutes()) {
+            $this->discussion = $discussion;
+            $this->agreements = $agreements;
+        }
+
+        $this->recordAttendance($present, $at);
+        // Lo que hay en el disco deja de decir lo que dice el acta. Solo si hay fichero: sin acta generada
+        // todavía no hay nada que se haya quedado viejo.
+        $this->minutesStale = null !== $this->minutesPath;
+
+        return $this;
+    }
+
+    /**
+     * Whether the acta ON FILE is older than what the acta SAYS: the text or the roll were written after the
+     * PDF was produced.
+     *
+     * The file is what got published, e-mailed and archived; the text is what the screen shows. Correcting
+     * a published acta is allowed by design, so the two can legitimately diverge — and the only wrong
+     * answer would be to say nothing and let the centre keep two versions, both called "el acta".
+     *
+     * @return bool true when the file has to be generated again
+     */
+    public function minutesOutdated(): bool
+    {
+        return $this->minutesStale && null !== $this->minutesPath;
+    }
+
+    /**
      * Records who attended, from the people expected ({@see people()}); anybody else in the list is
      * ignored, so "asistió quien no estaba convocado" cannot be stored whatever the form posts.
+     *
+     * Private: the roll only ever changes as part of writing the acta ({@see recordSession()}), which is
+     * what keeps the whole block one save.
      *
      * @param list<User>         $present the people who came
      * @param \DateTimeImmutable $at      when the roll was taken
      */
-    public function recordAttendance(array $present, \DateTimeImmutable $at): static
+    private function recordAttendance(array $present, \DateTimeImmutable $at): static
     {
         // Quien de verdad se apunta: los esperados que estén en la lista. Se recorre `people()` y no
         // `$present`, así el orden guardado es el de la convocatoria y no el que traiga el formulario.
@@ -817,6 +926,8 @@ class Meeting implements Auditable
         $this->minutesName = $name;
         $this->minutesUploadedBy = $by;
         $this->minutesUploadedAt = $at;
+        // El fichero acaba de salir de lo que dice el acta, así que ya no está desfasado.
+        $this->minutesStale = false;
         // Un acta nueva vuelve a ser borrador: lo que se publicó ya no es lo que hay, y dejar la marca de
         // publicada haría creer al claustro que lo que tienen por correo es esto.
         $this->minutesPublishedAt = null;
@@ -839,6 +950,9 @@ class Meeting implements Auditable
         $this->minutesName = null;
         $this->minutesUploadedBy = null;
         $this->minutesUploadedAt = null;
+        // Sin fichero no hay nada desfasado que avisar: el aviso volvería solo al generar uno nuevo, y este
+        // ya nace al día.
+        $this->minutesStale = false;
         $this->minutesPublishedAt = null;
         $this->minutesPublishedBy = null;
 
