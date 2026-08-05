@@ -226,7 +226,22 @@ final class MeetingCrudTest extends WebTestCase
         self::assertFalse($stored->isMinutesPublished());
         self::assertSame(0, $this->noticesOf($this->em->getRepository(User::class)->find($attendee->getId()), 'meeting.minutes'));
 
-        // El acta se lee dentro del grupo convocado y en ningún otro sitio.
+        // Y mientras es borrador no la lee ni quien está convocado: es de quien la levanta hasta que se
+        // publica, que es justo lo que la ficha promete.
+        $this->client->loginUser($attendee);
+        $this->client->request('GET', $downloadUrl);
+        self::assertResponseStatusCodeSame(403, 'el borrador todavía no es del grupo');
+
+        $this->client->loginUser($coordinator);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $publishUrl = '/reuniones/'.$id.'/acta/publicar';
+        $token = (string) $crawler->filter('form[action="'.$publishUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $publishUrl, ['_token' => $token]);
+        self::assertResponseRedirects();
+
+        // Publicada, el acta se lee dentro del grupo convocado y en ningún otro sitio. La persona ajena se
+        // prueba DESPUÉS de publicar a propósito: con el acta en borrador su 403 sería el mismo, pero por
+        // el motivo equivocado, y el test pasaría sin demostrar nada.
         $this->client->loginUser($attendee);
         $this->client->request('GET', $downloadUrl);
         self::assertResponseIsSuccessful();
@@ -460,7 +475,19 @@ final class MeetingCrudTest extends WebTestCase
         self::assertTrue($stored->hasMinutes(), 'el acta generada ES el acta de la reunión');
         self::assertStringEndsWith('.pdf', (string) $stored->getMinutesName());
 
-        // 3. Quien está convocado se la puede descargar.
+        // 3. Recién generada es un BORRADOR: quien está convocado todavía no la ve, aunque adivine la URL.
+        $this->client->loginUser($attendee);
+        $this->client->request('GET', '/reuniones/'.$id.'/acta/descargar');
+        self::assertResponseStatusCodeSame(403, 'el borrador es de quien levanta el acta hasta que se publica');
+
+        // 4. Se publica, y entonces sí se la puede descargar.
+        $this->client->loginUser($convener);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $publishAction = '/reuniones/'.$id.'/acta/publicar';
+        $token = (string) $crawler->filter('form[action="'.$publishAction.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $publishAction, ['_token' => $token]);
+        self::assertResponseRedirects();
+
         $this->client->loginUser($attendee);
         $this->client->request('GET', '/reuniones/'.$id.'/acta/descargar');
         self::assertResponseIsSuccessful();

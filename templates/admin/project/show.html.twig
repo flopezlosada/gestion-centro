@@ -59,8 +59,12 @@
                             <td>{{ meeting.startAt|date('d/m/Y H:i') }}</td>
                             <td>{{ meeting.convener ? meeting.convener.fullName : '—' }}</td>
                             <td>
-                                {% if meeting.hasMinutes %}
+                                {# Igual que en /reuniones: un borrador no se ofrece en un listado, pero se
+                                   dice que existe. #}
+                                {% if meeting.minutesPublished %}
                                     <a href="{{ path('meeting_minutes_download', { id: meeting.id }) }}">Descargar</a>
+                                {% elseif meeting.hasMinutes %}
+                                    <span class="help">En preparación</span>
                                 {% else %}
                                     <span class="help">Sin acta</span>
                                 {% endif %}

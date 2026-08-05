@@ -463,12 +463,19 @@ final class MeetingController extends AbstractController
      * Serves the acta as a download, named after the original upload. Only for the people the meeting
      * concerns (and admins): an acta records decisions, sometimes about people, so it never leaves the
      * group that was called.
+     *
+     * And only once it is PUBLISHED. Saving an acta leaves a draft that the screen promises is private
+     * ("solo la ves tú hasta que la publiques"), so until it is published the download belongs to whoever
+     * keeps it: publishing is the deliberate gesture that hands the acta to the group.
      */
     #[Route('/{id}/acta/descargar', name: 'meeting_minutes_download', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function downloadMinutes(Meeting $meeting, #[CurrentUser] User $user, MeetingAccess $access, OrganizationHierarchy $hierarchy, FileUploader $uploader): Response
     {
         if (!$access->canSee($meeting, $user, $this->isLeadership($user, $hierarchy))) {
             throw $this->createAccessDeniedException('No estás convocado a esta reunión.');
+        }
+        if (!$meeting->isMinutesPublished() && !$access->canKeepMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
+            throw $this->createAccessDeniedException('El acta es todavía un borrador: solo la ve quien la levanta.');
         }
 
         $path = $meeting->getMinutesPath();
