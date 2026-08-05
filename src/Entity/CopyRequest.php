@@ -18,14 +18,17 @@ use Doctrine\ORM\Mapping as ORM;
  * {@see $context} says what it is for (level, group, room, period) and {@see $documentPath} is the file
  * that travels attached.
  *
- * The row is the record that the order was PLACED; {@see $sentAt} says whether the e-mail actually
- * went out. They are separate on purpose: a mail transport hiccup must not lose the order, it must
- * leave it visible and resendable. {@see $recipient} snapshots the address used, so a later change of
- * mailbox does not rewrite history.
+ * Three instants, three different facts, and none of them derives the others: the row exists because
+ * the order was PLACED ({@see $requestedAt}), {@see $sentAt} says the e-mail actually went out, and
+ * {@see $doneAt} says the copies are made. A mail transport hiccup must not lose the order, it must
+ * leave it visible and resendable; and a sent e-mail is not a printed document — that is the whole
+ * reason conserjería needs a queue instead of an inbox. {@see $recipient} snapshots the address used,
+ * so a later change of mailbox does not rewrite history.
  *
- * The document is referenced, not copied: an order that came from a guardia points at the very file
- * the covering teacher downloads. If that file is later removed (the parte line is deleted), the order
- * keeps its name and its trace — the e-mail carrying the attachment had already left.
+ * The document is snapshotted when the order is placed ({@see
+ * \App\Controller\CopyRequestController::snapshotDocument()}), not referenced: the source is shared and
+ * mutable — the absent teacher's file, or a bank task its department will edit or retire — and an order
+ * is the record of what was actually sent, so it must not end up pointing at a file replaced last week.
  */
 #[ORM\Entity(repositoryClass: CopyRequestRepository::class)]
 #[ORM\Table(name: 'copy_request')]
@@ -91,6 +94,17 @@ class CopyRequest
     /** When the e-mail actually left. Null while it has not (a failed send stays resendable). */
     #[ORM\Column(name: 'sent_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $sentAt = null;
+
+    /**
+     * When conserjería marked the copies made. Null while the order is still in the queue.
+     *
+     * It is NOT derivable from {@see $sentAt}: the e-mail leaving says nothing about the photocopier,
+     * and the centre's problem was precisely that nobody could tell what was left to print. Nullable
+     * both ways on purpose — a mistaken click has to be undoable, and an order reopened is back in the
+     * queue with no trace lost (the order itself never disappears).
+     */
+    #[ORM\Column(name: 'done_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $doneAt = null;
 
     /** The mailbox the order was sent to, snapshotted so a change of address does not rewrite history. */
     #[ORM\Column(length: 180)]
@@ -240,6 +254,43 @@ class CopyRequest
     public function markSent(\DateTimeImmutable $at): static
     {
         $this->sentAt = $at;
+
+        return $this;
+    }
+
+    public function getDoneAt(): ?\DateTimeImmutable
+    {
+        return $this->doneAt;
+    }
+
+    /**
+     * Whether conserjería already made the copies.
+     *
+     * @return bool true once the order is out of the queue
+     */
+    public function isDone(): bool
+    {
+        return null !== $this->doneAt;
+    }
+
+    /**
+     * Marks the copies made, at the given instant.
+     *
+     * @param \DateTimeImmutable $at when the copies were made
+     */
+    public function markDone(\DateTimeImmutable $at): static
+    {
+        $this->doneAt = $at;
+
+        return $this;
+    }
+
+    /**
+     * Puts the order back in the queue (undo of {@see markDone()}).
+     */
+    public function reopen(): static
+    {
+        $this->doneAt = null;
 
         return $this;
     }

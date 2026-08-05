@@ -5,11 +5,26 @@
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Fotocopias{% endblock %}
 
 {% block body %}
+    {# El recuento solo para quien atiende la cola: a quien pide fotocopias le importa lo suyo, y un
+       "quedan 12" sin poder hacer nada con ellos es ruido. Cuenta sobre la lista y lo dice así: la
+       consulta trae los 100 encargos más recientes, no el curso entero. #}
+    {% set pending = seesAll ? requests|filter(order => not order.done)|length : 0 %}
     <div class="page-head">
         <div>
             <p class="eyebrow">Conserjería</p>
             <h1>Encargos de fotocopias</h1>
-            <p class="lead">{% if seesAll %}Todos los encargos enviados a conserjería.{% else %}Los encargos que has enviado a conserjería.{% endif %} Salen por correo a <span class="mono">{{ recipient }}</span> con el documento adjunto y el número de copias.</p>
+            <p class="lead">
+                {% if seesAll %}
+                    {% if pending > 0 %}
+                        <strong>{{ pending }} {{ pending == 1 ? 'encargo' : 'encargos' }}</strong> por imprimir entre los últimos que ha pedido el centro.
+                    {% else %}
+                        Los últimos encargos del centro. Ahora mismo no queda ninguno por imprimir.
+                    {% endif %}
+                {% else %}
+                    Los encargos que has enviado a conserjería.
+                {% endif %}
+                Salen por correo a <span class="mono">{{ recipient }}</span> con el documento adjunto y el número de copias.
+            </p>
         </div>
         <a class="btn" href="{{ path('copy_request_new') }}">+ Nuevo encargo</a>
     </div>
@@ -17,8 +32,13 @@
     <div class="card">
         {% if requests is empty %}
             <div class="empty-state">
-                <h2>Todavía no has pedido fotocopias</h2>
-                <p>Desde una guardia puedes mandar la tarea del grupo a conserjería, o crear aquí un encargo suelto con cualquier documento.</p>
+                {% if seesAll %}
+                    <h2>No hay ningún encargo</h2>
+                    <p>Aquí aparecen las fotocopias que pide el profesorado, con el documento y el número de copias. Cada encargo llega además por correo a <span class="mono">{{ recipient }}</span>.</p>
+                {% else %}
+                    <h2>Todavía no has pedido fotocopias</h2>
+                    <p>Desde una guardia puedes mandar la tarea del grupo a conserjería, o crear aquí un encargo suelto con cualquier documento.</p>
+                {% endif %}
                 <a class="btn" href="{{ path('copy_request_new') }}">Nuevo encargo</a>
             </div>
         {% else %}
@@ -49,14 +69,42 @@
                                 {% else %}—{% endif %}
                             </td>
                             {% if seesAll %}<td>{{ order.requestedBy ? order.requestedBy.fullName : '—' }}</td>{% endif %}
+                            {# Tres estados y no dos: que el correo saliera no dice que el papel exista, y la
+                               pregunta que se hace todo el mundo —quien pide y quien imprime— es esa. El
+                               verde se reserva para «Hecha».
+                               «Hecha» gana a «Sin enviar» y ese orden importa: conserjería puede imprimir un
+                               encargo cuyo correo nunca salió (para eso está la cola, que sustituye al buzón),
+                               y con la precedencia al revés esa fila se quedaría en «Sin enviar» para siempre
+                               mientras desaparecía del recuento de pendientes. Que el correo no saliera lo
+                               sigue diciendo su botón, «Reintentar envío».
+                               UNA insignia y no dos: el filtro de la columna se construye con TODO el texto de
+                               la celda (table-tools.js), así que dos etiquetas juntas —o la hora a la vista—
+                               darían un valor de filtro distinto por fila. La hora va en el title. #}
                             <td>
-                                {% if order.isSent %}
-                                    <span class="badge badge--ok" data-tone="success">Enviado</span>
-                                {% else %}
+                                {% if order.done %}
+                                    <span class="badge badge--success" data-tone="success" title="Hecha el {{ order.doneAt|date('d/m/Y', false) }} a las {{ order.doneAt|date('H:i', false) }}">Hecha</span>
+                                {% elseif not order.isSent %}
                                     <span class="badge badge--danger" data-tone="danger">Sin enviar</span>
+                                {% else %}
+                                    <span class="badge badge--warning" data-tone="warning">En cola</span>
                                 {% endif %}
                             </td>
                             <td class="row-actions">
+                                {% if canMarkDone %}
+                                    {% if order.done %}
+                                        <form method="post" action="{{ path('copy_request_reopen', { id: order.id }) }}">
+                                            <input type="hidden" name="_token" value="{{ csrf_token('copy_request_done' ~ order.id) }}">
+                                            <button type="submit" class="btn btn-sm secondary">Devolver a la cola</button>
+                                        </form>
+                                    {% else %}
+                                        <form method="post" action="{{ path('copy_request_done', { id: order.id }) }}">
+                                            <input type="hidden" name="_token" value="{{ csrf_token('copy_request_done' ~ order.id) }}">
+                                            {# Un solo botón principal por fila: si el correo no salió, lo
+                                               primero es reintentarlo, no dar por hecha la copia. #}
+                                            <button type="submit" class="btn btn-sm{{ order.isSent ? '' : ' secondary' }}">Hecha</button>
+                                        </form>
+                                    {% endif %}
+                                {% endif %}
                                 <form method="post" action="{{ path('copy_request_resend', { id: order.id }) }}"{% if order.isSent %} data-confirm="Este encargo ya se envió. ¿Reenviarlo a conserjería?"{% endif %}>
                                     <input type="hidden" name="_token" value="{{ csrf_token('copy_request_resend' ~ order.id) }}">
                                     <button type="submit" class="btn btn-sm{{ order.isSent ? ' secondary' }}">{{ order.isSent ? 'Reenviar' : 'Reintentar envío' }}</button>

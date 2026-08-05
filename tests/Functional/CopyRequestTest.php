@@ -24,6 +24,10 @@ use Symfony\Component\HttpFoundation\File\UploadedFile;
  * Ordering copies from conserjería. The order is recorded AND sent: the number of copies is required
  * (an order without it cannot be worked), what it is for is snapshotted so it survives the parte line,
  * and only the people a guardia concerns may order its copies.
+ *
+ * Who sees the queue is the {@see Area::FOTOCOPIAS} matrix in two tiers, and the tiers are the point:
+ * READ looks at everybody's orders (the guardia coordination, checking the copies it left asked for) and
+ * WRITE marks them printed (the auxiliares de control, who are at the photocopier).
  */
 final class CopyRequestTest extends WebTestCase
 {
@@ -38,9 +42,32 @@ final class CopyRequestTest extends WebTestCase
 
     private function login(string $email = 'profe@centro.test', bool $coordinator = false): User
     {
+        // La coordinación de guardias lleva LECTURA en Fotocopias, como en el catálogo real
+        // ({@see \App\DataFixtures\RoleFixtures}): ve la cola entera porque es quien deja dichas las copias
+        // de cada guardia, pero no marca hecho.
+        return $this->loginWith($email, $coordinator
+            ? (new Role())->setCode('guardias-'.uniqid())->setName('Coordinación de guardias')
+                ->setLevel(Area::GUARDIAS, PermissionLevel::WRITE)
+                ->setLevel(Area::FOTOCOPIAS, PermissionLevel::READ)
+            : null);
+    }
+
+    /**
+     * Conserjería: escritura en Fotocopias, como el rol `auxiliar_control` del catálogo.
+     */
+    private function loginAsCopyRoom(string $email = 'conserjeria@centro.test'): User
+    {
+        return $this->loginWith($email, (new Role())->setCode('auxiliar-'.uniqid())->setName('Auxiliar de control')
+            ->setLevel(Area::FOTOCOPIAS, PermissionLevel::WRITE));
+    }
+
+    /**
+     * @param Role|null $role the single role to grant, or null for a plain teacher
+     */
+    private function loginWith(string $email, ?Role $role): User
+    {
         $user = (new User())->setFullName('Docente '.$email)->setEmail($email);
-        if ($coordinator) {
-            $role = (new Role())->setCode('guardias-'.uniqid())->setName('Coordinación de guardias')->setLevel(Area::GUARDIAS, PermissionLevel::WRITE);
+        if (null !== $role) {
             $this->em->persist($role);
             $user->addAssignedRole($role);
         }
@@ -49,6 +76,24 @@ final class CopyRequestTest extends WebTestCase
         $this->client->loginUser($user);
 
         return $user;
+    }
+
+    /**
+     * An order somebody else placed and whose e-mail already left, i.e. one waiting in the queue.
+     *
+     * @param string $context what the copies are for, used to spot the row in the listing
+     */
+    private function queuedOrder(string $context): CopyRequest
+    {
+        $other = (new User())->setFullName('Quien pidió')->setEmail('pidio-'.uniqid().'@centro.test');
+        $order = (new CopyRequest())->setRequestedBy($other)->setCopies(30)->setContext($context)
+            ->setRecipient('fotocopias@centro.test')
+            ->markSent(new \DateTimeImmutable('2026-01-15 08:30'));
+        $this->em->persist($other);
+        $this->em->persist($order);
+        $this->em->flush();
+
+        return $order;
     }
 
     /**
@@ -250,5 +295,94 @@ final class CopyRequestTest extends WebTestCase
         $text = $this->client->request('GET', '/fotocopias')->filter('table')->text();
         self::assertStringContainsString('Lo mío', $text);
         self::assertStringContainsString('Lo de otra', $text);
+    }
+
+    public function testConserjeriaSeesTheWholeQueueAndMarksAnOrderDone(): void
+    {
+        $order = $this->queuedOrder('Fichas de 1º ESO');
+        $id = (int) $order->getId();
+
+        $this->loginAsCopyRoom();
+        $crawler = $this->client->request('GET', '/fotocopias');
+
+        self::assertResponseIsSuccessful();
+        // Ve el encargo de otra persona (es su trabajo) y la cola dice cuánto queda por imprimir.
+        self::assertStringContainsString('Fichas de 1º ESO', $crawler->filter('table')->text());
+        self::assertStringContainsString('1 encargo', $crawler->filter('.lead')->text());
+        self::assertStringContainsString('En cola', $crawler->filter('table')->text());
+
+        $action = '/fotocopias/'.$id.'/hecha';
+        $token = (string) $crawler->filter('form[action="'.$action.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $action, ['_token' => $token]);
+
+        self::assertResponseRedirects('/fotocopias');
+        $this->em->clear();
+        self::assertTrue($this->em->getRepository(CopyRequest::class)->find($id)?->isDone());
+
+        // Y el clic equivocado se deshace: el encargo vuelve a la cola sin perder nada.
+        $crawler = $this->client->request('GET', '/fotocopias');
+        self::assertStringContainsString('Hecha', $crawler->filter('table')->text());
+        $action = '/fotocopias/'.$id.'/pendiente';
+        $token = (string) $crawler->filter('form[action="'.$action.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $action, ['_token' => $token]);
+
+        $this->em->clear();
+        self::assertFalse($this->em->getRepository(CopyRequest::class)->find($id)?->isDone());
+    }
+
+    public function testMarkingDoneNeedsAValidCsrfToken(): void
+    {
+        // Con conserjería logueada el permiso SÍ está, así que el 403 solo puede venir del CSRF. Los dos
+        // tests negativos de abajo no prueban esto: allí la petición muere antes, en el gate de área, y
+        // seguirían en verde aunque se borrara `assertCsrf`.
+        $order = $this->queuedOrder('Fichas de 2º ESO');
+        $id = (int) $order->getId();
+
+        $this->loginAsCopyRoom();
+        $this->client->request('POST', '/fotocopias/'.$id.'/hecha', ['_token' => 'no-es-el-token']);
+
+        self::assertResponseStatusCodeSame(403);
+        $this->em->clear();
+        self::assertFalse($this->em->getRepository(CopyRequest::class)->find($id)?->isDone());
+    }
+
+    public function testTheGuardiaCoordinationSeesTheQueueButDoesNotMarkAnythingDone(): void
+    {
+        // Lectura mira, escritura imprime: el botón no está para quien solo mira, ni por la ruta directa.
+        $order = $this->queuedOrder('Examen de Historia');
+        $id = (int) $order->getId();
+
+        $this->login('coordina@centro.test', coordinator: true);
+        $crawler = $this->client->request('GET', '/fotocopias');
+
+        self::assertStringContainsString('Examen de Historia', $crawler->filter('table')->text());
+        self::assertCount(0, $crawler->filter('form[action="/fotocopias/'.$id.'/hecha"]'));
+
+        $this->client->request('POST', '/fotocopias/'.$id.'/hecha', ['_token' => 'irrelevante']);
+
+        self::assertResponseStatusCodeSame(403);
+        $this->em->clear();
+        self::assertFalse($this->em->getRepository(CopyRequest::class)->find($id)?->isDone());
+    }
+
+    public function testAPlainTeacherCannotMarkTheirOwnOrderDone(): void
+    {
+        // Pedir fotocopias lo hace cualquiera; decir que están hechas, solo quien las hace. Si no fuera
+        // así, la cola de conserjería la vaciaría quien tiene prisa.
+        $user = $this->login();
+        $order = (new CopyRequest())->setRequestedBy($user)->setCopies(10)->setContext('Lo mío')
+            ->setRecipient('fotocopias@centro.test')->markSent(new \DateTimeImmutable('2026-01-15 08:30'));
+        $this->em->persist($order);
+        $this->em->flush();
+        $id = (int) $order->getId();
+
+        $crawler = $this->client->request('GET', '/fotocopias');
+        self::assertCount(0, $crawler->filter('form[action="/fotocopias/'.$id.'/hecha"]'));
+
+        $this->client->request('POST', '/fotocopias/'.$id.'/hecha', ['_token' => 'irrelevante']);
+
+        self::assertResponseStatusCodeSame(403);
+        $this->em->clear();
+        self::assertFalse($this->em->getRepository(CopyRequest::class)->find($id)?->isDone());
     }
 }
