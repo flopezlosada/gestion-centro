@@ -118,10 +118,16 @@ final class SubstitutionRotaTest extends KernelTestCase
 
         self::getContainer()->get(SubstitutionApplier::class)->close($substitution, new \DateTimeImmutable('2026-02-03'));
 
-        $places = $this->em->getRepository(BreakDutyAssignment::class)->findBy(['academicYear' => $this->year]);
+        // Releído desde cero, como haría la siguiente petición. El traspaso es una actualización en
+        // bloque, así que las plazas que este mismo test cargó al publicar siguen en memoria con la
+        // persona anterior: comprobarlo sobre ellas daría por bueno un traspaso que no hubiera ocurrido.
+        $substitutedId = (int) $this->substituted->getId();
+        $this->em->clear();
+
+        $places = $this->em->getRepository(BreakDutyAssignment::class)->findBy(['academicYear' => $this->year->getId()]);
         self::assertCount(4, $places);
         foreach ($places as $place) {
-            self::assertSame($this->substituted->getId(), $place->getTeacher()->getId());
+            self::assertSame($substitutedId, $place->getTeacher()->getId());
             self::assertSame(BreakDutySource::ENGINE, $place->getSource());
         }
     }
