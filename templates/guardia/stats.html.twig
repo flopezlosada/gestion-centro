@@ -166,6 +166,14 @@
                                 {% endfor %}
                             </tbody>
                         </table>
+                        {% if substitutions is not empty %}
+                            {# Sin esto la tabla parece cuadrar mal: quien cubre una baja aparece con las
+                               guardias de la persona a la que sustituye sumadas a las suyas, y esa
+                               persona sigue apareciendo con las que hizo. Es una lectura de equidad —lo
+                               que usa el reparto para decidir a quién le toca—, no una suma que dé el
+                               total del curso. #}
+                            <p class="help">Quien está cubriendo una baja larga arranca con el contador de la persona a la que sustituye, que es lo que usa el reparto: {{ substitutions|join('; ') }}. Las dos aparecen en la tabla, así que los totales de esta columna no suman las guardias del curso.</p>
+                        {% endif %}
                     {% endif %}
                 </div>
             </div>

@@ -21,6 +21,19 @@
         <a class="btn secondary" href="{{ path('admin_user_edit', { id: user.id }) }}">Editar</a>
     </div>
 
+    {% if substitution %}
+        {# Por qué esta persona tiene o no tiene horario ahora mismo. Sin esto, una cuenta creada en
+           noviembre con el horario de otra parece un error de datos. #}
+        <div class="callout" role="note">
+            {% if substitution.substitute.id == user.id %}
+                <p>Está cubriendo la baja de <a href="{{ path('admin_user_show', { id: substitution.substitutedTeacher.id }) }}">{{ substitution.substitutedTeacher.fullName }}</a> desde el {{ substitution.startedOn|date('d/m/Y', false) }}: tiene su horario, sus guardias y su cuadrante de recreo, <strong>pero no sus cargos</strong>.</p>
+            {% else %}
+                <p>Está de baja desde el {{ substitution.startedOn|date('d/m/Y', false) }}. Su horario lo lleva <a href="{{ path('admin_user_show', { id: substitution.substitute.id }) }}">{{ substitution.substitute.fullName }}</a>; sus tareas, sus reuniones y su cuenta siguen siendo suyas.</p>
+            {% endif %}
+            <p><a href="{{ path('admin_substitution_index', { curso: substitution.academicYear.schoolYear }) }}">Ver las sustituciones de {{ substitution.academicYear.schoolYear }}</a></p>
+        </div>
+    {% endif %}
+
     <div class="card">
         <dl class="detail-grid">
             <dt>Departamento</dt>

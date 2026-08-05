@@ -122,21 +122,33 @@
                                     {{ row.teacher.fullName }}
                                     {# "Exenta/o" solo si alguien lo ha decidido: un cero que nadie ha
                                        tecleado todavía es "sin decidir", no una exención. #}
-                                    {% if row.configured and row.lective == 0 and row.break == 0 %}
+                                    {% if row.inherited %}
+                                        <span class="badge badge--muted">Cupo de la persona sustituida</span>
+                                    {% elseif row.configured and row.lective == 0 and row.break == 0 %}
                                         <span class="badge badge--muted">Exenta/o</span>
                                     {% elseif not row.configured %}
                                         <span class="badge badge--muted">Sin decidir</span>
                                     {% endif %}
                                 </th>
                                 <td class="muted">{{ row.hours }}</td>
-                                <td>
-                                    <label class="visually-hidden" for="lective-{{ row.teacher.id }}">Guardias de {{ row.teacher.fullName }}</label>
-                                    <input type="number" id="lective-{{ row.teacher.id }}" name="lective[{{ row.teacher.id }}]" value="{{ row.lective }}" min="0" max="{{ max }}" step="1" data-quota-field="lective">
-                                </td>
-                                <td>
-                                    <label class="visually-hidden" for="break-{{ row.teacher.id }}">Recreos de {{ row.teacher.fullName }}</label>
-                                    <input type="number" id="break-{{ row.teacher.id }}" name="break[{{ row.teacher.id }}]" value="{{ row.break }}" min="0" max="{{ max }}" step="1" data-quota-field="break">
-                                </td>
+                                {% if row.inherited %}
+                                    {# Quien cubre una baja larga NO lleva casillas, y no es una limitación:
+                                       el cupo es del PUESTO, así que mientras dure la sustitución rige el de
+                                       la persona a la que sustituye. Con casillas, el navegador mandaría la
+                                       cifra heredada en cada envío de la tabla —se toque o no— y le crearía
+                                       una fila propia que a partir de ahí ya no seguiría al cupo real. Sin
+                                       casillas no hay nada que enviar: el save ni se entera de esta fila. #}
+                                    <td class="muted" colspan="2">Hereda el cupo de {{ row.inheritedFrom }}: {{ row.lective }} guardia(s) y {{ row.break }} recreo(s). Para darle uno propio, cierra antes la sustitución.</td>
+                                {% else %}
+                                    <td>
+                                        <label class="visually-hidden" for="lective-{{ row.teacher.id }}">Guardias de {{ row.teacher.fullName }}</label>
+                                        <input type="number" id="lective-{{ row.teacher.id }}" name="lective[{{ row.teacher.id }}]" value="{{ row.lective }}" min="0" max="{{ max }}" step="1" data-quota-field="lective">
+                                    </td>
+                                    <td>
+                                        <label class="visually-hidden" for="break-{{ row.teacher.id }}">Recreos de {{ row.teacher.fullName }}</label>
+                                        <input type="number" id="break-{{ row.teacher.id }}" name="break[{{ row.teacher.id }}]" value="{{ row.break }}" min="0" max="{{ max }}" step="1" data-quota-field="break">
+                                    </td>
+                                {% endif %}
                             </tr>
                         {% endfor %}
                     </tbody>

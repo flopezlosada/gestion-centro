@@ -16,8 +16,15 @@ use Doctrine\Persistence\ManagerRegistry;
  */
 class GuardiaCoverRepository extends ServiceEntityRepository
 {
-    public function __construct(ManagerRegistry $registry)
-    {
+    /**
+     * @param SubstitutionRepository $substitutions las sustituciones en vigor, para que quien cubre una
+     *                                             baja larga arranque con el contador de la persona a la
+     *                                             que sustituye ({@see self::withInheritedLoad()})
+     */
+    public function __construct(
+        ManagerRegistry $registry,
+        private readonly SubstitutionRepository $substitutions,
+    ) {
         parent::__construct($registry, GuardiaCover::class);
     }
 
@@ -167,6 +174,11 @@ class GuardiaCoverRepository extends ServiceEntityRepository
      * ranking and the teacher's own tally can never disagree about what a guardia is worth. The 'g'/'c'
      * prefixes keep the two id spaces apart (grouping 5 and cover 5 are different things); CONCAT with a
      * NULL grouping yields NULL, which is what makes COALESCE fall through to the cover's own key.
+     *
+     * Las cuatro consultas que la comparten pasan además por {@see withInheritedLoad()}, por lo mismo:
+     * quien cubre una baja larga hereda el contador de la persona a la que sustituye, y una herencia que
+     * entrara solo en una de las cuatro es exactamente la discrepancia que esta constante existe para
+     * impedir.
      */
     private const string WORK_UNIT = "COALESCE(CONCAT('g', IDENTITY(c.grouping)), CONCAT('c', c.id))";
 
@@ -421,6 +433,42 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
+     * Borra los tres sellos de aviso de unos covers, para que sus recordatorios vuelvan a salir.
+     *
+     * Existe por un caso concreto: cuando una guardia ya asignada cambia de manos al dar de alta una
+     * sustitución de baja larga ({@see \App\Entity\Substitution}), los avisos ya salieron —a nombre de
+     * quien está de baja—, y los sellos harían que quien la hereda no recibiera ninguno. Sin esto, la
+     * guardia aparece en su pantalla y en ningún sitio más.
+     *
+     * En bloque y por la misma razón que {@see markReminderSent()}: {@see GuardiaCover} es
+     * {@see \App\Contract\Auditable}, y pasar por el Unit of Work dejaría una entrada "modificada" sin
+     * autor en el historial de cada guardia por lo que es contabilidad de la máquina. El cambio que SÍ
+     * decide una persona —quién cubre— va por el ORM y queda auditado; esto no.
+     *
+     * @param list<int> $ids los covers cuyos sellos se borran
+     *
+     * @return int cuántos covers quedaron sin sellos
+     */
+    public function clearReminderStamps(array $ids): int
+    {
+        if ([] === $ids) {
+            return 0;
+        }
+
+        // NULL literal y no un parámetro enlazado: un parámetro a null obliga a Doctrine a inferir su
+        // tipo, y en un SET no tiene columna de la que deducirlo.
+        return (int) $this->createQueryBuilder('c')
+            ->update()
+            ->set('c.raicesReminderSentAt', 'NULL')
+            ->set('c.eveningReminderSentAt', 'NULL')
+            ->set('c.morningReminderSentAt', 'NULL')
+            ->andWhere('c.id IN (:ids)')
+            ->setParameter('ids', $ids)
+            ->getQuery()
+            ->execute();
+    }
+
+    /**
      * Guardias covered per teacher across the whole course, teacher eager-loaded and ordered by count
      * (busiest first). An assigned cover with no incident counts as done, and a whole grouping counts as
      * one (see {@see self::WORK_UNIT}); teachers with none do not appear. Powers the coordinator's stats
@@ -449,10 +497,10 @@ class GuardiaCoverRepository extends ServiceEntityRepository
         /** @var list<array{0: User, total: int}> $rows */
         $rows = $qb->getQuery()->getResult();
 
-        return array_map(
+        return $this->withInheritedTotals(array_map(
             static fn (array $r): array => ['teacher' => $r[0], 'total' => (int) $r['total']],
             $rows,
-        );
+        ));
     }
 
     /**
@@ -461,11 +509,43 @@ class GuardiaCoverRepository extends ServiceEntityRepository
      * Derived live, like every other guardia count, and from the same expression, so their tally and the
      * coordinator's ranking always agree.
      *
+     * Quien cubre una baja larga suma además las de la persona a la que sustituye. La suma la hace
+     * {@see self::withInheritedLoad()}, la MISMA función que las otras tres, y no una versión pequeña
+     * escrita aquí: dos copias de la regla de herencia serían el segundo sitio donde el número puede
+     * divergir, que es justo lo que {@see self::WORK_UNIT} evita para el conteo.
+     *
+     * Basta con darle las dos cifras crudas que intervienen; el resto de sustituciones abiertas caen a
+     * cero y se descartan al leer la clave que interesa.
+     *
      * @param User $teacher the guardia teacher
      *
      * @return int the teacher's covered-guardia count
      */
     public function countCoveredForTeacher(User $teacher): int
+    {
+        $id = (int) $teacher->getId();
+        $raw = [$id => $this->rawCountFor($teacher)];
+
+        $open = $this->substitutions->findOpenInvolving($teacher);
+        if (null !== $open && $open->getSubstitute()->getId() === $id) {
+            $raw[(int) $open->getSubstitutedTeacher()->getId()] = $this->rawCountFor($open->getSubstitutedTeacher());
+        }
+
+        return $this->withInheritedLoad($raw)[$id] ?? 0;
+    }
+
+    /**
+     * Las guardias que una persona ha cubierto ELLA, sin herencia de ninguna sustitución.
+     *
+     * Privado a propósito: fuera de aquí, "cuántas guardias lleva" siempre incluye lo heredado, y un
+     * método público que devolviera la cifra cruda sería una forma silenciosa de que una pantalla
+     * dijera un número distinto al del reparto.
+     *
+     * @param User $teacher the guardia teacher
+     *
+     * @return int su propio recuento
+     */
+    private function rawCountFor(User $teacher): int
     {
         return (int) $this->createQueryBuilder('c')
             ->select('COUNT(DISTINCT '.self::WORK_UNIT.')')
@@ -474,6 +554,49 @@ class GuardiaCoverRepository extends ServiceEntityRepository
             ->setParameter('teacher', $teacher)
             ->getQuery()
             ->getSingleScalarResult();
+    }
+
+    /**
+     * El ranking con la herencia de las sustituciones aplicada, reordenado y completo.
+     *
+     * Dos cosas que la consulta no puede hacer sola. Reordenar, porque el ORDER BY del SQL ya se ejecutó
+     * sobre las cifras sin heredar. Y AÑADIR: la consulta sale de los covers, así que quien sustituye no
+     * aparece en ella hasta que cubre su primera guardia — y ese es precisamente el momento en que su
+     * contador heredado importa, porque es cuando el motor decide si le toca.
+     *
+     * @param list<array{teacher: User, total: int}> $rows el ranking tal como sale de la consulta
+     *
+     * @return list<array{teacher: User, total: int}> el ranking heredado, de más a menos
+     */
+    private function withInheritedTotals(array $rows): array
+    {
+        $teachers = [];
+        $totals = [];
+        foreach ($rows as $row) {
+            $id = (int) $row['teacher']->getId();
+            $teachers[$id] = $row['teacher'];
+            $totals[$id] = $row['total'];
+        }
+        foreach ($this->substitutions->findAllOpen() as $substitution) {
+            $teachers[(int) $substitution->getSubstitute()->getId()] ??= $substitution->getSubstitute();
+        }
+
+        $ranking = [];
+        foreach ($this->withInheritedLoad($totals) as $id => $total) {
+            // El cero se descarta para no romper lo que el ranking promete ("quien no ha cubierto
+            // ninguna no sale"): heredar de alguien que tampoco lleva ninguna añadiría una fila a cero
+            // que la consulta nunca habría devuelto.
+            if ($total > 0 && isset($teachers[$id])) {
+                $ranking[] = ['teacher' => $teachers[$id], 'total' => $total];
+            }
+        }
+        usort(
+            $ranking,
+            static fn (array $a, array $b): int => $b['total'] <=> $a['total']
+                ?: strcasecmp($a['teacher']->getFullName(), $b['teacher']->getFullName()),
+        );
+
+        return $ranking;
     }
 
     /**
@@ -707,6 +830,42 @@ class GuardiaCoverRepository extends ServiceEntityRepository
             $load[(int) $row['id']] = (int) $row['total'];
         }
 
-        return $load;
+        return $this->withInheritedLoad($load);
+    }
+
+    /**
+     * Suma a quien cubre una baja larga el contador de la persona a la que sustituye.
+     *
+     * Es lo que el centro pidió y por qué: si quien llega en noviembre arranca en cero mientras el resto
+     * del claustro lleva ocho guardias, el reparto equitativo le echará encima todas las de la mañana
+     * hasta emparejarlo. Heredando el contador, entra donde estaba la persona a la que sustituye.
+     *
+     * **Derivado, nunca guardado**, como el propio contador. Un número copiado al dar de alta la
+     * sustitución sería un cuarto sitio donde el conteo puede discrepar de los otros tres, y esa es
+     * justo la propiedad que {@see self::WORK_UNIT} sostiene. Aquí no hace falta: el mapa que llega YA
+     * trae el conteo de la persona sustituida, así que heredar es una pasada por encima y una lectura de
+     * una tabla diminuta — cero consultas más sobre {@code guardia_cover}.
+     *
+     * Se lee del mapa original y se escribe sobre el resultado a propósito: así una segunda sustitución
+     * que empezara donde acabó la primera no encadena herencias, que sumarían dos veces las mismas
+     * guardias.
+     *
+     * La persona sustituida conserva las suyas en todas las lecturas. No es una suma de la que salga un
+     * total: es una lectura de equidad, y esas guardias las hizo ella.
+     *
+     * @param array<int, int> $load id de docente → guardias hechas
+     *
+     * @return array<int, int> el mismo mapa con la herencia aplicada
+     */
+    private function withInheritedLoad(array $load): array
+    {
+        $inherited = $load;
+        foreach ($this->substitutions->findAllOpen() as $substitution) {
+            $substituteId = (int) $substitution->getSubstitute()->getId();
+            $inherited[$substituteId] = ($load[$substituteId] ?? 0)
+                + ($load[(int) $substitution->getSubstitutedTeacher()->getId()] ?? 0);
+        }
+
+        return $inherited;
     }
 }

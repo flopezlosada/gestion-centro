@@ -138,13 +138,17 @@ final class BreakRotaPlanner
      * Everybody with a timetable gets a candidate, quota included as zero when nothing has been typed:
      * the engine drops those itself, and the list then matches the quota screen row for row.
      *
+     * El cupo se lee EN VIGOR, con la herencia de las sustituciones aplicada, por la misma razón que en
+     * {@see RotaPlanner::candidates()}: quien cubre una baja larga no tiene fila de cupo propia y un cero
+     * la dejaría fuera del cuadrante de recreo entero.
+     *
      * @param AcademicYear $year the course
      *
      * @return list<BreakRotaCandidate> the candidates
      */
     public function candidates(AcademicYear $year): array
     {
-        $quotas = $this->quotas->findByYearKeyedByTeacher($year);
+        $quotas = $this->quotas->findEffectiveByTeacher($year);
 
         $candidates = [];
         foreach ($this->schedule->teachersWithEntries($year) as $teacher) {
@@ -152,7 +156,7 @@ final class BreakRotaPlanner
             $candidates[] = new BreakRotaCandidate(
                 $id,
                 $teacher->getFullName(),
-                isset($quotas[$id]) ? $quotas[$id]->getBreakDuties() : 0,
+                $quotas[$id]['break'] ?? 0,
             );
         }
 

@@ -193,27 +193,39 @@ final class GuardiaQuotaController extends AbstractController
      * Without it the screen cannot tell a deliberate exemption from a teacher nobody has got to yet, and
      * on a fresh course it would greet the coordinator by declaring the entire claustro exempt.
      *
+     * Las cifras son las que RIGEN, herencia de sustituciones incluida
+     * ({@see GuardiaQuotaRepository::findEffectiveByTeacher()}), y no las filas guardadas. Quien cubre
+     * una baja larga aparece aquí —tiene el horario— sin cupo propio: pintar el cero que hay en la base
+     * de datos diría "exenta" en la pantalla mientras el motor la reparte con el cupo de la persona a la
+     * que sustituye.
+     *
+     * Su fila va sin casillas ({@code inherited}), y eso es lo que hace que {@see save()} no necesite
+     * saber nada de sustituciones: sin casillas no se envía nada suyo, y el guard de "esta persona no
+     * viene en la petición" la deja intacta. El cupo es del puesto mientras dure la baja.
+     *
      * @param AcademicYear            $year    the course
      * @param ScheduleEntryRepository $entries the timetable, source of who counts as staff this year
      * @param GuardiaQuotaRepository  $quotas  the quotas typed in so far
      *
-     * @return list<array{teacher: User, hours: int, lective: int, break: int, configured: bool}> the rows, by teacher name
+     * @return list<array{teacher: User, hours: int, lective: int, break: int, configured: bool, inherited: bool, inheritedFrom: string|null}> the rows, by teacher name
      */
     private function rowsFor(AcademicYear $year, ScheduleEntryRepository $entries, GuardiaQuotaRepository $quotas): array
     {
         $hours = $entries->lectiveHoursByTeacher($year);
-        $existing = $quotas->findByYearKeyedByTeacher($year);
+        $effective = $quotas->findEffectiveByTeacher($year);
 
         $rows = [];
         foreach ($entries->teachersWithEntries($year) as $teacher) {
             $id = (int) $teacher->getId();
-            $quota = $existing[$id] ?? null;
+            $quota = $effective[$id] ?? null;
             $rows[] = [
                 'teacher' => $teacher,
                 'hours' => $hours[$id] ?? 0,
-                'lective' => $quota?->getLectiveDuties() ?? 0,
-                'break' => $quota?->getBreakDuties() ?? 0,
+                'lective' => $quota['lective'] ?? 0,
+                'break' => $quota['break'] ?? 0,
                 'configured' => null !== $quota,
+                'inherited' => null !== ($quota['inheritedFrom'] ?? null),
+                'inheritedFrom' => $quota['inheritedFrom'] ?? null,
             ];
         }
 

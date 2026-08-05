@@ -8,6 +8,7 @@ use App\Entity\AcademicYear;
 use App\Entity\GuardiaQuota;
 use App\Entity\Role;
 use App\Entity\ScheduleEntry;
+use App\Entity\Substitution;
 use App\Entity\TimeSlot;
 use App\Entity\User;
 use App\Enum\Area;
@@ -15,6 +16,7 @@ use App\Enum\PermissionLevel;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\TimeSlotKind;
 use App\Enum\Weekday;
+use App\Guardia\SubstitutionApplier;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -106,6 +108,43 @@ final class GuardiaQuotaPageTest extends WebTestCase
         self::assertInstanceOf(GuardiaQuota::class, $quota);
         self::assertSame(3, $quota->getLectiveDuties());
         self::assertSame(1, $quota->getBreakDuties());
+    }
+
+    public function testWhoeverCoversALongLeaveShowsTheQuotaOfThePostAndHasNoBoxes(): void
+    {
+        // Quien cubre una baja larga tiene el horario, así que aparece en la tabla, pero el cupo es del
+        // PUESTO: se lee el de la persona a la que sustituye. Y va SIN casillas a propósito — con ellas,
+        // el navegador mandaría esa cifra en cada envío de la tabla, se hubiera tocado o no, y le crearía
+        // una fila propia que a partir de ahí dejaría de seguir al cupo real. Guardar por cualquier otro
+        // motivo la congelaría sin que nadie lo pidiera.
+        $this->login();
+        $year = $this->courseWithFrame('2025-2026', 6);
+        $elena = $this->user('Elena Titular', 'elena@centro.test');
+        $sara = $this->user('Sara Sustituta', 'sara@centro.test');
+        $this->lectiveEntry($year, $elena, Weekday::MONDAY, 0);
+        $this->em->persist((new GuardiaQuota())->setAcademicYear($year)->setTeacher($elena)->setLectiveDuties(3)->setBreakDuties(1));
+        $this->em->flush();
+
+        $substitution = (new Substitution())
+            ->setAcademicYear($year)
+            ->setSubstitutedTeacher($elena)
+            ->setSubstitute($sara)
+            ->setStartedOn(new \DateTimeImmutable('2025-11-10'));
+        self::getContainer()->get(SubstitutionApplier::class)->open($substitution, new \DateTimeImmutable('2025-11-10'));
+
+        $crawler = $this->client->request('GET', self::URL.'?curso=2025-2026');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('body', 'Hereda el cupo de Elena Titular');
+        self::assertCount(0, $crawler->filter('#lective-'.$sara->getId()), 'sin casilla que enviar');
+
+        // Y guardar la tabla —donde el navegador solo manda lo que tiene casilla— la deja intacta.
+        $this->client->request('POST', self::URL, [
+            '_token' => $this->tokenFrom($crawler),
+            'curso' => '2025-2026',
+        ]);
+
+        self::assertNull($this->quotaOf($sara), 'no se le congela un cupo propio por pulsar Guardar');
     }
 
     public function testATeacherLeftAtZeroIsStoredSoTheExemptionIsOnTheRecord(): void

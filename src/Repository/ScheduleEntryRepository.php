@@ -874,6 +874,43 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
+     * Hands a teacher's WHOLE timetable in one course over to another person, in one statement.
+     *
+     * This is how a long-term substitution works ({@see \App\Entity\Substitution}): every cell moves,
+     * lessons and duty alike and whatever their {@see ScheduleEntrySource}, because whoever stands in
+     * front of the group also takes the guardia hours. Moving the rows rather than resolving the
+     * substitute at read time is what keeps all eight per-teacher queries of this repository — and every
+     * screen built on them — untouched: the timetable simply says who is really there.
+     *
+     * A bulk update, so the rows already loaded in the identity map keep the old teacher, same as
+     * {@see linkCells()} and {@see \App\Repository\GuardiaCoverRepository::markReminderSent()}. Callers
+     * must not go on using {@see ScheduleEntry} objects read before this ran.
+     *
+     * No unique key spans (course, teacher, weekday, slot), so nothing collides — but by the same token
+     * nothing stops the target ending up with two timetables. Guarding that is the applier's job: it
+     * only ever moves onto somebody who has none.
+     *
+     * @param AcademicYear $year the course whose cells move
+     * @param User         $from the teacher the cells belong to
+     * @param User         $to   the person taking them over
+     *
+     * @return int how many cells changed hands
+     */
+    public function moveTeacherEntries(AcademicYear $year, User $from, User $to): int
+    {
+        return (int) $this->createQueryBuilder('s')
+            ->update()
+            ->set('s.teacher', ':to')
+            ->where('s.academicYear = :year')
+            ->andWhere('s.teacher = :from')
+            ->setParameter('year', $year)
+            ->setParameter('from', $from)
+            ->setParameter('to', $to)
+            ->getQuery()
+            ->execute();
+    }
+
+    /**
      * Replaces the given teachers' IMPORTED timetable for one course with the supplied entries. Used by
      * the importer: it wipes only the reconciled teachers' export-sourced rows in that course (so
      * unmatched teachers, every other course, and every hand-marked guardia keep whatever they had) and
