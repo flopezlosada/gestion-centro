@@ -83,13 +83,13 @@ final class CaBundleTest extends TestCase
         $configured = (string) ini_get('openssl.cafile');
         $capath = (string) ini_get('openssl.capath');
         $fromEnvironment = (string) getenv('SSL_CERT_FILE');
-        $default = openssl_get_cert_locations()['default_cert_file'] ?? '';
+        $default = (string) (openssl_get_cert_locations()['default_cert_file'] ?? '');
 
         self::assertTrue(
             '' !== $configured
             || '' !== $capath
             || '' !== $fromEnvironment
-            || (\is_string($default) && is_file($default)),
+            || ('' !== $default && is_file($default)),
             'Tras anclar, PHP debería tener algún almacén de CA al que mirar.',
         );
     }
