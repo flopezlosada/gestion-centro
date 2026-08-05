@@ -73,6 +73,10 @@ final class RoleFixtures extends AbstractGoldenFixture
                 // Read on Espacios so the coordinator can find a big free room to merge groups into when
                 // there are more absences than teachers on call — that consultation is why it exists.
                 ->setLevel(Area::ESPACIOS, PermissionLevel::READ)
+                // Lectura en Fotocopias: la coordinación ve la cola entera porque es quien deja dichas las
+                // copias de la tarea de cada guardia y tiene que comprobar que salieron. LECTURA y no
+                // escritura: marcar un encargo hecho es del que está en la fotocopiadora.
+                ->setLevel(Area::FOTOCOPIAS, PermissionLevel::READ)
                 ->setCanConvene(true),
             // Project coordination: convenes the meetings of the projects it coordinates and uploads their
             // minutes. NO rank (commands nobody) and NO area in the matrix, on purpose: the power is scoped
@@ -86,6 +90,46 @@ final class RoleFixtures extends AbstractGoldenFixture
             // no del rango.
             (new Role())->setCode('tutor')->setName('Tutor/a')->setPerDepartment(true)->setCanConvene(true),
             (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true),
+            // PERSONAL NO DOCENTE. Tres cargos con funciones concretas, no un cajón "PAS": el centro pidió
+            // que entraran por lo que HACEN en la aplicación, y cada uno recibe exactamente eso.
+            //
+            // Ninguno convoca reuniones: la regla del centro es que convocan los cargos con equipo al que
+            // convocar. Se les convoca (a un claustro, a una comisión), y para eso no hace falta la bandera.
+            //
+            // Auxiliares de control (conserjería). UN solo permiso: ESCRITURA en Fotocopias, porque son
+            // quienes imprimen — ven la cola completa y marcan cada encargo hecho, que es lo que convierte
+            // la lista en una cola de trabajo.
+            //
+            // Su otra función, "ver dónde están los profesores que han cambiado de aula", NO necesita
+            // permiso: «Aulas libres» se abrió a todo el claustro quitándole la puerta (PR #139) y responde
+            // sobre el horario EFECTIVO, planes de cambio aprobados incluidos ({@see \App\Space\RoomOccupancy}).
+            // Y `espacios: read` sería peor que inútil: no enseña nada (el bloque Espacios del menú exige
+            // ESCRITURA) y abriría el área entera a cualquier lectura que el módulo añada mañana.
+            (new Role())->setCode('auxiliar_control')->setName('Auxiliar de control')
+                ->setLevel(Area::FOTOCOPIAS, PermissionLevel::WRITE),
+            // Personal administrativo. LECTURA en Guardias: el parte del día, el histórico y las
+            // estadísticas, que es "ver los partes de ausencias". Sin escritura no apuntan ausencias ni
+            // reparten guardias — eso sigue siendo del equipo directivo.
+            //
+            // Lo que el centro pidió y NO está aquí: completar los horarios. Las dos pantallas que lo hacen
+            // están detrás de permisos que dan mucho más (`/admin/horario` exige escritura en
+            // ADMINISTRACIÓN, o sea todo el back-office incluido /admin/roles; `/guardias/horario` exige
+            // escritura en GUARDIAS, o sea el parte entero). Darles cualquiera de los dos para que puedan
+            // teclear un horario es una escalada de privilegios, no un matiz. Queda pendiente partir la
+            // puerta de {@see \App\Controller\AdminTimetableController}.
+            (new Role())->setCode('personal_administrativo')->setName('Personal administrativo')
+                ->setLevel(Area::GUARDIAS, PermissionLevel::READ),
+            // Integración social. Ni un permiso: lo que pidió el centro es que EXISTAN en el organigrama,
+            // dentro del departamento de Orientación — de ahí perDepartment, igual que el resto de roles
+            // que se ostentan "de un departamento".
+            //
+            // Rol propio y no `teacher` con el departamento puesto, aunque técnicamente valdría (nada en el
+            // código comprueba el código 'teacher', y el reparto de guardias sale del horario importado, no
+            // del rol). El motivo es que la responsabilidad de una tarea se resuelve en vivo por
+            // rol+departamento: "Docente / Orientación" les caería encima a quienes no dan clase, y en la
+            // ficha del departamento saldrían etiquetadas como docentes. El nombre es la función y no la
+            // persona, como Dirección o Jefatura de estudios, y así además no tiene género.
+            (new Role())->setCode('integracion_social')->setName('Integración social')->setPerDepartment(true),
         ];
 
         foreach ($catalog as $role) {
