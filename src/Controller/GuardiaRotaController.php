@@ -87,6 +87,11 @@ final class GuardiaRotaController extends AbstractController
 
     /**
      * Approves the proposal: asks the engine for it again and writes it into the timetable.
+     *
+     * A proposal that places nobody is not published ({@see RotaPlanner::publish()} refuses it, because
+     * the write is a replace and an empty one would wipe the rota). Saying so out loud matters as much as
+     * refusing it: a silent no-op with a green flash reading "0 guardias publicadas" is how somebody
+     * concludes the program is broken.
      */
     #[Route('/aprobar', name: 'guardia_rota_approve', methods: ['POST'])]
     public function approve(Request $request, AcademicYearRepository $years, RotaPlanner $planner): Response
@@ -107,6 +112,12 @@ final class GuardiaRotaController extends AbstractController
 
         $proposal = $planner->propose($year);
         $written = $planner->publish($year, $proposal->placements);
+
+        if (0 === $written) {
+            $this->addFlash('error', 'No se ha publicado nada: la propuesta no coloca a nadie. Revisa los cupos antes de publicar — sin cupo, el programa no tiene a quién poner de guardia.');
+
+            return $this->redirectToRoute('guardia_rota_index', ['curso' => $curso, 'propuesta' => 1]);
+        }
 
         $this->addFlash('success', sprintf(
             'Cuadrante publicado: %d guardias en el horario del curso %s.',

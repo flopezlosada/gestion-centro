@@ -54,6 +54,16 @@ final class RotaProposer
     public const GAP_QUOTA_EXHAUSTED = 'quota-exhausted';
 
     /**
+     * Nobody has been given a quota yet, so the engine had nobody to place anywhere and the whole week
+     * comes back empty. Not a shortage and not the timetable: the quota table has simply never been
+     * filled in, and typing it is the only thing that changes anything.
+     *
+     * A reason of its own because the other two are answers about a period, and this is an answer about
+     * the course — see the note in {@see propose()} for the bug that its absence caused.
+     */
+    public const GAP_NO_QUOTA_SET = 'no-quota-set';
+
+    /**
      * Draws up the week.
      *
      * @param list<int>            $slots      the teaching period indexes of the centre's day
@@ -69,10 +79,16 @@ final class RotaProposer
         // A quota of zero is an exemption: dropping those here means they cannot be reached by any
         // later step, rather than relying on every comparison to remember to skip them.
         $eligible = array_values(array_filter($candidates, static fn (RotaCandidate $c): bool => $c->quota > 0));
-        $byId = [];
-        foreach ($eligible as $candidate) {
-            $byId[$candidate->teacherId] = $candidate;
-        }
+
+        // "Nobody has a quota" is decided HERE, where both lists are still in hand, and not per period
+        // down in whyNobody(). Once the engine is reduced to $eligible there is nothing left to look at:
+        // every test whyNobody() runs over an empty list is vacuously true, so it falls through to
+        // GAP_NOBODY_FREE — which the screen renders as "eso no se arregla con cupos, es el horario".
+        // Exactly backwards, and not hypothetical: on 05-08-2026 the centre's rota screen reported all
+        // 150 places of the week as a timetable problem when the real state was 0 rows in guardia_quota.
+        // Distinguishing it from "no candidates at all" matters too: with an empty timetable there is no
+        // quota to type, and GAP_NOBODY_FREE is then literally true.
+        $noQuotaSet = [] === $eligible && [] !== $candidates;
 
         $assigned = [];
         $perDay = [];
@@ -117,7 +133,9 @@ final class RotaProposer
                         'weekday' => $weekday,
                         'slot' => $slot,
                         'kind' => $round->value,
-                        'reason' => $this->whyNobody($eligible, $weekday, $slot, $inCell[$key] ?? [], $assigned),
+                        'reason' => $noQuotaSet
+                            ? self::GAP_NO_QUOTA_SET
+                            : $this->whyNobody($eligible, $weekday, $slot, $inCell[$key] ?? [], $assigned),
                     ];
                     continue;
                 }
@@ -266,7 +284,11 @@ final class RotaProposer
      * Somebody free who already holds a place in this period counts as the timetable: they cannot be put
      * in it twice, and no amount of quota changes that.
      *
-     * @param list<RotaCandidate> $candidates the eligible teachers
+     * ONLY call this with at least one eligible candidate. With an empty list both tests below are
+     * vacuously true and it would answer GAP_NOBODY_FREE — blaming the timetable for an empty quota
+     * table. {@see propose()} decides that case before getting here.
+     *
+     * @param list<RotaCandidate> $candidates the eligible teachers, never empty
      * @param int                 $weekday    the weekday
      * @param int                 $slot       the period index
      * @param array<int, bool>    $taken      teacher ids already placed in this period

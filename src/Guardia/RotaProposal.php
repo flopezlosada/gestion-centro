@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Guardia;
 
+use App\Enum\ScheduleActivityKind;
+
 /**
  * What the rota engine came up with, and — just as importantly — what it could not do.
  *
@@ -29,7 +31,20 @@ final class RotaProposal
     /**
      * Headline figures for the report above the grid.
      *
-     * @return array{placed: int, unfilled: int, needed: int, atQuota: int, belowQuota: int, unusedQuota: int} the summary
+     * `unfilledGuardias` exists so the screen can stop claiming that a shortage always lands on the
+     * standby places. It normally does — the engine fills every period's guardias before handing out a
+     * single support place — but "normally" is not "always": when the engine has nobody to place at all
+     * the guardias go unfilled too, and the reassuring sentence then contradicts the figure right above
+     * it. Counted here rather than in Twig because a template cannot filter a list by kind without
+     * turning into logic.
+     *
+     * `placedByEngine` is what publishing would actually write: the fixed places are already in the
+     * timetable and {@see RotaPlanner::publish()} skips them. It exists so the screen offering the button
+     * and the code performing the write agree on whether there is anything to publish — with guardias in
+     * the Peñalara export and no quota typed, `placed` is not zero while the write is empty, and the
+     * screen would offer an action that is then refused.
+     *
+     * @return array{placed: int, placedByEngine: int, unfilled: int, unfilledGuardias: int, needed: int, atQuota: int, belowQuota: int, unusedQuota: int} the summary
      */
     public function summary(): array
     {
@@ -45,9 +60,21 @@ final class RotaProposal
             $unusedQuota += $row['quota'] - $row['assigned'];
         }
 
+        $unfilledGuardias = \count(array_filter(
+            $this->unfilled,
+            static fn (array $gap): bool => ScheduleActivityKind::GUARDIA->value === $gap['kind'],
+        ));
+
+        $placedByEngine = \count(array_filter(
+            $this->placements,
+            static fn (array $place): bool => !$place['fixed'],
+        ));
+
         return [
             'placed' => \count($this->placements),
+            'placedByEngine' => $placedByEngine,
             'unfilled' => \count($this->unfilled),
+            'unfilledGuardias' => $unfilledGuardias,
             'needed' => \count($this->placements) + \count($this->unfilled),
             'atQuota' => $atQuota,
             'belowQuota' => $belowQuota,
@@ -56,9 +83,11 @@ final class RotaProposal
     }
 
     /**
-     * Why the week came up short, in the terms a human can act on: either there was nobody free at all,
-     * or there were people free but all of them had used up their quota. The two call for opposite
-     * responses — redraw the timetable, or raise somebody's quota — so they are never merged.
+     * Why the week came up short, in the terms a human can act on: nobody has been given a quota yet,
+     * or there was nobody free at all, or there were people free but all of them had used up their
+     * quota. The three call for different responses — type the quota table, redraw the timetable, or
+     * raise somebody's quota — so they are never merged. See the GAP_* constants of
+     * {@see RotaProposer}.
      *
      * @return array<string, int> reason → how many places it accounts for
      */

@@ -64,10 +64,16 @@ final class RotaPlanner
      * week, but they already exist in the timetable as MANUAL rows: writing them again would put the same
      * teacher in the same period twice, once under each source.
      *
+     * A proposal with nothing to write is REFUSED, not written. The write is a replace — delete every
+     * engine cell of the course, then insert — so handing it an empty list wipes a published rota and puts
+     * nothing back. That is reachable today: with no quota typed the engine proposes nobody, and the
+     * screen still offered "Publicar el cuadrante". Nothing asks for "clear the engine's rota", and if it
+     * ever does it deserves a method that says so instead of an empty argument doing it by accident.
+     *
      * @param AcademicYear                                                                     $year       the course
      * @param list<array{weekday: int, slot: int, teacherId: int, kind: string, fixed?: bool}> $placements the approved rota
      *
-     * @return int how many duty cells were written
+     * @return int how many duty cells were written; 0 means nothing was written AND nothing was deleted
      */
     public function publish(AcademicYear $year, array $placements): int
     {
@@ -99,6 +105,12 @@ final class RotaPlanner
                 ->setEndsAt($when[1])
                 ->setKind($kind)
                 ->setSource(ScheduleEntrySource::ENGINE);
+        }
+
+        // See the note above: an empty write is a wipe, so it is refused here rather than in the one
+        // screen that happens to call this today.
+        if ([] === $entries) {
+            return 0;
         }
 
         $this->schedule->replaceEngineDutyCells($year, $entries);
