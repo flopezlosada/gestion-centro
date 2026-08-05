@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Agenda;
 
+use App\Entity\BreakDutyAssignment;
 use App\Entity\GuardiaCover;
 use App\Entity\Meeting;
 use App\Entity\PersonalEvent;
@@ -11,12 +12,13 @@ use App\Entity\Task;
 
 /**
  * A single line of the personal agenda, wrapping an institutional {@see Task}, a private
- * {@see PersonalEvent}, a {@see GuardiaCover} or a convened {@see Meeting} behind a common sort/bucket key
+ * {@see PersonalEvent}, a {@see GuardiaCover}, a place on the break duty rota
+ * ({@see BreakDutyAssignment}) or a convened {@see Meeting} behind a common sort/bucket key
  * ({@see $date}) and done flag. It deliberately does NOT flatten them into one shape — a task carries a
  * workflow and a role, an event does not, a guardia is imposed by the centre and cannot be ticked off, a
  * meeting has other people convened to it — so the template keeps rendering each with its own marker; this
- * only unifies the ordering and the "which time bucket" decision that the agenda needs across the four
- * kinds. The shapes match the markers the calendar already uses: círculo = tarea, cuadrado = evento,
+ * only unifies the ordering and the "which time bucket" decision that the agenda needs across the kinds.
+ * The shapes match the markers the calendar already uses: círculo = tarea, cuadrado = evento,
  * escudo = guardia, personas = reunión.
  */
 final readonly class AgendaEntry
@@ -25,18 +27,20 @@ final readonly class AgendaEntry
     public const string KIND_EVENT = 'event';
     public const string KIND_GUARDIA = 'guardia';
     public const string KIND_MEETING = 'meeting';
+    public const string KIND_BREAK_DUTY = 'break_duty';
 
     private function __construct(
         // One of the self::KIND_* constants.
         public string $kind,
         // The instant this entry sorts and buckets by: a task's deadline, an event's start, a guardia's
-        // period start or a meeting's start.
+        // period start, a recreo's start or a meeting's start.
         public \DateTimeImmutable $date,
         public bool $done,
         public ?Task $task,
         public ?PersonalEvent $event,
         public ?GuardiaCover $guardia = null,
         public ?Meeting $meeting = null,
+        public ?BreakDutyAssignment $breakDuty = null,
     ) {
     }
 
@@ -88,6 +92,32 @@ final readonly class AgendaEntry
     public static function fromGuardia(GuardiaCover $cover, ?\DateTimeImmutable $startsAt): self
     {
         return new self(self::KIND_GUARDIA, $startsAt ?? $cover->getDate(), false, null, null, $cover);
+    }
+
+    /**
+     * Wraps the viewer's place on the break duty rota, for ONE day, keyed by the instant that day's
+     * recreo starts.
+     *
+     * The rota line itself is a weekly pattern that holds all course ({@see BreakDutyAssignment}), not a
+     * record of a day: it is the CALLER that decides which day this entry stands for, and passes both the
+     * day and the recreo's start on it. Nothing is persisted per day — the entry lives only as long as the
+     * screen that shows it.
+     *
+     * Without an imported marco horario the recreo has no clock time and `$startsAt` is null, so the entry
+     * falls back to the day at midnight: it still buckets and sorts, it just cannot show an hour, exactly
+     * as a guardia does ({@see fromGuardia()}).
+     *
+     * `done` is always FALSE, for the same reason as a guardia: a duty is not a checklist line.
+     *
+     * @param BreakDutyAssignment     $duty     the viewer's place on the rota
+     * @param \DateTimeImmutable      $day      the day this entry stands for
+     * @param \DateTimeImmutable|null $startsAt the instant that day's recreo starts, or null when unknown
+     *
+     * @return self the agenda entry
+     */
+    public static function fromBreakDuty(BreakDutyAssignment $duty, \DateTimeImmutable $day, ?\DateTimeImmutable $startsAt): self
+    {
+        return new self(self::KIND_BREAK_DUTY, $startsAt ?? $day, false, null, null, null, null, $duty);
     }
 
     /**

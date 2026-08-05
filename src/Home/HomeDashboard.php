@@ -7,16 +7,23 @@ namespace App\Home;
 use App\Agenda\AgendaEntry;
 use App\Agenda\PersonalAgenda;
 use App\Dashboard\CentreDashboard;
+use App\Entity\AcademicYear;
+use App\Entity\BreakDutyAssignment;
 use App\Entity\GuardiaCover;
 use App\Entity\Task;
 use App\Entity\User;
+use App\Enum\Weekday;
 use App\Guardia\TeacherGuardiaDay;
 use App\Repository\AcademicYearRepository;
+use App\Repository\BreakDutyAssignmentRepository;
+use App\Repository\BreakDutyGapRepository;
 use App\Repository\GuardiaCoverRepository;
 use App\Repository\ScheduleEntryRepository;
 use App\Repository\TaskRepository;
+use App\Repository\TimeSlotRepository;
 use App\Repository\UserRepository;
 use App\Service\OrganizationHierarchy;
+use App\Service\SchoolCalendar;
 use App\Service\TaskWorkflow;
 use App\Support\TaskStatus;
 use App\Util\SchoolYear;
@@ -65,6 +72,10 @@ final readonly class HomeDashboard
         private UserRepository $usersRepo,
         private TaskWorkflow $workflows,
         private TeacherGuardiaDay $guardiaDay,
+        private BreakDutyAssignmentRepository $breakDuties,
+        private BreakDutyGapRepository $breakGaps,
+        private TimeSlotRepository $timeSlots,
+        private SchoolCalendar $calendar,
     ) {
     }
 
@@ -79,6 +90,7 @@ final readonly class HomeDashboard
      *     nextGuardia: array{cover: GuardiaCover, done: bool, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable, minutesUntil: ?int, inProgress: bool}|null,
      *     guardiasTodayCount: int,
      *     upcomingGuardia: array{cover: GuardiaCover, startsAt: ?\DateTimeImmutable}|null,
+     *     breakDutiesToday: list<array{duty: BreakDutyAssignment, entry: AgendaEntry, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable}>,
      *     dayTimeline: list<array{entry: AgendaEntry, startsAt: ?\DateTimeImmutable, minutesUntil: ?int, state: string}>,
      *     todos: AgendaEntry[],
      *     todosTotal: int,
@@ -91,8 +103,12 @@ final readonly class HomeDashboard
      */
     public function baseFor(User $user, \DateTimeImmutable $today, \DateTimeImmutable $now): array
     {
+        // El curso se resuelve UNA vez y viaja a los dos bloques que lo necesitan (las guardias de
+        // sustitución y el recreo): son dos lecturas del mismo dato en la pantalla más visitada.
+        $year = $this->years->findBySchoolYear(SchoolYear::current($today));
         $buckets = $this->agenda->bucketsFor($user, $today);
-        $guardias = $this->guardias($user, $today, $now);
+        $guardias = $this->guardias($user, $year, $today, $now);
+        $breakDuties = $this->breakDutiesOn($user, $year, $today);
 
         $isMeeting = static fn (AgendaEntry $e): bool => AgendaEntry::KIND_MEETING === $e->kind;
         // Un "por hacer": una tarea del centro (fecha límite) o un recordatorio personal sin hora. Lo que
@@ -144,7 +160,8 @@ final readonly class HomeDashboard
             'nextGuardia' => $guardias['next'],
             'guardiasTodayCount' => $guardias['todayCount'],
             'upcomingGuardia' => $guardias['upcomingGuardia'],
-            'dayTimeline' => $this->dayTimeline($guardias['todayItems'], $buckets['today'], $now),
+            'breakDutiesToday' => $breakDuties,
+            'dayTimeline' => $this->dayTimeline($guardias['todayItems'], $breakDuties, $buckets['today'], $now),
             'todos' => \array_slice($ahead, 0, self::TODOS_SHOWN),
             // Todo lo que hay por hacer, no lo que se pinta: es la cifra de la cabecera y del pie, y los
             // dos llevan a la lista donde está entero.
@@ -163,10 +180,10 @@ final readonly class HomeDashboard
     }
 
     /**
-     * "Tu día": todo lo de HOY que tiene hora, en una sola línea temporal — las guardias asignadas, las
-     * reuniones a las que se convoca al usuario y sus citas privadas. Antes eran dos bloques ("Reuniones
-     * de hoy" y "Con hora") que se leían por separado y dejaban media pantalla vacía, cuando la pregunta
-     * es una sola: ¿qué tengo hoy a una hora?
+     * "Tu día": todo lo de HOY que tiene hora, en una sola línea temporal — las guardias asignadas, la
+     * guardia de recreo que toque ese día de la semana, las reuniones a las que se convoca al usuario y
+     * sus citas privadas. Antes eran dos bloques ("Reuniones de hoy" y "Con hora") que se leían por
+     * separado y dejaban media pantalla vacía, cuando la pregunta es una sola: ¿qué tengo hoy a una hora?
      *
      * Cada fila lleva su estado respecto al reloj, que es lo que la plantilla necesita para atenuar lo
      * pasado y marcar con un filo lo que viene ahora:
@@ -182,12 +199,13 @@ final readonly class HomeDashboard
      * sería perder guardias reales por no saber a qué hora son.
      *
      * @param list<array{cover: GuardiaCover, done: bool, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable, minutesUntil: ?int}> $guardiaItems today's covers as {@see TeacherGuardiaDay} reads them
+     * @param list<array{duty: BreakDutyAssignment, entry: AgendaEntry, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable}>      $breakItems   today's recreos on the rota, as {@see breakDutiesOn()} reads them
      * @param AgendaEntry[]                                                                                                              $todayEntries the agenda's "today" bucket (meetings and events are taken from it)
      * @param \DateTimeImmutable                                                                                                         $now          the current instant
      *
      * @return list<array{entry: AgendaEntry, startsAt: ?\DateTimeImmutable, minutesUntil: ?int, state: string}> the day's rows, earliest first
      */
-    private function dayTimeline(array $guardiaItems, array $todayEntries, \DateTimeImmutable $now): array
+    private function dayTimeline(array $guardiaItems, array $breakItems, array $todayEntries, \DateTimeImmutable $now): array
     {
         $minutesUntil = static fn (?\DateTimeImmutable $startsAt): ?int => null !== $startsAt && $startsAt > $now
             ? intdiv($startsAt->getTimestamp() - $now->getTimestamp(), 60)
@@ -200,6 +218,17 @@ final readonly class HomeDashboard
                 'startsAt' => $item['startsAt'],
                 'minutesUntil' => $item['minutesUntil'],
                 'over' => $item['done'],
+            ];
+        }
+        foreach ($breakItems as $item) {
+            // Un recreo termina cuando lo dice el marco horario. Sin horario importado no se sabe la
+            // hora, y entonces NO se da por pasado: como con las guardias, no saber cuándo es no es
+            // razón para atenuar algo que todavía puede estar por llegar.
+            $rows[] = [
+                'entry' => $item['entry'],
+                'startsAt' => $item['startsAt'],
+                'minutesUntil' => $minutesUntil($item['startsAt']),
+                'over' => null !== $item['endsAt'] && $item['endsAt'] < $now,
             ];
         }
         foreach ($todayEntries as $entry) {
@@ -363,6 +392,11 @@ final readonly class HomeDashboard
      * One query feeds all five: the covers assigned from today on, split by day in PHP. Period times
      * come from the slot index via the course's timetable.
      *
+     * @param User               $user  the viewer
+     * @param AcademicYear|null  $year  the course today belongs to, or null when there is none
+     * @param \DateTimeImmutable $today the reference day (midnight)
+     * @param \DateTimeImmutable $now   the current instant
+     *
      * @return array{
      *     next: array{cover: GuardiaCover, done: bool, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable, minutesUntil: ?int, inProgress: bool}|null,
      *     todayItems: list<array{cover: GuardiaCover, done: bool, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable, minutesUntil: ?int}>,
@@ -371,9 +405,8 @@ final readonly class HomeDashboard
      *     weekEntries: list<AgendaEntry>
      * }
      */
-    private function guardias(User $user, \DateTimeImmutable $today, \DateTimeImmutable $now): array
+    private function guardias(User $user, ?AcademicYear $year, \DateTimeImmutable $today, \DateTimeImmutable $now): array
     {
-        $year = $this->years->findBySchoolYear(SchoolYear::current($today));
         $slotTimes = $this->schedule->slotTimes($year);
 
         $todayKey = $today->format('Y-m-d');
@@ -419,6 +452,70 @@ final readonly class HomeDashboard
                 : null,
             'weekEntries' => $weekEntries,
         ];
+    }
+
+    /**
+     * The viewer's break duty rota for ONE day — their "hoy te toca el patio a las 11:10".
+     *
+     * The rota is a weekly pattern fixed for the whole course ({@see BreakDutyAssignment}), which is why
+     * "Mis guardias" states it once ("los martes, patio") instead of listing every Tuesday of the year.
+     * Inicio needs the other reading: it answers "qué me toca HOY", and a duty nobody is reminded of on
+     * the morning it falls is a zone that quietly goes unwatched. So the pattern is projected onto today
+     * here, and nothing is persisted per day.
+     *
+     * Three things keep it from lying:
+     *  - the rota is only shown once ANNOUNCED, the same gate as {@see \App\Controller\GuardiaController::mine()}:
+     *    while it is a draft the equipo directivo is still moving places about;
+     *  - only on a teaching day ({@see SchoolCalendar}), so a Tuesday that happens to be a holiday does
+     *    not claim a recreo;
+     *  - and never for a place already recorded as a {@see \App\Entity\BreakDutyGap}: somebody who has
+     *    registered that they are away that day would otherwise be told to turn up to the very recreo
+     *    their absence released.
+     *
+     * @param User               $user  the viewer
+     * @param AcademicYear|null  $year  the course the day belongs to, or null when there is none
+     * @param \DateTimeImmutable $today the day to project the rota onto (midnight)
+     *
+     * @return list<array{duty: BreakDutyAssignment, entry: AgendaEntry, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable}> the day's recreos, earliest first
+     */
+    private function breakDutiesOn(User $user, ?AcademicYear $year, \DateTimeImmutable $today): array
+    {
+        if (null === $year || !$year->isBreakRotaAnnounced()) {
+            return [];
+        }
+
+        // El orden de las guardas es el orden de su coste: primero lo que no cuesta consulta, luego las
+        // plazas y solo entonces el calendario. Quien no tiene recreo ese día de la semana —la mayor
+        // parte del claustro, la mayor parte de los días— no llega a preguntar si el día es lectivo.
+        $duties = $this->breakDuties->findAllForTeacherAndWeekday($year, $user, Weekday::from((int) $today->format('N')));
+        if ([] === $duties || !$this->calendar->isLective($today)) {
+            return [];
+        }
+
+        $withGap = $this->breakGaps->findAssignmentIdsWithGapOn($duties, $today);
+        // Las horas del recreo salen del marco horario por POSICIÓN (primer recreo, segundo), nunca por
+        // índice de tramo: los índices de Peñalara cambian de un curso a otro. Misma resolución que
+        // guardia/_break_times.html.twig, que es lo que se lee en las otras tres pantallas.
+        $breaks = $this->timeSlots->findBreaksByYear($year);
+
+        $rows = [];
+        foreach ($duties as $duty) {
+            if (\in_array($duty->getId(), $withGap, true)) {
+                continue;
+            }
+            $slot = $breaks[$duty->getPeriod()->position()] ?? null;
+            // Del marco horario sale la HORA (sin fecha: es una columna TIME), y el día lo pone hoy.
+            $startsAt = null !== $slot ? $today->setTime((int) $slot->getStartsAt()->format('G'), (int) $slot->getStartsAt()->format('i')) : null;
+            $endsAt = null !== $slot ? $today->setTime((int) $slot->getEndsAt()->format('G'), (int) $slot->getEndsAt()->format('i')) : null;
+            $rows[] = [
+                'duty' => $duty,
+                'entry' => AgendaEntry::fromBreakDuty($duty, $today, $startsAt),
+                'startsAt' => $startsAt,
+                'endsAt' => $endsAt,
+            ];
+        }
+
+        return $rows;
     }
 
     /**
