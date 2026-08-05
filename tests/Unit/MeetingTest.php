@@ -219,7 +219,6 @@ final class MeetingTest extends TestCase
         self::assertSame('Se abre la sesión.', $meeting->getDiscussion());
         self::assertSame('1. Se aprueba.', $meeting->getAgreements());
         self::assertSame([$came], $meeting->getAttended()->toArray());
-        self::assertSame($when, $meeting->getRecordUpdatedAt());
         self::assertTrue($meeting->isAttendanceTaken());
     }
 
@@ -252,30 +251,69 @@ final class MeetingTest extends TestCase
 
     public function testTheFileIsOutdatedOnceTheActaIsWrittenAgain(): void
     {
+        // Todo dentro del MISMO instante a propósito: el aviso es un hecho que apuntan las operaciones, no
+        // la comparación de dos sellos. Comparando sellos, esta secuencia entera cabía en un segundo de
+        // `DATETIME` y el acta salía "al día" con el texto ya corregido.
         $convener = $this->user('Coordina');
         $meeting = $this->meeting($convener);
+        $at = new \DateTimeImmutable('2026-09-15 15:00');
 
         self::assertFalse($meeting->minutesOutdated(), 'sin fichero no hay nada desfasado');
 
-        $meeting->recordSession('Primera versión.', null, [], new \DateTimeImmutable('2026-09-15 15:00'));
-        $meeting->attachMinutes('meeting-minutes/uuid-1.pdf', 'acta.pdf', $convener, new \DateTimeImmutable('2026-09-15 15:05'));
+        $meeting->recordSession('Primera versión.', null, [], $at);
+        $meeting->attachMinutes('meeting-minutes/uuid-1.pdf', 'acta.pdf', $convener, $at);
 
-        self::assertFalse($meeting->minutesOutdated(), 'el PDF se generó DESPUÉS de escribirla: está al día');
+        self::assertFalse($meeting->minutesOutdated(), 'el PDF sale de lo que dice el acta: está al día');
 
-        $meeting->recordSession('Corregida.', null, [], new \DateTimeImmutable('2026-09-15 16:00'));
+        $meeting->recordSession('Corregida.', null, [], $at);
 
         self::assertTrue($meeting->minutesOutdated(), 'el PDF que hay ya no dice lo que dice el acta');
+
+        $meeting->attachMinutes('meeting-minutes/uuid-2.pdf', 'acta.pdf', $convener, $at);
+
+        self::assertFalse($meeting->minutesOutdated(), 'regenerarlo lo pone al día otra vez');
     }
 
     public function testAnActaNobodyWroteIsNotReportedAsOutdated(): void
     {
-        // El caso de las actas que ya existían cuando se añadió el sello: sin `recordUpdatedAt` no hay nada
-        // que comparar, y marcarlas todas como desfasadas sería un aviso falso en cada reunión vieja.
+        // Las actas que ya existían cuando se añadió la marca: no sabemos si alguien tocó su texto después de
+        // generarlas, y suponer que sí pondría un aviso de corrección pendiente en cada reunión vieja.
         $convener = $this->user('Coordina');
         $meeting = $this->meeting($convener);
         $meeting->attachMinutes('meeting-minutes/uuid-1.pdf', 'acta.pdf', $convener, new \DateTimeImmutable('2026-09-15 16:30'));
 
         self::assertFalse($meeting->minutesOutdated());
+    }
+
+    public function testWritingTheActaBeforeThereIsAFileLeavesNothingToWarnAbout(): void
+    {
+        // El desfase es del FICHERO: sin PDF generado todavía no hay nada que se haya quedado viejo, y el
+        // aviso no debe aparecer en cuanto se genere el primero.
+        $convener = $this->user('Coordina');
+        $meeting = $this->meeting($convener);
+        $at = new \DateTimeImmutable('2026-09-15 15:00');
+
+        $meeting->recordSession('Primera versión.', null, [], $at);
+
+        self::assertFalse($meeting->minutesOutdated());
+
+        $meeting->attachMinutes('meeting-minutes/uuid-1.pdf', 'acta.pdf', $convener, $at);
+
+        self::assertFalse($meeting->minutesOutdated(), 'el primer PDF nace al día');
+    }
+
+    public function testRemovingTheActaTakesItsOutdatedWarningWithIt(): void
+    {
+        $convener = $this->user('Coordina');
+        $meeting = $this->meeting($convener);
+        $at = new \DateTimeImmutable('2026-09-15 15:00');
+        $meeting->attachMinutes('meeting-minutes/uuid-1.pdf', 'acta.pdf', $convener, $at);
+        $meeting->recordSession('Corregida.', null, [], $at);
+        self::assertTrue($meeting->minutesOutdated());
+
+        $meeting->clearMinutes();
+
+        self::assertFalse($meeting->minutesOutdated(), 'sin acta no hay nada desfasado que avisar');
     }
 
     public function testIsPastComparesAgainstTheStart(): void

@@ -147,17 +147,23 @@ class Meeting implements Auditable
     private ?\DateTimeImmutable $attendanceTakenAt = null;
 
     /**
-     * When the acta was last WRITTEN — desarrollo, acuerdos and roll, which move together through
-     * {@see recordSession()}. Null while nobody has written it.
+     * Whether the acta ON FILE no longer says what the acta SAYS: somebody wrote or corrected the
+     * desarrollo, los acuerdos or the roll after the PDF was produced.
      *
-     * It exists to answer one question the app could not answer before: whether the PDF on file still says
-     * what the acta says ({@see minutesOutdated()}). Correcting a published acta is allowed and expected
-     * ("solo para corregir errores"), but the corrected text does not reach the file that was e-mailed to
-     * everybody — so the screen has to be able to say so instead of showing two versions and calling both
-     * "el acta".
+     * It answers a question the app could not answer before. Correcting a published acta is allowed and
+     * expected ("solo para corregir errores"), but the corrected text does not reach the file that was
+     * e-mailed to everybody — so the screen has to be able to say so instead of showing two versions and
+     * calling both "el acta".
+     *
+     * **A recorded fact and not a comparison of two timestamps**, which is what it was first. Both stamps
+     * live in `DATETIME` columns with one-second resolution, so writing the acta and generating its PDF
+     * inside the same second compared as EQUAL and the acta read as up to date when it was not — and
+     * loosening the comparison to `>=` would have cried stale on every freshly generated acta instead. The
+     * two operations know the answer exactly at the moment they happen ({@see recordSession()} makes it
+     * stale, {@see attachMinutes()} makes it fresh); no clock has to be consulted at all.
      */
-    #[ORM\Column(name: 'record_updated_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
-    private ?\DateTimeImmutable $recordUpdatedAt = null;
+    #[ORM\Column(name: 'minutes_stale', options: ['default' => false])]
+    private bool $minutesStale = false;
 
     /**
      * Who keeps the minutes ("quien levanta el acta"), which the centre says is NOT always whoever
@@ -757,11 +763,6 @@ class Meeting implements Auditable
         return null !== $this->attendanceTakenAt;
     }
 
-    public function getRecordUpdatedAt(): ?\DateTimeImmutable
-    {
-        return $this->recordUpdatedAt;
-    }
-
     /**
      * Writes the acta: lo tratado, los acuerdos and the roll, in ONE operation.
      *
@@ -795,14 +796,16 @@ class Meeting implements Auditable
         }
 
         $this->recordAttendance($present, $at);
-        $this->recordUpdatedAt = $at;
+        // Lo que hay en el disco deja de decir lo que dice el acta. Solo si hay fichero: sin acta generada
+        // todavía no hay nada que se haya quedado viejo.
+        $this->minutesStale = null !== $this->minutesPath;
 
         return $this;
     }
 
     /**
-     * Whether the acta ON FILE is older than what the acta SAYS: there is a file and the text has been
-     * written (or corrected) after it was produced.
+     * Whether the acta ON FILE is older than what the acta SAYS: the text or the roll were written after the
+     * PDF was produced.
      *
      * The file is what got published, e-mailed and archived; the text is what the screen shows. Correcting
      * a published acta is allowed by design, so the two can legitimately diverge — and the only wrong
@@ -812,10 +815,7 @@ class Meeting implements Auditable
      */
     public function minutesOutdated(): bool
     {
-        return null !== $this->minutesPath
-            && null !== $this->recordUpdatedAt
-            && null !== $this->minutesUploadedAt
-            && $this->recordUpdatedAt > $this->minutesUploadedAt;
+        return $this->minutesStale && null !== $this->minutesPath;
     }
 
     /**
@@ -926,6 +926,8 @@ class Meeting implements Auditable
         $this->minutesName = $name;
         $this->minutesUploadedBy = $by;
         $this->minutesUploadedAt = $at;
+        // El fichero acaba de salir de lo que dice el acta, así que ya no está desfasado.
+        $this->minutesStale = false;
         // Un acta nueva vuelve a ser borrador: lo que se publicó ya no es lo que hay, y dejar la marca de
         // publicada haría creer al claustro que lo que tienen por correo es esto.
         $this->minutesPublishedAt = null;
@@ -948,6 +950,9 @@ class Meeting implements Auditable
         $this->minutesName = null;
         $this->minutesUploadedBy = null;
         $this->minutesUploadedAt = null;
+        // Sin fichero no hay nada desfasado que avisar: el aviso volvería solo al generar uno nuevo, y este
+        // ya nace al día.
+        $this->minutesStale = false;
         $this->minutesPublishedAt = null;
         $this->minutesPublishedBy = null;
 

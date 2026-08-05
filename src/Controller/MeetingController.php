@@ -527,7 +527,10 @@ final class MeetingController extends AbstractController
         if (!$access->canSee($meeting, $user, $isAdmin)) {
             throw $this->createAccessDeniedException('No estás convocado a esta reunión.');
         }
-        if (!$meeting->isMinutesPublished() && !$access->canKeepMinutes($meeting, $user, $isAdmin)) {
+        // El borrador es de quien puede ESCRIBIRLO, no solo de quien la levanta: mientras se corrige un acta
+        // ya publicada el fichero vuelve a ser borrador, y quien está corrigiéndola tiene que poder abrirlo
+        // para comprobar la corrección antes de volver a publicarla.
+        if (!$meeting->isMinutesPublished() && !$access->canWriteMinutes($meeting, $user, $isAdmin)) {
             throw $this->createAccessDeniedException('El acta es todavía un borrador: solo la ve quien la levanta.');
         }
 

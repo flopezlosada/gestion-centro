@@ -8,19 +8,17 @@ use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
 
 /**
- * El candado del acta publicada: cuándo se escribió el acta y las observaciones de quien la lee.
+ * El candado del acta publicada: si el PDF sigue al día, cuándo salió el acta y las observaciones de quien
+ * la lee.
  *
- *  - `meeting.record_updated_at` es cuándo se escribió por última vez el acta —desarrollo, acuerdos y
- *    lista, que ahora se guardan de una vez ({@see \App\Entity\Meeting::recordSession()})—. Existe para
- *    poder contestar a una pregunta que la aplicación no sabía contestar: si el PDF que hay en el disco
- *    (y que la gente ya tiene por correo) sigue diciendo lo que dice el acta. Corregir un acta publicada
- *    está permitido y es lo que pidió el centro; lo que no puede pasar es que haya dos versiones y las dos
- *    se llamen «el acta».
+ *  - `meeting.minutes_stale` dice si el PDF que hay en el disco ya no coincide con lo que dice el acta,
+ *    porque alguien escribió o corrigió el desarrollo, los acuerdos o la lista después de generarlo. Es un
+ *    HECHO que apuntan las dos operaciones que lo saben, y no la comparación de dos sellos de tiempo, que
+ *    fue la primera versión: con columnas `DATETIME` de resolución de un segundo, escribir el acta y
+ *    generar su PDF dentro del mismo segundo comparaban IGUAL y el acta salía «al día» sin estarlo.
  *
- *    **Las actas que ya existen se quedan con NULL a propósito.** NULL significa «nadie ha escrito el acta
- *    desde la aplicación», y sin sello no hay nada que comparar: `minutesOutdated()` da false y ninguna
- *    acta vieja aparece de golpe marcada como desfasada. Rellenarlo con `minutes_uploaded_at` sería
- *    inventarse que alguien escribió el desarrollo justo cuando se subió el fichero.
+ *    **Las actas que ya existen arrancan a 0 (al día).** No sabemos si alguien tocó su texto después de
+ *    generarlas y suponer que sí pondría un aviso de corrección pendiente en cada reunión vieja del centro.
  *
  *  - `meeting.minutes_first_published_at` es cuándo salió el acta por PRIMERA vez, y a diferencia de
  *    `minutes_published_at` no se borra nunca. De ahí cuelgan el permiso de corrección y las observaciones:
@@ -41,12 +39,12 @@ final class Version20260805100001 extends AbstractMigration
 {
     public function getDescription(): string
     {
-        return 'Reuniones: sellos de escritura y de primera publicación del acta, y observaciones al acta.';
+        return 'Reuniones: PDF desfasado, primera publicación del acta y observaciones al acta.';
     }
 
     public function up(Schema $schema): void
     {
-        $this->addSql('ALTER TABLE meeting ADD record_updated_at DATETIME DEFAULT NULL, ADD minutes_first_published_at DATETIME DEFAULT NULL');
+        $this->addSql('ALTER TABLE meeting ADD minutes_stale TINYINT(1) DEFAULT 0 NOT NULL, ADD minutes_first_published_at DATETIME DEFAULT NULL');
         // Lo que ya está publicado salió cuando dice su sello de publicación: no hay nada que inventar.
         $this->addSql('UPDATE meeting SET minutes_first_published_at = minutes_published_at WHERE minutes_published_at IS NOT NULL');
 
@@ -69,6 +67,6 @@ final class Version20260805100001 extends AbstractMigration
         $this->addSql('ALTER TABLE meeting_remark DROP FOREIGN KEY FK_meeting_remark_meeting');
         $this->addSql('ALTER TABLE meeting_remark DROP FOREIGN KEY FK_meeting_remark_author');
         $this->addSql('DROP TABLE meeting_remark');
-        $this->addSql('ALTER TABLE meeting DROP record_updated_at, DROP minutes_first_published_at');
+        $this->addSql('ALTER TABLE meeting DROP minutes_stale, DROP minutes_first_published_at');
     }
 }

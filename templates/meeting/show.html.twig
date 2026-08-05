@@ -67,9 +67,15 @@
                     {%- else %} Vuelve a generarla para que el archivo recoja los cambios.{% endif %}</p>
                 </div>
             {% endif %}
-            {# Un acta guardada pero SIN publicar es un borrador: solo la ve (y descarga) quien la levanta.
-               Publicar es lo que la reparte, así que ofrecerla antes contradiría lo que promete la pantalla. #}
-            {% if meeting.hasMinutes and (meeting.minutesPublished or canKeepMinutes) %}
+            {# Un acta guardada pero SIN publicar es un borrador: solo la ve (y descarga) quien puede
+               ESCRIBIRLA. Publicar es lo que la reparte, así que ofrecerla antes contradiría lo que promete
+               la pantalla.
+
+               `canWriteMinutes` y no `canKeepMinutes`: para un acta que nunca ha salido son lo mismo, pero
+               regenerar el PDF de una corrección la devuelve a borrador — y con la condición estrecha, quien
+               convocó dejaba de ver el borrador que acababa de generar y se quedaba sin botón de publicar,
+               con el acta fuera del archivo. #}
+            {% if meeting.hasMinutes and (meeting.minutesPublished or canWriteMinutes) %}
                 <a class="doc-card" href="{{ path('meeting_minutes_download', { id: meeting.id }) }}">
                     <span class="doc-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span>
                     <span class="doc-card__body">
