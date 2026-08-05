@@ -31,7 +31,15 @@
                 <tbody>
                     {% for user in users %}
                         <tr>
-                            <td><a href="{{ path('admin_user_show', { id: user.id }) }}">{{ user.fullName }}</a></td>
+                            <td>
+                                <a href="{{ path('admin_user_show', { id: user.id }) }}">{{ user.fullName }}</a>
+                                {# Quién está de baja y quién la cubre, para que una cuenta creada a mitad
+                                   de curso con el horario de otra persona no parezca un duplicado. #}
+                                {% set link = involved[user.id] ?? null %}
+                                {% if link %}
+                                    <span class="badge badge--muted">{{ link.role == 'substitute' ? 'Sustituye a' : 'Sustituida por' }} {{ link.other.fullName }}</span>
+                                {% endif %}
+                            </td>
                             <td>{{ user.email }}</td>
                             <td>
                                 {% if user.active %}

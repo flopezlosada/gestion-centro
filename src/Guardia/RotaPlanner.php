@@ -113,6 +113,10 @@ final class RotaPlanner
      * the engine drops those itself, and building the list this way means the count of candidates always
      * matches the count of rows on the quota screen.
      *
+     * El cupo se lee EN VIGOR ({@see GuardiaQuotaRepository::findEffectiveByTeacher()}): quien está
+     * cubriendo una baja larga tiene el horario, pero no una fila de cupo propia, y un cero aquí no
+     * significa "no decidido" sino "exenta" — desaparecería del cuadrante entero.
+     *
      * @param AcademicYear $year the course
      *
      * @return list<RotaCandidate> the candidates
@@ -120,7 +124,7 @@ final class RotaPlanner
     public function candidates(AcademicYear $year): array
     {
         $busy = $this->schedule->lectiveSlotsByTeacher($year);
-        $quotas = $this->quotas->findByYearKeyedByTeacher($year);
+        $quotas = $this->quotas->findEffectiveByTeacher($year);
 
         $candidates = [];
         foreach ($this->schedule->teachersWithEntries($year) as $teacher) {
@@ -128,7 +132,7 @@ final class RotaPlanner
             $candidates[] = new RotaCandidate(
                 $id,
                 $teacher->getFullName(),
-                isset($quotas[$id]) ? $quotas[$id]->getLectiveDuties() : 0,
+                $quotas[$id]['lective'] ?? 0,
                 $busy[$id] ?? [],
             );
         }

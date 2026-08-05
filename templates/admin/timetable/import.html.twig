@@ -117,6 +117,13 @@
                 </div>
             {% endif %}
 
+            {% if preview.substitutions is not empty %}
+                <div class="callout" role="note">
+                    <p><strong>{{ preview.substitutions|length }} sustitución(es) de baja larga en vigor en este curso.</strong> El fichero trae el horario a nombre de la persona sustituida, así que al importar se devuelve un momento, se carga el horario nuevo y se vuelve a traspasar. No hay que hacer nada a mano.</p>
+                    <ul>{% for line in preview.substitutions %}<li>{{ line }}</li>{% endfor %}</ul>
+                </div>
+            {% endif %}
+
             {% if preview.stale is not empty %}
                 <div class="callout callout--warning" role="note">
                     <p><strong>{{ preview.stale|length }} profesor(es) con horario en {{ year.schoolYear }} que este fichero no trae.</strong> No se tocan: conservan el horario y las guardias que ya tenían. Si han dejado el centro, quítales el horario a mano o seguirán entrando en el reparto de guardias.</p>

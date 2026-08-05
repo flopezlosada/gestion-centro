@@ -9,6 +9,7 @@ use App\Entity\User;
 use App\Enum\Area;
 use App\Form\UserType;
 use App\Repository\DepartmentRepository;
+use App\Repository\SubstitutionRepository;
 use App\Repository\TaskRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
@@ -41,12 +42,22 @@ final class AdminUserController extends AbstractController
      * Lists every user ordered by name.
      */
     #[Route('', name: 'admin_user_index', methods: ['GET'])]
-    public function index(UserRepository $users): Response
+    public function index(UserRepository $users, SubstitutionRepository $substitutions): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
 
+        // Un mapa por persona, de una sola lectura: quién está de baja y quién la cubre es justo lo que
+        // hace que una cuenta recién creada no parezca un duplicado. Consultarlo fila a fila serían
+        // setenta consultas para pintar una columna.
+        $involved = [];
+        foreach ($substitutions->findAllOpen() as $substitution) {
+            $involved[(int) $substitution->getSubstitutedTeacher()->getId()] = ['role' => 'substituted', 'other' => $substitution->getSubstitute()];
+            $involved[(int) $substitution->getSubstitute()->getId()] = ['role' => 'substitute', 'other' => $substitution->getSubstitutedTeacher()];
+        }
+
         return $this->render('admin/user/index.html.twig', [
             'users' => $users->findBy([], ['fullName' => 'ASC']),
+            'involved' => $involved,
         ]);
     }
 
@@ -71,7 +82,7 @@ final class AdminUserController extends AbstractController
      * course. The entry point linked from the department detail and the user list.
      */
     #[Route('/{id}', name: 'admin_user_show', requirements: ['id' => '\d+'], methods: ['GET'])]
-    public function show(User $user, TaskRepository $tasks): Response
+    public function show(User $user, TaskRepository $tasks, SubstitutionRepository $substitutions): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
 
@@ -81,6 +92,9 @@ final class AdminUserController extends AbstractController
             'user' => $user,
             'schoolYear' => $schoolYear,
             'tasks' => $tasks->findAssignedTo($user, $schoolYear),
+            // La sustitución en vigor explica por qué esta persona tiene (o no tiene) horario, que es la
+            // pregunta que trae aquí a quien mira la ficha durante una baja.
+            'substitution' => $substitutions->findOpenInvolving($user),
         ]);
     }
 

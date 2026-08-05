@@ -1,0 +1,108 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}Sustituciones{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Sustituciones{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Administración</p>
+            <h1>Sustituciones de baja larga</h1>
+            <p class="lead">Quien cubre una baja asume el horario, las guardias y el cuadrante de recreo de la persona a la que sustituye, sin teclear nada. <strong>No asume sus cargos</strong>: si la baja es de una jefatura, da sus clases y sus guardias, pero no ocupa el puesto ni sus permisos.</p>
+        </div>
+    </div>
+
+    {# Selector de curso (GET, auto-envío): lo que se traspasa es el horario, y el horario es de un curso. #}
+    <div class="card">
+        <form method="get" action="{{ path('admin_substitution_index') }}" class="inline-form">
+            <label class="field-label" for="curso">Curso</label>
+            <select id="curso" name="curso" onchange="this.form.submit()">
+                {% for c in courses %}
+                    <option value="{{ c.schoolYear }}" {{ c.schoolYear == curso ? 'selected' }}>{{ c.schoolYear }}</option>
+                {% endfor %}
+            </select>
+            <noscript><button type="submit" class="btn">Ver</button></noscript>
+        </form>
+    </div>
+
+    {% if year is null %}
+        <div class="card">
+            <div class="empty-state">
+                <h2>No hay curso {{ curso }} dado de alta</h2>
+                <p>Hay que crear el curso en <a href="{{ path('admin_academic_year_index') }}">Trimestres</a> antes de registrar una sustitución.</p>
+            </div>
+        </div>
+    {% else %}
+        <div class="card">
+            <h2>En vigor</h2>
+            {% if open is empty %}
+                <p class="muted">Ninguna sustitución abierta en {{ curso }}.</p>
+            {% else %}
+                <table>
+                    <thead>
+                        <tr><th>Quien sustituye</th><th>Persona sustituida</th><th>Desde</th><th>Nota</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        {% for s in open %}
+                            <tr>
+                                <td><a href="{{ path('admin_user_show', { id: s.substitute.id }) }}">{{ s.substitute.fullName }}</a></td>
+                                <td><a href="{{ path('admin_user_show', { id: s.substitutedTeacher.id }) }}">{{ s.substitutedTeacher.fullName }}</a></td>
+                                {# Sin conversión de zona: es una fecha sin hora, y convertirla la mueve un día. #}
+                                <td>{{ s.startedOn|date('d/m/Y', false) }}</td>
+                                <td class="muted">{{ s.note ?: '—' }}</td>
+                                <td>
+                                    <form method="post" action="{{ path('admin_substitution_close', { id: s.id }) }}">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('substitution_close_' ~ s.id) }}">
+                                        <button class="btn secondary" type="submit">Ha vuelto: cerrar</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <p class="help">Cerrar devuelve el horario y el cuadrante de recreo a la persona que vuelve. Las guardias que ya se hicieron se quedan en el histórico de quien las cubrió.</p>
+            {% endif %}
+        </div>
+
+        <div class="card form-card">
+            <h2>Dar de alta una sustitución</h2>
+            {# Lo que la pantalla no puede enseñar y hay que decir: el horario es una rejilla semanal sin
+               fechas, así que el traspaso empieza hoy y no rehace lo ya registrado. #}
+            <div class="callout" role="note">
+                <p><strong>El traspaso empieza hoy.</strong> La fecha de inicio queda registrada, pero los partes de guardia ya rellenados siguen a nombre de la persona sustituida: son el histórico de lo que pasó esos días.</p>
+                <p>Quien sustituye <strong>hereda el contador de guardias</strong> de la persona a la que sustituye, para que el reparto no le cargue más que al resto por haber llegado a mitad de curso.</p>
+            </div>
+            {{ form_start(form, { 'attr': { 'novalidate': 'novalidate' } }) }}
+                {{ form_errors(form) }}
+                {{ f.fields([form.substitutedTeacher, form.substituteName, form.substituteEmail, form.startedOn, form.note]) }}
+                <div class="form-actions">
+                    <button class="btn" type="submit">Dar de alta y traspasar</button>
+                </div>
+            {{ form_end(form) }}
+        </div>
+
+        {% if closed is not empty %}
+            <div class="card">
+                <h2>Ya cerradas</h2>
+                <table>
+                    <thead>
+                        <tr><th>Quien sustituyó</th><th>Persona sustituida</th><th>Desde</th><th>Hasta</th><th>Nota</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for s in closed %}
+                            <tr>
+                                <td>{{ s.substitute.fullName }}</td>
+                                <td>{{ s.substitutedTeacher.fullName }}</td>
+                                <td>{{ s.startedOn|date('d/m/Y', false) }}</td>
+                                <td>{{ s.endedOn|date('d/m/Y', false) }}</td>
+                                <td class="muted">{{ s.note ?: '—' }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+    {% endif %}
+{% endblock %}

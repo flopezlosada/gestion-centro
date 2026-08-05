@@ -6,6 +6,7 @@ namespace App\Guardia;
 
 use App\Entity\AcademicYear;
 use App\Entity\ScheduleEntry;
+use App\Entity\Substitution;
 use App\Entity\TimeSlot;
 use App\Entity\User;
 use App\Enum\ScheduleActivityKind;
@@ -15,6 +16,7 @@ use App\Penalara\PenalaraTimetableParser;
 use App\Penalara\ScheduleEntryDto;
 use App\Penalara\TimeFrameSlotDto;
 use App\Repository\ScheduleEntryRepository;
+use App\Repository\SubstitutionRepository;
 use App\Repository\TimeSlotRepository;
 use App\Repository\UserRepository;
 use App\Space\RoomSynchroniser;
@@ -49,6 +51,13 @@ use Symfony\Component\String\Slugger\AsciiSlugger;
  * Its last step (never on a dry run) hands over to {@see RoomSynchroniser}: the cells name rooms, and
  * the space module can only reason about a room it has a card for. Discovering spaces belongs to that
  * module, not here — this just makes sure it happens whenever the timetable changes.
+ *
+ * Y toda la escritura va envuelta en {@see SubstitutionApplier::withSubstitutionsSuspended()}. Sin eso,
+ * reimportar con una baja larga en curso NO pierde la sustitución: la duplica. Las filas están a nombre
+ * de quien sustituye, así que el borrado por "profesor IN (…) AND source = penalara" no encuentra nada,
+ * y el import inserta un juego nuevo para la persona de baja — las dos en el pool de guardias con el
+ * mismo horario, sin un solo error. Devolviendo antes y volviendo a traspasar después, un reimport
+ * vuelve a ser idempotente y las celdas marcadas a mano durante la baja siguen el mismo camino.
  */
 final class TimetableImporter
 {
@@ -60,6 +69,8 @@ final class TimetableImporter
         private readonly TimeSlotRepository $timeSlots,
         private readonly PenalaraTimetableParser $parser,
         private readonly RoomSynchroniser $rooms,
+        private readonly SubstitutionRepository $substitutions,
+        private readonly SubstitutionApplier $applier,
     ) {
         $this->slugger = new AsciiSlugger();
     }
@@ -107,22 +118,39 @@ final class TimetableImporter
 
         // Read before writing: what is already there is what the report compares the export against.
         $teachers = array_values($matched);
-        $replaced = $this->schedule->countImportedFor($year, $teachers);
-        $stale = $this->staleTeachers($year, $matched);
+        $affected = $this->substitutionsAffecting($year, $matched);
+        // Contando también a quien sustituye: mientras la baja está en vigor, las celdas de la persona
+        // que el export nombra están a nombre de otra, y sin esto el preview diría "0 celdas sustituyen
+        // a las 0 que ya había" justo para las personas cuyo horario más se está moviendo.
+        $replaced = $this->schedule->countImportedFor($year, [
+            ...$teachers,
+            ...array_map(static fn (Substitution $s): User => $s->getSubstitute(), $affected),
+        ]);
+        $stale = $this->staleTeachers($year, $matched, $affected);
 
-        [$entries, $keptManual, $dropManualIds] = $this->buildEntries($year, $byTeacher, $matched, $this->schedule->protectedDutyCells($year));
+        [$entries, $keptManual, $dropManualIds] = $this->buildEntries(
+            $year,
+            $byTeacher,
+            $matched,
+            $this->protectedDutyCells($year, $affected),
+        );
         $frame = $this->buildFrame($year, $parsed->frame);
         $newRooms = [];
         if (!$dryRun) {
-            $this->schedule->replaceForTeachers($year, $teachers, $entries, $dropManualIds);
-            // Only when the export actually carried a marco horario: a planificador without one must not
-            // wipe the day's shape, which is what the break duty rota reads its times from.
-            if ([] !== $frame) {
-                $this->timeSlots->replaceForYear($year, $frame);
-            }
-            // The cells are in; now make sure every room they name has a card and points at it. A dry
-            // run must not do this — previewing an import may not create anything, catalogue included.
-            $newRooms = $this->rooms->sync()->createdCodes;
+            // Con las sustituciones deshechas: el horario vuelve un momento a la persona de baja, que es
+            // a quien el export nombra, y se retraspasa al terminar. Ver la cabecera de la clase.
+            $newRooms = $this->applier->withSubstitutionsSuspended($year, function () use ($year, $teachers, $entries, $dropManualIds, $frame): array {
+                $this->schedule->replaceForTeachers($year, $teachers, $entries, $dropManualIds);
+                // Only when the export actually carried a marco horario: a planificador without one must
+                // not wipe the day's shape, which is what the break duty rota reads its times from.
+                if ([] !== $frame) {
+                    $this->timeSlots->replaceForYear($year, $frame);
+                }
+
+                // The cells are in; now make sure every room they name has a card and points at it. A dry
+                // run must not do this — previewing an import may not create anything, catalogue included.
+                return $this->rooms->sync()->createdCodes;
+            });
         }
 
         $guardias = \count(array_filter($entries, static fn (ScheduleEntry $e): bool => ScheduleActivityKind::LECTIVE !== $e->getKind()));
@@ -141,7 +169,71 @@ final class TimetableImporter
             \count(array_filter($frame, static fn (TimeSlot $s): bool => $s->isBreak())),
             $parsed->frameConflicts,
             $newRooms,
+            array_map(
+                static fn (Substitution $s): string => sprintf(
+                    '%s sustituye a %s',
+                    $s->getSubstitute()->getFullName(),
+                    $s->getSubstitutedTeacher()->getFullName(),
+                ),
+                $affected,
+            ),
         );
+    }
+
+    /**
+     * Las celdas de guardia que el import no puede pisar, indexadas por la persona A LA QUE EL EXPORT
+     * NOMBRA.
+     *
+     * El remapeo es el detalle que evita un choque silencioso. Mientras dura una baja, una guardia
+     * marcada a mano queda a nombre de quien sustituye, así que
+     * {@see ScheduleEntryRepository::protectedDutyCells()} la devuelve bajo el id de esa persona — y el
+     * import busca por el id de la persona de baja, que es a quien el export nombra. Sin remapear no la
+     * encuentra: la celda no se protege y, peor, si el nuevo horario pone una clase en ese tramo tampoco
+     * se marca para borrar, así que al reponer la sustitución esa persona acaba con una guardia y una
+     * clase a la misma hora. Es exactamente el caso para el que existe {@code dropManualIds}.
+     *
+     * Los ids de fila que salen de aquí siguen siendo válidos para borrar: lo que cambia al traspasar es
+     * el docente de la fila, no la fila.
+     *
+     * @param AcademicYear       $year     el curso destino
+     * @param list<Substitution> $affected las sustituciones en vigor que este import repone
+     *
+     * @return array<int, array<string, int>> id de docente → "día:tramo" → id de celda
+     */
+    private function protectedDutyCells(AcademicYear $year, array $affected): array
+    {
+        $protected = $this->schedule->protectedDutyCells($year);
+        foreach ($affected as $substitution) {
+            $substituteId = (int) $substitution->getSubstitute()->getId();
+            if (isset($protected[$substituteId])) {
+                $protected[(int) $substitution->getSubstitutedTeacher()->getId()] = $protected[$substituteId];
+            }
+        }
+
+        return $protected;
+    }
+
+    /**
+     * Las sustituciones en vigor del curso que afectan a alguien que el export nombra — las que este
+     * import va a deshacer y volver a aplicar.
+     *
+     * Se filtra por las personas resueltas y no se devuelven todas las del curso: una sustitución de
+     * alguien que este export no trae no la toca nadie, y anunciarla en el preview sería ruido sobre una
+     * pantalla cuyo valor es exactamente que solo diga lo que va a pasar.
+     *
+     * @param AcademicYear        $year    el curso destino
+     * @param array<string, User> $matched las personas a las que el export se resolvió
+     *
+     * @return list<Substitution> las sustituciones abiertas afectadas
+     */
+    private function substitutionsAffecting(AcademicYear $year, array $matched): array
+    {
+        $matchedIds = array_flip(array_map(static fn (User $u): int => (int) $u->getId(), $matched));
+
+        return array_values(array_filter(
+            $this->substitutions->findOpenFor($year),
+            static fn (Substitution $s): bool => isset($matchedIds[(int) $s->getSubstitutedTeacher()->getId()]),
+        ));
     }
 
     /**
@@ -150,20 +242,29 @@ final class TimetableImporter
      * cells — and their guardia slots keep feeding the assignment engine. Nothing is deleted on a guess:
      * they are listed so a person decides.
      *
-     * @param AcademicYear        $year    the target course
-     * @param array<string, User> $matched the teachers the export resolved to
+     * Quien está cubriendo una baja larga queda fuera de la lista: su horario no es uno que nadie
+     * reimporta, es el prestado de la persona a la que sustituye, y el propio import lo repone al
+     * terminar. Sin esta excepción saldría señalado en cada import mientras dure la baja, y una lista de
+     * avisos que siempre trae el mismo falso positivo deja de leerse.
+     *
+     * @param AcademicYear       $year     the target course
+     * @param array<string, User> $matched  the teachers the export resolved to
+     * @param list<Substitution> $affected las sustituciones en vigor que este import va a reponer
      *
      * @return list<string> their full names, alphabetically
      */
-    private function staleTeachers(AcademicYear $year, array $matched): array
+    private function staleTeachers(AcademicYear $year, array $matched, array $affected): array
     {
-        $matchedIds = array_flip(array_map(static fn (User $u): int => (int) $u->getId(), $matched));
+        $excusedIds = array_flip([
+            ...array_map(static fn (User $u): int => (int) $u->getId(), $matched),
+            ...array_map(static fn (Substitution $s): int => (int) $s->getSubstitute()->getId(), $affected),
+        ]);
 
         return array_values(array_map(
             static fn (User $u): string => $u->getFullName(),
             array_filter(
                 $this->schedule->teachersWithEntries($year),
-                static fn (User $u): bool => !isset($matchedIds[$u->getId()]),
+                static fn (User $u): bool => !isset($excusedIds[$u->getId()]),
             ),
         ));
     }

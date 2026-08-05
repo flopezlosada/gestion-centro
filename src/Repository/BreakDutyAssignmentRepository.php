@@ -247,4 +247,39 @@ class BreakDutyAssignmentRepository extends ServiceEntityRepository
             ->getQuery()
             ->getSingleScalarResult();
     }
+
+    /**
+     * Pasa las plazas de recreo de una persona en un curso a otra, en una sola sentencia — el recreo de
+     * una sustitución de baja larga ({@see \App\Entity\Substitution}).
+     *
+     * Se mueven, y no se dejan a nombre de quien está de baja, porque el cuadrante de recreo no se
+     * reasigna solo: cuando quien tiene la plaza falta, el sistema anota un {@see BreakDutyGap} y avisa
+     * de que ese recreo se queda sin vigilar. Dejarlas quietas durante una baja de tres meses sería un
+     * hueco anunciado cada día para una plaza que sí tiene quien la cubra.
+     *
+     * El UNIQUE (curso, docente, día, recreo) no puede saltar aquí porque quien sustituye llega sin
+     * plazas; que siga siendo así lo garantiza el applier, que nunca traspasa sobre alguien que ya tenga
+     * cuadrante.
+     *
+     * Actualización en bloque: las plazas ya cargadas en memoria conservan a la persona anterior.
+     *
+     * @param AcademicYear $year el curso cuyas plazas se mueven
+     * @param User         $from la persona a la que pertenecen
+     * @param User         $to   quien las asume
+     *
+     * @return int cuántas plazas cambiaron de manos
+     */
+    public function movePlaces(AcademicYear $year, User $from, User $to): int
+    {
+        return (int) $this->createQueryBuilder('a')
+            ->update()
+            ->set('a.teacher', ':to')
+            ->where('a.academicYear = :year')
+            ->andWhere('a.teacher = :from')
+            ->setParameter('year', $year)
+            ->setParameter('from', $from)
+            ->setParameter('to', $to)
+            ->getQuery()
+            ->execute();
+    }
 }

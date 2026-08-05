@@ -33,6 +33,8 @@ final class TimetableImportResult
      * @param int                   $breakCount    how many of those are recreos, which is what the break duty rota needs
      * @param list<int>             $frameConflicts period indices the export defined more than one way
      * @param list<string>          $newRooms      space cards the import had to create for rooms the timetable names
+     * @param list<string>          $substitutions descripción de las sustituciones en vigor del curso, que el import
+     *                                            deshace y vuelve a aplicar sobre el horario nuevo
      */
     public function __construct(
         public readonly int $entryCount,
@@ -48,6 +50,7 @@ final class TimetableImportResult
         public readonly int $breakCount = 0,
         public readonly array $frameConflicts = [],
         public readonly array $newRooms = [],
+        public readonly array $substitutions = [],
     ) {
     }
 
@@ -60,6 +63,6 @@ final class TimetableImportResult
     public function needsAttention(): bool
     {
         return [] !== $this->unmatched || [] !== $this->stale || $this->keptManual > 0 || $this->droppedManual > 0
-            || [] !== $this->frameConflicts || 0 === $this->breakCount;
+            || [] !== $this->frameConflicts || 0 === $this->breakCount || [] !== $this->substitutions;
     }
 }

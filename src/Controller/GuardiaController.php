@@ -9,6 +9,7 @@ use App\Entity\AuditLog;
 use App\Entity\GuardiaCover;
 use App\Entity\GuardiaSupport;
 use App\Entity\ScheduleEntry;
+use App\Entity\Substitution;
 use App\Entity\User;
 use App\Enum\Area;
 use App\Enum\GuardiaDutyBand;
@@ -29,6 +30,7 @@ use App\Repository\GuardiaCoverRepository;
 use App\Repository\GuardiaSupportRepository;
 use App\Repository\ScheduleEntryRepository;
 use App\Repository\SpacePlanAssignmentRepository;
+use App\Repository\SubstitutionRepository;
 use App\Repository\TimeSlotRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
@@ -362,7 +364,7 @@ final class GuardiaController extends AbstractController
      * needed, absences by department and the busiest teachers on both sides. Read access is enough.
      */
     #[Route('/estadisticas', name: 'guardia_stats', methods: ['GET'])]
-    public function stats(Request $request, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years, GuardiaStatistics $statistics): Response
+    public function stats(Request $request, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years, GuardiaStatistics $statistics, SubstitutionRepository $substitutions): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
@@ -420,6 +422,17 @@ final class GuardiaController extends AbstractController
                 'equity' => $statistics->equity(array_map(static fn (array $r): int => $r['total'], $ranking)),
                 'heatmap' => $statistics->heatmap($singleRows),
                 'slotTimes' => $this->slotTimes($schedule, $year),
+                // Solo si las hay: el ranking suma a quien cubre una baja el contador de la persona a la
+                // que sustituye, y sin decirlo la tabla parece cuadrar mal (las dos aparecen). Vacío el
+                // resto del curso, que es casi siempre, no se pinta nada.
+                'substitutions' => array_map(
+                    static fn (Substitution $s): string => sprintf(
+                        '%s cubre a %s',
+                        $s->getSubstitute()->getFullName(),
+                        $s->getSubstitutedTeacher()->getFullName(),
+                    ),
+                    $substitutions->findAllOpen(),
+                ),
             ];
         }
 
