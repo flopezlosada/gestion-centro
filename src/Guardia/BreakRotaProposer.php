@@ -40,6 +40,17 @@ final class BreakRotaProposer
     public const GAP_NOBODY_LEFT = 'nobody-left';
 
     /**
+     * There was nobody to place at all: no teacher in the course has both a timetable and a recreo quota
+     * above zero.
+     *
+     * Kept apart from the other two because it is not a fact about the place — it is a fact about the
+     * whole course, and the only true thing to say about every single gap. Without it these came out as
+     * {@see GAP_NOBODY_LEFT}, which reads "everybody is already standing at another zone" when there is
+     * nobody standing anywhere: the same default-reason bug the teaching rota had.
+     */
+    public const GAP_NOBODY_ELIGIBLE = 'nobody-eligible';
+
+    /**
      * Draws up the week.
      *
      * @param list<array{weekday: int, period: BreakPeriod, zoneId: int, weight: int}> $places     every place the week needs, one entry per person needed
@@ -193,9 +204,13 @@ final class BreakRotaProposer
     }
 
     /**
-     * Tells apart the two ways a place goes unfilled, because they call for different answers: everybody
-     * at their quota is fixed by raising quotas, while everybody already standing at that very recreo
-     * means the cell needs more people than there are on the rota at all.
+     * Tells apart the ways a place goes unfilled, because they call for different answers: everybody at
+     * their quota is fixed by raising quotas, everybody already standing at that very recreo means the cell
+     * needs more people than there are on the rota at all, and an empty candidate list means the course has
+     * no rota to draw from yet.
+     *
+     * The empty list is checked FIRST and on purpose: with no candidates the loop below never runs and
+     * every gap fell through to {@see GAP_NOBODY_LEFT}, blaming a crowd that does not exist.
      *
      * @param list<BreakRotaCandidate>                                  $candidates the eligible teachers
      * @param array{weekday: int, period: BreakPeriod, zoneId: int, weight: int} $place the place
@@ -206,6 +221,10 @@ final class BreakRotaProposer
      */
     private function whyNobody(array $candidates, array $place, array $perBreak, array $inCell): string
     {
+        if ([] === $candidates) {
+            return self::GAP_NOBODY_ELIGIBLE;
+        }
+
         $cell = $place['weekday'].':'.$place['period']->value;
         foreach ($candidates as $candidate) {
             if (!isset($inCell[$cell][$candidate->teacherId])) {

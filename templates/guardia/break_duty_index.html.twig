@@ -239,6 +239,11 @@
                                                     hace después, en la rejilla del borrador. -#}
                                                 {% if row.fix == 'quota' %}
                                                     <a class="btn secondary" href="{{ path('guardia_quota_index', {curso: curso}) }}">Subir cupos</a>
+                                                {#- Sin nadie a quien colocar el cupo puede estar a cero o puede
+                                                    faltar el horario del curso entero: se dice «revisar», que es
+                                                    lo que hay que hacer, y no «subir», que da por hecho el motivo. -#}
+                                                {% elseif row.fix == 'roster' %}
+                                                    <a class="btn secondary" href="{{ path('guardia_quota_index', {curso: curso}) }}">Revisar los cupos</a>
                                                 {% else %}
                                                     <a class="btn secondary" href="{{ path('break_zone_index') }}">Ver la demanda</a>
                                                 {% endif %}
@@ -429,8 +434,16 @@
                                 {% endfor %}
                             </ul>
                             {% if equity.rows|length > corte %}
+                                {#- El control va DEBAJO de lo que despliega (lo coloca el CSS, no el orden
+                                    del marcado): abierto, un «Ver las 30 personas» a la altura de la sexta
+                                    fila parte la lista en dos y sigue ofreciendo lo que ya está a la vista.
+                                    Se queda —cambiando de texto— en vez de esconderse, porque sin él la lista
+                                    desplegada no se puede volver a cerrar ni con el ratón ni con el teclado. -#}
                                 <details class="recreo-share__more">
-                                    <summary>Ver las {{ equity.rows|length }} personas</summary>
+                                    <summary>
+                                        <span class="recreo-share__more-show">Ver las {{ equity.rows|length }} personas</span>
+                                        <span class="recreo-share__more-hide">Ver solo las {{ corte }} de más carga</span>
+                                    </summary>
                                     <ul class="recreo-share">
                                         {% for row in equity.rows|slice(corte) %}
                                             {{ ui.share_row(row) }}

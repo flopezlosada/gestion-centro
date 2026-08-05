@@ -55,10 +55,17 @@ final class BreakRotaPlanner
      * Places already fixed are skipped: they are in the proposal because the grid shows the whole week,
      * but they already exist as MANUAL rows, and writing them again would break the unique key.
      *
+     * A proposal with nothing to write is REFUSED, not written, exactly as in the teaching rota
+     * ({@see RotaPlanner::publish()}). The write is a diff: with no rows wanted, every engine place is
+     * surplus and gets deleted, so publishing nothing WIPES the published rota and puts nothing back.
+     * And it is reachable today — a course with no timetable and no quotas proposes zero places, and the
+     * screen still offered "Guardar como borrador". If "clear the engine's places" is ever wanted, it
+     * deserves a method that says so rather than an empty argument doing it by accident.
+     *
      * @param AcademicYear                                                                    $year   the course
      * @param list<array{weekday: int, period: string, zoneId: int, teacherId: int, fixed?: bool}> $places the approved rota
      *
-     * @return int how many places were written
+     * @return int how many places were written; 0 means nothing was written AND nothing was deleted
      */
     public function publish(AcademicYear $year, array $places): int
     {
@@ -90,6 +97,12 @@ final class BreakRotaPlanner
                 ->setZone($zone)
                 ->setPeriod($period)
                 ->setSource(BreakDutySource::ENGINE);
+        }
+
+        // Ver la nota de arriba: un diff sin filas es un vaciado, así que se rechaza aquí y no en la única
+        // pantalla que hoy llama a esto.
+        if ([] === $rows) {
+            return 0;
         }
 
         // A diff, so a place that survives the new proposal keeps the record of the days its recreo went
