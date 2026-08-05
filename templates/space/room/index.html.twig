@@ -13,8 +13,21 @@
             <h1>Catálogo de espacios</h1>
             <p class="lead">Las aulas, laboratorios y demás espacios del centro. El horario de Peñalara los nombra pero no dice ni cuántos grupos caben ni de qué tipo son: eso se completa aquí.</p>
         </div>
-        <a class="btn" href="{{ path('space_room_new') }}">+ Nuevo espacio</a>
+        <div class="page-head__actions">
+            <a class="btn" href="{{ path('space_room_classify') }}">Clasificar todos</a>
+            <a class="btn secondary" href="{{ path('space_room_new') }}">+ Nuevo espacio</a>
+        </div>
     </div>
+
+    {# El aviso de las fichas sin completar lleva a la pantalla de golpe y no a la primera ficha: son
+       cuarenta, y de una en una es el motivo por el que llevan semanas sin clasificar. #}
+    {% set pendientes = rooms|filter(r => r.active and r.needsReview)|length %}
+    {% if pendientes > 0 %}
+        <div class="callout callout--warning" role="note">
+            <p><strong>{{ pendientes }} espacio{{ pendientes == 1 ? '' : 's' }} sin completar.</strong> Mientras falte el tipo y el tamaño, «Aulas libres» no puede decir si un grupo cabe y «Reservas» los ofrece todos en la misma lista.</p>
+            <a class="btn" href="{{ path('space_room_classify') }}">Clasificarlos todos de una vez</a>
+        </div>
+    {% endif %}
 
     {% if unlinkedCells > 0 %}
         <div class="callout callout--warning" role="alert">

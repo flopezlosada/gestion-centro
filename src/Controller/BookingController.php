@@ -13,7 +13,7 @@ use App\Repository\AcademicYearRepository;
 use App\Repository\BookingRepository;
 use App\Repository\MaterialRepository;
 use App\Repository\RoomRepository;
-use App\Repository\ScheduleEntryRepository;
+use App\Repository\TimeSlotRepository;
 use App\Security\Voter\AreaVoter;
 use App\Util\CalendarDate;
 use App\Util\SchoolYear;
@@ -60,13 +60,19 @@ final class BookingController extends AbstractController
         BookingRepository $bookings,
         RoomRepository $rooms,
         MaterialRepository $materials,
-        ScheduleEntryRepository $schedule,
+        TimeSlotRepository $timeSlots,
         AcademicYearRepository $years,
     ): Response {
         $day = CalendarDate::parse($request->query->getString('fecha'), new \DateTimeZone(date_default_timezone_get()))
             ?? new \DateTimeImmutable('today');
 
         $year = $years->findBySchoolYear(SchoolYear::current($day));
+        // Las horas del día salen del MARCO horario y no de las clases del horario, y con el respaldo del
+        // curso anterior cuando el nuevo aún no se ha importado: ver el javadoc del método. Antes se leían
+        // de las celdas de ScheduleEntry, así que un curso recién empezado no tenía ninguna y la pantalla
+        // caía a «1ª a 6ª hora» seguidas — una numeración que NO es la del centro, donde los tramos 3 y 6
+        // son los recreos.
+        $periods = $timeSlots->lectiveTimesWithFallback($year);
 
         return $this->render('booking/index.html.twig', [
             'day' => $day,
@@ -79,7 +85,8 @@ final class BookingController extends AbstractController
             // el centro no abre a reservas (laboratorios, gimnasio, pistas) no se ofrecen.
             'rooms' => $rooms->findReservable(),
             'materials' => $materials->findActive(),
-            'slotTimes' => $schedule->slotTimes($year),
+            'slotTimes' => $periods['slots'],
+            'periodsBorrowedFrom' => $periods['borrowedFrom'],
         ]);
     }
 
@@ -103,7 +110,7 @@ final class BookingController extends AbstractController
     public function tracking(
         Request $request,
         BookingRepository $bookings,
-        ScheduleEntryRepository $schedule,
+        TimeSlotRepository $timeSlots,
         AcademicYearRepository $years,
     ): Response {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ESPACIOS);
@@ -120,11 +127,18 @@ final class BookingController extends AbstractController
         $monday = $anchor->modify('-'.((int) $anchor->format('N') - 1).' days');
         $sunday = $monday->modify('+6 days');
 
+        // La MISMA fuente de horas que la pantalla del día, respaldo incluido: si las dos leyeran sitios
+        // distintos, una reserva se vería a una hora al hacerla y a otra al auditarla. Y el aviso viaja
+        // igual: aquí se investiga un desperfecto contra una hora concreta, así que de qué curso son esas
+        // horas es parte del dato.
+        $periods = $timeSlots->lectiveTimesWithFallback($years->findBySchoolYear(SchoolYear::current($monday)));
+
         return $this->render('booking/tracking.html.twig', [
             'monday' => $monday,
             'sunday' => $sunday,
             'bookings' => $bookings->findForRange($monday, $sunday),
-            'slotTimes' => $schedule->slotTimes($years->findBySchoolYear(SchoolYear::current($monday))),
+            'slotTimes' => $periods['slots'],
+            'periodsBorrowedFrom' => $periods['borrowedFrom'],
         ]);
     }
 

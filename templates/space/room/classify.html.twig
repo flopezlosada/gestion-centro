@@ -1,0 +1,137 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Clasificar los espacios · {{ app_organization_name }}{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('space_index') }}">Espacios</a><span class="sep">/</span><a href="{{ path('space_room_index') }}">Catálogo</a><span class="sep">/</span>Clasificar{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Catálogo de espacios</p>
+            <h1>Clasificar los espacios</h1>
+            <p class="lead">Todo el catálogo de una vez: qué es cada espacio, cuántos grupos caben y si se reserva. Se guarda entero de un botón, así que se puede rellenar en una sentada y corregir después.</p>
+        </div>
+    </div>
+
+    {# Por qué merece la pena rellenarlo, dicho con las consecuencias y no con un «es importante»: las dos
+       pantallas que dependen de esto las usa el claustro entero. #}
+    <div class="callout" role="note">
+        <p><strong>Sin esto, dos pantallas dan respuestas peores.</strong> «Aulas libres» no puede decir si un grupo cabe, y «Reservas» ofrece los cuarenta espacios en la misma lista — laboratorios, gimnasio y pistas incluidos, que los organiza su departamento.</p>
+    </div>
+
+    <form method="post" action="{{ path('space_room_classify_save') }}">
+        <input type="hidden" name="_token" value="{{ csrf_token('space_room_classify') }}">
+
+        <div class="card">
+            <div class="page-head">
+                <h2>{{ rooms|length }} espacio{{ rooms|length == 1 ? '' : 's' }} en uso</h2>
+                {# Poner lo más común a todas y corregir las excepciones: en este centro treinta de los
+                   cuarenta espacios son aulas ordinarias de un grupo, así que a mano son treinta selectores
+                   iguales. Esto solo ESCRIBE en los selectores —no envía nada—, así que lo puesto se revisa
+                   antes de guardar. Sin JS el bloque no aparece y la tabla se rellena a mano. #}
+                <div class="inline-form" data-catalogue-bulk hidden>
+                    <label class="field-label" for="bulk-kind">Poner a todos</label>
+                    <select id="bulk-kind" data-catalogue-bulk-value="tipo">
+                        {% for kind in kinds %}<option value="{{ kind.value }}">{{ kind.label }}</option>{% endfor %}
+                    </select>
+                    <button type="button" class="btn btn-sm secondary" data-catalogue-bulk-apply="tipo">Aplicar tipo</button>
+                    <select id="bulk-size" data-catalogue-bulk-value="tamano">
+                        <option value="">Sin indicar</option>
+                        {% for size in sizes %}<option value="{{ size.value }}">{{ size.label }}</option>{% endfor %}
+                    </select>
+                    <button type="button" class="btn btn-sm secondary" data-catalogue-bulk-apply="tamano">Aplicar tamaño</button>
+                </div>
+            </div>
+
+            {% if rooms is empty %}
+                <div class="empty-state">
+                    <h2>Todavía no hay espacios en uso</h2>
+                    <p>El programa crea una ficha por cada aula que nombre el horario de Peñalara. Hazlo desde <a href="{{ path('space_room_index') }}">el catálogo</a>.</p>
+                </div>
+            {% else %}
+                <table class="catalogue-classify">
+                    <thead>
+                        <tr>
+                            <th scope="col">Espacio</th>
+                            <th scope="col">Nombre</th>
+                            <th scope="col">Tipo</th>
+                            <th scope="col">Tamaño</th>
+                            <th scope="col">Se reserva</th>
+                            <th scope="col">Admite grupos</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for room in rooms %}
+                            <tr>
+                                <th scope="row">
+                                    <strong class="mono">{{ room.code }}</strong>
+                                    {# La cuenta del horario se enseña como lo que es —cuántas ETIQUETAS de
+                                       grupo coinciden aquí— y no como aforo. En este centro sale 4 en aulas
+                                       ordinarias porque Peñalara etiqueta las optativas con el grupo de
+                                       procedencia de cada alumno: cuatro trozos de grupo, no cuatro grupos.
+                                       Presentarlo como «caben 4» es justo lo que haría que alguien mandase
+                                       tres grupos a un aula de treinta sillas. #}
+                                    {% if room.observedGroups %}
+                                        <span class="help">El horario junta aquí {{ room.observedGroups }} grupo{{ room.observedGroups == 1 ? '' : 's' }} distinto{{ room.observedGroups == 1 ? '' : 's' }}{% if room.observedGroups > 1 %} (pueden ser optativas con alumnado de varios){% endif %}.</span>
+                                    {% endif %}
+                                    {# Presente en el formulario. Sin este marcador un envío parcial no se
+                                       distinguiría de «han desmarcado todas las casillas»: una casilla sin
+                                       marcar no manda nada. #}
+                                    <input type="hidden" name="presente[{{ room.id }}]" value="1">
+                                </th>
+                                <td>
+                                    <label class="visually-hidden" for="nombre-{{ room.id }}">Nombre de {{ room.code }}</label>
+                                    <input type="text" id="nombre-{{ room.id }}" name="nombre[{{ room.id }}]" value="{{ room.name != room.code ? room.name : '' }}" maxlength="128" placeholder="{{ room.code }}">
+                                </td>
+                                <td>
+                                    <label class="visually-hidden" for="tipo-{{ room.id }}">Tipo de {{ room.code }}</label>
+                                    <select id="tipo-{{ room.id }}" name="tipo[{{ room.id }}]" data-catalogue-field="tipo">
+                                        {% for kind in kinds %}
+                                            <option value="{{ kind.value }}" {{ kind == room.kind ? 'selected' }}>{{ kind.label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <label class="visually-hidden" for="tamano-{{ room.id }}">Tamaño de {{ room.code }}</label>
+                                    {# El valor que se preselecciona es SOLO el que alguien confirmó: la
+                                       deducción del horario se queda en el texto de la izquierda. Si llegase
+                                       preseleccionada, guardar sin mirar la firmaría como respuesta del
+                                       centro y ya no habría manera de distinguir una de otra. #}
+                                    <select id="tamano-{{ room.id }}" name="tamano[{{ room.id }}]" data-catalogue-field="tamano">
+                                        <option value="">Sin indicar</option>
+                                        {% for size in sizes %}
+                                            <option value="{{ size.value }}" {{ room.sizeConfirmed and size == room.size ? 'selected' }}>{{ size.label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <label class="visually-hidden" for="reservable-{{ room.id }}">{{ room.code }} se puede reservar</label>
+                                    <input type="checkbox" id="reservable-{{ room.id }}" name="reservable[{{ room.id }}]" value="1" {{ room.reservable ? 'checked' }}>
+                                </td>
+                                <td>
+                                    <label class="visually-hidden" for="asignable-{{ room.id }}">A {{ room.code }} se le pueden enviar grupos</label>
+                                    <input type="checkbox" id="asignable-{{ room.id }}" name="asignable[{{ room.id }}]" value="1" {{ room.assignable ? 'checked' }}>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+                <p class="help"><strong>Se reserva:</strong> cualquiera del claustro puede cogerlo una hora desde «Reservas». <strong>Admite grupos:</strong> se le puede mandar un grupo desalojado (un cambio de aula, una semana de exámenes). Son preguntas distintas: el gimnasio no se reserva y sin embargo es buen sitio donde juntar tres grupos una hora mala.</p>
+
+                <div class="inline-form">
+                    <button type="submit" class="btn">Guardar el catálogo</button>
+                    <a class="btn secondary" href="{{ path('space_room_index') }}">Volver al catálogo</a>
+                </div>
+            {% endif %}
+        </div>
+    </form>
+
+    {% if retired > 0 %}
+        <p class="help">{{ retired }} espacio{{ retired == 1 ? '' : 's' }} retirado{{ retired == 1 ? '' : 's' }} no aparece{{ retired == 1 ? '' : 'n' }} aquí. Se editan desde su ficha, en <a href="{{ path('space_room_index') }}">el catálogo</a>.</p>
+    {% endif %}
+{% endblock %}
+
+{% block page_scripts %}
+    <script src="{{ asset_ver('/js/catalogue-bulk.js') }}"></script>
+{% endblock %}

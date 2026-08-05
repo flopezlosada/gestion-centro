@@ -70,6 +70,9 @@
                     {% endfor %}
                 </tbody>
             </table>
+            {% if periodsBorrowedFrom %}
+                <p class="help">Las horas son las del curso {{ periodsBorrowedFrom }}: el horario de este curso todavía no está importado. De cada reserva se guarda el tramo, no la hora.</p>
+            {% endif %}
         {% endif %}
     </div>
 {% endblock %}

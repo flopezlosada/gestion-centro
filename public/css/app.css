@@ -5026,3 +5026,53 @@ tr.is-not-covered { background: var(--danger-weak); }
     .recreo-add { display: flex; }
     .recreo-days, .recreo-phone { display: none; }
 }
+
+/* =============================================================================
+   Clasificar espacios: el catálogo entero como tabla editable (space/room/classify.html.twig).
+
+   Solo reparte el ancho. Los controles ya son width:100% por la regla global de input/select, y con seis
+   columnas —dos de ellas selectores con etiquetas largas («Muy grande (tres grupos o más)»)— sin anchos
+   la tabla se estrecha justo en las columnas que hay que leer. Nada de display propio en las celdas: un
+   display distinto de table-cell en un <td> saca la celda de la rejilla y desalinea la tabla entera.
+
+   Por debajo de 899px la tabla se apila sola en tarjetas «Etiqueta: valor» con la regla general de
+   .card table, pero hay que corregirle una cosa: esa regla da por hecho que la primera columna es un
+   <td> y la convierte en el título de la tarjeta, sin etiqueta. Aquí la primera columna es un
+   <th scope="row"> (el código IDENTIFICA la fila, y con seis controles por fila el lector de pantalla
+   necesita saber de qué espacio son), así que el título hay que hacerlo con el th y devolverle al
+   primer <td> —el nombre— su etiqueta, o queda un campo suelto sin decir qué es.
+   ============================================================================= */
+@media (max-width: 899px) {
+    .catalogue-classify tbody th[scope="row"] {
+        display: block;
+        text-align: left;
+        padding: 4px 0 9px;
+        margin-bottom: 3px;
+        font-size: 15px;
+        border-bottom: 1px solid var(--separator);
+    }
+    /* Deshace el trato de "título" que .card tbody td:first-child le daría: aquí el título ya es el th. */
+    .catalogue-classify tbody td:first-child {
+        display: flex;
+        text-align: right;
+        padding: 7px 0;
+        margin-bottom: 0;
+        font-size: inherit;
+        border-bottom: 0;
+    }
+    .catalogue-classify tbody td:first-child::before { display: block; }
+}
+@media (min-width: 900px) {
+    .catalogue-classify th, .catalogue-classify td { padding: 8px 10px; vertical-align: top; }
+    .catalogue-classify th[scope="row"] { width: 20%; }
+    .catalogue-classify td:nth-child(2) { width: 24%; }
+    .catalogue-classify td:nth-child(3),
+    .catalogue-classify td:nth-child(4) { width: 20%; }
+    /* Las dos casillas: lo justo para el control y su cabecera, centradas bajo ella. */
+    .catalogue-classify td:nth-child(5),
+    .catalogue-classify td:nth-child(6) { width: 8%; text-align: center; }
+    .catalogue-classify input[type="checkbox"] { width: 20px; height: 20px; }
+    /* La pista del horario, debajo del código y sin el margen superior de .help: aquí es una segunda
+       línea de la misma celda, no el pie de un campo. */
+    .catalogue-classify th[scope="row"] .help { display: block; margin: 2px 0 0; font-weight: 400; }
+}
