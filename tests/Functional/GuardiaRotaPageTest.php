@@ -152,6 +152,56 @@ final class GuardiaRotaPageTest extends WebTestCase
         self::assertSame(0, $this->countDutyCells());
     }
 
+    public function testAProposalWithNoQuotaBlamesTheQuotasAndNotTheTimetable(): void
+    {
+        // What the centre actually saw on 05-08-2026: the timetable was loaded, guardia_quota had zero
+        // rows, and the screen reported all 150 places of the week as "eso no se arregla con cupos, es el
+        // horario" — sending dirección to look at the one thing that was fine.
+        $this->login();
+        $this->course('2025-2026', [new RotaTeacherFixture('Ana Docente', 'ana@centro.test', 0)]);
+
+        $this->client->request('GET', self::URL.'?curso=2025-2026&propuesta=1');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('body', 'Nadie tiene cupo');
+        // The exact sentence that misled the centre. Asserted whole rather than by a fragment like "es el
+        // horario", which the sidebar's own links could satisfy by accident.
+        self::assertSelectorTextNotContains('body', 'eso no se arregla con cupos', 'the screen blamed the timetable for an empty quota table');
+        // And the grid must not claim the course has no guardias: it is a draft, not the timetable.
+        self::assertSelectorTextNotContains('body', 'Todavía no hay ninguna guardia en el horario');
+        // No publish button either: publishing nothing can only delete (see the test below).
+        self::assertSelectorNotExists('form[action="'.self::URL.'/aprobar"]');
+    }
+
+    public function testPublishingAProposalThatPlacesNobodyDoesNotWipeTheRota(): void
+    {
+        // Publishing is a REPLACE: delete every engine cell of the course, then insert. Hand it a proposal
+        // that places nobody and it deletes the published rota and puts nothing back. Reachable without
+        // any bad intent: propose and publish, somebody clears the quotas, and the tab still open gets a
+        // second press of Publicar.
+        $this->login();
+        $this->course('2025-2026', [new RotaTeacherFixture('Ana Docente', 'ana@centro.test', 3)]);
+
+        $crawler = $this->client->request('GET', self::URL.'?curso=2025-2026&propuesta=1');
+        $token = $this->tokenFrom($crawler);
+        $this->client->request('POST', self::URL.'/aprobar', ['_token' => $token, 'curso' => '2025-2026']);
+        self::assertSame(3, $this->countDutyCells(ScheduleEntrySource::ENGINE), 'nothing was published to begin with');
+
+        // The quotas go back to zero, and the same form is posted again.
+        $this->em->createQueryBuilder()
+            ->update(GuardiaQuota::class, 'q')
+            ->set('q.lectiveDuties', 0)
+            ->getQuery()
+            ->execute();
+        $this->em->clear();
+
+        $this->client->request('POST', self::URL.'/aprobar', ['_token' => $token, 'curso' => '2025-2026']);
+
+        self::assertSame(3, $this->countDutyCells(ScheduleEntrySource::ENGINE), 'the published rota was wiped by an empty proposal');
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('body', 'No se ha publicado nada');
+    }
+
     public function testACourseWithNoTimetableSaysSoInsteadOfOfferingAProposal(): void
     {
         $this->login();

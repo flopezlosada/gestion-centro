@@ -66,6 +66,18 @@
             <p class="help">
                 {% if summary.unfilled == 0 %}
                     La semana queda cubierta entera.
+                {# Nadie con cupo es la ÚNICA razón cuando se da, así que corta aquí: enumerar las otras dos
+                   sería repetir la misma causa con tres nombres. Y sobre todo, NO puede caer en el mensaje
+                   de «es el horario»: eso es lo que vio el centro el 05-08-2026 con la tabla de cupos
+                   vacía, y le decía justo lo contrario de lo que había que hacer.
+
+                   Dice «nadie tiene cupo» y NO «los cupos están sin poner»: el motor ve un 0 y no puede
+                   saber si es que nadie lo tecleó o si el equipo directivo puso a todo el mundo a cero
+                   (basta con guardar la pantalla de cupos sin escribir nada para que existan las 58 filas
+                   a cero). Esa diferencia la lleva la pantalla de cupos, que es donde se actúa sobre ella;
+                   desde aquí el siguiente paso es el mismo en los dos casos. #}
+                {% elseif gaps['nobody-on-quota'] is defined %}
+                    <strong>Nadie tiene cupo</strong> de guardias en este curso —sin poner o a cero—, así que el programa no tiene a quién colocar y la propuesta sale vacía: las <strong>{{ summary.unfilled }}</strong> plazas de la semana se quedan sin nadie. Esto no es el horario — hay que <a href="{{ path('guardia_quota_index', {curso: curso}) }}">revisar los cupos</a> y volver a proponer.
                 {% else %}
                     {% if gaps['quota-exhausted'] is defined %}
                         <strong>{{ gaps['quota-exhausted'] }}</strong> plazas se quedan sin nadie porque todo el mundo ha llegado a su cupo: para cubrirlas hay que <a href="{{ path('guardia_quota_index', {curso: curso}) }}">subir cupos</a>.
@@ -73,20 +85,44 @@
                     {% if gaps['nobody-free'] is defined %}
                         <strong>{{ gaps['nobody-free'] }}</strong> se quedan sin nadie porque a esa hora ya no queda ningún docente libre sin guardia: eso no se arregla con cupos, es el horario.
                     {% endif %}
-                    Las plazas que faltan son siempre de <strong>apoyo</strong>: las tres plazas de guardia de cada hora se completan primero.
+                    {# «Siempre de apoyo» es cierto casi siempre, y por eso engaña cuando no lo es: el motor
+                       completa las guardias de cada hora antes de repartir un solo apoyo, pero si el cupo del
+                       claustro no llega, también se quedan guardias sin cubrir. Se mira el dato, no se afirma. #}
+                    {% if summary.unfilledGuardias == 0 %}
+                        Las plazas que faltan son siempre de <strong>apoyo</strong>: las tres plazas de guardia de cada hora se completan primero.
+                    {% else %}
+                        De ellas, <strong>{{ summary.unfilledGuardias }}</strong> son plazas de <strong>guardia</strong>, no de apoyo: el programa completa las de guardia antes de repartir apoyos, así que si faltan es que el cupo del claustro no llega para la semana.
+                    {% endif %}
                 {% endif %}
             </p>
 
+            {# Una propuesta que no coloca a nadie NO se ofrece para publicar. Publicar es un reemplazo
+               (borra las guardias del motor y escribe las nuevas), así que publicar la nada borraría el
+               cuadrante vigente sin poner nada en su sitio. El controlador lo rechaza igualmente
+               —GuardiaRotaController::approve()—; esto es para no ofrecer un botón que va a decir no. #}
             <div class="card">
-                <div class="inline-form">
-                    <form method="post" action="{{ path('guardia_rota_approve') }}" class="inline-form">
-                        <input type="hidden" name="_token" value="{{ csrf_token('guardia_rota_approve') }}">
-                        <input type="hidden" name="curso" value="{{ curso }}">
-                        <button type="submit" class="btn">Publicar el cuadrante</button>
-                    </form>
-                    <a class="btn secondary" href="{{ path('guardia_rota_index', {curso: curso}) }}">Descartar</a>
-                </div>
-                <p class="help">Al publicar se sustituyen las guardias que puso el programa en una propuesta anterior. Lo que esté marcado <strong>a mano</strong> no se toca: sale ya en la propuesta y se respeta.</p>
+                {# placedByEngine y no placed: las plazas fijadas ya están en el horario y publicar las
+                   salta, así que con guardias de Peñalara y sin cupos «placed» no sería cero pero la
+                   escritura sí. Se mira el mismo número que mira publish(). #}
+                {% if summary.placedByEngine == 0 %}
+                    <div class="inline-form">
+                        <a class="btn" href="{{ path('guardia_quota_index', {curso: curso}) }}">Ir a los cupos</a>
+                        <a class="btn secondary" href="{{ path('guardia_rota_index', {curso: curso}) }}">Descartar</a>
+                    </div>
+                    {# «Nada nuevo» y no «no coloca a nadie»: la propuesta puede estar enseñando guardias de
+                       Peñalara o marcadas a mano, que ya están en el horario y publicar no vuelve a escribir. #}
+                    <p class="help">Esta propuesta no añade ninguna guardia, así que no hay nada que publicar. Publicar ahora solo borraría el cuadrante que hubiera puesto el programa.</p>
+                {% else %}
+                    <div class="inline-form">
+                        <form method="post" action="{{ path('guardia_rota_approve') }}" class="inline-form">
+                            <input type="hidden" name="_token" value="{{ csrf_token('guardia_rota_approve') }}">
+                            <input type="hidden" name="curso" value="{{ curso }}">
+                            <button type="submit" class="btn">Publicar el cuadrante</button>
+                        </form>
+                        <a class="btn secondary" href="{{ path('guardia_rota_index', {curso: curso}) }}">Descartar</a>
+                    </div>
+                    <p class="help">Al publicar se sustituyen las guardias que puso el programa en una propuesta anterior. Lo que esté marcado <strong>a mano</strong> no se toca: sale ya en la propuesta y se respeta.</p>
+                {% endif %}
             </div>
         {% else %}
             <div class="card">
@@ -99,8 +135,16 @@
 
         <div class="card">
             <h2>{{ isDraft ? 'Propuesta' : 'Cuadrante actual' }} · {{ curso }}</h2>
+            {# Dos estados distintos que compartían mensaje, y el de la propuesta era falso: en modo
+               borrador la rejilla vacía no habla del horario del curso, habla de un borrador que no ha
+               colocado a nadie. Decir «no hay ninguna guardia en el horario» mientras se enseña una
+               propuesta manda a buscar el problema donde no está. #}
             {% if grid is empty %}
-                <p class="muted">Todavía no hay ninguna guardia en el horario de este curso.</p>
+                {% if isDraft %}
+                    <p class="muted">La propuesta no ha colocado a nadie: la rejilla sale vacía. El motivo está explicado arriba.</p>
+                {% else %}
+                    <p class="muted">Todavía no hay ninguna guardia en el horario de este curso.</p>
+                {% endif %}
             {% else %}
                 <table class="worklist">
                     <thead>
