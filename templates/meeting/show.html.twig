@@ -236,7 +236,7 @@
                una línea no dice lo que se acordó: eso es esto. No entra en el PDF —el acta es lo que aprobó
                el órgano, no un hilo— y llega como aviso a quien la levanta y a quien convocó, que son los
                dos que pueden corregirla. ---- #}
-        {% if meeting.minutesPublished and meeting.keepsMinutes and (remarks is not empty or canRemark) %}
+        {% if meeting.wereMinutesEverPublished and meeting.keepsMinutes and (remarks is not empty or canRemark) %}
             <div class="detail-block" id="observaciones">
                 <div class="detail-block__label">Observaciones al acta{% if remarks is not empty %} · {{ remarks|length }}{% endif %}</div>
                 {% if remarks is empty %}

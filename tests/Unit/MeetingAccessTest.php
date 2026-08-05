@@ -243,6 +243,47 @@ final class MeetingAccessTest extends TestCase
         self::assertFalse($access->canWriteMinutes($meeting, $attendee, false), 'quien asistió nunca la reescribe');
     }
 
+    public function testCorrectingAPublishedActaDoesNotTakeThePermissionAwayHalfway(): void
+    {
+        // El agujero que tenía la primera versión: corregir un acta pasa por REGENERAR su PDF, y eso la
+        // devuelve a borrador a propósito. Con el permiso colgado de "está publicada ahora", quien convocó
+        // lo perdía justo después de regenerar y el acta se quedaba en un borrador que solo podía enviar la
+        // secretaría ausente — fuera del archivo y con el claustro teniendo por correo el PDF equivocado.
+        $convener = $this->user('Ana', $this->direction);
+        $secretary = $this->user('Sara', $this->teacher);
+        $attendee = $this->user('Pedro', $this->teacher);
+        $meeting = (new Meeting($convener, 'CCP de octubre', new \DateTimeImmutable('2026-10-01 12:00')))->addAttendee($attendee);
+        $meeting->setMinutesTakenBy($secretary);
+        $meeting->attachMinutes('meeting-minutes/uuid.pdf', 'acta.pdf', $secretary, new \DateTimeImmutable('2026-10-01 14:00'));
+        $meeting->publishMinutes($secretary);
+        $access = $this->access();
+
+        // Se regenera el PDF corregido: vuelve a ser borrador…
+        $meeting->attachMinutes('meeting-minutes/uuid-2.pdf', 'acta.pdf', $convener, new \DateTimeImmutable('2026-10-02 09:00'));
+
+        self::assertFalse($meeting->isMinutesPublished(), 'un fichero nuevo es borrador otra vez');
+        self::assertTrue($meeting->wereMinutesEverPublished(), '…pero el acta YA salió, y eso no se deshace');
+        // …y quien convocó sigue pudiendo terminar la corrección y publicarla.
+        self::assertTrue($access->canWriteMinutes($meeting, $convener, false));
+        // Lo mismo con las observaciones: el hilo que pidió la corrección no se calla mientras se corrige.
+        self::assertTrue($access->canRemark($meeting, $attendee));
+        self::assertFalse($access->canWriteMinutes($meeting, $attendee, false), 'y sigue sin poder reescribirla');
+    }
+
+    public function testRepublishingACorrectionDoesNotRewriteWhenTheActaFirstWentOut(): void
+    {
+        $convener = $this->user('Ana', $this->direction);
+        $meeting = new Meeting($convener, 'CCP de octubre', new \DateTimeImmutable('2026-10-01 12:00'));
+        $meeting->attachMinutes('meeting-minutes/uuid.pdf', 'acta.pdf', $convener, new \DateTimeImmutable('2026-10-01 14:00'));
+        $meeting->publishMinutes($convener);
+        $first = $meeting->getMinutesFirstPublishedAt();
+
+        $meeting->attachMinutes('meeting-minutes/uuid-2.pdf', 'acta.pdf', $convener, new \DateTimeImmutable('2026-10-02 09:00'));
+        $meeting->publishMinutes($convener);
+
+        self::assertSame($first, $meeting->getMinutesFirstPublishedAt(), 'cuándo salió el acta es un hecho, no el último envío');
+    }
+
     public function testOnlyThePeopleOfTheMeetingMayRemarkAndOnlyOnceTheActaIsPublished(): void
     {
         $convener = $this->user('Ana', $this->direction);

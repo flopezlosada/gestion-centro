@@ -219,6 +219,22 @@ class Meeting implements Auditable
     #[ORM\Column(name: 'minutes_published_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $minutesPublishedAt = null;
 
+    /**
+     * When the acta went out for the FIRST time, or null if it never did. Unlike {@see $minutesPublishedAt}
+     * this is never cleared: "esta acta ya salió" is a fact about the past, and replacing the file does not
+     * unmake it.
+     *
+     * It is what the permissions and the observations hang from ({@see wereMinutesEverPublished()}), and the
+     * reason is a hole the first version of the correction flow had. Dirección corrected a published acta,
+     * regenerated the PDF — which returns it to draft, deliberately — and at that instant lost the very
+     * permission it was using: "publicada" had become false, so it could no longer publish the correction.
+     * The acta was left as a draft only the (absent) secretary could send, off the archive, with the whole
+     * staff still holding the wrong PDF by e-mail. A permission must not depend on a state that the
+     * permitted action itself destroys.
+     */
+    #[ORM\Column(name: 'minutes_first_published_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $minutesFirstPublishedAt = null;
+
     /** Who published it (a historical fact). */
     #[ORM\ManyToOne(targetEntity: User::class)]
     #[ORM\JoinColumn(name: 'minutes_published_by_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
@@ -395,6 +411,27 @@ class Meeting implements Auditable
     }
 
     /**
+     * Whether this acta has EVER been sent out, even if what is on file right now is a draft again because
+     * somebody is correcting it. The predicate that says "el claustro ya tiene un acta de esta reunión", and
+     * therefore the one that decides who may correct it ({@see \App\Service\MeetingAccess::canWriteMinutes()})
+     * and who may object to it ({@see \App\Service\MeetingAccess::canRemark()}).
+     *
+     * NOT {@see isMinutesPublished()}, which answers "lo que hay ahora mismo está publicado" and goes back
+     * to false the moment the file is replaced — see {@see $minutesFirstPublishedAt} for what that cost.
+     *
+     * @return bool true once the acta has gone out at least once
+     */
+    public function wereMinutesEverPublished(): bool
+    {
+        return null !== $this->minutesFirstPublishedAt;
+    }
+
+    public function getMinutesFirstPublishedAt(): ?\DateTimeImmutable
+    {
+        return $this->minutesFirstPublishedAt;
+    }
+
+    /**
      * Publishes the acta. Refuses to do it without a file, because publishing is precisely "esto ya es el
      * acta": there has to be an acta.
      *
@@ -410,6 +447,8 @@ class Meeting implements Auditable
 
         $this->minutesPublishedAt = new \DateTimeImmutable();
         $this->minutesPublishedBy = $by;
+        // Solo la PRIMERA vez: republicar una corrección no reescribe cuándo salió el acta.
+        $this->minutesFirstPublishedAt ??= $this->minutesPublishedAt;
 
         return true;
     }

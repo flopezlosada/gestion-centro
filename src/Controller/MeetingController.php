@@ -204,8 +204,10 @@ final class MeetingController extends AbstractController
             // pantalla los distingue: publicarla y quitarla siguen siendo de quien la levanta.
             'canWriteMinutes' => $access->canWriteMinutes($meeting, $user, $isAdmin),
             'canRemark' => $access->canRemark($meeting, $user),
-            // Las observaciones al acta: solo existen a partir de que se publica, así que antes no hay hilo.
-            'remarks' => $meeting->isMinutesPublished() ? $remarks->findThreadFor($meeting) : [],
+            // Las observaciones existen a partir de que el acta SALE. Se pregunta si salió alguna vez y no
+            // si está publicada ahora: mientras alguien regenera el PDF de una corrección vuelve a ser
+            // borrador, y con la otra condición el hilo desaparecía de la pantalla justo entonces.
+            'remarks' => $meeting->wereMinutesEverPublished() ? $remarks->findThreadFor($meeting) : [],
             // Pasar lista solo tiene sentido cuando la reunión ya ha empezado: antes no hay nada que contar.
             'isHeld' => $meeting->isPast(new \DateTimeImmutable()),
         ]);

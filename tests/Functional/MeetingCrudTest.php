@@ -469,6 +469,67 @@ final class MeetingCrudTest extends WebTestCase
         self::getContainer()->get(FileUploader::class)->remove((string) $stored->getMinutesPath());
     }
 
+    /**
+     * El camino completo de una corrección, que es donde estaba el agujero: el acta la levantó la secretaría
+     * y la publicó; quien CONVOCÓ la corrige, regenera el PDF —lo que la devuelve a borrador— y la vuelve a
+     * publicar. Con el permiso colgado de "está publicada ahora" se quedaba tirado en el paso 3, con el acta
+     * fuera del archivo y el claustro teniendo por correo la versión mala.
+     */
+    public function testWhoeverConvenedCanFinishCorrectingAPublishedActaEndToEnd(): void
+    {
+        $convener = $this->user('Ana Directora', 'ana33.meet@centro.test');
+        $secretary = $this->user('Sara Secretaría', 'sara33.meet@centro.test');
+        $meeting = new Meeting($convener, 'CCP de diciembre', new \DateTimeImmutable('-2 hours'));
+        $meeting->addAttendee($secretary);
+        $meeting->setMinutesTakenBy($secretary);
+        $this->em->persist($meeting);
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+        $recordUrl = '/reuniones/'.$id.'/acta/registro';
+        $generateUrl = '/reuniones/'.$id.'/acta/generar';
+        $publishUrl = '/reuniones/'.$id.'/acta/publicar';
+
+        // 1. La secretaría la escribe, la genera y la publica.
+        $this->client->loginUser($secretary);
+        foreach ([[$recordUrl, ['tratado' => 'Versión con el dato mal.']], [$generateUrl, []], [$publishUrl, []]] as [$url, $extra]) {
+            $crawler = $this->client->request('GET', '/reuniones/'.$id);
+            $token = (string) $crawler->filter('form[action="'.$url.'"] input[name="_token"]')->attr('value');
+            $this->client->request('POST', $url, ['_token' => $token] + $extra);
+            self::assertResponseRedirects();
+        }
+
+        // 2. Quien convocó no la tocaba mientras era borrador, pero ya ha salido: ahora sí la corrige.
+        $this->client->loginUser($convener);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $token = (string) $crawler->filter('form[action="'.$recordUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $recordUrl, ['_token' => $token, 'tratado' => 'Versión corregida.']);
+        self::assertResponseRedirects();
+
+        // 3. Y regenera el PDF, que la devuelve a borrador…
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $token = (string) $crawler->filter('form[action="'.$generateUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $generateUrl, ['_token' => $token]);
+        self::assertResponseRedirects();
+
+        // 4. …y la ficha le SIGUE ofreciendo publicarla. Esto es lo que se rompía.
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        self::assertSelectorExists('form[action="'.$publishUrl.'"]', 'quien convocó tiene que poder terminar la corrección');
+        $token = (string) $crawler->filter('form[action="'.$publishUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $publishUrl, ['_token' => $token]);
+        self::assertResponseRedirects();
+
+        $this->em->clear();
+        $stored = $this->em->getRepository(Meeting::class)->find($id);
+        self::assertInstanceOf(Meeting::class, $stored);
+        self::assertTrue($stored->isMinutesPublished(), 'la corrección ha salido');
+        self::assertSame('Versión corregida.', $stored->getDiscussion());
+        // Y vuelve a estar en el archivo de actas, que es de donde la había sacado el regenerado.
+        $this->client->request('GET', '/reuniones/actas');
+        self::assertSelectorTextContains('body', 'CCP de diciembre');
+
+        self::getContainer()->get(FileUploader::class)->remove((string) $stored->getMinutesPath());
+    }
+
     /** Corregir un acta ya publicada deja el PDF que la gente recibió diciendo otra cosa: la ficha lo dice. */
     public function testCorrectingAPublishedActaWarnsThatTheFileIsNowOutOfDate(): void
     {

@@ -137,15 +137,20 @@ final readonly class MeetingAccess
     /**
      * Whether the person may WRITE the acta right now: el desarrollo, los acuerdos y la asistencia.
      *
-     * While it is a draft that is exactly {@see canKeepMinutes()}. Once it is PUBLISHED the centre widens
-     * it by one person — "una vez enviada, solo la modifica quien coordina o quien convocó, y solo para
-     * corregir errores" — so whoever convened the body gets in too. It is a bus-factor rule, not a
+     * While the acta has never gone out that is exactly {@see canKeepMinutes()}. Once it HAS gone out the
+     * centre widens it by one person — "una vez enviada, solo la modifica quien coordina o quien convocó, y
+     * solo para corregir errores" — so whoever convened the body gets in too. It is a bus-factor rule, not a
      * loosening: the acta of a CCP that goes out with the wrong figure must not wait for the secretary to
      * come back from sick leave, and whoever convened the body is who answers for its record.
      *
-     * Deliberately NOT applied to the draft: writing the acta is delegated work and the centre delegates
-     * it explicitly ({@see Meeting::getMinutesTakenBy()}), so the convener who handed it over does not get
-     * to write it back. Correcting a published institutional record is the different, narrower act.
+     * Deliberately NOT applied before that: writing the acta is delegated work and the centre delegates it
+     * explicitly ({@see Meeting::getMinutesTakenBy()}), so the convener who handed it over does not get to
+     * write it back. Correcting a record the whole staff already has is the different, narrower act.
+     *
+     * The condition is {@see Meeting::wereMinutesEverPublished()} and NOT "está publicada ahora mismo".
+     * Correcting an acta means regenerating its PDF, and that returns it to draft on purpose — so gating on
+     * the current state took the permission away halfway through the correction and left the acta as a draft
+     * nobody present could send.
      *
      * Nothing needs to police "solo para corregir errores": {@see Meeting} is {@see \App\Contract\Auditable},
      * so every change to a published acta is already trailed field by field with its author.
@@ -159,7 +164,7 @@ final readonly class MeetingAccess
     public function canWriteMinutes(Meeting $meeting, User $user, bool $isAdmin): bool
     {
         return $this->canKeepMinutes($meeting, $user, $isAdmin)
-            || ($meeting->isMinutesPublished() && $this->canManage($meeting, $user, $isAdmin));
+            || ($meeting->wereMinutesEverPublished() && $this->canManage($meeting, $user, $isAdmin));
     }
 
     /**
@@ -168,8 +173,12 @@ final readonly class MeetingAccess
      *
      * It is the answer to "los asistentes no editan el acta, pero sí pueden puntualizar". Two boundaries,
      * both deliberate:
-     *  - only once PUBLISHED, because a puntualización is about the acta you have read; there is nothing to
-     *    object to while it is still being written;
+     *  - only once the acta has GONE OUT ({@see Meeting::wereMinutesEverPublished()}), because a
+     *    puntualización is about the acta you have read; there is nothing to object to while it is still
+     *    being written. "Ever" and not "is published right now" for the same reason as
+     *    {@see canWriteMinutes()}: while somebody regenerates the corrected PDF the acta is briefly a draft
+     *    again, and that must not gag the people whose objection prompted the correction — nor make the
+     *    thread they wrote disappear off the screen;
      *  - only {@see Meeting::concerns()}, so the equipo directivo — which reads every acta — does not get to
      *    annotate a meeting it was not at. Reading the centre's records is not taking part in them.
      *
@@ -180,7 +189,7 @@ final readonly class MeetingAccess
      */
     public function canRemark(Meeting $meeting, User $user): bool
     {
-        return $meeting->isMinutesPublished() && $meeting->keepsMinutes() && $meeting->concerns($user);
+        return $meeting->wereMinutesEverPublished() && $meeting->keepsMinutes() && $meeting->concerns($user);
     }
 
     /**

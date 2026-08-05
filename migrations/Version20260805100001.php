@@ -22,7 +22,14 @@ use Doctrine\Migrations\AbstractMigration;
  *    acta vieja aparece de golpe marcada como desfasada. Rellenarlo con `minutes_uploaded_at` sería
  *    inventarse que alguien escribió el desarrollo justo cuando se subió el fichero.
  *
- *  - `meeting_remark` son las observaciones a un acta PUBLICADA: quien asistió no reescribe el acta, pero
+ *  - `meeting.minutes_first_published_at` es cuándo salió el acta por PRIMERA vez, y a diferencia de
+ *    `minutes_published_at` no se borra nunca. De ahí cuelgan el permiso de corrección y las observaciones:
+ *    corregir un acta pasa por regenerar su PDF, y eso la devuelve a borrador a propósito, así que colgar
+ *    el permiso de «está publicada AHORA» se lo quitaba a media corrección. **Las actas ya publicadas se
+ *    rellenan con su `minutes_published_at`**, que es cuándo salieron; aquí sí hay dato y no hay nada que
+ *    inventar.
+ *
+ *  - `meeting_remark` son las observaciones a un acta ya enviada: quien asistió no reescribe el acta, pero
  *    sí puede decir que una línea no dice lo que se acordó. `ON DELETE CASCADE` sobre la reunión (sin el
  *    acta no significan nada, igual que su fichero) y `SET NULL` sobre la persona (borrar a alguien no
  *    borra la objeción que levantó).
@@ -34,12 +41,14 @@ final class Version20260805100001 extends AbstractMigration
 {
     public function getDescription(): string
     {
-        return 'Reuniones: sello de escritura del acta y observaciones al acta publicada.';
+        return 'Reuniones: sellos de escritura y de primera publicación del acta, y observaciones al acta.';
     }
 
     public function up(Schema $schema): void
     {
-        $this->addSql('ALTER TABLE meeting ADD record_updated_at DATETIME DEFAULT NULL');
+        $this->addSql('ALTER TABLE meeting ADD record_updated_at DATETIME DEFAULT NULL, ADD minutes_first_published_at DATETIME DEFAULT NULL');
+        // Lo que ya está publicado salió cuando dice su sello de publicación: no hay nada que inventar.
+        $this->addSql('UPDATE meeting SET minutes_first_published_at = minutes_published_at WHERE minutes_published_at IS NOT NULL');
 
         $this->addSql('CREATE TABLE meeting_remark (
             id INT AUTO_INCREMENT NOT NULL,
@@ -60,6 +69,6 @@ final class Version20260805100001 extends AbstractMigration
         $this->addSql('ALTER TABLE meeting_remark DROP FOREIGN KEY FK_meeting_remark_meeting');
         $this->addSql('ALTER TABLE meeting_remark DROP FOREIGN KEY FK_meeting_remark_author');
         $this->addSql('DROP TABLE meeting_remark');
-        $this->addSql('ALTER TABLE meeting DROP record_updated_at');
+        $this->addSql('ALTER TABLE meeting DROP record_updated_at, DROP minutes_first_published_at');
     }
 }
