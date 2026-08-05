@@ -150,6 +150,26 @@ final class BreakRotaPlannerTest extends KernelTestCase
         self::assertCount(2, $this->places(), 'the places she no longer holds are gone');
     }
 
+    public function testPublishingAProposalThatPlacesNobodyDoesNotWipeTheRota(): void
+    {
+        // Publicar es un DIFF: lo que no está en la propuesta se borra. Una propuesta que no coloca a
+        // nadie vacía por tanto el cuadrante publicado y no pone nada. Y se llega sin mala intención:
+        // publicas, alguien pone los cupos a cero, y la pestaña que sigue abierta se vuelve a enviar.
+        $ana = $this->staff('Ana Recreo Ruiz', 'ana.recreo@educa.madrid.org', 2);
+        $this->planner->publish($this->year, $this->planner->propose($this->year)->places);
+        self::assertCount(4, $this->places(), 'no se publicó nada de partida');
+
+        $quota = $this->em->getRepository(GuardiaQuota::class)->findOneBy(['teacher' => $ana->getId()]);
+        self::assertNotNull($quota);
+        $quota->setBreakDuties(0);
+        $this->em->flush();
+
+        $written = $this->planner->publish($this->year, $this->planner->propose($this->year)->places);
+
+        self::assertSame(0, $written, 'un diff vacío no se escribe, se rechaza');
+        self::assertCount(4, $this->places(), 'el cuadrante publicado lo vació una propuesta vacía');
+    }
+
     public function testAQuotaOfZeroPutsNobodyOnTheRota(): void
     {
         $this->staff('Exenta Directiva', 'exenta@educa.madrid.org', 0);

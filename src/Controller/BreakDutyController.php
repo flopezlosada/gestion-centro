@@ -155,6 +155,11 @@ final class BreakDutyController extends AbstractController
      * never the person, it is the week's arithmetic (the zones' demand), because a week that asks for more
      * long places than short ones cannot pair them however well anything is distributed.
      *
+     * There is a third case that is NOT a list: a course where nobody has both a timetable and a quota
+     * ({@see BreakRotaProposer::GAP_NOBODY_ELIGIBLE}) leaves every place unfilled for the same single
+     * reason, and printing it once per zone and recreo is ten rows saying the same thing. That one comes
+     * back as a single row and short-circuits the rest — with nobody placed there are no halves either.
+     *
      * @param BreakRotaProposal $proposal the draft
      * @param list<BreakZone>   $zones    the active zones, to name them
      *
@@ -167,24 +172,48 @@ final class BreakDutyController extends AbstractController
             $zoneNames[(int) $zone->getId()] = $zone->getName();
         }
 
+        $noneEligible = array_filter(
+            $proposal->unfilled,
+            static fn (array $gap): bool => BreakRotaProposer::GAP_NOBODY_ELIGIBLE === $gap['reason'],
+        );
+        if ([] !== $noneEligible) {
+            return [[
+                'what' => 'Nadie a quien colocar',
+                'detail' => 'en todo el curso',
+                'why' => sprintf(
+                    'Las %d plazas de la semana se quedan sin nadie: en este curso no hay nadie con horario y cupo de recreo por encima de cero.',
+                    \count($noneEligible),
+                ),
+                'fix' => 'roster',
+            ]];
+        }
+
         $grouped = [];
         foreach ($proposal->unfilled as $gap) {
             $key = $gap['zoneId'].':'.$gap['period'].':'.$gap['reason'];
             $grouped[$key]['zone'] = $zoneNames[$gap['zoneId']] ?? 'Zona archivada';
             $grouped[$key]['period'] = BreakPeriod::from($gap['period']);
             $grouped[$key]['reason'] = $gap['reason'];
-            $grouped[$key]['days'][] = mb_strtolower(Weekday::from($gap['weekday'])->label());
+            // Por día, no una entrada por plaza: una zona que pide dos personas el lunes son dos huecos del
+            // mismo día, y listarlos crudos salía «lunes, lunes, martes, martes».
+            $day = mb_strtolower(Weekday::from($gap['weekday'])->label());
+            $grouped[$key]['days'][$day] = ($grouped[$key]['days'][$day] ?? 0) + 1;
         }
 
         $rows = [];
         foreach ($grouped as $gap) {
-            $missing = \count($gap['days']);
+            $missing = array_sum($gap['days']);
+            // «10 plazas» sobre cinco días solo se entiende si se dice cuántas por día, y eso solo cabe en
+            // una frase cuando todos los días piden lo mismo.
+            $perDay = array_values(array_unique($gap['days']));
+            $sameEveryDay = 1 === \count($perDay) && $perDay[0] > 1;
             $rows[] = [
                 'what' => $gap['zone'],
-                'detail' => sprintf('%s · %s', mb_strtolower($gap['period']->label()), implode(', ', $gap['days'])),
+                'detail' => sprintf('%s · %s', mb_strtolower($gap['period']->label()), implode(', ', array_keys($gap['days']))),
                 'why' => sprintf(
-                    '%s sin nadie: %s',
+                    '%s sin nadie%s: %s',
                     1 === $missing ? '1 plaza' : $missing.' plazas',
+                    $sameEveryDay ? sprintf(' (%d por día)', $perDay[0]) : '',
                     BreakRotaProposer::GAP_QUOTA_EXHAUSTED === $gap['reason']
                         ? 'quien podría ya está en su cupo.'
                         : 'a ese recreo ya está todo el mundo colocado en otra zona.',
@@ -316,6 +345,15 @@ final class BreakDutyController extends AbstractController
         $proposal = $planner->propose($year);
         $written = $planner->publish($year, $proposal->places);
         $summary = $proposal->summary();
+
+        // Una propuesta que no coloca a nadie NO se guarda ({@see BreakRotaPlanner::publish()} la rechaza,
+        // porque el diff vaciaría el cuadrante ya publicado). Decirlo importa tanto como rechazarlo: un
+        // "publicado: 0 plazas" en verde es como se concluye que el programa está roto.
+        if (0 === $written) {
+            $this->addFlash('error', 'No se ha guardado nada: la propuesta no coloca ninguna plaza. Revisa los cupos de recreo antes de publicar — si nadie tiene cupo, el programa no tiene a quién colocar.');
+
+            return $this->redirectToRoute('break_duty_index', ['curso' => $curso, 'propuesta' => 1]);
+        }
 
         $this->addFlash('success', sprintf(
             'Cuadrante de recreo publicado: %d plazas repartidas, %d guardias completas%s.',

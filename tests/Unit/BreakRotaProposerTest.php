@@ -189,6 +189,17 @@ final class BreakRotaProposerTest extends TestCase
         self::assertSame([BreakRotaProposer::GAP_NOBODY_LEFT => 1], $proposal->gapsByReason());
     }
 
+    public function testWithNobodyToPlaceTheGapsSayThatAndNotThatEverybodyIsElsewhere(): void
+    {
+        // Un curso sin horario importado o con todos los cupos a cero: la razón por defecto era
+        // «ya está todo el mundo colocado en otra zona», que describe un gentío que no existe.
+        $places = $this->week([[1, BreakPeriod::FIRST, 10, 1], [2, BreakPeriod::SECOND, 20, 1]]);
+
+        $proposal = $this->proposer->propose($places, [new BreakRotaCandidate(1, 'Exenta', 0)]);
+
+        self::assertSame([BreakRotaProposer::GAP_NOBODY_ELIGIBLE => 2], $proposal->gapsByReason());
+    }
+
     public function testTheReportNamesWhoIsBelowTheirQuota(): void
     {
         $places = $this->week([[1, BreakPeriod::FIRST, 10, 1], [1, BreakPeriod::SECOND, 10, 1]]);

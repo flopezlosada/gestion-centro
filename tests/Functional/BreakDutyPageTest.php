@@ -8,11 +8,14 @@ use App\Entity\AcademicYear;
 use App\Entity\BreakDutyAssignment;
 use App\Entity\BreakDutyGap;
 use App\Entity\BreakZone;
+use App\Entity\GuardiaQuota;
 use App\Entity\Role;
+use App\Entity\ScheduleEntry;
 use App\Entity\User;
 use App\Enum\Area;
 use App\Enum\BreakPeriod;
 use App\Enum\PermissionLevel;
+use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use App\Util\SchoolYear;
 use App\Tests\Support\OwnsTheBreakZoneCatalogue;
@@ -302,6 +305,50 @@ final class BreakDutyPageTest extends WebTestCase
         self::assertCount(0, $propuesta->filter('.recreo-anchor .recreo-figure'), 'las cifras de la propuesta las da su panel, y solo él');
     }
 
+    public function testACourseWithNobodyToPlaceSaysSoOnceAndNotOncePerZone(): void
+    {
+        // Sin horario importado no hay a quien colocar, y eso es UN hecho del curso: repetirlo por cada
+        // zona y recreo eran diez filas idénticas culpando de paso a un gentío que no existe.
+        $this->login();
+        $year = $this->currentYear();
+        $this->zone('Patio');
+        $this->zone('Pistas');
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/recreo?curso='.$year->getSchoolYear().'&propuesta=1');
+
+        self::assertCount(1, $crawler->filter('.recreo-todo__row'), 'una sola fila, no una por zona y recreo');
+        self::assertStringContainsString('20 plazas', $crawler->filter('.recreo-todo__why')->text());
+        self::assertStringContainsString('no hay nadie con horario y cupo', $crawler->filter('.recreo-todo__why')->text());
+        self::assertStringNotContainsString('colocado en otra zona', $crawler->filter('.recreo-todo')->text());
+    }
+
+    public function testAZoneShortOfTwoPeopleADayListsEachWeekdayOnceAndSaysHowManyPerDay(): void
+    {
+        // Las plazas llegan una por persona necesaria, así que una zona que pide dos el lunes son dos
+        // huecos del mismo día: listados en crudo salía «lunes, lunes, martes, martes…».
+        $this->login();
+        $year = $this->currentYear();
+        $zone = $this->zone('Patio');
+        $zone->setRequiredTeachers(2);
+        $ana = $this->user('Ana Patio Ruiz', 'ana.patio@centro.test');
+        $this->timetabled($ana, $year);
+        $this->quota($ana, $year, 1);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/recreo?curso='.$year->getSchoolYear().'&propuesta=1');
+
+        $rows = $crawler->filter('.recreo-todo__what')->each(static fn ($node): string => $node->text());
+        self::assertNotEmpty($rows, 'con una sola persona y veinte plazas hay huecos que contar');
+        foreach ($rows as $row) {
+            foreach (['lunes', 'martes', 'miércoles', 'jueves', 'viernes'] as $day) {
+                self::assertLessThanOrEqual(1, substr_count($row, $day), 'un día no se nombra dos veces: '.$row);
+            }
+        }
+        // Cuatro días a dos plazas cada uno: sin el «por día», «8 plazas» sobre cuatro días no se explica.
+        self::assertStringContainsString('(2 por día)', $crawler->filter('.recreo-todo')->text());
+    }
+
     public function testDuplicateZoneNameIsRefusedWithAnExplanation(): void
     {
         $this->login();
@@ -442,6 +489,36 @@ final class BreakDutyPageTest extends WebTestCase
         $this->em->persist($user);
 
         return $user;
+    }
+
+    /**
+     * Puts a teacher on the course's timetable, which is what makes the engine consider them at all.
+     *
+     * One lective cell is enough: {@see ScheduleEntryRepository::teachersWithEntries()} asks for people
+     * with any entry in the course, not for a full week.
+     *
+     * @param User         $teacher the teacher
+     * @param AcademicYear $year    the course
+     */
+    private function timetabled(User $teacher, AcademicYear $year): void
+    {
+        $this->em->persist((new ScheduleEntry())
+            ->setAcademicYear($year)->setTeacher($teacher)->setWeekday(Weekday::MONDAY)->setSlotIndex(1)
+            ->setStartsAt(new \DateTimeImmutable('08:15'))->setEndsAt(new \DateTimeImmutable('09:10'))
+            ->setKind(ScheduleActivityKind::LECTIVE)->setGroupName('1ºA')->setRoomName('A10')->setSubjectName('Materia'));
+    }
+
+    /**
+     * Gives a teacher a recreo quota for the course, in guardias.
+     *
+     * @param User         $teacher  the teacher
+     * @param AcademicYear $year     the course
+     * @param int          $guardias how many recreo guardias they take on
+     */
+    private function quota(User $teacher, AcademicYear $year, int $guardias): void
+    {
+        $this->em->persist((new GuardiaQuota())
+            ->setAcademicYear($year)->setTeacher($teacher)->setBreakDuties($guardias));
     }
 
     /**
