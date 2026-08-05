@@ -260,6 +260,28 @@ final class AdminPanelTest extends WebTestCase
         self::assertStringContainsString('Administración', $crawler->filter('#main-nav details.nav-block[open] .nav-label')->text());
     }
 
+    public function testAdminNavGroupsEachLabelWithItsOwnGuide(): void
+    {
+        $this->client->loginUser($this->admin());
+
+        $crawler = $this->client->request('GET', '/admin/usuarios');
+
+        self::assertResponseIsSuccessful();
+        $block = $crawler->filter('#main-nav details.nav-block[open]');
+
+        // Cada rótulo va FUERA de su .nav-group, no dentro. Es lo que corta la guía vertical en cada
+        // grupo y lo que saca el rótulo del sangrado de los enlaces; con los rótulos dentro de un único
+        // .nav-group la línea recorría las catorce entradas de un tirón y el rótulo quedaba alineado con
+        // los enlaces, o sea leyéndose como un enlace más. Se asertan las dos mitades del contrato
+        // porque cada una se puede romper sin que salte nada: el CSS no falla, solo deja de agrupar.
+        self::assertCount(0, $block->filter('.nav-group .nav-subtitle'), 'ningún rótulo cuelga dentro de un .nav-group');
+        // Aquí los grupos son exactamente cuatro y TODOS llevan rótulo, así que las dos cuentas cuadran.
+        // No es una regla general de la barra: "Coordinar guardias" tiene dos grupos y un solo rótulo,
+        // porque su primer grupo es el día a día y no necesita título para entenderse.
+        self::assertCount(4, $block->filter('.nav-subtitle'));
+        self::assertCount(4, $block->filter('.nav-group'));
+    }
+
     public function testAdminNavHiddenForNonAdmin(): void
     {
         $this->client->loginUser($this->teacher());
