@@ -339,11 +339,14 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 500; color: var(--te
 
 .nav-group { display: flex; flex-direction: column; gap: 2px; }
 
-/* Jerarquía visual de tres niveles para que no se confunda lo principal con lo de cada pilar:
-   1) enlaces principales (Inicio, Qué toca, Estructura, Documentos): hijos directos de .nav,
-      con color de texto pleno y algo más de peso;
-   2) cabecera de pilar: la etiqueta "eyebrow" en mayúsculas (.nav-label);
-   3) módulos dentro del pilar: sangrados bajo una guía vertical y atenuados, como subnivel. */
+/* Jerarquía visual de la barra lateral, de fuera adentro:
+   1) navegación primaria (Inicio y todo lo de "Mi día" y "El centro"): hijos DIRECTOS de .nav, con
+      color de texto pleno y algo más de peso. Meterlos en un .nav-group los atenuaría;
+   2) cabecera de sección: etiqueta "eyebrow" en mayúsculas, estática (.nav-section-title) para las
+      zonas siempre abiertas, o plegable (.nav-label, el <summary> de un <details>) para los bloques
+      de gestión: Coordinar guardias, Espacios y Administración;
+   3) enlaces dentro de un bloque: sangrados bajo una guía vertical y atenuados, como subnivel;
+   4) .nav-subtitle, para partir un bloque largo por naturaleza sin plegar otra vez. */
 .nav > a { color: var(--text); font-weight: 500; }
 .nav-group { margin-left: 1.1rem; border-left: 1px solid var(--border); }
 .nav-group a { padding-left: 14px; }
@@ -1771,8 +1774,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
     .seg { width: 100%; }
 }
 
-/* Cabecera de pilar: es un <button> (plegable), pero conserva la estética de etiqueta "eyebrow".
-   La fila completa es clicable; el chevron a la derecha indica abierto/cerrado. */
+/* Cabecera de bloque plegable de la barra lateral: es el <summary> de un <details> (Coordinar
+   guardias, Espacios, Administración), con la misma estética de etiqueta "eyebrow" que el título
+   de sección estático .nav-section-title. La fila completa es clicable; el chevron a la derecha
+   indica abierto/cerrado. Nativo a propósito: pliega sin una línea de JavaScript, y el bloque que
+   contiene la pantalla actual se sirve ya con [open] desde la plantilla. */
 .nav-label {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     width: 100%; margin: .7rem 0 .3rem; padding: 4px .9rem;
@@ -1781,12 +1787,30 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
     text-transform: uppercase; color: var(--text-faint);
 }
 .nav-label:hover { color: var(--text-muted); }
+/* Fuera el triangulito del navegador: el chevron lo dibujamos nosotros. Hacen falta las dos reglas
+   —list-style para Firefox y el pseudo-elemento propietario para Safari—; en Chrome basta con que
+   el summary no sea display:list-item, que ya lo garantiza el display:flex de arriba. */
+.nav-label { list-style: none; }
+.nav-label::-webkit-details-marker { display: none; }
 /* Chevron CSS (sin imagen): apunta hacia abajo cuando está abierto, a la derecha al colapsar. */
 .nav-label::after {
     content: ""; width: 6px; height: 6px; flex: none; margin-right: 2px;
     border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
     transform: translateY(-1px) rotate(45deg); transition: transform .15s ease;
 }
+.nav-block:not([open]) > .nav-label::after { transform: translateY(-1px) rotate(-45deg); }
+/* El foco se pinta en el summary, que es lo que recibe el teclado (el <details> no es focusable). */
+.nav-label:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius); }
+
+/* Subtítulo dentro de un grupo: tercer nivel de la barra lateral, para partir listas largas por
+   naturaleza ("Personas", "Curso escolar", "Preparar el curso") sin abrir otro bloque plegable.
+   Más pequeño y sin mayúsculas para que no compita con la cabecera del bloque que lo contiene. */
+.nav-subtitle {
+    display: block; margin: .6rem 0 .15rem; padding: 0 14px;
+    font-size: 11px; font-weight: 600; color: var(--text-faint);
+}
+/* El primero no separa de nada por arriba: la cabecera del bloque ya deja aire. */
+.nav-subtitle:first-child { margin-top: .15rem; }
 
 /* --- Obligations cockpit ("Qué toca" y "Estructura SGA") --- */
 /* Conmutador de ámbito (Mías / Todas): pastillas, misma estética que .theme-toggle. */

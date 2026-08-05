@@ -238,9 +238,26 @@ final class AdminPanelTest extends WebTestCase
         $this->client->request('GET', '/');
 
         self::assertResponseIsSuccessful();
-        // An admin now sees more than one nav section (Guardias, Administración), so assert Administración
-        // is present among them rather than assuming it is the first.
-        self::assertAnySelectorTextContains('.nav-section-title', 'Administración');
+        // Administración es ahora un bloque PLEGABLE: su cabecera es el <summary class="nav-label"> de un
+        // <details>, no el título estático .nav-section-title que llevaba antes. Se asertan las dos cosas
+        // que importan por separado —que la cabecera está y que sus enlaces están servidos— porque estar
+        // plegado no es estar ausente: el HTML del grupo se manda siempre, y esconderlo de verdad sería
+        // el fallo que busca testAdminNavHiddenForNonAdmin.
+        self::assertAnySelectorTextContains('.nav-label', 'Administración');
+        self::assertSelectorExists('#main-nav a[href="/admin/usuarios"]');
+    }
+
+    public function testAdminNavOpensTheBlockYouAreWorkingIn(): void
+    {
+        $this->client->loginUser($this->admin());
+
+        // El bloque que contiene la pantalla actual se sirve ya desplegado: sin esto, quien entra en
+        // /admin/usuarios vería su propia sección cerrada y tendría que abrirla a mano en cada página.
+        $crawler = $this->client->request('GET', '/admin/usuarios');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(1, $crawler->filter('#main-nav details.nav-block[open]'), 'solo el bloque de la pantalla actual está abierto');
+        self::assertStringContainsString('Administración', $crawler->filter('#main-nav details.nav-block[open] .nav-label')->text());
     }
 
     public function testAdminNavHiddenForNonAdmin(): void

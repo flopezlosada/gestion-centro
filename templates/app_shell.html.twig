@@ -16,123 +16,173 @@
                 </a>
             </div>
 
+            {# ---- Arquitectura del menú ----------------------------------------------------------
+               Se ordena por PROPIEDAD y frecuencia, no por módulo de código. Tres zonas:
+
+               1) "Mi día" y "El centro": abiertas siempre, sin puerta. Lo que cualquiera del claustro
+                  usa a diario o casi. Separadas entre sí porque responden a preguntas distintas: lo que
+                  ME toca frente a lo que pido o consulto del centro.
+               2) Bloques de gestión (Guardias, Espacios, Administración): PLEGADOS por defecto, cada uno
+                  tras su propio gate. Quien dirige es además docente, y al entrar quiere ver su día, no
+                  el panel de mando.
+               3) La cuenta, al final (solo visible en móvil; en escritorio manda la topbar).
+
+               Antes esto era una lista plana: un usuario de dirección veía 38 enlaces abiertos a la vez,
+               los diez primeros sin título de sección que explicara qué los unía. Ahora ve doce y tres
+               cabeceras. Guardias, además, salía en tres sitios distintos con el mismo peso visual:
+               "Mis guardias" (diario, mío), "Parte del día" (diario, del centro) y los cupos y el
+               cuadrante (una vez al curso). Ahora cada cosa está en la zona que le toca por frecuencia.
+
+               El plegado es <details>/<summary> nativo: funciona sin JavaScript, y el grupo que contiene
+               la pantalla actual se sirve ya abierto (`open`), así que nadie tiene que abrir a mano el
+               bloque donde está trabajando. Sin estado recordado a propósito: con la apertura automática
+               por ruta no hace falta, y evita meter JS y localStorage en la navegación.
+
+               REGLA al mover enlaces aquí: reorganizar NO cambia ni un permiso. Cada enlace conserva
+               exactamente el gate que ya tenía; "Seguimiento" de reservas se muda al bloque Espacios
+               porque su gate ya era ESPACIOS:WRITE, el mismo del bloque. #}
             <nav id="main-nav" class="nav" aria-label="Navegación principal">
                 <a href="{{ path('app_homepage') }}" class="{{ route == 'app_homepage' ? 'is-active' }}">Inicio</a>
+
+                {# Mi día: lo que es MÍO. Nada de esto habla del centro entero — son mis tareas, mis
+                   guardias, mi agenda y los cambios de aula que me afectan. #}
+                {# Sin .nav-group a propósito: ese contenedor sangra y ATENÚA a sus enlaces (es el estilo de
+                   subnivel, ver app.css). Estas dos zonas son la navegación primaria, así que sus enlaces
+                   van como hijos directos de .nav para conservar el texto pleno; el título de sección basta
+                   para separarlas. #}
+                <span class="nav-section-title">Mi día</span>
                 <a href="{{ path('task_index') }}" class="{{ route starts with 'task_' ? 'is-active' }}">Tareas</a>
                 <a href="{{ path('guardia_mine') }}" class="{{ route == 'guardia_mine' ? 'is-active' }}">Mis guardias</a>
+                <a href="{{ path('calendar_index') }}" class="{{ route starts with 'calendar_' ? 'is-active' }}">Calendario</a>
                 <a href="{{ path('space_mine') }}" class="{{ route == 'space_mine' ? 'is-active' }}">Mis cambios de aula</a>
-                {# Reuniones: destino primario porque es donde viven las actas (el histórico de lo
-                   acordado), no solo lo que viene — eso ya lo anticipa Inicio. #}
-                {# Dos entradas y no una: "Reuniones" es lo que viene, "Actas" es el archivo de lo que ya
-                   pasó. Se buscan en momentos distintos y por eso el centro pidió el apartado aparte. #}
+
+                {# El centro: consultar y pedir. Todo abierto al claustro a propósito y por la misma razón
+                   en cada caso — quien tiene que usarlo es cualquiera, y esconderlo no protege nada:
+                   · Reuniones y Actas son el histórico de lo acordado, que se lee, no se administra. Dos
+                     entradas y no una porque "Reuniones" es lo que viene y "Actas" el archivo de lo que ya
+                     pasó: se buscan en momentos distintos, y el centro pidió el apartado aparte.
+                   · Aulas libres responde a «¿dónde meto a mi grupo esta hora?». No dice nada privado: qué
+                     aulas están vacías se deduce del horario, que ya ve todo el mundo. Una sola entrada,
+                     porque cuando estaba en dos bloques el resaltado de «estás aquí» se encendía dos veces.
+                   · El banco de tareas lo llenan los departamentos, no la coordinación de guardias, y las
+                     fotocopias las pide cualquiera.
+                   · Una incidencia TIC la avisa quien se encuentra el proyector muerto, o sea quien tenía
+                     clase ahí. El permiso solo decide quién puede RESOLVERLA, y eso lo aplica el controlador. #}
+                <span class="nav-section-title">El centro</span>
                 <a href="{{ path('meeting_index') }}" class="{{ (route starts with 'meeting_' and route != 'meeting_minutes_archive') ? 'is-active' }}">Reuniones</a>
                 <a href="{{ path('meeting_minutes_archive') }}" class="{{ route == 'meeting_minutes_archive' ? 'is-active' }}">Actas</a>
-                <a href="{{ path('calendar_index') }}" class="{{ route starts with 'calendar_' ? 'is-active' }}">Calendario</a>
-                {# Abiertos a todo el claustro a propósito: el banco lo llenan los departamentos (no la
-                   coordinación de guardias) y las fotocopias las pide cualquiera. #}
-                <a href="{{ path('guardia_bank_index') }}" class="{{ route starts with 'guardia_bank_' ? 'is-active' }}">Banco de tareas</a>
-                <a href="{{ path('copy_request_index') }}" class="{{ route starts with 'copy_request_' ? 'is-active' }}">Fotocopias</a>
-                {# Aulas libres, y AQUÍ arriba, sin puerta. Estaba dentro del área Espacios, que solo tienen
-                   dirección (write) y coordinación de guardias (read): un docente no la veía por ningún
-                   camino, y es una pregunta que se hace cualquiera («¿dónde meto a mi grupo esta hora?»).
-                   No dice nada privado —qué aulas están vacías se deduce del horario, que ya ve todo el
-                   mundo—, así que va sin gate, igual que Reservas e Incidencias TIC. Una sola entrada: la
-                   pintaban el bloque de Guardias y el de Espacios a la vez, con lo que el resaltado de
-                   «estás aquí» se encendía dos veces. #}
                 <a href="{{ path('guardia_rooms') }}" class="{{ route == 'guardia_rooms' ? 'is-active' }}">Aulas libres</a>
+                <a href="{{ path('booking_index') }}" class="{{ (route starts with 'booking_' and route != 'booking_tracking') ? 'is-active' }}">Espacios y material</a>
+                <a href="{{ path('copy_request_index') }}" class="{{ route starts with 'copy_request_' ? 'is-active' }}">Fotocopias</a>
+                <a href="{{ path('guardia_bank_index') }}" class="{{ route starts with 'guardia_bank_' ? 'is-active' }}">Banco de tareas</a>
+                <a href="{{ path('tic_incident_index') }}" class="{{ route starts with 'tic_incident_' ? 'is-active' }}">Incidencias TIC</a>
 
                 {# Gestión de guardias: solo para quien coordina (lectura en el área Guardias; el flag de
                    administrador la concede por bypass). Las acciones del parte exigen escritura, verificada
-                   en el GuardiaController con el mismo AreaVoter. #}
+                   en el GuardiaController con el mismo AreaVoter.
+                   «Mis guardias» y «Aulas libres» NO están aquí: son de todo el claustro y viven arriba;
+                   quien coordina las tiene igual de a mano. #}
                 {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::READ'), constant('App\\Enum\\Area::GUARDIAS')) %}
-                    <span class="nav-section-title">Guardias</span>
-                    <div class="nav-group">
-                        <a href="{{ path('guardia_index') }}" class="{{ (route == 'guardia_index' or route starts with 'guardia_absence') ? 'is-active' }}">Parte del día</a>
-                        {# «Aulas libres» ya no está aquí: subió a la navegación primaria al abrirse a todo el
-                           claustro, y quien coordina la tiene igual de a mano ahí. #}
-                        {# Semana de exámenes: quien acompaña un examen no puede hacer su guardia, y quien da
-                           clase solo a los grupos que se examinan queda libre para cogerla. La entrada está
-                           siempre, y la pantalla dice cuándo no hay nada en marcha: esconderla mientras no
-                           hay plan aprobado obligaría a saber que existe para poder buscarla. #}
-                        <a href="{{ path('guardia_exam_index') }}" class="{{ route starts with 'guardia_exam_' ? 'is-active' }}">Semana de exámenes</a>
-                        <a href="{{ path('guardia_history') }}" class="{{ route == 'guardia_history' ? 'is-active' }}">Histórico</a>
-                        <a href="{{ path('guardia_stats') }}" class="{{ route == 'guardia_stats' ? 'is-active' }}">Estadísticas</a>
-                        {# El recreo es otro carril: cuadrante fijo de curso y, cuando alguien falta, un
-                           hueco que se avisa en vez de reasignarse. De ahí sus dos entradas propias. #}
-                        <a href="{{ path('break_duty_index') }}" class="{{ (route == 'break_duty_index' or route starts with 'break_zone_') ? 'is-active' }}">Cuadrante de recreo</a>
-                        <a href="{{ path('break_duty_gap_index') }}" class="{{ route starts with 'break_duty_gap' ? 'is-active' }}">Recreos sin vigilar</a>
-                        {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::GUARDIAS')) %}
-                            <a href="{{ path('guardia_schedule_edit') }}" class="{{ route starts with 'guardia_schedule_' ? 'is-active' }}">Horario de guardias</a>
-                            {# Montar el cuadrante del curso: primero los cupos (cuántas asume cada cual)
-                               y después la propuesta. Decidir quién está exento es cosa del equipo
-                               directivo, no una lectura del parte: por eso van dentro del WRITE. #}
-                            <a href="{{ path('guardia_quota_index') }}" class="{{ route starts with 'guardia_quota_' ? 'is-active' }}">Cupos</a>
-                            <a href="{{ path('guardia_rota_index') }}" class="{{ route starts with 'guardia_rota_' ? 'is-active' }}">Cuadrante</a>
-                        {% endif %}
-                    </div>
+                    {# Qué cuenta como "estoy en la gestión de guardias": todo lo de /guardias MENOS las tres
+                       pantallas que son del claustro y viven arriba (mis guardias, aulas libres y el banco
+                       de tareas), más los dos carriles del recreo, cuyas rutas no llevan el prefijo. #}
+                    {% set enGuardiasGestion = (route starts with 'guardia_' and route != 'guardia_mine' and route != 'guardia_rooms' and not (route starts with 'guardia_bank_')) or route starts with 'break_duty' or route starts with 'break_zone_' %}
+                    <details class="nav-block"{{ enGuardiasGestion ? ' open' : '' }}>
+                        <summary class="nav-label">Coordinar guardias</summary>
+                        <div class="nav-group">
+                            <a href="{{ path('guardia_index') }}" class="{{ (route == 'guardia_index' or route starts with 'guardia_absence') ? 'is-active' }}">Parte del día</a>
+                            <a href="{{ path('break_duty_gap_index') }}" class="{{ route starts with 'break_duty_gap' ? 'is-active' }}">Recreos sin vigilar</a>
+                            {# El recreo es otro carril: cuadrante fijo de curso y, cuando alguien falta, un
+                               hueco que se avisa en vez de reasignarse. De ahí sus dos entradas propias.
+                               El cuadrante de recreo se queda en la parte de LECTURA aunque sea trabajo de
+                               curso: ese es el gate que ya tenía, y reorganizar no cambia permisos. #}
+                            <a href="{{ path('break_duty_index') }}" class="{{ (route == 'break_duty_index' or route starts with 'break_zone_') ? 'is-active' }}">Cuadrante de recreo</a>
+                            {# Semana de exámenes: quien acompaña un examen no puede hacer su guardia, y quien da
+                               clase solo a los grupos que se examinan queda libre para cogerla. La entrada está
+                               siempre, y la pantalla dice cuándo no hay nada en marcha: esconderla mientras no
+                               hay plan aprobado obligaría a saber que existe para poder buscarla. #}
+                            <a href="{{ path('guardia_exam_index') }}" class="{{ route starts with 'guardia_exam_' ? 'is-active' }}">Semana de exámenes</a>
+                            <a href="{{ path('guardia_history') }}" class="{{ route == 'guardia_history' ? 'is-active' }}">Histórico</a>
+                            <a href="{{ path('guardia_stats') }}" class="{{ route == 'guardia_stats' ? 'is-active' }}">Estadísticas</a>
+                            {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::GUARDIAS')) %}
+                                {# Montar el cuadrante del curso: primero el horario y los cupos (cuántas asume
+                                   cada cual) y después la propuesta. Decidir quién está exento es cosa del
+                                   equipo directivo, no una lectura del parte: por eso van dentro del WRITE.
+                                   Bajo su propio subtítulo porque son de una vez al curso, no del día a día. #}
+                                <span class="nav-subtitle">Preparar el curso</span>
+                                <a href="{{ path('guardia_schedule_edit') }}" class="{{ route starts with 'guardia_schedule_' ? 'is-active' }}">Horario de guardias</a>
+                                <a href="{{ path('guardia_quota_index') }}" class="{{ route starts with 'guardia_quota_' ? 'is-active' }}">Cupos</a>
+                                <a href="{{ path('guardia_rota_index') }}" class="{{ route starts with 'guardia_rota_' ? 'is-active' }}">Cuadrante</a>
+                            {% endif %}
+                        </div>
+                    </details>
                 {% endif %}
 
-                {# Espacios: decidir dónde va un grupo (planes) y completar el catálogo (tamaño, tipo, si se
-                   puede reservar). Todo lo de aquí es del equipo directivo, así que el gate del bloque es
-                   ESCRITURA, no lectura: la única entrada que era de lectura —«Aulas libres»— se abrió al
-                   claustro y subió arriba, y con un gate de lectura este bloque saldría VACÍO para quien
-                   tenga `espacios: read` a secas (hoy, coordinación de guardias). Mismo gate en los
-                   controladores. #}
+                {# Espacios: decidir dónde va un grupo (planes), completar el catálogo (tamaño, tipo, si se
+                   puede reservar) y ver el rastro de quién cogió qué. Todo lo de aquí es del equipo
+                   directivo, así que el gate del bloque es ESCRITURA, no lectura: la única entrada que era
+                   de lectura —«Aulas libres»— se abrió al claustro y está arriba, y con un gate de lectura
+                   este bloque saldría VACÍO para quien tenga `espacios: read` a secas (hoy, coordinación de
+                   guardias). Mismo gate en los controladores. #}
                 {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ESPACIOS')) %}
-                    <span class="nav-section-title">Espacios</span>
-                    <div class="nav-group">
-                        <a href="{{ path('space_plan_index') }}" class="{{ route starts with 'space_plan_' ? 'is-active' }}">Planes de espacios</a>
-                        <a href="{{ path('space_room_index') }}" class="{{ route starts with 'space_room_' ? 'is-active' }}">Catálogo de espacios</a>
-                    </div>
+                    {% set enEspacios = route starts with 'space_plan_' or route starts with 'space_room_' or route == 'booking_tracking' %}
+                    <details class="nav-block"{{ enEspacios ? ' open' : '' }}>
+                        <summary class="nav-label">Espacios</summary>
+                        <div class="nav-group">
+                            <a href="{{ path('space_plan_index') }}" class="{{ route starts with 'space_plan_' ? 'is-active' }}">Planes de espacios</a>
+                            <a href="{{ path('space_room_index') }}" class="{{ route starts with 'space_room_' ? 'is-active' }}">Catálogo de espacios</a>
+                            {# El seguimiento de reservas vive AQUÍ y no junto a «Espacios y material»: dice
+                               quién cogió qué y cuándo —el rastro de trabajo de cada compañero—, y es para el
+                               equipo directivo cuando aparece un desperfecto, no para consulta general. Su
+                               gate ya era ESPACIOS:WRITE, el mismo de este bloque, así que la mudanza no
+                               cambia quién lo ve; solo deja de ser el único enlace con puerta dentro de una
+                               sección abierta a todo el mundo. #}
+                            <a href="{{ path('booking_tracking') }}" class="{{ route == 'booking_tracking' ? 'is-active' }}">Seguimiento</a>
+                        </div>
+                    </details>
                 {% endif %}
-
-                {# Reservas: abierto a todo el mundo, como las incidencias. Pedir el carro de portátiles
-                   no es un privilegio, y esconderlo a quien tiene que pedirlo no protege nada. #}
-                <span class="nav-section-title">Reservas</span>
-                <div class="nav-group">
-                    <a href="{{ path('booking_index') }}" class="{{ (route starts with 'booking_' and route != 'booking_tracking') ? 'is-active' }}">Espacios y material</a>
-                    {# El seguimiento SÍ lleva puerta, y por eso está aparte: dice quién cogió qué y cuándo —el
-                       rastro de trabajo de cada compañero—, y es para el equipo directivo cuando aparece un
-                       desperfecto, no para consulta general. #}
-                    {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ESPACIOS')) %}
-                        <a href="{{ path('booking_tracking') }}" class="{{ route == 'booking_tracking' ? 'is-active' }}">Seguimiento</a>
-                    {% endif %}
-                </div>
-
-                {# Incidencias TIC: aquí NO hay gate. Avisar de una avería lo puede hacer cualquiera —el
-                   que se encuentra el proyector muerto es quien tenía clase ahí—, y esconder el enlace a
-                   quien no gestiona TIC sería esconder justamente a quien tiene que avisar. El permiso
-                   solo decide quién puede resolverlas, y eso lo aplica el controlador. #}
-                <span class="nav-section-title">Incidencias</span>
-                <div class="nav-group">
-                    <a href="{{ path('tic_incident_index') }}" class="{{ route starts with 'tic_incident_' ? 'is-active' }}">Incidencias TIC</a>
-                </div>
 
                 {# Administración: alta de personas, roles/permisos y organigrama. Visible para quien
                    tenga escritura en el área Administración (el flag de administrador la concede por
-                   completo); los controladores /admin aplican el mismo gate con el AreaVoter. #}
+                   completo); los controladores /admin aplican el mismo gate con el AreaVoter.
+                   Catorce entradas planas y sin orden reconocible eran un cajón de sastre —«Sustituciones»
+                   caía entre «Usuarios» y «Roles y permisos»—, así que van en cuatro grupos por naturaleza.
+                   Los subtítulos, además, desambiguan sin renombrar nada: «Catálogo de tareas» bajo
+                   "Catálogos" ya no se confunde con las «Tareas» de Mi día. #}
                 {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ADMINISTRATION')) %}
-                    <span class="nav-section-title">Administración</span>
-                    <div class="nav-group">
-                        <a href="{{ path('admin_school_year_setup') }}" class="{{ (route starts with 'admin_school_year_' or route starts with 'admin_roster_') ? 'is-active' }}">Arranque de curso</a>
-                        <a href="{{ path('admin_user_index') }}" class="{{ route starts with 'admin_user_' ? 'is-active' }}">Usuarios</a>
-                        <a href="{{ path('admin_substitution_index') }}" class="{{ route starts with 'admin_substitution_' ? 'is-active' }}">Sustituciones</a>
-                        <a href="{{ path('admin_role_index') }}" class="{{ route starts with 'admin_role_' ? 'is-active' }}">Roles y permisos</a>
-                        <a href="{{ path('admin_department_index') }}" class="{{ route starts with 'admin_department_' ? 'is-active' }}">Departamentos</a>
-                        <a href="{{ path('admin_project_index') }}" class="{{ route starts with 'admin_project_' ? 'is-active' }}">Proyectos</a>
-                        <a href="{{ path('admin_meeting_type_index') }}" class="{{ route starts with 'admin_meeting_type_' ? 'is-active' }}">Tipos de reunión</a>
-                        <a href="{{ path('admin_material_index') }}" class="{{ route starts with 'admin_material_' ? 'is-active' }}">Material</a>
-                        <a href="{{ path('admin_task_template_index') }}" class="{{ route starts with 'admin_task_template_' ? 'is-active' }}">Catálogo de tareas</a>
-                        <a href="{{ path('admin_academic_year_index') }}" class="{{ route starts with 'admin_academic_year_' ? 'is-active' }}">Años escolares</a>
-                        <a href="{{ path('admin_timetable_import') }}" class="{{ route starts with 'admin_timetable_' ? 'is-active' }}">Horario (Peñalara)</a>
-                        <a href="{{ path('admin_non_lective_day_index') }}" class="{{ route starts with 'admin_non_lective_day_' ? 'is-active' }}">Días no lectivos</a>
-                        <a href="{{ path('admin_event_category_index') }}" class="{{ route starts with 'admin_event_category_' ? 'is-active' }}">Categorías de evento</a>
-                        {# Quién puede entrar en la aplicación: reservado a administradores, más
-                           estrecho que el resto de /admin, porque es el interruptor de la puerta. #}
-                        {% if is_granted('ROLE_ADMIN') %}
-                            <a href="{{ path('admin_access_index') }}" class="{{ route starts with 'admin_access_' ? 'is-active' }}">Acceso</a>
-                        {% endif %}
-                    </div>
+                    <details class="nav-block"{{ route starts with 'admin_' ? ' open' : '' }}>
+                        <summary class="nav-label">Administración</summary>
+                        <div class="nav-group">
+                            <span class="nav-subtitle">Personas</span>
+                            <a href="{{ path('admin_user_index') }}" class="{{ route starts with 'admin_user_' ? 'is-active' }}">Usuarios</a>
+                            <a href="{{ path('admin_substitution_index') }}" class="{{ route starts with 'admin_substitution_' ? 'is-active' }}">Sustituciones</a>
+                            <a href="{{ path('admin_role_index') }}" class="{{ route starts with 'admin_role_' ? 'is-active' }}">Roles y permisos</a>
+                            {# Quién puede entrar en la aplicación: reservado a administradores, más
+                               estrecho que el resto de /admin, porque es el interruptor de la puerta. #}
+                            {% if is_granted('ROLE_ADMIN') %}
+                                <a href="{{ path('admin_access_index') }}" class="{{ route starts with 'admin_access_' ? 'is-active' }}">Acceso</a>
+                            {% endif %}
+
+                            <span class="nav-subtitle">Estructura</span>
+                            <a href="{{ path('admin_department_index') }}" class="{{ route starts with 'admin_department_' ? 'is-active' }}">Departamentos</a>
+                            <a href="{{ path('admin_project_index') }}" class="{{ route starts with 'admin_project_' ? 'is-active' }}">Proyectos</a>
+
+                            {# Curso escolar: lo que se toca al arrancar septiembre y casi nunca más. #}
+                            <span class="nav-subtitle">Curso escolar</span>
+                            <a href="{{ path('admin_school_year_setup') }}" class="{{ (route starts with 'admin_school_year_' or route starts with 'admin_roster_') ? 'is-active' }}">Arranque de curso</a>
+                            <a href="{{ path('admin_academic_year_index') }}" class="{{ route starts with 'admin_academic_year_' ? 'is-active' }}">Años escolares</a>
+                            <a href="{{ path('admin_timetable_import') }}" class="{{ route starts with 'admin_timetable_' ? 'is-active' }}">Horario (Peñalara)</a>
+                            <a href="{{ path('admin_non_lective_day_index') }}" class="{{ route starts with 'admin_non_lective_day_' ? 'is-active' }}">Días no lectivos</a>
+
+                            {# Catálogos: las listas maestras de las que tiran los formularios del resto de la
+                               aplicación. Se rellenan una vez y se retocan de año en año. #}
+                            <span class="nav-subtitle">Catálogos</span>
+                            <a href="{{ path('admin_material_index') }}" class="{{ route starts with 'admin_material_' ? 'is-active' }}">Material</a>
+                            <a href="{{ path('admin_meeting_type_index') }}" class="{{ route starts with 'admin_meeting_type_' ? 'is-active' }}">Tipos de reunión</a>
+                            <a href="{{ path('admin_task_template_index') }}" class="{{ route starts with 'admin_task_template_' ? 'is-active' }}">Catálogo de tareas</a>
+                            <a href="{{ path('admin_event_category_index') }}" class="{{ route starts with 'admin_event_category_' ? 'is-active' }}">Categorías de evento</a>
+                        </div>
+                    </details>
                 {% endif %}
 
                 {# Cuenta (tema + usuario + salir): en móvil la topbar se oculta, así que estos controles
