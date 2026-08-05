@@ -36,6 +36,38 @@ class BreakDutyGapRepository extends ServiceEntityRepository
     }
 
     /**
+     * Which of these places are already recorded as a gap on a day — the question Inicio asks before
+     * telling somebody "hoy te toca el patio": a teacher who has already registered that they are away
+     * must not be reminded of a duty their own absence has released.
+     *
+     * One query for the lot rather than one per place: it runs on the busiest screen of the app, and a
+     * teacher can hold both recreos of a day.
+     *
+     * @param BreakDutyAssignment[] $assignments the places to check (an empty list asks nothing)
+     * @param \DateTimeImmutable    $date        the day
+     *
+     * @return list<int> the ids of the places with a gap that day
+     */
+    public function findAssignmentIdsWithGapOn(array $assignments, \DateTimeImmutable $date): array
+    {
+        if ([] === $assignments) {
+            return [];
+        }
+
+        /** @var list<array{id: int}> $rows */
+        $rows = $this->createQueryBuilder('g')
+            ->select('IDENTITY(g.assignment) AS id')
+            ->andWhere('g.assignment IN (:assignments)')
+            ->andWhere('g.date = :date')
+            ->setParameter('assignments', $assignments)
+            ->setParameter('date', $date)
+            ->getQuery()
+            ->getResult();
+
+        return array_map(static fn (array $row): int => (int) $row['id'], $rows);
+    }
+
+    /**
      * The gaps of one day, with the duty, its zone and the absent teacher joined — the "hoy falta gente
      * en el recreo" panel the equipo directivo works from.
      *

@@ -107,11 +107,21 @@
                     <span class="no-guardia__title">
                         {%- if guardiasTodayCount > 0 -%}
                             Ya has hecho {{ guardiasTodayCount == 1 ? 'tu guardia de hoy' : 'tus ' ~ guardiasTodayCount ~ ' guardias de hoy' }}
+                        {%- elseif breakDutiesToday is not empty -%}
+                            {#- "Hoy no tienes guardia" sería FALSO un día en que toca el recreo, y además se
+                                contradiría con la fila que "Tu día" pinta justo al lado. La tira habla de las de
+                                sustitución, así que lo que cambia es la frase, no lo que se enseña. -#}
+                            Hoy solo tienes {{ breakDutiesToday|length == 1 ? 'el recreo' : 'los recreos' }}
                         {%- else -%}
                             Hoy no tienes guardia
                         {%- endif -%}
                     </span>
-                    {% if upcomingGuardia %}<span class="no-guardia__meta">Próxima: {{ dias[upcomingGuardia.cover.date|date('N')] }} {{ upcomingGuardia.cover.date|date('d/m') }}{% if upcomingGuardia.startsAt %} · {{ upcomingGuardia.startsAt|date('H:i') }}{% endif %}</span>{% endif %}
+                    {% if breakDutiesToday is not empty %}
+                        {%- set recreo = breakDutiesToday|first -%}
+                        <span class="no-guardia__meta">{{ recreo.duty.period.label }} · {{ recreo.duty.zone.name }}{% if recreo.startsAt %} · {{ recreo.startsAt|date('H:i') }}{% endif %}</span>
+                    {% elseif upcomingGuardia %}
+                        <span class="no-guardia__meta">Próxima: {{ dias[upcomingGuardia.cover.date|date('N')] }} {{ upcomingGuardia.cover.date|date('d/m') }}{% if upcomingGuardia.startsAt %} · {{ upcomingGuardia.startsAt|date('H:i') }}{% endif %}</span>
+                    {% endif %}
                 </span>
                 <span class="no-guardia__cta">Ver</span>
             </a>
@@ -326,6 +336,17 @@
                                     {% set url = path('guardia_cover_show', { id: c.id }) %}
                                     {% set titulo = 'Guardia' ~ ((c.effectiveRoomName or c.groupName) ? ' · ' ~ [c.effectiveRoomName, c.groupName]|filter(v => v)|join(' · ') : '') %}
                                     {% set sub = (row.minutesUntil is not null ? 'en ' ~ row.minutesUntil ~ ' min · ' : '') ~ (c.hasTask ? 'tiene tarea' : 'sin tarea') %}
+                                    {% set tipo = 'guardia' %}
+                                {% elseif entry.kind == 'break_duty' %}
+                                    {#- La guardia de recreo del cuadrante, proyectada sobre HOY. Lleva a "Mis
+                                        guardias", que es donde está el cuadrante entero de la persona: un recreo no
+                                        tiene ficha propia porque no es un registro por día, sino una plaza fija de
+                                        todo el curso. Mismo escudo que una guardia de sustitución —las dos son
+                                        guardias—, y lo que las distingue lo dice el texto. -#}
+                                    {% set bd = entry.breakDuty %}
+                                    {% set url = path('guardia_mine') %}
+                                    {% set titulo = bd.period.label ~ ' · ' ~ bd.zone.name %}
+                                    {% set sub = (row.minutesUntil is not null ? 'en ' ~ row.minutesUntil ~ ' min · ' : '') ~ 'guardia de recreo' %}
                                     {% set tipo = 'guardia' %}
                                 {% elseif entry.kind == 'meeting' %}
                                     {% set m = entry.meeting %}
