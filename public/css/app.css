@@ -316,12 +316,12 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 500; color: var(--te
         width: 8px; height: 8px; border-radius: 999px;
         background: var(--danger); border: 1.5px solid var(--surface);
     }
-    /* Deja hueco bajo el contenido para que la barra no tape la última fila. */
-    .page { padding-bottom: calc(74px + env(safe-area-inset-bottom, 14px)); }
-    /* El cajón "Más" reutiliza el sidebar off-canvas; su backdrop debe quedar por
-       encima de la barra inferior. */
-    .nav { z-index: 62; }
-    .nav-backdrop { z-index: 58; }
+    /* El hueco bajo el contenido para que esta barra no tape la última fila NO se declara aquí:
+       va junto al resto del padding de .page, en el otro bloque @media de 760px (busca
+       "Hueco para la barra inferior"). Separarlo era el bug: allí .page usa el shorthand
+       `padding`, que resetea el padding-bottom, así que este hueco quedaba anulado —misma
+       especificidad y la otra regla va después— y la barra tapaba unos 78px de contenido en
+       cualquier pantalla. Los z-index del cajón "Más" tampoco están aquí, y por lo mismo. */
 }
 
 .nav { display: flex; flex-direction: column; gap: 2px; }
@@ -1356,6 +1356,12 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
     .nav-account__logout { color: var(--text-muted); font-size: 13px; text-decoration: none; }
     .nav-account__logout:hover { color: var(--danger-text); }
 
+    /* Orden de apilado del cajón "Más", y aquí es donde se decide: cajón (60) por encima de su
+       fondo oscurecido (55), y el fondo por encima de la barra inferior (50), que si no se
+       quedaría encima del velo. El otro bloque @media de 760px pedía 62 y 58 para lo mismo, pero
+       esas dos reglas nunca estuvieron en vigor —este bloque va después y gana— y solo funcionaba
+       porque el orden relativo coincidía. Ya están retiradas: un z-index en dos sitios es la
+       siguiente avería. */
     .nav-backdrop {
         display: block;
         position: fixed; inset: 0;
@@ -1369,7 +1375,14 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
     /* En móvil no hay topbar: cada pantalla trae su propia cabecera en el contenido; tema/usuario/
        salir viven en el cajón "Más". Así se elimina la doble cabecera y el sangrado del nombre. */
     .topbar { display: none; }
-    .page { padding: 22px 16px; }
+    /* Hueco para la barra inferior: la última declaración de padding de .page en móvil TIENE que ser
+       esta, y tiene que traer el bottom dentro. Estaba en el otro bloque @media de 760px como un
+       `padding-bottom` suelto, y este shorthand —misma especificidad, más abajo en el fichero— lo
+       reseteaba a 22px sin avisar: la barra tapaba unos 78px del final de cualquier pantalla.
+       El valor cubre la barra (10 de padding arriba + 43 del contenido + 12 abajo + 1 de borde ≈ 66px)
+       más su safe-area. Si algún día crece —otra fila, un icono mayor, texto que envuelva— hay que
+       subir este número con ella: son dos valores que deben cuadrar y nada lo comprueba. */
+    .page { padding: 22px 16px calc(74px + env(safe-area-inset-bottom, 14px)); }
     /* El apilado ya es el estado base de .page-head; aquí solo el tamaño de móvil del handoff. */
     .page-head h1 { font-size: 24px; }
 }
