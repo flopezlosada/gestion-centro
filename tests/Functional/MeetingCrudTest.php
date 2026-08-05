@@ -460,7 +460,19 @@ final class MeetingCrudTest extends WebTestCase
         self::assertTrue($stored->hasMinutes(), 'el acta generada ES el acta de la reunión');
         self::assertStringEndsWith('.pdf', (string) $stored->getMinutesName());
 
-        // 3. Quien está convocado se la puede descargar.
+        // 3. Recién generada es un BORRADOR: quien está convocado todavía no la ve, aunque adivine la URL.
+        $this->client->loginUser($attendee);
+        $this->client->request('GET', '/reuniones/'.$id.'/acta/descargar');
+        self::assertResponseStatusCodeSame(403, 'el borrador es de quien levanta el acta hasta que se publica');
+
+        // 4. Se publica, y entonces sí se la puede descargar.
+        $this->client->loginUser($convener);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $publishAction = '/reuniones/'.$id.'/acta/publicar';
+        $token = (string) $crawler->filter('form[action="'.$publishAction.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $publishAction, ['_token' => $token]);
+        self::assertResponseRedirects();
+
         $this->client->loginUser($attendee);
         $this->client->request('GET', '/reuniones/'.$id.'/acta/descargar');
         self::assertResponseIsSuccessful();

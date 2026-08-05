@@ -56,7 +56,9 @@
                     · {% if meeting.areMinutesApproved %}aprobada el {{ meeting.minutesApprovedAt|date('d/m/Y') }}{% else %}pendiente de aprobación{% endif %}
                 {%- endif %}
             </div>
-            {% if meeting.hasMinutes %}
+            {# Un acta guardada pero SIN publicar es un borrador: solo la ve (y descarga) quien la levanta.
+               Publicar es lo que la reparte, así que ofrecerla antes contradiría lo que promete la pantalla. #}
+            {% if meeting.hasMinutes and (meeting.minutesPublished or canKeepMinutes) %}
                 <a class="doc-card" href="{{ path('meeting_minutes_download', { id: meeting.id }) }}">
                     <span class="doc-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span>
                     <span class="doc-card__body">
@@ -98,6 +100,9 @@
                         </form>
                     </div>
                 {% endif %}
+            {% elseif meeting.hasMinutes %}
+                {# Hay acta, pero es borrador y quien mira no la levanta: se dice que llegará, no que no existe. #}
+                <p class="help">El acta está en preparación. Cuando se publique, la recibirás por correo.</p>
             {% else %}
                 <p class="help">Todavía no hay acta de esta reunión.</p>
             {% endif %}
@@ -124,7 +129,7 @@
                     </label>
                     <button class="btn secondary" type="submit">{{ meeting.hasMinutes ? 'Sustituir por este archivo' : 'Subir un acta hecha aparte' }}</button>
                 </form>
-                <p class="help">PDF, Office, texto o imagen, hasta {{ (constant('App\\Support\\DocumentUpload::MAX_BYTES') / 1024 / 1024)|round }} MB. Solo la puede descargar el grupo convocado y el equipo directivo.</p>
+                <p class="help">PDF, Office, texto o imagen, hasta {{ (constant('App\\Support\\DocumentUpload::MAX_BYTES') / 1024 / 1024)|round }} MB. Una vez la publiques, la pueden descargar el grupo convocado y el equipo directivo; antes, solo tú.</p>
             {% endif %}
         </div>
         {% endif %}

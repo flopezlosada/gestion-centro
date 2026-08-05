@@ -76,8 +76,13 @@
                                 <td><a href="{{ path('meeting_show', { id: meeting.id }) }}">{{ meeting.title }}</a>{% if meeting.project %} <span class="help">{{ meeting.project.name }}</span>{% endif %}</td>
                                 <td>{{ meeting.startAt|date('d/m/Y') }} · {{ meeting.startAt|date('H:i') }}</td>
                                 <td>
-                                    {% if meeting.hasMinutes %}
+                                    {# Un listado nunca ofrece un borrador: hasta que se publica, el acta es
+                                       de quien la levanta, y su sitio es el detalle de la reunión. Que EXISTE
+                                       sí se dice, para que quien la subió no la crea perdida. #}
+                                    {% if meeting.minutesPublished %}
                                         <a href="{{ path('meeting_minutes_download', { id: meeting.id }) }}">Descargar acta</a>
+                                    {% elseif meeting.hasMinutes %}
+                                        <span class="help">En preparación</span>
                                     {% else %}
                                         <span class="help">Sin acta todavía</span>
                                     {% endif %}
