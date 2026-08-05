@@ -50,7 +50,10 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
-          extensions: mbstring, intl, pdo_mysql
+          # gd porque el acta en PDF lleva el logo del centro en el membrete: sin gd, Dompdf no procesa
+          # la imagen y pinta su recuadro de "imagen rota" en vez de fallar. El PHP de producción (cdmon)
+          # lo trae compilado dentro, así que aquí se pide para que CI pruebe el mismo camino.
+          extensions: mbstring, intl, pdo_mysql, gd
           coverage: none
 
       - name: Cache vendor/

@@ -115,7 +115,10 @@ final class MeetingFormType extends AbstractType
                 'choice_label' => 'name',
                 'required' => false,
                 'placeholder' => '— No es de un proyecto —',
-                'help' => 'Solo los proyectos y coordinaciones que llevas. Al convocar desde uno, su profesorado viene ya marcado.',
+                // Ya no es "solo los que llevas": el equipo directivo ve los del centro entero
+                // ({@see \App\Service\MeetingAccess::convenableProjects()}), que es lo que le faltaba para
+                // poder convocar la reunión periódica de un proyecto y archivar su acta.
+                'help' => 'Los proyectos y coordinaciones que llevas (o los del centro, si estás en el equipo directivo). Es lo que hace que el acta quede archivada como del proyecto; al convocar desde uno, su profesorado viene ya marcado.',
             ])
             ->add('minutesTakenBy', EntityType::class, [
                 'label' => 'Levanta el acta',

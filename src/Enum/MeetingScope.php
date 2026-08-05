@@ -31,12 +31,18 @@ enum MeetingScope: string
     /**
      * The label shown when convening and on the meeting.
      *
+     * STAFF reads "con el profesorado" and NOT "con equipo docente", which is what it said until the centre
+     * asked for a meeting type called «Equipo docente» (the team of teachers of one group, which meets to
+     * evaluate it). Both would have appeared on the same screen — the ámbito radio and the tipo dropdown
+     * right under it — naming two different things: this one covers every meeting among staff, from a
+     * claustro to a CCP. "Profesorado" is also the generic the centre asks its texts to use.
+     *
      * @return string the Spanish label
      */
     public function label(): string
     {
         return match ($this) {
-            self::STAFF => 'Con equipo docente',
+            self::STAFF => 'Con el profesorado',
             self::STUDENTS => 'Con alumnado',
             self::FAMILIES => 'Con familias',
         };

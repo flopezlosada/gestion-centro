@@ -4,7 +4,14 @@
    public/css/app.css (que usa variables y grid, que Dompdf no soporta).
 
    Fuente DejaVu Sans porque es la única de las que trae Dompdf que lleva tildes y ñ (ver MinutesPdfRenderer).
-   Nada de imágenes: el logo pediría ext-gd en el servidor y un acta no lo necesita para tener valor.
+
+   MEMBRETE con el logo real del centro. La cabecera decía antes que la imagen pediría ext-gd en el
+   servidor: se comprobó el 05-08-2026 y el único PHP de cdmon (phpfarm php84) lleva gd COMPILADO dentro,
+   con soporte PNG, así que no hay nada que instalar. El logo llega como data: URI desde
+   MinutesPdfRenderer, no como URL: los recursos remotos están desactivados a propósito.
+
+   `logo` puede ser null (fichero ausente en un despliegue a medias) y el membrete cae a solo texto: un
+   acta sin logo sigue siendo un acta, y no poder generarla sería peor que generarla sosa.
 #}
 <!DOCTYPE html>
 <html lang="es">
@@ -14,7 +21,13 @@
     <style>
         @page { margin: 2.2cm 2cm; }
         body { font-family: "DejaVu Sans", sans-serif; font-size: 10.5pt; color: #1a1a1a; line-height: 1.45; }
-        .centre { font-size: 9pt; letter-spacing: .06em; text-transform: uppercase; color: #555; }
+        /* Membrete en tabla y no en flex: Dompdf no implementa flexbox, y una tabla de dos celdas es lo
+           que sí coloca de verdad el logo a la izquierda del nombre del centro. */
+        table.head { width: 100%; border-collapse: collapse; margin-bottom: 10pt; border-bottom: 1pt solid #333; }
+        table.head td { padding: 0 0 8pt; vertical-align: middle; }
+        table.head td.mark { width: 58pt; }
+        .centre { font-size: 12pt; font-weight: bold; color: #1a1a1a; }
+        .centre-kind { font-size: 8.5pt; letter-spacing: .06em; text-transform: uppercase; color: #555; }
         h1 { font-size: 15pt; margin: 2pt 0 10pt; }
         h2 { font-size: 11pt; margin: 16pt 0 4pt; border-bottom: .6pt solid #bbb; padding-bottom: 2pt; }
         table.data { width: 100%; border-collapse: collapse; margin-top: 4pt; }
@@ -23,13 +36,31 @@
         p { margin: 4pt 0; }
         .prose { white-space: pre-wrap; }
         .none { color: #777; font-style: italic; }
-        .sign { margin-top: 34pt; }
-        .sign td { width: 50%; padding-top: 34pt; font-size: 9.5pt; color: #555; }
+        /* Pie de firmas. `width: 100%` en la TABLA y no solo el 50% de las celdas: sin ella Dompdf
+           encoge la tabla a su contenido y los dos rótulos salían pegados en la misma línea
+           ("Firma de quien levanta el acta Visto bueno de quien convoca"), en la parte del documento
+           que alguien tiene que firmar a mano. La línea sobre cada celda ES el renglón de la firma:
+           antes solo había un rótulo y ningún sitio donde firmar. */
+        /* `separate` con `border-spacing` y NO `collapse`: al colapsar, los bordes de las dos celdas se
+           funden en un único renglón de punta a punta, que parece un subrayado del documento y no dos
+           sitios donde firmar. */
+        table.sign { width: 100%; border-collapse: separate; border-spacing: 24pt 0; margin-top: 48pt; }
+        table.sign td { width: 50%; border-top: .6pt solid #999; padding: 4pt 0 0; font-size: 9.5pt; color: #555; vertical-align: top; }
     </style>
 </head>
 <body>
-    <div class="centre">{{ app_organization_name }}</div>
-    <h1>Acta · {{ meeting.title }}</h1>
+    <table class="head">
+        <tr>
+            {% if logo %}<td class="mark"><img src="{{ logo }}" alt="" width="48"></td>{% endif %}
+            <td>
+                <div class="centre">{{ app_organization_name }}</div>
+                {#- El tipo NO se repite aquí: ya va en la ficha de abajo, que es donde están los datos. -#}
+                <div class="centre-kind">Acta de reunión</div>
+            </td>
+        </tr>
+    </table>
+
+    <h1>{{ meeting.title }}</h1>
 
     <table class="data">
         <tr><td class="k">Fecha y hora</td><td>{{ meeting.startAt|date('d/m/Y') }}, {{ meeting.startAt|date('H:i') }}{% if meeting.endAt %} a {{ meeting.endAt|date('H:i') }}{% endif %}</td></tr>

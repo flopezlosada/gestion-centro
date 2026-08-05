@@ -9,25 +9,36 @@ use App\Entity\Meeting;
 use App\Entity\Project;
 use App\Entity\Role;
 use App\Entity\User;
+use App\Enum\Area;
+use App\Enum\PermissionLevel;
+use App\Repository\DepartmentRepository;
 use App\Repository\ProjectRepository;
 use App\Repository\UserRepository;
 use App\Service\MeetingAccess;
+use App\Service\OrganizationHierarchy;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Who may convene a meeting, who may change it and who keeps its acta — three different answers that must
- * not leak into each other: convocar es de cualquier CARGO (bandera del rol) o de quien coordina un
- * proyecto; gestionar la reunión es de quien convoca; y el acta, de quien la levanta, que no siempre es la
- * misma persona.
+ * Who may convene a meeting, who may change it, who writes its acta and who may puntualizar it — four
+ * different answers that must not leak into each other: convocar es de cualquier CARGO (bandera del rol) o
+ * de quien coordina un proyecto; gestionar la reunión es de quien convoca; el acta, de quien la levanta, que
+ * no siempre es la misma persona; y las observaciones, de quien estuvo.
+ *
+ * Y el «equipo directivo», que es la única noción que atraviesa varias de ellas: lee cualquier acta y
+ * convoca por cualquier proyecto del centro.
  */
 final class MeetingAccessTest extends TestCase
 {
     private Department $maths;
     /** Docente raso: el único rol que NO convoca (es a quien se convoca). */
     private Role $teacher;
-    /** Tutoría: un cargo SIN rango jerárquico, que sí convoca (convoca a su equipo docente). */
+    /** Tutoría: un cargo SIN rango jerárquico, que sí convoca (convoca al equipo docente de su grupo). */
     private Role $tutor;
     private Role $headDept;
+    /** Dirección tal y como está sembrada: rango de CENTRO y escritura en Administración, pero NO admin. */
+    private Role $direction;
+    /** Secretaría: sin rango, entra en el equipo directivo por la LECTURA de Administración. */
+    private Role $secretary;
 
     protected function setUp(): void
     {
@@ -35,6 +46,13 @@ final class MeetingAccessTest extends TestCase
         $this->teacher = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
         $this->tutor = (new Role())->setCode('tutor')->setName('Tutoría')->setPerDepartment(true)->setCanConvene(true);
         $this->headDept = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10)->setCanConvene(true);
+        $this->direction = (new Role())->setCode('direction')->setName('Dirección')
+            ->setLevel(Area::ADMINISTRATION, PermissionLevel::WRITE)
+            ->setHierarchyLevel(40)
+            ->setCanConvene(true);
+        $this->secretary = (new Role())->setCode('secretary')->setName('Secretaría')
+            ->setLevel(Area::ADMINISTRATION, PermissionLevel::READ)
+            ->setCanConvene(true);
     }
 
     private function user(string $name, Role ...$roles): User
@@ -50,17 +68,22 @@ final class MeetingAccessTest extends TestCase
     /**
      * @param list<Project> $coordinated the projects the subject coordinates
      * @param list<User>    $staff       everybody still on the staff
+     * @param list<Project> $wholeCentre every live project of the centre (what the equipo directivo gets)
      */
-    private function access(array $coordinated = [], array $staff = []): MeetingAccess
+    private function access(array $coordinated = [], array $staff = [], ?array $wholeCentre = null): MeetingAccess
     {
         $projects = $this->createMock(ProjectRepository::class);
         $projects->method('findActiveCoordinatedBy')->willReturn($coordinated);
-        $projects->method('findActiveWithMembers')->willReturn($coordinated);
+        $projects->method('findActiveWithMembers')->willReturn($wholeCentre ?? $coordinated);
 
         $users = $this->createMock(UserRepository::class);
         $users->method('findActive')->willReturn($staff);
 
-        return new MeetingAccess($projects, $users);
+        // OrganizationHierarchy es final: no se puede doblar. Se construye de verdad con repositorios
+        // dobles, que es inofensivo porque commandsWholeSchool() es puro (solo lee los roles del actor).
+        $hierarchy = new OrganizationHierarchy($users, $this->createMock(DepartmentRepository::class));
+
+        return new MeetingAccess($projects, $users, $hierarchy);
     }
 
     public function testAPlainTeacherCannotConvene(): void
@@ -147,14 +170,98 @@ final class MeetingAccessTest extends TestCase
         $convener = $this->user('Lucía', $this->teacher);
         $attendee = $this->user('Pedro', $this->teacher);
         $stranger = $this->user('Ajena', $this->teacher);
+        $head = $this->user('Ana', $this->direction, $this->teacher);
         $meeting = (new Meeting($convener, 'Seguimiento', new \DateTimeImmutable('2026-09-15 14:00')))->addAttendee($attendee);
         $access = $this->access();
 
         self::assertTrue($access->canSee($meeting, $convener, false));
         self::assertTrue($access->canSee($meeting, $attendee, false));
         self::assertFalse($access->canSee($meeting, $stranger, false));
-        // El equipo directivo (rango de centro, lectura de Administración o administrador): lee cualquier acta.
-        self::assertTrue($access->canSee($meeting, $stranger, true));
+        // El equipo directivo lee cualquier acta, y lo hace SIN ser administrador: el tercer argumento es el
+        // flag de admin, y la condición de directivo se resuelve dentro (antes venía ya masticada del
+        // controlador, que era el sitio donde se olvidaba).
+        self::assertTrue($access->canSee($meeting, $head, false));
+        self::assertTrue($access->canSee($meeting, $stranger, true), 'el flag de administrador también (bypass)');
+    }
+
+    public function testTheLeadershipTeamIsReadFromRankOrFromAdministrationAccessAndNotFromTheAdminFlag(): void
+    {
+        $access = $this->access();
+        $head = $this->user('Ana', $this->direction, $this->teacher);
+        $secretary = $this->user('Sara', $this->secretary, $this->teacher);
+        $headDept = $this->user('María', $this->headDept, $this->teacher);
+        $docente = $this->user('Pedro', $this->teacher);
+
+        // Dirección: rango de CENTRO. Y NO es admin a propósito (el superusuario es TIC), que es justamente
+        // lo que dejaba fuera al gatear por `$isAdmin`.
+        self::assertTrue($access->isLeadership($head, false));
+        // Secretaría: sin rango ninguno, entra por la lectura del área de Administración.
+        self::assertTrue($access->isLeadership($secretary, false));
+        // Jefatura de departamento tiene rango, pero POR DEPARTAMENTO: no manda en el centro.
+        self::assertFalse($access->isLeadership($headDept, false));
+        self::assertFalse($access->isLeadership($docente, false));
+        self::assertTrue($access->isLeadership($docente, true), 'el flag de administrador sí (bypass)');
+    }
+
+    public function testTheLeadershipTeamConvenesForAnyProjectOfTheCentreAndNotOnlyItsOwn(): void
+    {
+        // El fallo que traía: Dirección no coordina ningún proyecto (los creó sin ponerse de coordinadora) y
+        // no es admin, así que el desplegable de proyectos le salía VACÍO y no podía convocar la reunión
+        // periódica de ninguno ni archivar su acta como del proyecto.
+        $head = $this->user('Ana', $this->direction, $this->teacher);
+        $docente = $this->user('Pedro', $this->teacher);
+        $erasmus = (new Project())->setName('Erasmus+');
+        $access = $this->access([], [], [$erasmus]);
+
+        self::assertSame([$erasmus], $access->convenableProjects($head, false));
+        self::assertSame([], $access->convenableProjects($docente, false), 'quien no coordina nada sigue sin lista');
+    }
+
+    public function testAPublishedActaIsCorrectedByWhoeverConvenedToo(): void
+    {
+        // Regla del centro: "una vez enviada, solo la modifica quien coordina o quien convocó, y solo para
+        // corregir errores". Es bus factor: el acta de una CCP que sale con un dato mal no puede esperar a
+        // que vuelva la secretaría.
+        $convener = $this->user('Ana', $this->direction);
+        $secretary = $this->user('Sara', $this->teacher);
+        $attendee = $this->user('Pedro', $this->teacher);
+        $meeting = (new Meeting($convener, 'CCP de octubre', new \DateTimeImmutable('2026-10-01 12:00')))->addAttendee($attendee);
+        $meeting->setMinutesTakenBy($secretary);
+        $access = $this->access();
+
+        // Mientras es BORRADOR la regla no cambia: escribirla es de quien la levanta, y quien convocó la
+        // delegó a propósito. Esa decisión no se afloja.
+        self::assertTrue($access->canWriteMinutes($meeting, $secretary, false));
+        self::assertFalse($access->canWriteMinutes($meeting, $convener, false), 'el borrador es de quien la levanta');
+        self::assertFalse($access->canWriteMinutes($meeting, $attendee, false));
+
+        $meeting->attachMinutes('meeting-minutes/uuid.pdf', 'acta.pdf', $secretary, new \DateTimeImmutable('2026-10-01 14:00'));
+        $meeting->publishMinutes($secretary);
+
+        self::assertTrue($access->canWriteMinutes($meeting, $secretary, false));
+        self::assertTrue($access->canWriteMinutes($meeting, $convener, false), 'publicada, quien convocó puede corregirla');
+        self::assertFalse($access->canWriteMinutes($meeting, $attendee, false), 'quien asistió nunca la reescribe');
+    }
+
+    public function testOnlyThePeopleOfTheMeetingMayRemarkAndOnlyOnceTheActaIsPublished(): void
+    {
+        $convener = $this->user('Ana', $this->direction);
+        $attendee = $this->user('Pedro', $this->teacher);
+        $stranger = $this->user('Ajena', $this->teacher);
+        $meeting = (new Meeting($convener, 'CCP de octubre', new \DateTimeImmutable('2026-10-01 12:00')))->addAttendee($attendee);
+        $access = $this->access();
+
+        // Sin acta publicada no hay nada que puntualizar: la que se está escribiendo todavía no dice nada.
+        self::assertFalse($access->canRemark($meeting, $attendee));
+
+        $meeting->attachMinutes('meeting-minutes/uuid.pdf', 'acta.pdf', $convener, new \DateTimeImmutable('2026-10-01 14:00'));
+        $meeting->publishMinutes($convener);
+
+        self::assertTrue($access->canRemark($meeting, $attendee));
+        self::assertTrue($access->canRemark($meeting, $convener));
+        // El equipo directivo LEE cualquier acta, pero no anota una reunión en la que no estuvo: leer los
+        // registros del centro no es haber participado en ellos.
+        self::assertFalse($access->canRemark($meeting, $stranger));
     }
 
     public function testWhoeverConvenesMayConveneAnybodyOnTheStaffButThemselves(): void

@@ -7,11 +7,13 @@ namespace App\Tests\Unit;
 use App\Entity\Meeting;
 use App\Entity\User;
 use App\Enum\EventReminderOffset;
+use App\Enum\MeetingScope;
 use PHPUnit\Framework\TestCase;
 
 /**
- * The invariants of a meeting: who it concerns, how the convened list changes, and the four fields of
- * the acta moving as one (so "there is a file but no name" is never reachable).
+ * The invariants of a meeting: who it concerns, how the convened list changes, the four fields of the acta
+ * moving as one (so "there is a file but no name" is never reachable) and the acta being written in a
+ * single operation (so "half an acta saved" is not reachable either).
  */
 final class MeetingTest extends TestCase
 {
@@ -179,7 +181,7 @@ final class MeetingTest extends TestCase
         $stranger = $this->user('Ajeno');
         $meeting = $this->meeting($convener)->addAttendee($came)->addAttendee($missed);
 
-        $meeting->recordAttendance([$came, $stranger], new \DateTimeImmutable('2026-09-15 15:00'));
+        $meeting->recordSession(null, null, [$came, $stranger], new \DateTimeImmutable('2026-09-15 15:00'));
 
         self::assertTrue($meeting->isAttendanceTaken());
         // El de fuera se descarta aunque venga en el POST, y el orden es el de la convocatoria.
@@ -194,13 +196,86 @@ final class MeetingTest extends TestCase
         $convener = $this->user('Coordina');
         $came = $this->user('Vino');
         $meeting = $this->meeting($convener)->addAttendee($came);
-        $meeting->recordAttendance([$came], new \DateTimeImmutable('2026-09-15 15:00'));
+        $meeting->recordSession(null, null, [$came], new \DateTimeImmutable('2026-09-15 15:00'));
 
-        $meeting->recordAttendance([], new \DateTimeImmutable('2026-09-15 15:10'));
+        $meeting->recordSession(null, null, [], new \DateTimeImmutable('2026-09-15 15:10'));
 
         self::assertCount(0, $meeting->getAttended());
         self::assertTrue($meeting->isAttendanceTaken(), 'sigue constando que se pasó lista');
         self::assertSame([$came, $convener], $meeting->absentees());
+    }
+
+    public function testTheWholeActaIsWrittenInOneGo(): void
+    {
+        // El arreglo del fallo que traía la pantalla: el desarrollo, los acuerdos y la lista se guardan de
+        // una vez, así que "guardé la asistencia y perdí lo escrito" no es un estado alcanzable.
+        $convener = $this->user('Coordina');
+        $came = $this->user('Vino');
+        $meeting = $this->meeting($convener)->addAttendee($came);
+        $when = new \DateTimeImmutable('2026-09-15 15:00');
+
+        $meeting->recordSession('Se abre la sesión.', '1. Se aprueba.', [$came], $when);
+
+        self::assertSame('Se abre la sesión.', $meeting->getDiscussion());
+        self::assertSame('1. Se aprueba.', $meeting->getAgreements());
+        self::assertSame([$came], $meeting->getAttended()->toArray());
+        self::assertSame($when, $meeting->getRecordUpdatedAt());
+        self::assertTrue($meeting->isAttendanceTaken());
+    }
+
+    public function testAMeetingWithFamiliesKeepsTheRollButNoText(): void
+    {
+        // Con familias no hay acta AQUÍ (va a RAICES) pero sí quién vino: la entidad se queda con la lista
+        // y tira el texto, de modo que un POST a pelo no puede dejar media acta colgando de una cita.
+        $convener = $this->user('Coordina');
+        $came = $this->user('Familia');
+        $meeting = $this->meeting($convener)->addAttendee($came);
+        $meeting->setScope(MeetingScope::FAMILIES);
+
+        $meeting->recordSession('Lo que me apetezca.', 'Y esto.', [$came], new \DateTimeImmutable('2026-09-15 15:00'));
+
+        self::assertNull($meeting->getDiscussion(), 'sin acta aquí no hay desarrollo que guardar');
+        self::assertNull($meeting->getAgreements());
+        self::assertSame([$came], $meeting->getAttended()->toArray(), 'la lista sí: es un dato de la cita');
+        self::assertTrue($meeting->isAttendanceTaken());
+    }
+
+    public function testTheAgendaIsAlsoRefusedOnAMeetingThatKeepsNoMinutes(): void
+    {
+        $meeting = $this->meeting($this->user('Coordina'));
+        $meeting->setScope(MeetingScope::STUDENTS);
+
+        $meeting->setAgenda('Puntos a tratar');
+
+        self::assertNull($meeting->getAgenda());
+    }
+
+    public function testTheFileIsOutdatedOnceTheActaIsWrittenAgain(): void
+    {
+        $convener = $this->user('Coordina');
+        $meeting = $this->meeting($convener);
+
+        self::assertFalse($meeting->minutesOutdated(), 'sin fichero no hay nada desfasado');
+
+        $meeting->recordSession('Primera versión.', null, [], new \DateTimeImmutable('2026-09-15 15:00'));
+        $meeting->attachMinutes('meeting-minutes/uuid-1.pdf', 'acta.pdf', $convener, new \DateTimeImmutable('2026-09-15 15:05'));
+
+        self::assertFalse($meeting->minutesOutdated(), 'el PDF se generó DESPUÉS de escribirla: está al día');
+
+        $meeting->recordSession('Corregida.', null, [], new \DateTimeImmutable('2026-09-15 16:00'));
+
+        self::assertTrue($meeting->minutesOutdated(), 'el PDF que hay ya no dice lo que dice el acta');
+    }
+
+    public function testAnActaNobodyWroteIsNotReportedAsOutdated(): void
+    {
+        // El caso de las actas que ya existían cuando se añadió el sello: sin `recordUpdatedAt` no hay nada
+        // que comparar, y marcarlas todas como desfasadas sería un aviso falso en cada reunión vieja.
+        $convener = $this->user('Coordina');
+        $meeting = $this->meeting($convener);
+        $meeting->attachMinutes('meeting-minutes/uuid-1.pdf', 'acta.pdf', $convener, new \DateTimeImmutable('2026-09-15 16:30'));
+
+        self::assertFalse($meeting->minutesOutdated());
     }
 
     public function testIsPastComparesAgainstTheStart(): void

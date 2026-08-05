@@ -8,11 +8,13 @@ use App\Entity\Meeting;
 use App\Entity\User;
 
 /**
- * Avisa a la gente convocada a una reunión: la convocatoria, un cambio de día u hora, y el acta cuando
- * se sube. Decide a QUIÉN avisar y QUÉ decirle; la entrega (aviso in-app + e-mail + push) la hace
- * {@see NotificationDispatcher}, compartida con el resto de notificadores.
+ * Avisa a la gente de una reunión: la convocatoria, un cambio de día u hora, la cancelación, el acta al
+ * publicarse y las observaciones a un acta publicada. Decide a QUIÉN avisar y QUÉ decirle; la entrega
+ * (aviso in-app + e-mail + push) la hace {@see NotificationDispatcher}, compartida con el resto de
+ * notificadores.
  *
- * Nunca se avisa a quien convoca: ya sabe lo que acaba de hacer.
+ * Nunca se avisa a quien convoca de lo que acaba de hacer. La excepción es {@see notifyRemark()}, que va
+ * dirigido justo a quien manda en el acta: ahí quien convoca es destinatario, no autor.
  */
 final readonly class MeetingNotifier
 {
@@ -96,6 +98,43 @@ final readonly class MeetingNotifier
             \sprintf('Acta de: %s', $meeting->getTitle()),
             \sprintf('Ya puedes leer el acta de la reunión del %s.', $meeting->getStartAt()->format('d/m/Y')),
         );
+    }
+
+    /**
+     * Observación al acta: avisa a quien puede hacer algo con ella — quien la levanta y quien convocó, que
+     * son las dos personas que pueden corregirla ({@see \App\Service\MeetingAccess::canWriteMinutes()}).
+     *
+     * NO se avisa al resto del grupo convocado: una puntualización es una petición de corrección dirigida a
+     * quien firma el acta, no un tablón. Si el acta se corrige, lo que llega a todo el mundo es el acta
+     * corregida, que es lo único que queda en el registro.
+     *
+     * @param Meeting $meeting the meeting whose acta was remarked on
+     * @param User    $author  who raised it (never notified: they just wrote it)
+     */
+    public function notifyRemark(Meeting $meeting, User $author): void
+    {
+        // tell() ya salta a quien convoca, y aquí es justamente uno de los destinatarios: se entrega en
+        // directo para no depender de ese filtro.
+        $recipients = [];
+        foreach ([$meeting->minutesKeeper(), $meeting->getConvener()] as $person) {
+            if (null !== $person && $person !== $author && !\in_array($person, $recipients, true)) {
+                $recipients[] = $person;
+            }
+        }
+        if ([] === $recipients) {
+            return;
+        }
+
+        $notifications = [];
+        foreach ($recipients as $person) {
+            $notifications[] = $this->dispatcher->record(
+                $person,
+                'meeting.remark',
+                \sprintf('Observación al acta: %s', $meeting->getTitle()),
+                \sprintf('%s ha puntualizado el acta de la reunión del %s.', $author->getFullName(), $meeting->getStartAt()->format('d/m/Y')),
+            );
+        }
+        $this->dispatcher->flushAndSend($notifications);
     }
 
     /**

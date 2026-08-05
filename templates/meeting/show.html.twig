@@ -56,6 +56,17 @@
                     · {% if meeting.areMinutesApproved %}aprobada el {{ meeting.minutesApprovedAt|date('d/m/Y') }}{% else %}pendiente de aprobación{% endif %}
                 {%- endif %}
             </div>
+            {# El PDF que hay en el disco es más viejo que lo que dice el acta: alguien ha escrito (o
+               corregido) el desarrollo, los acuerdos o la lista después de generarlo. Se avisa a todo el
+               mundo y no solo a quien la levanta: si está publicada, el PDF que el claustro tiene por
+               correo es el viejo, y eso lo tiene que saber quien lo abra. #}
+            {% if meeting.minutesOutdated %}
+                <div class="callout callout--warning">
+                    <p><strong>El acta se ha modificado después de generar el PDF.</strong>
+                    {%- if meeting.minutesPublished %} El archivo publicado es el anterior: hay que volver a generarlo y publicarlo para que la corrección llegue.
+                    {%- else %} Vuelve a generarla para que el archivo recoja los cambios.{% endif %}</p>
+                </div>
+            {% endif %}
             {# Un acta guardada pero SIN publicar es un borrador: solo la ve (y descarga) quien la levanta.
                Publicar es lo que la reparte, así que ofrecerla antes contradiría lo que promete la pantalla. #}
             {% if meeting.hasMinutes and (meeting.minutesPublished or canKeepMinutes) %}
@@ -77,7 +88,7 @@
                 {% else %}
                     <p class="help"><strong>Es un borrador.</strong> Solo la ves tú hasta que la publiques.</p>
                 {% endif %}
-                {% if canKeepMinutes %}
+                {% if canWriteMinutes %}
                     <div class="deliverable-form">
                         {% if not meeting.minutesPublished %}
                             <form method="post" action="{{ path('meeting_minutes_publish', { id: meeting.id }) }}" data-confirm="¿Publicar el acta? Se enviará por correo, con el PDF adjunto, a todas las personas convocadas.">
@@ -87,17 +98,21 @@
                         {% endif %}
                         {#- La aprobación es el "lectura y aprobación del acta anterior" de la reunión
                             siguiente: solo se ofrece en las reuniones que la necesitan (CCP, departamento)
-                            y mientras no esté dada. -#}
-                        {% if meeting.minutesApprovalRequired and not meeting.areMinutesApproved %}
-                            <form method="post" action="{{ path('meeting_minutes_approve', { id: meeting.id }) }}">
+                            y mientras no esté dada. Y solo a quien LEVANTA el acta, no a quien convocó:
+                            dar un acta por aprobada es certificar lo que hizo el órgano, y eso lo firma
+                            quien la levantó. Quitarla, igual: es destruir el registro. -#}
+                        {% if canKeepMinutes %}
+                            {% if meeting.minutesApprovalRequired and not meeting.areMinutesApproved %}
+                                <form method="post" action="{{ path('meeting_minutes_approve', { id: meeting.id }) }}">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
+                                    <button type="submit" class="btn secondary">Dar el acta por aprobada</button>
+                                </form>
+                            {% endif %}
+                            <form method="post" action="{{ path('meeting_minutes_delete', { id: meeting.id }) }}" data-confirm="¿Quitar el acta de esta reunión?">
                                 <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
-                                <button type="submit" class="btn secondary">Dar el acta por aprobada</button>
+                                <button type="submit" class="link-danger">Quitar el acta</button>
                             </form>
                         {% endif %}
-                        <form method="post" action="{{ path('meeting_minutes_delete', { id: meeting.id }) }}" data-confirm="¿Quitar el acta de esta reunión?">
-                            <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
-                            <button type="submit" class="link-danger">Quitar el acta</button>
-                        </form>
                     </div>
                 {% endif %}
             {% elseif meeting.hasMinutes %}
@@ -107,7 +122,7 @@
                 <p class="help">Todavía no hay acta de esta reunión.</p>
             {% endif %}
 
-            {% if canKeepMinutes and isHeld %}
+            {% if canWriteMinutes and isHeld %}
                 {#- Generar el acta: NO es automático (no todas las reuniones necesitan PDF), se hace cuando
                     alguien la pide. Sale del orden del día, la asistencia y lo tratado, y pasa a ser EL acta
                     de la reunión. -#}
@@ -118,7 +133,7 @@
                 <p class="help">Se genera con el orden del día, la asistencia y lo tratado. Puedes generarla otra vez si corriges algo.</p>
             {% endif %}
 
-            {% if canKeepMinutes %}
+            {% if canWriteMinutes %}
                 {# O subir un fichero propio, para un acta escrita fuera. Sustituir vale para corregir una
                    equivocada: el fichero anterior se borra del disco. #}
                 <form method="post" action="{{ path('meeting_minutes_upload', { id: meeting.id }) }}" enctype="multipart/form-data" class="deliverable-form">
@@ -133,50 +148,45 @@
             {% endif %}
         </div>
         {% endif %}
-        {# ---- Lo tratado: la materia prima del acta. Lo escribe quien la levanta; lo lee todo el grupo
-               convocado, que así se entera de lo acordado aunque nadie genere el PDF. ---- #}
-        {% if isHeld and meeting.keepsMinutes %}
-            <div class="detail-block">
-                <div class="detail-block__label">Desarrollo y acuerdos</div>
-                {% if canKeepMinutes %}
-                    {# Dos cuadros y no uno: el centro los pidió por su nombre, y los acuerdos son la parte
-                       que se busca meses después. El orden del día se escribe al convocar. #}
-                    <form method="post" action="{{ path('meeting_discussion', { id: meeting.id }) }}">
-                        <input type="hidden" name="_token" value="{{ csrf_token('meeting_discussion' ~ meeting.id) }}">
-                        <div class="form-row">
-                            <label for="tratado">Desarrollo de la reunión</label>
-                            <textarea id="tratado" name="tratado" rows="8" placeholder="Se abre la sesión a las…&#10;Sobre el primer punto…">{{ meeting.discussion }}</textarea>
-                        </div>
-                        <div class="form-row">
-                            <label for="acuerdos">Acuerdos</label>
-                            <textarea id="acuerdos" name="acuerdos" rows="6" placeholder="1. Se acuerda…&#10;2. Se aprueba…">{{ meeting.agreements }}</textarea>
-                        </div>
-                        <div class="form-actions">
-                            <button class="btn" type="submit">Guardar</button>
-                        </div>
-                    </form>
-                {% else %}
-                    {% if meeting.discussion %}
-                        <p class="detail-prose">{{ meeting.discussion|nl2br }}</p>
-                    {% else %}
-                        <p class="help">Todavía no se ha recogido el desarrollo.</p>
-                    {% endif %}
-                    {% if meeting.agreements %}
-                        <div class="detail-block__label">Acuerdos</div>
-                        <p class="detail-prose">{{ meeting.agreements|nl2br }}</p>
-                    {% endif %}
-                {% endif %}
-            </div>
-        {% endif %}
+        {# ---- Lo que pasó en la sesión: el desarrollo, los acuerdos y la asistencia. UN SOLO BLOQUE y un
+               solo formulario, a propósito.
 
-        {# ---- Asistencia: se pasa lista DESPUÉS de la reunión, y es parte del acta. Un acta formal dice
-               quién asistió y quién no. ---- #}
+               Antes eran dos formularios dentro de este mismo bloque, uno debajo del otro, y el navegador
+               hacía lo que dos formularios significan: «Guardar asistencia» mandaba solo las casillas y el
+               desarrollo recién escrito se quedaba sin enviar, sin un aviso. Ahora hay un botón, y guarda
+               el acta entera ({@see App\Entity\Meeting::recordSession}).
+
+               Lo escribe quien la levanta (y, si ya está publicada, también quien convocó, para corregirla);
+               lo lee todo el grupo convocado, que así se entera de lo acordado aunque nadie genere el PDF.
+
+               Con alumnado o con familias no hay acta que escribir —eso va a RAICES— pero sí lista: quién
+               vino a una entrevista es un dato de esta cita. Por eso la asistencia no está dentro del
+               `keepsMinutes`. ---- #}
         {% if isHeld %}
             <div class="detail-block">
-                <div class="detail-block__label">Asistencia{% if meeting.attendanceTaken %} · {{ meeting.attended|length }} de {{ meeting.people|length }}{% endif %}</div>
-                {% if canKeepMinutes %}
-                    <form method="post" action="{{ path('meeting_attendance', { id: meeting.id }) }}">
-                        <input type="hidden" name="_token" value="{{ csrf_token('meeting_attendance' ~ meeting.id) }}">
+                {#- Se dice lo que el bloque CONTIENE y no «el acta»: el bloque de arriba ya se llama «Acta»
+                    (el documento) y dos cosas con el mismo nombre en la misma pantalla es justo lo que hubo
+                    que arreglar en el desplegable del ámbito. Este es de dónde SALE el acta. -#}
+                <div class="detail-block__label">
+                    {%- if meeting.keepsMinutes %}Desarrollo, acuerdos y asistencia{% else %}Asistencia{% endif -%}
+                    {%- if meeting.attendanceTaken %} · asistieron {{ meeting.attended|length }} de {{ meeting.people|length }}{% endif -%}
+                </div>
+                {% if canWriteMinutes %}
+                    <form method="post" action="{{ path('meeting_record', { id: meeting.id }) }}">
+                        <input type="hidden" name="_token" value="{{ csrf_token('meeting_record' ~ meeting.id) }}">
+                        {% if meeting.keepsMinutes %}
+                            {# Dos cuadros y no uno: el centro los pidió por su nombre, y los acuerdos son la
+                               parte que se busca meses después. El orden del día se escribe al convocar. #}
+                            <div class="form-row">
+                                <label for="tratado">Desarrollo de la reunión</label>
+                                <textarea id="tratado" name="tratado" rows="8" placeholder="Se abre la sesión a las…&#10;Sobre el primer punto…">{{ meeting.discussion }}</textarea>
+                            </div>
+                            <div class="form-row">
+                                <label for="acuerdos">Acuerdos</label>
+                                <textarea id="acuerdos" name="acuerdos" rows="6" placeholder="1. Se acuerda…&#10;2. Se aprueba…">{{ meeting.agreements }}</textarea>
+                            </div>
+                        {% endif %}
+                        <div class="detail-block__label">Asistencia</div>
                         <div class="pick-list">
                             {% for person in meeting.people %}
                                 <label class="pick-option">
@@ -189,17 +199,70 @@
                             {% endfor %}
                         </div>
                         <div class="form-actions">
-                            <button class="btn" type="submit">Guardar asistencia</button>
+                            <button class="btn" type="submit">{% if meeting.keepsMinutes %}Guardar el acta{% else %}Guardar la asistencia{% endif %}</button>
                         </div>
-                        <p class="help">Marca a quien asistió. Si no asistió nadie, guarda la lista vacía: es distinto de no haber pasado lista.</p>
+                        {#- Se dice que el botón guarda TAMBIÉN la lista: guardar es declarar quién vino, y
+                            una lista vacía guardada significa «no vino nadie», que es distinto de no haber
+                            pasado lista. Es lo que hace que la marca de «lista pasada» siga queriendo decir
+                            algo con un único botón. -#}
+                        <p class="help">Se guarda todo de una vez, incluida la asistencia: marca a quien asistió antes de guardar. Guardar la lista vacía significa que no asistió nadie, que es distinto de no haber pasado lista.</p>
                     </form>
-                {% elseif meeting.attendanceTaken %}
-                    <p class="detail-prose">Asistió: {% for person in meeting.attended %}{{ person.fullName }}{% if not loop.last %} · {% endif %}{% else %}nadie{% endfor %}</p>
-                    {% if meeting.absentees is not empty %}
-                        <p class="help">No asistió: {% for person in meeting.absentees %}{{ person.fullName }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
-                    {% endif %}
                 {% else %}
-                    <p class="help">Todavía no se ha pasado lista.</p>
+                    {% if meeting.keepsMinutes %}
+                        {% if meeting.discussion %}
+                            <p class="detail-prose">{{ meeting.discussion|nl2br }}</p>
+                        {% else %}
+                            <p class="help">Todavía no se ha recogido el desarrollo.</p>
+                        {% endif %}
+                        {% if meeting.agreements %}
+                            <div class="detail-block__label">Acuerdos</div>
+                            <p class="detail-prose">{{ meeting.agreements|nl2br }}</p>
+                        {% endif %}
+                        <div class="detail-block__label">Asistencia</div>
+                    {% endif %}
+                    {% if meeting.attendanceTaken %}
+                        <p class="detail-prose">Asistió: {% for person in meeting.attended %}{{ person.fullName }}{% if not loop.last %} · {% endif %}{% else %}nadie{% endfor %}</p>
+                        {% if meeting.absentees is not empty %}
+                            <p class="help">No asistió: {% for person in meeting.absentees %}{{ person.fullName }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+                        {% endif %}
+                    {% else %}
+                        <p class="help">Todavía no se ha pasado lista.</p>
+                    {% endif %}
+                {% endif %}
+            </div>
+        {% endif %}
+
+        {# ---- Observaciones al acta publicada. El acta no la reescribe quien asiste, pero puede decir que
+               una línea no dice lo que se acordó: eso es esto. No entra en el PDF —el acta es lo que aprobó
+               el órgano, no un hilo— y llega como aviso a quien la levanta y a quien convocó, que son los
+               dos que pueden corregirla. ---- #}
+        {% if meeting.minutesPublished and meeting.keepsMinutes and (remarks is not empty or canRemark) %}
+            <div class="detail-block" id="observaciones">
+                <div class="detail-block__label">Observaciones al acta{% if remarks is not empty %} · {{ remarks|length }}{% endif %}</div>
+                {% if remarks is empty %}
+                    <p class="help">Nadie ha puntualizado el acta.</p>
+                {% else %}
+                    <ol class="thread">
+                        {% for remark in remarks %}
+                            <li class="thread__item">
+                                <div class="thread__head">
+                                    <span class="thread__who">{{ remark.author ? remark.author.fullName : 'Alguien que ya no está en el centro' }}</span>
+                                    <time class="thread__when" datetime="{{ remark.createdAt|date('c') }}">{{ remark.createdAt|date('d/m/Y H:i', false) }}</time>
+                                </div>
+                                <p class="thread__body">{{ remark.body|nl2br }}</p>
+                            </li>
+                        {% endfor %}
+                    </ol>
+                {% endif %}
+
+                {% if canRemark %}
+                    <form method="post" action="{{ path('meeting_remark', { id: meeting.id }) }}" class="thread__form">
+                        <input type="hidden" name="_token" value="{{ csrf_token('meeting_remark' ~ meeting.id) }}">
+                        <label class="visually-hidden" for="observacion">Escribe una observación al acta</label>
+                        <textarea id="observacion" name="observacion" rows="2" maxlength="{{ constant('App\\Entity\\MeetingRemark::MAX_LENGTH') }}" placeholder="Ej.: en el punto 3 se acordó aplazarlo, no aprobarlo."></textarea>
+                        <button type="submit" class="btn secondary">Añadir observación</button>
+                    </form>
+                    <p class="help">No cambia el acta: la comenta. Se avisa a quien la levanta y a quien convocó, que son quienes pueden corregirla y volver a publicarla.</p>
                 {% endif %}
             </div>
         {% endif %}

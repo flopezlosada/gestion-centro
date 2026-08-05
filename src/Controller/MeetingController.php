@@ -5,21 +5,20 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\Meeting;
+use App\Entity\MeetingRemark;
 use App\Entity\Project;
 use App\Entity\User;
-use App\Enum\Area;
 use App\Form\MeetingFormData;
 use App\Form\MeetingFormType;
+use App\Repository\MeetingRemarkRepository;
 use App\Repository\MeetingRepository;
 use App\Repository\MeetingTypeRepository;
 use App\Repository\UserRepository;
-use App\Security\Voter\AreaVoter;
 use App\Service\FileUploader;
 use App\Service\MeetingAccess;
 use App\Service\MeetingNotifier;
 use App\Service\MinutesMailer;
 use App\Service\MinutesPdfRenderer;
-use App\Service\OrganizationHierarchy;
 use App\Support\DocumentUpload;
 use App\Util\CalendarDate;
 use Doctrine\ORM\EntityManagerInterface;
@@ -35,13 +34,20 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
  *
  * The page is open to any authenticated user, but every screen is scoped to the meetings that CONCERN
  * them ({@see Meeting::concerns()}): a teacher never sees one they were not called to, and the acta is
- * served only inside that group (the leadership team aside). Who convenes, who changes a meeting and who
- * keeps its acta are three different answers, decided once in {@see MeetingAccess} — the templates ask the
- * same service, so a button is never offered for an action the controller will refuse.
+ * served only inside that group (the leadership team aside). Who convenes, who changes a meeting, who
+ * writes its acta and who may puntualizar it are four different answers, decided once in
+ * {@see MeetingAccess} — the templates ask the same service, so a button is never offered for an action
+ * the controller will refuse. "Equipo directivo" is asked there too, for the same reason.
  *
  * The acta is stored as a FILE (unlike a task's deliverable, which is a link): the centre asked to keep
  * the institutional record in the app. It lives in private storage, is renamed to a random UUID and is
  * only ever served as a download.
+ *
+ * The acta is written through ONE route ({@see recordSession()}) and one entity operation, because it is
+ * one form: desarrollo, acuerdos and roll used to be two endpoints behind two forms in the same block, and
+ * saving one silently threw away what had been typed in the other. Once it is published it can still be
+ * corrected — that is what the centre asked for — and whoever read it can object without rewriting it
+ * ({@see addRemark()}).
  */
 #[Route('/reuniones')]
 final class MeetingController extends AbstractController
@@ -82,7 +88,7 @@ final class MeetingController extends AbstractController
      * más no tiene vuelta atrás.
      */
     #[Route('/actas', name: 'meeting_minutes_archive', methods: ['GET'])]
-    public function minutesArchive(Request $request, #[CurrentUser] User $user, MeetingRepository $meetings, MeetingTypeRepository $meetingTypes, OrganizationHierarchy $hierarchy): Response
+    public function minutesArchive(Request $request, #[CurrentUser] User $user, MeetingRepository $meetings, MeetingTypeRepository $meetingTypes, MeetingAccess $access): Response
     {
         $types = $meetingTypes->findAllOrdered();
         $requested = $request->query->getInt('tipo');
@@ -96,7 +102,7 @@ final class MeetingController extends AbstractController
             }
         }
 
-        $wholeCentre = $this->isLeadership($user, $hierarchy);
+        $wholeCentre = $access->isLeadership($user, $this->isGranted('ROLE_ADMIN'));
 
         return $this->render('meeting/archive.html.twig', [
             'minutes' => $wholeCentre ? $meetings->findPublishedMinutes($type) : $meetings->findPublishedMinutesFor($user, $type),
@@ -176,23 +182,30 @@ final class MeetingController extends AbstractController
     /**
      * The convocatoria: what it is about, when and where, who is called, the acta once it exists, and — once
      * the meeting has been held — the roll. Readable by the people the meeting concerns plus the leadership
-     * team ({@see isLeadership()}); nobody else.
+     * team ({@see MeetingAccess::isLeadership()}); nobody else.
      */
     #[Route('/{id}', name: 'meeting_show', requirements: ['id' => '\d+'], methods: ['GET'])]
-    public function show(Meeting $meeting, #[CurrentUser] User $user, MeetingAccess $access, OrganizationHierarchy $hierarchy): Response
+    public function show(Meeting $meeting, #[CurrentUser] User $user, MeetingAccess $access, MeetingRemarkRepository $remarks): Response
     {
         $isAdmin = $this->isGranted('ROLE_ADMIN');
-        if (!$access->canSee($meeting, $user, $this->isLeadership($user, $hierarchy))) {
+        if (!$access->canSee($meeting, $user, $isAdmin)) {
             throw $this->createAccessDeniedException('No estás convocado a esta reunión.');
         }
 
         return $this->render('meeting/show.html.twig', [
             'meeting' => $meeting,
             'canManage' => $access->canManage($meeting, $user, $isAdmin),
-            // Quien levanta el acta: no siempre quien convoca. Es quien sube el acta, pasa lista y la da
-            // por aprobada. Se llama canKeepMinutes y no keepsMinutes porque Meeting::keepsMinutes() ya
+            // Quien levanta el acta: no siempre quien convoca. Es quien la sube, la publica y la da por
+            // aprobada. Se llama canKeepMinutes y no keepsMinutes porque Meeting::keepsMinutes() ya
             // responde otra cosa —si ESTA REUNIÓN lleva acta— y las dos conviven en la misma plantilla.
             'canKeepMinutes' => $access->canKeepMinutes($meeting, $user, $isAdmin),
+            // ESCRIBIR el acta (desarrollo, acuerdos y lista) es lo mismo mientras es borrador; con el acta
+            // ya publicada entra además quien convocó, para corregirla. Los dos permisos se piden porque la
+            // pantalla los distingue: publicarla y quitarla siguen siendo de quien la levanta.
+            'canWriteMinutes' => $access->canWriteMinutes($meeting, $user, $isAdmin),
+            'canRemark' => $access->canRemark($meeting, $user),
+            // Las observaciones al acta: solo existen a partir de que se publica, así que antes no hay hilo.
+            'remarks' => $meeting->isMinutesPublished() ? $remarks->findThreadFor($meeting) : [],
             // Pasar lista solo tiene sentido cuando la reunión ya ha empezado: antes no hay nada que contar.
             'isHeld' => $meeting->isPast(new \DateTimeImmutable()),
         ]);
@@ -277,7 +290,7 @@ final class MeetingController extends AbstractController
         if (!$this->isCsrfTokenValid('meeting_minutes'.$meeting->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
-        if (!$access->canKeepMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
+        if (!$access->canWriteMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
             throw $this->createAccessDeniedException('El acta la sube quien la levanta.');
         }
 
@@ -303,34 +316,66 @@ final class MeetingController extends AbstractController
     }
 
     /**
-     * Records what was discussed and agreed ("lo tratado"), which is what the acta is made of. Written by
-     * whoever keeps the minutes, and only once the meeting has been held — there is nothing to record about
-     * a meeting that has not happened.
+     * Writes the acta: lo tratado, los acuerdos and the roll, all in one POST because they are one form on
+     * one screen. Only once the meeting has been held — there is nothing to record about a meeting that has
+     * not happened — and only by whoever may write it ({@see MeetingAccess::canWriteMinutes()}).
+     *
+     * This route replaces the two it used to be (`/tratado` and `/asistencia`). They were two forms inside
+     * a single visual block, so pressing "Guardar asistencia" posted only the checkboxes and silently
+     * dropped the desarrollo somebody had just typed. One form, one endpoint, one entity operation
+     * ({@see Meeting::recordSession()}): saving half the acta is no longer something the app can do.
+     *
+     * A meeting with families or students keeps NO acta here (it goes to RAICES) but it does keep its roll,
+     * so this is not refused for them: the entity ignores the text and records who came. That is why the
+     * old 403 on scope is gone — the screen only ever offers the half that applies.
      */
-    #[Route('/{id}/tratado', name: 'meeting_discussion', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function recordDiscussion(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager): Response
+    #[Route('/{id}/acta/registro', name: 'meeting_record', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function recordSession(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, UserRepository $users, EntityManagerInterface $entityManager): Response
     {
-        if (!$this->isCsrfTokenValid('meeting_discussion'.$meeting->getId(), (string) $request->request->get('_token'))) {
+        if (!$this->isCsrfTokenValid('meeting_record'.$meeting->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
-        if (!$access->canKeepMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
-            throw $this->createAccessDeniedException('Lo tratado lo recoge quien levanta el acta.');
+        if (!$access->canWriteMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
+            throw $this->createAccessDeniedException('El acta la escribe quien la levanta.');
         }
         if (!$meeting->isPast(new \DateTimeImmutable())) {
             throw $this->createAccessDeniedException('La reunión todavía no ha empezado.');
         }
 
-        if (!$meeting->keepsMinutes()) {
-            // Con alumnado o con familias no hay acta que rellenar: eso va a RAICES.
-            throw $this->createAccessDeniedException('Esta reunión no lleva acta en la aplicación.');
-        }
+        /** @var list<string> $ids */
+        $ids = array_values($request->request->all('asistentes'));
+        // La entidad se queda solo con quien estaba convocado, así que un id colado en el POST no puede
+        // aparecer como asistente.
+        $present = [] !== $ids ? $users->findBy(['id' => array_map('intval', $ids)]) : [];
 
         $discussion = trim((string) $request->request->get('tratado'));
         $agreements = trim((string) $request->request->get('acuerdos'));
-        $meeting->setDiscussion('' !== $discussion ? $discussion : null);
-        $meeting->setAgreements('' !== $agreements ? $agreements : null);
+        $wasPublished = $meeting->isMinutesPublished();
+
+        $meeting->recordSession(
+            '' !== $discussion ? $discussion : null,
+            '' !== $agreements ? $agreements : null,
+            $present,
+            new \DateTimeImmutable(),
+        );
         $entityManager->flush();
-        $this->addFlash('success', 'Guardado. Cuando esté listo, genera el acta y publícala.');
+
+        // El siguiente paso depende de dónde estaba: corregir un acta YA publicada deja el PDF que la gente
+        // recibió diciendo otra cosa, y eso se dice aquí —no solo con el aviso de la ficha— porque es el
+        // momento en que se acaba de hacer. Y en una reunión sin acta (alumnado, familias) no se menciona
+        // ninguna: ahí solo se ha pasado lista.
+        $next = match (true) {
+            !$meeting->keepsMinutes() => '',
+            $wasPublished => ' Vuelve a generar el PDF y a publicarlo para que la corrección llegue a quien ya tiene el acta.',
+            default => ' Cuando esté lista, genera el acta y publícala.',
+        };
+        $this->addFlash('success', \sprintf(
+            '%s Asistencia: %d de %d.%s',
+            $meeting->keepsMinutes() ? 'Acta guardada.' : 'Guardado.',
+            \count($meeting->getAttended()),
+            \count($meeting->people()),
+            $next,
+        ));
 
         return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
     }
@@ -347,7 +392,7 @@ final class MeetingController extends AbstractController
         if (!$this->isCsrfTokenValid('meeting_minutes'.$meeting->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
-        if (!$access->canKeepMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
+        if (!$access->canWriteMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
             throw $this->createAccessDeniedException('El acta la genera quien la levanta.');
         }
         if (!$meeting->isPast(new \DateTimeImmutable())) {
@@ -376,7 +421,7 @@ final class MeetingController extends AbstractController
         if (!$this->isCsrfTokenValid('meeting_minutes'.$meeting->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
-        if (!$access->canKeepMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
+        if (!$access->canWriteMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
             throw $this->createAccessDeniedException('El acta la publica quien la levanta.');
         }
 
@@ -399,32 +444,37 @@ final class MeetingController extends AbstractController
     }
 
     /**
-     * Records the roll: who of the expected people actually attended. Kept by whoever levanta el acta, and
-     * only once the meeting has started — before that there is nothing to count. Posting nobody is a valid
-     * answer ("no vino nadie"), which is why the timestamp, not the list, is what says the roll was taken.
+     * Adds an observation to a published acta ({@see MeetingRemark}): the way somebody who was AT the
+     * meeting says a line of its acta is wrong, without being able to rewrite it.
+     *
+     * Only for the people the meeting concerns and only once the acta is published — the two boundaries of
+     * {@see MeetingAccess::canRemark()}. It tells the two people who can act on it (whoever levanta el acta
+     * and whoever convened), because an objection nobody reads is the same as no objection.
      */
-    #[Route('/{id}/asistencia', name: 'meeting_attendance', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function recordAttendance(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, UserRepository $users, EntityManagerInterface $entityManager): Response
+    #[Route('/{id}/acta/observacion', name: 'meeting_remark', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function addRemark(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, MeetingNotifier $notifier): Response
     {
-        if (!$this->isCsrfTokenValid('meeting_attendance'.$meeting->getId(), (string) $request->request->get('_token'))) {
+        if (!$this->isCsrfTokenValid('meeting_remark'.$meeting->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
-        if (!$access->canKeepMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
-            throw $this->createAccessDeniedException('La asistencia la registra quien levanta el acta.');
-        }
-        if (!$meeting->isPast(new \DateTimeImmutable())) {
-            throw $this->createAccessDeniedException('La reunión todavía no ha empezado.');
+        if (!$access->canRemark($meeting, $user)) {
+            throw $this->createAccessDeniedException('Las observaciones al acta las escribe quien estuvo convocado, y solo cuando está publicada.');
         }
 
-        /** @var list<string> $ids */
-        $ids = array_values($request->request->all('asistentes'));
-        $present = [] !== $ids ? $users->findBy(['id' => array_map('intval', $ids)]) : [];
-        // La entidad se queda solo con quien estaba convocado, así que un id colado en el POST no puede
-        // aparecer como asistente.
-        $meeting->recordAttendance($present, new \DateTimeImmutable());
+        $body = trim((string) $request->request->get('observacion'));
+        if ('' === $body || mb_strlen($body) > MeetingRemark::MAX_LENGTH) {
+            $this->addFlash('error', '' === $body
+                ? 'Escribe la observación antes de enviarla.'
+                : \sprintf('La observación es demasiado larga (máximo %d caracteres).', MeetingRemark::MAX_LENGTH));
+
+            return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
+        }
+
+        $entityManager->persist(new MeetingRemark($meeting, $user, $body, new \DateTimeImmutable()));
         $entityManager->flush();
 
-        $this->addFlash('success', \sprintf('Asistencia registrada: %d de %d.', \count($meeting->getAttended()), \count($meeting->people())));
+        $notifier->notifyRemark($meeting, $user);
+        $this->addFlash('success', 'Observación añadida. Se ha avisado a quien levanta el acta.');
 
         return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
     }
@@ -469,12 +519,13 @@ final class MeetingController extends AbstractController
      * keeps it: publishing is the deliberate gesture that hands the acta to the group.
      */
     #[Route('/{id}/acta/descargar', name: 'meeting_minutes_download', requirements: ['id' => '\d+'], methods: ['GET'])]
-    public function downloadMinutes(Meeting $meeting, #[CurrentUser] User $user, MeetingAccess $access, OrganizationHierarchy $hierarchy, FileUploader $uploader): Response
+    public function downloadMinutes(Meeting $meeting, #[CurrentUser] User $user, MeetingAccess $access, FileUploader $uploader): Response
     {
-        if (!$access->canSee($meeting, $user, $this->isLeadership($user, $hierarchy))) {
+        $isAdmin = $this->isGranted('ROLE_ADMIN');
+        if (!$access->canSee($meeting, $user, $isAdmin)) {
             throw $this->createAccessDeniedException('No estás convocado a esta reunión.');
         }
-        if (!$meeting->isMinutesPublished() && !$access->canKeepMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
+        if (!$meeting->isMinutesPublished() && !$access->canKeepMinutes($meeting, $user, $isAdmin)) {
             throw $this->createAccessDeniedException('El acta es todavía un borrador: solo la ve quien la levanta.');
         }
 
@@ -607,24 +658,6 @@ final class MeetingController extends AbstractController
         }
 
         return null !== $replaced;
-    }
-
-    /**
-     * Whether the current user is on the leadership team, which the centre says reads every acta. Derived
-     * from the model instead of a list of names: a centre-wide ranked role (dirección, jefatura de estudios
-     * and its adjunta), or read access to the administration area (how secretaría gets it), or the admin
-     * flag. Widens ONLY what can be READ — see {@see MeetingAccess::canSee()}.
-     *
-     * @param User                  $user      the current user
-     * @param OrganizationHierarchy $hierarchy the chain-of-command service
-     *
-     * @return bool true if they may read any meeting
-     */
-    private function isLeadership(User $user, OrganizationHierarchy $hierarchy): bool
-    {
-        return $this->isGranted('ROLE_ADMIN')
-            || $hierarchy->commandsWholeSchool($user)
-            || $this->isGranted(AreaVoter::READ, Area::ADMINISTRATION);
     }
 
     /**
