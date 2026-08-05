@@ -77,8 +77,10 @@ final class BookingTest extends WebTestCase
      * encuentra el token y TODOS los casos de este fichero fallan a la vez por una razón que no tiene nada
      * que ver con lo que prueban.
      *
-     * Treinta días dan margen de sobra para que la zona horaria del CI (UTC) y la de local (Madrid) puedan
-     * discrepar en el día sin que la comparación cambie de lado.
+     * Los dos lados de la comparación caen en la MISMA zona, y no por casualidad: {@see \App\Kernel} llama a
+     * `date_default_timezone_set()` en su constructor, por el que pasa también `KernelTestCase`, así que aquí
+     * no hay el desfase CI-en-UTC contra local-en-Madrid que sí muerde a las fechas escritas a mano en otras
+     * pantallas. Los treinta días son solo para que la fecha nunca esté cerca del borde.
      *
      * @return string the day, as "YYYY-MM-DD"
      */

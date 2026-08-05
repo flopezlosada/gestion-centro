@@ -28,8 +28,13 @@ use Doctrine\Migrations\AbstractMigration;
  * después nacen con `kind = 'other'`, que en esta misma regla es `true`, así que el defecto de la columna y
  * la siembra concuerdan sin código extra.
  *
- * `reservable` no es palabra reservada en MariaDB 10.11 (a diferencia de `period`, que paró un despliegue
- * el 31/07): el `ADD` se parsea sin ambigüedad.
+ * Sobre el nombre de la columna: lo que paró el despliegue del 31/07 con `ADD period` NO fue una palabra
+ * reservada —`period` no está en la lista de reservadas de Doctrine ni del servidor—, sino que `ADD PERIOD`
+ * es el arranque literal de la cláusula `ADD PERIOD FOR SYSTEM_TIME (...)` de MariaDB, así que el parser
+ * dejaba de esperar un nombre de columna. `ADD reservable` no coincide con el arranque de ninguna cláusula de
+ * `ALTER TABLE`, de modo que no puede caer en esa ambigüedad. Razonado sobre la gramática, no ejecutado
+ * contra el servidor: la red que lo confirma es el paso de migraciones del CI, que desde la PR #128 corre
+ * MariaDB 10.11 y no MySQL 8 (que era justo por lo que aquel error no se vio venir).
  */
 final class Version20260805110000 extends AbstractMigration
 {

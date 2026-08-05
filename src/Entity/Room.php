@@ -355,6 +355,24 @@ class Room implements Auditable
     }
 
     /**
+     * Whether the staff may book this space for a period: the WHOLE rule, in one place.
+     *
+     * Two conditions and not one, because they retire a space for different reasons — {@see $active} means it
+     * no longer exists for anybody, {@see $reservable} means the centre does not open it to the booking queue.
+     * They used to be spelled out at each call site, which made the rule a convention: a screen could offer
+     * the gym by remembering only half of it, and nothing would complain. Here it cannot be half-asked.
+     *
+     * The DQL in {@see \App\Repository\RoomRepository::findReservable()} has to repeat the two conditions —
+     * DQL cannot call a method — but THIS is the canonical definition; that query points back here.
+     *
+     * @return bool true when the space may be booked
+     */
+    public function canBeBooked(): bool
+    {
+        return $this->active && $this->reservable;
+    }
+
+    /**
      * Whether the card still lacks the data a person has to supply — its size (in groups) and a type.
      * Drives the "sin completar" marker in the catalogue: an auto-created stub is useful (it makes the
      * room exist) but it cannot inform a decision until somebody finishes it.

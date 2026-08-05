@@ -174,11 +174,12 @@ final class BookingController extends AbstractController
 
         // Lo que la pantalla no ofrece no es una regla hasta que se comprueba aquí: sin esto se podía
         // reservar un aula dada de baja —o el gimnasio, que el centro no abre a reservas— mandando su id a
-        // mano. Las dos condiciones son las mismas que filtra {@see RoomRepository::findReservable()}.
+        // mano. Se pregunta con {@see Room::canBeBooked()} y no con las dos condiciones sueltas: escritas a
+        // mano aquí, la regla dependía de que quien las copie a la siguiente pantalla se acuerde de las dos.
         $room = 'room' === $kind ? $rooms->find((int) $id) : null;
         $material = 'material' === $kind ? $materials->find((int) $id) : null;
         $booking = match (true) {
-            $room instanceof Room && $room->isActive() && $room->isReservable() => Booking::forRoom($user, $room, $day, $slot, $purpose),
+            $room instanceof Room && $room->canBeBooked() => Booking::forRoom($user, $room, $day, $slot, $purpose),
             $material instanceof Material && $material->isActive() => Booking::forMaterial($user, $material, $day, $slot, $purpose),
             default => null,
         };
