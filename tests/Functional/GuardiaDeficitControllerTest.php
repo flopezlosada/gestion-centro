@@ -171,13 +171,18 @@ final class GuardiaDeficitControllerTest extends WebTestCase
         self::assertStringContainsString('room=S ACTOS', $href, 'with the room already chosen');
     }
 
-    public function testFreeRoomsSheetIsDeniedWithoutReadAccess(): void
+    /**
+     * La hoja de aulas libres NO tiene puerta: un docente sin permiso de guardias ni de espacios entra. Era
+     * un 403 y por eso nadie del claustro podía preguntar dónde meter a su grupo. Lo que sigue cerrado con
+     * escritura es todo lo que CAMBIA algo, y eso lo prueban los dos casos de abajo.
+     */
+    public function testFreeRoomsSheetIsOpenToAnyTeacher(): void
     {
         $this->login(coordinator: false);
 
         $this->client->request('GET', '/guardias/aulas');
 
-        self::assertResponseStatusCodeSame(403);
+        self::assertResponseIsSuccessful();
     }
 
     public function testGroupingScreenIsDeniedWithoutWriteAccess(): void

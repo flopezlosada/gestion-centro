@@ -31,7 +31,7 @@ use Symfony\Component\Validator\Constraints as Assert;
  * point at it from every occupancy calculation): it is deactivated instead, see {@see $active}.
  *
  * {@see Auditable} like the other admin catalogues: capacity and assignability decide where groups end
- * up, so a change has to leave a trail.
+ * up and {@see $reservable} decides what the whole staff may book, so a change has to leave a trail.
  */
 #[ORM\Entity(repositoryClass: RoomRepository::class)]
 #[ORM\Table(name: 'room')]
@@ -115,6 +115,24 @@ class Room implements Auditable
      */
     #[ORM\Column(options: ['default' => true])]
     private bool $assignable = true;
+
+    /**
+     * Whether the space may be BOOKED for one period by whoever asks first ({@see Booking}).
+     *
+     * A different question from {@see $assignable}, and deliberately a different column. Assignable asks
+     * "may I send a displaced group here?" — the coordinator's emergency, decided by whether a lesson can
+     * happen in the room. Reservable asks "may anybody take this for an hour?" — decided by who owns the
+     * space: the centre's rule is that labs, workshops, the gym and the courts are NOT booked (their
+     * department or the PE staff arranges them), while an ordinary classroom or the assembly hall are. The
+     * two answers diverge in both directions — the gym is bookable by nobody yet a fine place to park three
+     * groups for one period, the salón de actos is bookable and also assignable — so hanging both meanings
+     * on one boolean would make each screen wrong half the time.
+     *
+     * Seeded per {@see RoomKind} on migration and then centre-owned: the defaults are a starting point,
+     * the catalogue screen is where the truth is set.
+     */
+    #[ORM\Column(options: ['default' => true])]
+    private bool $reservable = true;
 
     /** Whether the space is in use. Retiring a room deactivates it; the historical cells keep pointing here. */
     #[ORM\Column(options: ['default' => true])]
@@ -296,6 +314,18 @@ class Room implements Auditable
     public function setAssignable(bool $assignable): static
     {
         $this->assignable = $assignable;
+
+        return $this;
+    }
+
+    public function isReservable(): bool
+    {
+        return $this->reservable;
+    }
+
+    public function setReservable(bool $reservable): static
+    {
+        $this->reservable = $reservable;
 
         return $this;
     }

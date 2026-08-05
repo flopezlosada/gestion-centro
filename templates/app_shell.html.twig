@@ -32,6 +32,14 @@
                    coordinación de guardias) y las fotocopias las pide cualquiera. #}
                 <a href="{{ path('guardia_bank_index') }}" class="{{ route starts with 'guardia_bank_' ? 'is-active' }}">Banco de tareas</a>
                 <a href="{{ path('copy_request_index') }}" class="{{ route starts with 'copy_request_' ? 'is-active' }}">Fotocopias</a>
+                {# Aulas libres, y AQUÍ arriba, sin puerta. Estaba dentro del área Espacios, que solo tienen
+                   dirección (write) y coordinación de guardias (read): un docente no la veía por ningún
+                   camino, y es una pregunta que se hace cualquiera («¿dónde meto a mi grupo esta hora?»).
+                   No dice nada privado —qué aulas están vacías se deduce del horario, que ya ve todo el
+                   mundo—, así que va sin gate, igual que Reservas e Incidencias TIC. Una sola entrada: la
+                   pintaban el bloque de Guardias y el de Espacios a la vez, con lo que el resaltado de
+                   «estás aquí» se encendía dos veces. #}
+                <a href="{{ path('guardia_rooms') }}" class="{{ route == 'guardia_rooms' ? 'is-active' }}">Aulas libres</a>
 
                 {# Gestión de guardias: solo para quien coordina (lectura en el área Guardias; el flag de
                    administrador la concede por bypass). Las acciones del parte exigen escritura, verificada
@@ -40,7 +48,8 @@
                     <span class="nav-section-title">Guardias</span>
                     <div class="nav-group">
                         <a href="{{ path('guardia_index') }}" class="{{ (route == 'guardia_index' or route starts with 'guardia_absence') ? 'is-active' }}">Parte del día</a>
-                        <a href="{{ path('guardia_rooms') }}" class="{{ route == 'guardia_rooms' ? 'is-active' }}">Aulas libres</a>
+                        {# «Aulas libres» ya no está aquí: subió a la navegación primaria al abrirse a todo el
+                           claustro, y quien coordina la tiene igual de a mano ahí. #}
                         {# Semana de exámenes: quien acompaña un examen no puede hacer su guardia, y quien da
                            clase solo a los grupos que se examinan queda libre para cogerla. La entrada está
                            siempre, y la pantalla dice cuándo no hay nada en marcha: esconderla mientras no
@@ -63,21 +72,17 @@
                     </div>
                 {% endif %}
 
-                {# Espacios: consultar qué aulas quedan libres a una hora (abierto a quien tenga lectura
-                   en el área) y el catálogo de espacios, que decide dónde puede ir un grupo y por eso
-                   exige escritura. Mismo gate en los controladores. #}
-                {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::READ'), constant('App\\Enum\\Area::ESPACIOS')) %}
+                {# Espacios: decidir dónde va un grupo (planes) y completar el catálogo (tamaño, tipo, si se
+                   puede reservar). Todo lo de aquí es del equipo directivo, así que el gate del bloque es
+                   ESCRITURA, no lectura: la única entrada que era de lectura —«Aulas libres»— se abrió al
+                   claustro y subió arriba, y con un gate de lectura este bloque saldría VACÍO para quien
+                   tenga `espacios: read` a secas (hoy, coordinación de guardias). Mismo gate en los
+                   controladores. #}
+                {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ESPACIOS')) %}
                     <span class="nav-section-title">Espacios</span>
                     <div class="nav-group">
-                        {#- UNA sola pantalla de aulas libres, la de guardias: las dos respondían la misma
-                            pregunta con el mismo servicio de ocupación, y dos sitios para lo mismo obligan al
-                            claustro a aprender cuál mira cada uno y acaban divergiendo. Se conserva la de
-                            guardias porque está pensada para resolver con prisa (una hora a la vez). -#}
-                        <a href="{{ path('guardia_rooms') }}" class="{{ route == 'guardia_rooms' ? 'is-active' }}">Aulas libres</a>
-                        {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ESPACIOS')) %}
-                            <a href="{{ path('space_plan_index') }}" class="{{ route starts with 'space_plan_' ? 'is-active' }}">Planes de espacios</a>
-                            <a href="{{ path('space_room_index') }}" class="{{ route starts with 'space_room_' ? 'is-active' }}">Catálogo de espacios</a>
-                        {% endif %}
+                        <a href="{{ path('space_plan_index') }}" class="{{ route starts with 'space_plan_' ? 'is-active' }}">Planes de espacios</a>
+                        <a href="{{ path('space_room_index') }}" class="{{ route starts with 'space_room_' ? 'is-active' }}">Catálogo de espacios</a>
                     </div>
                 {% endif %}
 
@@ -85,7 +90,13 @@
                    no es un privilegio, y esconderlo a quien tiene que pedirlo no protege nada. #}
                 <span class="nav-section-title">Reservas</span>
                 <div class="nav-group">
-                    <a href="{{ path('booking_index') }}" class="{{ route starts with 'booking_' ? 'is-active' }}">Espacios y material</a>
+                    <a href="{{ path('booking_index') }}" class="{{ (route starts with 'booking_' and route != 'booking_tracking') ? 'is-active' }}">Espacios y material</a>
+                    {# El seguimiento SÍ lleva puerta, y por eso está aparte: dice quién cogió qué y cuándo —el
+                       rastro de trabajo de cada compañero—, y es para el equipo directivo cuando aparece un
+                       desperfecto, no para consulta general. #}
+                    {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ESPACIOS')) %}
+                        <a href="{{ path('booking_tracking') }}" class="{{ route == 'booking_tracking' ? 'is-active' }}">Seguimiento</a>
+                    {% endif %}
                 </div>
 
                 {# Incidencias TIC: aquí NO hay gate. Avisar de una avería lo puede hacer cualquiera —el
@@ -262,7 +273,12 @@
                     <span class="bottomnav__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 1.5-1.5M4 12l1 1 1.5-1.5M4 18l1 1 1.5-1.5"/></svg></span>
                     <span>Tareas</span>
                 </a>
-                <a href="{{ path('guardia_mine') }}" class="bottomnav__item{{ route starts with 'guardia_' ? ' is-active' }}"{{ route starts with 'guardia_' ? ' aria-current=page' }}>
+                {# «Aulas libres» vive bajo /guardias por historia (allí nació), pero ya no es una pantalla de
+                   guardias: la usa todo el claustro y tiene su propia entrada arriba. Sin excluirla, estar en
+                   ella encendía «Guardias» aquí abajo — engañoso, y ahora le pasaría a los sesenta del
+                   claustro y no a las dos personas que coordinan. #}
+                {% set enGuardias = route starts with 'guardia_' and route != 'guardia_rooms' %}
+                <a href="{{ path('guardia_mine') }}" class="bottomnav__item{{ enGuardias ? ' is-active' }}"{{ enGuardias ? ' aria-current=page' }}>
                     <span class="bottomnav__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
                     <span>Guardias</span>
                 </a>

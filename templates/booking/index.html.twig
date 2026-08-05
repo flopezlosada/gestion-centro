@@ -15,12 +15,33 @@
         </div>
     </div>
 
-    {# Navegar por días: es una pantalla de un día, como el parte de guardias. #}
-    <nav class="scope-toggle" aria-label="Día">
-        <a href="{{ path('booking_index', { fecha: day|date_modify('-1 day')|date('Y-m-d', false) }) }}">← Día anterior</a>
-        <a href="{{ path('booking_index') }}" class="{{ diaStr == 'now'|date('Y-m-d', false) ? 'is-active' }}">Hoy</a>
-        <a href="{{ path('booking_index', { fecha: day|date_modify('+1 day')|date('Y-m-d', false) }) }}">Día siguiente →</a>
-    </nav>
+    {# Navegar por días: es una pantalla de un día, como el parte de guardias.
+
+       SIN «día anterior» a propósito: aquí se viene a reservar y el pasado no se reserva (lo rechaza también
+       BookingController::create(), no solo esta pantalla). El selector de fecha SÍ deja ir atrás porque
+       consultar lo que hubo es legítimo — para eso se separa mirar de reservar.
+
+       El selector es la mejora progresiva que ya usa «Aulas libres»: un <form method="get"> con un
+       input[type=date] que se envía al cambiar. Sin JS queda el calendario nativo del sistema con su botón
+       «Ir»; con JS, date-field.js lo cambia por el calendario en español y el onchange sigue disparando
+       (choose() emite un evento 'change' que burbujea). Es lo que hacía falta para reservar de una semana
+       para otra: a saltos de un día son cinco clics. #}
+    {# El selector va FUERA del .scope-toggle y no dentro: ese grupo lleva overflow:hidden (app.css) y el
+       calendario que monta date-field.js es un .cdate__pop absoluto, así que ahí dentro se vería recortado. #}
+    <div class="toolbar">
+        <nav class="scope-toggle" aria-label="Día">
+            <a href="{{ path('booking_index') }}" class="{{ diaStr == 'now'|date('Y-m-d', false) ? 'is-active' }}">Hoy</a>
+            <a href="{{ path('booking_index', { fecha: day|date_modify('+1 day')|date('Y-m-d', false) }) }}">Día siguiente →</a>
+        </nav>
+        <form method="get" action="{{ path('booking_index') }}">
+            {#- <label for> y no aria-label: date-field.js pasa el input real a hidden y le TRASPASA el id al
+                campo visible justo para que la etiqueta lo siga enfocando (ver su comentario). Un aria-label
+                en el input real se quedaría en el campo oculto y el visible perdería su nombre. -#}
+            <label for="fecha" class="visually-hidden">Ir a un día</label>
+            <input type="date" id="fecha" name="fecha" value="{{ diaStr }}" onchange="this.form.submit()">
+            <noscript><button type="submit" class="btn secondary">Ir</button></noscript>
+        </form>
+    </div>
 
     <h2 class="home-section__title">{{ dias[day|date('N', false)] }} {{ day|date('d/m/Y', false) }}</h2>
 
@@ -57,8 +78,13 @@
 
     <div class="card">
         <div class="page-head"><div><h2>Reservar</h2></div></div>
-        {% if rooms is empty and materials is empty %}
-            <p class="muted">No hay nada que reservar todavía. El material lo da de alta administración, en «Material».</p>
+        {# Un día pasado se puede mirar pero no reservar, así que aquí no hay formulario que ofrecer. El
+           servidor rechaza igualmente el POST (BookingController::create()): esconder el formulario solo
+           evita el viaje en balde. #}
+        {% if isPast %}
+            <p class="muted">Este día ya ha pasado. Para reservar, vuelve a <a href="{{ path('booking_index') }}">hoy</a> o elige un día por venir.</p>
+        {% elseif rooms is empty and materials is empty %}
+            <p class="muted">No hay nada que reservar todavía. El material lo da de alta administración, en «Material»; los espacios se abren a reservas desde su ficha del catálogo.</p>
         {% else %}
             <form method="post" action="{{ path('booking_new') }}" class="stack-form">
                 <input type="hidden" name="_token" value="{{ csrf_token('booking_new') }}">

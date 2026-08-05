@@ -64,6 +64,11 @@ final class RoomType extends AbstractType
                 'required' => false,
                 'help' => 'Desmárcalo para espacios donde no se puede recolocar un grupo: pistas y gimnasio (que Peñalara sí llama aulas), almacenes, o los que el centro reserve.',
             ])
+            ->add('reservable', CheckboxType::class, [
+                'label' => 'Se puede reservar',
+                'required' => false,
+                'help' => 'Si está marcado, cualquiera del claustro puede cogerlo una hora desde «Reservas». Desmárcalo para lo que no se reserva: laboratorios, talleres, gimnasio y pistas, que los organiza su departamento.',
+            ])
             ->add('active', CheckboxType::class, [
                 'label' => 'En uso',
                 'required' => false,

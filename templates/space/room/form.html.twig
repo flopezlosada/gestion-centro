@@ -23,7 +23,10 @@
             {{ f.section('Datos para reubicar grupos', [form.size, form.capacity, form.building, form.floor]) }}
             <fieldset class="form-section">
                 <legend class="form-section-title">Uso</legend>
-                {{ f.toggles([form.assignable, form.active]) }}
+                {#- Los tres son preguntas distintas y van juntas a propósito, para que se lean como lo que
+                    son: a quién se le puede MANDAR aquí (assignable), quién puede COGERLO una hora
+                    (reservable) y si el espacio sigue existiendo (active). Ver el javadoc de Room. -#}
+                {{ f.toggles([form.assignable, form.reservable, form.active]) }}
             </fieldset>
             {{ f.fields([form.notes]) }}
             {{ f.actions(path('space_room_index')) }}

@@ -41,6 +41,31 @@ class BookingRepository extends ServiceEntityRepository
     }
 
     /**
+     * Everything booked between two days, inclusive — the tracking sheet the equipo directivo asked for
+     * ("who had which room, when, with which group"), a week at a time.
+     *
+     * Ordered by day and then period so the listing reads as the week goes; the person and the resource are
+     * joined in because every row shows both and the sheet would otherwise be an N+1 over the whole week.
+     *
+     * @param \DateTimeImmutable $from the first day to include
+     * @param \DateTimeImmutable $to   the last day to include
+     *
+     * @return Booking[] the bookings in the range, earliest first
+     */
+    public function findForRange(\DateTimeImmutable $from, \DateTimeImmutable $to): array
+    {
+        return $this->createQueryBuilder('b')
+            ->leftJoin('b.room', 'room')->addSelect('room')
+            ->leftJoin('b.material', 'material')->addSelect('material')
+            ->leftJoin('b.bookedBy', 'person')->addSelect('person')
+            ->andWhere('b.date >= :from')->setParameter('from', $from->setTime(0, 0))
+            ->andWhere('b.date <= :to')->setParameter('to', $to->setTime(0, 0))
+            ->orderBy('b.date', 'ASC')->addOrderBy('b.slotIndex', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * A person's own bookings from a day onwards, so they can see (and undo) what they have asked for.
      *
      * @param User               $user the person

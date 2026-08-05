@@ -67,18 +67,23 @@ final class GuardiaDeficitController extends AbstractController
      * uses: a room an approved space plan has just taken must not appear here as free, or two groups end
      * up in it.
      *
-     * Either gate opens it: guardias, because this is the coordinator's sheet and they may well have no
-     * permission on the spaces module; espacios, because this IS the spaces module's free-rooms screen
-     * since `/espacios` was unified into it ({@see SpaceController::index()}) — asking for guardias there
-     * would have turned that redirect into a 403 for whoever manages rooms and no guardias.
+     * NO GATE, y no es un olvido. Pedía lectura en guardias O en espacios, y esas dos áreas las tienen
+     * dirección (espacios: write) y coordinación de guardias (espacios: read) y nadie más: un docente no
+     * llegaba aquí por ningún camino, ni por el menú ni escribiendo la URL. Y la pregunta que contesta —«¿qué
+     * aula está vacía a esta hora?»— se la hace cualquiera que necesite mover a su grupo, sacar a un
+     * desdoble o buscar sitio para un examen.
+     *
+     * Abierta quitando el gate y NO sembrando `espacios: read` en todos los roles, que era la otra opción:
+     * ese permiso abre el ÁREA entera, así que cualquier lectura que el módulo de espacios añada mañana
+     * quedaría abierta a todo el claustro por accidente — y hoy mismo abriría `/espacios` como puerta de
+     * entrada al módulo. Un área nueva solo para esta pantalla tampoco: habría que concederla a los diez
+     * roles y a cada rol futuro para un dato que no es privado. Mismo criterio que Reservas e Incidencias
+     * TIC, que tampoco tienen gate: la sábana no dice nada que el horario no diga ya, y quien lo mira no
+     * puede cambiar nada desde aquí (agrupar y mover exigen escritura, cada una en su acción).
      */
     #[Route('/aulas', name: 'guardia_rooms', methods: ['GET'])]
     public function rooms(Request $request, ScheduleEntryRepository $schedule, TimeSlotRepository $frames, AcademicYearRepository $years, RoomOccupancy $occupancy, RoomSynchroniser $synchroniser): Response
     {
-        if (!$this->isGranted(AreaVoter::READ, Area::GUARDIAS)) {
-            $this->denyAccessUnlessGranted(AreaVoter::READ, Area::ESPACIOS);
-        }
-
         $date = GuardiaDate::fromRequest($request);
         $schoolYear = SchoolYear::current($date);
         $year = $years->findBySchoolYear($schoolYear);

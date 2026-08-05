@@ -21,9 +21,14 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\DomCrawler\Crawler;
 
 /**
- * The space module is gated by the {@see Area::ESPACIOS} matrix in two tiers: the free-rooms
- * consultation needs read access (the guardia coordinator has it, to find a big room to merge groups
- * into), while the catalogue needs write — capacity and assignability decide where groups end up.
+ * The space module's gate: the CATALOGUE needs write access on {@see Area::ESPACIOS} — capacity,
+ * assignability and whether a space may be booked decide where groups end up and what the staff can take.
+ *
+ * The free-rooms consultation is NOT gated any more, and that is the rule these tests now pin: it asked for
+ * read on espacios or guardias, which only direction and the guardia coordinator have, so an ordinary teacher
+ * could not reach it by any route — while "which room is free this hour" is a question anybody asks. See
+ * {@see \App\Controller\GuardiaDeficitController::rooms()} for why it was opened by dropping the gate rather
+ * than by granting every role read on the area.
  *
  * The delete guard is the other rule worth pinning: a room the timetable uses may only be deactivated,
  * never removed, or its cells would stop counting as occupied without anybody noticing.
@@ -39,12 +44,16 @@ final class SpacePageTest extends WebTestCase
         $this->em = self::getContainer()->get(EntityManagerInterface::class);
     }
 
-    public function testFreeRoomsIsDeniedWithoutReadAccess(): void
+    public function testFreeRoomsIsOpenToAnyTeacher(): void
     {
+        // Somebody with NO permission on the area at all. This used to be a 403, which meant an ordinary
+        // teacher could not ask where to put their group — the whole point of opening it.
         $this->login(null);
-        $this->client->request('GET', '/espacios');
+        $this->client->request('GET', '/espacios?date=2026-01-12&slot=3');
 
-        self::assertSame(403, $this->client->getResponse()->getStatusCode());
+        self::assertResponseRedirects('/guardias/aulas?date=2026-01-12&slot=3');
+        $this->client->followRedirect();
+        self::assertResponseIsSuccessful();
     }
 
     public function testFreeRoomsSendsYouToTheOneFreeRoomsScreen(): void
@@ -61,7 +70,7 @@ final class SpacePageTest extends WebTestCase
     public function testTheFreeRoomsScreenOpensWithSpacesAccessAlone(): void
     {
         // The screen it redirects to lives under /guardias, and whoever manages rooms may have no guardia
-        // permission at all: if it asked for guardias, the redirect above would end in a 403.
+        // permission at all: when it asked for guardias, the redirect above ended in a 403.
         $this->login(PermissionLevel::READ);
         $this->client->request('GET', '/guardias/aulas');
 
