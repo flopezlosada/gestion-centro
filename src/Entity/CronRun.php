@@ -70,6 +70,23 @@ class CronRun
      */
     public const string TRIGGER_TICK = 'tick';
 
+    /**
+     * Lanzada por el reloj de RESPALDO, o sea por el workflow horario de GitHub Actions.
+     *
+     * Separada de {@see self::TRIGGER_TICK} porque en este proyecto hay DOS relojes y no son
+     * equivalentes: el principal pasa cada cinco minutos (que es lo que necesita un aviso de «10 minutos
+     * antes») y el respaldo cada hora. Sin distinguirlos, el registro solo sabe decir «vino el reloj», y
+     * entonces el fallo más probable del sistema se vuelve invisible otra vez: si el principal muere y el
+     * respaldo sigue vivo, las tareas SIGUEN corriendo —cada hora, tarde— y todo parece normal, mientras
+     * los avisos llegan cincuenta minutos después de servir para algo.
+     *
+     * Lo declara el propio reloj mandando la cabecera `X-Cron-Clock: backup`; quien no la manda se
+     * registra como el reloj principal. Es opt-in a propósito: el reloj principal es un servicio externo
+     * que se configura desde una web ajena, y hacer que el sistema dependa de que alguien le acierte una
+     * cabecera sería poner la observabilidad en manos de un formulario de terceros.
+     */
+    public const string TRIGGER_TICK_BACKUP = 'tick_backup';
+
     /** Lanzada a mano por alguien (un botón, o `bin/console --force` a conciencia). */
     public const string TRIGGER_MANUAL = 'manual';
 

@@ -132,6 +132,27 @@ final class AdminCronScreenTest extends WebTestCase
     }
 
     /**
+     * EL LISTADO dice quién lanzó la última ejecución de cada tarea, no solo cuándo.
+     *
+     * Sin ese dato, la pantalla no puede contestar la pregunta que de verdad importa —«¿esto se mueve
+     * solo o solo cuando alguien lo pulsa?»— y, peor, no distingue los DOS relojes: si el principal
+     * (cada cinco minutos) muere y el de respaldo (cada hora) sigue vivo, las tareas siguen corriendo
+     * tarde y todo parece normal. Ver «el reloj de respaldo» en toda la columna es lo único que lo
+     * delata, así que tiene que estar en el LISTADO y no solo en el detalle de una tarea.
+     */
+    public function testElListadoDiceQuienLanzoLaUltimaEjecucion(): void
+    {
+        $this->recordRun(CentreCronManifest::CRON_MEETING_REMINDERS, '-3 minutes', CronRun::TRIGGER_TICK_BACKUP);
+        $this->recordRun(CentreCronManifest::CRON_EVENT_REMINDERS, '-2 minutes', CronRun::TRIGGER_MANUAL);
+        $this->client->loginUser($this->admin());
+
+        $text = $this->client->request('GET', '/admin/crons')->filter('main')->text();
+
+        self::assertStringContainsString('el reloj de respaldo', $text);
+        self::assertStringContainsString('a mano', $text);
+    }
+
+    /**
      * El historial de una tarea enseña sus ejecuciones, quién las disparó y su salida.
      */
     public function testElHistorialMuestraLasEjecucionesConSuOrigenYSuSalida(): void

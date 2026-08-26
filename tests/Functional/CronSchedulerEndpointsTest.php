@@ -24,8 +24,10 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  *   personales. Pedir token obligaría a configurarlo en el monitor, y un chequeo que cuesta configurar
  *   acaba sin configurarse — que es la avería original.
  *
- * Los tests corren con TODAS las tareas apagadas: lo que se prueba aquí es la puerta, no el trabajo (de
- * eso va CronTickTest), y así ninguna pasada intenta avisar a nadie.
+ * Los tests arrancan con TODAS las tareas apagadas: lo que se prueba aquí es la puerta, no el trabajo (de
+ * eso va CronTickTest), y así ninguna pasada intenta avisar a nadie. Los que necesitan que el tick
+ * ejecute ALGO —los que comprueban qué reloj queda registrado— encienden solo la poda del registro, que
+ * es la única tarea inocua: no avisa a nadie y borra filas viejas que en la base de test no existen.
  */
 final class CronSchedulerEndpointsTest extends WebTestCase
 {
@@ -117,6 +119,62 @@ final class CronSchedulerEndpointsTest extends WebTestCase
     }
 
     /**
+     * CADA RELOJ SE IDENTIFICA, y el registro los distingue.
+     *
+     * Es la diferencia que delata el fallo más probable de todo el montaje: hay dos relojes, el principal
+     * cada cinco minutos y el de respaldo cada hora. Si el principal muere y el respaldo sigue vivo, las
+     * tareas SIGUEN corriendo —tarde— y desde fuera todo parece normal, con los avisos de «10 minutos
+     * antes» llegando cincuenta minutos después de servir para algo. Registrar los dos como «el reloj»
+     * devolvería ese caso a la invisibilidad de la que venimos.
+     *
+     * El respaldo se declara con la cabecera; el principal es un servicio externo configurado en una web
+     * ajena, así que va por omisión — la observabilidad no puede depender de que alguien acierte una
+     * cabecera en un formulario de terceros.
+     */
+    public function testCadaRelojSeIdentificaEnElRegistro(): void
+    {
+        $settings = self::getContainer()->get(AppSettings::class);
+        $settings->setCronTaskEnabled(CentreCronManifest::CRON_PURGE_LOG, true);
+
+        $this->client->request('POST', '/cron/tick', server: [
+            'HTTP_X_CRON_TOKEN' => self::TOKEN,
+            'HTTP_X_CRON_CLOCK' => 'backup',
+        ]);
+
+        self::assertResponseStatusCodeSame(202);
+        self::assertSame(CronRun::TRIGGER_TICK_BACKUP, $this->lastRun()?->getTriggerSource());
+    }
+
+    /**
+     * Sin cabecera, el que llama es el reloj PRINCIPAL. Es el valor por defecto a propósito.
+     */
+    public function testSinCabeceraElRelojEsElPrincipal(): void
+    {
+        self::getContainer()->get(AppSettings::class)->setCronTaskEnabled(CentreCronManifest::CRON_PURGE_LOG, true);
+
+        $this->client->request('POST', '/cron/tick', server: ['HTTP_X_CRON_TOKEN' => self::TOKEN]);
+
+        self::assertSame(CronRun::TRIGGER_TICK, $this->lastRun()?->getTriggerSource());
+    }
+
+    /**
+     * Una cabecera inventada NO llega al registro: se traduce a una constante en el controlador, así que
+     * lo que se guarda es siempre uno de los orígenes declarados. El origen es un dato que se pinta en
+     * una pantalla, y no tiene por qué ser texto de nadie de fuera.
+     */
+    public function testUnaCabeceraInventadaNoLlegaAlRegistro(): void
+    {
+        self::getContainer()->get(AppSettings::class)->setCronTaskEnabled(CentreCronManifest::CRON_PURGE_LOG, true);
+
+        $this->client->request('POST', '/cron/tick', server: [
+            'HTTP_X_CRON_TOKEN' => self::TOKEN,
+            'HTTP_X_CRON_CLOCK' => "<b>me lo invento</b>' --",
+        ]);
+
+        self::assertSame(CronRun::TRIGGER_TICK, $this->lastRun()?->getTriggerSource());
+    }
+
+    /**
      * El chequeo de salud responde SIN token y en 200 cuando no hay nada fuera de plazo, publicando la
      * cadencia de cada tarea encendida en castellano.
      */
@@ -167,6 +225,20 @@ final class CronSchedulerEndpointsTest extends WebTestCase
         $payload = json_decode((string) $this->client->getResponse()->getContent(), true);
         self::assertSame([], $payload['late']);
         self::assertArrayNotHasKey(CentreCronManifest::CRON_TASK_REMINDERS, $payload['tasks'], 'Una tarea apagada no se evalúa.');
+    }
+
+    /**
+     * La última ejecución registrada de cualquier tarea, o null si no hay ninguna.
+     *
+     * El repositorio se pide DESPUÉS de la petición: el navegador de test reinicia el kernel entre
+     * peticiones, y además el registro se escribe por DBAL desde el otro kernel.
+     *
+     * @return CronRun|null la ejecución más reciente
+     */
+    private function lastRun(): ?CronRun
+    {
+        return self::getContainer()->get(CronRunRepository::class)
+            ->findRecentForTask(CentreCronManifest::CRON_PURGE_LOG, 1)[0] ?? null;
     }
 
     /**

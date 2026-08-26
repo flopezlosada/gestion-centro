@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Entity\CronRun;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -49,6 +50,21 @@ class CronTickController
     public const TICK_ATTRIBUTE = '_cron_tick';
 
     /**
+     * Cabecera con la que un reloj se identifica. El único valor que se mira es "backup".
+     *
+     * NO es un dato de seguridad y no hace falta que lo sea: quien no traiga el token no llega hasta
+     * aquí, y lo peor que puede hacer un reloj legítimo mintiendo sobre su nombre es ensuciar una
+     * etiqueta del registro.
+     */
+    public const CLOCK_HEADER = 'X-Cron-Clock';
+
+    /** Valor de {@see self::CLOCK_HEADER} con el que el reloj de respaldo se declara. */
+    public const CLOCK_BACKUP = 'backup';
+
+    /** Atributo donde viaja al listener el origen que se registrará (uno de los CronRun::TRIGGER_*). */
+    public const TRIGGER_ATTRIBUTE = '_cron_tick_trigger';
+
+    /**
      * No extiende el controlador base del proyecto: no necesita nada de él (ni
      * plantillas, ni sesión, ni Doctrine), y así el endpoint más expuesto de la
      * aplicación tiene la superficie más pequeña posible.
@@ -76,6 +92,16 @@ class CronTickController
         // El trabajo lo hará el listener de kernel.terminate; aquí sólo se deja
         // la señal y se contesta.
         $request->attributes->set(self::TICK_ATTRIBUTE, true);
+
+        // Y QUIÉN llama, para que el registro pueda distinguir los dos relojes. Se traduce a una
+        // constante aquí mismo en vez de pasar el valor de la cabecera adelante: así lo que se guarda es
+        // siempre uno de los orígenes declarados, no lo que a alguien le apetezca mandar.
+        $request->attributes->set(
+            self::TRIGGER_ATTRIBUTE,
+            self::CLOCK_BACKUP === $request->headers->get(self::CLOCK_HEADER)
+                ? CronRun::TRIGGER_TICK_BACKUP
+                : CronRun::TRIGGER_TICK
+        );
 
         return new Response('', Response::HTTP_ACCEPTED);
     }
