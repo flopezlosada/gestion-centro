@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use App\Service\DailyNotificationSweep;
-use App\Service\EventReminderNotifier;
-use App\Service\GuardiaDutyReminder;
-use App\Service\GuardiaRaicesReminder;
-use App\Service\MeetingReminderNotifier;
+use App\Entity\CronRun;
+use App\Service\Cron\Adapter\CentreCronManifest;
+use App\Service\Cron\CronRunMode;
+use App\Service\Cron\CronRunner;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Request;
@@ -17,69 +16,125 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 
 /**
- * HTTP triggers for the scheduled jobs, for hosts whose only scheduler is an HTTP cron. Every route is
- * authenticated by the same shared secret in constant time and fails closed (an empty CRON_SECRET
- * disables them all). GET is safe to call repeatedly because both sweeps are idempotent.
+ * Los DOS endpoints de la vía antigua: un crontab del hosting que llame por HTTP con `curl` porque su
+ * intérprete de PHP no sirve para `bin/console` (el de cdmon es 8.1 y el proyecto exige 8.2+).
  *
- * The jobs run at very different rates, hence two endpoints: task reminders once a day, and the
- * minute-level ones every five minutes. The second endpoint sweeps BOTH the personal agenda and the
- * convened meetings — they share the same antelación problem, and asking the deployment for a third cron
- * entry (one more thing to forget when moving hosts) buys nothing.
+ * SIGUEN AQUÍ a propósito, aunque el planificador ({@see CronTickController}) los deje redundantes: son
+ * el plan B si el reloj externo no cuaja, y un reloj viejo que todavía no se ha jubilado es una red, no
+ * una deuda. Están cerrados con `CRON_SECRET`, que hoy no está puesto en ningún servidor: sin él estas
+ * dos rutas responden 403 y no hacen nada.
+ *
+ * ⚠️ LO QUE CAMBIÓ AL LLEGAR EL PLANIFICADOR, y es la razón de este fichero tal como está: antes cada
+ * endpoint llamaba a los notificadores A PELO. Eso los dejaba fuera del gate, del CERROJO y del
+ * registro de ejecuciones, y con el tick funcionando a la vez eso deja de ser inocuo — dos caminos que
+ * no comparten cerrojo pueden barrer lo mismo al mismo tiempo, y cada barrido se protege con un `if`
+ * sobre su propio sello, que es justo el patrón que pierde la carrera (los dos leen que falta el aviso
+ * y los dos lo mandan). Ahora las dos rutas ejecutan las MISMAS tareas del manifiesto, por el mismo
+ * runner, así que los dos relojes vuelven a ser seguros a la vez y estas llamadas también quedan
+ * registradas.
+ *
+ * Se ejecuta en modo {@see CronRunMode::AsScheduled} y declarándose {@see CronRun::TRIGGER_SCHEDULE}:
+ * es lo que es, el crontab del hosting. Y no consulta la cadencia del manifiesto —ejecuta lo que se le
+ * pide— porque en este camino quien decide cuándo toca es el crontab, no la aplicación.
  */
 final class CronController extends AbstractController
 {
+    /**
+     * Las cuatro tareas con antelación en MINUTOS: los avisos de la agenda personal, el «apunta las
+     * ausencias en RAICES» de quien entra a una guardia, el doble recordatorio de guardia y el aviso de
+     * una reunión que empieza.
+     *
+     * Comparten un solo endpoint por lo mismo que siempre: todas quieren la misma cadencia, y separarlas
+     * haría que cada barrido nuevo dependiera de que alguien acordase otra línea de crontab con el
+     * hosting — un «no sale ni un aviso» silencioso si no lo hace, que ya pasó con RAICES y otra vez con
+     * guardias y reuniones.
+     */
+    private const array MINUTE_LEVEL_TASKS = [
+        CentreCronManifest::CRON_EVENT_REMINDERS,
+        CentreCronManifest::CRON_GUARDIA_RAICES_REMINDERS,
+        CentreCronManifest::CRON_GUARDIA_DUTY_REMINDERS,
+        CentreCronManifest::CRON_MEETING_REMINDERS,
+    ];
+
     public function __construct(
+        private readonly CronRunner $runner,
         #[Autowire('%env(CRON_SECRET)%')]
         private readonly string $cronSecret,
     ) {
     }
 
     /**
-     * Daily: reminders for tasks about to be due, escalations for the overdue ones, and the purge of
-     * the notices that have expired. Shares {@see DailyNotificationSweep} with the CLI command so the
-     * two ways of running the same daily job can never drift apart.
+     * Una vez al día: avisos de tareas próximas, escalada de las que están fuera de plazo y retirada de
+     * los avisos caducados. Y la poda del propio registro de ejecuciones, que también es diaria y que
+     * sin esto quedaría sin disparar en este camino — creciendo sin freno.
+     *
+     * @param Request $request la petición del crontab
+     *
+     * @return Response resumen de una línea por tarea, para que quede en el log del crontab
      */
     #[Route('/cron/task-reminders', name: 'cron_task_reminders', methods: ['GET'])]
-    public function taskReminders(Request $request, DailyNotificationSweep $sweep): Response
+    public function taskReminders(Request $request): Response
     {
         $this->denyUnlessCronToken($request);
 
-        // Reference DAY in the centre's timezone, which is now PHP's default one ({@see \App\Kernel}):
-        // this sweep matches whole days, and that anchoring keeps "today" from drifting near midnight.
-        $result = $sweep->run(new \DateTimeImmutable('now'));
-
-        return new Response(\sprintf('%d avisos enviados, %d caducados retirados.', $result['sent'], $result['purged']));
+        return $this->runTasks([
+            CentreCronManifest::CRON_TASK_REMINDERS,
+            CentreCronManifest::CRON_PURGE_LOG,
+        ]);
     }
 
     /**
-     * Every few minutes: the sweeps that carry a minute-level antelación — push reminders for personal
-     * agenda events about to start, the "apunta las ausencias en RAICES" reminder for the guardias being
-     * covered right now, the double guardia reminder (the evening before and that same morning) and the
-     * reminder for a meeting about to begin.
+     * Cada pocos minutos: los cuatro barridos con antelación de minutos.
      *
-     * They share ONE endpoint on purpose. All of them want the same cadence, and splitting them would make
-     * each new one depend on somebody remembering to add another entry to the host's cron table — a silent
-     * "no reminders ever" if they do not. One URL, one schedule, every sweep.
+     * Ninguno detiene a los demás si falla, al contrario que antes. El cambio es deliberado: el runner
+     * registra cada tarea con su propio resultado, así que un fallo persistente ya se ve en el registro
+     * y en `/cron/health` sin necesidad de que se lleve por delante las otras tres. Antes, dejar caer la
+     * excepción era la única forma de que el fallo se notara en algún sitio.
      *
-     * They also run unguarded, so a failure in the first stops the rest this tick. That is deliberate:
-     * catching would turn a persistent breakage into a 200 with a half-done sweep, which no cron monitor
-     * would flag, and every sweep is already best-effort per recipient ({@see NotificationDispatcher})
-     * and retried five minutes later. Better all fail loudly together than one fail quietly alone.
+     * @param Request $request la petición del crontab
+     *
+     * @return Response resumen de una línea por tarea
      */
     #[Route('/cron/event-reminders', name: 'cron_event_reminders', methods: ['GET'])]
-    public function eventReminders(Request $request, EventReminderNotifier $notifier, GuardiaRaicesReminder $raices, GuardiaDutyReminder $duties, MeetingReminderNotifier $meetings): Response
+    public function eventReminders(Request $request): Response
     {
         $this->denyUnlessCronToken($request);
 
-        // PHP's default time zone, unlike the daily job above: these sweeps compare clock times against
-        // the instants Doctrine wrote / the timetable's period times (see each notifier's class doc).
-        $now = new \DateTimeImmutable('now');
-        $events = $notifier->sendDue($now);
-        $guardias = $raices->sendDue($now);
-        $dutyCount = $duties->sendDue($now);
-        $meetingCount = $meetings->sendDue($now);
+        return $this->runTasks(self::MINUTE_LEVEL_TASKS);
+    }
 
-        return new Response(\sprintf('%d avisos de agenda, %d de RAICES, %d recordatorios de guardia y %d de reuniones enviados.', $events, $guardias, $dutyCount, $meetingCount));
+    /**
+     * Ejecuta una lista de tareas del manifiesto y devuelve en texto plano qué pasó con cada una.
+     *
+     * El código HTTP es 200 salvo que alguna falle: un monitor de cron que vigile estas URLs necesita
+     * que un fallo se vea en el código, no solo en el cuerpo.
+     *
+     * @param list<string> $taskKeys claves de las tareas a ejecutar, en orden
+     *
+     * @return Response el resumen y el código que corresponda
+     */
+    private function runTasks(array $taskKeys): Response
+    {
+        $lines = [];
+        $failed = false;
+
+        foreach ($taskKeys as $key) {
+            $result = $this->runner->run($key, CronRunMode::AsScheduled, trigger: CronRun::TRIGGER_SCHEDULE);
+
+            if (null !== $result->blocked) {
+                $lines[] = \sprintf('%s: %s', $result->label, $result->blocked);
+                continue;
+            }
+
+            $failed = $failed || !$result->isSuccessful();
+            $lines[] = \sprintf('%s: código %d. %s', $result->label, (int) $result->exitCode, $result->output);
+        }
+
+        return new Response(
+            implode("\n", $lines)."\n",
+            $failed ? Response::HTTP_INTERNAL_SERVER_ERROR : Response::HTTP_OK,
+            ['Content-Type' => 'text/plain; charset=utf-8'],
+        );
     }
 
     /**

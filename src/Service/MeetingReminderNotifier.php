@@ -14,7 +14,7 @@ use App\Repository\MeetingRepository;
  *
  * Runs on the same few-minutes sweep as the personal agenda reminders ({@see EventReminderNotifier}):
  * both carry a minute-level antelación, so they share the cron entry points
- * ({@see \App\Command\SendEventRemindersCommand}, {@see \App\Controller\CronController::eventReminders()})
+ * ({@see \App\Command\SendMeetingRemindersCommand}, una de las tareas del planificador)
  * instead of asking the deployment for a third scheduled job. Kept as its own class because the query and
  * the recipients are different: one notice per meeting fans out to N people.
  *

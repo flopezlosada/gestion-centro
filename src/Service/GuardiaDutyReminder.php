@@ -17,7 +17,7 @@ use App\Util\SchoolYear;
 /**
  * El **doble recordatorio de guardia** que pidió el equipo directivo (30-07-2026): un aviso **la tarde
  * anterior** y otro **esa misma mañana**. Va desde el mismo barrido de cada pocos minutos que el resto de
- * recordatorios ({@see \App\Controller\CronController}).
+ * recordatorios ({@see \App\Service\Cron\Adapter\CentreCronManifest}).
  *
  * ### Por qué dos, y por qué UN aviso por persona en cada uno
  * Los dos momentos sirven para cosas distintas: el de la tarde anterior te deja preparar la clase desde

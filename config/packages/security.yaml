@@ -40,6 +40,15 @@ security:
         # pinned to its exact path so a broad ^/cron prefix never opens a future route by accident.
         - { path: ^/cron/task-reminders$, roles: PUBLIC_ACCESS }
         - { path: ^/cron/event-reminders$, roles: PUBLIC_ACCESS }
+        # El tick del planificador: un endpoint que solo dice "es la hora" y decide la aplicación qué
+        # toca. Token en cabecera (X-Cron-Token) y no en la query, para que no quede escrito en los
+        # logs de acceso, y sin token configurado responde 404 — fail-closed por omisión.
+        - { path: ^/cron/tick$, roles: PUBLIC_ACCESS }
+        # El chequeo de salud va SIN token, a propósito: no ejecuta nada, no recibe parámetros y no
+        # expone datos personales (solo nombres de tareas internas y si van con retraso). Pedir token
+        # obligaría a configurarlo en el monitor externo, y un chequeo que cuesta configurar acaba sin
+        # configurarse — que es la avería que todo esto viene a cerrar.
+        - { path: ^/cron/health$, roles: PUBLIC_ACCESS }
         # The activity trail is sensitive (it shows everyone's actions): admins only.
         - { path: ^/audit, roles: ROLE_ADMIN }
         # User/role/org administration: only requires an authenticated user here; the fine-grained
