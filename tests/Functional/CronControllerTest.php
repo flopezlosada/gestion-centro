@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
+use App\Entity\CronRun;
 use App\Entity\PersonalEvent;
 use App\Entity\User;
 use App\Enum\EventReminderOffset;
+use App\Repository\CronRunRepository;
+use App\Service\Cron\Adapter\CentreCronManifest;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -16,6 +19,13 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  * The HTTP cron endpoints are the only routes the app answers without a session, so the shared-secret
  * gate is their whole security: every route must reject a missing or wrong token, and none may need a
  * logged-in user to work.
+ *
+ * Estas dos son la vía ANTIGUA —un crontab del hosting llamando con `curl`—, no el planificador; de las
+ * puertas de éste va {@see CronSchedulerEndpointsTest}. Siguen existiendo como plan B y desde que
+ * llegó el planificador ejecutan las mismas tareas del manifiesto por el mismo runner, para que los dos
+ * relojes puedan convivir sin pisarse: comparten gate, cerrojo y registro de ejecuciones. Eso es lo que
+ * se comprueba aquí abajo, y no el texto exacto de la respuesta — el rastro canónico de lo que pasó es
+ * ahora la fila de `cron_run`, no el cuerpo HTTP.
  */
 final class CronControllerTest extends WebTestCase
 {
@@ -78,11 +88,47 @@ final class CronControllerTest extends WebTestCase
         $this->client->request('GET', '/cron/event-reminders?token='.self::SECRET);
 
         self::assertResponseIsSuccessful();
-        // El endpoint lleva los CUATRO barridos de la misma cadencia (agenda, RAICES, los recordatorios de
-        // guardia de la tarde anterior y esa mañana, y reuniones), así que informa de los cuatro. Aquí no hay
-        // ninguna guardia en curso ni mañana, ni reunión a punto de empezar, de ahí los ceros.
-        self::assertStringContainsString('1 avisos de agenda, 0 de RAICES, 0 recordatorios de guardia y 0 de reuniones enviados.', (string) $this->client->getResponse()->getContent());
         $this->em->clear();
         self::assertNotNull($this->em->getRepository(PersonalEvent::class)->find($id)?->getReminderSentAt());
+
+        // El endpoint lleva los CUATRO barridos de la misma cadencia (agenda, RAICES, los recordatorios de
+        // guardia de la tarde anterior y esa mañana, y reuniones), y ahora cada uno deja SU propia fila en
+        // el registro con su propio resultado. Aquí no hay ninguna guardia en curso ni mañana, ni reunión a
+        // punto de empezar, así que la de agenda es la única que declara trabajo hecho.
+        $runs = self::getContainer()->get(CronRunRepository::class)->findLastRunPerTask();
+
+        self::assertArrayHasKey(CentreCronManifest::CRON_EVENT_REMINDERS, $runs);
+        self::assertSame(CronRun::STATUS_DONE, $runs[CentreCronManifest::CRON_EVENT_REMINDERS]->getStatus());
+        self::assertStringContainsString('1 avisos de agenda enviados', (string) $runs[CentreCronManifest::CRON_EVENT_REMINDERS]->getDetail());
+
+        foreach ([CentreCronManifest::CRON_GUARDIA_RAICES_REMINDERS, CentreCronManifest::CRON_GUARDIA_DUTY_REMINDERS, CentreCronManifest::CRON_MEETING_REMINDERS] as $sinTrabajo) {
+            self::assertArrayHasKey($sinTrabajo, $runs, \sprintf('El barrido "%s" no se ha ejecutado.', $sinTrabajo));
+            self::assertSame(
+                CronRun::STATUS_NOTHING_TO_DO,
+                $runs[$sinTrabajo]->getStatus(),
+                \sprintf('El barrido "%s" no tenía trabajo y no debe registrarse como si lo hubiera hecho.', $sinTrabajo)
+            );
+        }
+    }
+
+    /**
+     * La vía antigua se declara como el CRONTAB que es, no como el tick ni como una persona. Los tres
+     * orígenes tienen que verse distintos en el registro: mientras los dos relojes convivan, es lo único
+     * que permite saber cuál de ellos está vivo.
+     */
+    public function testLaViaAntiguaSeRegistraComoElCrontabDelHosting(): void
+    {
+        $this->client->request('GET', '/cron/task-reminders?token='.self::SECRET);
+
+        self::assertResponseIsSuccessful();
+        $runs = self::getContainer()->get(CronRunRepository::class)->findLastRunPerTask();
+
+        self::assertArrayHasKey(CentreCronManifest::CRON_TASK_REMINDERS, $runs);
+        self::assertSame(CronRun::TRIGGER_SCHEDULE, $runs[CentreCronManifest::CRON_TASK_REMINDERS]->getTriggerSource());
+        self::assertArrayHasKey(
+            CentreCronManifest::CRON_PURGE_LOG,
+            $runs,
+            'La poda del registro es diaria y viaja en este endpoint: si no, en esta vía crecería sin freno.'
+        );
     }
 }

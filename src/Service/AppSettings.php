@@ -57,6 +57,36 @@ final class AppSettings
     }
 
     /**
+     * Whether a scheduled task may run, which is the one thing about the scheduler that can be
+     * changed without a deploy (its cadence cannot: {@see \App\Service\Cron\Adapter\CentreCronManifest}).
+     *
+     * Defaults to ON, unlike every other switch here, and that asymmetry is the point: these tasks
+     * ARE the reminders. A task that is off until somebody writes a row would reproduce the very
+     * outage the scheduler exists to close — the cron died in August 2026 and nothing said so for 22
+     * days. Pausing one takes writing its row on purpose.
+     *
+     * @param string $taskKey the task's key in the manifest, e.g. "cron.meeting_reminders"
+     *
+     * @return bool true unless the task has been explicitly paused
+     */
+    public function isCronTaskEnabled(string $taskKey): bool
+    {
+        return $this->readBool($taskKey, true);
+    }
+
+    /**
+     * Pauses or resumes a scheduled task. No screen calls this yet: it exists so pausing one is a
+     * supported operation with a name, instead of an UPDATE typed into phpMyAdmin.
+     *
+     * @param bool   $enabled true to let the task run, false to pause it
+     * @param string $taskKey the task's key in the manifest
+     */
+    public function setCronTaskEnabled(string $taskKey, bool $enabled): void
+    {
+        $this->writeBool($taskKey, $enabled);
+    }
+
+    /**
      * Reads a boolean setting, falling back to the code default while the row does not exist.
      *
      * @param string $name    the setting name

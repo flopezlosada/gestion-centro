@@ -15,7 +15,7 @@ use Psr\Log\LoggerInterface;
 /**
  * Pushes the centre's operational reminder to whoever is covering a guardia RIGHT NOW: "entra en RAICES
  * y apunta las ausencias del alumnado de esta sesión". Meant to run every few minutes, off the same
- * sweep as the personal agenda reminders (see {@see \App\Controller\CronController}).
+ * sweep as the personal agenda reminders (see {@see \App\Service\Cron\Adapter\CentreCronManifest}).
  *
  * ### Why during the period and not before it
  * A guardia's reminder cannot be sent ahead of time like an appointment's: you can only note who is

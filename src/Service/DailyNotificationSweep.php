@@ -7,11 +7,15 @@ namespace App\Service;
 /**
  * El barrido DIARIO de avisos, completo: envía lo que toca hoy y retira lo que ya caducó.
  *
- * Existe porque ese barrido se dispara desde DOS sitios —{@see \App\Command\SendTaskRemindersCommand}
- * por CLI y {@see \App\Controller\CronController::taskReminders()} por HTTP, según lo que el hosting
- * permita— y los dos tienen que hacer exactamente lo mismo. Con la lógica duplicada, añadir un paso
- * (justo lo que es la purga) lo deja fuera de una de las dos vías y el síntoma es que "en producción no
- * caduca nada", sin ningún error. Un solo sitio que cambiar.
+ * Nació porque el barrido se disparaba desde DOS sitios que tenían que hacer lo mismo —el comando por
+ * CLI y el endpoint HTTP, según lo que el hosting permitiera—, y con la lógica duplicada añadir un paso
+ * (justo lo que es la purga) lo dejaba fuera de una de las dos vías, con el síntoma "en producción no
+ * caduca nada" y sin ningún error.
+ *
+ * Desde el planificador ya solo tiene un consumidor ({@see \App\Command\SendTaskRemindersCommand}):
+ * las tres vías —consola, tick y el endpoint HTTP antiguo— pasan todas por ese comando. Se queda como
+ * clase porque sigue siendo lo que nombra el barrido diario Y lo que garantiza el ORDEN de sus dos
+ * pasos, que no es intercambiable (ver abajo).
  */
 final class DailyNotificationSweep
 {
