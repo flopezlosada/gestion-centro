@@ -70,14 +70,18 @@
   filas es lo único que delata que el principal está muerto. Lo mismo valía para el crontab viejo del
   hosting mientras conviviera con el tick.
 
-  «el reloj» a secas es el principal: se declara por omisión, porque es un servicio externo que se
-  configura en una web ajena y no se puede depender de que alguien le acierte una cabecera.
+  Y «sin identificar» NO es el principal: es que llamó alguien que no dijo quién era. El defecto no
+  hereda la identidad de nadie a propósito — si la heredara, un curl de prueba se haría pasar por el reloj
+  principal (pasó, diez minutos después del primer despliegue) y el registro daría por vivo un reloj que
+  igual no existe.
 
   @param trigger  Uno de los CronRun::TRIGGER_*.
 #}
 {% macro trigger_label(trigger) %}
     {%- if trigger == 'tick' -%}
-        el reloj
+        un reloj sin identificar
+    {%- elseif trigger == 'tick_main' -%}
+        el reloj principal
     {%- elseif trigger == 'tick_backup' -%}
         el reloj de respaldo
     {%- elseif trigger == 'schedule' -%}

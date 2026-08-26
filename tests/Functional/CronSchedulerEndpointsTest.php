@@ -127,14 +127,11 @@ final class CronSchedulerEndpointsTest extends WebTestCase
      * antes» llegando cincuenta minutos después de servir para algo. Registrar los dos como «el reloj»
      * devolvería ese caso a la invisibilidad de la que venimos.
      *
-     * El respaldo se declara con la cabecera; el principal es un servicio externo configurado en una web
-     * ajena, así que va por omisión — la observabilidad no puede depender de que alguien acierte una
-     * cabecera en un formulario de terceros.
+     * Cada reloj se declara con la cabecera, y los dos valores tienen que llegar distintos al registro.
      */
     public function testCadaRelojSeIdentificaEnElRegistro(): void
     {
-        $settings = self::getContainer()->get(AppSettings::class);
-        $settings->setCronTaskEnabled(CentreCronManifest::CRON_PURGE_LOG, true);
+        self::getContainer()->get(AppSettings::class)->setCronTaskEnabled(CentreCronManifest::CRON_PURGE_LOG, true);
 
         $this->client->request('POST', '/cron/tick', server: [
             'HTTP_X_CRON_TOKEN' => self::TOKEN,
@@ -146,21 +143,50 @@ final class CronSchedulerEndpointsTest extends WebTestCase
     }
 
     /**
-     * Sin cabecera, el que llama es el reloj PRINCIPAL. Es el valor por defecto a propósito.
+     * Y el principal, igual: se declara.
      */
-    public function testSinCabeceraElRelojEsElPrincipal(): void
+    public function testElRelojPrincipalTambienSeDeclara(): void
     {
         self::getContainer()->get(AppSettings::class)->setCronTaskEnabled(CentreCronManifest::CRON_PURGE_LOG, true);
 
-        $this->client->request('POST', '/cron/tick', server: ['HTTP_X_CRON_TOKEN' => self::TOKEN]);
+        $this->client->request('POST', '/cron/tick', server: [
+            'HTTP_X_CRON_TOKEN' => self::TOKEN,
+            'HTTP_X_CRON_CLOCK' => 'main',
+        ]);
 
-        self::assertSame(CronRun::TRIGGER_TICK, $this->lastRun()?->getTriggerSource());
+        self::assertSame(CronRun::TRIGGER_TICK_MAIN, $this->lastRun()?->getTriggerSource());
     }
 
     /**
-     * Una cabecera inventada NO llega al registro: se traduce a una constante en el controlador, así que
-     * lo que se guarda es siempre uno de los orígenes declarados. El origen es un dato que se pinta en
-     * una pantalla, y no tiene por qué ser texto de nadie de fuera.
+     * SIN CABECERA NO SE HEREDA LA IDENTIDAD DE NADIE, y menos la del principal.
+     *
+     * Éste es el test que paga una lección: al principio el valor por defecto ERA el reloj principal, y
+     * diez minutos después del primer despliegue un `curl` de prueba desde una shell se registró como si
+     * lo hubiera movido él — con el principal aún sin configurar. La pantalla daba por vivo un reloj que
+     * no existía, que es la clase exacta de mentira que este registro existe para no contar.
+     *
+     * Un valor desconocido cae en el mismo sitio: se traduce a una constante en el controlador, así que
+     * lo que se guarda es siempre uno de los orígenes declarados y nunca texto de fuera.
+     */
+    public function testQuienNoSeIdentificaNoPasaPorElRelojPrincipal(): void
+    {
+        $settings = self::getContainer()->get(AppSettings::class);
+        $settings->setCronTaskEnabled(CentreCronManifest::CRON_PURGE_LOG, true);
+
+        $this->client->request('POST', '/cron/tick', server: ['HTTP_X_CRON_TOKEN' => self::TOKEN]);
+
+        // Una sola aserción, y la intención en el mensaje: un assertNotSame contra los otros dos orígenes
+        // después de esto sería una tautología —el tipo ya está fijado— y PHPStan lo marca. Que no pase
+        // por el principal es exactamente lo que dice que valga TRIGGER_TICK y no TRIGGER_TICK_MAIN.
+        self::assertSame(
+            CronRun::TRIGGER_TICK,
+            $this->lastRun()?->getTriggerSource(),
+            'Quien no dice quién es queda «sin identificar»: no puede pasar por el reloj principal ni por el de respaldo.'
+        );
+    }
+
+    /**
+     * Una cabecera inventada tampoco: mismo sitio que la ausencia.
      */
     public function testUnaCabeceraInventadaNoLlegaAlRegistro(): void
     {

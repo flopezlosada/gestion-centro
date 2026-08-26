@@ -153,6 +153,20 @@ final class AdminCronScreenTest extends WebTestCase
     }
 
     /**
+     * Y a quien no se identificó lo dice tal cual: «un reloj sin identificar», nunca «el principal».
+     */
+    public function testElListadoNoHacePasarPorPrincipalAQuienNoSeIdentifico(): void
+    {
+        $this->recordRun(CentreCronManifest::CRON_MEETING_REMINDERS, '-3 minutes', CronRun::TRIGGER_TICK);
+        $this->client->loginUser($this->admin());
+
+        $text = $this->client->request('GET', '/admin/crons')->filter('main')->text();
+
+        self::assertStringContainsString('sin identificar', $text);
+        self::assertStringNotContainsString('el reloj principal', $text);
+    }
+
+    /**
      * El historial de una tarea enseña sus ejecuciones, quién las disparó y su salida.
      */
     public function testElHistorialMuestraLasEjecucionesConSuOrigenYSuSalida(): void
