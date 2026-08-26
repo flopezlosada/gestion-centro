@@ -76,6 +76,14 @@ final class CronTickTest extends KernelTestCase
      * El segundo tick de la misma ocurrencia no repite nada. Es lo que hace que un reloj llamando cada
      * cinco minutos —o DOS relojes en paralelo, que es el diseño— no disparen la tarea diaria una y otra
      * vez.
+     *
+     * NO SE TOQUE ESTE TEST A LA LIGERA: es el que cazó que una tarea que LEE el registro mientras se
+     * ejecuta se envenena a sí misma. La poda pedía la última ejecución de cada tarea hidratando
+     * entidades, y en ese instante su propia fila está en su estado de nacimiento (`failed`); el cierre
+     * la corrige por DBAL, que no pasa por el EntityManager, así que la copia del identity map seguía
+     * diciendo `failed` y el evaluador la tomaba por un intento fallido y la reintentaba. Se arregló
+     * pidiendo escalares en {@see \App\Repository\CronRunRepository::purgeOlderThan()}; si alguien lo
+     * «simplifica» de vuelta a `findLastRunPerTask()`, este test vuelve a ponerse rojo.
      */
     public function testUnSegundoTickNoRepiteElTrabajo(): void
     {

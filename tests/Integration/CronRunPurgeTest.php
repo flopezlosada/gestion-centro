@@ -59,14 +59,24 @@ final class CronRunPurgeTest extends KernelTestCase
      */
     public function testLaUltimaEjecucionDeUnaTareaMuertaNoSeBorraNunca(): void
     {
-        $ultima = $this->record('cron.tarea_muerta', '-200 days');
+        // En el orden en que las escribe el sistema, que es cronológico: la más vieja primero. Importa
+        // porque «la última» está definida como el id más alto y no como el `started_at` mayor (ver el
+        // doc de findLastRunPerTask), y las dos definiciones solo coinciden si las filas se escriben en
+        // orden — que es lo que hace el registro siempre.
         $this->record('cron.tarea_muerta', '-300 days');
+        $ultima = $this->record('cron.tarea_muerta', '-200 days');
+
+        // La invariante, dicha como la lee quien depende de ella: lo que el chequeo de salud usaría para
+        // medir el retraso tiene que seguir ahí después de la poda.
+        $referenciaAntes = $this->runs->findLastRunPerTask()['cron.tarea_muerta'] ?? null;
+        self::assertNotNull($referenciaAntes);
+        self::assertSame($ultima->getId(), $referenciaAntes->getId());
 
         $this->runs->purgeOlderThan(new \DateTimeImmutable(\sprintf('-%d days', PurgeCronLogCommand::RETENTION_DAYS)));
 
         $quedan = $this->runs->findRecentForTask('cron.tarea_muerta', 20);
         self::assertCount(1, $quedan, 'Se conserva exactamente una: la última.');
-        self::assertSame($ultima->getId(), $quedan[0]->getId());
+        self::assertSame($referenciaAntes->getId(), $quedan[0]->getId(), 'La poda ha borrado la fila contra la que se mide el retraso.');
     }
 
     /**

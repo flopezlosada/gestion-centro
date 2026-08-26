@@ -79,16 +79,28 @@ class CronRunRepository extends ServiceEntityRepository
      * subconsulta: MySQL/MariaDB no admiten subconsultar la misma tabla que se está borrando, y son
      * tantos ids como tareas hay (media docena).
      *
+     * ⚠️ Y se piden como ESCALARES, no con {@see self::findLastRunPerTask()}, aunque la consulta sea la
+     * misma. Hidratar entidades aquí tenía una consecuencia que costó un CI en rojo entenderla: quien
+     * llama es la propia tarea de poda, y en ese momento SU fila del registro está todavía en su estado
+     * de nacimiento (`failed`, para que un proceso que muera a mitad deje constancia). Esa entidad se
+     * quedaba en el identity map con `failed`, y el cierre de la ejecución la corrige por DBAL, que no
+     * pasa por el EntityManager. Al leer el registro otra vez en el mismo proceso, Doctrine devolvía la
+     * copia rancia —que sigue diciendo `failed`—, el evaluador lo tomaba por un intento fallido y
+     * REINTENTABA la tarea en la pasada siguiente. En producción cada tick es una petición nueva y no se
+     * notaba; en un proceso que ejecute dos ticks, sí.
+     *
      * @param \DateTimeImmutable $cutoff todo lo arrancado ANTES de este instante se borra
      *
      * @return int cuántas filas se han borrado
      */
     public function purgeOlderThan(\DateTimeImmutable $cutoff): int
     {
-        $keep = [];
-        foreach ($this->findLastRunPerTask() as $run) {
-            $keep[] = $run->getId();
-        }
+        $keep = array_map(
+            static fn (array $row): int => (int) $row['lastId'],
+            $this->getEntityManager()
+                ->createQuery('SELECT MAX(r.id) AS lastId FROM '.CronRun::class.' r GROUP BY r.taskKey')
+                ->getScalarResult()
+        );
 
         $query = $this->createQueryBuilder('r')
             ->delete()
