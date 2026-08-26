@@ -275,9 +275,38 @@ final class AdminPanelTest extends WebTestCase
         // los enlaces, o sea leyéndose como un enlace más. Se asertan las dos mitades del contrato
         // porque cada una se puede romper sin que salte nada: el CSS no falla, solo deja de agrupar.
         self::assertCount(0, $block->filter('.nav-group .nav-subtitle'), 'ningún rótulo cuelga dentro de un .nav-group');
-        // Aquí los grupos son exactamente cuatro y TODOS llevan rótulo, así que las dos cuentas cuadran.
+        // Aquí los grupos son exactamente cinco y TODOS llevan rótulo, así que las dos cuentas cuadran.
         // No es una regla general de la barra: "Coordinar guardias" tiene dos grupos y un solo rótulo,
         // porque su primer grupo es el día a día y no necesita título para entenderse.
+        //
+        // El quinto es "Sistema" (tareas programadas), y solo lo ve un superusuario — que es quien entra
+        // en este test. Lo que se ve con el otro perfil lo fija testAdminNavHidesTheSystemGroupFromNonSuperusers().
+        self::assertCount(5, $block->filter('.nav-subtitle'));
+        self::assertCount(5, $block->filter('.nav-group'));
+    }
+
+    /**
+     * El grupo «Sistema» es solo para superusuarios, como la entrada de «Acceso».
+     *
+     * Es la mitad de seguridad del grupo nuevo, y se fija aquí porque el gate real vive en el
+     * controlador ({@see \App\Controller\AdminCronController}) y este enlace podría quedarse visible sin
+     * que nada fallara: quien lo pulsara se comería un 403, que es seguro pero desconcertante — y peor,
+     * enseñaría que hay pantallas del menú que no funcionan.
+     */
+    public function testAdminNavHidesTheSystemGroupFromNonSuperusers(): void
+    {
+        $this->client->loginUser($this->administrationManager());
+
+        $crawler = $this->client->request('GET', '/admin/usuarios');
+
+        self::assertResponseIsSuccessful();
+        $block = $crawler->filter('#main-nav details.nav-block[open]');
+        self::assertSelectorNotExists('#main-nav a[href="/admin/crons"]');
+        // Sobre el texto del bloque entero y no sobre .nav-subtitle: Crawler::text() devuelve el del
+        // PRIMER nodo, así que filtrar por los rótulos solo miraría el primero y el test pasaría por la
+        // razón equivocada.
+        self::assertStringNotContainsString('Sistema', $block->text());
+        // Cuatro grupos y cuatro rótulos: los mismos de siempre, sin el de sistema.
         self::assertCount(4, $block->filter('.nav-subtitle'));
         self::assertCount(4, $block->filter('.nav-group'));
     }
