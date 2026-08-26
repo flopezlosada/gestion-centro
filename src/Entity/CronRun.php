@@ -71,6 +71,12 @@ class CronRun
     public const string TRIGGER_TICK = 'tick';
 
     /**
+     * Lanzada por el reloj PRINCIPAL, el que pasa cada cinco minutos (un servicio externo tipo
+     * cron-job.org). Se declara con `X-Cron-Clock: main`.
+     */
+    public const string TRIGGER_TICK_MAIN = 'tick_main';
+
+    /**
      * Lanzada por el reloj de RESPALDO, o sea por el workflow horario de GitHub Actions.
      *
      * Separada de {@see self::TRIGGER_TICK} porque en este proyecto hay DOS relojes y no son
@@ -80,10 +86,17 @@ class CronRun
      * respaldo sigue vivo, las tareas SIGUEN corriendo —cada hora, tarde— y todo parece normal, mientras
      * los avisos llegan cincuenta minutos después de servir para algo.
      *
-     * Lo declara el propio reloj mandando la cabecera `X-Cron-Clock: backup`; quien no la manda se
-     * registra como el reloj principal. Es opt-in a propósito: el reloj principal es un servicio externo
-     * que se configura desde una web ajena, y hacer que el sistema dependa de que alguien le acierte una
-     * cabecera sería poner la observabilidad en manos de un formulario de terceros.
+     * Cada reloj se declara con `X-Cron-Clock`, y quien no la manda queda como {@see self::TRIGGER_TICK}
+     * — que significa «un reloj que no se identificó», NO «el principal».
+     *
+     * Esa distinción se aprendió sobre la marcha: al principio el valor por defecto ERA el principal,
+     * con el argumento de no depender de que alguien acertara una cabecera en el formulario de un
+     * servicio ajeno. Es un argumento flojo —en ese formulario ya hay que poner la cabecera del token,
+     * así que poner dos es gratis— y su precio era una MENTIRA: un `curl` de prueba desde una shell se
+     * hacía pasar por el reloj principal, y lo hizo diez minutos después del primer despliegue, con el
+     * principal aún sin configurar. Ahora, si a cron-job.org se le olvida la cabecera, el registro dice
+     * «sin identificar»: un error visible que se corrige solo, en vez de un dato falso que nadie
+     * cuestiona.
      */
     public const string TRIGGER_TICK_BACKUP = 'tick_backup';
 

@@ -29,10 +29,11 @@ name: Reloj de respaldo del planificador
 #
 # Los TOKENS de cada entorno son distintos y no se reutilizan: cada uno vale para su servidor.
 #
-# ⚠️ AL DAR DE ALTA EL RELOJ PRINCIPAL (cron-job.org o equivalente), NO le pongas la cabecera
-# `X-Cron-Clock`. Solo la manda este workflow, y es lo que permite que el registro distinga los dos:
-# sin cabecera = el reloj principal, con `backup` = éste. Si el principal la mandara también, el
-# listado diría que todo lo mueve el respaldo y se perdería el único dato que delata su muerte.
+# ⚠️ AL DAR DE ALTA EL RELOJ PRINCIPAL (cron-job.org o equivalente), PONLE LA CABECERA
+# `X-Cron-Clock: main` además de la del token. Cada reloj se identifica, y quien no lo hace queda en el
+# registro como «sin identificar» — que es lo correcto: el defecto no hereda la identidad de nadie. Si
+# la heredara, un curl de prueba se haría pasar por el principal y el listado daría por vivo un reloj que
+# igual no existe (pasó, diez minutos después del primer despliegue).
 #
 # Secretos (Settings > Secrets and variables > Actions):
 #   CRON_TICK_URL_PROD       - https://gestion.ieslacabrera.org/cron/tick

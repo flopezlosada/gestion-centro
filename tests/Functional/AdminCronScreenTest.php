@@ -153,11 +153,29 @@ final class AdminCronScreenTest extends WebTestCase
     }
 
     /**
+     * Y a quien no se identificó lo dice tal cual: «un reloj sin identificar», nunca «el principal».
+     */
+    public function testElListadoNoHacePasarPorPrincipalAQuienNoSeIdentifico(): void
+    {
+        $this->recordRun(CentreCronManifest::CRON_MEETING_REMINDERS, '-3 minutes', CronRun::TRIGGER_TICK);
+        $this->client->loginUser($this->admin());
+
+        $text = $this->client->request('GET', '/admin/crons')->filter('main')->text();
+
+        self::assertStringContainsString('sin identificar', $text);
+        self::assertStringNotContainsString('el reloj principal', $text);
+    }
+
+    /**
      * El historial de una tarea enseña sus ejecuciones, quién las disparó y su salida.
      */
     public function testElHistorialMuestraLasEjecucionesConSuOrigenYSuSalida(): void
     {
-        $this->recordRun(CentreCronManifest::CRON_MEETING_REMINDERS, '-1 hour', CronRun::TRIGGER_TICK, '3 avisos de reuniones enviados.', '[OK] 3 avisos');
+        // Con el origen que tendrá una ejecución REAL: el reloj principal declarándose. Antes este test
+        // sembraba TRIGGER_TICK y afirmaba que se leía «el reloj», y eso era exactamente el diseño malo
+        // —el valor por defecto haciéndose pasar por el principal— así que la aserción daba por bueno lo
+        // que había que arreglar.
+        $this->recordRun(CentreCronManifest::CRON_MEETING_REMINDERS, '-1 hour', CronRun::TRIGGER_TICK_MAIN, '3 avisos de reuniones enviados.', '[OK] 3 avisos');
         $this->client->loginUser($this->admin());
 
         $crawler = $this->client->request('GET', '/admin/crons/'.CentreCronManifest::CRON_MEETING_REMINDERS);
@@ -165,7 +183,7 @@ final class AdminCronScreenTest extends WebTestCase
         self::assertResponseIsSuccessful();
         $text = $crawler->filter('main')->text();
         self::assertStringContainsString('3 avisos de reuniones enviados.', $text);
-        self::assertStringContainsString('el reloj', $text, 'El origen del disparo tiene que verse: es lo que dice qué reloj está vivo.');
+        self::assertStringContainsString('el reloj principal', $text, 'El origen del disparo tiene que verse: es lo que dice qué reloj está vivo.');
         self::assertStringContainsString('[OK] 3 avisos', $text, 'La salida del comando es lo que se mira cuando algo falla.');
     }
 

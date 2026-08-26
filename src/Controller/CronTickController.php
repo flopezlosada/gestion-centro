@@ -50,13 +50,17 @@ class CronTickController
     public const TICK_ATTRIBUTE = '_cron_tick';
 
     /**
-     * Cabecera con la que un reloj se identifica. El único valor que se mira es "backup".
+     * Cabecera con la que un reloj se identifica: "main" el principal, "backup" el de respaldo.
      *
      * NO es un dato de seguridad y no hace falta que lo sea: quien no traiga el token no llega hasta
      * aquí, y lo peor que puede hacer un reloj legítimo mintiendo sobre su nombre es ensuciar una
-     * etiqueta del registro.
+     * etiqueta del registro. Lo que sí importa es que **quien no se identifique no herede la identidad
+     * de nadie**: un valor ausente o desconocido queda como «sin identificar» y no como el principal.
      */
     public const CLOCK_HEADER = 'X-Cron-Clock';
+
+    /** Valor de {@see self::CLOCK_HEADER} con el que el reloj PRINCIPAL (cada 5 min) se declara. */
+    public const CLOCK_MAIN = 'main';
 
     /** Valor de {@see self::CLOCK_HEADER} con el que el reloj de respaldo se declara. */
     public const CLOCK_BACKUP = 'backup';
@@ -93,15 +97,18 @@ class CronTickController
         // la señal y se contesta.
         $request->attributes->set(self::TICK_ATTRIBUTE, true);
 
-        // Y QUIÉN llama, para que el registro pueda distinguir los dos relojes. Se traduce a una
-        // constante aquí mismo en vez de pasar el valor de la cabecera adelante: así lo que se guarda es
-        // siempre uno de los orígenes declarados, no lo que a alguien le apetezca mandar.
-        $request->attributes->set(
-            self::TRIGGER_ATTRIBUTE,
-            self::CLOCK_BACKUP === $request->headers->get(self::CLOCK_HEADER)
-                ? CronRun::TRIGGER_TICK_BACKUP
-                : CronRun::TRIGGER_TICK
-        );
+        // Y QUIÉN llama, para que el registro pueda distinguir los relojes. Se traduce a una constante
+        // aquí mismo en vez de pasar el valor de la cabecera adelante: así lo que se guarda es siempre
+        // uno de los orígenes declarados, no lo que a alguien le apetezca mandar.
+        //
+        // El `default` NO cae en el principal, y ésa es la lección: si cayera, cualquier llamada sin
+        // cabecera —un curl de prueba, un reloj nuevo mal configurado— se haría pasar por él y el
+        // registro daría por vivo un reloj que igual no existe.
+        $request->attributes->set(self::TRIGGER_ATTRIBUTE, match ($request->headers->get(self::CLOCK_HEADER)) {
+            self::CLOCK_MAIN => CronRun::TRIGGER_TICK_MAIN,
+            self::CLOCK_BACKUP => CronRun::TRIGGER_TICK_BACKUP,
+            default => CronRun::TRIGGER_TICK,
+        });
 
         return new Response('', Response::HTTP_ACCEPTED);
     }
