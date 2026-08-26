@@ -108,11 +108,30 @@
         <input type="hidden" name="_token" value="{{ csrf_token('cron_run' ~ row.key) }}">
         <button type="submit" class="btn btn-sm secondary">Ejecutar ahora</button>
     </form>
+    {#
+      El interruptor es un BOTÓN con `role="switch"`, no la casilla de `form.checkbox_switch`.
+
+      Por qué no la casilla: ese macro está hecho para un formulario con «Guardar» al final, y aquí no hay
+      ninguno — pausar es un acto inmediato. Una casilla que actuara al cambiar necesitaría JavaScript, y
+      sin él se quedaría muda: parecería funcionar y no haría nada, que en un interruptor que apaga los
+      avisos del centro es el peor fallo posible. Un botón envía solo.
+
+      Por qué botón y no dos etiquetas de texto («Pausar» / «Reanudar»): tienen ancho distinto, así que la
+      columna de acciones bailaba de fila en fila. Este tiene ancho fijo.
+
+      `role="switch"` + `aria-checked` es lo que hace que un lector de pantalla anuncie el ESTADO y no
+      solo la acción, que es justo la ventaja de un interruptor sobre un botón: se ve si está encendido
+      sin tener que deducirlo del texto.
+    #}
     <form method="post" action="{{ path('admin_cron_toggle', { key: row.key }) }}"
           {% if row.enabled %}data-confirm="Mientras esté pausada, «{{ row.label }}» no manda ningún aviso, y los de esos días NO se acumulan: se pierden. ¿Pausarla?"{% endif %}>
         <input type="hidden" name="_token" value="{{ csrf_token('cron_toggle' ~ row.key) }}">
         <input type="hidden" name="enabled" value="{{ row.enabled ? '0' : '1' }}">
         {% if fromDetail %}<input type="hidden" name="fromDetail" value="1">{% endif %}
-        <button type="submit" class="btn btn-sm secondary">{{ row.enabled ? 'Pausar' : 'Reanudar' }}</button>
+        <button type="submit" class="cron-switch" role="switch" aria-checked="{{ row.enabled ? 'true' : 'false' }}"
+                title="{{ row.enabled ? 'Pausar' : 'Reanudar' }} «{{ row.label }}»">
+            <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+            <span class="visually-hidden">{{ row.enabled ? 'Pausar' : 'Reanudar' }} «{{ row.label }}»</span>
+        </button>
     </form>
 {% endmacro %}

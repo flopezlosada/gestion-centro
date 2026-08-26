@@ -5151,3 +5151,32 @@ tr.is-not-covered { background: var(--danger-weak); }
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
+
+/* ── Interruptor de una tarea programada, en la celda de acciones ─────────────────────────────────
+   Un <button> con role="switch", no la casilla de form.checkbox_switch: ahí el control vive en un
+   formulario con «Guardar» al final, y aquí pausar es un acto inmediato. Una casilla que actuara al
+   cambiar necesitaría JS y sin él se quedaría muda —parecería funcionar sin hacer nada—, que en el
+   interruptor que apaga los avisos del centro es el peor fallo posible.
+
+   Reutiliza .switch__track y .switch__thumb del interruptor de formulario para que sea el MISMO objeto
+   a la vista; lo único propio es conmutar por [aria-checked] en vez de por :checked, porque aquí no
+   hay input que se marque. */
+.cron-switch {
+    display: inline-flex; align-items: center; vertical-align: middle;
+    margin-left: 8px; padding: 4px; border: 0; background: none; cursor: pointer;
+    border-radius: 999px;
+}
+/* La pista viene con margin-top para alinearse con una etiqueta de dos líneas; aquí va sola. */
+.cron-switch .switch__track { margin-top: 0; }
+.cron-switch[aria-checked="true"] .switch__track { background: var(--accent); border-color: var(--accent); }
+.cron-switch[aria-checked="true"] .switch__thumb { transform: translateX(18px); background: var(--on-accent); }
+.cron-switch:hover .switch__track { border-color: var(--accent); }
+/* El foco se pinta en la pista y no en el botón, para que el anillo abrace al interruptor y no a su
+   caja con padding. */
+.cron-switch:focus-visible { outline: none; }
+.cron-switch:focus-visible .switch__track { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* La etiqueta de estado no parte en dos líneas: «HIZO TRABAJO» se rompía en el ancho de esta columna y
+   una etiqueta de dos renglones deja de leerse como etiqueta. Acotado a esta tabla y NO puesto en
+   `.badge`: son cientos de usos en toda la aplicación y algunos SÍ quieren envolver. */
+.cron-table td .badge { white-space: nowrap; }

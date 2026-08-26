@@ -184,6 +184,32 @@ final class AdminCronScreenTest extends WebTestCase
     }
 
     /**
+     * El interruptor REFLEJA el estado, no solo la acción.
+     *
+     * Es un `<button role="switch">` con `aria-checked`, y ese atributo es lo único que dice si está
+     * encendido: la pinta la da el CSS a partir de él, así que si dejan de cuadrar la pantalla enseña un
+     * interruptor apagado sobre una tarea que sigue mandando avisos, sin que nada falle. Es exactamente
+     * la mentira que esta pantalla existe para no contar.
+     *
+     * Y el valor que se ENVÍA es el contrario del estado, porque pulsar conmuta.
+     */
+    public function testElInterruptorReflejaElEstadoDeLaTarea(): void
+    {
+        self::getContainer()->get(AppSettings::class)->setCronTaskEnabled(CentreCronManifest::CRON_MEETING_REMINDERS, false);
+        $this->client->loginUser($this->admin());
+
+        $crawler = $this->client->request('GET', '/admin/crons');
+
+        $pausada = $crawler->filter('form[action$="/'.CentreCronManifest::CRON_MEETING_REMINDERS.'/interruptor"]');
+        self::assertSame('false', $pausada->filter('button[role="switch"]')->attr('aria-checked'), 'Una tarea pausada tiene que verse apagada.');
+        self::assertSame('1', $pausada->filter('input[name="enabled"]')->attr('value'), 'Pulsarla la reanuda.');
+
+        $activa = $crawler->filter('form[action$="/'.CentreCronManifest::CRON_EVENT_REMINDERS.'/interruptor"]');
+        self::assertSame('true', $activa->filter('button[role="switch"]')->attr('aria-checked'), 'Una tarea activa tiene que verse encendida.');
+        self::assertSame('0', $activa->filter('input[name="enabled"]')->attr('value'), 'Pulsarla la pausa.');
+    }
+
+    /**
      * Pausar desde la pantalla pausa de verdad, y el reloj deja de mirarla.
      */
     public function testPausarEscribeElInterruptor(): void
