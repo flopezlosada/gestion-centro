@@ -1,0 +1,98 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/cron.html.twig' as cronUi %}
+
+{% block title %}Tareas programadas{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Tareas programadas
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Administración</p>
+            <h1>Tareas programadas</h1>
+            <p class="lead">Los barridos que mandan los avisos por su cuenta: recordatorios de tareas, de reuniones, de guardias y de la agenda. Aquí se ve si están corriendo de verdad.</p>
+        </div>
+    </div>
+
+    {# El veredicto ARRIBA y en una frase, antes de la tabla. Es lo único que hay que leer el 99 % de los
+       días, y la razón de ser de la pantalla: que «no había nada que avisar» y «no se ejecutó» dejen de
+       verse igual. #}
+    {% if late > 0 %}
+        <div class="callout callout--warning" role="alert">
+            <p><strong>{{ late }} tarea{{ late == 1 ? '' : 's' }} fuera de plazo.</strong> Lleva{{ late == 1 ? '' : 'n' }} más tiempo sin ejecutarse del que debería, así que hay avisos que no están saliendo.</p>
+            <p class="help">Lo más probable es que el reloj esté parado, no la aplicación. Si acabas de desplegar, dale una pasada al reloj y vuelve a mirar.</p>
+        </div>
+    {% elseif paused == rows|length %}
+        <div class="callout callout--warning" role="alert">
+            <p><strong>Están todas pausadas.</strong> La aplicación no va a mandar ni un aviso por su cuenta.</p>
+        </div>
+    {% else %}
+        <div class="callout" role="status">
+            <p><strong>Todo al día.</strong> Ninguna tarea activa se ha pasado de su plazo.{% if paused > 0 %} Hay {{ paused }} pausada{{ paused == 1 ? '' : 's' }} a propósito, y por eso no se vigila{{ paused == 1 ? '' : 'n' }}.{% endif %}</p>
+        </div>
+    {% endif %}
+
+    <div class="card">
+        <table class="cron-table" data-list-tools>
+            <thead>
+                <tr>
+                    <th>Tarea</th>
+                    <th>Cada cuánto</th>
+                    <th>Última ejecución</th>
+                    <th data-filter>Estado</th>
+                    {# Cabecera vacía en la columna de acciones, como el resto de los listados: es lo que
+                       hace que responsive-tables.js no le ponga etiqueta al apilar la fila en móvil. #}
+                    <th data-nosort></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr>
+                        <td><a href="{{ path('admin_cron_show', { key: row.key }) }}">{{ row.label }}</a></td>
+                        <td class="muted">{{ row.schedule }}</td>
+                        {# La antigüedad en palabras, con la fecha exacta en el title. La fecha NO va en el
+                           texto de la celda a propósito: este proyecto ya se dejó un filtro de tabla roto
+                           por meter un dato variable en una celda, y aunque esta columna no filtre, la
+                           regla que se quiere fijar es «lo variable va en el title». #}
+                        <td>
+                            {% if row.lastRun %}
+                                <span title="{{ row.lastRun.startedAt|date('d/m/Y \\a \\l\\a\\s H:i', false) }}">{{ row.age }}</span>
+                                {# QUIÉN la lanzó, en la misma celda y no en columna propia: es una
+                                   propiedad de ESA ejecución, no de la tarea, y una cabecera «Lo
+                                   disparó» se leería como «qué dispara esta tarea», que es otra cosa.
+                                   Y tiene que estar en el listado y no solo en el detalle porque el
+                                   fallo más probable del sistema solo se ve mirando la COLUMNA entera:
+                                   si en todas las filas dice «el reloj de respaldo», el reloj principal
+                                   está muerto y los avisos llegan con una hora de retraso. #}
+                                <span class="muted">· {{ cronUi.trigger_label(row.lastRun.triggerSource) }}</span>
+                            {% else %}
+                                <span class="muted">sin registro todavía</span>
+                            {% endif %}
+                        </td>
+                        {# La única columna filtrable, y con etiquetas de un catálogo cerrado: los cuatro
+                           estados más «Pausada» y «Fuera de plazo». #}
+                        <td>{{ cronUi.state_badge(row) }}</td>
+                        <td class="row-actions">{{ cronUi.actions(row) }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Qué es cada cosa</h2>
+        <dl class="detail-grid">
+            <dt>Pausada</dt>
+            <dd>El reloj la salta. Los avisos que mandaría <strong>no se acumulan</strong>: se pierden los de esos días.</dd>
+            <dt>Sin trabajo</dt>
+            <dd>Corrió y no había nada que avisar. Es la respuesta sana de casi todas las pasadas, no un fallo.</dd>
+            <dt>Fuera de plazo</dt>
+            <dd>Lleva sin ejecutarse más de lo que tolera su cadencia. Casi siempre es el reloj, no la aplicación.</dd>
+            <dt>Falló</dt>
+            <dd>Reventó al ejecutarse. Se reintenta en la pasada siguiente sola, así que no hace falta relanzarla a mano; si sigue en rojo, mira su salida.</dd>
+        </dl>
+        <p class="help">El reloj es externo a la aplicación: la llama cada pocos minutos por HTTP y hay un segundo reloj de respaldo que pasa cada hora. Que una tarea esté al día significa que el reloj llega; que esté fuera de plazo, casi siempre, que no.</p>
+    </div>
+{% endblock %}

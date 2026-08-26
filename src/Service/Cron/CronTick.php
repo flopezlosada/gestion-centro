@@ -47,9 +47,12 @@ class CronTick
      * ejecutar el resto sin que nadie lo supiera.
      *
      * @param \DateTimeImmutable|null $now Momento de referencia (inyectable en tests).
+     * @param string $trigger Qué reloj llama, uno de los CronRun::TRIGGER_*. Lo declara quien recibe la
+     *                        llamada, porque el núcleo no puede saber cuántos relojes tiene la
+     *                        aplicación que lo hospeda ni cómo se llaman.
      * @return array<string, string> Clave de tarea => qué se hizo con ella.
      */
-    public function run(?\DateTimeImmutable $now = null): array
+    public function run(?\DateTimeImmutable $now = null, string $trigger = CronRun::TRIGGER_TICK): array
     {
         $now ??= new \DateTimeImmutable();
         $lastRuns = $this->runs->findLastRunPerTask();
@@ -68,7 +71,7 @@ class CronTick
                 continue;
             }
 
-            $done[$key] = $this->runTask($key);
+            $done[$key] = $this->runTask($key, $trigger);
         }
 
         return $done;
@@ -78,17 +81,19 @@ class CronTick
      * Lanza una tarea y devuelve en una línea qué pasó, sin dejar que una
      * excepción se lleve por delante el resto del tick.
      *
-     * @param string $key Clave de la tarea.
+     * @param string $key     Clave de la tarea.
+     * @param string $trigger Qué reloj llama.
      */
-    private function runTask(string $key): string
+    private function runTask(string $key, string $trigger): string
     {
         try {
-            // TRIGGER_TICK y no TRIGGER_SCHEDULE: el registro tiene que poder
-            // decir si una tarea la hizo el tick o el crontab viejo del hosting.
-            // Mientras los dos relojes convivan es la ÚNICA forma de saber si el
-            // nuevo funciona, porque el viejo dispara en punto, llega antes y
-            // deja al tick sin nada que hacer.
-            $result = $this->runner->run($key, CronRunMode::AsScheduled, null, CronRun::TRIGGER_TICK);
+            // El origen llega de fuera y no se fija aquí: el registro tiene que
+            // poder decir no solo si la tarea la hizo el tick o el crontab viejo
+            // del hosting, sino CUÁL de los relojes del tick. Mientras conviva
+            // más de uno es la ÚNICA forma de saber cuál está vivo, porque el que
+            // llega antes deja a los demás sin nada que hacer y entonces
+            // "funciona" y "está muerto" se ven exactamente igual.
+            $result = $this->runner->run($key, CronRunMode::AsScheduled, null, $trigger);
 
             if ($result->blocked !== null) {
                 return $result->blocked;

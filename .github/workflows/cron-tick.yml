@@ -29,6 +29,11 @@ name: Reloj de respaldo del planificador
 #
 # Los TOKENS de cada entorno son distintos y no se reutilizan: cada uno vale para su servidor.
 #
+# ⚠️ AL DAR DE ALTA EL RELOJ PRINCIPAL (cron-job.org o equivalente), NO le pongas la cabecera
+# `X-Cron-Clock`. Solo la manda este workflow, y es lo que permite que el registro distinga los dos:
+# sin cabecera = el reloj principal, con `backup` = éste. Si el principal la mandara también, el
+# listado diría que todo lo mueve el respaldo y se perdería el único dato que delata su muerte.
+#
 # Secretos (Settings > Secrets and variables > Actions):
 #   CRON_TICK_URL_PROD       - https://gestion.ieslacabrera.org/cron/tick
 #   CRON_TICK_TOKEN_PROD     - el mismo valor que el CRON_TICK_TOKEN del .env.local del servidor
@@ -102,10 +107,15 @@ jobs:
           # El código de salida de curl se captura SIN abortar (`|| rc=$?`): con `set -e`, una
           # asignación desde un comando que falla mata el paso ahí mismo, y entonces no se llega a
           # explicar nada.
+          # X-Cron-Clock: este reloj se declara como el RESPALDO que es, y con eso el registro de
+          # ejecuciones puede distinguirlo del principal. Importa porque el fallo más probable del
+          # sistema es justo ése: si el reloj de cinco minutos muere y este sigue vivo, las tareas
+          # SIGUEN corriendo —cada hora, tarde— y todo parece normal. Con la etiqueta, el listado de
+          # /admin/crons enseña «el reloj de respaldo» en todas las filas y se ve de un golpe.
           rc=0
           code=$(curl -sS -o /dev/null -w '%{http_code}' \
             --max-time 30 --retry 2 --retry-delay 5 \
-            -X POST "$URL" -H "X-Cron-Token: $TOKEN") || rc=$?
+            -X POST "$URL" -H "X-Cron-Token: $TOKEN" -H "X-Cron-Clock: backup") || rc=$?
 
           if [ "$rc" -ne 0 ]; then
             avisar "el servidor no respondió" \

@@ -1,0 +1,137 @@
+{#
+  Piezas compartidas por el listado de tareas programadas y el historial de una.
+
+  Están en un macro y no copiadas en las dos plantillas porque la etiqueta de estado es la que
+  interpreta los cuatro estados de `CronRun` MÁS los dos que no son estados de una ejecución sino de la
+  tarea («Pausada», «Fuera de plazo»). Dos copias acabarían discrepando en el orden de esa prioridad, y
+  entonces una pantalla diría que algo va bien y la otra que va mal, sobre lo mismo.
+#}
+
+{#
+  El estado de una tarea en una etiqueta.
+
+  EL ORDEN DE LA PRIORIDAD ES EL MENSAJE, y no es arbitrario:
+
+  1. Pausada gana a todo: una tarea apagada a propósito no está caída ni ha fallado, y decir otra cosa
+     manda a mirar una avería que no existe.
+  2. Fuera de plazo gana al estado de la última ejecución: da igual que la última saliera bien si fue
+     hace dieciséis días. Es la única etiqueta que exige actuar.
+  3. Y solo entonces, qué pasó la última vez.
+
+  «Pausada» y «Fuera de plazo» nunca se pisan: el registro no considera caída una tarea apagada.
+
+  @param row  Los datos de la tarea que arma AdminCronController::describe().
+#}
+{% macro state_badge(row) %}
+    {% if not row.enabled %}
+        <span class="badge badge--draft">Pausada</span>
+    {% elseif row.overdue %}
+        <span class="badge badge--danger">Fuera de plazo</span>
+    {% elseif row.lastRun is null %}
+        <span class="badge badge--muted">Sin registro</span>
+    {% else %}
+        {{ _self.run_badge(row.lastRun.status) }}
+    {% endif %}
+{% endmacro %}
+
+{#
+  Lo que pasó en UNA ejecución.
+
+  Los cuatro estados en cuatro etiquetas distintas, y ninguno cae en «bien / mal»: «corrió sin encontrar
+  trabajo» es el resultado sano de casi todas las pasadas y «estaba pausada» es la tarea obedeciendo.
+  Meterlos todos en verde haría que el registro no pudiera distinguir una tarea que avisa de una que solo
+  se ejecuta, que es exactamente la ceguera que el registro existe para cerrar.
+
+  El `default` no se deja caer en verde a propósito: si mañana se añade un estado a CronRun y nadie toca
+  esto, tiene que verse raro y no correcto.
+
+  @param status  Uno de los CronRun::STATUS_*.
+#}
+{% macro run_badge(status) %}
+    {% if status == 'done' %}
+        <span class="badge badge--success">Hizo trabajo</span>
+    {% elseif status == 'nothing_to_do' %}
+        <span class="badge badge--muted">Sin trabajo</span>
+    {% elseif status == 'disabled' %}
+        <span class="badge badge--draft">Estaba pausada</span>
+    {% elseif status == 'failed' %}
+        <span class="badge badge--danger">Falló</span>
+    {% else %}
+        <span class="badge badge--warning">{{ status }}</span>
+    {% endif %}
+{% endmacro %}
+
+{#
+  De dónde salió el disparo, en palabras.
+
+  Los CUATRO orígenes tienen que verse distintos, y el que más importa es la diferencia entre los dos
+  relojes. El principal pasa cada cinco minutos y el de respaldo cada hora: si el principal muere, las
+  tareas siguen corriendo —tarde— y todo parece normal, así que ver «el reloj de respaldo» en todas las
+  filas es lo único que delata que el principal está muerto. Lo mismo valía para el crontab viejo del
+  hosting mientras conviviera con el tick.
+
+  «el reloj» a secas es el principal: se declara por omisión, porque es un servicio externo que se
+  configura en una web ajena y no se puede depender de que alguien le acierte una cabecera.
+
+  @param trigger  Uno de los CronRun::TRIGGER_*.
+#}
+{% macro trigger_label(trigger) %}
+    {%- if trigger == 'tick' -%}
+        el reloj
+    {%- elseif trigger == 'tick_backup' -%}
+        el reloj de respaldo
+    {%- elseif trigger == 'schedule' -%}
+        el cron del hosting
+    {%- elseif trigger == 'manual' -%}
+        a mano
+    {%- else -%}
+        {{ trigger }}
+    {%- endif -%}
+{% endmacro %}
+
+{#
+  Los dos botones de acción de una tarea, para la celda .row-actions de una fila o la cabecera del
+  detalle.
+
+  Dos <form> hermanos y no uno grande con «Guardar»: pausar una tarea es UN acto deliberado sobre UNA
+  tarea, no la edición de una lista. Con un formulario grande habría que acordarse de bajar a guardar, y
+  una tarea que se creía pausada y sigue mandando avisos es justo lo que esta pantalla existe para evitar.
+
+  @param row         Los datos de la tarea.
+  @param fromDetail  ¿Se pulsa desde el historial? (para volver ahí y no al listado)
+#}
+{% macro actions(row, fromDetail = false) %}
+    <form method="post" action="{{ path('admin_cron_run', { key: row.key }) }}"
+          data-confirm="{{ row.enabled
+              ? 'Se ejecuta «' ~ row.label ~ '» ahora mismo. Si hay avisos que tocan, saldrán de verdad por correo y por notificación. ¿Continuar?'
+              : 'Esta tarea está PAUSADA y se va a ejecutar igualmente (es la razón de ser de este botón). Si hay avisos que tocan, saldrán de verdad. ¿Continuar?' }}">
+        <input type="hidden" name="_token" value="{{ csrf_token('cron_run' ~ row.key) }}">
+        <button type="submit" class="btn btn-sm secondary">Ejecutar ahora</button>
+    </form>
+    {#
+      El interruptor es un BOTÓN con `role="switch"`, no la casilla de `form.checkbox_switch`.
+
+      Por qué no la casilla: ese macro está hecho para un formulario con «Guardar» al final, y aquí no hay
+      ninguno — pausar es un acto inmediato. Una casilla que actuara al cambiar necesitaría JavaScript, y
+      sin él se quedaría muda: parecería funcionar y no haría nada, que en un interruptor que apaga los
+      avisos del centro es el peor fallo posible. Un botón envía solo.
+
+      Por qué botón y no dos etiquetas de texto («Pausar» / «Reanudar»): tienen ancho distinto, así que la
+      columna de acciones bailaba de fila en fila. Este tiene ancho fijo.
+
+      `role="switch"` + `aria-checked` es lo que hace que un lector de pantalla anuncie el ESTADO y no
+      solo la acción, que es justo la ventaja de un interruptor sobre un botón: se ve si está encendido
+      sin tener que deducirlo del texto.
+    #}
+    <form method="post" action="{{ path('admin_cron_toggle', { key: row.key }) }}"
+          {% if row.enabled %}data-confirm="Mientras esté pausada, «{{ row.label }}» no manda ningún aviso, y los de esos días NO se acumulan: se pierden. ¿Pausarla?"{% endif %}>
+        <input type="hidden" name="_token" value="{{ csrf_token('cron_toggle' ~ row.key) }}">
+        <input type="hidden" name="enabled" value="{{ row.enabled ? '0' : '1' }}">
+        {% if fromDetail %}<input type="hidden" name="fromDetail" value="1">{% endif %}
+        <button type="submit" class="cron-switch" role="switch" aria-checked="{{ row.enabled ? 'true' : 'false' }}"
+                title="{{ row.enabled ? 'Pausar' : 'Reanudar' }} «{{ row.label }}»">
+            <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+            <span class="visually-hidden">{{ row.enabled ? 'Pausar' : 'Reanudar' }} «{{ row.label }}»</span>
+        </button>
+    </form>
+{% endmacro %}
