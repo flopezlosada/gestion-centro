@@ -1,0 +1,84 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/cron.html.twig' as cronUi %}
+
+{% block title %}{{ task.label }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('admin_cron_index') }}">Tareas programadas</a><span class="sep">/</span>
+    {{ task.label }}
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Tareas programadas</p>
+            <h1>{{ task.label }} {{ cronUi.state_badge(task) }}</h1>
+            <p class="lead">{{ task.schedule|capitalize }}. Se considera caída si pasa más de {{ task.maxDelayHours }} h sin ejecutarse.</p>
+        </div>
+        <div class="row-actions">{{ cronUi.actions(task, true) }}</div>
+    </div>
+
+    {% if task.overdue %}
+        <div class="callout callout--warning" role="alert">
+            <p><strong>Fuera de plazo.</strong> No se ejecuta desde {{ task.age }}, y su plazo son {{ task.maxDelayHours }} h. Hay avisos de esta tarea que no están saliendo.</p>
+            <p class="help">Casi siempre es que el reloj no llega, no que la aplicación falle: mira si las demás tareas están igual. Si están todas fuera de plazo, es el reloj. Si es solo ésta, mira su salida más abajo.</p>
+        </div>
+    {% elseif not task.enabled %}
+        <div class="callout callout--warning" role="note">
+            <p><strong>Pausada.</strong> El reloj la salta, así que no manda ningún aviso — y los de estos días <strong>no se acumulan</strong>: se pierden. Mientras esté así no se vigila su plazo, a propósito: una tarea apagada no está caída.</p>
+        </div>
+    {% endif %}
+
+    {% if unmet is not empty %}
+        {# La tarea que se alimenta de lo que deja otra: con la de la que depende pausada, ésta corre en
+           verde sin hacer nada. Sin este aviso, ese fallo es invisible. #}
+        <div class="callout callout--warning" role="alert">
+            <p><strong>Depende de {{ unmet|length == 1 ? 'una tarea que está pausada' : 'tareas que están pausadas' }}:</strong> {{ unmet|join(', ') }}. Esta tarea se ejecutará y saldrá en verde, pero no encontrará trabajo que hacer.</p>
+        </div>
+    {% endif %}
+
+    <div class="card">
+        <h2>Ejecuciones</h2>
+        {% if history is empty %}
+            <div class="empty-state">
+                <h2>Sin ninguna ejecución registrada</h2>
+                <p>O acaba de instalarse, o el reloj no ha llegado nunca. Pulsa «Ejecutar ahora» para comprobar que la tarea funciona; eso no dice nada del reloj, pero sí de la tarea.</p>
+            </div>
+        {% else %}
+            <p class="help">{{ history|length == 1 ? 'Una sola ejecución registrada' : 'Las ' ~ history|length ~ ' más recientes, de la última a la primera' }}. El registro se poda a los 30 días, pero la última ejecución de cada tarea nunca se borra: es contra ella contra la que se mide el retraso.</p>
+            <table>
+                <thead>
+                    <tr><th>Cuándo</th><th>Estado</th><th>Lo disparó</th><th>Duró</th><th>Qué hizo</th></tr>
+                </thead>
+                <tbody>
+                    {% for run in history %}
+                        <tr>
+                            <td class="mono">{{ run.startedAt|date('d/m/Y H:i:s', false) }}</td>
+                            <td>{{ cronUi.run_badge(run.status) }}</td>
+                            <td class="muted">{{ cronUi.trigger_label(run.triggerSource) }}</td>
+                            <td class="muted">
+                                {% if run.finished %}
+                                    {{ run.durationSeconds }} s
+                                {% else %}
+                                    {# Sin cierre: el proceso arrancó y no volvió. Es lo que deja un timeout de
+                                       php-fpm, que PHP no puede pisar, o un proceso matado. #}
+                                    <span title="La ejecución arrancó y no llegó a cerrarse: el proceso murió a mitad.">no volvió</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {{ run.detail ?: '—' }}
+                                {% if run.output %}
+                                    <details class="cronlog">
+                                        <summary>Ver la salida</summary>
+                                        <pre class="cronlog__output">{{ run.output }}</pre>
+                                    </details>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}

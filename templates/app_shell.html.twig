@@ -193,6 +193,16 @@
                             <a href="{{ path('admin_task_template_index') }}" class="{{ route starts with 'admin_task_template_' ? 'is-active' }}">Catálogo de tareas</a>
                             <a href="{{ path('admin_event_category_index') }}" class="{{ route starts with 'admin_event_category_' ? 'is-active' }}">Categorías de evento</a>
                         </div>
+
+                        {# Infraestructura: lo que hace funcionar la aplicación, no lo que gestiona el
+                           centro. Reservado a administradores, igual que «Acceso», y en su propio grupo
+                           al final para que no se confunda con los catálogos que sí toca el centro. #}
+                        {% if is_granted('ROLE_ADMIN') %}
+                            <span class="nav-subtitle">Sistema</span>
+                            <div class="nav-group">
+                                <a href="{{ path('admin_cron_index') }}" class="{{ route starts with 'admin_cron_' ? 'is-active' }}">Tareas programadas</a>
+                            </div>
+                        {% endif %}
                     </details>
                 {% endif %}
 

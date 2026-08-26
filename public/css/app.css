@@ -5121,3 +5121,33 @@ tr.is-not-covered { background: var(--danger-weak); }
        línea de la misma celda, no el pie de un campo. */
     .catalogue-classify th[scope="row"] .help { display: block; margin: 2px 0 0; font-weight: 400; }
 }
+
+/* ── Salida de una ejecución de tarea programada ──────────────────────────────────────────────────
+   Un <details> nativo dentro de la celda «Qué hizo» del historial. Plegado por defecto a propósito:
+   la salida de un comando son varias líneas y el historial se lee de un barrido vertical, así que
+   abrirlas todas convertiría treinta filas en una pared de texto.
+
+   El <pre> lleva scroll horizontal PROPIO (overflow:auto) y ancho máximo, para que una línea larga
+   —la traza de una excepción, sin espacios— no ensanche la tabla y con ella la página entera. */
+.cronlog { margin-top: 4px; }
+.cronlog > summary { cursor: pointer; font: 600 12.5px var(--font-body); color: var(--text-faint); list-style: none; }
+.cronlog > summary::-webkit-details-marker { display: none; }
+.cronlog > summary::before { content: "▸ "; }
+.cronlog[open] > summary::before { content: "▾ "; }
+.cronlog > summary:hover { color: var(--text); }
+.cronlog__output {
+    margin: 6px 0 0;
+    padding: 10px 12px;
+    max-width: 60ch;
+    max-height: 20rem;
+    overflow: auto;
+    font: 12px/1.5 var(--font-mono);
+    color: var(--text);
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    /* La salida se guarda ya recortada a 8 KB y con sus saltos: se respetan tal cual, pero envolviendo
+       las líneas largas para no depender solo del scroll. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
