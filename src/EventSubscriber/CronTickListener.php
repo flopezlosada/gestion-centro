@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\EventSubscriber;
 
 use App\Controller\CronTickController;
+use App\Entity\CronRun;
 use App\Service\Cron\CronTick;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
@@ -51,7 +52,12 @@ class CronTickListener
         // siguiente.
         @set_time_limit(0);
 
-        $done = $this->tick->run();
+        // El origen que declaró el controlador: sin él, los dos relojes se registrarían igual y la
+        // muerte del principal —el caso que más importa— seguiría siendo invisible.
+        $done = $this->tick->run(trigger: (string) $event->getRequest()->attributes->get(
+            CronTickController::TRIGGER_ATTRIBUTE,
+            CronRun::TRIGGER_TICK
+        ));
 
         // Deja constancia de la pasada aunque no hubiera nada que hacer: es la
         // única traza de que el reloj externo está vivo, porque las pasadas sin

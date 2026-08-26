@@ -64,15 +64,22 @@
 {#
   De dónde salió el disparo, en palabras.
 
-  Los tres orígenes tienen que verse distintos: mientras el reloj nuevo y el crontab viejo puedan
-  convivir, es lo ÚNICO que permite saber cuál de los dos está vivo — el viejo dispara en punto, llega
-  antes y deja al nuevo sin nada que hacer, así que «funciona» y «está muerto» se ven igual.
+  Los CUATRO orígenes tienen que verse distintos, y el que más importa es la diferencia entre los dos
+  relojes. El principal pasa cada cinco minutos y el de respaldo cada hora: si el principal muere, las
+  tareas siguen corriendo —tarde— y todo parece normal, así que ver «el reloj de respaldo» en todas las
+  filas es lo único que delata que el principal está muerto. Lo mismo valía para el crontab viejo del
+  hosting mientras conviviera con el tick.
+
+  «el reloj» a secas es el principal: se declara por omisión, porque es un servicio externo que se
+  configura en una web ajena y no se puede depender de que alguien le acierte una cabecera.
 
   @param trigger  Uno de los CronRun::TRIGGER_*.
 #}
 {% macro trigger_label(trigger) %}
     {%- if trigger == 'tick' -%}
         el reloj
+    {%- elseif trigger == 'tick_backup' -%}
+        el reloj de respaldo
     {%- elseif trigger == 'schedule' -%}
         el cron del hosting
     {%- elseif trigger == 'manual' -%}

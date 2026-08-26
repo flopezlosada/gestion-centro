@@ -59,6 +59,14 @@
                         <td>
                             {% if row.lastRun %}
                                 <span title="{{ row.lastRun.startedAt|date('d/m/Y \\a \\l\\a\\s H:i', false) }}">{{ row.age }}</span>
+                                {# QUIÉN la lanzó, en la misma celda y no en columna propia: es una
+                                   propiedad de ESA ejecución, no de la tarea, y una cabecera «Lo
+                                   disparó» se leería como «qué dispara esta tarea», que es otra cosa.
+                                   Y tiene que estar en el listado y no solo en el detalle porque el
+                                   fallo más probable del sistema solo se ve mirando la COLUMNA entera:
+                                   si en todas las filas dice «el reloj de respaldo», el reloj principal
+                                   está muerto y los avisos llegan con una hora de retraso. #}
+                                <span class="muted">· {{ cronUi.trigger_label(row.lastRun.triggerSource) }}</span>
                             {% else %}
                                 <span class="muted">sin registro todavía</span>
                             {% endif %}
