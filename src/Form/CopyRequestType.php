@@ -39,7 +39,9 @@ final class CopyRequestType extends AbstractType
                 ->add('document', FileType::class, [
                     'label' => 'Documento a fotocopiar',
                     'constraints' => [new Assert\NotNull(message: 'Adjunta el documento que hay que fotocopiar.')],
-                    'help' => sprintf('PDF, Office, texto o imagen. Máximo %d MB.', intdiv(DocumentUpload::MAX_BYTES, 1024 * 1024)),
+                    'help' => sprintf('Solo PDF. Máximo %d MB.', intdiv(DocumentUpload::MAX_BYTES, 1024 * 1024)),
+                    // Solo filtra el selector de archivos; quien manda es DocumentUpload::pdfProblem().
+                    'attr' => ['accept' => '.pdf,application/pdf'],
                 ]);
         }
 

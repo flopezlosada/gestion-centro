@@ -9,8 +9,10 @@ use Symfony\Component\HttpFoundation\File\UploadedFile;
 /**
  * The single policy for the documents the centre uploads to be read or printed later: the task an
  * absent teacher leaves, the sheets a department puts in the guardia task bank, anything sent to the
- * copy room. What is accepted has to be the same everywhere — a file the bank takes but a copy order
- * rejects would be a trap.
+ * copy room. What is accepted is the same everywhere, with one exception the centre asked for: a
+ * document uploaded straight into a copy order must be a PDF ({@see pdfProblem()}). It is not a trap for
+ * the bank or the absent teacher's task, because what reaches the copy room from a guardia is never
+ * re-checked.
  *
  * Only the extension is checked, on purpose: sniffing the media type rejected legitimate Office
  * documents in this project before. It is defence in depth, not the defence itself — the real one is
@@ -53,6 +55,28 @@ final class DocumentUpload
         }
 
         return null;
+    }
+
+    /**
+     * Like {@see problem()}, but only a PDF passes. For a document uploaded straight into a copy order,
+     * where the centre asked for PDF only. Documents that reach the copy room from a guardia are not
+     * re-checked: they were accepted where they were uploaded, and rejecting them at the photocopier
+     * would leave the guardia with no task.
+     *
+     * @param UploadedFile $file the uploaded file
+     *
+     * @return string|null the reason to reject it, or null when acceptable
+     */
+    public static function pdfProblem(UploadedFile $file): ?string
+    {
+        $problem = self::problem($file);
+        if (null !== $problem || \UPLOAD_ERR_NO_FILE === $file->getError()) {
+            return $problem;
+        }
+
+        return 'pdf' === strtolower($file->getClientOriginalExtension())
+            ? null
+            : sprintf('«%s» no es un PDF. Para fotocopias solo se admite PDF: guárdalo o expórtalo como PDF.', $file->getClientOriginalName());
     }
 
     /**

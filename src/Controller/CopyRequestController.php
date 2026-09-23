@@ -85,7 +85,7 @@ final class CopyRequestController extends AbstractController
             $file = $data->document;
             $problem = !$file instanceof UploadedFile || !DocumentUpload::isPresent($file)
                 ? 'Adjunta el documento que hay que fotocopiar.'
-                : DocumentUpload::problem($file);
+                : DocumentUpload::pdfProblem($file);
 
             if (null === $problem && $file instanceof UploadedFile) {
                 $order = (new CopyRequest())->setRequestedBy($user)

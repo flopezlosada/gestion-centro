@@ -110,8 +110,11 @@ final class CopyShopMailer
 
     /**
      * The subject line: what the copy room needs at a glance — that it is a guardia task (the centre
-     * asked for it to be flagged there), how many copies and what for. A standalone order says only
-     * "Fotocopias", because calling it a guardia task would be a lie.
+     * asked for it to be flagged there), who asks, how many copies and what for. A standalone order says
+     * only "Fotocopias", because calling it a guardia task would be a lie.
+     *
+     * Who asks goes here and not in the sender: the visible sender stays "Equipo directivo" as the centre
+     * asked, so without it the inbox showed a list of orders nobody could tell apart by teacher.
      *
      * @param CopyRequest $request the order
      *
@@ -119,9 +122,12 @@ final class CopyShopMailer
      */
     private function subject(CopyRequest $request): string
     {
+        $requester = $request->getRequestedBy();
+
         return sprintf(
-            '%s: %d copias · %s',
+            '%s%s: %d copias · %s',
             null !== $request->getCover() ? 'Tarea de guardia · Fotocopias' : 'Fotocopias',
+            null !== $requester ? ' de '.$requester->getFullName() : '',
             $request->getCopies(),
             $request->getContext(),
         );
