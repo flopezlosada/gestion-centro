@@ -359,11 +359,9 @@
                                     {% set sub = 'Reunión' ~ (m.place ? ' · ' ~ m.place : '') %}
                                     {% set tipo = 'meeting' %}
                                 {% elseif entry.kind == 'class' %}
-                                    {#- Una clase propia de hoy, con el aula REAL. Lleva al día en el Calendario,
-                                        que es donde está el resto del día; la ficha de la clase llegará con su
-                                        programación. -#}
+                                    {#- Una clase propia de hoy, con el aula REAL. Lleva a su programación. -#}
                                     {% set cl = entry.class %}
-                                    {% set url = path('calendar_index', { vista: 'dia', fecha: entry.date|date('Y-m-d') }) %}
+                                    {% set url = path('lesson_plan', { fecha: entry.date|date('Y-m-d'), tramo: cl.slotIndex }) %}
                                     {% set titulo = cl.groups|join(', ') ~ (cl.subjects is not empty ? ' · ' ~ cl.subjects|join(', ') : '') %}
                                     {% set sub = 'Clase' ~ (cl.rooms is not empty ? ' · ' ~ cl.rooms|join(', ') : '') ~ (cl.isRelocated ? ' · aula cambiada' : '') %}
                                     {% set tipo = 'class' %}

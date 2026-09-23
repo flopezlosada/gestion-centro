@@ -40,16 +40,18 @@
                 </li>
             {% endfor %}
             {# Tus clases del día, con el aula REAL (la de un plan de espacios aprobado si movió la clase).
-               Marcador LIBRO, otra forma más. Sin enlace todavía: la ficha de cada clase llegará con su
-               programación. #}
+               Marcador LIBRO, otra forma más. Cada una lleva a su programación, y si ya está programada se
+               ve aquí mismo qué toca. #}
             {% for c in classes %}
+                {% set p = plansByClass[day.date|date('Y-m-d', false) ~ '|' ~ c.slotIndex] ?? null %}
                 <li class="agenda-item agenda-item--class">
                     <span class="agenda-class-marker" aria-hidden="true">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5"/></svg>
                     </span>
                     <div class="agenda-body">
-                        <span class="agenda-title">{% if c.startsAt %}{{ c.startsAt|date('H:i') }}{% else %}{{ c.ordinal }}ª hora{% endif %} · {{ c.groups|join(', ') }}{% if c.subjects is not empty %} · {{ c.subjects|join(', ') }}{% endif %}</span>
-                        <span class="agenda-meta">Clase{% if c.rooms is not empty %} · {{ c.rooms|join(', ') }}{% endif %}{% if c.isRelocated %} · aula cambiada{% endif %}</span>
+                        <a href="{{ path('lesson_plan', { fecha: day.date|date('Y-m-d', false), tramo: c.slotIndex }) }}" class="agenda-title">{% if c.startsAt %}{{ c.startsAt|date('H:i') }}{% else %}{{ c.ordinal }}ª hora{% endif %} · {{ c.groups|join(', ') }}{% if c.subjects is not empty %} · {{ c.subjects|join(', ') }}{% endif %}</a>
+                        <span class="agenda-meta">Clase{% if c.rooms is not empty %} · {{ c.rooms|join(', ') }}{% endif %}{% if c.isRelocated %} · aula cambiada{% endif %}
+                            {%- if p %} · {{ [p.topic ? p.topic.name : null, p.activity ? p.activity.label : null, p.outcome ? p.outcome.label : null]|filter(v => v)|join(' · ') ?: 'programada' }}{% else %} · sin programar{% endif %}</span>
                     </div>
                 </li>
             {% endfor %}

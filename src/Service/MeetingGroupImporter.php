@@ -10,9 +10,8 @@ use App\Penalara\PenalaraMeetingDto;
 use App\Penalara\PenalaraMeetingParser;
 use App\Repository\MeetingGroupRepository;
 use App\Repository\UserRepository;
+use App\Util\TextKey;
 use Doctrine\ORM\EntityManagerInterface;
-
-use function Symfony\Component\String\u;
 
 /**
  * Brings the standing weekly meetings of a Peñalara planificador into {@see MeetingGroup}s: one per
@@ -66,18 +65,18 @@ final class MeetingGroupImporter
         $groups = [];
         foreach ($existing as $group) {
             if (null !== $group->getPenalaraKey()) {
-                $groups[self::nameKey($group->getPenalaraKey())] = $group;
+                $groups[TextKey::of($group->getPenalaraKey())] = $group;
             }
         }
         foreach ($existing as $group) {
-            $groups[self::nameKey($group->getName())] ??= $group;
+            $groups[TextKey::of($group->getName())] ??= $group;
         }
 
         $created = $updated = $unchanged = $keptEdited = [];
         $unmatched = [];
         $seen = [];
         foreach ($meetings as $meeting) {
-            $key = self::nameKey($meeting->name);
+            $key = TextKey::of($meeting->name);
             // The same meeting twice in one file: the first one wins, as a second would be a duplicate.
             if (isset($seen[$key])) {
                 continue;
@@ -128,7 +127,7 @@ final class MeetingGroupImporter
 
         $missing = array_values(array_map(
             static fn (MeetingGroup $g): string => $g->getName(),
-            array_filter($existing, static fn (MeetingGroup $g): bool => null !== $g->getPenalaraKey() && !isset($seen[self::nameKey($g->getPenalaraKey())])),
+            array_filter($existing, static fn (MeetingGroup $g): bool => null !== $g->getPenalaraKey() && !isset($seen[TextKey::of($g->getPenalaraKey())])),
         ));
 
         if (!$dryRun) {
@@ -185,20 +184,6 @@ final class MeetingGroupImporter
         sort($ids);
 
         return ['weekday' => $meeting->weekday->value, 'slot' => $meeting->slotIndex, 'members' => $ids];
-    }
-
-    /**
-     * A name as the database compares it: without case or accents, like the unique index on the
-     * group's name. Comparing more strictly here would miss "Reunion TIC" made by hand, try to create
-     * "REUNIÓN TIC" next to it, and hit that index.
-     *
-     * @param string $name the group or meeting name
-     *
-     * @return string the comparable key
-     */
-    private static function nameKey(string $name): string
-    {
-        return u($name)->ascii()->lower()->trim()->toString();
     }
 
     /**
