@@ -956,4 +956,28 @@ class ScheduleEntryRepository extends ServiceEntityRepository
             $em->flush();
         });
     }
+
+    /**
+     * The distinct (subject, group) pairs the course's timetable teaches — the raw material the topic
+     * screen groups into (subject, level) scopes, since the level is read from the group name in PHP
+     * ({@see \App\Util\GroupCode::level()}) and cannot be derived in DQL.
+     *
+     * @param AcademicYear $year the course whose timetable to read
+     *
+     * @return list<array{subject: string, grp: string}> the pairs
+     */
+    public function distinctSubjectGroupPairs(AcademicYear $year): array
+    {
+        /** @var list<array{subject: string, grp: string}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('DISTINCT s.subjectName AS subject, s.groupName AS grp')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.subjectName IS NOT NULL')
+            ->andWhere('s.groupName IS NOT NULL')
+            ->setParameter('year', $year)
+            ->getQuery()
+            ->getResult();
+
+        return $rows;
+    }
 }

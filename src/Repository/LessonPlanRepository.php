@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repository;
 
 use App\Entity\LessonPlan;
+use App\Entity\Topic;
 use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
@@ -91,5 +92,25 @@ class LessonPlanRepository extends ServiceEntityRepository
         }
 
         return $byClass;
+    }
+
+    /**
+     * Repoints every plan on one topic to another, for merging two topics into one
+     * ({@see \App\Service\TopicAdmin::merge()}). Bulk DQL UPDATE, not hydrate-and-save: a topic used across
+     * a whole department's history can back hundreds of plans.
+     *
+     * @param Topic $from the topic being merged away
+     * @param Topic $into the topic it merges into
+     *
+     * @return int how many plans were repointed
+     */
+    public function repointTopic(Topic $from, Topic $into): int
+    {
+        return (int) $this->getEntityManager()->createQueryBuilder()
+            ->update(LessonPlan::class, 'p')
+            ->set('p.topic', ':into')->setParameter('into', $into)
+            ->where('p.topic = :from')->setParameter('from', $from)
+            ->getQuery()
+            ->execute();
     }
 }

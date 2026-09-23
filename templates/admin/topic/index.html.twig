@@ -1,0 +1,41 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Temas de las clases{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Temas de las clases{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Administración</p>
+            <h1>Temas de las clases</h1>
+            <p class="lead">La lista de temas de cada materia y nivel, la que el profesorado elige al programar sus clases. Nace sola la primera vez que alguien escribe un tema nuevo; aquí se ordena, se corrige y se pega la programación entera.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        {% if scopes is empty %}
+            <div class="empty-state">
+                <h2>Todavía no hay horario importado</h2>
+                <p>Las listas de temas aparecen aquí en cuanto el curso tiene horario.</p>
+            </div>
+        {% else %}
+            <table data-list-tools>
+                <thead>
+                    <tr><th>Materia</th><th data-filter>Nivel</th><th>Temas</th><th data-nosort></th></tr>
+                </thead>
+                <tbody>
+                    {% for s in scopes %}
+                        <tr>
+                            <td>{{ s.subject }}</td>
+                            <td>{{ s.level ? s.level.label : 'Sin nivel reconocido' }}</td>
+                            <td>{{ s.count }}</td>
+                            <td class="row-actions">
+                                <a href="{{ path('admin_topic_edit', { subject: s.subject, level: s.level ? s.level.value : '' }) }}">{{ s.count > 0 ? 'Editar' : 'Crear lista' }}</a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}
