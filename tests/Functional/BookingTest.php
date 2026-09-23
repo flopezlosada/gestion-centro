@@ -100,7 +100,9 @@ final class BookingTest extends WebTestCase
      */
     private function book(string $resource, string $day, int $slot, string $purpose = 'Grabación del podcast'): void
     {
-        $crawler = $this->client->request('GET', '/reservas?fecha='.$day);
+        // La hora hay que elegirla ANTES de que el formulario aparezca: sin ?tramo=, la pantalla solo
+        // ofrece el selector de hora, no el de recurso — ver templates/booking/index.html.twig.
+        $crawler = $this->client->request('GET', '/reservas?fecha='.$day.'&tramo='.$slot);
         $token = (string) $crawler->filter('form[action="/reservas/nueva"] input[name="_token"]')->attr('value');
         $this->client->request('POST', '/reservas/nueva', [
             '_token' => $token,
@@ -190,7 +192,7 @@ final class BookingTest extends WebTestCase
         $this->em->flush();
 
         $this->client->loginUser($teacher);
-        $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay());
+        $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay().'&tramo=2');
 
         self::assertStringNotContainsString('room:'.$gym->getId(), $crawler->filter('#recurso')->html());
         self::assertStringContainsString('room:'.$hall->getId(), $crawler->filter('#recurso')->html());
@@ -223,7 +225,7 @@ final class BookingTest extends WebTestCase
         self::assertSelectorTextContains('body', 'Este día ya ha pasado');
 
         // Y a pelo tampoco, con un token válido tomado de una pantalla que sí lo pinta.
-        $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay());
+        $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay().'&tramo=2');
         $this->client->request('POST', '/reservas/nueva', [
             '_token' => (string) $crawler->filter('form[action="/reservas/nueva"] input[name="_token"]')->attr('value'),
             'fecha' => $yesterday,
