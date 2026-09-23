@@ -39,6 +39,29 @@
             {% endif %}
         </div>
 
+        {# ---- El acta de la reunión anterior del mismo grupo, mientras esté por aprobar: su aprobación es el
+               primer punto de esta, y el centro pidió darla desde aquí con un clic una vez vistas las
+               observaciones, sin ir a buscar la otra reunión. Solo quien levantó ESA acta la da por aprobada. ---- #}
+        {% if previousPending %}
+            <div class="detail-block">
+                <div class="detail-block__label">Acta anterior · pendiente de aprobación</div>
+                <p>Reunión del {{ previousPending.startAt|date('d/m/Y') }}.
+                    {%- if previousPending.wereMinutesEverPublished %}
+                        <a href="{{ path('meeting_show', { id: previousPending.id }) }}">Ver el acta{% if previousRemarks > 0 %} y sus {{ previousRemarks }} observacion{{ previousRemarks == 1 ? '' : 'es' }}{% endif %}</a>.
+                    {%- else %}
+                        Su acta todavía no se ha publicado, así que aún no se puede aprobar.
+                    {%- endif %}
+                </p>
+                {% if canApprovePrevious and previousPending.wereMinutesEverPublished %}
+                    <form method="post" action="{{ path('meeting_minutes_approve', { id: previousPending.id }) }}" data-confirm="¿Dar por aprobada el acta de la reunión del {{ previousPending.startAt|date('d/m/Y') }}?">
+                        <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ previousPending.id) }}">
+                        <input type="hidden" name="volver" value="{{ meeting.id }}">
+                        <button type="submit" class="btn secondary">Dar el acta anterior por aprobada</button>
+                    </form>
+                {% endif %}
+            </div>
+        {% endif %}
+
         {# ---- Acta: el registro de lo acordado. La sube QUIEN LA LEVANTA (no siempre quien convoca) y la
                lee el grupo convocado.
 

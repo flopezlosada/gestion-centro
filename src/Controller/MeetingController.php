@@ -204,11 +204,19 @@ final class MeetingController extends AbstractController
      * team ({@see MeetingAccess::isLeadership()}); nobody else.
      */
     #[Route('/{id}', name: 'meeting_show', requirements: ['id' => '\d+'], methods: ['GET'])]
-    public function show(Meeting $meeting, #[CurrentUser] User $user, MeetingAccess $access, MeetingRemarkRepository $remarks): Response
+    public function show(Meeting $meeting, #[CurrentUser] User $user, MeetingAccess $access, MeetingRemarkRepository $remarks, MeetingRepository $meetings): Response
     {
         $isAdmin = $this->isGranted('ROLE_ADMIN');
         if (!$access->canSee($meeting, $user, $isAdmin)) {
             throw $this->createAccessDeniedException('No estás convocado a esta reunión.');
+        }
+
+        // La reunión anterior del mismo grupo semanal, si su acta está por aprobar: es el primer punto
+        // de esta ("lectura y aprobación del acta anterior"), y el centro pidió aprobarla desde aquí con un
+        // clic en vez de ir a buscar la otra reunión.
+        $previous = $meetings->findPreviousInGroup($meeting);
+        if (null !== $previous && (!$previous->minutesApprovalRequired() || $previous->areMinutesApproved())) {
+            $previous = null;
         }
 
         return $this->render('meeting/show.html.twig', [
@@ -229,6 +237,10 @@ final class MeetingController extends AbstractController
             'remarks' => $meeting->wereMinutesEverPublished() ? $remarks->findThreadFor($meeting) : [],
             // Pasar lista solo tiene sentido cuando la reunión ya ha empezado: antes no hay nada que contar.
             'isHeld' => $meeting->isPast(new \DateTimeImmutable()),
+            'previousPending' => $previous,
+            // Aprobarla es de quien levantó ESA acta, igual que en su propia página.
+            'canApprovePrevious' => null !== $previous && $access->canKeepMinutes($previous, $user, $isAdmin),
+            'previousRemarks' => null !== $previous && $previous->wereMinutesEverPublished() ? \count($remarks->findThreadFor($previous)) : 0,
         ]);
     }
 
@@ -527,7 +539,11 @@ final class MeetingController extends AbstractController
         $entityManager->flush();
         $this->addFlash('success', 'Acta aprobada.');
 
-        return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
+        // Aprobada desde la reunión siguiente, se vuelve a ella: es donde se estaba. Solo un id de reunión,
+        // así que no hay redirección abierta posible.
+        $back = $request->request->getInt('volver');
+
+        return $this->redirectToRoute('meeting_show', ['id' => $back > 0 ? $back : $meeting->getId()]);
     }
 
     /**
