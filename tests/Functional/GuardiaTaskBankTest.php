@@ -434,7 +434,7 @@ final class GuardiaTaskBankTest extends WebTestCase
         self::assertSame(['A', 'C'], $saved->getSections(), 'las letras se guardan normalizadas');
         self::assertSame(30, $saved->getSuggestedCopies());
         self::assertSame(0, $saved->getTimesUsed());
-        self::assertSame('2025-2026', $saved->getAcademicYear()->getSchoolYear());
+        self::assertSame($this->year->getSchoolYear(), $saved->getAcademicYear()->getSchoolYear());
     }
 
     public function testATaskCannotBeSavedWithoutSubject(): void
