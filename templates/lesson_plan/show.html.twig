@@ -1,0 +1,96 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}{{ class.groups|join(', ') }} · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('calendar_index', { vista: 'dia', fecha: day|date('Y-m-d', false) }) }}">{{ day|date('d/m', false) }}</a><span class="sep">/</span>
+    Mi clase
+{% endblock %}
+
+{% block body %}
+    {% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
+
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Mi clase · solo la ves tú</p>
+            <h1>{{ class.groups|join(', ') }}{% if subject %} · {{ subject }}{% endif %}</h1>
+            <p class="lead">
+                {{ dias[day|date('N', false)] }} {{ day|date('d/m', false) }} · {{ class.ordinal }}ª hora
+                {%- if class.startsAt %} ({{ class.startsAt|date('H:i') }}–{{ class.endsAt|date('H:i') }}){% endif %}
+                {%- if class.rooms is not empty %} · {{ class.rooms|join(', ') }}{% endif %}
+                {%- if class.isRelocated %} · aula cambiada{% endif %}
+            </p>
+        </div>
+    </div>
+
+    {# «Dónde lo dejé»: la última clase con este mismo grupo y materia. Es lo que se mira cada día, y lo que
+       hace que la clase normal sea un solo toque. #}
+    {% if previous %}
+        <div class="card">
+            <p class="eyebrow">La última clase con este grupo · {{ dias[previous.date|date('N', false)] }} {{ previous.date|date('d/m', false) }}</p>
+            <p>
+                {{- previous.topic ? previous.topic.name : 'Sin tema' -}}
+                {%- if previous.activity %} · {{ previous.activity.label }}{% endif -%}
+                {%- if previous.outcome %} · <strong>{{ previous.outcome.label }}</strong>{% endif -%}
+                {%- if previous.note %} · {{ previous.note }}{% endif -%}
+            </p>
+            {% if plan is null %}
+                <form method="post" action="{{ path('lesson_plan_repeat', { fecha: day|date('Y-m-d', false), tramo: class.slotIndex }) }}">
+                    <input type="hidden" name="_token" value="{{ csrf_token('lesson_plan') }}">
+                    <button type="submit" class="btn">Seguimos igual</button>
+                </form>
+            {% endif %}
+        </div>
+    {% endif %}
+
+    <div class="card">
+        <form method="post" class="stack-form">
+            <input type="hidden" name="_token" value="{{ csrf_token('lesson_plan') }}">
+
+            {% if subject %}
+                <div class="field">
+                    <label for="tema">Tema</label>
+                    {#- Elegir o escribir: la lista la comparte todo el profesorado de esta materia y nivel, y
+                        crece sola la primera vez que alguien escribe un tema nuevo. -#}
+                    <input type="text" id="tema" name="tema" list="temas" maxlength="{{ constant('App\\Entity\\Topic::MAX_NAME') }}" value="{{ topicName }}" autocomplete="off" placeholder="Elige o escribe uno nuevo">
+                    <datalist id="temas">
+                        {% for t in topics %}<option value="{{ t.name }}">{% endfor %}
+                    </datalist>
+                    {% if progress %}
+                        <p class="help">Tema {{ progress.position }} de {{ progress.total }}.</p>
+                    {% else %}
+                        <p class="help">Un tema nuevo se queda para ti y para quien dé {{ subject }} en este nivel.</p>
+                    {% endif %}
+                </div>
+            {% endif %}
+
+            <fieldset class="pick-chips">
+                <legend>¿Qué se hace?</legend>
+                {% for a in activities %}
+                    <label class="pick-chip"><input type="radio" name="actividad" value="{{ a.value }}"{{ activity is same as(a) ? ' checked' }}> {{ a.label }}</label>
+                {% endfor %}
+                <label class="pick-chip"><input type="radio" name="actividad" value=""{{ activity is null ? ' checked' }}> Sin decir</label>
+            </fieldset>
+
+            <fieldset class="pick-chips">
+                <legend>¿Cómo fue?</legend>
+                {% for o in outcomes %}
+                    <label class="pick-chip"><input type="radio" name="resultado" value="{{ o.value }}"{{ plan and plan.outcome is same as(o) ? ' checked' }}> {{ o.label }}</label>
+                {% endfor %}
+                <label class="pick-chip"><input type="radio" name="resultado" value=""{{ not plan or plan.outcome is null ? ' checked' }}> Aún no</label>
+            </fieldset>
+
+            <div class="field">
+                <label for="nota">Nota <span class="muted">(opcional)</span></label>
+                <input type="text" id="nota" name="nota" maxlength="{{ constant('App\\Entity\\LessonPlan::MAX_NOTE') }}" value="{{ note }}" placeholder="pág. 52, ej. 1-8">
+                {% if pending %}<p class="help">Es lo que quedó pendiente de la última clase.</p>{% endif %}
+                <p class="help">Sin datos de alumnos concretos: ni nombres ni notas.</p>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn">Guardar</button>
+                <a class="btn secondary" href="{{ path('calendar_index', { vista: 'dia', fecha: day|date('Y-m-d', false) }) }}">Volver al día</a>
+            </div>
+        </form>
+    </div>
+{% endblock %}

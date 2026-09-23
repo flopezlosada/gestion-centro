@@ -31,7 +31,7 @@
    "no lectivo" solo llega relleno (cell.nonLective) para los días del propio mes: el controlador lo
    anula en los días de meses colindantes que asoman en la rejilla, así que aquí no hay que filtrar.
 #}
-{% macro day_cell(cell, guardiasByDay = {}, classesByDay = {}) %}
+{% macro day_cell(cell, guardiasByDay = {}, classesByDay = {}, plansByClass = {}) %}
     {% import '_macros/task.html.twig' as taskUi %}
     <div class="calendar-day{{ cell.inMonth ? '' : ' is-outside' }}{{ cell.isToday ? ' is-today' : '' }}{{ cell.isWeekend ? ' is-weekend' : '' }}{{ cell.nonLective ? ' is-nonlective' : '' }}" role="gridcell"{% if cell.nonLective %} title="{{ cell.nonLective.description }}"{% endif %}>
         <div class="calendar-daynum">
@@ -47,16 +47,19 @@
         {# Guardias del día (ancla): marcador ESCUDO, distinto del punto de tarea/evento. Solo las propias.
            Enlazan a SU guardia (no a "mis guardias", que solo sabe de hoy y de lo que viene: desde una
            celda de la semana pasada era un callejón sin salida). #}
-        {#- Las clases del propio docente, una línea compacta por clase: hora, grupo y aula. Solo llegan en la
-            semana (en el mes serían demasiadas). Sin enlace todavía: la ficha de la clase llegará con su
-            programación. -#}
+        {#- Las clases del propio docente, una línea compacta por clase: hora, grupo y aula, con enlace a su
+            programación y una marca si ya está programada. Solo llegan en la semana (en el mes serían
+            demasiadas). -#}
         {% set dayClasses = classesByDay[cell.date|date('Y-m-d', false)] ?? [] %}
         {% if dayClasses is not empty %}
             <ul class="calendar-classes">
                 {% for c in dayClasses %}
-                    <li class="calendar-class" title="{{ c.subjects|join(', ') }}{% if c.isRelocated %} · aula cambiada{% endif %}">
-                        <span class="mono">{% if c.startsAt %}{{ c.startsAt|date('H:i') }}{% else %}{{ c.ordinal }}ª{% endif %}</span>
-                        {{ c.groups|join(', ') }}{% if c.rooms is not empty %} · {{ c.rooms|join(', ') }}{% endif %}
+                    {% set planned = plansByClass[cell.date|date('Y-m-d', false) ~ '|' ~ c.slotIndex] is defined %}
+                    <li class="calendar-class{{ planned ? ' is-planned' }}" title="{{ c.subjects|join(', ') }}{% if c.isRelocated %} · aula cambiada{% endif %}{% if planned %} · programada{% endif %}">
+                        <a href="{{ path('lesson_plan', { fecha: cell.date|date('Y-m-d', false), tramo: c.slotIndex }) }}">
+                            <span class="mono">{% if c.startsAt %}{{ c.startsAt|date('H:i') }}{% else %}{{ c.ordinal }}ª{% endif %}</span>
+                            {{ c.groups|join(', ') }}{% if c.rooms is not empty %} · {{ c.rooms|join(', ') }}{% endif %}
+                        </a>
                     </li>
                 {% endfor %}
             </ul>

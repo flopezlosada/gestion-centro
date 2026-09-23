@@ -68,6 +68,20 @@ final class MyClassesTest extends KernelTestCase
         self::assertSame('2026-01-12 14:30', $day[1]->endsAt?->format('Y-m-d H:i'));
     }
 
+    /**
+     * Los grupos salen ORDENADOS, lleguen las celdas como lleguen: juntos son lo que identifica «la misma
+     * clase» de una semana a otra, y el horario no ordena las celdas de un mismo tramo.
+     */
+    public function testTheGroupsComeSortedWhateverTheOrderOfTheCells(): void
+    {
+        $this->cell(2, 'B1C', '0LC3');
+        $this->cell(2, 'B1A', '0LC3');
+        $this->cell(2, 'B1B', '0LC3');
+        $this->em->flush();
+
+        self::assertSame(['B1A', 'B1B', 'B1C'], $this->classes->on($this->teacher, new \DateTimeImmutable(self::MONDAY))[0]->groups());
+    }
+
     public function testNoClassesOnANonTeachingDay(): void
     {
         $this->cell(0, 'E1A', '0CS6');

@@ -14,6 +14,7 @@ use App\Entity\Task;
 use App\Entity\User;
 use App\Repository\AcademicYearRepository;
 use App\Repository\GuardiaCoverRepository;
+use App\Repository\LessonPlanRepository;
 use App\Repository\MeetingRepository;
 use App\Repository\NonLectiveDayRepository;
 use App\Repository\PersonalEventRepository;
@@ -77,7 +78,7 @@ final class CalendarController extends AbstractController
      * @return Response the rendered calendar page
      */
     #[Route('/calendario', name: 'calendar_index', methods: ['GET'])]
-    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility, NonLectiveDayRepository $nonLectiveDays, SchoolCalendar $schoolCalendar, AcademicYearRepository $academicYears, PersonalEventRepository $personalEvents, GuardiaCoverRepository $covers, MeetingRepository $meetings, MyClasses $myClasses): Response
+    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility, NonLectiveDayRepository $nonLectiveDays, SchoolCalendar $schoolCalendar, AcademicYearRepository $academicYears, PersonalEventRepository $personalEvents, GuardiaCoverRepository $covers, MeetingRepository $meetings, MyClasses $myClasses, LessonPlanRepository $lessonPlans): Response
     {
         // Explicit zone because the grid parses a "YYYY-MM-DD" from the query string into a midnight;
         // it is the SAME zone PHP now defaults to ({@see \App\Kernel}), so this no longer decides
@@ -128,6 +129,8 @@ final class CalendarController extends AbstractController
             // Las clases del propio docente (Y-m-d → ClassSession[]), solo en día y semana: en el mes serían
             // treinta por celda y taparían lo demás, y en el año no caben. Quien no da clase no tiene ninguna.
             'classesByDay' => \in_array($view, ['dia', 'semana'], true) ? $myClasses->between($user, $rangeStart, $rangeEnd) : [],
+            // Lo ya programado de esas clases ("Y-m-d|tramo" → plan), en una consulta: solo del propio docente.
+            'plansByClass' => \in_array($view, ['dia', 'semana'], true) ? $lessonPlans->findForTeacherBetween($user, $rangeStart, $rangeEnd) : [],
             ...$model,
         ]);
     }

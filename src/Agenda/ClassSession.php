@@ -35,15 +35,19 @@ final readonly class ClassSession
 
     /**
      * The groups in the class as the staff name them: Peñalara's internal "~NNNNNN" variant of a group
-     * dropped, and each group once.
+     * dropped, each group once, SORTED. The order matters: the groups joined are what identifies "the same
+     * class" from one week to the next, and the timetable does not order the cells of one period.
      *
-     * @return list<string> the group names
+     * @return list<string> the group names, sorted
      */
     public function groups(): array
     {
-        return $this->distinct(static fn (EffectiveLesson $l): ?string => null !== $l->entry->getGroupName()
+        $groups = $this->distinct(static fn (EffectiveLesson $l): ?string => null !== $l->entry->getGroupName()
             ? preg_replace('/~\d+$/', '', $l->entry->getGroupName())
             : null);
+        sort($groups);
+
+        return $groups;
     }
 
     /**

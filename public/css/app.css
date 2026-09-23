@@ -2200,6 +2200,10 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 /* Las clases del docente en la semana: una línea tenue por clase, por debajo en peso de lo que hay que atender. */
 .calendar-classes { list-style: none; margin: 3px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .calendar-class { font-size: 11.5px; line-height: 1.25; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.calendar-class a { color: inherit; text-decoration: none; }
+.calendar-class a:hover { text-decoration: underline; }
+/* Programada: una raya a la izquierda, lo justo para ver de un vistazo qué clases de la semana faltan. */
+.calendar-class.is-planned { box-shadow: inset 2px 0 0 var(--accent); padding-left: 5px; }
 .calendar-guardia { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: var(--radius-sm); text-decoration: none; color: var(--text); font-size: 12.5px; line-height: 1.25; }
 .calendar-guardia:hover { background: var(--surface-sunken); }
 .calendar-guardia-icon { flex: none; display: inline-flex; color: var(--accent-ink); }
@@ -4242,7 +4246,7 @@ tr.is-not-covered { background: var(--danger-weak); }
     padding-bottom: 14px; border-bottom: 1px solid var(--border); margin-bottom: 18px;
 }
 .bank-filters__chips { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-width: 0; }
-.bank-chip {
+.bank-chip, .pick-chip {
     display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px;
     border: 1px solid var(--border); border-radius: 999px;
     background: var(--surface); color: var(--text-muted);
@@ -4251,9 +4255,9 @@ tr.is-not-covered { background: var(--danger-weak); }
 }
 .bank-chip::-webkit-details-marker { display: none; }
 .bank-chip::marker { content: ""; }
-.bank-chip:hover { border-color: var(--border-strong); color: var(--text); }
-.bank-chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.bank-chip.is-active, .bank-chip.is-locked {
+.bank-chip:hover, .pick-chip:hover { border-color: var(--border-strong); color: var(--text); }
+.bank-chip:focus-visible, .pick-chip:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 1px; }
+.bank-chip.is-active, .bank-chip.is-locked, .pick-chip:has(input:checked) {
     background: var(--accent-weak); border-color: var(--accent-weak-border);
     color: var(--accent-ink); font-weight: 600;
 }
@@ -5207,3 +5211,10 @@ tr.is-not-covered { background: var(--danger-weak); }
 .booking-week { min-width: 640px; }
 .booking-week th[scope="row"] { white-space: nowrap; }
 .booking-week td { vertical-align: top; font-size: 13px; }
+
+/* Opciones de un toque (programar una clase): el chip del banco de tareas con la radio dentro, oculta pero
+   accesible por teclado; el chip entero es la zona que se pulsa, que en el móvil es lo que importa. */
+.pick-chips { border: 0; padding: 0; margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 8px; }
+.pick-chips legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
+.pick-chip { position: relative; }
+.pick-chip input { position: absolute; opacity: 0; width: 1px; height: 1px; }
