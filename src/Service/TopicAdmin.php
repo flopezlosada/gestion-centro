@@ -50,10 +50,12 @@ final class TopicAdmin
      */
     public function parsePaste(string $subject, ?EducationLevel $level, string $raw): array
     {
-        $existing = array_map(
+        // Un solo mapa clave→true: los nombres ya en la lista y los ya vistos en este mismo pegado
+        // comparten el mismo criterio de "es el mismo nombre" (sin mayúsculas ni tildes).
+        $seen = array_fill_keys(array_map(
             static fn (Topic $t): string => TextKey::of($t->getName()),
             $this->topics->findListFor($subject, $level),
-        );
+        ), true);
 
         $names = [];
         foreach (preg_split('/\r\n|\r|\n/', $raw) ?: [] as $line) {
@@ -64,17 +66,17 @@ final class TopicAdmin
                 continue;
             }
             $key = TextKey::of($name);
-            if (isset($existing[$key]) || \in_array($key, array_column($names, 'key'), true)) {
+            if (isset($seen[$key])) {
                 continue;
             }
-            $existing[$key] = true;
-            $names[] = ['key' => $key, 'name' => $name];
+            $seen[$key] = true;
+            $names[] = $name;
             if (\count($names) >= self::MAX_PASTED_LINES) {
                 break;
             }
         }
 
-        return array_column($names, 'name');
+        return $names;
     }
 
     /**

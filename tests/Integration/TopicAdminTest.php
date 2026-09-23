@@ -111,10 +111,14 @@ final class TopicAdminTest extends KernelTestCase
         $this->em->persist($plan);
         $this->em->flush();
 
+        // El id se lee ANTES de fusionar: tras remove()+flush(), Doctrine anula el identificador del
+        // objeto en memoria para una clave autogenerada (UnitOfWork::executeDeletions()), así que
+        // llamarlo después lanzaría MissingIdentifierField al construir la consulta de comprobación.
+        $duplicateId = $duplicate->getId();
         $this->admin->merge($duplicate, $kept);
 
         $this->em->clear();
-        self::assertNull($this->topics->find($duplicate->getId()), 'el duplicado desaparece');
+        self::assertNull($this->topics->find($duplicateId), 'el duplicado desaparece');
         $reloaded = $this->em->getRepository(LessonPlan::class)->find($plan->getId());
         self::assertSame($kept->getId(), $reloaded?->getTopic()?->getId(), 'la clase ya programada apunta ahora al que se mantiene');
     }

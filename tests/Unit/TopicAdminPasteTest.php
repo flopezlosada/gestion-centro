@@ -66,7 +66,9 @@ final class TopicAdminPasteTest extends TestCase
 
     public function testCapsTheNumberOfLinesAccepted(): void
     {
-        $raw = implode("\n", array_map(static fn (int $i): string => "Tema $i", range(1, TopicAdmin::MAX_PASTED_LINES + 10)));
+        // Con nombre de verdad tras el número: "Tema 5" a secas la limpieza de numeración se lo comería
+        // entero (queda vacío y se descarta), y el tope dejaría de comprobar lo que dice comprobar.
+        $raw = implode("\n", array_map(static fn (int $i): string => "Tema $i: Unidad $i", range(1, TopicAdmin::MAX_PASTED_LINES + 10)));
 
         self::assertCount(TopicAdmin::MAX_PASTED_LINES, $this->admin()->parsePaste('Matemáticas', EducationLevel::ESO_3, $raw));
     }
