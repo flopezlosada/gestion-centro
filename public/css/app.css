@@ -5184,3 +5184,17 @@ tr.is-not-covered { background: var(--danger-weak); }
    una etiqueta de dos renglones deja de leerse como etiqueta. Acotado a esta tabla y NO puesto en
    `.badge`: son cientos de usos en toda la aplicación y algunos SÍ quieren envolver. */
 .cron-table td .badge { white-space: nowrap; }
+
+/* =============================================================================
+   Reservas — varias horas de una vez
+   ============================================================================= */
+.booking-hours { border: 0; padding: 0; margin: 0 0 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+.booking-hours legend { font-weight: 600; margin-bottom: 6px; padding: 0; }
+.booking-hour { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 13.5px; }
+.booking-hour:has(input:checked) { border-color: var(--accent); }
+
+/* La semana de reservas: una tabla ancha con scroll propio, para que en el móvil no desborde la página. */
+.table-scroll { overflow-x: auto; }
+.booking-week { min-width: 640px; }
+.booking-week th[scope="row"] { white-space: nowrap; }
+.booking-week td { vertical-align: top; font-size: 13px; }
