@@ -82,7 +82,23 @@ final class CalendarPersonalEventsTest extends WebTestCase
         $this->client->request('GET', '/calendario?vista=semana&fecha=2026-07-15');
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('.calendar-grid', 'Reunión tardía');
+        self::assertSelectorTextContains('.calendar--week', 'Reunión tardía');
+    }
+
+    /** Un evento CON hora sigue en la lista, no en la rejilla horaria: es donde vive su toque de "hecho"
+     *  (un <form>, que no cabe dentro del enlace de un bloque). */
+    public function testATimedEventKeepsItsDoneToggleInTheDayView(): void
+    {
+        $owner = $this->user('profe@centro.test');
+        $this->eventFor($owner, 'Tutoría con familia'); // 2026-07-15 10:00, allDay=false por defecto
+        $this->em->flush();
+
+        $this->client->loginUser($owner);
+        $crawler = $this->client->request('GET', '/calendario?vista=dia&fecha=2026-07-15');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(1, $crawler->filter('form.agenda-check'));
+        self::assertCount(0, $crawler->filter('.cal-block--event'), 'los eventos no van en la rejilla');
     }
 
     public function testAnotherUsersPersonalEventIsNotOnMyCalendar(): void

@@ -2270,14 +2270,101 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 .calendar-view:hover { color: var(--text); }
 .calendar-view.is-active { padding: 4px 13px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); }
 
-/* Vista semanal: misma rejilla que el mes, con columnas más altas y tareas sin recortar. */
-.calendar--week .calendar-day { min-height: 300px; }
-.calendar--week .calendar-task-title { white-space: normal; }
-
-/* Vista de día: reutiliza la agenda de Inicio; bandera arriba si es no lectivo o fin de semana. */
+/* Vista de día: reutiliza la agenda de Inicio para lo que no tiene hora; bandera arriba si es no
+   lectivo o fin de semana. */
 .calendar-dayview { display: flex; flex-direction: column; gap: 14px; }
 .calendar-dayview-flag { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text-muted); }
 .calendar-dayview-flag--nonlective { color: var(--accent-ink); font-weight: 600; }
+
+/* ── Rejilla horaria (día y semana) ──────────────────────────────────────────
+   Tipo Google Calendar: un eje de horas y bloques posicionados por su hora real, en vez de una lista de
+   líneas de texto. El % de arriba/alto de cada hora y cada bloque viene calculado en PHP
+   (DayTimeline::layout) sobre una ventana de horas — el único trabajo del CSS es darle a esa ventana una
+   altura real en px (--cal-hours × --cal-hour-h), porque un % solo tiene sentido contra un alto concreto. */
+:root { --cal-hour-h: 56px; }
+.cal-timeline { display: flex; }
+.cal-timeline__axis {
+    flex: none; width: 52px; position: relative;
+    height: calc(var(--cal-hours) * var(--cal-hour-h));
+}
+.cal-timeline__hour {
+    position: absolute; left: 0; right: 8px; transform: translateY(-50%);
+    font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); text-align: right;
+}
+.cal-timeline__grid {
+    flex: 1; position: relative; min-width: 0;
+    height: calc(var(--cal-hours) * var(--cal-hour-h));
+    border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+}
+.cal-timeline__gridline { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border); }
+.cal-timeline__now {
+    position: absolute; left: 0; right: 0; border-top: 2px solid var(--danger); z-index: 2;
+}
+.cal-timeline__now::before {
+    content: ""; position: absolute; left: -4px; top: -4px; width: 8px; height: 8px;
+    border-radius: 999px; background: var(--danger);
+}
+
+/* Un bloque: fondo tenue del color de su grupo (o fijo por tipo — guardia/reunión/evento), con el
+   propio hueco de acento reutilizado de EventCategory (cat-color--*) como fuente del tinte, para que
+   funcione igual en claro y oscuro sin declarar un color nuevo por bloque. */
+.cal-block {
+    position: absolute; overflow: hidden; box-sizing: border-box;
+    display: flex; flex-direction: column; gap: 1px;
+    padding: 4px 7px; margin: 0 1px;
+    border-radius: 6px; border-left: 3px solid var(--event-color, var(--accent));
+    background: color-mix(in srgb, var(--event-color, var(--accent)) 16%, var(--surface));
+    color: var(--text); text-decoration: none; font-size: 12px; line-height: 1.3;
+}
+.cal-block:hover, .cal-block:focus-visible { background: color-mix(in srgb, var(--event-color, var(--accent)) 28%, var(--surface)); outline: none; }
+.cal-block.is-flagged { border-left-style: dashed; }
+.cal-block__time { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); }
+.cal-block__title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-block__subtitle { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Semana: siete columnas compartiendo un único eje de horas. Cada bloque va más comprimido (sin
+   franja de hora ni subtítulo, título nada más) porque una columna mide una séptima parte del ancho. */
+.cal-timeline--week .cal-timeline__cols { flex: 1; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0; }
+.cal-timeline__col {
+    position: relative; border-right: 1px solid var(--border);
+    height: calc(var(--cal-hours) * var(--cal-hour-h));
+}
+.cal-timeline__col:last-child { border-right: 0; }
+.cal-timeline__col.is-weekend { background: var(--surface-sunken); }
+.cal-timeline__col.is-today { background: var(--accent-weak); }
+.cal-block--compact { padding: 2px 5px; gap: 0; font-size: 11px; }
+.cal-block--compact .cal-block__title { white-space: normal; -webkit-line-clamp: 3; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Cabecera y tira "todo el día" de la semana: la misma columna del eje de horas (52px) alineada. */
+.cal-week-head, .cal-week-allday { display: flex; }
+.cal-week-head__axis, .cal-week-allday__axis { flex: none; width: 52px; }
+.cal-week-head__day {
+    flex: 1; min-width: 0; padding: 6px 8px; text-align: center; border-left: 1px solid var(--border);
+}
+.cal-week-head__day.is-weekend { color: var(--text-faint); }
+.cal-week-head__day.is-today .cal-week-head__num {
+    display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px;
+    padding: 0 5px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-weight: 600;
+}
+.cal-week-head__name { display: block; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
+.cal-week-head__num { display: block; margin-top: 2px; font-size: 15px; }
+.cal-week-allday__col {
+    flex: 1; min-width: 0; padding: 4px 6px; display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start;
+    border-left: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.cal-week-allday__col.is-weekend { background: var(--surface-sunken); }
+.cal-chip {
+    display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    padding: 2px 7px; border-radius: 999px; background: var(--surface-sunken); border: 1px solid var(--border);
+    font-size: 10.5px; color: var(--text); text-decoration: none;
+}
+
+@media (max-width: 640px) {
+    :root { --cal-hour-h: 44px; }
+    .cal-timeline__axis, .cal-week-head__axis, .cal-week-allday__axis { width: 38px; }
+    .cal-timeline__hour { font-size: 9.5px; }
+    .cal-block { font-size: 11px; padding: 3px 5px; }
+}
 
 /* Vista anual: doce mini-meses; cada día con tareas lleva un punto de color por estado.
    Clic en un mini-mes abre la vista mensual de ese mes. */

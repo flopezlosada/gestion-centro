@@ -1,15 +1,62 @@
-{% import '_macros/calendar.html.twig' as cal %}
+{% set weekdayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] %}
 
 <div class="calendar calendar--week" role="grid" aria-label="Semana del {{ label }}">
-    <div class="calendar-weekdays" role="row">
-        {% for weekday in ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] %}
-            <div class="calendar-weekday{{ loop.index >= 6 ? ' is-weekend' : '' }}" role="columnheader">{{ weekday }}</div>
+    <div class="cal-week-head" role="row">
+        <div class="cal-week-head__axis"></div>
+        {% for cell in week %}
+            <div class="cal-week-head__day{{ cell.isWeekend ? ' is-weekend' : '' }}{{ cell.isToday ? ' is-today' : '' }}">
+                <span class="cal-week-head__name">{{ weekdayNames[loop.index0] }}</span>
+                <span class="cal-week-head__num"{% if cell.isToday %} aria-current="date"{% endif %}>{{ cell.date|date('j') }}</span>
+            </div>
         {% endfor %}
     </div>
 
-    <div class="calendar-grid">
-        <div class="calendar-week" role="row">
-            {% for cell in week %}{{ cal.day_cell(cell, guardiasByDay, classesByDay, plansByClass) }}{% endfor %}
+    {# Lo que no va en la rejilla (tareas, eventos personales, una clase sin marco horario): una tira
+       compacta de chips por día, encima de la rejilla — mismo contenido que la lista de la vista de día,
+       sin sitio aquí para su detalle. #}
+    {% set hasAnyAllDay = week|filter(c => c.tasks is not empty or c.events is not empty or c.unscheduledClasses is not empty) is not empty %}
+    {% if hasAnyAllDay %}
+        <div class="cal-week-allday" role="row">
+            <div class="cal-week-allday__axis"></div>
+            {% for cell in week %}
+                <div class="cal-week-allday__col{{ cell.isWeekend ? ' is-weekend' : '' }}">
+                    {% for c in cell.unscheduledClasses %}
+                        <a class="cal-chip" href="{{ path('lesson_plan', { fecha: cell.date|date('Y-m-d', false), tramo: c.slotIndex }) }}">{{ c.groups|join(', ') }}</a>
+                    {% endfor %}
+                    {% for task in cell.tasks %}
+                        <a class="cal-chip" data-status="{{ task.status }}" href="{{ path('task_show', { id: task.id }) }}">{{ task.title }}</a>
+                    {% endfor %}
+                    {% for event in cell.events %}
+                        <a class="cal-chip{{ event.category ? ' ' ~ event.category.color.cssClass }}{{ event.done ? ' is-done' : '' }}" href="{{ path('personal_event_edit', { id: event.id }) }}">{{ event.title }}</a>
+                    {% endfor %}
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <div class="cal-timeline cal-timeline--week" style="--cal-hours: {{ hourMarks|length }}">
+        <div class="cal-timeline__axis" aria-hidden="true">
+            {% for h in hourMarks %}
+                <span class="cal-timeline__hour" style="top: {{ h.top }}%">{{ h.label }}</span>
+            {% endfor %}
+        </div>
+        <div class="cal-timeline__cols">
+            {% for cell in week %}
+                <div class="cal-timeline__col{{ cell.isWeekend ? ' is-weekend' : '' }}{{ cell.isToday ? ' is-today' : '' }}">
+                    {% for h in hourMarks %}
+                        <span class="cal-timeline__gridline" style="top: {{ h.top }}%"></span>
+                    {% endfor %}
+                    {% if cell.nowTop is not null %}
+                        <span class="cal-timeline__now" style="top: {{ cell.nowTop }}%"></span>
+                    {% endif %}
+                    {% for pos in cell.timeline %}
+                        {% set b = pos.block %}
+                        <a class="cal-block cal-block--compact cal-block--{{ b.kind }} {{ b.colorClass }}{{ b.flagged ? ' is-flagged' }}" style="top: {{ pos.top }}%; height: {{ pos.height }}%; left: {{ pos.left }}%; width: {{ pos.width }}%" href="{{ b.href }}" title="{{ b.startsAt|date('H:i') }}–{{ b.endsAt|date('H:i') }} · {{ b.title }}{% if b.subtitle %} · {{ b.subtitle }}{% endif %}">
+                            <span class="cal-block__title">{{ b.title }}</span>
+                        </a>
+                    {% endfor %}
+                </div>
+            {% endfor %}
         </div>
     </div>
 </div>
