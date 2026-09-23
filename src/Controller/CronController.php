@@ -65,7 +65,7 @@ final class CronController extends AbstractController
 
     /**
      * Una vez al día: avisos de tareas próximas, escalada de las que están fuera de plazo y retirada de
-     * los avisos caducados. Y la poda del propio registro de ejecuciones, que también es diaria y que
+     * los avisos caducados; y las reuniones periódicas de la semana que viene. Y la poda del propio registro de ejecuciones, que también es diaria y que
      * sin esto quedaría sin disparar en este camino — creciendo sin freno.
      *
      * @param Request $request la petición del crontab
@@ -79,6 +79,7 @@ final class CronController extends AbstractController
 
         return $this->runTasks([
             CentreCronManifest::CRON_TASK_REMINDERS,
+            CentreCronManifest::CRON_RECURRING_MEETINGS,
             CentreCronManifest::CRON_PURGE_LOG,
         ]);
     }

@@ -174,6 +174,30 @@ class MeetingRepository extends ServiceEntityRepository
     }
 
     /**
+     * The meeting held just before this one in the same weekly group: the one whose acta this meeting
+     * reads and approves ("lectura y aprobación del acta anterior"). Only the immediately previous one —
+     * an older acta still unapproved is that meeting's business, not something to pile onto this one.
+     *
+     * @param Meeting $meeting the meeting
+     *
+     * @return Meeting|null the previous meeting of its group, or null when it has no group or none before
+     */
+    public function findPreviousInGroup(Meeting $meeting): ?Meeting
+    {
+        if (null === $meeting->getMeetingGroup()) {
+            return null;
+        }
+
+        return $this->createQueryBuilder('m')
+            ->andWhere('m.meetingGroup = :group')->setParameter('group', $meeting->getMeetingGroup())
+            ->andWhere('m.startAt < :start')->setParameter('start', $meeting->getStartAt())
+            ->orderBy('m.startAt', 'DESC')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    /**
      * Every published acta of the centre, for whoever may see the whole archive (the leadership team).
      *
      * @param MeetingType|null $type only this kind, or null for every kind

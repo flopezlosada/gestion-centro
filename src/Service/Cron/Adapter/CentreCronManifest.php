@@ -53,6 +53,8 @@ final class CentreCronManifest implements CronManifest
     public const string CRON_MEETING_REMINDERS = 'cron.meeting_reminders';
 
     /** Poda del propio registro de ejecuciones, que a cadencia de minutos crece rápido. */
+    public const string CRON_RECURRING_MEETINGS = 'cron.recurring_meetings';
+
     public const string CRON_PURGE_LOG = 'cron.purge_log';
 
     /**
@@ -138,6 +140,16 @@ final class CentreCronManifest implements CronManifest
             'needs_recipient' => false,
             'dry' => false,
         ],
+        self::CRON_RECURRING_MEETINGS => [
+            'command' => 'app:meetings:generate-recurring',
+            // Antes de que nadie mire la agenda: la reunión de la semana que viene aparece ya de mañana.
+            'schedule' => ['freq' => 'daily', 'hour' => 6],
+            'max_delay_hours' => 36,
+            'requires' => [],
+            'depends_on' => [],
+            'needs_recipient' => false,
+            'dry' => false,
+        ],
         self::CRON_PURGE_LOG => [
             'command' => 'app:cron:purge-log',
             // De madrugada, cuando nadie está usando la aplicación y el registro del día ya está
@@ -158,6 +170,7 @@ final class CentreCronManifest implements CronManifest
         self::CRON_GUARDIA_DUTY_REMINDERS => 'Recordatorios de guardia',
         self::CRON_GUARDIA_RAICES_REMINDERS => 'Avisos de RAICES',
         self::CRON_MEETING_REMINDERS => 'Avisos de reuniones',
+        self::CRON_RECURRING_MEETINGS => 'Reuniones periódicas',
         self::CRON_PURGE_LOG => 'Poda del registro de ejecuciones',
     ];
 

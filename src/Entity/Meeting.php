@@ -37,6 +37,8 @@ use Symfony\Component\Validator\Constraints as Assert;
 // Serves the reminder sweep, which runs every few minutes across EVERY meeting: the due ones are the
 // narrow slice with a remind_at already past and nothing sent yet.
 #[ORM\Index(name: 'idx_meeting_remind', columns: ['remind_at', 'reminder_sent_at'])]
+// One generated meeting per group and moment: the backstop behind the sweep's own bookkeeping.
+#[ORM\UniqueConstraint(name: 'uniq_meeting_group_start', columns: ['meeting_group_id', 'start_at'])]
 class Meeting implements Auditable
 {
     #[ORM\Id]
@@ -119,6 +121,16 @@ class Meeting implements Auditable
     #[ORM\ManyToOne(targetEntity: Project::class)]
     #[ORM\JoinColumn(name: 'project_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
     private ?Project $project = null;
+
+    /**
+     * The weekly group this meeting was generated from ({@see \App\Service\RecurringMeetingGenerator}).
+     * It is what "the previous meeting" means: the one before this in the same group, whose acta this
+     * one approves ({@see \App\Repository\MeetingRepository::findPreviousInGroup()}). Null for a
+     * meeting convened by hand.
+     */
+    #[ORM\ManyToOne(targetEntity: MeetingGroup::class)]
+    #[ORM\JoinColumn(name: 'meeting_group_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?MeetingGroup $meetingGroup = null;
 
     /**
      * The people convened. They see the meeting in their agenda and may read the minutes; they get no
@@ -564,6 +576,18 @@ class Meeting implements Auditable
     public function setProject(?Project $project): static
     {
         $this->project = $project;
+
+        return $this;
+    }
+
+    public function getMeetingGroup(): ?MeetingGroup
+    {
+        return $this->meetingGroup;
+    }
+
+    public function setMeetingGroup(?MeetingGroup $meetingGroup): static
+    {
+        $this->meetingGroup = $meetingGroup;
 
         return $this;
     }
