@@ -1,0 +1,48 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Grupos de convocatoria{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Grupos de convocatoria{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Administración</p>
+            <h1>Grupos de convocatoria</h1>
+            <p class="lead">Listas guardadas de gente que se convoca junta a menudo: «Tutores/as 2º ESO», «CCP»… Al convocar una reunión, elegir el grupo marca a sus miembros de una vez, sin pinchar uno a uno. Cambiarlos aquí no toca las reuniones ya convocadas.</p>
+        </div>
+        <a class="btn" href="{{ path('admin_meeting_group_new') }}">+ Nuevo grupo</a>
+    </div>
+
+    <div class="card">
+        {% if groups is empty %}
+            <div class="empty-state">
+                <h2>No hay grupos de convocatoria todavía</h2>
+                <p>Crea el primero y marca a quién incluye.</p>
+                <a class="btn" href="{{ path('admin_meeting_group_new') }}">Nuevo grupo</a>
+            </div>
+        {% else %}
+            <table data-list-tools>
+                <thead>
+                    <tr><th>Nombre</th><th>Miembros</th><th data-filter>Estado</th><th data-nosort></th></tr>
+                </thead>
+                <tbody>
+                    {% for group in groups %}
+                        <tr>
+                            <td>{{ group.name }}</td>
+                            <td>{{ group.members|length }}</td>
+                            <td>{{ group.active ? 'En uso' : 'Retirado' }}</td>
+                            <td class="row-actions">
+                                <a href="{{ path('admin_meeting_group_edit', { id: group.id }) }}">Editar</a>
+                                <form method="post" action="{{ path('admin_meeting_group_delete', { id: group.id }) }}" data-confirm="¿Borrar el grupo «{{ group.name }}»? No afecta a ninguna reunión ya convocada: solo deja de ofrecerse como atajo.">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('meeting_group_delete' ~ group.id) }}">
+                                    <button type="submit" class="link-danger">Borrar</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}
