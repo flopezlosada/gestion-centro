@@ -16,7 +16,7 @@ use Doctrine\ORM\EntityManagerInterface;
  * What the head of department does to a topic list: paste a programación into it, reorder and rename its
  * topics, retire the ones no longer taught, and merge a duplicate into the topic it should have been.
  *
- * Every class plan points to its topic by id ({@see \App\Entity\LessonPlan::$topic}), so none of this ever
+ * Every class plan entry points to its topic by id ({@see \App\Entity\LessonPlanTopic}), so none of this ever
  * loses what a teacher already recorded: renaming shows the new name everywhere at once, reordering only
  * changes the progress count, retiring keeps old plans exactly as they read, and merging repoints them
  * before the duplicate is removed.

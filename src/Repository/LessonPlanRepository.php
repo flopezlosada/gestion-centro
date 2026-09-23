@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repository;
 
 use App\Entity\LessonPlan;
+use App\Entity\LessonPlanTopic;
 use App\Entity\Topic;
 use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
@@ -51,7 +52,8 @@ class LessonPlanRepository extends ServiceEntityRepository
     public function findPreviousFor(User $teacher, string $subject, string $groupNames, \DateTimeImmutable $date, int $slotIndex): ?LessonPlan
     {
         return $this->createQueryBuilder('p')
-            ->leftJoin('p.topic', 't')->addSelect('t')
+            ->leftJoin('p.topics', 'lt')->addSelect('lt')
+            ->leftJoin('lt.topic', 't')->addSelect('t')
             ->andWhere('p.teacher = :teacher')->setParameter('teacher', $teacher)
             ->andWhere('p.subject = :subject')->setParameter('subject', $subject)
             ->andWhere('p.groupNames = :groups')->setParameter('groups', $groupNames)
@@ -78,7 +80,8 @@ class LessonPlanRepository extends ServiceEntityRepository
     {
         /** @var list<LessonPlan> $plans */
         $plans = $this->createQueryBuilder('p')
-            ->leftJoin('p.topic', 't')->addSelect('t')
+            ->leftJoin('p.topics', 'lt')->addSelect('lt')
+            ->leftJoin('lt.topic', 't')->addSelect('t')
             ->andWhere('p.teacher = :teacher')->setParameter('teacher', $teacher)
             ->andWhere('p.date BETWEEN :from AND :to')
             ->setParameter('from', $from->setTime(0, 0))
@@ -95,21 +98,21 @@ class LessonPlanRepository extends ServiceEntityRepository
     }
 
     /**
-     * Repoints every plan on one topic to another, for merging two topics into one
+     * Repoints every plan entry on one topic to another, for merging two topics into one
      * ({@see \App\Service\TopicAdmin::merge()}). Bulk DQL UPDATE, not hydrate-and-save: a topic used across
-     * a whole department's history can back hundreds of plans.
+     * a whole department's history can back hundreds of plan entries.
      *
      * @param Topic $from the topic being merged away
      * @param Topic $into the topic it merges into
      *
-     * @return int how many plans were repointed
+     * @return int how many entries were repointed
      */
     public function repointTopic(Topic $from, Topic $into): int
     {
         return (int) $this->getEntityManager()->createQueryBuilder()
-            ->update(LessonPlan::class, 'p')
-            ->set('p.topic', ':into')->setParameter('into', $into)
-            ->where('p.topic = :from')->setParameter('from', $from)
+            ->update(LessonPlanTopic::class, 'lt')
+            ->set('lt.topic', ':into')->setParameter('into', $into)
+            ->where('lt.topic = :from')->setParameter('from', $from)
             ->getQuery()
             ->execute();
     }

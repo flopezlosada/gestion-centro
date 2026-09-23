@@ -149,6 +149,39 @@ final class LessonPlanTest extends WebTestCase
         self::assertSelectorTextContains('.agenda-item--class', 'La novela del siglo XX · Examen');
     }
 
+    /** Una clase puede cerrar un tema y abrir otro: cuenta media clase para cada uno, no la clase entera
+     *  para el segundo. */
+    public function testAClassCanCloseOneTopicAndOpenAnother(): void
+    {
+        $this->save(self::FIRST, [
+            'tema' => 'La novela del siglo XX', 'actividad' => 'ejercicios', 'resultado' => 'hecho',
+            'tema2' => 'Romanticismo', 'actividad2' => 'explicacion',
+        ]);
+
+        $plan = $this->planOn(self::FIRST);
+        self::assertNotNull($plan);
+        $topics = $plan->getTopics();
+        self::assertCount(2, $topics);
+        self::assertSame('La novela del siglo XX', $topics[0]->getTopic()?->getName());
+        self::assertSame(LessonOutcome::DONE, $topics[0]->getOutcome());
+        self::assertSame('Romanticismo', $topics[1]->getTopic()?->getName());
+        self::assertNull($topics[1]->getOutcome(), 'el que se abre no tiene resultado todavía');
+        // El resumen de la clase (el que da "seguimos igual" a la clase siguiente) es el que se abrió.
+        self::assertSame('Romanticismo', $plan->getTopic()?->getName());
+        self::assertCount(2, $this->em->getRepository(Topic::class)->findAll());
+    }
+
+    /** Editar una clase que ya tenía dos temas y quitar el segundo lo borra, no lo deja huérfano. */
+    public function testRemovingTheSecondTopicOnEditDropsIt(): void
+    {
+        $this->save(self::FIRST, ['tema' => 'La novela del siglo XX', 'tema2' => 'Romanticismo']);
+        $this->save(self::FIRST, ['tema' => 'La novela del siglo XX', 'tema2' => '']);
+
+        $plan = $this->planOn(self::FIRST);
+        self::assertNotNull($plan);
+        self::assertCount(1, $plan->getTopics());
+    }
+
     /**
      * Sends the plan form of the Monday class.
      *

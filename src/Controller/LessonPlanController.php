@@ -7,6 +7,7 @@ namespace App\Controller;
 use App\Agenda\ClassSession;
 use App\Agenda\MyClasses;
 use App\Entity\LessonPlan;
+use App\Entity\Topic;
 use App\Entity\User;
 use App\Enum\EducationLevel;
 use App\Enum\LessonActivity;
@@ -61,11 +62,16 @@ final class LessonPlanController extends AbstractController
                 throw $this->createAccessDeniedException('Token CSRF inválido.');
             }
 
+            $resolveTopic = fn (string $field): ?Topic => '' !== $subject ? $this->topics->resolve($subject, $level, $request->request->getString($field), $user) : null;
+
             $plan ??= new LessonPlan($user, $day, $tramo, $groups, $subject, $level);
-            $plan->plan(
-                '' !== $subject ? $this->topics->resolve($subject, $level, $request->request->getString('tema'), $user) : null,
+            $plan->planTwo(
+                $resolveTopic('tema'),
                 LessonActivity::tryFrom($request->request->getString('actividad')),
                 LessonOutcome::tryFrom($request->request->getString('resultado')),
+                $resolveTopic('tema2'),
+                LessonActivity::tryFrom($request->request->getString('actividad2')),
+                LessonOutcome::tryFrom($request->request->getString('resultado2')),
                 $request->request->getString('nota'),
             );
             $this->flashStored($this->store($plan), 'Clase programada.');
@@ -79,6 +85,12 @@ final class LessonPlanController extends AbstractController
         // tema y la actividad de la última clase, y su línea si quedó algo pendiente.
         $pending = null !== $previous && true === $previous->getOutcome()?->leavesSomethingPending();
 
+        // Hasta dos entradas: la primera es el tema con el que se llega (o el único de la clase), la
+        // segunda solo existe cuando esta misma clase, además, empezó otro tema.
+        $entries = $plan?->getTopics() ?? [];
+        $entry1 = $entries[0] ?? null;
+        $entry2 = $entries[1] ?? null;
+
         return $this->render('lesson_plan/show.html.twig', [
             'day' => $day,
             'class' => $class,
@@ -86,13 +98,18 @@ final class LessonPlanController extends AbstractController
             'plan' => $plan,
             'previous' => $previous,
             'pending' => $pending,
-            'topicName' => $plan?->getTopic()?->getName() ?? $previous?->getTopic()?->getName(),
-            'activity' => null !== $plan ? $plan->getActivity() : $previous?->getActivity(),
+            'topicName' => $entry1?->getTopic()?->getName() ?? $previous?->getTopic()?->getName(),
+            'activity' => $entry1?->getActivity() ?? $previous?->getActivity(),
+            'outcome' => $entry1?->getOutcome(),
             'note' => null !== $plan ? $plan->getNote() : ($pending ? $previous->getNote() : null),
-            'progress' => null !== $plan?->getTopic() ? $this->topics->progressOf($plan->getTopic(), $topics) : null,
+            'progress' => null !== $entry1?->getTopic() ? $this->topics->progressOf($entry1->getTopic(), $topics) : null,
             'topics' => $topics,
             'activities' => LessonActivity::cases(),
             'outcomes' => LessonOutcome::cases(),
+            'topicName2' => $entry2?->getTopic()?->getName(),
+            'activity2' => $entry2?->getActivity(),
+            'outcome2' => $entry2?->getOutcome(),
+            'hasSecondTopic' => null !== $entry2,
         ]);
     }
 

@@ -75,10 +75,40 @@
             <fieldset class="pick-chips">
                 <legend>¿Cómo fue?</legend>
                 {% for o in outcomes %}
-                    <label class="pick-chip"><input type="radio" name="resultado" value="{{ o.value }}"{{ plan and plan.outcome is same as(o) ? ' checked' }}> {{ o.label }}</label>
+                    <label class="pick-chip"><input type="radio" name="resultado" value="{{ o.value }}"{{ outcome is same as(o) ? ' checked' }}> {{ o.label }}</label>
                 {% endfor %}
-                <label class="pick-chip"><input type="radio" name="resultado" value=""{{ not plan or plan.outcome is null ? ' checked' }}> Aún no</label>
+                <label class="pick-chip"><input type="radio" name="resultado" value=""{{ outcome is null ? ' checked' }}> Aún no</label>
             </fieldset>
+
+            {% if subject %}
+                {# Lo normal es un tema por clase. Esto es para cuando, en la misma clase, se termina uno y
+                   se empieza otro: cuenta como media clase de cada uno, no como que el segundo se dio
+                   entero. Plegado salvo que la clase ya tenga un segundo tema guardado. #}
+                <details class="field-group"{{ hasSecondTopic ? ' open' }}>
+                    <summary>¿Terminó este tema y empezó otro en la misma clase?</summary>
+
+                    <div class="field">
+                        <label for="tema2">Tema nuevo</label>
+                        <input type="text" id="tema2" name="tema2" list="temas" maxlength="{{ constant('App\\Entity\\Topic::MAX_NAME') }}" value="{{ topicName2 }}" autocomplete="off" placeholder="Elige o escribe uno nuevo">
+                    </div>
+
+                    <fieldset class="pick-chips">
+                        <legend>¿Qué se hizo con él?</legend>
+                        {% for a in activities %}
+                            <label class="pick-chip"><input type="radio" name="actividad2" value="{{ a.value }}"{{ activity2 is same as(a) ? ' checked' }}> {{ a.label }}</label>
+                        {% endfor %}
+                        <label class="pick-chip"><input type="radio" name="actividad2" value=""{{ activity2 is null ? ' checked' }}> Sin decir</label>
+                    </fieldset>
+
+                    <fieldset class="pick-chips">
+                        <legend>¿Cómo fue?</legend>
+                        {% for o in outcomes %}
+                            <label class="pick-chip"><input type="radio" name="resultado2" value="{{ o.value }}"{{ outcome2 is same as(o) ? ' checked' }}> {{ o.label }}</label>
+                        {% endfor %}
+                        <label class="pick-chip"><input type="radio" name="resultado2" value=""{{ outcome2 is null ? ' checked' }}> Aún no</label>
+                    </fieldset>
+                </details>
+            {% endif %}
 
             <div class="field">
                 <label for="nota">Nota <span class="muted">(opcional)</span></label>

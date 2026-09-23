@@ -51,7 +51,13 @@
                     <div class="agenda-body">
                         <a href="{{ path('lesson_plan', { fecha: day.date|date('Y-m-d', false), tramo: c.slotIndex }) }}" class="agenda-title">{% if c.startsAt %}{{ c.startsAt|date('H:i') }}{% else %}{{ c.ordinal }}ª hora{% endif %} · {{ c.groups|join(', ') }}{% if c.subjects is not empty %} · {{ c.subjects|join(', ') }}{% endif %}</a>
                         <span class="agenda-meta">Clase{% if c.rooms is not empty %} · {{ c.rooms|join(', ') }}{% endif %}{% if c.isRelocated %} · aula cambiada{% endif %}
-                            {%- if p %} · {{ [p.topic ? p.topic.name : null, p.activity ? p.activity.label : null, p.outcome ? p.outcome.label : null]|filter(v => v)|join(' · ') ?: 'programada' }}{% else %} · sin programar{% endif %}</span>
+                            {%- if p %}
+                                {%- set entries = [] %}
+                                {%- for e in p.topics %}
+                                    {%- set entries = entries|merge([[e.topic ? e.topic.name : null, e.activity ? e.activity.label : null, e.outcome ? e.outcome.label : null]|filter(v => v)|join(' · ')]) %}
+                                {%- endfor %}
+                                · {{ entries|filter(v => v)|join(' → ') ?: 'programada' }}
+                            {%- else %} · sin programar{% endif %}</span>
                     </div>
                 </li>
             {% endfor %}
