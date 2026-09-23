@@ -92,8 +92,10 @@ final class DayTimeline
                     'block' => $block,
                     'top' => $top,
                     'height' => max(0.0, $bottom - $top),
-                    'left' => $columns[$i] / $columnCount * 100,
-                    'width' => 100 / $columnCount,
+                    // Cast explícito: division entera exacta en PHP devuelve int, no float, y rompería
+                    // la forma declarada (y un assertSame estricto en el test).
+                    'left' => (float) ($columns[$i] / $columnCount * 100),
+                    'width' => (float) (100 / $columnCount),
                 ];
             }
         }
@@ -195,6 +197,8 @@ final class DayTimeline
 
         $offset = $at->getTimestamp() - $windowStart->getTimestamp();
 
-        return max(0.0, min(100.0, $offset / $total * 100));
+        // Cast explícito: cuando la división es exacta PHP devuelve int, no float, y max()/min() solo
+        // lo corrigen por casualidad en los extremos (0 o 100) por su regla de empate "gana el primero".
+        return max(0.0, min(100.0, (float) ($offset / $total * 100)));
     }
 }
