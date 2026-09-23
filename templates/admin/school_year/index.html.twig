@@ -79,7 +79,7 @@
                 <input type="hidden" name="_token" value="{{ csrf_token('admin_roster_upload') }}">
                 <div class="form-row">
                     <label class="field-label" for="roster">Fichero del claustro (CSV)</label>
-                    <input type="file" id="roster" name="roster" accept=".csv,text/csv" required>
+                    <input type="file" id="roster" name="roster" accept=".csv,text/csv" required data-max-bytes="{{ constant('App\\Controller\\AdminSchoolYearSetupController::MAX_ROSTER_BYTES') }}">
                     <p class="help">Verás lo que haría antes de que se escriba nada.</p>
                 </div>
                 <div class="form-actions"><button type="submit" class="btn">Ver qué haría</button></div>
@@ -90,4 +90,8 @@
     <div class="callout" role="note">
         <p><strong>Lo que NO hace falta subir:</strong> las aulas ocupadas y las libres no se cargan, se calculan del horario. Si se subieran aparte, en cuanto cambiara una clase habría dos versiones distintas de la verdad y ninguna forma de saber cuál vale.</p>
     </div>
+{% endblock %}
+
+{% block page_scripts %}
+    <script src="{{ asset_ver('/js/file-size-guard.js') }}"></script>
 {% endblock %}

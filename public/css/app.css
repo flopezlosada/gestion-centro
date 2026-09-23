@@ -849,6 +849,8 @@ a.badge:hover { border-color: currentColor; }
 /* Ayuda que va ANTES del control y hay que leer sí o sí (p. ej. "esto solo lo ve el equipo directivo"):
    mismo tamaño, pero en el color del texto normal para que no se lea como letra pequeña. */
 .field-help--lead { color: var(--text); margin: 0 0 6px; }
+/* Aviso de fichero rechazado en cliente (file-size-guard.js), antes de que el servidor lo vea siquiera. */
+.field-help--error { color: var(--danger-text); }
 .document-editor trix-editor {
     min-height: 340px;
     border: 1px solid var(--border-strong);

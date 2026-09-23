@@ -49,7 +49,7 @@
                     {% if wantsFile %}
                         <div class="field">
                             <label for="entrega-archivo">Archivo</label>
-                            <input type="file" id="entrega-archivo" name="archivo"{{ task.deliverable.value == 'file' and not task.hasDeliverable ? ' required' : '' }}>
+                            <input type="file" id="entrega-archivo" name="archivo" data-max-bytes="{{ constant('App\\Support\\DocumentUpload::MAX_BYTES') }}"{{ task.deliverable.value == 'file' and not task.hasDeliverable ? ' required' : '' }}>
                         </div>
                     {% endif %}
                     {% if note %}
@@ -453,4 +453,8 @@
         {{ ui.lifecycle(view.milestones) }}
       </aside>{# /detail-aside #}
     </div>{# /detail-cols #}
+{% endblock %}
+
+{% block page_scripts %}
+    <script src="{{ asset_ver('/js/file-size-guard.js') }}"></script>
 {% endblock %}
