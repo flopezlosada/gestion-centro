@@ -222,23 +222,32 @@ final class CopyRequestTest extends WebTestCase
         self::assertCount(0, $this->em->getRepository(CopyRequest::class)->findAll());
     }
 
-    public function testAStandaloneOrderCarriesTheUploadedDocument(): void
+    /**
+     * Sends a standalone order with a document of the given name.
+     *
+     * @param string $fileName the client name of the uploaded document
+     */
+    private function postStandaloneOrder(string $fileName): void
     {
-        $this->login();
-
         $crawler = $this->client->request('GET', '/fotocopias/nuevo');
         self::assertResponseIsSuccessful();
         $token = (string) $crawler->filter('input[name="copy_request[_token]"]')->attr('value');
 
-        $path = sys_get_temp_dir().'/encargo-'.uniqid().'.txt';
+        $path = sys_get_temp_dir().'/encargo-'.uniqid().'-'.$fileName;
         file_put_contents($path, 'contenido');
 
         $this->client->request(
             'POST',
             '/fotocopias/nuevo',
             ['copy_request' => ['context' => 'Examen de 2º ESO B', 'copies' => '25', '_token' => $token]],
-            ['copy_request' => ['document' => new UploadedFile($path, 'examen.txt', 'text/plain', null, true)]],
+            ['copy_request' => ['document' => new UploadedFile($path, $fileName, null, null, true)]],
         );
+    }
+
+    public function testAStandaloneOrderCarriesTheUploadedDocument(): void
+    {
+        $this->login();
+        $this->postStandaloneOrder('examen.pdf');
 
         self::assertResponseRedirects('/fotocopias');
         self::assertEmailCount(1);
@@ -246,8 +255,23 @@ final class CopyRequestTest extends WebTestCase
         $order = $this->onlyOrder();
         self::assertSame('Examen de 2º ESO B', $order->getContext());
         self::assertSame(25, $order->getCopies());
-        self::assertSame('examen.txt', $order->getDocumentName());
+        self::assertSame('examen.pdf', $order->getDocumentName());
         self::assertTrue($order->isSent());
+    }
+
+    /**
+     * Conserjería pidió solo PDF en los encargos sueltos. Un Word, aunque la política general lo admita,
+     * se rechaza con un mensaje que dice qué hacer, y no sale ningún correo.
+     */
+    public function testAStandaloneOrderOnlyAcceptsAPdf(): void
+    {
+        $this->login();
+        $this->postStandaloneOrder('examen.docx');
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertSelectorTextContains('body', 'Para fotocopias solo se admite PDF');
+        self::assertEmailCount(0);
+        self::assertCount(0, $this->em->getRepository(CopyRequest::class)->findAll());
     }
 
     public function testAStandaloneOrderNeedsADocument(): void

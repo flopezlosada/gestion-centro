@@ -116,7 +116,7 @@ final class CopyShopMailerTest extends TestCase
 
         self::assertTrue($this->mailerUnder($mailer)->send($this->order()));
         self::assertCount(1, $sent);
-        self::assertSame('Fotocopias: 25 copias · 4º de ESO · grupo E4D · aula A12 · 30/07/2026 10:15', $sent[0]->getSubject());
+        self::assertSame('Fotocopias de Ana Docente: 25 copias · 4º de ESO · grupo E4D · aula A12 · 30/07/2026 10:15', $sent[0]->getSubject());
         self::assertSame('fotocopias@centro.test', $sent[0]->getTo()[0]->getAddress());
     }
 
@@ -126,7 +126,18 @@ final class CopyShopMailerTest extends TestCase
         [$mailer, $sent] = $this->recordingMailer();
         $this->mailerUnder($mailer)->send($this->order()->setCover($this->cover()));
 
-        self::assertStringStartsWith('Tarea de guardia · Fotocopias: 25 copias', (string) $sent[0]->getSubject());
+        self::assertStringStartsWith('Tarea de guardia · Fotocopias de Ana Docente: 25 copias', (string) $sent[0]->getSubject());
+    }
+
+    /**
+     * Sin quién lo pide (la persona ya no existe) el asunto no inventa un nombre ni deja un «de» colgando.
+     */
+    public function testSubjectWithoutARequesterNamesNobody(): void
+    {
+        [$mailer, $sent] = $this->recordingMailer();
+        $this->mailerUnder($mailer)->send($this->order()->setRequestedBy(null));
+
+        self::assertSame('Fotocopias: 25 copias · 4º de ESO · grupo E4D · aula A12 · 30/07/2026 10:15', $sent[0]->getSubject());
     }
 
     public function testItIsSentOnBehalfOfTheManagementTeamWithoutForgingItsAddress(): void
