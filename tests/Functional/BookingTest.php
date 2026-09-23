@@ -350,14 +350,11 @@ final class BookingTest extends WebTestCase
         $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay());
 
         self::assertResponseIsSuccessful();
-        $offered = $crawler->filter('#tramo option')->each(static fn ($option): string => (string) $option->attr('value'));
-        // El primer valor es el hueco "— Elige la hora —": sin elegirla no hay forma de saber qué está
-        // libre, así que el desplegable de recursos no se ofrece hasta entonces (ver el filtro de
-        // disponibilidad de esta misma pantalla).
-        self::assertSame(['', '0', '1', '2', '4', '5', '7'], $offered, 'los seis tramos lectivos, con los recreos fuera');
+        $offered = $crawler->filter('input[name="tramos[]"]')->each(static fn ($box): string => (string) $box->attr('value'));
+        self::assertSame(['0', '1', '2', '4', '5', '7'], $offered, 'los seis tramos lectivos, con los recreos fuera');
 
         // Con su hora de reloj, que es lo que identifica el tramo cuando el índice no es su ordinal.
-        self::assertStringContainsString('13:35', $crawler->filter('#tramo')->html());
+        self::assertStringContainsString('13:35', $crawler->filter('.booking-hours')->html());
         // Y se dice de dónde salen las horas, para que nadie las lea como las de este curso.
         self::assertSelectorTextContains('body', 'Horas del curso '.$previous);
     }
@@ -375,9 +372,108 @@ final class BookingTest extends WebTestCase
         $this->client->loginUser($teacher);
         $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay());
 
-        $offered = $crawler->filter('#tramo option')->each(static fn ($option): string => (string) $option->attr('value'));
-        self::assertSame(['', '0', '1', '2', '3', '4', '5'], $offered);
+        $offered = $crawler->filter('input[name="tramos[]"]')->each(static fn ($box): string => (string) $box->attr('value'));
+        self::assertSame(['0', '1', '2', '3', '4', '5'], $offered);
         self::assertSelectorTextContains('body', 'estas seis horas son genéricas');
+    }
+
+    /** Varias horas de una vez: una reserva por hora, con el mismo motivo. */
+    public function testSeveralHoursAreBookedAtOnce(): void
+    {
+        $teacher = $this->user('varias@centro.test');
+        $cart = $this->material('Carro de portátiles');
+        $this->em->flush();
+
+        $this->client->loginUser($teacher);
+        $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay().'&tramos[]=1&tramos[]=2');
+        self::assertSelectorTextContains('body', 'Se reserva a las 2 horas marcadas');
+        $this->client->submit($crawler->filter('form[action="/reservas/nueva"]')->form([
+            'recurso' => 'material:'.$cart->getId(),
+            'motivo' => 'Proyecto de 4ºA',
+        ]));
+
+        self::assertResponseRedirects();
+        $this->em->clear();
+        $slots = array_map(static fn (Booking $b): int => $b->getSlotIndex(), $this->em->getRepository(Booking::class)->findBy(['purpose' => 'Proyecto de 4ºA']));
+        sort($slots);
+        self::assertSame([1, 2], $slots);
+    }
+
+    /** Si una de las horas ya está cogida no se reserva NINGUNA: media reserva engaña a quien la hace. */
+    public function testSeveralHoursAreAllOrNothing(): void
+    {
+        $first = $this->user('primero@centro.test');
+        $second = $this->user('segundo@centro.test');
+        $cart = $this->material('Carro de portátiles');
+        $this->em->flush();
+        $key = 'material:'.$cart->getId();
+
+        // La segunda persona carga el formulario con las dos horas libres…
+        $this->client->loginUser($second);
+        $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay().'&tramos[]=1&tramos[]=2');
+        $form = $crawler->filter('form[action="/reservas/nueva"]')->form(['recurso' => $key, 'motivo' => 'Dos horas']);
+
+        // …y entre medias la primera se lleva la 2ª.
+        $this->client->loginUser($first);
+        $this->book($key, self::futureDay(), 2, 'Solo la segunda');
+
+        $this->client->loginUser($second);
+        $this->client->submit($form);
+        self::assertResponseRedirects();
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('body', 'No se ha reservado nada');
+
+        $this->em->clear();
+        self::assertCount(0, $this->em->getRepository(Booking::class)->findBy(['purpose' => 'Dos horas']), 'tampoco la hora que estaba libre');
+    }
+
+    /** Con varias horas marcadas se ofrece solo lo que está libre en TODAS. */
+    public function testWithSeveralHoursOnlyWhatIsFreeInAllOfThemIsOffered(): void
+    {
+        $teacher = $this->user('filtra@centro.test');
+        $radio = $this->material('Radio');
+        $camera = $this->material('Cámara');
+        $this->em->flush();
+
+        $this->client->loginUser($teacher);
+        $this->book('material:'.$radio->getId(), self::futureDay(), 2);
+        $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay().'&tramos[]=1&tramos[]=2');
+
+        $offered = $crawler->filter('#recurso')->html();
+        self::assertStringNotContainsString('material:'.$radio->getId(), $offered, 'la radio está cogida a 2ª');
+        self::assertStringContainsString('material:'.$camera->getId(), $offered);
+    }
+
+    /**
+     * La semana: a cada hora, lo libre. Con casi todo libre dice «Todo salvo…» en vez de listar
+     * cuarenta aulas; y mirando una cosa concreta, «Cogido» o «Libre».
+     */
+    public function testTheWeekSaysWhatIsFreeAtEachHour(): void
+    {
+        $teacher = $this->user('semana@centro.test');
+        $radio = $this->material('Radio');
+        $this->material('Cámara');
+        $this->material('Micrófono');
+        $year = $this->academicYear(SchoolYear::current(new \DateTimeImmutable(self::futureDay())));
+        $this->em->persist($year);
+        $this->em->persist((new TimeSlot())->setAcademicYear($year)->setSlotIndex(0)->setStartsAt(new \DateTimeImmutable('08:25'))->setEndsAt(new \DateTimeImmutable('09:20'))->setKind(TimeSlotKind::LECTIVE));
+        $this->em->flush();
+        // Un día laborable dentro de la semana que se mira, para que la reserva caiga en la tabla.
+        $day = new \DateTimeImmutable(self::futureDay());
+        $monday = $day->modify('-'.((int) $day->format('N') - 1).' days');
+        $weekday = $monday->modify('+2 days')->format('Y-m-d');
+
+        $this->client->loginUser($teacher);
+        $this->book('material:'.$radio->getId(), $weekday, 0);
+
+        $this->client->request('GET', '/reservas/semana?fecha='.$weekday.'&ver=material');
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('table.booking-week', 'Todo salvo Radio');
+        self::assertSelectorTextContains('table.booking-week', 'Todo libre');
+
+        $this->client->request('GET', '/reservas/semana?fecha='.$weekday.'&ver=material:'.$radio->getId());
+        self::assertSelectorTextContains('table.booking-week', 'Cogido');
+        self::assertSelectorTextContains('table.booking-week', 'Libre');
     }
 
     /**

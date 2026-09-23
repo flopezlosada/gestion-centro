@@ -1,0 +1,101 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Semana de reservas · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('booking_index') }}">Reservas</a><span class="sep">/</span>Semana{% endblock %}
+
+{% block body %}
+    {% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'] %}
+    {% set lunes = monday|date('Y-m-d', false) %}
+
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Reservas</p>
+            <h1>Qué está libre esta semana</h1>
+            <p class="lead">Cada hora de lunes a viernes con lo que queda libre. Pincha en un hueco para reservarlo: se abre el día con esa hora ya marcada.</p>
+        </div>
+    </div>
+
+    <div class="toolbar">
+        <nav class="scope-toggle" aria-label="Semana">
+            <a href="{{ path('booking_week', { fecha: monday|date_modify('-7 days')|date('Y-m-d', false), ver: view }) }}">← Anterior</a>
+            <a href="{{ path('booking_week', { ver: view }) }}">Esta semana</a>
+            <a href="{{ path('booking_week', { fecha: monday|date_modify('+7 days')|date('Y-m-d', false), ver: view }) }}">Siguiente →</a>
+        </nav>
+        {# Qué mirar: todos los espacios, todo el material o una cosa concreta. Por GET, como la fecha, para
+           que funcione sin JavaScript (botón «Ver» en <noscript>). #}
+        <form method="get" action="{{ path('booking_week') }}">
+            <input type="hidden" name="fecha" value="{{ lunes }}">
+            <label for="ver" class="visually-hidden">Qué ver</label>
+            <select id="ver" name="ver" onchange="this.form.submit()">
+                <option value="espacios"{{ view == 'espacios' ? ' selected' }}>Todos los espacios</option>
+                <option value="material"{{ view == 'material' ? ' selected' }}>Todo el material</option>
+                {% if rooms is not empty %}
+                    <optgroup label="Un espacio">
+                        {% for r in rooms %}<option value="room:{{ r.id }}"{{ view == 'room:' ~ r.id ? ' selected' }}>{{ r.name }}</option>{% endfor %}
+                    </optgroup>
+                {% endif %}
+                {% if materials is not empty %}
+                    <optgroup label="Un material">
+                        {% for m in materials %}<option value="material:{{ m.id }}"{{ view == 'material:' ~ m.id ? ' selected' }}>{{ m.name }}</option>{% endfor %}
+                    </optgroup>
+                {% endif %}
+            </select>
+            <noscript><button type="submit" class="btn secondary">Ver</button></noscript>
+        </form>
+    </div>
+
+    <h2 class="home-section__title">Del {{ monday|date('d/m/Y', false) }} al {{ monday|date_modify('+4 days')|date('d/m/Y', false) }}{% if single %} · {{ single.name }}{% endif %}</h2>
+
+    <div class="card">
+        {% if grid is empty %}
+            <p class="muted">Todavía no hay ningún horario importado, así que no se sabe qué horas tiene el día.</p>
+        {% else %}
+            {% if periodsBorrowedFrom %}
+                <p class="help">Horas del curso {{ periodsBorrowedFrom }}: el horario de este curso todavía no está importado.</p>
+            {% endif %}
+            {# Tabla con scroll propio: en el móvil no cabe una semana, y así la página no se desborda. #}
+            <div class="table-scroll">
+                <table class="booking-week">
+                    <thead>
+                        <tr>
+                            <th scope="col">Hora</th>
+                            {% for day in days %}<th scope="col">{{ dias[day|date('N', false)] }} {{ day|date('d/m', false) }}</th>{% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for slot, byDay in grid %}
+                            <tr>
+                                <th scope="row">{{ loop.index }}ª <span class="mono muted">{{ slotTimes[slot].startsAt|date('H:i', false) }}</span></th>
+                                {% for day in days %}
+                                    {% set key = day|date('Y-m-d', false) %}
+                                    {% set free = byDay[key].free %}
+                                    {% set taken = byDay[key].taken %}
+                                    {% set reservar = path('booking_index', { fecha: key, tramos: [slot] }) %}
+                                    <td>
+                                        {% if not lective[key] %}
+                                            <span class="muted">No lectivo</span>
+                                        {% elseif single %}
+                                            {% if free is empty %}<span class="muted">Cogido</span>
+                                            {% elseif day < today %}<span class="muted">Libre</span>
+                                            {% else %}<a href="{{ reservar }}">Libre</a>{% endif %}
+                                        {% elseif free is empty %}
+                                            <span class="muted">Nada libre</span>
+                                        {% else %}
+                                            {#- Nombres y no un número, que era la petición («el lunes a 1ª, tales aulas»),
+                                                pero la lista CORTA: casi siempre está casi todo libre, y cuarenta aulas
+                                                por celda no se leen. «Todo salvo 1MA2» dice lo mismo que las otras 39. -#}
+                                            {% set texto = taken is empty ? 'Todo libre'
+                                                : (free|length <= taken|length ? free|map(r => r.name)|join(', ')
+                                                : 'Todo salvo ' ~ taken|map(r => r.name)|join(', ')) %}
+                                            {% if day < today %}{{ texto }}{% else %}<a href="{{ reservar }}">{{ texto }}</a>{% endif %}
+                                        {% endif %}
+                                    </td>
+                                {% endfor %}
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+    </div>
+{% endblock %}
