@@ -37,7 +37,18 @@
     <div class="avisos-page">
         <header class="avisos-head">
             <h1 class="avisos-title">Avisos</h1>
-            <a class="avisos-settings" href="{{ path('notification_settings') }}">Cómo te avisamos</a>
+            <div class="avisos-actions">
+                {#- Solo si hay algo que borrar. Borra TODOS los leídos de la persona, no solo los de esta
+                    lista (que se corta en los 50 más recientes); los no leídos nunca. -#}
+                {% if notifications|filter(n => n.read) is not empty %}
+                    <form method="post" action="{{ path('notification_clear_read') }}"
+                          data-confirm="¿Borrar todos tus avisos ya leídos? Los que aún no has abierto se quedan.">
+                        <input type="hidden" name="_token" value="{{ csrf_token('notification_clear_read') }}">
+                        <button type="submit" class="avisos-clear">Borrar leídos</button>
+                    </form>
+                {% endif %}
+                <a class="avisos-settings" href="{{ path('notification_settings') }}">Cómo te avisamos</a>
+            </div>
         </header>
 
         {% if app_vapid_public_key is not empty %}

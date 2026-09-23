@@ -101,6 +101,24 @@ class NotificationRepository extends ServiceEntityRepository
     }
 
     /**
+     * Deletes every notification a person has already opened, at their request. The unread ones are
+     * left alone: clearing the inbox must never make something they have not seen vanish.
+     *
+     * @param User $user the recipient whose read notifications go
+     *
+     * @return int how many rows were deleted
+     */
+    public function deleteReadFor(User $user): int
+    {
+        return (int) $this->getEntityManager()->createQueryBuilder()
+            ->delete(Notification::class, 'n')
+            ->where('n.recipient = :user')->setParameter('user', $user)
+            ->andWhere('n.readAt IS NOT NULL')
+            ->getQuery()
+            ->execute();
+    }
+
+    /**
      * How many unread notifications a person has (for the inbox badge).
      *
      * @param User $user the recipient
