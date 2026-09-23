@@ -18,7 +18,7 @@
     {# Atajos: convocar desde aquí trae ya marcado al profesorado del proyecto o del departamento (lo
        resuelve el servidor con ?proyecto= / ?departamento=mi, así que funciona sin JS). Sin ellos, con el
        claustro entero como candidatos, convocar una reunión de departamento sería marcar doce casillas. #}
-    {% if canConvene and (projects is not empty or ownDepartment) %}
+    {% if canConvene and (projects is not empty or ownDepartment or meetingGroups is not empty) %}
         <div class="card">
             <div class="detail-block__label">Atajos</div>
             <div class="form-actions">
@@ -27,6 +27,9 @@
                 {% endif %}
                 {% for project in projects %}
                     <a class="btn secondary" href="{{ path('meeting_new', { proyecto: project.id }) }}">Convocar reunión de {{ project.name }}</a>
+                {% endfor %}
+                {% for group in meetingGroups %}
+                    <a class="btn secondary" href="{{ path('meeting_new', { grupo: group.id }) }}">Convocar a {{ group.name }}</a>
                 {% endfor %}
             </div>
             <p class="help">Traen la lista de convocatoria ya marcada; puedes quitar o añadir a quien quieras antes de convocar.</p>

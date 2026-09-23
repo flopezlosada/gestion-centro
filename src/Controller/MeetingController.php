@@ -10,6 +10,7 @@ use App\Entity\Project;
 use App\Entity\User;
 use App\Form\MeetingFormData;
 use App\Form\MeetingFormType;
+use App\Repository\MeetingGroupRepository;
 use App\Repository\MeetingRemarkRepository;
 use App\Repository\MeetingRepository;
 use App\Repository\MeetingTypeRepository;
@@ -61,7 +62,7 @@ final class MeetingController extends AbstractController
      * have to be here.
      */
     #[Route('', name: 'meeting_index', methods: ['GET'])]
-    public function index(#[CurrentUser] User $user, MeetingRepository $meetings, MeetingAccess $access): Response
+    public function index(#[CurrentUser] User $user, MeetingRepository $meetings, MeetingAccess $access, MeetingGroupRepository $meetingGroups): Response
     {
         $now = new \DateTimeImmutable('now');
         $isAdmin = $this->isGranted('ROLE_ADMIN');
@@ -75,6 +76,9 @@ final class MeetingController extends AbstractController
             // One shortcut per project you coordinate: convening from here brings its teachers already
             // ticked, which is what "cada proyecto lleva por defecto a sus profes" means in practice.
             'projects' => $access->convenableProjects($user, $isAdmin),
+            // Grupos guardados por el centro (Tutores 2º ESO, CCP…): sin dueño, así que se ofrecen todos
+            // los activos a cualquiera que pueda convocar.
+            'meetingGroups' => $meetingGroups->findActive(),
         ]);
     }
 
@@ -121,7 +125,7 @@ final class MeetingController extends AbstractController
      * department — the two meetings a centre holds most.
      */
     #[Route('/nueva', name: 'meeting_new', methods: ['GET', 'POST'])]
-    public function new(Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, MeetingNotifier $notifier, MeetingTypeRepository $meetingTypes): Response
+    public function new(Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, MeetingNotifier $notifier, MeetingTypeRepository $meetingTypes, MeetingGroupRepository $meetingGroups): Response
     {
         $isAdmin = $this->isGranted('ROLE_ADMIN');
         if (!$access->canConvene($user, $isAdmin)) {
@@ -152,6 +156,21 @@ final class MeetingController extends AbstractController
                 $people,
                 static fn (User $candidate): bool => $candidate->getUnit() === $user->getUnit(),
             ));
+        }
+        // Un grupo de convocatoria guardado ("Tutores 2º ESO", "CCP"): mismo recorte por subconjunto que
+        // el proyecto, para que un miembro de baja o fuera de alcance no llegue como "valor no válido".
+        // Cualquier grupo activo vale para cualquiera que convoque — no tiene dueño, a diferencia de un
+        // proyecto — así que no hace falta filtrarlo contra $access.
+        $groupId = $request->query->getInt('grupo');
+        if (0 !== $groupId) {
+            $group = $meetingGroups->find($groupId);
+            if (null !== $group && $group->isActive()) {
+                $groupMembers = $group->getMembers();
+                $data->attendees = array_values(array_filter(
+                    $people,
+                    static fn (User $candidate): bool => $groupMembers->contains($candidate),
+                ));
+            }
         }
         $data->day = CalendarDate::parse($request->query->getString('fecha'), new \DateTimeZone(date_default_timezone_get()));
 
