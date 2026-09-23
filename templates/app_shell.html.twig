@@ -76,6 +76,12 @@
                 <a href="{{ path('copy_request_index') }}" class="{{ route starts with 'copy_request_' ? 'is-active' }}">Fotocopias</a>
                 <a href="{{ path('guardia_bank_index') }}" class="{{ route starts with 'guardia_bank_' ? 'is-active' }}">Banco de tareas</a>
                 <a href="{{ path('tic_incident_index') }}" class="{{ route starts with 'tic_incident_' ? 'is-active' }}">Incidencias TIC</a>
+                {# Temas de las clases: gate igual al de AdminTopicController::denyAccessUnlessLeading —
+                   jefatura de departamento o de todo el centro, más administradores. Sin este enlace solo
+                   se llegaba escribiendo /admin/temas a mano. #}
+                {% if leads_a_department() or is_granted('ROLE_ADMIN') %}
+                    <a href="{{ path('admin_topic_index') }}" class="{{ route starts with 'admin_topic_' ? 'is-active' }}">Temas de las clases</a>
+                {% endif %}
 
                 {# Gestión de guardias: solo para quien coordina (lectura en el área Guardias; el flag de
                    administrador la concede por bypass). Las acciones del parte exigen escritura, verificada
