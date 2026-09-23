@@ -2573,6 +2573,16 @@ tr.is-not-covered { background: var(--danger-weak); }
 /* ── Guardias · formulario de alta de ausencia ─────────────────────────────── */
 .stack-form { display: flex; flex-direction: column; gap: 18px; max-width: 560px; }
 .stack-form .field { display: flex; flex-direction: column; gap: 6px; }
+/* Bloque plegable de un segundo tema en la misma clase programación (lesson_plan/show): un fieldset
+   extra dentro de un <details>, así que necesita su propio ritmo vertical (el gap de .stack-form solo
+   separa sus hijos directos). */
+.stack-form .field-group {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+}
+.stack-form .field-group > summary { cursor: pointer; font-weight: 600; list-style: none; }
+.stack-form .field-group > * + * { margin-top: 14px; }
 .field-label { font-weight: 600; }
 .choice { display: flex; align-items: center; gap: 8px; font-weight: 400; cursor: pointer; }
 .choice--inline { display: inline-flex; }
