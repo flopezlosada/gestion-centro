@@ -165,4 +165,70 @@ final class NotificationControllerTest extends WebTestCase
         $this->client->request('GET', '/');
         self::assertSelectorNotExists('.notice-setup');
     }
+
+    /**
+     * «Borrar leídos» se lleva solo lo que la persona ya abrió: lo que no ha visto se queda, y los
+     * avisos de los demás, leídos o no, ni se tocan.
+     */
+    public function testClearingReadNotificationsKeepsTheUnreadAndEveryoneElses(): void
+    {
+        $me = $this->user('borra@centro.test');
+        $other = $this->user('otra@centro.test');
+        $myRead = (new Notification($me, 'info', 'Leído mío'))->markRead();
+        $myUnread = new Notification($me, 'info', 'Sin abrir mío');
+        $othersRead = (new Notification($other, 'info', 'Leído ajeno'))->markRead();
+        foreach ([$myRead, $myUnread, $othersRead] as $n) {
+            $this->em->persist($n);
+        }
+        $this->em->flush();
+        $ids = array_map(static fn (Notification $n): int => (int) $n->getId(), [$myRead, $myUnread, $othersRead]);
+
+        $this->client->loginUser($me);
+        $crawler = $this->client->request('GET', '/avisos');
+        $this->client->submit($crawler->selectButton('Borrar leídos')->form());
+
+        self::assertResponseRedirects('/avisos');
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('body', 'Borrado 1 aviso leído.');
+        $this->em->clear();
+        $repo = $this->em->getRepository(Notification::class);
+        self::assertNull($repo->find($ids[0]), 'el leído propio se borra');
+        self::assertNotNull($repo->find($ids[1]), 'el no leído propio se queda');
+        self::assertNotNull($repo->find($ids[2]), 'el leído ajeno no se toca');
+    }
+
+    /** Sin token válido no se borra nada. */
+    public function testClearingReadNotificationsRequiresAValidToken(): void
+    {
+        $me = $this->user('token@centro.test');
+        $read = (new Notification($me, 'info', 'Leído'))->markRead();
+        $this->em->persist($read);
+        $this->em->flush();
+
+        $this->client->loginUser($me);
+        $this->client->request('POST', '/avisos/borrar-leidos', ['_token' => 'falso']);
+
+        self::assertResponseStatusCodeSame(403);
+        $this->em->clear();
+        self::assertNotNull($this->em->getRepository(Notification::class)->find($read->getId()));
+    }
+
+    /** El botón solo sale cuando hay algo leído que borrar: con todo sin abrir, sobra. */
+    public function testTheClearButtonOnlyShowsWhenThereIsSomethingRead(): void
+    {
+        $me = $this->user('boton@centro.test');
+        $unread = new Notification($me, 'info', 'Sin abrir');
+        $this->em->persist($unread);
+        $this->em->flush();
+
+        $this->client->loginUser($me);
+        $this->client->request('GET', '/avisos');
+        self::assertSelectorNotExists('.avisos-clear');
+
+        $unread->markRead();
+        $this->em->flush();
+
+        $this->client->request('GET', '/avisos');
+        self::assertSelectorExists('.avisos-clear');
+    }
 }

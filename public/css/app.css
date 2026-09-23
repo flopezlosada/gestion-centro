@@ -3544,7 +3544,9 @@ tr.is-not-covered { background: var(--danger-weak); }
 .avisos-title { font-family: var(--font-display); font-weight: 500; font-size: 26px; margin: 0; }
 .avisos-settings { font-size: 13px; font-weight: 500; color: var(--accent-ink); text-decoration: none; }
 .avisos-settings:hover { text-decoration: underline; }
-.avisos-markread { background: transparent; border: 0; color: var(--success); font: 600 12.5px var(--font-body); cursor: pointer; }
+.avisos-actions { display: flex; align-items: center; gap: 16px; }
+.avisos-clear { background: transparent; border: 0; padding: 0; color: var(--text-muted); font: 500 13px var(--font-body); cursor: pointer; }
+.avisos-clear:hover { color: var(--danger); text-decoration: underline; }
 .avisos-group__label { font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint); margin: 0 2px 4px; }
 .avisos-group__label--sep { margin-top: 18px; }
 .avisos-list { display: flex; flex-direction: column; gap: 10px; }

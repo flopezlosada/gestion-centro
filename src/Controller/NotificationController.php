@@ -78,6 +78,27 @@ final class NotificationController extends AbstractController
     }
 
     /**
+     * Deletes the current user's read notifications. The daily purge would clear them after a week
+     * anyway; this is for whoever wants a clean inbox now. Only their own, and never the unread ones.
+     */
+    #[Route('/avisos/borrar-leidos', name: 'notification_clear_read', methods: ['POST'])]
+    public function clearRead(Request $request, #[CurrentUser] User $user, NotificationRepository $notifications): Response
+    {
+        if (!$this->isCsrfTokenValid('notification_clear_read', (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+
+        $deleted = $notifications->deleteReadFor($user);
+        $this->addFlash('success', match ($deleted) {
+            0 => 'No tenías avisos leídos que borrar.',
+            1 => 'Borrado 1 aviso leído.',
+            default => sprintf('Borrados %d avisos leídos.', $deleted),
+        });
+
+        return $this->redirectToRoute('notification_index');
+    }
+
+    /**
      * Opens a single notification: marks it read (once) and forwards the user to what it is about. The
      * destination comes from {@see NotificationLink} — the SAME source the Web Push payload uses — so a
      * push and its inbox row never disagree. Only its recipient may open it.
