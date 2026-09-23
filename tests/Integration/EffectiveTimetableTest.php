@@ -143,6 +143,39 @@ final class EffectiveTimetableTest extends KernelTestCase
     }
 
     /**
+     * The whole-day reading is the per-period one for every period at once: same relocations, same
+     * replaced groups — they share the code, and this pins that they agree.
+     */
+    public function testTheWholeDayAgreesWithEachPeriod(): void
+    {
+        $moved = $this->lective(0, 'E1A', '2IN5');
+        $this->lective(1, 'B2A', '2IN6');
+        $this->lective(2, 'E2B', '1MA2');
+        $plan = $this->approvedPlan();
+        $plan->setSubstitutionScope(SubstitutionScope::GROUPS)->setScopeGroupNames(['B2A']);
+        $this->line($plan, $moved, $this->room('0LC7'), 0, 'E1A');
+        $this->em->flush();
+
+        $day = $this->timetable->forTeacherOn($this->year, $this->teacher, $this->monday);
+
+        self::assertSame([0, 2], array_keys($day), 'the replaced B2A period is gone');
+        self::assertSame('0LC7', $day[0][0]->roomName());
+        self::assertTrue($day[0][0]->isRelocated());
+        self::assertSame('1MA2', $day[2][0]->roomName());
+        foreach ([0, 1, 2] as $slot) {
+            self::assertSame(
+                array_map(static fn ($l): ?string => $l->roomName(), $this->timetable->forTeacherAt($this->year, $this->teacher, $this->monday, $slot)),
+                array_map(static fn ($l): ?string => $l->roomName(), $day[$slot] ?? []),
+            );
+        }
+    }
+
+    public function testAWholeDayWithNoClassesIsEmpty(): void
+    {
+        self::assertSame([], $this->timetable->forTeacherOn($this->year, $this->teacher, $this->monday));
+    }
+
+    /**
      * Persists a lective Monday cell for the test teacher.
      *
      * @param int    $slotIndex the period index

@@ -28,6 +28,7 @@ final readonly class AgendaEntry
     public const string KIND_GUARDIA = 'guardia';
     public const string KIND_MEETING = 'meeting';
     public const string KIND_BREAK_DUTY = 'break_duty';
+    public const string KIND_CLASS = 'class';
 
     private function __construct(
         // One of the self::KIND_* constants.
@@ -41,6 +42,7 @@ final readonly class AgendaEntry
         public ?GuardiaCover $guardia = null,
         public ?Meeting $meeting = null,
         public ?BreakDutyAssignment $breakDuty = null,
+        public ?ClassSession $class = null,
     ) {
     }
 
@@ -134,5 +136,19 @@ final readonly class AgendaEntry
     public static function fromMeeting(Meeting $meeting): self
     {
         return new self(self::KIND_MEETING, $meeting->getStartAt(), false, null, null, null, $meeting);
+    }
+
+    /**
+     * Wraps one of the viewer's own classes of a day, keyed by the instant its period starts (the day
+     * itself without a timetable frame). Never "done", like a guardia: a class is not ticked off.
+     *
+     * @param ClassSession       $class the class
+     * @param \DateTimeImmutable $day   the day it is given
+     *
+     * @return self the agenda entry
+     */
+    public static function fromClass(ClassSession $class, \DateTimeImmutable $day): self
+    {
+        return new self(self::KIND_CLASS, $class->startsAt ?? $day, false, null, null, null, null, null, $class);
     }
 }

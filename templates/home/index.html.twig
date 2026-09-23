@@ -323,7 +323,11 @@
                    dos bloques que además dejaban media pantalla vacía. Lo privado ya no se marca con una
                    caja malva alrededor, sino con la marca de tipo de cada fila. #}
                 <section class="home-section home-section--day">
-                    {{ ui.section_head('Tu día', dayTimeline|length ~ (dayTimeline|length == 1 ? ' cita' : ' citas'), '+ Nuevo', path('personal_event_new')) }}
+                    {#- Las clases cuentan aparte: «9 citas» con seis clases dentro leería como un día lleno de
+                        compromisos cuando es un día normal. -#}
+                    {% set nClases = dayTimeline|filter(r => r.entry.kind == 'class')|length %}
+                    {% set nCitas = dayTimeline|length - nClases %}
+                    {{ ui.section_head('Tu día', (nCitas ~ (nCitas == 1 ? ' cita' : ' citas')) ~ (nClases > 0 ? ' · ' ~ nClases ~ (nClases == 1 ? ' clase' : ' clases') : ''), '+ Nuevo', path('personal_event_new')) }}
 
                     <div class="panel panel--day">
                         {% if dayTimeline is empty %}
@@ -354,6 +358,15 @@
                                     {% set titulo = m.title %}
                                     {% set sub = 'Reunión' ~ (m.place ? ' · ' ~ m.place : '') %}
                                     {% set tipo = 'meeting' %}
+                                {% elseif entry.kind == 'class' %}
+                                    {#- Una clase propia de hoy, con el aula REAL. Lleva al día en el Calendario,
+                                        que es donde está el resto del día; la ficha de la clase llegará con su
+                                        programación. -#}
+                                    {% set cl = entry.class %}
+                                    {% set url = path('calendar_index', { vista: 'dia', fecha: entry.date|date('Y-m-d') }) %}
+                                    {% set titulo = cl.groups|join(', ') ~ (cl.subjects is not empty ? ' · ' ~ cl.subjects|join(', ') : '') %}
+                                    {% set sub = 'Clase' ~ (cl.rooms is not empty ? ' · ' ~ cl.rooms|join(', ') : '') ~ (cl.isRelocated ? ' · aula cambiada' : '') %}
+                                    {% set tipo = 'class' %}
                                 {% else %}
                                     {% set e = entry.event %}
                                     {% set url = path('personal_event_edit', { id: e.id }) %}
@@ -368,6 +381,7 @@
                                     <span class="day-row__time">
                                         {%- if row.startsAt -%}{{ row.startsAt|date('H:i') }}
                                         {%- elseif entry.kind == 'guardia' -%}{{ entry.guardia.slotIndex + 1 }}ª
+                                        {%- elseif entry.kind == 'class' -%}{{ entry.class.ordinal }}ª
                                         {%- else -%}—{%- endif -%}
                                     </span>
                                     <span class="day-row__body">

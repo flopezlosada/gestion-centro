@@ -18,9 +18,10 @@
 
     {% set guardias = day.guardias ?? [] %}
     {% set meetings = day.meetings ?? [] %}
-    {% if day.tasks is empty and day.events is empty and guardias is empty and meetings is empty %}
+    {% set classes = classesByDay[day.date|date('Y-m-d', false)] ?? [] %}
+    {% if day.tasks is empty and day.events is empty and guardias is empty and meetings is empty and classes is empty %}
         <div class="empty-state">
-            <p>No hay guardias, reuniones, tareas ni eventos este día.</p>
+            <p>No hay clases, guardias, reuniones, tareas ni eventos este día.</p>
         </div>
     {% else %}
         <ol class="agenda-list">
@@ -35,6 +36,20 @@
                     <div class="agenda-body">
                         <a href="{{ path('guardia_cover_show', { id: g.id }) }}" class="agenda-title">Guardia{% if g.effectiveRoomName %} · {{ g.effectiveRoomName }}{% endif %}</a>
                         <span class="agenda-meta">Cubres a {{ g.absentTeacher.fullName }}{% if g.groupName %} · {{ g.groupName }}{% endif %}</span>
+                    </div>
+                </li>
+            {% endfor %}
+            {# Tus clases del día, con el aula REAL (la de un plan de espacios aprobado si movió la clase).
+               Marcador LIBRO, otra forma más. Sin enlace todavía: la ficha de cada clase llegará con su
+               programación. #}
+            {% for c in classes %}
+                <li class="agenda-item agenda-item--class">
+                    <span class="agenda-class-marker" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5"/></svg>
+                    </span>
+                    <div class="agenda-body">
+                        <span class="agenda-title">{% if c.startsAt %}{{ c.startsAt|date('H:i') }}{% else %}{{ c.ordinal }}ª hora{% endif %} · {{ c.groups|join(', ') }}{% if c.subjects is not empty %} · {{ c.subjects|join(', ') }}{% endif %}</span>
+                        <span class="agenda-meta">Clase{% if c.rooms is not empty %} · {{ c.rooms|join(', ') }}{% endif %}{% if c.isRelocated %} · aula cambiada{% endif %}</span>
                     </div>
                 </li>
             {% endfor %}
