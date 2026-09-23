@@ -236,6 +236,14 @@
                     {% endif %}
                 {% endif %}
             </div>
+        {% elseif canWriteMinutes %}
+            {# Sin esto, quien levanta el acta entra antes de la hora y no ve ningún campo — parece que
+               falta la función en vez de que aún no toca. Solo para quien la levanta: a los demás
+               convocados no les corresponde rellenarla y no tiene sentido anunciárselo. #}
+            <div class="detail-block">
+                <div class="detail-block__label">{% if meeting.keepsMinutes %}Desarrollo, acuerdos y asistencia{% else %}Asistencia{% endif %}</div>
+                <p class="help">{% if meeting.keepsMinutes %}Podrás rellenar el desarrollo, los acuerdos y la asistencia{% else %}Podrás pasar lista{% endif %} en cuanto pase la hora de la reunión ({{ meeting.startAt|date('d/m/Y H:i') }}).</p>
+            </div>
         {% endif %}
 
         {# ---- Observaciones al acta publicada. El acta no la reescribe quien asiste, pero puede decir que
