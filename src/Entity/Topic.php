@@ -113,4 +113,37 @@ class Topic
     {
         return $this->createdBy;
     }
+
+    /**
+     * Renames it, trimmed and capped, exactly as a teacher's typed name is stored.
+     *
+     * @param string $name the new name
+     */
+    public function rename(string $name): static
+    {
+        $this->name = mb_substr(trim($name), 0, self::MAX_NAME);
+
+        return $this;
+    }
+
+    public function setPosition(int $position): static
+    {
+        $this->position = $position;
+
+        return $this;
+    }
+
+    public function retire(): static
+    {
+        $this->retired = true;
+
+        return $this;
+    }
+
+    public function reinstate(): static
+    {
+        $this->retired = false;
+
+        return $this;
+    }
 }
