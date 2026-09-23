@@ -46,7 +46,7 @@
                         <label class="choice"><input type="checkbox" name="remove_document" value="1"> Quitar el documento</label>
                     </p>
                 {% endif %}
-                <input type="file" name="document">
+                <input type="file" name="document" data-max-bytes="{{ constant('App\\Support\\DocumentUpload::MAX_BYTES') }}">
                 <p class="field-help">{% if cover.taskDocumentPath %}Sube uno nuevo para reemplazarlo, o marca «Quitar».{% else %}Adjunta el documento con la tarea del grupo (opcional).{% endif %}</p>
             </div>
 
@@ -141,4 +141,5 @@
 
 {% block page_scripts %}
     <script src="{{ asset_ver('/js/change-note-presets.js') }}"></script>
+    <script src="{{ asset_ver('/js/file-size-guard.js') }}"></script>
 {% endblock %}

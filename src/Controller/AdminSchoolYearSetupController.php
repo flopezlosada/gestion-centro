@@ -43,8 +43,11 @@ final class AdminSchoolYearSetupController extends AbstractController
     /** Session key holding the roster CSV awaiting confirmation. A claustro is a few KB of text. */
     private const string PENDING_ROSTER = 'pending_roster_csv';
 
-    /** A roster of a whole centre is well under 100 KB; anything larger is a mistake, not a claustro. */
-    private const int MAX_ROSTER_BYTES = 1024 * 1024;
+    /**
+     * A roster of a whole centre is well under 100 KB; anything larger is a mistake, not a claustro.
+     * Public so the template can cite the same number instead of hardcoding it twice.
+     */
+    public const int MAX_ROSTER_BYTES = 1024 * 1024;
 
     #[Route('', name: 'admin_school_year_setup', methods: ['GET'])]
     public function index(

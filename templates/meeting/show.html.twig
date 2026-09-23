@@ -146,7 +146,7 @@
                     <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
                     <label class="classcard__file">
                         <span class="visually-hidden">Archivo del acta</span>
-                        <input type="file" name="acta" required>
+                        <input type="file" name="acta" required data-max-bytes="{{ constant('App\\Support\\DocumentUpload::MAX_BYTES') }}">
                     </label>
                     <button class="btn secondary" type="submit">{{ meeting.hasMinutes ? 'Sustituir por este archivo' : 'Subir un acta hecha aparte' }}</button>
                 </form>
@@ -312,4 +312,8 @@
         {% endif %}
       </aside>{# /detail-aside #}
     </div>{# /detail-cols #}
+{% endblock %}
+
+{% block page_scripts %}
+    <script src="{{ asset_ver('/js/file-size-guard.js') }}"></script>
 {% endblock %}
