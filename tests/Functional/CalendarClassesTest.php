@@ -42,17 +42,19 @@ final class CalendarClassesTest extends WebTestCase
         $this->client->request('GET', '/calendario?vista=dia&fecha=2026-01-12');
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('.agenda-item--class', '13:35 · B1A, B1B · Literatura Universal');
-        self::assertSelectorTextContains('.agenda-item--class', 'Clase · S ACTOS');
+        self::assertSelectorTextContains('.cal-block--class .cal-block__time', '13:35–14:30');
+        self::assertSelectorTextContains('.cal-block--class .cal-block__title', 'B1A, B1B');
+        self::assertSelectorTextContains('.cal-block--class .cal-block__subtitle', 'Literatura Universal');
+        self::assertSelectorTextContains('.cal-block--class .cal-block__subtitle', 'S ACTOS');
     }
 
-    public function testTheWeekViewShowsOneLinePerClass(): void
+    public function testTheWeekViewShowsOneBlockPerClass(): void
     {
         $this->client->loginUser($this->teacher);
         $crawler = $this->client->request('GET', '/calendario?vista=semana&fecha=2026-01-12');
 
-        self::assertCount(1, $crawler->filter('.calendar-class'), 'una clase aunque sean dos celdas');
-        self::assertSelectorTextContains('.calendar-class', 'B1A, B1B · S ACTOS');
+        self::assertCount(1, $crawler->filter('.cal-block--class'), 'una clase aunque sean dos celdas');
+        self::assertSelectorTextContains('.cal-block--class', 'B1A, B1B');
     }
 
     public function testTheMonthViewDoesNotListClasses(): void
@@ -74,6 +76,6 @@ final class CalendarClassesTest extends WebTestCase
         $this->client->loginUser($other);
         $crawler = $this->client->request('GET', '/calendario?vista=dia&fecha=2026-01-12');
 
-        self::assertCount(0, $crawler->filter('.agenda-item--class'));
+        self::assertCount(0, $crawler->filter('.cal-block--class'));
     }
 }

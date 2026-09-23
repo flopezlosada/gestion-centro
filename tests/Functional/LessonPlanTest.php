@@ -146,7 +146,7 @@ final class LessonPlanTest extends WebTestCase
 
         $this->client->request('GET', '/calendario?vista=dia&fecha='.self::FIRST);
 
-        self::assertSelectorTextContains('.agenda-item--class', 'La novela del siglo XX · Examen');
+        self::assertSelectorTextContains('.cal-block--class .cal-block__subtitle', 'La novela del siglo XX · Examen');
     }
 
     /** Una clase puede cerrar un tema y abrir otro: cuenta media clase para cada uno, no la clase entera

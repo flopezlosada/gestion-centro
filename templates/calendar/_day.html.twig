@@ -16,62 +16,20 @@
         <p class="calendar-dayview-flag">Fin de semana</p>
     {% endif %}
 
-    {% set guardias = day.guardias ?? [] %}
-    {% set meetings = day.meetings ?? [] %}
-    {% set classes = classesByDay[day.date|date('Y-m-d', false)] ?? [] %}
-    {% if day.tasks is empty and day.events is empty and guardias is empty and meetings is empty and classes is empty %}
-        <div class="empty-state">
-            <p>No hay clases, guardias, reuniones, tareas ni eventos este día.</p>
-        </div>
-    {% else %}
-        <ol class="agenda-list">
-            {# Guardias primero: son el ancla del día. Marcador ESCUDO, forma distinta de la tarea
-               (círculo) y del evento (cuadrado). Solo llegan las asignadas al propio usuario, y cada una
-               lleva a SU detalle: es donde está la tarea del grupo y el recordatorio de RAICES. #}
-            {% for g in guardias %}
-                <li class="agenda-item agenda-item--guardia">
-                    <span class="agenda-guardia-marker" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>
-                    </span>
-                    <div class="agenda-body">
-                        <a href="{{ path('guardia_cover_show', { id: g.id }) }}" class="agenda-title">Guardia{% if g.effectiveRoomName %} · {{ g.effectiveRoomName }}{% endif %}</a>
-                        <span class="agenda-meta">Cubres a {{ g.absentTeacher.fullName }}{% if g.groupName %} · {{ g.groupName }}{% endif %}</span>
-                    </div>
-                </li>
-            {% endfor %}
-            {# Tus clases del día, con el aula REAL (la de un plan de espacios aprobado si movió la clase).
-               Marcador LIBRO, otra forma más. Cada una lleva a su programación, y si ya está programada se
-               ve aquí mismo qué toca. #}
-            {% for c in classes %}
-                {% set p = plansByClass[day.date|date('Y-m-d', false) ~ '|' ~ c.slotIndex] ?? null %}
+    {# Lo que no va en la rejilla: tareas (solo llevan fecha de entrega, nunca hora), eventos personales
+       —CON hora o sin ella: es donde vive su toque de "hecho", que un bloque no tiene sitio para dar—, y
+       —caso raro— una clase cuyo curso no tiene marco horario importado todavía. #}
+    {% set hasAllDay = day.tasks is not empty or day.events is not empty or day.unscheduledClasses is not empty %}
+    {% if hasAllDay %}
+        <ol class="agenda-list agenda-list--allday">
+            {% for c in day.unscheduledClasses %}
                 <li class="agenda-item agenda-item--class">
                     <span class="agenda-class-marker" aria-hidden="true">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5"/></svg>
                     </span>
                     <div class="agenda-body">
-                        <a href="{{ path('lesson_plan', { fecha: day.date|date('Y-m-d', false), tramo: c.slotIndex }) }}" class="agenda-title">{% if c.startsAt %}{{ c.startsAt|date('H:i') }}{% else %}{{ c.ordinal }}ª hora{% endif %} · {{ c.groups|join(', ') }}{% if c.subjects is not empty %} · {{ c.subjects|join(', ') }}{% endif %}</a>
-                        <span class="agenda-meta">Clase{% if c.rooms is not empty %} · {{ c.rooms|join(', ') }}{% endif %}{% if c.isRelocated %} · aula cambiada{% endif %}
-                            {%- if p %}
-                                {%- set entries = [] %}
-                                {%- for e in p.topics %}
-                                    {%- set entries = entries|merge([[e.topic ? e.topic.name : null, e.activity ? e.activity.label : null, e.outcome ? e.outcome.label : null]|filter(v => v)|join(' · ')]) %}
-                                {%- endfor %}
-                                · {{ entries|filter(v => v)|join(' → ') ?: 'programada' }}
-                            {%- else %} · sin programar{% endif %}</span>
-                    </div>
-                </li>
-            {% endfor %}
-            {# Reuniones convocadas: marcador PERSONAS, otra forma más (escudo=guardia, círculo=tarea,
-               cuadrado=evento). Solo llegan las que conciernen al usuario. Con hora, que es lo que hay
-               que saber para no llegar tarde. #}
-            {% for m in meetings %}
-                <li class="agenda-item agenda-item--meeting">
-                    <span class="agenda-meeting-marker" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 19v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1"/><circle cx="9" cy="7" r="3"/><path d="M22 19v-1a4 4 0 0 0-3-3.87"/><path d="M16 3.13A4 4 0 0 1 19 7a4 4 0 0 1-.75 2.33"/></svg>
-                    </span>
-                    <div class="agenda-body">
-                        <a href="{{ path('meeting_show', { id: m.id }) }}" class="agenda-title">{{ m.startAt|date('H:i') }} · {{ m.title }}</a>
-                        <span class="agenda-meta">Reunión{% if m.place %} · {{ m.place }}{% endif %}{% if m.project %} · {{ m.project.name }}{% endif %}</span>
+                        <a href="{{ path('lesson_plan', { fecha: day.date|date('Y-m-d', false), tramo: c.slotIndex }) }}" class="agenda-title">{{ c.ordinal }}ª hora · {{ c.groups|join(', ') }}{% if c.subjects is not empty %} · {{ c.subjects|join(', ') }}{% endif %}</a>
+                        <span class="agenda-meta">Clase · sin horario del curso</span>
                     </div>
                 </li>
             {% endfor %}
@@ -86,5 +44,40 @@
                 {{ taskUi.event_item(event, day.date) }}
             {% endfor %}
         </ol>
+    {% endif %}
+
+    {% if day.timeline is empty %}
+        {% if not hasAllDay %}
+            <div class="empty-state">
+                <p>No hay nada este día.</p>
+            </div>
+        {% endif %}
+    {% else %}
+        {# La altura se fija aquí, en px, porque el top/height en % de cada hora y cada bloque solo tiene
+           sentido si el contenedor mide algo concreto — si no, un % de "lo que ocupe el contenido" es
+           circular. --cal-hours la usa el CSS para el alto real (ver .cal-timeline__axis/__grid). #}
+        <div class="cal-timeline" style="--cal-hours: {{ day.hourMarks|length }}">
+            <div class="cal-timeline__axis" aria-hidden="true">
+                {% for h in day.hourMarks %}
+                    <span class="cal-timeline__hour" style="top: {{ h.top }}%">{{ h.label }}</span>
+                {% endfor %}
+            </div>
+            <div class="cal-timeline__grid">
+                {% for h in day.hourMarks %}
+                    <span class="cal-timeline__gridline" style="top: {{ h.top }}%"></span>
+                {% endfor %}
+                {% if day.nowTop is not null %}
+                    <span class="cal-timeline__now" style="top: {{ day.nowTop }}%"></span>
+                {% endif %}
+                {% for pos in day.timeline %}
+                    {% set b = pos.block %}
+                    <a class="cal-block cal-block--{{ b.kind }} {{ b.colorClass }}{{ b.flagged ? ' is-flagged' }}" style="top: {{ pos.top }}%; height: {{ pos.height }}%; left: {{ pos.left }}%; width: {{ pos.width }}%" href="{{ b.href }}">
+                        <span class="cal-block__time">{{ b.startsAt|date('H:i') }}–{{ b.endsAt|date('H:i') }}</span>
+                        <span class="cal-block__title">{{ b.title }}</span>
+                        {% if b.subtitle %}<span class="cal-block__subtitle">{{ b.subtitle }}</span>{% endif %}
+                    </a>
+                {% endfor %}
+            </div>
+        </div>
     {% endif %}
 </div>
