@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Agenda\MyClasses;
 use App\Entity\AcademicYear;
 use App\Entity\NonLectiveDay;
 use App\Entity\GuardiaCover;
@@ -76,7 +77,7 @@ final class CalendarController extends AbstractController
      * @return Response the rendered calendar page
      */
     #[Route('/calendario', name: 'calendar_index', methods: ['GET'])]
-    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility, NonLectiveDayRepository $nonLectiveDays, SchoolCalendar $schoolCalendar, AcademicYearRepository $academicYears, PersonalEventRepository $personalEvents, GuardiaCoverRepository $covers, MeetingRepository $meetings): Response
+    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility, NonLectiveDayRepository $nonLectiveDays, SchoolCalendar $schoolCalendar, AcademicYearRepository $academicYears, PersonalEventRepository $personalEvents, GuardiaCoverRepository $covers, MeetingRepository $meetings, MyClasses $myClasses): Response
     {
         // Explicit zone because the grid parses a "YYYY-MM-DD" from the query string into a midnight;
         // it is the SAME zone PHP now defaults to ({@see \App\Kernel}), so this no longer decides
@@ -124,6 +125,9 @@ final class CalendarController extends AbstractController
             'todayDate' => $today->format('Y-m-d'),
             // Guardias por día (Y-m-d → GuardiaCover[]); las vistas de rejilla las miran por fecha de celda.
             'guardiasByDay' => $guardiasByDay,
+            // Las clases del propio docente (Y-m-d → ClassSession[]), solo en día y semana: en el mes serían
+            // treinta por celda y taparían lo demás, y en el año no caben. Quien no da clase no tiene ninguna.
+            'classesByDay' => \in_array($view, ['dia', 'semana'], true) ? $myClasses->between($user, $rangeStart, $rangeEnd) : [],
             ...$model,
         ]);
     }

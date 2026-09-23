@@ -2100,6 +2100,8 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
    gente convocada). Mismo tamaño que el escudo para que la columna de marcadores quede alineada. */
 .agenda-meeting-marker { flex: none; width: 22px; height: 22px; margin-top: 1px; display: grid; place-items: center; color: var(--text-muted); }
 .agenda-meeting-marker svg { width: 20px; height: 20px; }
+.agenda-class-marker { flex: none; width: 22px; height: 22px; margin-top: 1px; display: grid; place-items: center; color: var(--text-muted); }
+.agenda-class-marker svg { width: 20px; height: 20px; }
 .agenda-item--meeting .agenda-title { font-weight: 600; }
 /* Campanita de "este evento avisa": va dentro de .agenda-meta, así que hereda su color apagado; solo
    necesita alinearse ópticamente con el texto de la línea. */
@@ -2195,6 +2197,9 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 .calendar-dot--event { background: var(--event-color, var(--text-muted)); border-radius: 2px; }
 /* Guardias en la rejilla del calendario: mismo patrón compacto que eventos, pero marcador ESCUDO (acento). */
 .calendar-guardias { list-style: none; margin: 3px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+/* Las clases del docente en la semana: una línea tenue por clase, por debajo en peso de lo que hay que atender. */
+.calendar-classes { list-style: none; margin: 3px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.calendar-class { font-size: 11.5px; line-height: 1.25; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .calendar-guardia { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: var(--radius-sm); text-decoration: none; color: var(--text); font-size: 12.5px; line-height: 1.25; }
 .calendar-guardia:hover { background: var(--surface-sunken); }
 .calendar-guardia-icon { flex: none; display: inline-flex; color: var(--accent-ink); }
@@ -2315,6 +2320,8 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
     .calendar-daynum { justify-content: center; font-size: 12.5px; }
     /* Fuera de la vista compacta: textos largos y el alta rápida (se hace desde la vista de día). */
     .calendar-nonlective, .calendar-daynum .day-add, .calendar-task-title { display: none; }
+    /* Las clases no caben como puntos sin perder lo que dicen: en el móvil se ven en la vista de día. */
+    .calendar-classes { display: none; }
     /* Tareas y eventos como una fila de puntos centrada. */
     .calendar-tasks, .calendar-events, .calendar-guardias { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 4px; margin: 0; }
     .calendar-task, .calendar-event, .calendar-guardia { padding: 0; gap: 0; }
@@ -2851,6 +2858,8 @@ tr.is-not-covered { background: var(--danger-weak); }
 .day-row__kind--guardia { border-radius: 999px; background: var(--accent); }
 .day-row__kind--meeting { background: var(--review); }
 .day-row__kind--personal { background: var(--personal); }
+/* La clase: un filete hueco y tenue, lo más callado de la línea — es la rutina del día, no algo que atender. */
+.day-row__kind--class { background: transparent; box-shadow: inset 0 0 0 1.5px var(--text-muted); }
 /* Lo ya pasado no desaparece —eso se lee como "no lo tenías"— pero se aparta del camino. */
 .day-row.is-past { opacity: .6; }
 .day-row.is-past .day-row__time { text-decoration: line-through; }

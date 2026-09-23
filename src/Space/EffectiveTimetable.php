@@ -7,6 +7,7 @@ namespace App\Space;
 use App\Entity\AcademicYear;
 use App\Entity\ScheduleEntry;
 use App\Entity\SpacePlan;
+use App\Entity\SpacePlanAssignment;
 use App\Entity\User;
 use App\Enum\Weekday;
 use App\Repository\ScheduleEntryRepository;
@@ -67,17 +68,68 @@ final class EffectiveTimetable
             return array_map(static fn (ScheduleEntry $entry): EffectiveLesson => new EffectiveLesson($entry), array_values($entries));
         }
 
+        return $this->resolve(array_values($entries), $date, $plans, [$slotIndex => $this->assignments->inForceAt($date, $slotIndex)]);
+    }
+
+    /**
+     * The same as {@see forTeacherAt()} for a teacher's whole day, in at most three queries however many
+     * periods they teach — for the screens that show a teacher their day or their week ("Mis clases"),
+     * which would otherwise ask the database per period.
+     *
+     * @param AcademicYear       $year    the course the date falls into (supplies the timetable)
+     * @param User               $teacher the teacher
+     * @param \DateTimeImmutable $date    the day
+     *
+     * @return array<int, list<EffectiveLesson>> period index → the lessons that period, earliest period first
+     */
+    public function forTeacherOn(AcademicYear $year, User $teacher, \DateTimeImmutable $date): array
+    {
+        $entries = $this->schedule->lectiveDayFor($year, $teacher, Weekday::from((int) $date->format('N')));
+        if ([] === $entries) {
+            return [];
+        }
+
+        $plans = new ApprovedPlans($this->plans->approvedCovering($date));
+        $lessons = $plans->isEmpty()
+            ? array_map(static fn (ScheduleEntry $entry): EffectiveLesson => new EffectiveLesson($entry), array_values($entries))
+            : $this->resolve(array_values($entries), $date, $plans, $this->assignments->inForceBySlotOn($date));
+
+        $bySlot = [];
+        foreach ($lessons as $lesson) {
+            $bySlot[$lesson->entry->getSlotIndex()][] = $lesson;
+        }
+        ksort($bySlot);
+
+        return $bySlot;
+    }
+
+    /**
+     * Applies the approved plans of a day to timetable cells: drops the lessons a plan replaces (exam
+     * week) and points the relocated ones at their new room. Shared by the per-period and the per-day
+     * readings so the two can never disagree about a lesson.
+     *
+     * @param list<ScheduleEntry>                            $entries the timetable cells
+     * @param \DateTimeImmutable                             $date    the day
+     * @param ApprovedPlans                                  $plans   the approved plans covering it
+     * @param array<int, list<SpacePlanAssignment>> $lines   period index → the plan lines in force then
+     *
+     * @return list<EffectiveLesson> the lessons that really happen, in the cells' order
+     */
+    private function resolve(array $entries, \DateTimeImmutable $date, ApprovedPlans $plans, array $lines): array
+    {
         $movedTo = [];
-        foreach ($this->assignments->inForceAt($date, $slotIndex) as $line) {
-            $sourceId = $line->getSourceEntry()?->getId();
-            if (null !== $sourceId) {
-                $movedTo[$sourceId] = $line;
+        foreach ($lines as $slotLines) {
+            foreach ($slotLines as $line) {
+                $sourceId = $line->getSourceEntry()?->getId();
+                if (null !== $sourceId) {
+                    $movedTo[$sourceId] = $line;
+                }
             }
         }
 
         $lessons = [];
         foreach ($entries as $entry) {
-            if ($plans->replaceTimetableFor($date, $slotIndex, $entry->getGroupName())) {
+            if ($plans->replaceTimetableFor($date, $entry->getSlotIndex(), $entry->getGroupName())) {
                 continue;
             }
 

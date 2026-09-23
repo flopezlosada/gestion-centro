@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Home;
 
 use App\Agenda\AgendaEntry;
+use App\Agenda\ClassSession;
+use App\Agenda\MyClasses;
 use App\Agenda\PersonalAgenda;
 use App\Dashboard\CentreDashboard;
 use App\Entity\AcademicYear;
@@ -76,6 +78,7 @@ final readonly class HomeDashboard
         private BreakDutyGapRepository $breakGaps,
         private TimeSlotRepository $timeSlots,
         private SchoolCalendar $calendar,
+        private MyClasses $myClasses,
     ) {
     }
 
@@ -161,7 +164,7 @@ final readonly class HomeDashboard
             'guardiasTodayCount' => $guardias['todayCount'],
             'upcomingGuardia' => $guardias['upcomingGuardia'],
             'breakDutiesToday' => $breakDuties,
-            'dayTimeline' => $this->dayTimeline($guardias['todayItems'], $breakDuties, $buckets['today'], $now),
+            'dayTimeline' => $this->dayTimeline($guardias['todayItems'], $breakDuties, $buckets['today'], $now, $this->myClasses->on($user, $today)),
             'todos' => \array_slice($ahead, 0, self::TODOS_SHOWN),
             // Todo lo que hay por hacer, no lo que se pinta: es la cifra de la cabecera y del pie, y los
             // dos llevan a la lista donde está entero.
@@ -202,10 +205,11 @@ final readonly class HomeDashboard
      * @param list<array{duty: BreakDutyAssignment, entry: AgendaEntry, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable}>      $breakItems   today's recreos on the rota, as {@see breakDutiesOn()} reads them
      * @param AgendaEntry[]                                                                                                              $todayEntries the agenda's "today" bucket (meetings and events are taken from it)
      * @param \DateTimeImmutable                                                                                                         $now          the current instant
+     * @param list<ClassSession>                                                                                                         $classes      the viewer's own classes today ({@see MyClasses})
      *
      * @return list<array{entry: AgendaEntry, startsAt: ?\DateTimeImmutable, minutesUntil: ?int, state: string}> the day's rows, earliest first
      */
-    private function dayTimeline(array $guardiaItems, array $breakItems, array $todayEntries, \DateTimeImmutable $now): array
+    private function dayTimeline(array $guardiaItems, array $breakItems, array $todayEntries, \DateTimeImmutable $now, array $classes): array
     {
         $minutesUntil = static fn (?\DateTimeImmutable $startsAt): ?int => null !== $startsAt && $startsAt > $now
             ? intdiv($startsAt->getTimestamp() - $now->getTimestamp(), 60)
@@ -229,6 +233,16 @@ final readonly class HomeDashboard
                 'startsAt' => $item['startsAt'],
                 'minutesUntil' => $minutesUntil($item['startsAt']),
                 'over' => null !== $item['endsAt'] && $item['endsAt'] < $now,
+            ];
+        }
+        // Las clases propias: lo que más ocupa el día de un docente y lo que no salía en ningún sitio.
+        // Terminan cuando lo dice el marco horario; sin él, como el recreo, no se dan por pasadas.
+        foreach ($classes as $class) {
+            $rows[] = [
+                'entry' => AgendaEntry::fromClass($class, $now->setTime(0, 0)),
+                'startsAt' => $class->startsAt,
+                'minutesUntil' => $minutesUntil($class->startsAt),
+                'over' => null !== $class->endsAt && $class->endsAt < $now,
             ];
         }
         foreach ($todayEntries as $entry) {
