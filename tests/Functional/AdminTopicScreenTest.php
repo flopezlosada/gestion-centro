@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
+use App\Entity\Department;
 use App\Entity\Role;
 use App\Entity\Topic;
 use App\Entity\User;
@@ -29,9 +30,14 @@ final class AdminTopicScreenTest extends WebTestCase
 
     private function headOfDepartment(): User
     {
+        // OrganizationHierarchy::commandedDepartment() devuelve el DEPARTAMENTO PROPIO de quien tiene el
+        // rol con rango por departamento, no un booleano: sin unidad asignada, un jefe de departamento de
+        // pega no manda ningún departamento y el guardián lo rechazaría igual que a un docente cualquiera.
+        $department = (new Department())->setCode('dept_'.uniqid())->setName('Departamento de prueba');
+        $this->em->persist($department);
         $role = (new Role())->setCode('head_dept_'.uniqid())->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
         $this->em->persist($role);
-        $user = (new User())->setFullName('Jefa Depto')->setEmail('jefa.depto.'.uniqid().'@educa.madrid.org')->addAssignedRole($role);
+        $user = (new User())->setFullName('Jefa Depto')->setEmail('jefa.depto.'.uniqid().'@educa.madrid.org')->setUnit($department)->addAssignedRole($role);
         $this->em->persist($user);
 
         return $user;
@@ -49,8 +55,9 @@ final class AdminTopicScreenTest extends WebTestCase
 
     public function testAPlainTeacherCannotReachTheScreen(): void
     {
-        $this->client->loginUser($this->plainTeacher());
+        $teacher = $this->plainTeacher();
         $this->em->flush();
+        $this->client->loginUser($teacher);
 
         $this->client->request('GET', '/admin/temas/Matem%C3%A1ticas/eso3');
 
