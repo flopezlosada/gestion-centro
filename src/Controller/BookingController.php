@@ -73,18 +73,60 @@ final class BookingController extends AbstractController
         // caía a «1ª a 6ª hora» seguidas — una numeración que NO es la del centro, donde los tramos 3 y 6
         // son los recreos.
         $periods = $timeSlots->lectiveTimesWithFallback($year);
+        $dayBookings = $bookings->findForDay($day);
+
+        // Solo lo que se puede reservar: un aula retirada del catálogo, una cámara rota o un espacio que
+        // el centro no abre a reservas (laboratorios, gimnasio, pistas) no se ofrecen.
+        $allRooms = $rooms->findReservable();
+        $allMaterials = $materials->findActive();
+
+        // La hora es un filtro aparte, no un campo más del formulario: sin ella no hay forma de saber qué
+        // está libre (un aula puede estar cogida a 1ª y libre a 3ª), así que hasta que se elige se ve el
+        // catálogo entero, igual que antes. Se resuelve por GET, como la fecha, para que filtrar funcione
+        // sin JavaScript.
+        $selectedSlot = $request->query->has('tramo') && '' !== $request->query->get('tramo')
+            ? $request->query->getInt('tramo')
+            : null;
+        // Un valor tecleado a mano que no sea un tramo real (negativo, o texto que getInt() lee como 0)
+        // no filtra nada en vez de fingir una hora que no existe. Los índices no son consecutivos (los
+        // recreos también ocupan uno), así que se comprueba pertenencia y no un rango.
+        $validSlots = [] !== $periods['slots'] ? array_keys($periods['slots']) : range(0, 5);
+        if (null !== $selectedSlot && !\in_array($selectedSlot, $validSlots, true)) {
+            $selectedSlot = null;
+        }
+
+        $freeRooms = $allRooms;
+        $freeMaterials = $allMaterials;
+        if (null !== $selectedSlot) {
+            $bookedRoomIds = [];
+            $bookedMaterialIds = [];
+            foreach ($dayBookings as $booking) {
+                if ($booking->getSlotIndex() !== $selectedSlot) {
+                    continue;
+                }
+                if (null !== $booking->getRoom()) {
+                    $bookedRoomIds[$booking->getRoom()->getId()] = true;
+                }
+                if (null !== $booking->getMaterial()) {
+                    $bookedMaterialIds[$booking->getMaterial()->getId()] = true;
+                }
+            }
+            $freeRooms = array_values(array_filter($allRooms, static fn (Room $r): bool => !isset($bookedRoomIds[$r->getId()])));
+            $freeMaterials = array_values(array_filter($allMaterials, static fn (Material $m): bool => !isset($bookedMaterialIds[$m->getId()])));
+        }
 
         return $this->render('booking/index.html.twig', [
             'day' => $day,
             // Un día ya pasado se puede MIRAR (para eso está el selector), pero no se reserva: la pantalla
             // esconde el formulario y {@see create()} rechaza el POST, para que las dos cosas no discrepen.
             'isPast' => $day < new \DateTimeImmutable('today'),
-            'bookings' => $bookings->findForDay($day),
+            'bookings' => $dayBookings,
             'mine' => $bookings->findUpcomingFor($user, new \DateTimeImmutable('today')),
-            // Solo lo que se puede reservar: un aula retirada del catálogo, una cámara rota o un espacio que
-            // el centro no abre a reservas (laboratorios, gimnasio, pistas) no se ofrecen.
-            'rooms' => $rooms->findReservable(),
-            'materials' => $materials->findActive(),
+            // El catálogo entero: decide si hay algo que reservar HOY, sea cual sea la hora.
+            'hasCatalogue' => [] !== $allRooms || [] !== $allMaterials,
+            'selectedSlot' => $selectedSlot,
+            'rooms' => $freeRooms,
+            'materials' => $freeMaterials,
             'slotTimes' => $periods['slots'],
             'periodsBorrowedFrom' => $periods['borrowedFrom'],
         ]);

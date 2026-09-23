@@ -100,7 +100,9 @@ final class BookingTest extends WebTestCase
      */
     private function book(string $resource, string $day, int $slot, string $purpose = 'Grabación del podcast'): void
     {
-        $crawler = $this->client->request('GET', '/reservas?fecha='.$day);
+        // La hora hay que elegirla ANTES de que el formulario aparezca: sin ?tramo=, la pantalla solo
+        // ofrece el selector de hora, no el de recurso — ver templates/booking/index.html.twig.
+        $crawler = $this->client->request('GET', '/reservas?fecha='.$day.'&tramo='.$slot);
         $token = (string) $crawler->filter('form[action="/reservas/nueva"] input[name="_token"]')->attr('value');
         $this->client->request('POST', '/reservas/nueva', [
             '_token' => $token,
@@ -144,12 +146,31 @@ final class BookingTest extends WebTestCase
         $this->em->flush();
         $key = 'material:'.$radio->getId();
 
+        // El token se saca ANTES de la primera reserva y se reutiliza para las dos peticiones: es la
+        // misma sesión de navegador (loginUser() no la reinicia) y así se reproduce la carrera de
+        // verdad — las dos personas cargaron el formulario viendo el recurso libre, y una gana. Sacar
+        // el token de la segunda persona DESPUÉS de la primera reserva ya no valdría: a esa hora el
+        // recurso ha dejado de ofrecerse y el formulario no se pinta (ver el filtro de disponibilidad).
         $this->client->loginUser($first);
-        $this->book($key, self::futureDay(), 2, 'Podcast');
+        $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay().'&tramo=2');
+        $token = (string) $crawler->filter('form[action="/reservas/nueva"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', '/reservas/nueva', [
+            '_token' => $token,
+            'fecha' => self::futureDay(),
+            'tramo' => '2',
+            'recurso' => $key,
+            'motivo' => 'Podcast',
+        ]);
         self::assertResponseRedirects();
 
         $this->client->loginUser($second);
-        $this->book($key, self::futureDay(), 2, 'Otra cosa');
+        $this->client->request('POST', '/reservas/nueva', [
+            '_token' => $token,
+            'fecha' => self::futureDay(),
+            'tramo' => '2',
+            'recurso' => $key,
+            'motivo' => 'Otra cosa',
+        ]);
         self::assertResponseRedirects();
 
         $this->em->clear();
@@ -190,7 +211,7 @@ final class BookingTest extends WebTestCase
         $this->em->flush();
 
         $this->client->loginUser($teacher);
-        $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay());
+        $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay().'&tramo=2');
 
         self::assertStringNotContainsString('room:'.$gym->getId(), $crawler->filter('#recurso')->html());
         self::assertStringContainsString('room:'.$hall->getId(), $crawler->filter('#recurso')->html());
@@ -223,7 +244,7 @@ final class BookingTest extends WebTestCase
         self::assertSelectorTextContains('body', 'Este día ya ha pasado');
 
         // Y a pelo tampoco, con un token válido tomado de una pantalla que sí lo pinta.
-        $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay());
+        $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay().'&tramo=2');
         $this->client->request('POST', '/reservas/nueva', [
             '_token' => (string) $crawler->filter('form[action="/reservas/nueva"] input[name="_token"]')->attr('value'),
             'fecha' => $yesterday,
@@ -330,7 +351,10 @@ final class BookingTest extends WebTestCase
 
         self::assertResponseIsSuccessful();
         $offered = $crawler->filter('#tramo option')->each(static fn ($option): string => (string) $option->attr('value'));
-        self::assertSame(['0', '1', '2', '4', '5', '7'], $offered, 'los seis tramos lectivos, con los recreos fuera');
+        // El primer valor es el hueco "— Elige la hora —": sin elegirla no hay forma de saber qué está
+        // libre, así que el desplegable de recursos no se ofrece hasta entonces (ver el filtro de
+        // disponibilidad de esta misma pantalla).
+        self::assertSame(['', '0', '1', '2', '4', '5', '7'], $offered, 'los seis tramos lectivos, con los recreos fuera');
 
         // Con su hora de reloj, que es lo que identifica el tramo cuando el índice no es su ordinal.
         self::assertStringContainsString('13:35', $crawler->filter('#tramo')->html());
@@ -352,7 +376,7 @@ final class BookingTest extends WebTestCase
         $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay());
 
         $offered = $crawler->filter('#tramo option')->each(static fn ($option): string => (string) $option->attr('value'));
-        self::assertSame(['0', '1', '2', '3', '4', '5'], $offered);
+        self::assertSame(['', '0', '1', '2', '3', '4', '5'], $offered);
         self::assertSelectorTextContains('body', 'estas seis horas son genéricas');
     }
 

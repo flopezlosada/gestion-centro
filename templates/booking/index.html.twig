@@ -94,73 +94,86 @@
            evita el viaje en balde. #}
         {% if isPast %}
             <p class="muted">Este día ya ha pasado. Para reservar, vuelve a <a href="{{ path('booking_index') }}">hoy</a> o elige un día por venir.</p>
-        {% elseif rooms is empty and materials is empty %}
+        {% elseif not hasCatalogue %}
             {# Con el permiso, el enlace directo a donde se arregla; sin él, el nombre de la pantalla, para
                que quien lo lea sepa a quién pedirlo en vez de encontrarse un 403. #}
             {% set puedeEspacios = is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ESPACIOS')) %}
             <p class="muted">No hay nada que reservar todavía. El material lo da de alta administración, en «Material»; los espacios se abren a reservas {% if puedeEspacios %}en <a href="{{ path('space_room_classify') }}">Clasificar los espacios</a>{% else %}desde <strong>Espacios → Catálogo</strong>{% endif %}.</p>
         {% else %}
-            <form method="post" action="{{ path('booking_new') }}" class="stack-form">
-                <input type="hidden" name="_token" value="{{ csrf_token('booking_new') }}">
+            {# La hora se elige APARTE y por GET, como la fecha: sin ella no hay forma de saber qué está
+               libre (un aula puede estar cogida a 1ª y libre a 3ª), así que se resuelve antes de ofrecer
+               el desplegable de recursos y no dentro del mismo formulario. Funciona sin JavaScript. #}
+            <form method="get" action="{{ path('booking_index') }}" class="field">
                 <input type="hidden" name="fecha" value="{{ diaStr }}">
-
-                <div class="field">
-                    <label for="recurso">¿Qué necesitas?</label>
-                    <select id="recurso" name="recurso" required>
-                        <option value="">— Elige —</option>
-                        {% if materials is not empty %}
-                            <optgroup label="Material">
-                                {% for m in materials %}<option value="material:{{ m.id }}">{{ m.name }}{% if m.keptAt %} ({{ m.keptAt }}){% endif %}</option>{% endfor %}
-                            </optgroup>
-                        {% endif %}
-                        {% if rooms is not empty %}
-                            <optgroup label="Espacios">
-                                {% for r in rooms %}<option value="room:{{ r.id }}">{{ r.name }}</option>{% endfor %}
-                            </optgroup>
-                        {% endif %}
-                    </select>
-                </div>
-
-                <div class="field">
-                    <label for="tramo">¿A qué hora?</label>
-                    <select id="tramo" name="tramo" required>
-                        {% if slotTimes is empty %}
-                            {# Ningún curso tiene marco horario todavía (base recién montada, sin un solo
-                               import): se ofrecen seis horas seguidas para que la pantalla sirva, y el aviso
-                               de debajo advierte de que puede que no sean vuestros tramos. En cuanto haya UN
-                               curso con marco, esta rama no se usa — BookingController toma prestado el del
-                               último curso que lo tenga, que es lo que mantiene los tramos en su sitio. #}
-                            {% for i in 0..5 %}<option value="{{ i }}">{{ i + 1 }}ª hora</option>{% endfor %}
-                        {% else %}
-                            {# La etiqueta va por ORDEN en la lista y no por índice + 1: los recreos también
-                               ocupan índice, así que en el centro la sexta clase es el tramo 7 y «8ª hora»
-                               no le diría nada a nadie. La hora de reloj es lo que la identifica. #}
-                            {% for index, times in slotTimes %}
-                                <option value="{{ index }}">{{ loop.index }}ª hora · {{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}</option>
-                            {% endfor %}
-                        {% endif %}
-                    </select>
-                    {% if periodsBorrowedFrom %}
-                        <p class="help">Horas del curso {{ periodsBorrowedFrom }}: el horario de este curso todavía no está importado. Se guarda el tramo, no la hora, así que si el horario nuevo mueve los timbres las reservas ya hechas se verán con las horas nuevas.</p>
-                    {% elseif slotTimes is empty %}
-                        <p class="help">Todavía no hay ningún horario importado, así que estas seis horas son genéricas y puede que no coincidan con los tramos del centro.</p>
+                <label for="tramo">¿A qué hora?</label>
+                <select id="tramo" name="tramo" onchange="this.form.submit()">
+                    <option value=""{{ selectedSlot is null ? ' selected' }}>— Elige la hora para ver qué está libre —</option>
+                    {% if slotTimes is empty %}
+                        {# Ningún curso tiene marco horario todavía (base recién montada, sin un solo
+                           import): se ofrecen seis horas seguidas para que la pantalla sirva, y el aviso
+                           de debajo advierte de que puede que no sean vuestros tramos. En cuanto haya UN
+                           curso con marco, esta rama no se usa — BookingController toma prestado el del
+                           último curso que lo tenga, que es lo que mantiene los tramos en su sitio. #}
+                        {% for i in 0..5 %}<option value="{{ i }}"{{ selectedSlot is same as(i) ? ' selected' }}>{{ i + 1 }}ª hora</option>{% endfor %}
+                    {% else %}
+                        {# La etiqueta va por ORDEN en la lista y no por índice + 1: los recreos también
+                           ocupan índice, así que en el centro la sexta clase es el tramo 7 y «8ª hora»
+                           no le diría nada a nadie. La hora de reloj es lo que la identifica. #}
+                        {% for index, times in slotTimes %}
+                            <option value="{{ index }}"{{ selectedSlot is same as(index) ? ' selected' }}>{{ loop.index }}ª hora · {{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}</option>
+                        {% endfor %}
                     {% endif %}
-                </div>
-
-                <div class="field">
-                    <label for="motivo">¿Para qué?</label>
-                    <input type="text" id="motivo" name="motivo" maxlength="200" required placeholder="Grabación del podcast, examen de recuperación…">
-                </div>
-
-                <div class="field">
-                    <label for="grupo">Grupo <span class="muted">(si es para uno)</span></label>
-                    <input type="text" id="grupo" name="grupo" maxlength="40" placeholder="2ºB">
-                </div>
-
-                <div class="form-actions">
-                    <button type="submit" class="btn">Reservar</button>
-                </div>
+                </select>
+                <noscript><button type="submit" class="btn secondary">Ver</button></noscript>
+                {% if periodsBorrowedFrom %}
+                    <p class="help">Horas del curso {{ periodsBorrowedFrom }}: el horario de este curso todavía no está importado. Se guarda el tramo, no la hora, así que si el horario nuevo mueve los timbres las reservas ya hechas se verán con las horas nuevas.</p>
+                {% elseif slotTimes is empty %}
+                    <p class="help">Todavía no hay ningún horario importado, así que estas seis horas son genéricas y puede que no coincidan con los tramos del centro.</p>
+                {% endif %}
             </form>
+
+            {% if selectedSlot is null %}
+                <p class="muted">Elige la hora de arriba para ver qué aulas y material están libres.</p>
+            {% elseif rooms is empty and materials is empty %}
+                <p class="muted">A esa hora no queda nada libre. Prueba con otra.</p>
+            {% else %}
+                <form method="post" action="{{ path('booking_new') }}" class="stack-form">
+                    <input type="hidden" name="_token" value="{{ csrf_token('booking_new') }}">
+                    <input type="hidden" name="fecha" value="{{ diaStr }}">
+                    <input type="hidden" name="tramo" value="{{ selectedSlot }}">
+
+                    <div class="field">
+                        <label for="recurso">¿Qué necesitas?</label>
+                        <select id="recurso" name="recurso" required>
+                            <option value="">— Elige —</option>
+                            {% if materials is not empty %}
+                                <optgroup label="Material">
+                                    {% for m in materials %}<option value="material:{{ m.id }}">{{ m.name }}{% if m.keptAt %} ({{ m.keptAt }}){% endif %}</option>{% endfor %}
+                                </optgroup>
+                            {% endif %}
+                            {% if rooms is not empty %}
+                                <optgroup label="Espacios">
+                                    {% for r in rooms %}<option value="room:{{ r.id }}">{{ r.name }}</option>{% endfor %}
+                                </optgroup>
+                            {% endif %}
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="motivo">¿Para qué?</label>
+                        <input type="text" id="motivo" name="motivo" maxlength="200" required placeholder="Grabación del podcast, examen de recuperación…">
+                    </div>
+
+                    <div class="field">
+                        <label for="grupo">Grupo <span class="muted">(si es para uno)</span></label>
+                        <input type="text" id="grupo" name="grupo" maxlength="40" placeholder="2ºB">
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn">Reservar</button>
+                    </div>
+                </form>
+            {% endif %}
         {% endif %}
     </div>
 
