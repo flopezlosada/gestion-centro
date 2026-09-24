@@ -2336,7 +2336,7 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
    líneas de texto. El % de arriba/alto de cada hora y cada bloque viene calculado en PHP
    (DayTimeline::layout) sobre una ventana de horas — el único trabajo del CSS es darle a esa ventana una
    altura real en px (--cal-hours × --cal-hour-h), porque un % solo tiene sentido contra un alto concreto. */
-:root { --cal-hour-h: 56px; }
+:root { --cal-hour-h: 80px; }
 .cal-timeline { display: flex; }
 .cal-timeline__axis {
     flex: none; width: 52px; position: relative;
@@ -2379,7 +2379,8 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 
 /* Semana: siete columnas compartiendo un único eje de horas. Cada bloque lleva lo mismo que el de la
    vista de día —hora, título y subtítulo— pero más apretado, porque una columna mide un séptimo del
-   ancho: el título se queda en dos líneas y lo que no quepa en un bloque corto se recorta. */
+   ancho: el título en una línea (el tooltip lo da entero) y el subtítulo en hasta tres, que con la hora a
+   80px es lo que cabe en una clase de 55 minutos sin cortar ninguna línea por la mitad. */
 .cal-timeline--week .cal-timeline__cols { flex: 1; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0; }
 .cal-timeline__col {
     position: relative; border-right: 1px solid var(--border);
@@ -2388,14 +2389,14 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 .cal-timeline__col:last-child { border-right: 0; }
 .cal-timeline__col.is-weekend { background: var(--surface-sunken); }
 .cal-timeline__col.is-today { background: var(--accent-weak); }
-.cal-block--compact { padding: 2px 5px; gap: 0; font-size: 11px; }
+.cal-block--compact { padding: 2px 5px; gap: 0; font-size: 11px; line-height: 1.2; }
 .cal-block--compact .cal-block__time { font-size: 10px; }
 /* Hora y título no encogen nunca; el subtítulo (materia · aula · tema · estado) ocupa las líneas que
    queden y es él quien se recorta. Al revés, la columna flex aplastaba el título a media línea: con
    `overflow` distinto de visible un elemento flex puede encoger por debajo de su texto. */
 .cal-block--compact .cal-block__time, .cal-block--compact .cal-block__title { flex: none; }
-.cal-block--compact .cal-block__subtitle { white-space: normal; min-height: 0; overflow: hidden; }
-.cal-block--compact .cal-block__title { white-space: normal; -webkit-line-clamp: 2; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
+.cal-block--compact .cal-block__subtitle { white-space: normal; min-height: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.cal-block--compact .cal-block__title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Cabecera y tira "todo el día" de la semana: la misma columna del eje de horas (52px) alineada. */
 .cal-week-head, .cal-week-allday { display: flex; }
@@ -2445,7 +2446,7 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
         font-size: 10px; line-height: 1.15;
         background: color-mix(in srgb, var(--event-color, var(--accent)) 34%, var(--surface));
     }
-    .cal-block--compact .cal-block__title { display: block; -webkit-line-clamp: none; overflow-wrap: anywhere; hyphens: auto; }
+    .cal-block--compact .cal-block__title { white-space: normal; text-overflow: clip; overflow-wrap: anywhere; hyphens: auto; }
     /* Hora y subtítulo, fuera: la posición en la rejilla ya dice la hora, y el detalle está a un toque. */
     .cal-block--compact .cal-block__time, .cal-block--compact .cal-block__subtitle { display: none; }
     .cal-week-allday__col { padding: 2px; gap: 2px; }
