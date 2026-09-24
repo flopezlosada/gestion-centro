@@ -4,6 +4,8 @@
 
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Fotocopias{% endblock %}
 
+{% import '_macros/copy_request.html.twig' as copies %}
+
 {% block body %}
     {# El recuento solo para quien atiende la cola: a quien pide fotocopias le importa lo suyo, y un
        "quedan 12" sin poder hacer nada con ellos es ruido. Cuenta sobre la lista y lo dice así: la
@@ -80,15 +82,7 @@
                                UNA insignia y no dos: el filtro de la columna se construye con TODO el texto de
                                la celda (table-tools.js), así que dos etiquetas juntas —o la hora a la vista—
                                darían un valor de filtro distinto por fila. La hora va en el title. #}
-                            <td>
-                                {% if order.done %}
-                                    <span class="badge badge--success" data-tone="success" title="Hecha el {{ order.doneAt|date('d/m/Y', false) }} a las {{ order.doneAt|date('H:i', false) }}">Hecha</span>
-                                {% elseif not order.isSent %}
-                                    <span class="badge badge--danger" data-tone="danger">Sin enviar</span>
-                                {% else %}
-                                    <span class="badge badge--warning" data-tone="warning">En cola</span>
-                                {% endif %}
-                            </td>
+                            <td>{{ copies.status_badge(order) }}</td>
                             <td class="row-actions">
                                 {% if canMarkDone %}
                                     {% if order.done %}

@@ -3853,6 +3853,9 @@ tr.is-not-covered { background: var(--danger-weak); }
 .side-card__label { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 3px; }
 .side-card .btn { width: 100%; padding: 12px; }
 .side-card .btn svg { width: 16px; height: 16px; }
+/* Las fotocopias ya pedidas para una guardia, encima del botón de pedir más. */
+.copy-orders { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.copy-orders li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 
 /* ---- Contexto: el resto de tus guardias del día ------------------------- */
 .day-strip { background: var(--surface-sunken); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; }

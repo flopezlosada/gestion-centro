@@ -41,16 +41,24 @@
                 </div>
             {% endif %}
 
+            {#- Un aviso y no una línea gris: pasaba desapercibida y se pedía lo mismo dos veces. No se bloquea
+                —a veces faltan copias—, pero enviar pide confirmación (data-confirm del formulario). -#}
             {% if previous is defined and previous is not empty %}
-                <p class="help">Ya se han pedido fotocopias para esta guardia:
-                    {% for p in previous %}{{ p.copies }} copias el {{ p.requestedAt|date('d/m H:i', false) }}{% if not p.isSent %} (sin enviar){% endif %}{{ not loop.last ? '; ' }}{% endfor %}.
-                </p>
+                <div class="callout callout--warning">
+                    <p><strong>Ya se han pedido fotocopias para esta guardia:</strong>
+                        {% for p in previous %}{{ p.copies }} copias el {{ p.requestedAt|date('d/m H:i', false) }}{% if not p.isSent %} (sin enviar){% endif %}{{ not loop.last ? '; ' }}{% endfor %}.
+                        Envía otro encargo solo si hacen falta más.</p>
+                </div>
             {% endif %}
         </section>
     {% endif %}
 
     <div class="card form-card">
-        {{ form_start(form, { attr: { novalidate: 'novalidate', enctype: 'multipart/form-data' } }) }}
+        {% set formAttr = { novalidate: 'novalidate', enctype: 'multipart/form-data' } %}
+        {% if previous is defined and previous is not empty %}
+            {% set formAttr = formAttr|merge({ 'data-confirm': 'Ya hay fotocopias pedidas para esta guardia. ¿Enviar otro encargo a conserjería?' }) %}
+        {% endif %}
+        {{ form_start(form, { attr: formAttr }) }}
             {{ f.submit_error(form) }}
             {{ form_errors(form) }}
             {% if form.context is defined %}{{ f.fields([form.context, form.document]) }}{% endif %}
