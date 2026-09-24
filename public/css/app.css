@@ -1038,6 +1038,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
    Reemplaza la lista nativa del SO (incontrolable por CSS) por un listbox del tema. El <select>
    nativo queda oculto pero en el DOM y se envía igual; sin JS no lleva .cselect__native y se ve normal. */
 .cselect { position: relative; }
+/* En una barra flexible (.toolbar) el formulario encoge al texto elegido, y el panel, que copia el ancho
+   del botón, salía tan estrecho como «BIBL». Un mínimo fijo lo hace legible y evita que el botón cambie
+   de tamaño con cada elección. */
+.toolbar .cselect { min-width: 16rem; }
 .cselect__native { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .cselect__button {
     display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;

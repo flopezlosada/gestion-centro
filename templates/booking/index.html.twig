@@ -97,7 +97,9 @@
         {% endif %}
     </div>
 
-    <div class="card">
+    {#- id="reservar": el destino de los huecos libres de la vista semanal, que traen la hora ya marcada;
+        sin el ancla aterrizaban arriba y había que bajar a buscar el formulario. -#}
+    <div class="card" id="reservar">
         <div class="page-head"><div><h2>Reservar</h2></div></div>
         {# Un día pasado se puede mirar pero no reservar, así que aquí no hay formulario que ofrecer. El
            servidor rechaza igualmente el POST (BookingController::create()): esconder el formulario solo

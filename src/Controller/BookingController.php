@@ -277,20 +277,23 @@ final class BookingController extends AbstractController
 
         $allRooms = $rooms->findReservable();
         $allMaterials = $materials->findActive();
-        $view = $request->query->getString('ver', 'espacios');
+        // Por defecto, espacios y material juntos: separados, quien había reservado material abría la
+        // semana en «espacios», lo veía todo libre y creía que su reserva no estaba.
+        $view = $request->query->getString('ver', 'todo');
         [$kind, $id] = array_pad(explode(':', $view, 2), 2, '');
         $single = match ($kind) {
             'room' => array_values(array_filter($allRooms, static fn (Room $r): bool => $r->getId() === (int) $id))[0] ?? null,
             'material' => array_values(array_filter($allMaterials, static fn (Material $m): bool => $m->getId() === (int) $id))[0] ?? null,
             default => null,
         };
-        if (null === $single && !\in_array($view, ['espacios', 'material'], true)) {
-            $view = 'espacios';
+        if (null === $single && !\in_array($view, ['todo', 'espacios', 'material'], true)) {
+            $view = 'todo';
         }
         $candidates = match (true) {
             null !== $single => [$single],
+            'espacios' === $view => $allRooms,
             'material' === $view => $allMaterials,
-            default => $allRooms,
+            default => [...$allRooms, ...$allMaterials],
         };
 
         // Lo cogido, por día y hora, en una sola consulta para toda la semana.

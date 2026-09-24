@@ -21,14 +21,15 @@
             <a href="{{ path('booking_week', { ver: view }) }}">Esta semana</a>
             <a href="{{ path('booking_week', { fecha: monday|date_modify('+7 days')|date('Y-m-d', false), ver: view }) }}">Siguiente →</a>
         </nav>
-        {# Qué mirar: todos los espacios, todo el material o una cosa concreta. Por GET, como la fecha, para
+        {# Qué mirar: todo junto (por defecto), solo espacios, solo material o una cosa concreta. Por GET, como la fecha, para
            que funcione sin JavaScript (botón «Ver» en <noscript>). #}
         <form method="get" action="{{ path('booking_week') }}">
             <input type="hidden" name="fecha" value="{{ lunes }}">
             <label for="ver" class="visually-hidden">Qué ver</label>
             <select id="ver" name="ver" onchange="this.form.submit()">
-                <option value="espacios"{{ view == 'espacios' ? ' selected' }}>Todos los espacios</option>
-                <option value="material"{{ view == 'material' ? ' selected' }}>Todo el material</option>
+                <option value="todo"{{ view == 'todo' ? ' selected' }}>Espacios y material</option>
+                <option value="espacios"{{ view == 'espacios' ? ' selected' }}>Solo espacios</option>
+                <option value="material"{{ view == 'material' ? ' selected' }}>Solo material</option>
                 {% if rooms is not empty %}
                     <optgroup label="Un espacio">
                         {% for r in rooms %}<option value="room:{{ r.id }}"{{ view == 'room:' ~ r.id ? ' selected' }}>{{ r.name }}</option>{% endfor %}
@@ -70,7 +71,7 @@
                                     {% set key = day|date('Y-m-d', false) %}
                                     {% set free = byDay[key].free %}
                                     {% set taken = byDay[key].taken %}
-                                    {% set reservar = path('booking_index', { fecha: key, tramos: [slot] }) %}
+                                    {% set reservar = path('booking_index', { fecha: key, tramos: [slot] }) ~ '#reservar' %}
                                     <td>
                                         {% if not lective[key] %}
                                             <span class="muted">No lectivo</span>
