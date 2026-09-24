@@ -78,9 +78,14 @@ class Booking implements Auditable
     #[Assert\Length(max: 200)]
     private string $purpose;
 
-    /** The group it is for, when there is one. */
-    #[ORM\Column(name: 'group_name', length: 40, nullable: true)]
-    #[Assert\Length(max: 40)]
+    /**
+     * The group or groups it is for, when there are any, as a ", "-joined snapshot ("E1A, E1B") — the same
+     * shape the timetable uses for a multi-group class ({@see \App\Util\GroupCode}). A string and not a
+     * list column because it is only ever SHOWN, never queried or split; it is written only through
+     * {@see setGroupNames()}, so the joining lives in one place.
+     */
+    #[ORM\Column(name: 'group_name', length: 255, nullable: true)]
+    #[Assert\Length(max: 255)]
     private ?string $groupName = null;
 
     #[ORM\Column(name: 'created_at', type: Types::DATETIME_IMMUTABLE)]
@@ -167,10 +172,16 @@ class Booking implements Auditable
         return $this->groupName;
     }
 
-    public function setGroupName(?string $groupName): static
+    /**
+     * Sets the groups the booking is for: trimmed, blanks and repeats dropped, joined with ", ". None at
+     * all leaves it empty (null), not an empty string.
+     *
+     * @param list<string> $groupNames the group names, in the order they should read
+     */
+    public function setGroupNames(array $groupNames): static
     {
-        $groupName = null !== $groupName ? trim($groupName) : '';
-        $this->groupName = '' !== $groupName ? $groupName : null;
+        $clean = array_values(array_unique(array_filter(array_map('trim', $groupNames), static fn (string $g): bool => '' !== $g)));
+        $this->groupName = [] !== $clean ? implode(', ', $clean) : null;
 
         return $this;
     }

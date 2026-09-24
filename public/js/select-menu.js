@@ -28,10 +28,12 @@
     }
 
     function enhance(select) {
-        // No realzamos selects nativos que no aportan (multiple, sin opciones) ni los ya realzados.
-        if (select.multiple || select.dataset.cselectDone === '1' || select.options.length === 0) {
+        // No realzamos selects sin opciones ni los ya realzados. Los `multiple` SÍ: el nativo exige
+        // ctrl-clic, que en el móvil es inservible; aquí cada clic marca o desmarca y el panel sigue abierto.
+        if (select.dataset.cselectDone === '1' || select.options.length === 0) {
             return;
         }
+        var multiple = select.multiple;
         select.dataset.cselectDone = '1';
 
         var id = 'cselect-' + (++counter);
@@ -83,12 +85,26 @@
         if (labelledby) {
             list.setAttribute('aria-labelledby', labelledby);
         }
+        if (multiple) {
+            list.setAttribute('aria-multiselectable', 'true');
+        }
 
         var optionEls = [];
 
         function syncButtonText() {
-            var selected = select.options[select.selectedIndex];
-            valueSpan.textContent = selected ? selected.textContent : '';
+            if (!multiple) {
+                var selected = select.options[select.selectedIndex];
+                valueSpan.textContent = selected ? selected.textContent : '';
+                return;
+            }
+            // Varias: las tres primeras por su nombre y el resto contadas, para que el botón no crezca
+            // sin límite. Sin ninguna, "— Elige —" como los simples: un <select multiple> no tiene opción
+            // vacía que lo diga, y un botón en blanco no parece un campo.
+            var names = Array.prototype.filter.call(select.options, function (o) { return o.selected; })
+                .map(function (o) { return o.textContent; });
+            valueSpan.textContent = names.length === 0
+                ? '— Elige —'
+                : names.slice(0, 3).join(', ') + (names.length > 3 ? ' y ' + (names.length - 3) + ' más' : '');
         }
 
         // (Re)builds the listbox from the native <select>'s current options. Exposed as
@@ -185,6 +201,16 @@
         wrap.cselectClose = close;
 
         function choose(index) {
+            if (multiple) {
+                // Marca o desmarca sin cerrar: se eligen varias seguidas, y el foco se queda donde
+                // estaba (el buscador o la lista) para poder seguir escribiendo.
+                var opt = select.options[index];
+                opt.selected = !opt.selected;
+                optionEls[index].setAttribute('aria-selected', opt.selected ? 'true' : 'false');
+                syncButtonText();
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+                return;
+            }
             select.selectedIndex = index;
             optionEls.forEach(function (li, i) { li.setAttribute('aria-selected', i === index ? 'true' : 'false'); });
             syncButtonText();

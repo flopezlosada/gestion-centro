@@ -1,0 +1,56 @@
+{# Lo que depende SOLO de las horas marcadas: el aviso de "nada libre" o el formulario de reserva. Vive
+   aparte de index.html.twig porque BookingController::availability() pinta exactamente esto, sin el resto
+   de la página, para el fetch de public/js/booking-hours.js. #}
+{% set diaStr = day|date('Y-m-d', false) %}
+
+{% if selectedSlots is empty %}
+    <p class="muted">Marca una o varias horas para ver qué aulas y material están libres.</p>
+{% elseif rooms is empty and materials is empty %}
+    <p class="muted">{{ selectedSlots|length == 1 ? 'A esa hora' : 'En todas esas horas a la vez' }} no queda nada libre. Prueba con otras.</p>
+{% else %}
+    <form method="post" action="{{ path('booking_new') }}" class="stack-form">
+        <input type="hidden" name="_token" value="{{ csrf_token('booking_new') }}">
+        <input type="hidden" name="fecha" value="{{ diaStr }}">
+        {% for index in selectedSlots %}<input type="hidden" name="tramos[]" value="{{ index }}">{% endfor %}
+        {% if selectedSlots|length > 1 %}
+            <p class="help">Se reserva a las {{ selectedSlots|length }} horas marcadas; si alguna ya no está libre, no se reserva ninguna.</p>
+        {% endif %}
+
+        <div class="field">
+            <label for="recurso">¿Qué necesitas?</label>
+            <select id="recurso" name="recurso" required>
+                <option value="">— Elige —</option>
+                {% if materials is not empty %}
+                    <optgroup label="Material">
+                        {% for m in materials %}<option value="material:{{ m.id }}">{{ m.name }}{% if m.keptAt %} ({{ m.keptAt }}){% endif %}</option>{% endfor %}
+                    </optgroup>
+                {% endif %}
+                {% if rooms is not empty %}
+                    <optgroup label="Espacios">
+                        {% for r in rooms %}<option value="room:{{ r.id }}">{{ r.name }}</option>{% endfor %}
+                    </optgroup>
+                {% endif %}
+            </select>
+        </div>
+
+        <div class="field">
+            <label for="motivo">¿Para qué?</label>
+            <input type="text" id="motivo" name="motivo" maxlength="200" required placeholder="Grabación del podcast, examen de recuperación…">
+        </div>
+
+        {#- Los grupos del horario del curso, varios a la vez (el mismo desplegable con buscador que «¿Qué
+            necesitas?», en modo múltiple). Sin horario importado no hay lista que ofrecer y el campo no sale. -#}
+        {% if groupNames is not empty %}
+            <div class="field">
+                <label for="grupos">Grupos <span class="muted">(si es para alguno)</span></label>
+                <select id="grupos" name="grupos[]" multiple>
+                    {% for g in groupNames %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+                </select>
+            </div>
+        {% endif %}
+
+        <div class="form-actions">
+            <button type="submit" class="btn">Reservar</button>
+        </div>
+    </form>
+{% endif %}
