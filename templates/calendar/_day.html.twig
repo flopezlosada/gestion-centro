@@ -70,12 +70,7 @@
                     <span class="cal-timeline__now" style="top: {{ day.nowTop }}%"></span>
                 {% endif %}
                 {% for pos in day.timeline %}
-                    {% set b = pos.block %}
-                    <a class="cal-block cal-block--{{ b.kind }} {{ b.colorClass }}{{ b.flagged ? ' is-flagged' }}" style="top: {{ pos.top }}%; height: {{ pos.height }}%; left: {{ pos.left }}%; width: {{ pos.width }}%" href="{{ b.href }}">
-                        <span class="cal-block__time">{{ b.startsAt|date('H:i') }}–{{ b.endsAt|date('H:i') }}</span>
-                        <span class="cal-block__title">{{ b.title }}</span>
-                        {% if b.subtitle %}<span class="cal-block__subtitle">{{ b.subtitle }}</span>{% endif %}
-                    </a>
+                    {{ cal.timeline_block(pos) }}
                 {% endfor %}
             </div>
         </div>

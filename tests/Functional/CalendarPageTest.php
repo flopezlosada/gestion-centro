@@ -45,6 +45,26 @@ final class CalendarPageTest extends WebTestCase
         self::assertSelectorTextContains('.calendar-grid', 'Memoria del departamento');
     }
 
+    /**
+     * Sin «vista» se abre la semana. Y un día de fin de semana sin nada se marca para plegarse en el
+     * móvil, pero uno con algo dentro no: plegarlo escondería esa tarea.
+     */
+    public function testTheCalendarOpensOnTheWeekAndOnlyAnEmptyWeekendDayFolds(): void
+    {
+        $teacher = $this->teacherWithTask(new \DateTimeImmutable('2026-07-18'), 'Entrega del sábado');
+
+        $this->client->loginUser($teacher);
+        $crawler = $this->client->request('GET', '/calendario?fecha=2026-07-15');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('.calendar--week');
+        self::assertSelectorTextSame('.calendar-view.is-active', 'Semana');
+        // Del 13 al 19 de julio: el sábado 18 tiene la tarea, el domingo 19 está vacío.
+        self::assertCount(1, $crawler->filter('.cal-timeline__col.is-foldable'));
+        self::assertCount(1, $crawler->filter('.cal-week-head__day.is-foldable'));
+        self::assertSame('19', trim($crawler->filter('.cal-week-head__day.is-foldable .cal-week-head__num')->text()));
+    }
+
     public function testDayViewShowsTaskDueThatDay(): void
     {
         $teacher = $this->teacherWithTask(new \DateTimeImmutable('2026-07-15'), 'Memoria del departamento');
