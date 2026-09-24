@@ -40,8 +40,10 @@ final class CopyRequestType extends AbstractType
                     'label' => 'Documento a fotocopiar',
                     'constraints' => [new Assert\NotNull(message: 'Adjunta el documento que hay que fotocopiar.')],
                     'help' => sprintf('Solo PDF. Máximo %d MB.', intdiv(DocumentUpload::MAX_BYTES, 1024 * 1024)),
-                    // Solo filtra el selector de archivos; quien manda es DocumentUpload::pdfProblem().
-                    'attr' => ['accept' => '.pdf,application/pdf'],
+                    // `accept` solo filtra el selector de archivos (quien manda es DocumentUpload::pdfProblem());
+                    // `data-max-bytes` avisa del tamaño antes de enviar (file-size-guard.js): un PDF escaneado
+                    // pasa fácil del límite, y por encima de ~15 MB el servidor corta sin llegar a la app.
+                    'attr' => ['accept' => '.pdf,application/pdf', 'data-max-bytes' => DocumentUpload::MAX_BYTES],
                 ]);
         }
 

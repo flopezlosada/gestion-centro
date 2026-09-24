@@ -78,6 +78,8 @@ final class GuardiaTaskBankItemType extends AbstractType
                 'label' => 'Documento',
                 'required' => false,
                 'help' => sprintf('PDF, Office, texto o imagen. Máximo %d MB.', intdiv(DocumentUpload::MAX_BYTES, 1024 * 1024)),
+                // Avisa del tamaño antes de enviar (file-size-guard.js), con el mismo límite que aplica el servidor.
+                'attr' => ['data-max-bytes' => DocumentUpload::MAX_BYTES],
             ])
             ->add('suggestedCopies', IntegerType::class, [
                 'label' => 'Copias que suele necesitar',
