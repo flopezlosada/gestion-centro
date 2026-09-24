@@ -15,6 +15,7 @@ use App\Tests\Support\BuildsTheCentresTimetable;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 
 /**
  * Programar una clase propia con toques: tema de la lista compartida (o uno nuevo), actividad, cómo fue y
@@ -26,6 +27,7 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 final class LessonPlanTest extends WebTestCase
 {
     use BuildsTheCentresTimetable;
+    use ClockSensitiveTrait;
 
     private const FIRST = '2026-01-12';
     private const NEXT = '2026-01-19';
@@ -92,6 +94,50 @@ final class LessonPlanTest extends WebTestCase
         self::assertNull($plan->getOutcome(), 'cómo fue se marca después');
         self::assertSame('pág. 52', $plan->getNote());
         self::assertCount(1, $this->em->getRepository(Topic::class)->findAll(), 'el mismo tema, no uno nuevo');
+    }
+
+    /**
+     * Quedó a medias con las dos clases siguientes ya programadas: se vuelve a la clase para ofrecer
+     * correrlas, y al correrlas la siguiente sigue con lo pendiente, cada programada pasa una clase más
+     * tarde y la primera clase libre recoge la última.
+     */
+    public function testAClassLeftHalfDoneShiftsThePlannedOnesOneClassLater(): void
+    {
+        self::mockTime('2026-01-12 15:00');
+        $this->save('2026-01-19', ['tema' => 'El Romanticismo', 'actividad' => 'explicacion']);
+        $this->save('2026-01-26', ['tema' => 'El Realismo', 'actividad' => 'explicacion']);
+
+        $this->save(self::FIRST, ['tema' => 'La novela del siglo XX', 'actividad' => 'ejercicios', 'resultado' => 'a_medias', 'nota' => 'pág. 52']);
+        self::assertResponseRedirects('/mis-clases/'.self::FIRST.'/7', null, 'vuelve a la clase, donde se ofrece correr');
+        $crawler = $this->client->followRedirect();
+        self::assertSelectorTextContains('.callout--warning', 'El Romanticismo');
+
+        $this->client->submit($crawler->selectButton('Correr las siguientes una clase')->form());
+
+        self::assertResponseRedirects('/calendario?vista=dia&fecha='.self::FIRST);
+        $next = $this->planOn('2026-01-19');
+        self::assertNotNull($next);
+        self::assertSame('La novela del siglo XX', $next->getTopic()?->getName());
+        self::assertSame('pág. 52', $next->getNote(), 'con la línea de lo pendiente');
+        self::assertSame('El Romanticismo', $this->planOn('2026-01-26')?->getTopic()?->getName());
+        $freed = $this->planOn('2026-02-02');
+        self::assertNotNull($freed, 'la primera clase libre recoge la última programada');
+        self::assertSame('El Realismo', $freed->getTopic()?->getName());
+        self::assertSame(LessonActivity::EXPLANATION, $freed->getActivity());
+    }
+
+    /** Una clase ya dada es lo que pasó: si la siguiente ya empezó, no se ofrece correr nada. */
+    public function testNothingIsOfferedWhenTheNextClassHasAlreadyStarted(): void
+    {
+        self::mockTime('2026-01-12 15:00');
+        $this->save(self::NEXT, ['tema' => 'El Romanticismo']);
+        self::mockTime('2026-01-19 14:00');
+
+        $this->save(self::FIRST, ['tema' => 'La novela del siglo XX', 'resultado' => 'a_medias']);
+
+        self::assertResponseRedirects('/calendario?vista=dia&fecha='.self::FIRST);
+        $this->client->request('GET', '/mis-clases/'.self::FIRST.'/7');
+        self::assertSelectorNotExists('.callout--warning');
     }
 
     /** Escribir el tema en otras mayúsculas es el mismo tema de la lista. */

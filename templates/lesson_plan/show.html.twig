@@ -23,6 +23,19 @@
         </div>
     </div>
 
+    {# Quedó a medias y la clase siguiente ya estaba programada con otra cosa: se ofrece correr las
+       programadas una clase, para que la siguiente siga con lo pendiente en vez de saltárselo. #}
+    {% if shiftOffer %}
+        <div class="callout callout--warning">
+            <p><strong>La clase siguiente ya estaba programada</strong> ({{ dias[shiftOffer.date|date('N', false)] }} {{ shiftOffer.date|date('d/m', false) }}: {{ shiftOffer.topic ? shiftOffer.topic.name : 'sin tema' }}).
+                Si la corres, esa clase y las programadas detrás de ella pasan una clase más tarde, y la del {{ shiftOffer.date|date('d/m', false) }} sigue con {{ plan.topic ? '«' ~ plan.topic.name ~ '»' : 'lo que quedó pendiente' }}.</p>
+            <form method="post" action="{{ path('lesson_plan_shift', { fecha: day|date('Y-m-d', false), tramo: class.slotIndex }) }}">
+                <input type="hidden" name="_token" value="{{ csrf_token('lesson_plan') }}">
+                <button type="submit" class="btn">Correr las siguientes una clase</button>
+            </form>
+        </div>
+    {% endif %}
+
     {# «Dónde lo dejé»: la última clase con este mismo grupo y materia. Es lo que se mira cada día, y lo que
        hace que la clase normal sea un solo toque. #}
     {% if previous %}
