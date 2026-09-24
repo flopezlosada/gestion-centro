@@ -1,11 +1,18 @@
+{% import '_macros/calendar.html.twig' as cal %}
 {% set weekdayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] %}
+{% set weekdayLetters = ['L', 'M', 'X', 'J', 'V', 'S', 'D'] %}
+{% set weekdayFullNames = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
+{#- Un sábado o domingo sin nada: en el móvil se pliega (como el «mostrar fines de semana» de Google),
+    para que los cinco días lectivos se repartan el ancho en vez de siete. Con algo dentro se queda, y
+    hoy también: plegarlo dejaría la semana sin el día en que estás. -#}
+{% set foldable = week|map(c => c.isWeekend and not c.isToday and c.timeline is empty and c.tasks is empty and c.events is empty and c.unscheduledClasses is empty) %}
 
 <div class="calendar calendar--week" role="grid" aria-label="Semana del {{ label }}">
     <div class="cal-week-head" role="row">
         <div class="cal-week-head__axis"></div>
         {% for cell in week %}
-            <div class="cal-week-head__day{{ cell.isWeekend ? ' is-weekend' : '' }}{{ cell.isToday ? ' is-today' : '' }}">
-                <span class="cal-week-head__name">{{ weekdayNames[loop.index0] }}</span>
+            <div class="cal-week-head__day{{ cell.isWeekend ? ' is-weekend' : '' }}{{ cell.isToday ? ' is-today' : '' }}{{ foldable[loop.index0] ? ' is-foldable' }}">
+                <span class="cal-week-head__name"><abbr class="cal-week-head__letter" title="{{ weekdayFullNames[loop.index0] }}">{{ weekdayLetters[loop.index0] }}</abbr><span class="cal-week-head__word">{{ weekdayNames[loop.index0] }}</span></span>
                 <span class="cal-week-head__num"{% if cell.isToday %} aria-current="date"{% endif %}>{{ cell.date|date('j') }}</span>
             </div>
         {% endfor %}
@@ -19,7 +26,7 @@
         <div class="cal-week-allday" role="row">
             <div class="cal-week-allday__axis"></div>
             {% for cell in week %}
-                <div class="cal-week-allday__col{{ cell.isWeekend ? ' is-weekend' : '' }}">
+                <div class="cal-week-allday__col{{ cell.isWeekend ? ' is-weekend' : '' }}{{ foldable[loop.index0] ? ' is-foldable' }}">
                     {% for c in cell.unscheduledClasses %}
                         <a class="cal-chip" href="{{ path('lesson_plan', { fecha: cell.date|date('Y-m-d', false), tramo: c.slotIndex }) }}">{{ c.groups|join(', ') }}</a>
                     {% endfor %}
@@ -42,7 +49,7 @@
         </div>
         <div class="cal-timeline__cols">
             {% for cell in week %}
-                <div class="cal-timeline__col{{ cell.isWeekend ? ' is-weekend' : '' }}{{ cell.isToday ? ' is-today' : '' }}">
+                <div class="cal-timeline__col{{ cell.isWeekend ? ' is-weekend' : '' }}{{ cell.isToday ? ' is-today' : '' }}{{ foldable[loop.index0] ? ' is-foldable' }}">
                     {% for h in hourMarks %}
                         <span class="cal-timeline__gridline" style="top: {{ h.top }}%"></span>
                     {% endfor %}
@@ -50,10 +57,7 @@
                         <span class="cal-timeline__now" style="top: {{ cell.nowTop }}%"></span>
                     {% endif %}
                     {% for pos in cell.timeline %}
-                        {% set b = pos.block %}
-                        <a class="cal-block cal-block--compact cal-block--{{ b.kind }} {{ b.colorClass }}{{ b.flagged ? ' is-flagged' }}" style="top: {{ pos.top }}%; height: {{ pos.height }}%; left: {{ pos.left }}%; width: {{ pos.width }}%" href="{{ b.href }}" title="{{ b.startsAt|date('H:i') }}–{{ b.endsAt|date('H:i') }} · {{ b.title }}{% if b.subtitle %} · {{ b.subtitle }}{% endif %}">
-                            <span class="cal-block__title">{{ b.title }}</span>
-                        </a>
+                        {{ cal.timeline_block(pos, true) }}
                     {% endfor %}
                 </div>
             {% endfor %}

@@ -104,3 +104,19 @@
         {% endif %}
     </div>
 {% endmacro %}
+
+{#
+   Un bloque de la rejilla horaria (día y semana): hora, título y subtítulo, colocado con el % que
+   calcula DayTimeline::layout. La semana lo pide `compact`: mismo contenido —lo que antes solo salía
+   en el tooltip al pasar el ratón—, con menos aire; en el móvil el CSS deja solo el título, que es lo
+   único que cabe en una columna de un quinto de pantalla. El `title` repite el texto entero para cuando
+   un bloque corto lo recorta.
+#}
+{% macro timeline_block(pos, compact = false) %}
+    {% set b = pos.block %}
+    <a class="cal-block{{ compact ? ' cal-block--compact' }} cal-block--{{ b.kind }} {{ b.colorClass }}{{ b.flagged ? ' is-flagged' }}" style="top: {{ pos.top }}%; height: {{ pos.height }}%; left: {{ pos.left }}%; width: {{ pos.width }}%" href="{{ b.href }}" title="{{ b.startsAt|date('H:i') }}–{{ b.endsAt|date('H:i') }} · {{ b.title }}{% if b.subtitle %} · {{ b.subtitle }}{% endif %}">
+        <span class="cal-block__time">{{ b.startsAt|date('H:i') }}–{{ b.endsAt|date('H:i') }}</span>
+        <span class="cal-block__title">{{ b.title }}</span>
+        {% if b.subtitle %}<span class="cal-block__subtitle">{{ b.subtitle }}</span>{% endif %}
+    </a>
+{% endmacro %}

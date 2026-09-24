@@ -2336,7 +2336,7 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
    líneas de texto. El % de arriba/alto de cada hora y cada bloque viene calculado en PHP
    (DayTimeline::layout) sobre una ventana de horas — el único trabajo del CSS es darle a esa ventana una
    altura real en px (--cal-hours × --cal-hour-h), porque un % solo tiene sentido contra un alto concreto. */
-:root { --cal-hour-h: 56px; }
+:root { --cal-hour-h: 80px; }
 .cal-timeline { display: flex; }
 .cal-timeline__axis {
     flex: none; width: 52px; position: relative;
@@ -2377,8 +2377,10 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 .cal-block__title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cal-block__subtitle { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Semana: siete columnas compartiendo un único eje de horas. Cada bloque va más comprimido (sin
-   franja de hora ni subtítulo, título nada más) porque una columna mide una séptima parte del ancho. */
+/* Semana: siete columnas compartiendo un único eje de horas. Cada bloque lleva lo mismo que el de la
+   vista de día —hora, título y subtítulo— pero más apretado, porque una columna mide un séptimo del
+   ancho: el título en una línea (el tooltip lo da entero) y el subtítulo en hasta tres, que con la hora a
+   80px es lo que cabe en una clase de 55 minutos sin cortar ninguna línea por la mitad. */
 .cal-timeline--week .cal-timeline__cols { flex: 1; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0; }
 .cal-timeline__col {
     position: relative; border-right: 1px solid var(--border);
@@ -2387,8 +2389,14 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 .cal-timeline__col:last-child { border-right: 0; }
 .cal-timeline__col.is-weekend { background: var(--surface-sunken); }
 .cal-timeline__col.is-today { background: var(--accent-weak); }
-.cal-block--compact { padding: 2px 5px; gap: 0; font-size: 11px; }
-.cal-block--compact .cal-block__title { white-space: normal; -webkit-line-clamp: 3; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
+.cal-block--compact { padding: 2px 5px; gap: 0; font-size: 11px; line-height: 1.2; }
+.cal-block--compact .cal-block__time { font-size: 10px; }
+/* Hora y título no encogen nunca; el subtítulo (materia · aula · tema · estado) ocupa las líneas que
+   queden y es él quien se recorta. Al revés, la columna flex aplastaba el título a media línea: con
+   `overflow` distinto de visible un elemento flex puede encoger por debajo de su texto. */
+.cal-block--compact .cal-block__time, .cal-block--compact .cal-block__title { flex: none; }
+.cal-block--compact .cal-block__subtitle { white-space: normal; min-height: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.cal-block--compact .cal-block__title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Cabecera y tira "todo el día" de la semana: la misma columna del eje de horas (52px) alineada. */
 .cal-week-head, .cal-week-allday { display: flex; }
@@ -2403,6 +2411,8 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 }
 .cal-week-head__name { display: block; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
 .cal-week-head__num { display: block; margin-top: 2px; font-size: 15px; }
+/* El nombre del día va dos veces: «Lun» para el ancho de escritorio y «L» para el del móvil. */
+.cal-week-head__letter { display: none; text-decoration: none; }
 .cal-week-allday__col {
     flex: 1; min-width: 0; padding: 4px 6px; display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start;
     border-left: 1px solid var(--border); border-bottom: 1px solid var(--border);
@@ -2419,6 +2429,28 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
     .cal-timeline__axis, .cal-week-head__axis, .cal-week-allday__axis { width: 38px; }
     .cal-timeline__hour { font-size: 9.5px; }
     .cal-block { font-size: 11px; padding: 3px 5px; }
+
+    /* La semana en el móvil, a la manera de Google Calendar: una columna mide un séptimo (o un quinto)
+       de ~340px, así que el bloque deja de gastar ancho en relleno y borde, el texto se parte donde haga
+       falta en vez de cortarse con «…», y el color se refuerza porque a este tamaño es él quien dice qué
+       es cada cosa; el título es solo una pista, y el detalle está a un toque. */
+    .cal-week-head__day.is-foldable, .cal-week-allday__col.is-foldable, .cal-timeline__col.is-foldable { display: none; }
+    /* Sin plantilla fija de siete: las columnas que quedan (5, 6 o 7) se reparten el ancho. */
+    .cal-timeline--week .cal-timeline__cols { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+    .cal-week-head__day { padding: 4px 0; }
+    .cal-week-head__letter { display: inline; }
+    .cal-week-head__word { display: none; }
+    .cal-week-head__name { letter-spacing: 0; }
+    .cal-block.cal-block--compact {
+        margin: 0; padding: 1px 2px; border-radius: 3px; border-left-width: 2px;
+        font-size: 10px; line-height: 1.15;
+        background: color-mix(in srgb, var(--event-color, var(--accent)) 34%, var(--surface));
+    }
+    .cal-block--compact .cal-block__title { white-space: normal; text-overflow: clip; overflow-wrap: anywhere; hyphens: auto; }
+    /* Hora y subtítulo, fuera: la posición en la rejilla ya dice la hora, y el detalle está a un toque. */
+    .cal-block--compact .cal-block__time, .cal-block--compact .cal-block__subtitle { display: none; }
+    .cal-week-allday__col { padding: 2px; gap: 2px; }
+    .cal-week-allday__col .cal-chip { width: 100%; padding: 1px 3px; border-radius: 3px; font-size: 9.5px; }
 }
 
 /* Vista anual: doce mini-meses; cada día con tareas lleva un punto de color por estado.

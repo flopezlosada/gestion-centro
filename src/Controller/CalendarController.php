@@ -48,7 +48,7 @@ final class CalendarController extends AbstractController
 {
     /** The day, week, month and year views, and the one used when "vista" is missing or unknown. */
     private const array VIEWS = ['dia', 'semana', 'mes', 'anio'];
-    private const string DEFAULT_VIEW = 'mes';
+    private const string DEFAULT_VIEW = 'semana';
 
     /** Spanish month names, indexed 1–12, for the calendar labels. */
     private const array MONTH_NAMES = [
@@ -158,7 +158,7 @@ final class CalendarController extends AbstractController
     }
 
     /**
-     * Normalises the "vista" parameter to one of the known views, falling back to the month view.
+     * Normalises the "vista" parameter to one of the known views, falling back to the week view.
      *
      * @param string $raw the raw "vista" value
      *
