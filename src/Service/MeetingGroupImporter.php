@@ -20,7 +20,9 @@ use Doctrine\ORM\EntityManagerInterface;
  *
  * An import owns the day, the period and the members, and nothing else: who convenes and the kind of
  * meeting are set by hand here ({@see \App\Controller\AdminMeetingGroupController}) because Peñalara does
- * not know them, and no import touches them.
+ * not know them. The one exception is a convener still BLANK, which gets a default
+ * ({@see DefaultMeetingConvener}) so the group generates meetings from the first week; one already set is
+ * never touched.
  *
  * When those same three things were changed HERE since the last import (somebody added a person Peñalara
  * does not have), overwriting them is not decided silently: the caller is asked, group by group, and a
@@ -38,6 +40,7 @@ final class MeetingGroupImporter
         private readonly MeetingGroupRepository $groups,
         private readonly UserRepository $users,
         private readonly EntityManagerInterface $entityManager,
+        private readonly DefaultMeetingConvener $defaultConvener,
     ) {
     }
 
@@ -73,6 +76,7 @@ final class MeetingGroupImporter
         }
 
         $created = $updated = $unchanged = $keptEdited = [];
+        $defaulted = [];
         $unmatched = [];
         $seen = [];
         foreach ($meetings as $meeting) {
@@ -100,6 +104,7 @@ final class MeetingGroupImporter
                     $this->apply($group, $meeting, $members);
                     $this->entityManager->persist($group);
                 }
+                $defaulted += $this->assignDefaultConvener($group, $meeting, $members, $dryRun);
                 continue;
             }
 
@@ -108,6 +113,7 @@ final class MeetingGroupImporter
                 if (!$dryRun) {
                     $group->setPenalaraKey($meeting->name)->markImported();
                 }
+                $defaulted += $this->assignDefaultConvener($group, $meeting, $members, $dryRun);
                 continue;
             }
 
@@ -123,6 +129,7 @@ final class MeetingGroupImporter
             if (!$dryRun) {
                 $this->apply($group, $meeting, $members);
             }
+            $defaulted += $this->assignDefaultConvener($group, $meeting, $members, $dryRun);
         }
 
         $missing = array_values(array_map(
@@ -139,11 +146,41 @@ final class MeetingGroupImporter
             static fn (MeetingGroup $g): string => $g->getName(),
             array_filter(
                 $dryRun ? $existing : $this->groups->findAllOrdered(),
-                static fn (MeetingGroup $g): bool => $g->isActive() && $g->repeatsWeekly() && null === $g->getConvener(),
+                static fn (MeetingGroup $g): bool => $g->isActive() && $g->repeatsWeekly() && null === $g->getConvener()
+                    && !isset($defaulted[$g->getName()]),
             ),
         ));
 
-        return new MeetingGroupImportResult($created, $updated, $unchanged, $keptEdited, $skipped, $unmatched, $missing, $noConvener, $dryRun);
+        return new MeetingGroupImportResult($created, $updated, $unchanged, $keptEdited, $skipped, $unmatched, $missing, $noConvener, $defaulted, $dryRun);
+    }
+
+    /**
+     * Gives a group with nobody to convene it the default convener ({@see DefaultMeetingConvener}), so
+     * its meetings start being generated. Never replaces one already set: who convenes is the centre's
+     * decision, and the default only fills the blank Peñalara leaves. Not called for a group kept as edited
+     * here — somebody curated it by hand, and choosing its convener is part of that.
+     *
+     * @param MeetingGroup|null  $group   the group, or null for one a dry run would create
+     * @param PenalaraMeetingDto $meeting the meeting as the file declares it
+     * @param list<User>         $members the members as imported
+     * @param bool               $dryRun  when true, nothing is written
+     *
+     * @return array<string, string> the group's name → the default convener's name, or empty when none was given
+     */
+    private function assignDefaultConvener(?MeetingGroup $group, PenalaraMeetingDto $meeting, array $members, bool $dryRun): array
+    {
+        if (null !== $group?->getConvener()) {
+            return [];
+        }
+        $convener = $this->defaultConvener->for($meeting->name, $members);
+        if (null === $convener) {
+            return [];
+        }
+        if (!$dryRun) {
+            $group?->setConvener($convener);
+        }
+
+        return [$group?->getName() ?? $meeting->name => (string) $convener->getFullName()];
     }
 
     /**

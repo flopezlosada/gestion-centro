@@ -51,6 +51,23 @@ final readonly class ClassSession
     }
 
     /**
+     * The groups joined as one line — with {@see subject()}, what identifies "the same class" from one week
+     * to the next, and what a {@see \App\Entity\LessonPlan} stores.
+     */
+    public function groupNames(): string
+    {
+        return implode(', ', $this->groups());
+    }
+
+    /**
+     * The subject the class is planned under: the first one taught, or '' when the timetable names none.
+     */
+    public function subject(): string
+    {
+        return $this->subjects()[0] ?? '';
+    }
+
+    /**
      * @return list<string> the subjects taught, each once (almost always one)
      */
     public function subjects(): array

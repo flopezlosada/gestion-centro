@@ -205,6 +205,42 @@ final class MeetingTest extends TestCase
         self::assertSame([$came, $convener], $meeting->absentees());
     }
 
+    /**
+     * El acta recoge una sesión que ya ha pasado: antes de la hora de inicio no se escribe. En el minuto
+     * exacto del inicio tampoco — la reunión «empieza» al pasar esa hora, igual que en la ficha.
+     */
+    public function testTheActaCannotBeWrittenBeforeTheMeetingStarts(): void
+    {
+        $convener = $this->user('Coordina');
+        $meeting = $this->meeting($convener);
+
+        foreach (['2026-09-15 13:59', '2026-09-15 14:00'] as $at) {
+            try {
+                $meeting->recordSession('Se abre la sesión.', null, [$convener], new \DateTimeImmutable($at));
+                self::fail('se ha escrito el acta a las '.$at);
+            } catch (\LogicException) {
+            }
+        }
+
+        self::assertNull($meeting->getDiscussion());
+        self::assertFalse($meeting->isAttendanceTaken());
+    }
+
+    /** Ni se adjunta un fichero antes de empezar: sin fichero no hay nada que publicar ni mandar por correo. */
+    public function testTheActaCannotBeAttachedBeforeTheMeetingStarts(): void
+    {
+        $convener = $this->user('Coordina');
+        $meeting = $this->meeting($convener);
+
+        $this->expectException(\LogicException::class);
+
+        try {
+            $meeting->attachMinutes('meeting-minutes/uuid-1.pdf', 'acta.pdf', $convener, new \DateTimeImmutable('2026-09-15 13:00'));
+        } finally {
+            self::assertFalse($meeting->hasMinutes());
+        }
+    }
+
     public function testTheWholeActaIsWrittenInOneGo(): void
     {
         // El arreglo del fallo que traía la pantalla: el desarrollo, los acuerdos y la lista se guardan de

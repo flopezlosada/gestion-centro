@@ -111,6 +111,17 @@ final class ImportMeetingGroupsCommand extends Command
             $io->warning(sprintf('Ya no están en este planificador (no se tocan; desactívalas en /admin si ya no se celebran): %s.', implode(', ', $result->missing)));
         }
 
+        if ([] !== $result->defaulted) {
+            $io->note($result->dryRun
+                ? 'Se les pondría quien convoca por defecto (se cambia en /admin/grupos-de-reunion):'
+                : 'Quien convoca por defecto (se cambia en /admin/grupos-de-reunion):');
+            $io->listing(array_map(
+                static fn (string $group, string $person): string => sprintf('%s — %s', $group, $person),
+                array_keys($result->defaulted),
+                $result->defaulted,
+            ));
+        }
+
         if ([] !== $result->noConvener) {
             $io->note(sprintf('Sin nadie que convoque, así que todavía no se generan sus reuniones. Asígnalo en /admin/grupos-de-reunion: %s.', implode(', ', $result->noConvener)));
         }
