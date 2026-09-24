@@ -832,9 +832,12 @@ class Meeting implements Auditable
      * @param string|null        $agreements what was agreed, or null for nothing recorded
      * @param list<User>         $present    the people who came
      * @param \DateTimeImmutable $at         when it was written
+     *
+     * @throws \LogicException when the meeting has not started yet at $at
      */
     public function recordSession(?string $discussion, ?string $agreements, array $present, \DateTimeImmutable $at): static
     {
+        $this->assertHeldAt($at);
         if ($this->scope->keepsMinutes()) {
             $this->discussion = $discussion;
             $this->agreements = $agreements;
@@ -962,9 +965,12 @@ class Meeting implements Auditable
      * @param \DateTimeImmutable $at   when it was uploaded
      *
      * @return string|null the replaced file's path, or null when there was nothing to replace
+     *
+     * @throws \LogicException when the meeting has not started yet at $at
      */
     public function attachMinutes(string $path, string $name, User $by, \DateTimeImmutable $at): ?string
     {
+        $this->assertHeldAt($at);
         $replaced = $this->minutesPath;
 
         $this->minutesPath = $path;
@@ -1020,5 +1026,22 @@ class Meeting implements Auditable
     public function isPast(\DateTimeImmutable $now): bool
     {
         return $this->startAt < $now;
+    }
+
+    /**
+     * Guards the two ways an acta gets content ({@see recordSession()} and {@see attachMinutes()}): an acta
+     * records a session that has happened, so neither may run before the meeting starts. Publishing is not
+     * guarded here: it needs a file that already passed this check, and the one way left to publish early
+     * (moving the meeting to a later date after attaching) is refused by the controller.
+     *
+     * @param \DateTimeImmutable $at when the acta is being written
+     *
+     * @throws \LogicException when the meeting has not started yet at $at
+     */
+    private function assertHeldAt(\DateTimeImmutable $at): void
+    {
+        if (!$this->isPast($at)) {
+            throw new \LogicException('El acta de una reunión solo se escribe una vez empezada la reunión.');
+        }
     }
 }

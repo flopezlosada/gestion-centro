@@ -28,6 +28,7 @@ use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Security\Http\Attribute\CurrentUser;
 
 /**
@@ -328,6 +329,7 @@ final class MeetingController extends AbstractController
         if (!$access->canWriteMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
             throw $this->createAccessDeniedException('El acta la sube quien la levanta.');
         }
+        $this->denyUnlessStarted($meeting);
 
         $file = $request->files->get('acta');
         if (!DocumentUpload::isPresent($file instanceof UploadedFile ? $file : null)) {
@@ -373,9 +375,7 @@ final class MeetingController extends AbstractController
         if (!$access->canWriteMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
             throw $this->createAccessDeniedException('El acta la escribe quien la levanta.');
         }
-        if (!$meeting->isPast(new \DateTimeImmutable())) {
-            throw $this->createAccessDeniedException('La reunión todavía no ha empezado.');
-        }
+        $this->denyUnlessStarted($meeting);
 
         /** @var list<string> $ids */
         $ids = array_values($request->request->all('asistentes'));
@@ -430,9 +430,7 @@ final class MeetingController extends AbstractController
         if (!$access->canWriteMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
             throw $this->createAccessDeniedException('El acta la genera quien la levanta.');
         }
-        if (!$meeting->isPast(new \DateTimeImmutable())) {
-            throw $this->createAccessDeniedException('La reunión todavía no se ha celebrado.');
-        }
+        $this->denyUnlessStarted($meeting);
 
         $path = $uploader->store($renderer->render($meeting), self::MINUTES_SUBDIR, 'pdf');
         $replaced = $this->keepMinutes($meeting, $path, $renderer->fileNameFor($meeting), $user, $entityManager, $uploader);
@@ -459,6 +457,7 @@ final class MeetingController extends AbstractController
         if (!$access->canWriteMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
             throw $this->createAccessDeniedException('El acta la publica quien la levanta.');
         }
+        $this->denyUnlessStarted($meeting);
 
         if (!$meeting->publishMinutes($user)) {
             $this->addFlash('error', 'Primero sube o genera el acta; después se publica.');
@@ -700,6 +699,22 @@ final class MeetingController extends AbstractController
         }
 
         return null !== $replaced;
+    }
+
+    /**
+     * Refuses every acta action — writing, uploading, generating, publishing — before the meeting starts.
+     * An acta records a session that has happened; without this an acta uploaded ahead of time could be
+     * published and e-mailed to everyone convened for a meeting that had not taken place.
+     *
+     * @param Meeting $meeting the meeting
+     *
+     * @throws AccessDeniedException when the meeting has not started yet
+     */
+    private function denyUnlessStarted(Meeting $meeting): void
+    {
+        if (!$meeting->isPast(new \DateTimeImmutable())) {
+            throw $this->createAccessDeniedException('La reunión todavía no ha empezado.');
+        }
     }
 
     /**

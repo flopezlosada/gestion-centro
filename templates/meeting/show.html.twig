@@ -121,7 +121,7 @@
                 {% endif %}
                 {% if canWriteMinutes %}
                     <div class="deliverable-form">
-                        {% if not meeting.minutesPublished %}
+                        {% if not meeting.minutesPublished and isHeld %}
                             <form method="post" action="{{ path('meeting_minutes_publish', { id: meeting.id }) }}" data-confirm="¿Publicar el acta? Se enviará por correo, con el PDF adjunto, a todas las personas convocadas.">
                                 <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
                                 <button type="submit" class="btn">Publicar y enviar por correo</button>
@@ -164,7 +164,7 @@
                 <p class="help">Se genera con el orden del día, la asistencia y lo tratado. Puedes generarla otra vez si corriges algo.</p>
             {% endif %}
 
-            {% if canWriteMinutes %}
+            {% if canWriteMinutes and isHeld %}
                 {# O subir un fichero propio, para un acta escrita fuera. Sustituir vale para corregir una
                    equivocada: el fichero anterior se borra del disco. #}
                 <form method="post" action="{{ path('meeting_minutes_upload', { id: meeting.id }) }}" enctype="multipart/form-data" class="deliverable-form">
@@ -263,11 +263,12 @@
             </div>
         {% elseif canWriteMinutes %}
             {# Sin esto, quien levanta el acta entra antes de la hora y no ve ningún campo — parece que
-               falta la función en vez de que aún no toca. Solo para quien la levanta: a los demás
-               convocados no les corresponde rellenarla y no tiene sentido anunciárselo. #}
+               falta la función en vez de que aún no toca. Antes de empezar no se escribe, ni se sube, ni
+               se genera, ni se publica acta: recoge una sesión que ya ha pasado. Solo para quien la
+               levanta: a los demás convocados no les corresponde rellenarla y no tiene sentido anunciárselo. #}
             <div class="detail-block">
                 <div class="detail-block__label">{% if meeting.keepsMinutes %}Desarrollo, acuerdos y asistencia{% else %}Asistencia{% endif %}</div>
-                <p class="help">{% if meeting.keepsMinutes %}Podrás rellenar el desarrollo, los acuerdos y la asistencia{% else %}Podrás pasar lista{% endif %} en cuanto pase la hora de la reunión ({{ meeting.startAt|date('d/m/Y H:i') }}).</p>
+                <p class="help">{% if meeting.keepsMinutes %}Podrás rellenar el desarrollo, los acuerdos y la asistencia{% else %}Podrás pasar lista{% endif %} en cuanto empiece la reunión ({{ meeting.startAt|date('d/m/Y H:i') }}).</p>
             </div>
         {% endif %}
 

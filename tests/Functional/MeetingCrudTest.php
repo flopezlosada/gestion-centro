@@ -194,7 +194,8 @@ final class MeetingCrudTest extends WebTestCase
         $coordinator = $this->user('Lucía Coordina', 'lucia4.meet@centro.test');
         $attendee = $this->user('Pedro Convocado', 'pedro6.meet@centro.test');
         $stranger = $this->user('Ajena Nada', 'ajena2.meet@centro.test');
-        $meeting = $this->meeting($coordinator, $attendee);
+        // Ya empezada: antes de la hora el acta no se le ofrece a nadie, y lo que se prueba aquí es QUIÉN.
+        $meeting = $this->meeting($coordinator, $attendee)->setStartAt(new \DateTimeImmutable('-2 hours'));
         $this->em->flush();
         $id = (int) $meeting->getId();
         $uploadUrl = '/reuniones/'.$id.'/acta';
@@ -327,7 +328,8 @@ final class MeetingCrudTest extends WebTestCase
         // Caso real del centro: en la CCP convoca la dirección y el acta la levanta la secretaría.
         $convener = $this->user('Ana Directora', 'ana.meet@centro.test');
         $secretary = $this->user('Sara Secretaría', 'sara.meet@centro.test');
-        $meeting = $this->meeting($convener, $secretary);
+        // Ya empezada: antes de la hora el acta no se le ofrece a nadie, y lo que se prueba aquí es QUIÉN.
+        $meeting = $this->meeting($convener, $secretary)->setStartAt(new \DateTimeImmutable('-2 hours'));
         $meeting->setMinutesTakenBy($secretary);
         $this->em->flush();
         $id = (int) $meeting->getId();
@@ -352,6 +354,54 @@ final class MeetingCrudTest extends WebTestCase
         self::assertSame('sara.meet@centro.test', $stored->getMinutesUploadedBy()?->getEmail());
 
         self::getContainer()->get(FileUploader::class)->remove((string) $stored->getMinutesPath());
+    }
+
+    /**
+     * Antes de la hora no hay acta que hacer: quien la levanta ve cuándo podrá y ningún botón, y el POST a
+     * pelo se rechaza. Sin esto se podía subir un acta y mandarla por correo a todo el grupo convocado de
+     * una reunión que aún no se había celebrado.
+     */
+    public function testNoActaIsUploadedOrPublishedBeforeTheMeetingStarts(): void
+    {
+        $convener = $this->user('Lucía Coordina', 'lucia22.meet@centro.test');
+        $attendee = $this->user('Pedro Convocado', 'pedro22.meet@centro.test');
+        $meeting = $this->meeting($convener, $attendee)->setStartAt(new \DateTimeImmutable('-2 hours'));
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+        $uploadUrl = '/reuniones/'.$id.'/acta';
+        $publishUrl = '/reuniones/'.$id.'/acta/publicar';
+
+        // El token se coge mientras la reunión ya ha empezado, que es cuando la ficha lo pinta: así el 403
+        // de después sale de la hora y no de un token que no vale.
+        $this->client->loginUser($convener);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $token = (string) $crawler->filter('form[action="'.$uploadUrl.'"] input[name="_token"]')->attr('value');
+
+        $this->reschedule($id, '+2 days');
+        $this->client->request('GET', '/reuniones/'.$id);
+        self::assertSelectorTextContains('body', 'en cuanto empiece la reunión');
+        self::assertSelectorNotExists('input[type="file"][name="acta"]');
+        $this->client->request('POST', $uploadUrl, ['_token' => $token], ['acta' => $this->actaFile()]);
+        self::assertResponseStatusCodeSame(403);
+
+        // La otra vía: un acta subida a su hora y la reunión movida después a otro día. Queda el borrador,
+        // pero no sale hasta que la reunión (la nueva) empiece.
+        $this->em->clear();
+        $stored = $this->em->getRepository(Meeting::class)->find($id);
+        self::assertInstanceOf(Meeting::class, $stored);
+        self::assertFalse($stored->hasMinutes(), 'el POST rechazado no ha dejado acta');
+        $stored->setStartAt(new \DateTimeImmutable('-2 hours'));
+        $keeper = $this->em->getRepository(User::class)->find($convener->getId());
+        self::assertInstanceOf(User::class, $keeper);
+        $stored->attachMinutes('meeting-minutes/aplazada.pdf', 'acta.pdf', $keeper, new \DateTimeImmutable());
+        $this->em->flush();
+        $this->reschedule($id, '+2 days');
+
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        self::assertCount(0, $crawler->filter('form[action="'.$publishUrl.'"]'), 'no se ofrece publicarla');
+        $this->client->request('POST', $publishUrl, ['_token' => $token]);
+        self::assertResponseStatusCodeSame(403);
+        self::assertEmailCount(0);
     }
 
     public function testTheRollIsTakenAfterTheMeetingAndOnlyAmongThePeopleExpected(): void
@@ -788,6 +838,16 @@ final class MeetingCrudTest extends WebTestCase
         // …y el POST a pelo tampoco vale.
         $this->client->request('POST', '/reuniones/'.$id.'/acta/registro', ['_token' => 'irrelevante', 'asistentes' => []]);
         self::assertResponseStatusCodeSame(403);
+    }
+
+    /** Mueve la reunión a otra hora, como haría quien la convoca al editarla. */
+    private function reschedule(int $id, string $when): void
+    {
+        $this->em->clear();
+        $meeting = $this->em->getRepository(Meeting::class)->find($id);
+        self::assertInstanceOf(Meeting::class, $meeting);
+        $meeting->setStartAt((new \DateTimeImmutable($when))->setTime(14, 0));
+        $this->em->flush();
     }
 
     /**
