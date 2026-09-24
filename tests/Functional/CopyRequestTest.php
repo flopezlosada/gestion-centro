@@ -189,6 +189,17 @@ final class CopyRequestTest extends WebTestCase
         self::assertStringContainsString('4º de ESO', $order->getContext());
         self::assertStringContainsString('Matemáticas', $order->getContext());
         self::assertSame($coverId, $order->getCover()?->getId());
+
+        // De vuelta en la guardia, lo pedido se ve: sin esto se pedía dos veces. (Esta guardia ya pasó,
+        // así que se lee pero no se ofrece pedir más.)
+        $this->client->request('GET', '/guardias/'.$coverId.'/ver');
+        self::assertSelectorTextContains('.copy-orders', '30 copias');
+        self::assertSelectorTextContains('.copy-orders', 'Enviada');
+
+        // Y un segundo encargo avisa y pide confirmación antes de salir.
+        $crawler = $this->client->request('GET', '/fotocopias/guardia/'.$coverId);
+        self::assertSelectorTextContains('.callout--warning', 'Ya se han pedido fotocopias para esta guardia');
+        self::assertNotNull($crawler->filter('form[data-confirm]')->getNode(0));
     }
 
     public function testWhatTheAbsentTeacherSaidWinsOverTheBankSuggestion(): void
@@ -333,7 +344,7 @@ final class CopyRequestTest extends WebTestCase
         // Ve el encargo de otra persona (es su trabajo) y la cola dice cuánto queda por imprimir.
         self::assertStringContainsString('Fichas de 1º ESO', $crawler->filter('table')->text());
         self::assertStringContainsString('1 encargo', $crawler->filter('.lead')->text());
-        self::assertStringContainsString('En cola', $crawler->filter('table')->text());
+        self::assertStringContainsString('Enviada', $crawler->filter('table')->text());
 
         $action = '/fotocopias/'.$id.'/hecha';
         $token = (string) $crawler->filter('form[action="'.$action.'"] input[name="_token"]')->attr('value');

@@ -25,6 +25,7 @@ use App\Guardia\TeacherGuardiaDay;
 use App\Repository\AbsenceRepository;
 use App\Repository\AcademicYearRepository;
 use App\Repository\AuditLogRepository;
+use App\Repository\CopyRequestRepository;
 use App\Repository\BreakDutyAssignmentRepository;
 use App\Repository\GuardiaCoverRepository;
 use App\Repository\GuardiaSupportRepository;
@@ -1082,7 +1083,7 @@ final class GuardiaController extends AbstractController
      * que le interesa es el del parte, no el suyo.
      */
     #[Route('/{id}/ver', name: 'guardia_cover_show', requirements: ['id' => '\d+'], methods: ['GET'])]
-    public function showCover(GuardiaCover $cover, #[CurrentUser] User $user, ScheduleEntryRepository $schedule, AcademicYearRepository $years, GuardiaCoverRepository $covers, TeacherGuardiaDay $day): Response
+    public function showCover(GuardiaCover $cover, #[CurrentUser] User $user, ScheduleEntryRepository $schedule, AcademicYearRepository $years, GuardiaCoverRepository $covers, TeacherGuardiaDay $day, CopyRequestRepository $copyRequests): Response
     {
         // A teacher may see the guardia assigned to them; anyone else needs read access to the area.
         $isOwner = $cover->getAssignedGuardia()?->getId() === $user->getId();
@@ -1130,6 +1131,8 @@ final class GuardiaController extends AbstractController
             // resuelve). Sin esto, la única forma de que constara era que la coordinación lo marcara en
             // el parte, con lo que quien cubría tenía que ir a buscarla.
             'canReportIncident' => $isOwner || $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS),
+            // Las fotocopias ya pedidas para esta guardia: sin verlas aquí se pedían dos veces.
+            'copyOrders' => $copyRequests->findForCover($cover),
         ]);
     }
 
