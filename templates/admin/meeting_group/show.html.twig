@@ -1,0 +1,62 @@
+{% extends 'app_shell.html.twig' %}
+{% import 'admin/meeting_group/_macros.html.twig' as g %}
+
+{% block title %}{{ group.name }}{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('admin_meeting_group_index') }}">Grupos de convocatoria</a><span class="sep">/</span>
+    {{ group.name }}
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Grupos de convocatoria</p>
+            <h1>{{ group.name }}</h1>
+            <p class="lead">{{ g.status(group) }}{% if group.penalaraKey %} · viene del horario de Peñalara{% if group.editedSinceImport %}, cambiado a mano después{% endif %}{% endif %}</p>
+            {% if group.active and group.repeatsWeekly %}<p class="help">Las reuniones semanales se crean solas cada semana. «Convocar una reunión extraordinaria» convoca una aparte, con aviso a los convocados.</p>{% endif %}
+        </div>
+        <div class="form-actions">
+            {#- En un grupo semanal el botón NO toca la serie: convoca una reunión aparte, sin ligar al grupo. Con
+                el texto de siempre invitaba a convocar a mano la de esta semana y acababan saliendo dos. -#}
+            {% if group.active %}
+                <a class="btn secondary" href="{{ path('meeting_new', { grupo: group.id }) }}">{{ group.repeatsWeekly ? 'Convocar una reunión extraordinaria' : 'Convocar a este grupo' }}</a>
+            {% endif %}
+            <a class="btn secondary" href="{{ path('admin_meeting_group_edit', { id: group.id }) }}">Editar</a>
+        </div>
+    </div>
+
+    <div class="card">
+        <dl class="detail-grid">
+            <dt>Tipo</dt><dd>{{ group.type ? group.type.name : 'Sin tipo' }}</dd>
+            <dt>Cada semana</dt><dd>{{ g.schedule(group, slotLabels) }}</dd>
+            <dt>Quién convoca</dt><dd>{{ group.convener ? group.convener.fullName : '—' }}</dd>
+            <dt>Lugar</dt><dd>{{ group.place ?: '—' }}</dd>
+            <dt>Avisar antes</dt><dd>{{ group.reminder ? group.reminder.label : 'Sin aviso' }}</dd>
+        </dl>
+    </div>
+
+    <div class="card">
+        <div class="page-head"><div><h2>Quién lo forma ({{ group.members|length }})</h2></div></div>
+        {% if group.members is empty %}
+            <div class="empty-state">
+                <p>Nadie todavía. Añade personas desde «Editar».</p>
+            </div>
+        {% else %}
+            <table data-list-tools>
+                <thead>
+                    <tr><th>Nombre</th><th data-filter>Departamento</th></tr>
+                </thead>
+                <tbody>
+                    {% for member in group.members %}
+                        <tr>
+                            <td>{{ member.fullName }}{% if group.convener and member.id == group.convener.id %} <span class="badge">Convoca</span>{% endif %}</td>
+                            <td>{{ member.unit ? member.unit.name : 'Sin departamento' }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}

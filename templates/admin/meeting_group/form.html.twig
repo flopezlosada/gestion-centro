@@ -23,13 +23,13 @@
             <fieldset class="form-section">
                 <legend class="form-section-title">Quién lo forma</legend>
                 {% if form.members.vars.help %}<p class="help">{{ form.members.vars.help }}</p>{% endif %}
-                {{ f.pick_list(form.members, 'No hay personas de alta todavía.') }}
+                {{ f.pick_list(form.members, 'No hay personas de alta todavía.', true) }}
                 {{ form_errors(form.members) }}
             </fieldset>
             <fieldset class="form-section">
                 <legend class="form-section-title">Reunión semanal</legend>
                 <p class="help">Si este grupo se reúne cada semana a la misma hora, la aplicación crea sola cada reunión con una semana de antelación, sin convocarla a mano. Los cambios valen para las semanas que aún no se han creado.{% if group.penalaraKey %} Viene del horario de Peñalara («{{ group.penalaraKey }}»): si cambias aquí el día, la hora o las personas, el próximo import preguntará antes de pisarlo.{% endif %}</p>
-                {{ f.fields([form.weekday, form.slotIndex, form.convener, form.type]) }}
+                {{ f.fields([form.weekday, form.slotIndex, form.convener, form.type, form.place, form.reminder]) }}
             </fieldset>
             {{ f.toggle(form.active) }}
             {{ f.actions(path('admin_meeting_group_index')) }}

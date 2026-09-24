@@ -281,6 +281,27 @@ final class MeetingCrudTest extends WebTestCase
         self::assertSame(0, $this->noticesOf($this->em->getRepository(User::class)->find($attendee->getId()), 'meeting.convened'), 'a quien ya estaba convocado no se le vuelve a convocar');
     }
 
+    /** Poner lugar a una reunión que no lo tenía (la semanal generada llega sin él) no es moverla. */
+    public function testGivingAPlaceToAMeetingWithoutOneWarnsNobody(): void
+    {
+        $coordinator = $this->user('Lucía Coordina', 'lucia9.meet@centro.test');
+        $attendee = $this->user('Pedro Convocado', 'pedro9.meet@centro.test');
+        $meeting = $this->meeting($coordinator, $attendee);
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+
+        $this->client->loginUser($coordinator);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id.'/editar');
+        $values = $crawler->selectButton('Guardar')->form()->getPhpValues();
+        $values['meeting_form']['place'] = 'Sala de profesores';
+        $this->client->request('POST', '/reuniones/'.$id.'/editar', $values);
+        self::assertResponseRedirects();
+
+        $this->em->clear();
+        self::assertSame('Sala de profesores', $this->em->getRepository(Meeting::class)->find($id)?->getPlace());
+        self::assertSame(0, $this->noticesOf($this->em->getRepository(User::class)->find($attendee->getId()), 'meeting.rescheduled'));
+    }
+
     public function testCancellingWarnsThePeopleConvened(): void
     {
         $coordinator = $this->user('Lucía Coordina', 'lucia6.meet@centro.test');

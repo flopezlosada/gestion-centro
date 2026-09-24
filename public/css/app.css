@@ -1897,6 +1897,33 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 .obligation-help { font-size: .85rem; margin-top: .2rem; max-width: 64ch; }
 .row-actions { text-align: right; white-space: nowrap; }
 .row-actions form { display: inline; }
+/* Menú de acciones de una fila (⋮): <details class="row-menu"> con <summary> y un .row-menu__panel con
+   los enlaces y formularios de siempre. Sin JS abre y cierra solo (es un <details>); row-menu.js cierra
+   los demás al abrir uno, al pinchar fuera y con Escape. */
+.row-menu { position: relative; display: inline-block; text-align: left; }
+.row-menu > summary {
+    list-style: none; cursor: pointer; width: 32px; height: 32px; display: grid; place-items: center;
+    border-radius: var(--radius-sm); color: var(--text-muted); font-size: 18px; line-height: 1;
+}
+.row-menu > summary::-webkit-details-marker { display: none; }
+.row-menu > summary:hover, .row-menu[open] > summary { background: var(--surface-sunken); color: var(--text); }
+.row-menu > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.row-menu__panel {
+    position: absolute; z-index: 30; right: 0; top: calc(100% + 4px); min-width: 10rem;
+    display: flex; flex-direction: column; padding: 4px;
+    background: var(--surface); border: 1px solid var(--border-strong);
+    border-radius: var(--radius); box-shadow: var(--shadow-card);
+}
+.row-menu__panel form { display: block; }
+/* Todas las entradas iguales, sea enlace o botón: sin subrayado y sin el margin-left de .link-danger,
+   que pensado para ir en línea tras «Editar» descuadraba «Borrar» dentro del panel. Solo cambia el color. */
+.row-menu__panel a, .row-menu__panel button {
+    display: block; width: 100%; box-sizing: border-box; margin: 0; padding: 8px 10px; text-align: left;
+    border: 0; border-radius: var(--radius-sm); background: transparent; font: inherit; cursor: pointer;
+    color: var(--text); text-decoration: none;
+}
+.row-menu__panel .link-danger { color: var(--danger-text); }
+.row-menu__panel a:hover, .row-menu__panel button:hover { background: var(--surface-sunken); text-decoration: none; }
 /* Borrado inline en tablas: botón con apariencia de enlace destructivo (por accesibilidad y CSRF
    es un <button> dentro de un <form>, no un enlace). */
 .link-danger { background: none; border: 0; padding: 0; margin-left: 14px; color: var(--danger-text); font: inherit; cursor: pointer; }
@@ -1958,12 +1985,36 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
     transition: border-color .12s ease, background .12s ease;
 }
 .pick-option:hover { border-color: var(--accent); }
+/* display:flex anula el [hidden] del navegador: sin esto pick-search.js no podía esconder a los no elegidos. */
+.pick-option[hidden] { display: none; }
 .pick-option__input { margin-top: 2px; flex: 0 0 auto; accent-color: var(--accent); }
 .pick-option__body { display: flex; flex-direction: column; gap: 2px; }
 .pick-option__name { font-weight: 500; color: var(--text); line-height: 1.3; }
 .pick-option__desc { font-size: 13px; color: var(--text-muted); line-height: 1.35; }
 /* Estado seleccionado: la casilla nativa es el control real; :has solo lo refuerza. */
 .pick-option:has(.pick-option__input:checked) { border-color: var(--accent); background: var(--accent-weak); }
+/* Buscador de pick-search.js: encima de la lista, con los resultados en un panel que no empuja la
+   página. Cada resultado reutiliza el nombre y la descripción de la tarjeta. */
+.pick-search { position: relative; margin-top: 6px; }
+.pick-search__input {
+    width: 100%; box-sizing: border-box; padding: 10px 12px;
+    border: 1px solid var(--border-strong); border-radius: var(--radius);
+    font: 400 14px var(--font-body); background: var(--surface); color: var(--text);
+}
+.pick-search__results {
+    position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + 4px);
+    margin: 0; padding: 4px; list-style: none; max-height: 320px; overflow-y: auto;
+    background: var(--surface); border: 1px solid var(--border-strong);
+    border-radius: var(--radius); box-shadow: var(--shadow-card);
+}
+.pick-search__result {
+    display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left;
+    padding: 8px 10px; border: 0; border-radius: var(--radius-sm); background: transparent;
+    font: inherit; cursor: pointer;
+}
+.pick-search__result:hover, .pick-search__result:focus-visible { background: var(--surface-sunken); outline: none; }
+.pick-search__none { padding: 8px 10px; color: var(--text-muted); }
+.pick-search__empty { margin: 8px 0 0; }
 
 /* Lista de incidencias TIC: una fila por avería, con lo que hace falta para no abrirla — qué, dónde,
    cuándo y en qué estado. Lo resuelto se apaga en vez de esconderse: sigue siendo consultable. */
@@ -3066,6 +3117,35 @@ tr.is-not-covered { background: var(--danger-weak); }
     color: var(--text-muted); background: var(--surface-sunken);
     border: 1px solid var(--border); padding: 2px 7px; border-radius: 999px;
 }
+/* Mismo chip, en ámbar: algo que hacer que no urge ("falta el orden del día"). Ámbar y no naranja porque
+   no está vencido; es la acción pendiente, como el entregable de una tarea. */
+.chip-todo {
+    display: inline-flex; align-items: center;
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--amber-text); background: var(--amber-weak);
+    border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent); padding: 2px 7px; border-radius: 999px;
+}
+
+/* ---- Mis reuniones ----
+   Convocar con la lista hecha: una fila bajo la cabecera (rótulo + atajos + desplegable de grupos), no una
+   tarjeta. Se parte en varias líneas en el móvil, con el desplegable ocupando la suya entera. */
+.convene-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: -4px 0 26px; }
+.convene-bar__label { font-size: 13px; color: var(--text-muted); margin-right: 2px; }
+.convene-bar__group { display: flex; align-items: center; gap: 8px; flex: 1 1 20rem; max-width: 30rem; margin: 0; }
+.convene-bar__group .cselect, .convene-bar__group select { flex: 1 1 auto; min-width: 0; }
+.convene-bar__group .cselect__button { padding: 7px 12px; font-size: 13px; }
+
+/* La fecha de cada reunión en su bloque: día de la semana, número y mes, en mono para que cuadren. */
+.meeting-date {
+    flex: none; width: 48px; display: flex; flex-direction: column; align-items: center; gap: 1px;
+    padding: 6px 0 7px; border-radius: 12px; background: var(--surface-sunken); border: 1px solid var(--border);
+    font-family: var(--font-mono); line-height: 1;
+}
+.meeting-date__wd, .meeting-date__month { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }
+.meeting-date__day { font-size: 20px; font-weight: 600; color: var(--text); padding: 2px 0; }
+.meeting-list .tasklist__item { align-items: center; }
+.meeting-list .tasklist__body:hover .tasklist__title { color: var(--accent-ink); }
+.meeting-list__flags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
 
 /* =============================================================================
    Módulo con caja y banda de cabecera. Queda para /avisos (el panel de "avisos en este dispositivo");

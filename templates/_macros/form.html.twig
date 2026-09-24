@@ -140,8 +140,10 @@
    `:has`. Si la opción trae `data-description` (inyectada con `choice_attr` en el FormType), se pinta
    como subtítulo. `emptyText` es lo que se dice cuando el catálogo está vacío — nunca una lista muda.
 #}
-{% macro pick_list(field, emptyText = 'No hay nada que elegir todavía.') %}
-    <div class="pick-list">
+{#- searchable: para listas largas de personas. Con JS (pick-search.js) solo quedan a la vista las
+    marcadas y un buscador ofrece el resto; sin JS, la lista entera como siempre. -#}
+{% macro pick_list(field, emptyText = 'No hay nada que elegir todavía.', searchable = false) %}
+    <div class="pick-list"{% if searchable %} data-pick-search{% endif %}>
         {% for child in field %}
             <label class="pick-option">
                 {{ form_widget(child, { attr: { class: 'pick-option__input' } }) }}

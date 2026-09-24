@@ -12,6 +12,7 @@ use App\Repository\AcademicYearRepository;
 use App\Repository\MeetingGroupRepository;
 use App\Repository\TimeSlotRepository;
 use App\Security\Voter\AreaVoter;
+use App\Service\RecurringMeetingGenerator;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -45,16 +46,31 @@ final class AdminMeetingGroupController extends AbstractController
         ]);
     }
 
-    #[Route('/nuevo', name: 'admin_meeting_group_new', methods: ['GET', 'POST'])]
-    public function new(Request $request, EntityManagerInterface $em, AcademicYearRepository $years, TimeSlotRepository $timeSlots): Response
+    /**
+     * La ficha de un grupo: quién lo forma (con su departamento), cuándo se reúne, quién convoca y de qué
+     * tipo es. Lo que el listado solo cuenta —«19 miembros»— aquí se ve con nombres.
+     */
+    #[Route('/{id}', name: 'admin_meeting_group_show', requirements: ['id' => '\d+'], methods: ['GET'])]
+    public function show(MeetingGroup $group, AcademicYearRepository $years, TimeSlotRepository $timeSlots): Response
     {
-        return $this->handleForm(new MeetingGroup(), $request, $em, $this->slotChoices($years, $timeSlots));
+        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
+
+        return $this->render('admin/meeting_group/show.html.twig', [
+            'group' => $group,
+            'slotLabels' => array_flip($this->slotChoices($years, $timeSlots)),
+        ]);
+    }
+
+    #[Route('/nuevo', name: 'admin_meeting_group_new', methods: ['GET', 'POST'])]
+    public function new(Request $request, EntityManagerInterface $em, AcademicYearRepository $years, TimeSlotRepository $timeSlots, RecurringMeetingGenerator $generator): Response
+    {
+        return $this->handleForm(new MeetingGroup(), $request, $em, $this->slotChoices($years, $timeSlots), $generator);
     }
 
     #[Route('/{id}/editar', name: 'admin_meeting_group_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
-    public function edit(MeetingGroup $group, Request $request, EntityManagerInterface $em, AcademicYearRepository $years, TimeSlotRepository $timeSlots): Response
+    public function edit(MeetingGroup $group, Request $request, EntityManagerInterface $em, AcademicYearRepository $years, TimeSlotRepository $timeSlots, RecurringMeetingGenerator $generator): Response
     {
-        return $this->handleForm($group, $request, $em, $this->slotChoices($years, $timeSlots));
+        return $this->handleForm($group, $request, $em, $this->slotChoices($years, $timeSlots), $generator);
     }
 
     #[Route('/{id}/borrar', name: 'admin_meeting_group_delete', methods: ['POST'], requirements: ['id' => '\d+'])]
@@ -79,10 +95,11 @@ final class AdminMeetingGroupController extends AbstractController
      * @param Request                $request     the current request
      * @param EntityManagerInterface $em          the entity manager
      * @param array<string, int>     $slotChoices the periods of the day, label → index
+     * @param RecurringMeetingGenerator $generator carries the edit to the meetings already created
      *
      * @return Response the form page, or a redirect to the list on success
      */
-    private function handleForm(MeetingGroup $group, Request $request, EntityManagerInterface $em, array $slotChoices): Response
+    private function handleForm(MeetingGroup $group, Request $request, EntityManagerInterface $em, array $slotChoices, RecurringMeetingGenerator $generator): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
         // Un grupo con una hora que ya no está en el marco horario del curso la sigue enseñando, en vez
@@ -91,6 +108,7 @@ final class AdminMeetingGroupController extends AbstractController
             $slotChoices[sprintf('Tramo %d', $group->getSlotIndex())] = $group->getSlotIndex();
         }
         $before = $group->importedShape();
+        $series = $group->seriesShape();
 
         $form = $this->createForm(MeetingGroupFormType::class, $group, ['slot_choices' => $slotChoices]);
         $form->get('weekday')->setData($group->getWeekday());
@@ -115,7 +133,10 @@ final class AdminMeetingGroupController extends AbstractController
             }
             $em->persist($group);
             $em->flush();
-            $this->addFlash('success', 'Grupo guardado.');
+            // El cambio llega también a las reuniones ya creadas que aún no han empezado: la siguiente lo
+            // refleja aunque sea mañana. Las pasadas no se tocan.
+            $updated = $generator->applySeriesChange($group, $series, new \DateTimeImmutable());
+            $this->addFlash('success', 0 === $updated ? 'Grupo guardado.' : sprintf('Grupo guardado. El cambio llega también a %d reunión(es) ya creada(s).', $updated));
 
             return $this->redirectToRoute('admin_meeting_group_index');
         }

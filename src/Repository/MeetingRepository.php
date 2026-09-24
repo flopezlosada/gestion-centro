@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repository;
 
 use App\Entity\Meeting;
+use App\Entity\MeetingGroup;
 use App\Entity\MeetingType;
 use App\Entity\Project;
 use App\Entity\User;
@@ -84,6 +85,25 @@ class MeetingRepository extends ServiceEntityRepository
             ->andWhere('m.startAt BETWEEN :from AND :to')
             ->setParameter('from', $from)
             ->setParameter('to', $to)
+            ->orderBy('m.startAt', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * The meetings of a weekly group that have not started yet: the ones already in the agenda that a
+     * change to the group's members still has to reach.
+     *
+     * @param MeetingGroup       $group the weekly group
+     * @param \DateTimeImmutable $now   the reference moment
+     *
+     * @return list<Meeting> the group's upcoming meetings, soonest first
+     */
+    public function findUpcomingInGroup(MeetingGroup $group, \DateTimeImmutable $now): array
+    {
+        return $this->createQueryBuilder('m')
+            ->andWhere('m.meetingGroup = :group')->setParameter('group', $group)
+            ->andWhere('m.startAt > :now')->setParameter('now', $now)
             ->orderBy('m.startAt', 'ASC')
             ->getQuery()
             ->getResult();

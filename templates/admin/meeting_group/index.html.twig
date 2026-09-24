@@ -1,4 +1,5 @@
 {% extends 'app_shell.html.twig' %}
+{% import 'admin/meeting_group/_macros.html.twig' as g %}
 
 {% block title %}Grupos de convocatoria{% endblock %}
 
@@ -24,24 +25,28 @@
         {% else %}
             <table data-list-tools>
                 <thead>
-                    <tr><th>Nombre</th><th>Miembros</th><th>Cada semana</th><th>Convoca</th><th data-filter>Estado</th><th data-nosort></th></tr>
+                    <tr><th>Nombre</th><th data-filter>Tipo</th><th>Miembros</th><th>Cada semana</th><th>Convoca</th><th data-filter>Estado</th><th data-nosort></th></tr>
                 </thead>
                 <tbody>
                     {% for group in groups %}
                         <tr>
-                            <td>{{ group.name }}</td>
+                            <td><a href="{{ path('admin_meeting_group_show', { id: group.id }) }}">{{ group.name }}</a></td>
+                            <td>{{ group.type ? group.type.name : 'Sin tipo' }}</td>
                             <td>{{ group.members|length }}</td>
-                            <td>{% if group.repeatsWeekly %}{{ group.weekday.label }} · {{ slotLabels[group.slotIndex] ?? ('tramo ' ~ group.slotIndex) }}{% else %}—{% endif %}</td>
+                            <td>{{ g.schedule(group, slotLabels) }}</td>
                             <td>{{ group.convener ? group.convener.fullName : '—' }}</td>
-                            {#- El estado es lo que se filtra, así que es texto fijo por grupo (ver la trampa de las
-                                celdas con data-filter): «Sin quien convoque» es lo que hay que ir a arreglar. -#}
-                            <td>{% if not group.active %}Retirado{% elseif group.repeatsWeekly and not group.convener %}Sin quien convoque{% elseif group.repeatsWeekly %}Crea sus reuniones{% else %}En uso{% endif %}</td>
+                            <td>{{ g.status(group) }}</td>
                             <td class="row-actions">
-                                <a href="{{ path('admin_meeting_group_edit', { id: group.id }) }}">Editar</a>
-                                <form method="post" action="{{ path('admin_meeting_group_delete', { id: group.id }) }}" data-confirm="¿Borrar el grupo «{{ group.name }}»? No afecta a ninguna reunión ya convocada: solo deja de ofrecerse como atajo.">
-                                    <input type="hidden" name="_token" value="{{ csrf_token('meeting_group_delete' ~ group.id) }}">
-                                    <button type="submit" class="link-danger">Borrar</button>
-                                </form>
+                                <details class="row-menu">
+                                    <summary aria-label="Acciones de «{{ group.name }}»" title="Acciones">⋮</summary>
+                                    <div class="row-menu__panel">
+                                        <a href="{{ path('admin_meeting_group_edit', { id: group.id }) }}">Editar</a>
+                                        <form method="post" action="{{ path('admin_meeting_group_delete', { id: group.id }) }}" data-confirm="¿Borrar el grupo «{{ group.name }}»? No afecta a ninguna reunión ya convocada: solo deja de ofrecerse como atajo.">
+                                            <input type="hidden" name="_token" value="{{ csrf_token('meeting_group_delete' ~ group.id) }}">
+                                            <button type="submit" class="link-danger">Borrar</button>
+                                        </form>
+                                    </div>
+                                </details>
                             </td>
                         </tr>
                     {% endfor %}

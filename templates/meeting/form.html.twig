@@ -43,7 +43,7 @@
                 <div class="form-row">
                     {{ form_label(form.attendees) }}
                     {% if form.attendees.vars.help %}<p class="help">{{ form.attendees.vars.help }}</p>{% endif %}
-                    {{ f.pick_list(form.attendees, 'No hay nadie a quien puedas convocar: pídele a dirección que te ponga el profesorado del proyecto.') }}
+                    {{ f.pick_list(form.attendees, 'No hay nadie a quien puedas convocar: pídele a dirección que te ponga el profesorado del proyecto.', true) }}
                     {{ form_errors(form.attendees) }}
                 </div>
             </fieldset>
