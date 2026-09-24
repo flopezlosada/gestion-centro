@@ -5,6 +5,7 @@
 
 {% block body %}
     {% set dias = ['', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'] %}
+    {% set meses = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'] %}
 
     <div class="page-head">
         <div>
@@ -15,24 +16,30 @@
         {% if canConvene %}<a class="btn" href="{{ path('meeting_new') }}">+ Convocar reunión</a>{% endif %}
     </div>
 
-    {# Atajos: convocar desde aquí trae ya marcado al profesorado del proyecto o del departamento (lo
-       resuelve el servidor con ?proyecto= / ?departamento=mi, así que funciona sin JS). Sin ellos, con el
-       claustro entero como candidatos, convocar una reunión de departamento sería marcar doce casillas. #}
+    {#- Convocar con la lista ya hecha: tu departamento, tus proyectos y los grupos de convocatoria, en UNA
+        fila bajo la cabecera y no en una tarjeta de botones. Los grupos van en un desplegable con buscador:
+        con los del horario de Peñalara son casi cuarenta y como botones tapaban la pantalla entera. Todo por
+        GET, así que sin JS funciona igual (el servidor marca a los convocados con ?departamento= / ?proyecto=
+        / ?grupo=). -#}
     {% if canConvene and (projects is not empty or ownDepartment or meetingGroups is not empty) %}
-        <div class="card">
-            <div class="detail-block__label">Atajos</div>
-            <div class="form-actions">
-                {% if ownDepartment %}
-                    <a class="btn secondary" href="{{ path('meeting_new', { departamento: 'mi' }) }}">Convocar a {{ ownDepartment.name }}</a>
-                {% endif %}
-                {% for project in projects %}
-                    <a class="btn secondary" href="{{ path('meeting_new', { proyecto: project.id }) }}">Convocar reunión de {{ project.name }}</a>
-                {% endfor %}
-                {% for group in meetingGroups %}
-                    <a class="btn secondary" href="{{ path('meeting_new', { grupo: group.id }) }}">Convocar a {{ group.name }}</a>
-                {% endfor %}
-            </div>
-            <p class="help">Traen la lista de convocatoria ya marcada; puedes quitar o añadir a quien quieras antes de convocar.</p>
+        <div class="convene-bar">
+            <span class="convene-bar__label">Con la lista ya marcada</span>
+            {% if ownDepartment %}
+                <a class="btn secondary btn-sm" href="{{ path('meeting_new', { departamento: 'mi' }) }}">{{ ownDepartment.name }}</a>
+            {% endif %}
+            {% for project in projects %}
+                <a class="btn secondary btn-sm" href="{{ path('meeting_new', { proyecto: project.id }) }}">{{ project.name }}</a>
+            {% endfor %}
+            {% if meetingGroups is not empty %}
+                <form method="get" action="{{ path('meeting_new') }}" class="convene-bar__group">
+                    <label for="convocar-grupo" class="visually-hidden">Grupo de convocatoria</label>
+                    <select id="convocar-grupo" name="grupo" required>
+                        <option value="">Un grupo de convocatoria…</option>
+                        {% for group in meetingGroups %}<option value="{{ group.id }}">{{ group.name }}</option>{% endfor %}
+                    </select>
+                    <button type="submit" class="btn secondary btn-sm">Convocar</button>
+                </form>
+            {% endif %}
         </div>
     {% endif %}
 
@@ -43,21 +50,41 @@
         {% if upcoming is empty %}
             <p class="home-empty">No tienes ninguna reunión convocada.</p>
         {% else %}
-            <ul class="tasklist">
-                {% for meeting in upcoming %}
-                    <li class="tasklist__item upcoming-item">
-                        <a class="tasklist__body" href="{{ path('meeting_show', { id: meeting.id }) }}">
-                            <span class="tasklist__title">{{ meeting.title }}</span>
-                            <span class="tasklist__meta">
-                                {{- dias[meeting.startAt|date('N')] }} {{ meeting.startAt|date('d/m') }} · {{ meeting.startAt|date('H:i') -}}
-                                {%- if meeting.place %} · {{ meeting.place }}{% endif -%}
-                                {%- if meeting.project %} · {{ meeting.project.name }}{% endif -%}
+            <div class="panel">
+                <ul class="tasklist tasklist--panel meeting-list">
+                    {% for meeting in upcoming %}
+                        {% set mine = meeting.convener and meeting.convener.id == app.user.id %}
+                        <li class="tasklist__item">
+                            {#- La fecha, lo primero que se busca en una reunión, en su propio bloque: el día de la
+                                semana, el número y el mes, en mono para que las filas cuadren entre sí. -#}
+                            <span class="meeting-date" aria-hidden="true">
+                                <span class="meeting-date__wd">{{ dias[meeting.startAt|date('N')] }}</span>
+                                <span class="meeting-date__day">{{ meeting.startAt|date('j') }}</span>
+                                <span class="meeting-date__month">{{ meses[meeting.startAt|date('n')] }}</span>
                             </span>
-                        </a>
-                        <span class="tasklist__go" aria-hidden="true">›</span>
-                    </li>
-                {% endfor %}
-            </ul>
+                            <a class="tasklist__body" href="{{ path('meeting_show', { id: meeting.id }) }}">
+                                <span class="tasklist__title">{{ meeting.title }}</span>
+                                <span class="tasklist__meta">
+                                    <span class="visually-hidden">{{ meeting.startAt|date('d/m/Y') }}, </span>
+                                    {{- meeting.startAt|date('H:i') }}{% if meeting.endAt %}–{{ meeting.endAt|date('H:i') }}{% endif -%}
+                                    {%- if meeting.place %} <span class="tasklist__sep">·</span> {{ meeting.place }}{% endif -%}
+                                    {%- if meeting.type %} <span class="tasklist__sep">·</span> {{ meeting.type.name }}{% endif -%}
+                                    {%- if meeting.project %} <span class="tasklist__sep">·</span> {{ meeting.project.name }}{% endif -%}
+                                </span>
+                                {% if mine %}
+                                    <span class="meeting-list__flags">
+                                        <span class="chip-neutral">Convocas</span>
+                                        {#- Ámbar: hay algo que hacer, no algo que urge. Las semanales llegan sin
+                                            orden del día y solo quien convoca puede escribirlo. -#}
+                                        {% if not meeting.agenda %}<span class="chip-todo">Falta el orden del día</span>{% endif %}
+                                    </span>
+                                {% endif %}
+                            </a>
+                            <span class="tasklist__go" aria-hidden="true">›</span>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
         {% endif %}
     </section>
 

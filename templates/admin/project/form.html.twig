@@ -23,7 +23,7 @@
             <fieldset class="form-section">
                 <legend class="form-section-title">Profesorado del proyecto</legend>
                 {% if form.members.vars.help %}<p class="help">{{ form.members.vars.help }}</p>{% endif %}
-                {{ f.pick_list(form.members, 'No hay personas de alta todavía.') }}
+                {{ f.pick_list(form.members, 'No hay personas de alta todavía.', true) }}
                 {{ form_errors(form.members) }}
             </fieldset>
             {{ f.toggle(form.active) }}

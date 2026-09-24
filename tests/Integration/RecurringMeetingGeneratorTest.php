@@ -9,8 +9,10 @@ use App\Entity\Meeting;
 use App\Entity\MeetingGroup;
 use App\Entity\MeetingType;
 use App\Entity\NonLectiveDay;
+use App\Entity\Notification;
 use App\Entity\TimeSlot;
 use App\Entity\User;
+use App\Enum\EventReminderOffset;
 use App\Enum\TimeSlotKind;
 use App\Enum\Weekday;
 use App\Repository\MeetingRepository;
@@ -89,6 +91,28 @@ final class RecurringMeetingGeneratorTest extends KernelTestCase
         self::assertSame($this->group, $meeting->getMeetingGroup());
         self::assertTrue($meeting->minutesApprovalRequired(), 'lo decide el tipo del grupo');
         self::assertSame([$this->member], array_values($meeting->getAttendees()->toArray()), 'quien convoca no se convoca a sí mismo');
+    }
+
+    /**
+     * La reunión hereda el lugar y el aviso del grupo, y SOLO quien convoca recibe un aviso: el de que le
+     * falta el orden del día. Los convocados no, que la reunión ya está fija en su horario.
+     */
+    public function testInheritsPlaceAndReminderAndTellsOnlyTheConvenerToWriteTheAgenda(): void
+    {
+        $this->group->setPlace('Sala de profesores')->setReminder(EventReminderOffset::FIFTEEN_MINUTES);
+        $this->em->flush();
+
+        $this->generator->generate(new \DateTimeImmutable(self::TODAY));
+
+        $meeting = $this->onlyMeeting();
+        self::assertSame('Sala de profesores', $meeting->getPlace());
+        self::assertSame(EventReminderOffset::FIFTEEN_MINUTES, $meeting->getReminder());
+        self::assertSame('2026-10-12 13:20', $meeting->getRemindAt()?->format('Y-m-d H:i'));
+
+        $notices = $this->em->getRepository(Notification::class)->findBy(['kind' => 'meeting.generated']);
+        self::assertCount(1, $notices);
+        self::assertSame($this->convener, $notices[0]->getRecipient());
+        self::assertCount(0, $this->em->getRepository(Notification::class)->findBy(['recipient' => $this->member]));
     }
 
     public function testRunningItAgainTheSameDayCreatesNothing(): void
@@ -183,6 +207,129 @@ final class RecurringMeetingGeneratorTest extends KernelTestCase
     private function meetings(): array
     {
         return self::getContainer()->get(MeetingRepository::class)->findBy(['meetingGroup' => $this->group]);
+    }
+
+    /** Un cambio del grupo llega a la reunión ya creada, salvo en lo que quien convoca cambió a mano en ella. */
+    public function testAnEditReachesTheUpcomingMeetingExceptWhatWasChangedThere(): void
+    {
+        $this->generator->generate(new \DateTimeImmutable(self::TODAY));
+        $before = $this->group->seriesShape();
+        $this->group->setName('TUTORÍA 3º ESO')->setPlace('Sala A');
+        $this->em->flush();
+
+        self::assertSame(1, $this->generator->applySeriesChange($this->group, $before, new \DateTimeImmutable(self::TODAY)));
+        $meeting = $this->onlyMeeting();
+        self::assertSame('TUTORÍA 3º ESO', $meeting->getTitle());
+        self::assertSame('Sala A', $meeting->getPlace());
+        self::assertSame(0, $this->noticesTo($this->member, 'meeting.rescheduled'), 'poner lugar donde no lo había no mueve a nadie');
+
+        $meeting->setPlace('Biblioteca');
+        $before = $this->group->seriesShape();
+        $this->group->setPlace('Sala B');
+        $this->em->flush();
+        $this->generator->applySeriesChange($this->group, $before, new \DateTimeImmutable(self::TODAY));
+
+        self::assertSame('Biblioteca', $this->onlyMeeting()->getPlace(), 'el lugar de esa semana lo decidió quien convoca');
+    }
+
+    /** Otro día: la reunión se mueve dentro de su semana y se avisa a los convocados. */
+    public function testANewDayMovesTheMeetingWithinItsWeekAndWarns(): void
+    {
+        $this->generator->generate(new \DateTimeImmutable(self::TODAY));
+        $before = $this->group->seriesShape();
+        $this->group->repeatWeekly(Weekday::WEDNESDAY, 7);
+        $this->em->flush();
+
+        $this->generator->applySeriesChange($this->group, $before, new \DateTimeImmutable(self::TODAY));
+
+        self::assertSame('2026-10-14 13:35', $this->onlyMeeting()->getStartAt()->format('Y-m-d H:i'));
+        self::assertSame(1, $this->noticesTo($this->member, 'meeting.rescheduled'));
+        self::assertNull($this->group->getGeneratedThrough(), 'el horario nuevo se vuelve a repasar desde hoy');
+    }
+
+    /** Si en esa semana la nueva hora ya pasó, la reunión de esa semana se cancela, con aviso. */
+    public function testANewHourAlreadyGoneByCancelsThatWeeksMeeting(): void
+    {
+        $this->em->persist((new TimeSlot())->setAcademicYear($this->year)->setSlotIndex(0)
+            ->setStartsAt(new \DateTimeImmutable('08:25'))->setEndsAt(new \DateTimeImmutable('09:20'))->setKind(TimeSlotKind::LECTIVE));
+        $this->em->flush();
+        $this->generator->generate(new \DateTimeImmutable(self::TODAY));
+        $before = $this->group->seriesShape();
+        $this->group->repeatWeekly(Weekday::MONDAY, 0);
+        $this->em->flush();
+
+        $this->generator->applySeriesChange($this->group, $before, new \DateTimeImmutable('2026-10-12 09:00'));
+
+        self::assertCount(0, $this->meetings());
+        self::assertSame(1, $this->noticesTo($this->member, 'meeting.cancelled'));
+    }
+
+    /** Quien convoca ahora se queda las reuniones ya creadas y recibe el aviso del orden del día. */
+    public function testANewConvenerTakesTheUpcomingMeetingAndIsToldAboutTheAgenda(): void
+    {
+        $this->generator->generate(new \DateTimeImmutable(self::TODAY));
+        $before = $this->group->seriesShape();
+        $this->group->setConvener($this->member);
+        $this->em->flush();
+
+        $this->generator->applySeriesChange($this->group, $before, new \DateTimeImmutable(self::TODAY));
+
+        $meeting = $this->onlyMeeting();
+        self::assertSame($this->member, $meeting->getConvener());
+        self::assertSame($this->member, $meeting->getMinutesTakenBy());
+        self::assertSame([$this->convener], array_values($meeting->getAttendees()->toArray()), 'quien convocaba sigue en el grupo: pasa a convocado');
+        self::assertSame(1, $this->noticesTo($this->member, 'meeting.generated'));
+    }
+
+    /**
+     * Una reunión no deja cambiar su convocante a mano: si no coincide con el del grupo es que se quedó
+     * atrás, y el siguiente guardado del grupo la pone al día aunque ese guardado no toque el convocante.
+     */
+    public function testAConvenerLeftBehindCatchesUpOnTheNextSave(): void
+    {
+        $this->generator->generate(new \DateTimeImmutable(self::TODAY));
+        $this->group->setConvener($this->member);
+        $this->em->flush();
+        $before = $this->group->seriesShape();
+
+        $this->generator->applySeriesChange($this->group, $before, new \DateTimeImmutable(self::TODAY));
+
+        self::assertSame($this->member, $this->onlyMeeting()->getConvener());
+    }
+
+    /** Dejar de repetirse cancela las reuniones que aún no se han celebrado. */
+    public function testStoppingTheSeriesCancelsTheUpcomingMeetings(): void
+    {
+        $this->generator->generate(new \DateTimeImmutable(self::TODAY));
+        $before = $this->group->seriesShape();
+        $this->group->stopRepeating();
+        $this->em->flush();
+
+        $this->generator->applySeriesChange($this->group, $before, new \DateTimeImmutable(self::TODAY));
+
+        self::assertCount(0, $this->meetings());
+        self::assertSame(1, $this->noticesTo($this->member, 'meeting.cancelled'));
+    }
+
+    /** También la que su convocante movió a mano: el grupo ya no existe como serie, así que no queda huérfana. */
+    public function testStoppingTheSeriesAlsoCancelsAMeetingMovedByHand(): void
+    {
+        $this->generator->generate(new \DateTimeImmutable(self::TODAY));
+        $this->onlyMeeting()->setStartAt(new \DateTimeImmutable('2026-10-13 10:00'));
+        $this->em->flush();
+        $before = $this->group->seriesShape();
+        $this->group->setActive(false);
+        $this->em->flush();
+
+        $this->generator->applySeriesChange($this->group, $before, new \DateTimeImmutable(self::TODAY));
+
+        self::assertCount(0, $this->meetings());
+        self::assertSame(1, $this->noticesTo($this->member, 'meeting.cancelled'));
+    }
+
+    private function noticesTo(User $person, string $kind): int
+    {
+        return \count($this->em->getRepository(Notification::class)->findBy(['recipient' => $person, 'kind' => $kind]));
     }
 
     private function onlyMeeting(): Meeting

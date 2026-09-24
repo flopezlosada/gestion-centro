@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Contract\Auditable;
+use App\Enum\EventReminderOffset;
 use App\Enum\Weekday;
 use App\Repository\MeetingGroupRepository;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -54,6 +55,7 @@ class MeetingGroup implements Auditable
      */
     #[ORM\ManyToMany(targetEntity: User::class)]
     #[ORM\JoinTable(name: 'meeting_group_member')]
+    #[ORM\OrderBy(['fullName' => 'ASC'])]
     private Collection $members;
 
     /** Retired groups stay for the audit trail but are no longer offered when convening. */
@@ -84,6 +86,19 @@ class MeetingGroup implements Auditable
     #[ORM\ManyToOne(targetEntity: MeetingType::class)]
     #[ORM\JoinColumn(name: 'meeting_type_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
     private ?MeetingType $type = null;
+
+    /**
+     * Where the weekly meeting is held, copied to each generated meeting. Here and not left for the
+     * convener to fill in every week: it rarely changes, and filling it in on an already-generated
+     * meeting would read as a change of place.
+     */
+    #[ORM\Column(length: 120, nullable: true)]
+    #[Assert\Length(max: 120)]
+    private ?string $place = null;
+
+    /** How long before each generated meeting the convened get a push reminder, or null for none. */
+    #[ORM\Column(name: 'reminder_minutes', type: Types::INTEGER, nullable: true, enumType: EventReminderOffset::class)]
+    private ?EventReminderOffset $reminder = null;
 
     /**
      * The meeting's name in Peñalara, the key a re-import finds this group by. Kept apart from
@@ -172,6 +187,13 @@ class MeetingGroup implements Auditable
      */
     public function repeatWeekly(Weekday $weekday, int $slotIndex): static
     {
+        // Un día u hora nuevos invalidan la marca de generación: los días ya repasados con el horario viejo
+        // se saltaron por no ser el día del grupo, y con el nuevo alguno sí lo es. Sin esto, pasar de jueves
+        // a martes perdía el martes que ya caía dentro de la semana generada. El generador no duplica: una
+        // reunión del grupo a esa misma hora ya existente no se vuelve a crear.
+        if ($weekday !== $this->weekday || $slotIndex !== $this->slotIndex) {
+            $this->generatedThrough = null;
+        }
         $this->weekday = $weekday;
         $this->slotIndex = $slotIndex;
 
@@ -179,7 +201,8 @@ class MeetingGroup implements Auditable
     }
 
     /**
-     * Stops the weekly repetition; the meetings already generated stay.
+     * Stops the weekly repetition. The meetings already generated and not yet held are cancelled when the
+     * edit is saved ({@see \App\Service\RecurringMeetingGenerator::applySeriesChange()}); past ones stay.
      */
     public function stopRepeating(): static
     {
@@ -227,6 +250,30 @@ class MeetingGroup implements Auditable
         return $this;
     }
 
+    public function getPlace(): ?string
+    {
+        return $this->place;
+    }
+
+    public function setPlace(?string $place): static
+    {
+        $this->place = $place;
+
+        return $this;
+    }
+
+    public function getReminder(): ?EventReminderOffset
+    {
+        return $this->reminder;
+    }
+
+    public function setReminder(?EventReminderOffset $reminder): static
+    {
+        $this->reminder = $reminder;
+
+        return $this;
+    }
+
     public function getType(): ?MeetingType
     {
         return $this->type;
@@ -249,6 +296,26 @@ class MeetingGroup implements Auditable
         $this->penalaraKey = null !== $penalaraKey ? trim($penalaraKey) : null;
 
         return $this;
+    }
+
+    /**
+     * Everything its generated meetings copy from it, taken before an edit so the change can be carried
+     * to the meetings already created ({@see \App\Service\RecurringMeetingGenerator::applySeriesChange()}).
+     *
+     * @return array{name: string, type: MeetingType|null, convener: User|null, place: string|null, reminder: EventReminderOffset|null, weekday: Weekday|null, slot: int|null, members: list<User>} the shape
+     */
+    public function seriesShape(): array
+    {
+        return [
+            'name' => $this->name,
+            'type' => $this->type,
+            'convener' => $this->convener,
+            'place' => $this->place,
+            'reminder' => $this->reminder,
+            'weekday' => $this->weekday,
+            'slot' => $this->slotIndex,
+            'members' => array_values($this->members->toArray()),
+        ];
     }
 
     /**

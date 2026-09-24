@@ -18,6 +18,11 @@
 
     var counter = 0;
 
+    /* Minúsculas y sin tildes, para buscar sin que importe cómo se escribió. */
+    function fold(text) {
+        return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    }
+
     /* Cierra cualquier desplegable abierto salvo el que se pase a conservar. */
     function closeOthers(keep) {
         document.querySelectorAll('.cselect.is-open').forEach(function (el) {
@@ -158,10 +163,11 @@
 
         function filterOptions() {
             if (!searchInput) { return; }
-            var q = searchInput.value.trim().toLowerCase();
+            // Sin tildes ni mayúsculas en los dos lados: «reunion» encuentra «REUNIÓN».
+            var q = fold(searchInput.value.trim());
             var firstVisible = -1;
             optionEls.forEach(function (li, i) {
-                var match = q === '' || li.textContent.toLowerCase().indexOf(q) !== -1;
+                var match = q === '' || fold(li.textContent).indexOf(q) !== -1;
                 li.hidden = !match;
                 if (match && firstVisible === -1) { firstVisible = i; }
             });

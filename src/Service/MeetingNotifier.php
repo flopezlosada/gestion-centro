@@ -47,6 +47,35 @@ final readonly class MeetingNotifier
     }
 
     /**
+     * Reuniones semanales recién creadas por el generador: avisa SOLO a quien convoca cada una de que ya
+     * está en la agenda y le falta el orden del día. A los convocados no se les avisa (la reunión está fija
+     * en su horario, ver {@see RecurringMeetingGenerator}); a quien convoca sí, porque sin este aviso nada le
+     * recuerda que tiene que escribirlo y la reunión llega sin orden del día.
+     *
+     * @param list<Meeting> $meetings the meetings just generated
+     */
+    public function notifyAgendaPending(array $meetings): void
+    {
+        $notifications = [];
+        foreach ($meetings as $meeting) {
+            $convener = $meeting->getConvener();
+            if (null === $convener) {
+                continue;
+            }
+            $notifications[] = $this->dispatcher->record(
+                $convener,
+                'meeting.generated',
+                \sprintf('Añade el orden del día: %s', $meeting->getTitle()),
+                \sprintf('Tu reunión de %s ya está creada y convocada: es %s. Escribe el orden del día para que lo vean los convocados.', $meeting->getTitle(), $this->when($meeting)),
+            );
+        }
+
+        if ([] !== $notifications) {
+            $this->dispatcher->flushAndSend($notifications);
+        }
+    }
+
+    /**
      * Cambio de convocatoria: avisa a los ya convocados de que la reunión se mueve. Solo se llama cuando
      * cambia el CUÁNDO o el DÓNDE — lo que te hace llegar tarde o al sitio equivocado.
      *

@@ -313,6 +313,27 @@ class Meeting implements Auditable
         return $this->convener;
     }
 
+    /**
+     * Hands the meeting to another convener, as when a weekly group changes who convenes it. Whoever was
+     * going to take the minutes because they convened now hands that over too (someone else named on
+     * purpose keeps it), and the new convener leaves the convened list: nobody is convened to a meeting
+     * they call themselves.
+     *
+     * @param User $newConvener who convenes from now on
+     *
+     * @return static the meeting
+     */
+    public function handOverTo(User $newConvener): static
+    {
+        if ($this->minutesTakenBy === $this->convener) {
+            $this->minutesTakenBy = $newConvener;
+        }
+        $this->convener = $newConvener;
+        $this->attendees->removeElement($newConvener);
+
+        return $this;
+    }
+
     public function getTitle(): string
     {
         return $this->title;

@@ -35,7 +35,9 @@
             {% if meeting.agenda %}
                 <p class="detail-prose">{{ meeting.agenda|nl2br }}</p>
             {% else %}
-                <p class="help">Sin orden del día.</p>
+                {#- Las semanales se crean solas y sin orden del día: quien puede escribirlo lo tiene aquí a mano,
+                    no solo en el «Modificar» de la barra de arriba, que pasaba desapercibido. -#}
+                <p class="help">Sin orden del día.{% if canManage %} <a href="{{ path('meeting_edit', { id: meeting.id }) }}#meeting_form_agenda">Escribir el orden del día</a>{% endif %}</p>
             {% endif %}
         </div>
 

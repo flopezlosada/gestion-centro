@@ -1,0 +1,11 @@
+{#- Lo que el listado y la ficha de un grupo dicen igual, para que no se desalineen. -#}
+
+{#- El estado es texto FIJO por grupo porque el listado lo filtra (data-filter agrupa por el texto
+    entero de la celda): «Sin quien convoque» es lo que hay que ir a arreglar. -#}
+{% macro status(group) -%}
+    {%- if not group.active %}Retirado{% elseif group.repeatsWeekly and not group.convener %}Sin quien convoque{% elseif group.repeatsWeekly %}Crea sus reuniones{% else %}En uso{% endif -%}
+{%- endmacro %}
+
+{% macro schedule(group, slotLabels) -%}
+    {%- if group.repeatsWeekly %}{{ group.weekday.label }} · {{ slotLabels[group.slotIndex] ?? ('tramo ' ~ group.slotIndex) }}{% else %}—{% endif -%}
+{%- endmacro %}

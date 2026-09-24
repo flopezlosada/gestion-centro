@@ -154,6 +154,105 @@ final class MeetingGroupSeriesTest extends WebTestCase
         self::assertFalse($this->em->getRepository(MeetingGroup::class)->find($group->getId())?->isEditedSinceImport());
     }
 
+    /** Que convoque la CCP quien no está en ella no tiene sentido: el servidor lo rechaza aunque llegue a mano. */
+    public function testAConvenerOutsideTheGroupAndTheLeadershipIsRejected(): void
+    {
+        $admin = $this->admin();
+        $member = $this->user('Profe CCP', 'profe.ccp@educa.madrid.org');
+        $outsider = $this->user('Mercedes Alende', 'mercedes.fuera@educa.madrid.org');
+        $group = $this->group('CCP', null, $member);
+        $this->em->flush();
+
+        $this->client->loginUser($admin);
+        $crawler = $this->client->request('GET', '/admin/grupos-de-reunion/'.$group->getId().'/editar');
+        $values = $crawler->selectButton('Guardar')->form()->getPhpValues();
+        $values['meeting_group_form']['convener'] = (string) $outsider->getId();
+        $this->client->request('POST', '/admin/grupos-de-reunion/'.$group->getId().'/editar', $values);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertSelectorTextContains('body', 'Tiene que ser alguien del grupo o del equipo directivo.');
+        $this->em->clear();
+        self::assertNull($this->em->getRepository(MeetingGroup::class)->find($group->getId())?->getConvener());
+    }
+
+    /** El equipo directivo convoca aunque no sea miembro del grupo; secretaría, sin rango, no cuenta todavía. */
+    public function testTheLeadershipMayConveneWithoutBeingAMember(): void
+    {
+        $admin = $this->admin();
+        $member = $this->user('Profe CCP', 'profe.ccp2@educa.madrid.org');
+        $headRole = (new Role())->setCode('head-studies-'.uniqid())->setName('Jefatura de estudios')->setHierarchyLevel(30);
+        $this->em->persist($headRole);
+        $head = $this->user('María Belén', 'jefatura.ccp@educa.madrid.org')->addAssignedRole($headRole);
+        $group = $this->group('CCP', null, $member);
+        $this->em->flush();
+
+        $this->client->loginUser($admin);
+        $crawler = $this->client->request('GET', '/admin/grupos-de-reunion/'.$group->getId().'/editar');
+        self::assertSelectorExists('select[data-convener-filter] option[value="'.$head->getId().'"][data-leadership]');
+        $values = $crawler->selectButton('Guardar')->form()->getPhpValues();
+        $values['meeting_group_form']['convener'] = (string) $head->getId();
+        $this->client->request('POST', '/admin/grupos-de-reunion/'.$group->getId().'/editar', $values);
+
+        self::assertResponseRedirects('/admin/grupos-de-reunion');
+        $this->em->clear();
+        self::assertSame('jefatura.ccp@educa.madrid.org', $this->em->getRepository(MeetingGroup::class)->find($group->getId())?->getConvener()?->getEmail());
+    }
+
+    /**
+     * Quien entra o sale del grupo entra o sale también de la reunión de mañana, ya creada. Solo viaja el
+     * cambio: el invitado que el convocante añadió a mano se queda, y la reunión ya pasada no se toca.
+     */
+    public function testMemberChangesReachTheMeetingsAlreadyCreated(): void
+    {
+        $admin = $this->admin();
+        $carolina = $this->user('Carolina Rodríguez', 'carolina4@educa.madrid.org');
+        $ana = $this->user('Ana', 'ana4@educa.madrid.org');
+        $rober = $this->user('Rober', 'rober4@educa.madrid.org');
+        $guest = $this->user('Invitado', 'invitado4@educa.madrid.org');
+        $group = $this->group('REUNIÓN TIC', $carolina, $carolina, $ana);
+        $past = $this->meetingOf($group, $carolina, $ana, '-2 days');
+        $tomorrow = $this->meetingOf($group, $carolina, $ana, '+1 day')->addAttendee($guest);
+        $this->em->flush();
+
+        $this->client->loginUser($admin);
+        $crawler = $this->client->request('GET', '/admin/grupos-de-reunion/'.$group->getId().'/editar');
+        $values = $crawler->selectButton('Guardar')->form()->getPhpValues();
+        $values['meeting_group_form']['members'] = [(string) $carolina->getId(), (string) $rober->getId()];
+        $this->client->request('POST', '/admin/grupos-de-reunion/'.$group->getId().'/editar', $values);
+        self::assertResponseRedirects('/admin/grupos-de-reunion');
+
+        $this->em->clear();
+        $attendeesOf = fn (Meeting $m): array => array_map(
+            static fn (User $u): string => $u->getEmail(),
+            $this->em->getRepository(Meeting::class)->find($m->getId())?->getAttendees()->toArray() ?? [],
+        );
+        $next = $attendeesOf($tomorrow);
+        sort($next);
+        self::assertSame(['invitado4@educa.madrid.org', 'rober4@educa.madrid.org'], $next, 'entra Rober, sale Ana, el invitado se queda y quien convoca no se convoca');
+        self::assertSame(['ana4@educa.madrid.org'], $attendeesOf($past), 'la reunión pasada queda como fue');
+    }
+
+    /** El nombre del listado lleva a la ficha, que dice con nombres lo que el listado solo cuenta. */
+    public function testTheListLinksToAGroupPageWithItsMembers(): void
+    {
+        $admin = $this->admin();
+        $carolina = $this->user('Carolina Rodríguez', 'carolina3@educa.madrid.org');
+        $rober = $this->user('Rober', 'rober3@educa.madrid.org');
+        $group = $this->group('REUNIÓN TIC', $carolina, $carolina, $rober);
+        $this->em->flush();
+
+        $this->client->loginUser($admin);
+        $crawler = $this->client->request('GET', '/admin/grupos-de-reunion');
+        $this->client->click($crawler->selectLink('REUNIÓN TIC')->link());
+
+        self::assertResponseIsSuccessful();
+        self::assertRouteSame('admin_meeting_group_show', ['id' => (string) $group->getId()]);
+        self::assertSelectorTextContains('h1', 'REUNIÓN TIC');
+        self::assertSelectorTextContains('table', 'Carolina Rodríguez');
+        self::assertSelectorTextContains('table', 'Rober');
+        self::assertSelectorTextContains('.badge', 'Convoca');
+    }
+
     public function testADayWithoutAnHourIsRejected(): void
     {
         $admin = $this->admin();

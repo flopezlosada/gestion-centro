@@ -289,8 +289,10 @@ final class MeetingController extends AbstractController
             $added = $this->applyFormData($meeting, $data);
             $entityManager->flush();
 
+            // Poner lugar a una reunión que no lo tenía no la mueve: nadie podía ir al sitio equivocado. Sin
+            // esto, rellenar el lugar de una reunión semanal generada avisaba a todos de un «cambio».
             $moved = $meeting->getStartAt()->format('Y-m-d H:i') !== $before['at']->format('Y-m-d H:i')
-                || $meeting->getPlace() !== $before['place'];
+                || (null !== $before['place'] && $meeting->getPlace() !== $before['place']);
             if ($moved) {
                 // Solo a los que ya estaban: los nuevos reciben la convocatoria completa, que ya lleva
                 // el día, la hora y el sitio nuevos.
