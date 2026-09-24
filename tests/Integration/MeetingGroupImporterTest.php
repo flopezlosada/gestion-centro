@@ -6,6 +6,7 @@ namespace App\Tests\Integration;
 
 use App\Entity\MeetingGroup;
 use App\Entity\MeetingType;
+use App\Entity\Role;
 use App\Entity\User;
 use App\Enum\Weekday;
 use App\Repository\MeetingGroupRepository;
@@ -173,6 +174,58 @@ final class MeetingGroupImporterTest extends KernelTestCase
         self::assertSame($kind, $this->group()->getType());
     }
 
+    /**
+     * Sin convocante no se genera ninguna reunión, y Peñalara no lo trae: el import pone uno de partida. En
+     * un departamento, su jefe si está en el grupo; en lo demás, dirección.
+     */
+    public function testADepartmentMeetingDefaultsToItsHeadAndAnyOtherToDirection(): void
+    {
+        $this->luis->addAssignedRole($this->role('head_dept'));
+        $this->rober->addAssignedRole($this->role('direction'));
+        $this->em->flush();
+
+        $dryRun = $this->importer->import($this->xml(['111', '222'], name: 'DPTO LENGUA'), true, $this->noQuestionExpected(...));
+        self::assertSame(['DPTO LENGUA' => 'Luis Sanz Mora'], $dryRun->defaulted, 'el ensayo dice a quién pondría');
+
+        $this->importer->import($this->xml(['111', '222'], name: 'DPTO LENGUA'), false, $this->noQuestionExpected(...));
+        $result = $this->importer->import($this->xml(['111', '222']), false, $this->noQuestionExpected(...));
+
+        $groups = self::getContainer()->get(MeetingGroupRepository::class);
+        self::assertSame($this->luis, $groups->findOneBy(['penalaraKey' => 'DPTO LENGUA'])?->getConvener());
+        self::assertSame($this->rober, $this->group()->getConvener());
+        self::assertSame(['REUNIÓN TIC' => 'Rober Pérez'], $result->defaulted);
+        self::assertSame([], $result->noConvener);
+    }
+
+    /**
+     * El jefe que no está en el grupo no convoca por defecto: el formulario del grupo solo acepta a alguien
+     * del grupo o del equipo directivo, y el grupo quedaría sin poder guardarse. Entonces, dirección.
+     */
+    public function testADepartmentWhoseHeadIsNotInTheGroupDefaultsToDirection(): void
+    {
+        $this->luis->addAssignedRole($this->role('head_dept'));
+        $this->rober->addAssignedRole($this->role('direction'));
+        $this->em->flush();
+
+        $this->importer->import($this->xml(['111'], name: 'DPTO LENGUA'), false, $this->noQuestionExpected(...));
+
+        self::assertSame($this->rober, self::getContainer()->get(MeetingGroupRepository::class)->findOneBy(['penalaraKey' => 'DPTO LENGUA'])?->getConvener());
+    }
+
+    /** Con dos personas en dirección no se elige a una al azar: el grupo se queda sin convocante y se dice. */
+    public function testNoDefaultWhenTheRoleHasMoreThanOneHolder(): void
+    {
+        $direction = $this->role('direction');
+        $this->ana->addAssignedRole($direction);
+        $this->rober->addAssignedRole($direction);
+        $this->em->flush();
+
+        $result = $this->importer->import($this->xml(['111', '222']), false, $this->noQuestionExpected(...));
+
+        self::assertNull($this->group()->getConvener());
+        self::assertSame(['REUNIÓN TIC'], $result->noConvener);
+    }
+
     /** Un código de Peñalara sin usuario se dice con su nombre, y no se inventa a nadie. */
     public function testReportsMembersNobodyMatchesByName(): void
     {
@@ -245,6 +298,21 @@ final class MeetingGroupImporterTest extends KernelTestCase
         self::assertInstanceOf(MeetingGroup::class, $group);
 
         return $group;
+    }
+
+    /**
+     * A role, persisted. The test database has none: roles come from fixtures, not from migrations.
+     *
+     * @param string $code the role code
+     *
+     * @return Role the persisted role
+     */
+    private function role(string $code): Role
+    {
+        $role = (new Role())->setCode($code)->setName($code);
+        $this->em->persist($role);
+
+        return $role;
     }
 
     private function person(string $name, string $email, ?string $code): User

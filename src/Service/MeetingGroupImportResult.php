@@ -18,6 +18,7 @@ final class MeetingGroupImportResult
      * @param array<string, list<string>> $unmatched    "Name (code)" of a Peñalara member matching nobody → the meetings they are in
      * @param list<string>                $missing      groups imported before that this file no longer has
      * @param list<string>                $noConvener   groups that repeat weekly but have nobody to convene them
+     * @param array<string, string>       $defaulted    group → the default convener it was given (or would be, in a dry run)
      * @param bool                        $dryRun       whether nothing was written
      */
     public function __construct(
@@ -29,6 +30,7 @@ final class MeetingGroupImportResult
         public readonly array $unmatched,
         public readonly array $missing,
         public readonly array $noConvener,
+        public readonly array $defaulted,
         public readonly bool $dryRun,
     ) {
     }
