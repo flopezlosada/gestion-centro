@@ -62,6 +62,9 @@
             <script src="{{ asset_ver('/js/calendar-filter.js') }}"></script>
             <script src="{{ asset_ver('/js/day-add.js') }}"></script>
             <script src="{{ asset_ver('/js/calendar-swipe.js') }}"></script>
+            {#- Global y no página a página: cualquier <input type="file" data-max-bytes> avisa del tamaño antes
+                de enviar. Cargado por página, cada formulario nuevo tenía que acordarse, y dos se olvidaron. -#}
+            <script src="{{ asset_ver('/js/file-size-guard.js') }}"></script>
             <script src="{{ asset_ver('/js/absence-form.js') }}"></script>
             <script src="{{ asset_ver('/js/app-badge.js') }}"></script>
             {% if app.user and app_vapid_public_key is not empty %}
