@@ -469,6 +469,11 @@ final class BookingTest extends WebTestCase
         $this->client->loginUser($teacher);
         $this->book('material:'.$radio->getId(), $weekday, 0);
 
+        // Sin elegir nada, espacios y material van juntos: una reserva de material no puede quedar escondida.
+        $this->client->request('GET', '/reservas/semana?fecha='.$weekday);
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('table.booking-week', 'Todo salvo Radio');
+
         $this->client->request('GET', '/reservas/semana?fecha='.$weekday.'&ver=material');
         self::assertResponseIsSuccessful();
         self::assertSelectorTextContains('table.booking-week', 'Todo salvo Radio');
