@@ -9,12 +9,15 @@ use App\Entity\Booking;
 use App\Entity\Material;
 use App\Entity\Role;
 use App\Entity\Room;
+use App\Entity\ScheduleEntry;
 use App\Entity\TimeSlot;
 use App\Entity\User;
 use App\Enum\Area;
 use App\Enum\PermissionLevel;
 use App\Enum\RoomKind;
+use App\Enum\ScheduleActivityKind;
 use App\Enum\TimeSlotKind;
+use App\Enum\Weekday;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -131,7 +134,7 @@ final class BookingTest extends WebTestCase
         self::assertSame('profe@centro.test', $stored->getBookedBy()?->getEmail());
 
         $this->client->request('GET', '/reservas?fecha='.self::futureDay());
-        self::assertSelectorTextContains('.incident-list', 'Radio');
+        self::assertSelectorTextContains('[data-booking-day-list]', 'Radio');
     }
 
     /**
@@ -286,7 +289,7 @@ final class BookingTest extends WebTestCase
         // Un miércoles fijo, y la semana se ancla en él: así el caso no depende del día en que se ejecute.
         $wednesday = new \DateTimeImmutable('2026-09-16');
         $booking = Booking::forMaterial($teacher, $radio, $wednesday, 2, 'Grabación del podcast');
-        $booking->setGroupName('2ºB');
+        $booking->setGroupNames(['2ºB']);
         $this->em->persist($booking);
         $this->em->flush();
 
@@ -516,5 +519,137 @@ final class BookingTest extends WebTestCase
 
         $this->em->clear();
         self::assertNotNull($this->em->getRepository(Booking::class)->find($id));
+    }
+
+    /**
+     * El curso del día de las pruebas con una clase por grupo: de ahí sale la lista del desplegable de
+     * grupos. Los nombres, tal cual los trae Peñalara (con el espacio de «E2 AA»).
+     *
+     * @param list<string> $groups the group names the timetable teaches
+     */
+    private function courseTeaching(array $groups): void
+    {
+        $year = $this->academicYear(SchoolYear::current(new \DateTimeImmutable(self::futureDay())));
+        $this->em->persist($year);
+        $teacher = $this->user('horario@centro.test');
+        foreach ($groups as $group) {
+            $this->em->persist((new ScheduleEntry())
+                ->setAcademicYear($year)->setTeacher($teacher)
+                ->setWeekday(Weekday::MONDAY)->setSlotIndex(0)
+                ->setStartsAt(new \DateTimeImmutable('08:25'))->setEndsAt(new \DateTimeImmutable('09:20'))
+                ->setKind(ScheduleActivityKind::LECTIVE)
+                ->setGroupName($group)->setSubjectName('Lengua'));
+        }
+    }
+
+    /**
+     * Posts the booking form with the token the screen hands out for that day and period.
+     *
+     * @param array<string, mixed> $fields the fields besides the token, day and period
+     */
+    private function postBooking(int $slot, array $fields): void
+    {
+        $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay().'&tramos[]='.$slot);
+        $token = (string) $crawler->filter('form[action="/reservas/nueva"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', '/reservas/nueva', ['_token' => $token, 'fecha' => self::futureDay(), 'tramos' => [(string) $slot]] + $fields);
+    }
+
+    /** Los grupos se eligen de los del horario, varios a la vez, y se guardan juntos en la reserva. */
+    public function testSeveralGroupsFromTheTimetableAreStoredTogether(): void
+    {
+        $teacher = $this->user('grupos@centro.test');
+        $radio = $this->material('Radio');
+        $this->courseTeaching(['B1A', 'E2 AA', 'E1C']);
+        $this->em->flush();
+
+        $this->client->loginUser($teacher);
+        $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay().'&tramos[]=2');
+        $offered = $crawler->filter('select#grupos option')->each(static fn ($o): string => (string) $o->attr('value'));
+        self::assertSame(['B1A', 'E1C', 'E2 AA'], $offered);
+
+        $this->postBooking(2, ['recurso' => 'material:'.$radio->getId(), 'motivo' => 'Dos grupos', 'grupos' => ['B1A', 'E2 AA']]);
+
+        self::assertResponseRedirects();
+        $this->em->clear();
+        $stored = $this->em->getRepository(Booking::class)->findOneBy(['purpose' => 'Dos grupos']);
+        self::assertNotNull($stored);
+        self::assertSame('B1A, E2 AA', $stored->getGroupName());
+    }
+
+    /** Un grupo que no está en el horario solo llega con un POST a mano: no se guarda nada. */
+    public function testAGroupThatIsNotInTheTimetableIsRefused(): void
+    {
+        $teacher = $this->user('inventa@centro.test');
+        $radio = $this->material('Radio');
+        $this->courseTeaching(['B1A']);
+        $this->em->flush();
+
+        $this->client->loginUser($teacher);
+        $this->postBooking(2, ['recurso' => 'material:'.$radio->getId(), 'motivo' => 'Grupo falso', 'grupos' => ['B1A', 'INVENTADO']]);
+
+        self::assertResponseRedirects();
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('body', 'no está en el horario');
+        $this->em->clear();
+        self::assertNull($this->em->getRepository(Booking::class)->findOneBy(['purpose' => 'Grupo falso']));
+    }
+
+    /** Sin grupos no pasa nada: el campo es opcional y la reserva se guarda sin grupo, no con uno vacío. */
+    public function testABookingWithoutGroupsHasNone(): void
+    {
+        $teacher = $this->user('singrupo@centro.test');
+        $radio = $this->material('Radio');
+        $this->courseTeaching(['B1A']);
+        $this->em->flush();
+
+        $this->client->loginUser($teacher);
+        $this->postBooking(2, ['recurso' => 'material:'.$radio->getId(), 'motivo' => 'Sin grupo']);
+
+        self::assertResponseRedirects();
+        $this->em->clear();
+        $stored = $this->em->getRepository(Booking::class)->findOneBy(['purpose' => 'Sin grupo']);
+        self::assertNotNull($stored);
+        self::assertNull($stored->getGroupName());
+    }
+
+    /**
+     * El fragmento que pide el JS al marcar horas: solo el formulario, sin la página alrededor, y con lo
+     * libre calculado igual que la pantalla entera.
+     */
+    public function testTheAvailabilityFragmentOffersOnlyWhatIsFree(): void
+    {
+        $teacher = $this->user('fragmento@centro.test');
+        $radio = $this->material('Radio');
+        $camera = $this->material('Cámara');
+        $this->em->flush();
+
+        $this->client->loginUser($teacher);
+        $this->book('material:'.$radio->getId(), self::futureDay(), 2);
+        $crawler = $this->client->request('GET', '/reservas/disponibilidad?fecha='.self::futureDay().'&tramos[]=2');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorNotExists('h1');
+        $offered = $crawler->filter('#recurso')->html();
+        self::assertStringNotContainsString('material:'.$radio->getId(), $offered);
+        self::assertStringContainsString('material:'.$camera->getId(), $offered);
+    }
+
+    /** Lo tuyo de ESE día ya está en los bloques de arriba: abajo solo sale lo de otros días. */
+    public function testYourBookingsOfTheDayAreNotRepeatedBelow(): void
+    {
+        $teacher = $this->user('mias@centro.test');
+        $radio = $this->material('Radio');
+        $this->em->flush();
+        $this->em->persist(Booking::forMaterial($teacher, $radio, new \DateTimeImmutable(self::futureDay()), 2, 'El mismo día'));
+        $this->em->persist(Booking::forMaterial($teacher, $radio, (new \DateTimeImmutable(self::futureDay()))->modify('+1 day'), 2, 'Al día siguiente'));
+        $this->em->flush();
+
+        $this->client->loginUser($teacher);
+        $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay());
+
+        self::assertSelectorTextContains('[data-booking-day-list]', 'El mismo día');
+        $below = $crawler->filter('.incident-list')->text();
+        self::assertStringContainsString('Al día siguiente', $below);
+        self::assertStringNotContainsString('El mismo día', $below);
     }
 }

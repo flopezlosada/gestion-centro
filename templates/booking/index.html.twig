@@ -59,32 +59,41 @@
     <h2 class="home-section__title">{{ dias[day|date('N', false)] }} {{ day|date('d/m/Y', false) }}</h2>
 
     <div class="card">
-        {% if bookings is empty %}
+        {# Bloques por hora y tarjetas, no una lista de líneas: con dos o tres reservas sueltas en todo el
+           día una lista se veía casi vacía. Mismo lenguaje que el panel de guardias (.card-grid/.mini-card,
+           ver app.css), no el de «Aulas libres» (.roomcard): esas tarjetas llevan un cuadro de capacidad
+           que aquí no pinta nada; lo que hace falta es qué es, para qué y quién lo tiene. #}
+        {% if bookingsBySlot is empty %}
             <p class="muted">No hay nada reservado este día.</p>
         {% else %}
-            <ul class="incident-list">
-                {% for b in bookings %}
-                    <li class="incident">
-                        <span class="incident__main">
-                            <span class="incident__head">
-                                <span class="incident__what">{{ b.resourceName }}</span>
-                                <span class="badge {{ b.room ? 'badge--accent' : 'badge--muted' }}">{{ b.room ? 'Espacio' : 'Material' }}</span>
-                            </span>
-                            <span class="incident__where">
-                                <span class="mono">{{ _self.hora(slotTimes, b.slotIndex) }}</span>
-                                · {{ b.purpose }}{% if b.groupName %} · {{ b.groupName }}{% endif %}
-                            </span>
-                            <span class="incident__meta">{{ b.bookedBy ? b.bookedBy.fullName : '—' }}</span>
-                        </span>
-                        {% if b.isOwnedBy(app.user) or is_granted('ROLE_ADMIN') %}
-                            <form method="post" action="{{ path('booking_delete', { id: b.id }) }}" data-confirm="¿Anular esta reserva?">
-                                <input type="hidden" name="_token" value="{{ csrf_token('booking_delete' ~ b.id) }}">
-                                <button type="submit" class="link-danger">Anular</button>
-                            </form>
-                        {% endif %}
-                    </li>
-                {% endfor %}
-            </ul>
+            {% for index, items in bookingsBySlot %}
+                <section class="booking-slot">
+                    <h3 class="booking-slot__head">
+                        <span class="booking-slot__label">{{ _self.hora(slotTimes, index) }}</span>
+                        <span class="booking-slot__count">{{ items|length }} reserva{{ items|length == 1 ? '' : 's' }}</span>
+                    </h3>
+                    <div class="card-grid" data-booking-day-list>
+                        {% for b in items %}
+                            <div class="mini-card">
+                                <div class="mini-card-head">
+                                    <span class="badge {{ b.room ? 'badge--accent' : 'badge--muted' }}">{{ b.room ? 'Espacio' : 'Material' }}</span>
+                                    <strong>{{ b.resourceName }}</strong>
+                                </div>
+                                <p class="mini-card-note">{{ b.purpose }}{% if b.groupName %} · {{ b.groupName }}{% endif %}</p>
+                                <div class="mini-card-status">
+                                    <span class="muted">{{ b.bookedBy ? b.bookedBy.fullName : '—' }}</span>
+                                    {% if b.isOwnedBy(app.user) or is_granted('ROLE_ADMIN') %}
+                                        <form method="post" action="{{ path('booking_delete', { id: b.id }) }}" data-confirm="¿Anular esta reserva?">
+                                            <input type="hidden" name="_token" value="{{ csrf_token('booking_delete' ~ b.id) }}">
+                                            <button type="submit" class="link-danger">Anular</button>
+                                        </form>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </section>
+            {% endfor %}
         {% endif %}
     </div>
 
@@ -104,9 +113,17 @@
             {# Las horas se eligen APARTE y por GET, como la fecha: sin ellas no hay forma de saber qué está
                libre (un aula puede estar cogida a 1ª y libre a 3ª), así que se resuelven antes de ofrecer el
                desplegable de recursos. Se pueden marcar VARIAS: lo que se ofrece es lo libre en todas, y se
-               reserva todo de una vez. Funciona sin JavaScript (botón «Ver qué está libre»). #}
+               reserva todo de una vez. SIN onchange inline a propósito: con JS, booking-hours.js escucha el
+               cambio y trae solo el fragmento de abajo por fetch, sin recargar la página; sin JS, un
+               checkbox no tiene forma nativa de auto-enviarse, así que queda el botón dentro de
+               <noscript> como único camino (marcar y pulsar "Ver qué está libre"). #}
             {% set horas = slotTimes is empty ? range(0, 5) : slotTimes|keys %}
-            <form method="get" action="{{ path('booking_index') }}" class="field">
+            {#- data-booking-hours: lo que booking-hours.js engancha para interceptar el cambio de casillas y
+               pedir solo el fragmento de abajo por fetch, en vez de que el checkbox recargue la página
+               entera. data-availability-url es la ruta del fragmento y data-page-url la de esta misma
+               página, para que el JS pueda actualizar la barra de direcciones sin perder el histórico. -#}
+            <form method="get" action="{{ path('booking_index') }}" class="field" data-booking-hours
+                  data-availability-url="{{ path('booking_availability') }}" data-page-url="{{ path('booking_index') }}">
                 <input type="hidden" name="fecha" value="{{ diaStr }}">
                 <fieldset class="booking-hours">
                     <legend>¿A qué horas?</legend>
@@ -121,9 +138,9 @@
                     {% endfor %}
                 </fieldset>
                 <div class="form-actions">
-                    <button type="submit" class="btn secondary">Ver qué está libre</button>
+                    <noscript><button type="submit" class="btn secondary">Ver qué está libre</button></noscript>
                     {#- Un enlace y no una casilla más: «todo el día» es marcar todas, y así no necesita JS. -#}
-                    <a href="{{ path('booking_index', { fecha: diaStr, tramos: horas }) }}">Todo el día</a>
+                    <a href="{{ path('booking_index', { fecha: diaStr, tramos: horas }) }}" data-booking-all-day>Todo el día</a>
                 </div>
                 {% if periodsBorrowedFrom %}
                     <p class="help">Horas del curso {{ periodsBorrowedFrom }}: el horario de este curso todavía no está importado. Se guarda el tramo, no la hora, así que si el horario nuevo mueve los timbres las reservas ya hechas se verán con las horas nuevas.</p>
@@ -132,57 +149,15 @@
                 {% endif %}
             </form>
 
-            {% if selectedSlots is empty %}
-                <p class="muted">Marca una o varias horas para ver qué aulas y material están libres.</p>
-            {% elseif rooms is empty and materials is empty %}
-                <p class="muted">{{ selectedSlots|length == 1 ? 'A esa hora' : 'En todas esas horas a la vez' }} no queda nada libre. Prueba con otras.</p>
-            {% else %}
-                <form method="post" action="{{ path('booking_new') }}" class="stack-form">
-                    <input type="hidden" name="_token" value="{{ csrf_token('booking_new') }}">
-                    <input type="hidden" name="fecha" value="{{ diaStr }}">
-                    {% for index in selectedSlots %}<input type="hidden" name="tramos[]" value="{{ index }}">{% endfor %}
-                    {% if selectedSlots|length > 1 %}
-                        <p class="help">Se reserva a las {{ selectedSlots|length }} horas marcadas; si alguna ya no está libre, no se reserva ninguna.</p>
-                    {% endif %}
-
-                    <div class="field">
-                        <label for="recurso">¿Qué necesitas?</label>
-                        <select id="recurso" name="recurso" required>
-                            <option value="">— Elige —</option>
-                            {% if materials is not empty %}
-                                <optgroup label="Material">
-                                    {% for m in materials %}<option value="material:{{ m.id }}">{{ m.name }}{% if m.keptAt %} ({{ m.keptAt }}){% endif %}</option>{% endfor %}
-                                </optgroup>
-                            {% endif %}
-                            {% if rooms is not empty %}
-                                <optgroup label="Espacios">
-                                    {% for r in rooms %}<option value="room:{{ r.id }}">{{ r.name }}</option>{% endfor %}
-                                </optgroup>
-                            {% endif %}
-                        </select>
-                    </div>
-
-                    <div class="field">
-                        <label for="motivo">¿Para qué?</label>
-                        <input type="text" id="motivo" name="motivo" maxlength="200" required placeholder="Grabación del podcast, examen de recuperación…">
-                    </div>
-
-                    <div class="field">
-                        <label for="grupo">Grupo <span class="muted">(si es para uno)</span></label>
-                        <input type="text" id="grupo" name="grupo" maxlength="40" placeholder="2ºB">
-                    </div>
-
-                    <div class="form-actions">
-                        <button type="submit" class="btn">Reservar</button>
-                    </div>
-                </form>
-            {% endif %}
+            <div data-booking-availability>
+                {{ include('booking/_availability.html.twig', { day: day, selectedSlots: selectedSlots, rooms: rooms, materials: materials, groupNames: groupNames }) }}
+            </div>
         {% endif %}
     </div>
 
     {% if mine is not empty %}
         <div class="card">
-            <div class="page-head"><div><h2>Lo que tienes reservado</h2></div></div>
+            <div class="page-head"><div><h2>Lo que tienes reservado otros días</h2></div></div>
             <ul class="incident-list">
                 {% for b in mine %}
                     <li class="incident">
@@ -199,4 +174,6 @@
             </ul>
         </div>
     {% endif %}
+
+    <script src="{{ asset_ver('/js/booking-hours.js') }}"></script>
 {% endblock %}

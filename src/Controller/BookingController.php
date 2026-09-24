@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Entity\AcademicYear;
 use App\Entity\Booking;
 use App\Entity\Material;
 use App\Entity\Room;
@@ -13,6 +14,7 @@ use App\Repository\AcademicYearRepository;
 use App\Repository\BookingRepository;
 use App\Repository\MaterialRepository;
 use App\Repository\RoomRepository;
+use App\Repository\ScheduleEntryRepository;
 use App\Repository\TimeSlotRepository;
 use App\Security\Voter\AreaVoter;
 use App\Service\SchoolCalendar;
@@ -64,7 +66,80 @@ final class BookingController extends AbstractController
         MaterialRepository $materials,
         TimeSlotRepository $timeSlots,
         AcademicYearRepository $years,
+        ScheduleEntryRepository $schedule,
     ): Response {
+        $availability = $this->resolveAvailability($request, $bookings, $rooms, $materials, $timeSlots, $years);
+        $day = $availability['day'];
+
+        return $this->render('booking/index.html.twig', [
+            'day' => $day,
+            // Un día ya pasado se puede MIRAR (para eso está el selector), pero no se reserva: la pantalla
+            // esconde el formulario y {@see create()} rechaza el POST, para que las dos cosas no discrepen.
+            'isPast' => $day < new \DateTimeImmutable('today'),
+            'bookings' => $availability['dayBookings'],
+            'bookingsBySlot' => self::bySlot($availability['dayBookings']),
+            // Sin lo del propio DÍA: ya está arriba, con su "Anular" — repetirlo aquí abajo era la misma
+            // reserva dos veces en la misma pantalla.
+            'mine' => array_values(array_filter(
+                $bookings->findUpcomingFor($user, new \DateTimeImmutable('today')),
+                static fn (Booking $b): bool => $b->getDate() != $day,
+            )),
+            // El catálogo entero: decide si hay algo que reservar HOY, sea cual sea la hora.
+            'hasCatalogue' => [] !== $availability['allRooms'] || [] !== $availability['allMaterials'],
+            'selectedSlots' => $availability['selectedSlots'],
+            'rooms' => $availability['freeRooms'],
+            'materials' => $availability['freeMaterials'],
+            'slotTimes' => $availability['periods']['slots'],
+            'periodsBorrowedFrom' => $availability['periods']['borrowedFrom'],
+            'groupNames' => self::knownGroups($schedule, $availability['year']),
+        ]);
+    }
+
+    /**
+     * El mismo bloque que {@see index()} pinta bajo el selector de horas (el desplegable de recursos y el
+     * formulario de reserva), pero SOLO ese bloque, sin el resto de la página: es lo que
+     * {@code public/js/booking-hours.js} pide por `fetch` cada vez que se marca o desmarca una hora, para no
+     * recargar la pantalla entera por un filtro. Sin JavaScript esto no se usa nunca: el formulario de horas
+     * hace un GET normal a {@see index()}, que ya sabe pintarse entero.
+     */
+    #[Route('/disponibilidad', name: 'booking_availability', methods: ['GET'])]
+    public function availability(
+        Request $request,
+        BookingRepository $bookings,
+        RoomRepository $rooms,
+        MaterialRepository $materials,
+        TimeSlotRepository $timeSlots,
+        AcademicYearRepository $years,
+        ScheduleEntryRepository $schedule,
+    ): Response {
+        $availability = $this->resolveAvailability($request, $bookings, $rooms, $materials, $timeSlots, $years);
+
+        return $this->render('booking/_availability.html.twig', [
+            'day' => $availability['day'],
+            'selectedSlots' => $availability['selectedSlots'],
+            'rooms' => $availability['freeRooms'],
+            'materials' => $availability['freeMaterials'],
+            'groupNames' => self::knownGroups($schedule, $availability['year']),
+        ]);
+    }
+
+    /**
+     * Lo que hace falta para responder "qué está libre" un día y unas horas dadas: el marco horario del
+     * curso, lo ya reservado, el catálogo entero, y el catálogo filtrado a lo libre en TODAS las horas
+     * pedidas. Compartido por {@see index()} (la página entera) y {@see availability()} (el fragmento que
+     * pide el fetch de las horas), para que las dos vean exactamente el mismo "libre" sin mantener la
+     * regla en dos sitios.
+     *
+     * @return array{day: \DateTimeImmutable, year: ?AcademicYear, periods: array{slots: array<int, array{startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}>, borrowedFrom: string|null}, dayBookings: list<Booking>, allRooms: list<Room>, allMaterials: list<Material>, selectedSlots: list<int>, freeRooms: list<Room>, freeMaterials: list<Material>}
+     */
+    private function resolveAvailability(
+        Request $request,
+        BookingRepository $bookings,
+        RoomRepository $rooms,
+        MaterialRepository $materials,
+        TimeSlotRepository $timeSlots,
+        AcademicYearRepository $years,
+    ): array {
         $day = CalendarDate::parse($request->query->getString('fecha'), new \DateTimeZone(date_default_timezone_get()))
             ?? new \DateTimeImmutable('today');
 
@@ -109,21 +184,17 @@ final class BookingController extends AbstractController
             $freeMaterials = array_values(array_filter($allMaterials, static fn (Material $m): bool => !isset($bookedMaterialIds[$m->getId()])));
         }
 
-        return $this->render('booking/index.html.twig', [
+        return [
             'day' => $day,
-            // Un día ya pasado se puede MIRAR (para eso está el selector), pero no se reserva: la pantalla
-            // esconde el formulario y {@see create()} rechaza el POST, para que las dos cosas no discrepen.
-            'isPast' => $day < new \DateTimeImmutable('today'),
-            'bookings' => $dayBookings,
-            'mine' => $bookings->findUpcomingFor($user, new \DateTimeImmutable('today')),
-            // El catálogo entero: decide si hay algo que reservar HOY, sea cual sea la hora.
-            'hasCatalogue' => [] !== $allRooms || [] !== $allMaterials,
+            'year' => $year,
+            'periods' => $periods,
+            'dayBookings' => $dayBookings,
+            'allRooms' => $allRooms,
+            'allMaterials' => $allMaterials,
             'selectedSlots' => $selectedSlots,
-            'rooms' => $freeRooms,
-            'materials' => $freeMaterials,
-            'slotTimes' => $periods['slots'],
-            'periodsBorrowedFrom' => $periods['borrowedFrom'],
-        ]);
+            'freeRooms' => $freeRooms,
+            'freeMaterials' => $freeMaterials,
+        ];
     }
 
     /**
@@ -266,7 +337,7 @@ final class BookingController extends AbstractController
      * mismo idioma y no hay una tercera forma de nombrar las cosas.
      */
     #[Route('/nueva', name: 'booking_new', methods: ['POST'])]
-    public function create(Request $request, #[CurrentUser] User $user, RoomRepository $rooms, MaterialRepository $materials, BookingRepository $bookings, TimeSlotRepository $timeSlots, AcademicYearRepository $years, EntityManagerInterface $entityManager): Response
+    public function create(Request $request, #[CurrentUser] User $user, RoomRepository $rooms, MaterialRepository $materials, BookingRepository $bookings, TimeSlotRepository $timeSlots, AcademicYearRepository $years, ScheduleEntryRepository $schedule, EntityManagerInterface $entityManager): Response
     {
         if (!$this->isCsrfTokenValid('booking_new', (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
@@ -301,9 +372,22 @@ final class BookingController extends AbstractController
         // Los límites se comprueban AQUÍ y no solo con el maxlength del formulario: esta acción no pasa
         // por un FormType (son cuatro campos), así que sin esto un POST a mano con un motivo de 300
         // caracteres reventaría contra la columna VARCHAR(200) con un error de driver, no con un aviso.
-        $group = trim($request->request->getString('grupo'));
-        if (mb_strlen($purpose) > 200 || mb_strlen($group) > 40) {
-            $this->addFlash('error', 'El motivo o el grupo son demasiado largos.');
+        if (mb_strlen($purpose) > 200) {
+            $this->addFlash('error', 'El motivo es demasiado largo.');
+
+            return $this->back($day);
+        }
+
+        // Los grupos salen de un desplegable con los del horario, así que uno que no esté en esa lista solo
+        // llega con un POST a mano: se rechaza en vez de guardar un nombre que no casa con ningún grupo.
+        $groups = array_values(array_filter($request->request->all('grupos'), 'is_string'));
+        if ([] !== array_diff($groups, self::knownGroups($schedule, $years->findBySchoolYear(SchoolYear::current($day))))) {
+            $this->addFlash('error', 'Alguno de esos grupos no está en el horario del curso.');
+
+            return $this->back($day);
+        }
+        if (mb_strlen(implode(', ', $groups)) > 255) {
+            $this->addFlash('error', 'Son demasiados grupos para una reserva: si es para todo un nivel, di cuál en el motivo.');
 
             return $this->back($day);
         }
@@ -344,7 +428,7 @@ final class BookingController extends AbstractController
                 $booking = $room instanceof Room
                     ? Booking::forRoom($user, $room, $day, $slot, $purpose)
                     : Booking::forMaterial($user, $material, $day, $slot, $purpose);
-                $entityManager->persist($booking->setGroupName($group));
+                $entityManager->persist($booking->setGroupNames($groups));
             }
             // Un solo flush: es una transacción, así que si una hora choca no se guarda ninguna.
             $entityManager->flush();
@@ -386,6 +470,39 @@ final class BookingController extends AbstractController
         $this->addFlash('success', 'Reserva anulada.');
 
         return $this->back($day);
+    }
+
+    /**
+     * Los grupos del horario del curso: lo que ofrece el desplegable de grupos y, en {@see create()}, lo
+     * único que se acepta. La misma lista que los planes de espacios ({@see SpacePlanController}), para
+     * que un grupo se llame igual en todas partes. Sin curso, ninguno: el campo no se ofrece.
+     *
+     * @param ScheduleEntryRepository $schedule the timetable
+     * @param AcademicYear|null       $year     the course of the day, or null when there is none
+     *
+     * @return list<string> the group names, sorted
+     */
+    private static function knownGroups(ScheduleEntryRepository $schedule, ?AcademicYear $year): array
+    {
+        return null !== $year ? $schedule->distinctGroupNames($year) : [];
+    }
+
+    /**
+     * Lo reservado un día, agrupado por hora: la pantalla lo pinta en bloques por tramo, no como una
+     * lista plana, que con dos o tres reservas sueltas en todo el día se veía casi vacía.
+     *
+     * @param list<Booking> $dayBookings ya vienen ordenadas por tramo ({@see BookingRepository::findForDay})
+     *
+     * @return array<int, list<Booking>> las reservas, agrupadas por índice de tramo en el mismo orden
+     */
+    private static function bySlot(array $dayBookings): array
+    {
+        $bySlot = [];
+        foreach ($dayBookings as $booking) {
+            $bySlot[$booking->getSlotIndex()][] = $booking;
+        }
+
+        return $bySlot;
     }
 
     /**

@@ -2618,7 +2618,11 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 tr.is-not-covered { background: var(--danger-weak); }
 .task-note { cursor: help; }
 
-.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+/* auto-fit y no auto-fill: con pocas tarjetas, auto-fill reserva igual las columnas vacías del ancho del
+   contenedor y deja un hueco en blanco a la derecha; auto-fit las colapsa. Tope de 260px y no 1fr: sin
+   tope, las pocas tarjetas que quedan se estiran a ocupar toda la fila y el hueco reaparece DENTRO de
+   cada una en vez de al lado. */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 260px)); gap: 12px; }
 .mini-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; background: var(--surface); }
 .mini-card.is-absent { background: var(--danger-weak); border-color: var(--danger); }
 .mini-card-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
@@ -5311,6 +5315,17 @@ tr.is-not-covered { background: var(--danger-weak); }
 .booking-hours legend { font-weight: 600; margin-bottom: 6px; padding: 0; }
 .booking-hour { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 13.5px; }
 .booking-hour:has(input:checked) { border-color: var(--accent); }
+
+/* Lo reservado un día, en bloques por hora: mismo formato de cabecera de grupo que «Aulas libres»
+   (.rooms-tier__head), pero sin acoplar las dos pantallas a una clase compartida — si un tercer sitio
+   necesita este mismo patrón, ENTONCES se extrae. */
+.booking-slot + .booking-slot { margin-top: 22px; }
+.booking-slot__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0 0 11px; font-weight: 400; }
+.booking-slot__label {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted);
+}
+.booking-slot__count { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
 
 /* La semana de reservas: una tabla ancha con scroll propio, para que en el móvil no desborde la página. */
 .table-scroll { overflow-x: auto; }
