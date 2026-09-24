@@ -2,7 +2,8 @@
    El estado de un encargo de fotocopias, en una insignia. Tres, y solo lo que la aplicación sabe de
    verdad: «Sin enviar» (el correo falló), «Enviada» (salió hacia conserjería) y «Hecha» (conserjería la
    marcó). No «En cola»: conserjería trabaja desde su buzón, casi nunca marca nada aquí, y «en cola» hacía
-   creer que un encargo ya entregado seguía esperando. La hora va en el `title` y no en el texto: el filtro
+   creer que un encargo ya entregado seguía esperando. «Enviada» va en gris: es un dato, nada que atender;
+   el color se queda para lo que sí pide algo (rojo) o ya está cerrado (verde). La hora va en el `title` y no en el texto: el filtro
    de la tabla agrupa por el texto entero de la celda (table-tools.js).
 #}
 {% macro status_badge(order) %}
@@ -11,6 +12,6 @@
     {%- elseif not order.isSent -%}
         <span class="badge badge--danger" data-tone="danger">Sin enviar</span>
     {%- else -%}
-        <span class="badge badge--accent" data-tone="accent" title="Enviada a conserjería el {{ order.sentAt|date('d/m/Y', false) }} a las {{ order.sentAt|date('H:i', false) }}">Enviada</span>
+        <span class="badge badge--muted" data-tone="muted" title="Enviada a conserjería el {{ order.sentAt|date('d/m/Y', false) }} a las {{ order.sentAt|date('H:i', false) }}">Enviada</span>
     {%- endif -%}
 {% endmacro %}

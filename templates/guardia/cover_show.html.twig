@@ -188,26 +188,33 @@
 
         {# Las acciones, agrupadas y con rótulo. Antes colgaban del final de la tarea, y ahí "pedir
            fotocopias" parecía parte de la ficha del banco en vez de algo que puedes hacer con ella. #}
-        {% if canChangeTask or (canWorkOnTask and copyOrders is not empty) %}
+        {#- Lo ya pedido, en su propio bloque y no solo dentro del formulario: sin esto, al volver a la guardia
+            nada decía que las fotocopias estaban pedidas, y se pedían dos veces. No va bajo «Acciones»: es un
+            dato, no algo que pulsar. -#}
+        {% if canWorkOnTask and copyOrders is not empty %}
+            <div class="side-card">
+                <div class="side-card__label">Fotocopias pedidas</div>
+                <ul class="copy-orders">
+                    {% for order in copyOrders %}
+                        <li>
+                            <span class="copy-orders__copies">{{ order.copies }} copias</span>
+                            <span class="copy-orders__when">{{ order.requestedAt|date('d/m · H:i', false) }}</span>
+                            {{ copies.status_badge(order) }}
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
+
+        {% if canChangeTask %}
             <div class="side-card">
                 <div class="side-card__label">Acciones</div>
-                {#- Lo ya pedido, aquí y no solo dentro del formulario: sin esto, al volver a la guardia nada
-                    decía que las fotocopias estaban pedidas, y se pedían dos veces. -#}
-                {% if copyOrders is not empty %}
-                    <ul class="copy-orders">
-                        {% for order in copyOrders %}
-                            <li>{{ order.copies }} copias · {{ order.requestedAt|date('d/m H:i', false) }} {{ copies.status_badge(order) }}</li>
-                        {% endfor %}
-                    </ul>
-                {% endif %}
-                {% if canChangeTask %}
-                    <a class="btn secondary" href="{{ path('copy_request_for_cover', { cover: cover.id }) }}">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 8V4h10v4"/><rect x="5" y="8" width="14" height="7" rx="1.5"/><path d="M7 15h10v5H7z"/></svg>
-                        {{ copyOrders is empty ? 'Pedir fotocopias' : 'Pedir más fotocopias' }}
-                    </a>
-                    {% if cover.hasTask and not cover.hasBankTask %}
-                        <a class="btn secondary" href="{{ path('guardia_bank_index', { para: cover.id }) }}">Ver banco de tareas</a>
-                    {% endif %}
+                <a class="btn secondary" href="{{ path('copy_request_for_cover', { cover: cover.id }) }}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 8V4h10v4"/><rect x="5" y="8" width="14" height="7" rx="1.5"/><path d="M7 15h10v5H7z"/></svg>
+                    {{ copyOrders is empty ? 'Pedir fotocopias' : 'Pedir más fotocopias' }}
+                </a>
+                {% if cover.hasTask and not cover.hasBankTask %}
+                    <a class="btn secondary" href="{{ path('guardia_bank_index', { para: cover.id }) }}">Ver banco de tareas</a>
                 {% endif %}
             </div>
         {% endif %}
