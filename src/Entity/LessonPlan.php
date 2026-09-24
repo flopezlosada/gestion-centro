@@ -33,6 +33,9 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Index(name: 'idx_lesson_plan_continuity', columns: ['teacher_id', 'subject', 'group_names'])]
 class LessonPlan
 {
+    /** Column widths of the class's groups and subject: what a stored plan is cut to and compared at. */
+    private const int MAX_GROUPS = 160;
+    private const int MAX_SUBJECT = 120;
     /** Longest free line kept: a page and some exercises, not a lesson plan in prose. */
     public const int MAX_NOTE = 160;
 
@@ -88,8 +91,8 @@ class LessonPlan
         $this->teacher = $teacher;
         $this->date = $date->setTime(0, 0);
         $this->slotIndex = $slotIndex;
-        $this->groupNames = mb_substr($groupNames, 0, 160);
-        $this->subject = mb_substr($subject, 0, 120);
+        $this->groupNames = mb_substr($groupNames, 0, self::MAX_GROUPS);
+        $this->subject = mb_substr($subject, 0, self::MAX_SUBJECT);
         $this->level = $level;
         $this->topics = new ArrayCollection();
         $this->updatedAt = new \DateTimeImmutable();
@@ -140,6 +143,57 @@ class LessonPlan
         $this->updatedAt = new \DateTimeImmutable();
 
         return $this;
+    }
+
+    /**
+     * Whether a class with these groups and subject is the same class as this one, compared the way this
+     * plan stored them (cut to the column width) — a long list of groups compared uncut would never match.
+     *
+     * @param string $groupNames the class's groups as shown
+     * @param string $subject    the class's subject
+     */
+    public function isSameClassAs(string $groupNames, string $subject): bool
+    {
+        return mb_substr($groupNames, 0, self::MAX_GROUPS) === $this->groupNames
+            && mb_substr($subject, 0, self::MAX_SUBJECT) === $this->subject;
+    }
+
+    /**
+     * Plans this class as the one that carries on from another: its topic and activity, and its line when
+     * something was left over — «seguimos igual». How it goes is not told yet.
+     *
+     * @param LessonPlan $previous the class it carries on from
+     */
+    public function continueFrom(LessonPlan $previous): static
+    {
+        return $this->plan(
+            $previous->getTopic(),
+            $previous->getActivity(),
+            null,
+            true === $previous->getOutcome()?->leavesSomethingPending() ? $previous->getNote() : null,
+        );
+    }
+
+    /**
+     * Makes this class hold exactly what another one held — its entries and its line. What moving a planned
+     * class one class later amounts to, done on the content so the one-plan-per-class index never sees two
+     * plans on the same class mid-way.
+     *
+     * @param LessonPlan $other the class whose content this one takes
+     */
+    public function takeContentOf(LessonPlan $other): static
+    {
+        [$first, $second] = $other->getTopics() + [null, null];
+
+        return $this->planTwo(
+            $first?->getTopic(),
+            $first?->getActivity(),
+            $first?->getOutcome(),
+            $second?->getTopic(),
+            $second?->getActivity(),
+            $second?->getOutcome(),
+            $other->getNote(),
+        );
     }
 
     /**

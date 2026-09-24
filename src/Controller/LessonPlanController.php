@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Agenda\ClassSession;
+use App\Agenda\LessonShift;
 use App\Agenda\MyClasses;
 use App\Entity\LessonPlan;
 use App\Entity\Topic;
@@ -46,6 +47,7 @@ final class LessonPlanController extends AbstractController
         private readonly LessonPlanRepository $plans,
         private readonly TopicCatalog $topics,
         private readonly EntityManagerInterface $entityManager,
+        private readonly LessonShift $shift,
     ) {
     }
 
@@ -74,7 +76,14 @@ final class LessonPlanController extends AbstractController
                 LessonOutcome::tryFrom($request->request->getString('resultado2')),
                 $request->request->getString('nota'),
             );
-            $this->flashStored($this->store($plan), 'Clase programada.');
+            $stored = $this->store($plan);
+            $this->flashStored($stored, 'Clase programada.');
+
+            // Recién marcada a medias y con las siguientes ya programadas: se vuelve a esta clase, que es
+            // donde se ofrece correrlas. Al día, la oferta pasaría desapercibida.
+            if ($stored && null !== $this->shift->offer($plan)) {
+                return $this->redirectToRoute('lesson_plan', ['fecha' => $fecha, 'tramo' => $tramo]);
+            }
 
             return $this->backToDay($day);
         }
@@ -110,6 +119,7 @@ final class LessonPlanController extends AbstractController
             'activity2' => $entry2?->getActivity(),
             'outcome2' => $entry2?->getOutcome(),
             'hasSecondTopic' => null !== $entry2,
+            'shiftOffer' => null !== $plan ? $this->shift->offer($plan) : null,
         ]);
     }
 
@@ -134,13 +144,31 @@ final class LessonPlanController extends AbstractController
         }
 
         $plan = $this->plans->findForClass($user, $day, $tramo) ?? new LessonPlan($user, $day, $tramo, $groups, $subject, $level);
-        $plan->plan(
-            $previous->getTopic(),
-            $previous->getActivity(),
-            null,
-            true === $previous->getOutcome()?->leavesSomethingPending() ? $previous->getNote() : null,
-        );
+        $plan->continueFrom($previous);
         $this->flashStored($this->store($plan), sprintf('Programada igual que la clase del %s.', $previous->getDate()->format('d/m')));
+
+        return $this->backToDay($day);
+    }
+
+    /**
+     * «Correr las siguientes una clase»: this class was left half done and the next ones with the group
+     * were already planned, so they move one class later and the next one carries on from this
+     * ({@see LessonShift}).
+     */
+    #[Route('/{fecha}/{tramo}/correr', name: 'lesson_plan_shift', requirements: ['fecha' => '\d{4}-\d{2}-\d{2}', 'tramo' => '\d+'], methods: ['POST'])]
+    public function shift(string $fecha, int $tramo, Request $request, #[CurrentUser] User $user): Response
+    {
+        if (!$this->isCsrfTokenValid('lesson_plan', (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+
+        [$day] = $this->classOrFail($user, $fecha, $tramo);
+        $plan = $this->plans->findForClass($user, $day, $tramo) ?? throw $this->createNotFoundException('Esta clase no está programada.');
+
+        $moved = $this->shift->shift($plan);
+        0 === $moved
+            ? $this->addFlash('warning', 'No había nada que correr: la clase siguiente ya no estaba programada con otra cosa, o ya ha empezado.')
+            : $this->addFlash('success', sprintf('%d clase%s corrida%s una clase más tarde. La siguiente sigue con lo que quedó pendiente.', $moved, 1 === $moved ? '' : 's', 1 === $moved ? '' : 's'));
 
         return $this->backToDay($day);
     }
@@ -177,9 +205,9 @@ final class LessonPlanController extends AbstractController
      */
     private function identity(ClassSession $class): array
     {
-        $groups = implode(', ', $class->groups());
+        $groups = $class->groupNames();
 
-        return [$class->subjects()[0] ?? '', $groups, GroupCode::level($groups)];
+        return [$class->subject(), $groups, GroupCode::level($groups)];
     }
 
     /**
