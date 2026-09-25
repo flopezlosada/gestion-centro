@@ -3,16 +3,17 @@
 {% block title %}Protección de datos · {{ app_organization_name }}{% endblock %}
 
 {% block shell %}
-    <div class="auth">
-        <div class="auth-card privacy-doc">
-            <p class="eyebrow">{{ app_organization_name }}</p>
-            <h1>Protección de datos</h1>
+    <main class="privacy-page">
+        <article class="privacy-sheet">
             {% if notice %}
+                {{ include('privacy_notice/_head.html.twig', { lead: 'Qué datos del personal usa esta aplicación, para qué y con qué derechos.' }) }}
                 {{ include('privacy_notice/_text.html.twig', { open: true }) }}
             {% else %}
-                <p class="auth-lead">El centro todavía no ha publicado la información sobre protección de datos de esta aplicación.</p>
+                {{ include('privacy_notice/_head.html.twig', { lead: 'El centro todavía no ha publicado la información sobre protección de datos de esta aplicación.' }) }}
             {% endif %}
-            <a class="auth-secondary" href="{{ app.user ? path('app_homepage') : path('login') }}">{{ app.user ? 'Volver a la aplicación' : 'Ir a la entrada' }}</a>
-        </div>
-    </div>
+            <footer class="privacy-sheet__foot">
+                <a class="btn secondary" href="{{ app.user ? path('app_homepage') : path('login') }}">{{ app.user ? 'Volver a la aplicación' : 'Ir a la entrada' }}</a>
+            </footer>
+        </article>
+    </main>
 {% endblock %}

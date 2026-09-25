@@ -54,7 +54,7 @@ final class PrivacyNoticeTest extends WebTestCase
         self::assertResponseRedirects('/proteccion-datos/leer?volver=/tareas');
 
         $this->client->followRedirect();
-        self::assertSelectorTextContains('.privacy-doc__summary', 'Resumen de prueba');
+        self::assertSelectorTextContains('.privacy-sheet', 'Resumen de prueba');
         $this->client->submitForm('Entendido');
 
         self::assertResponseRedirects('/tareas');
@@ -109,7 +109,7 @@ final class PrivacyNoticeTest extends WebTestCase
         $this->client->request('GET', '/proteccion-datos');
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('.privacy-doc__summary', 'Texto visible sin entrar');
+        self::assertSelectorTextContains('.privacy-sheet', 'Texto visible sin entrar');
     }
 
     /**

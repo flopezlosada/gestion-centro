@@ -83,6 +83,66 @@ class PrivacyNotice implements Auditable
     }
 
     /**
+     * The summary as label/value rows, when it is written that way — one "Responsable: …" per line, the
+     * usual shape of the first layer of GDPR information. Null when any line does not follow it, so a
+     * summary written as prose is shown as prose instead of as a half-broken table.
+     *
+     * @return list<array{label: string, text: string}>|null the rows, or null if the summary is prose
+     */
+    public function summaryRows(): ?array
+    {
+        $rows = [];
+        foreach (self::lines($this->summary) as $line) {
+            if (1 !== preg_match('/^([^:]{2,40}):\s*(\S.*)$/u', $line, $m)) {
+                return null;
+            }
+            $rows[] = ['label' => trim($m[1]), 'text' => trim($m[2])];
+        }
+
+        return \count($rows) >= 2 ? $rows : null;
+    }
+
+    /**
+     * The summary split into paragraphs at blank lines, for when it is prose.
+     *
+     * @return list<string> the paragraphs
+     */
+    public function summaryParagraphs(): array
+    {
+        return self::paragraphs($this->summary);
+    }
+
+    /**
+     * The full information split into paragraphs at blank lines.
+     *
+     * @return list<string> the paragraphs
+     */
+    public function bodyParagraphs(): array
+    {
+        return self::paragraphs($this->body);
+    }
+
+    /**
+     * @param string $text a text
+     *
+     * @return list<string> its non-empty lines, trimmed
+     */
+    private static function lines(string $text): array
+    {
+        return array_values(array_filter(array_map(trim(...), preg_split('/\R/u', $text) ?: []), static fn (string $l): bool => '' !== $l));
+    }
+
+    /**
+     * @param string $text a text
+     *
+     * @return list<string> its paragraphs (separated by one or more blank lines), trimmed
+     */
+    private static function paragraphs(string $text): array
+    {
+        return array_values(array_filter(array_map(trim(...), preg_split('/\R\s*\R/u', $text) ?: []), static fn (string $p): bool => '' !== $p));
+    }
+
+    /**
      * @return \DateTimeImmutable when this version took effect
      */
     public function getPublishedAt(): \DateTimeImmutable

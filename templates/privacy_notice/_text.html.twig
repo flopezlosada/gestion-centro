@@ -1,8 +1,30 @@
-{# Las dos capas de la información: el resumen a la vista y el texto completo plegado debajo. Se escriben
-   como texto plano en el portal, así que se respetan los saltos de línea y nada más (sin HTML). #}
-<div class="privacy-doc__summary">{{ notice.summary|nl2br }}</div>
-<details class="privacy-doc__full"{{ open|default(false) ? ' open' }}>
-    <summary>Información completa</summary>
-    <div class="privacy-doc__body">{{ notice.body|nl2br }}</div>
+{# Las dos capas de la información. La primera, a la vista: si el centro la escribe como «Etiqueta: texto»
+   por línea (la forma habitual de la información básica del RGPD) se pinta como ficha; si no, como texto.
+   La segunda, plegada debajo. Se escriben como texto plano en el portal: sin HTML, se respetan los
+   saltos de línea y los párrafos. #}
+{% set rows = notice.summaryRows %}
+{% if rows %}
+    <dl class="privacy-facts">
+        {% for row in rows %}
+            <div class="privacy-facts__row">
+                <dt>{{ row.label }}</dt>
+                <dd>{{ row.text }}</dd>
+            </div>
+        {% endfor %}
+    </dl>
+{% else %}
+    <div class="privacy-prose">
+        {% for p in notice.summaryParagraphs %}<p>{{ p|nl2br }}</p>{% endfor %}
+    </div>
+{% endif %}
+
+<details class="privacy-more"{{ open|default(false) ? ' open' }}>
+    <summary>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        Información completa
+    </summary>
+    {# tabindex: una zona con scroll propio tiene que poder recorrerse con el teclado. #}
+    <div class="privacy-more__body privacy-prose" tabindex="0" role="region" aria-label="Información completa sobre protección de datos">
+        {% for p in notice.bodyParagraphs %}<p>{{ p|nl2br }}</p>{% endfor %}
+    </div>
 </details>
-<p class="privacy-doc__version">Versión del {{ notice.publishedAt|date('d/m/Y') }}</p>

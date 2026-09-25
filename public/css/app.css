@@ -1373,16 +1373,67 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 }
 .auth-card .form-row { text-align: left; }
 .auth-card hr { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
-/* Protección de datos: el mismo marco centrado que la entrada, pero es un documento para LEER — más
-   ancho, alineado a la izquierda y con la medida de línea de un texto, no de un formulario. */
-.auth-card.privacy-doc { max-width: 640px; text-align: left; }
-.privacy-doc .auth-lead { margin-bottom: 20px; }
-.privacy-doc__summary { font-size: 14.5px; line-height: 1.6; max-width: 65ch; }
-.privacy-doc__full { margin: 18px 0 0; border-top: 1px solid var(--border); padding-top: 14px; }
-.privacy-doc__full > summary { cursor: pointer; font-weight: 600; color: var(--accent-ink); }
-.privacy-doc__body { margin-top: 12px; max-height: 45vh; overflow-y: auto; font-size: 14px; line-height: 1.6; color: var(--text-muted); max-width: 65ch; }
-.privacy-doc__version { margin: 16px 0 22px; font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
-.privacy-doc .auth-secondary { display: block; text-align: center; }
+/* =============================================================================
+   Protección de datos — una hoja para LEER, no un formulario: la medida de línea de un texto, la
+   información básica como ficha (etiqueta · texto) y el botón al pie, después de lo leído.
+   ============================================================================= */
+.privacy-page {
+    min-height: 100vh; display: flex; justify-content: center; align-items: flex-start;
+    padding: 56px 16px; background: var(--canvas);
+}
+.privacy-sheet {
+    width: 100%; max-width: 680px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card); padding: 36px 44px 32px;
+}
+.privacy-sheet__top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.privacy-sheet__version { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); white-space: nowrap; }
+.privacy-sheet h1 { font-size: 30px; line-height: 1.15; margin: 26px 0 10px; text-wrap: balance; }
+.privacy-sheet__lead { margin: 0 0 28px; max-width: 58ch; color: var(--text-muted); font-size: 15px; line-height: 1.55; }
+
+/* La ficha: etiqueta a la izquierda, texto a la derecha, filete entre filas. La etiqueta en la sans,
+   no en mono de rótulo: es parte de lo que se lee, no un adorno. */
+.privacy-facts { margin: 0; border-top: 1px solid var(--border); }
+.privacy-facts__row {
+    display: grid; grid-template-columns: minmax(8rem, 11rem) 1fr; gap: 4px 24px;
+    padding: 14px 0; border-bottom: 1px solid var(--separator);
+}
+.privacy-facts dt { font-size: 13px; font-weight: 600; color: var(--text-muted); padding-top: 1px; }
+.privacy-facts dd { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--text); overflow-wrap: anywhere; }
+
+.privacy-prose p { margin: 0 0 12px; max-width: 65ch; font-size: 14.5px; line-height: 1.65; }
+.privacy-prose p:last-child { margin-bottom: 0; }
+
+.privacy-more { margin-top: 22px; }
+.privacy-more > summary {
+    display: inline-flex; align-items: center; gap: 6px; list-style: none; cursor: pointer;
+    font-weight: 600; font-size: 14px; color: var(--accent-ink); border-radius: 6px;
+}
+.privacy-more > summary::-webkit-details-marker { display: none; }
+.privacy-more > summary svg { width: 16px; height: 16px; transition: transform .2s ease-out; }
+.privacy-more[open] > summary svg { transform: rotate(90deg); }
+.privacy-more > summary:focus-visible, .privacy-more__body:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.privacy-more__body {
+    margin-top: 14px; max-height: 50vh; overflow-y: auto; padding: 18px 20px;
+    background: var(--surface-sunken); border-radius: var(--radius);
+}
+.privacy-more__body p { color: var(--text-muted); font-size: 14px; }
+
+.privacy-sheet__foot { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--border); text-align: center; }
+.privacy-sheet__foot .btn { width: 100%; padding: 13px; font-size: 15px; }
+.privacy-sheet__note { margin: 14px auto 0; max-width: 52ch; font-size: 13px; line-height: 1.5; color: var(--text-muted); }
+.privacy-sheet__exit { display: inline-block; margin-top: 12px; font-size: 13px; color: var(--text-faint); }
+.privacy-sheet__exit:hover { color: var(--text); }
+
+@media (max-width: 560px) {
+    .privacy-page { padding: 16px 12px 32px; }
+    .privacy-sheet { padding: 24px 20px; }
+    .privacy-sheet h1 { font-size: 25px; margin-top: 20px; }
+    .privacy-facts__row { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .privacy-more > summary svg { transition: none; }
+}
 
 /* =============================================================================
    Responsive: la barra lateral colapsa a una nav horizontal en móvil

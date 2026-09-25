@@ -1,0 +1,10 @@
+{# Cabecera común de la lectura y de la copia pública: el logo del centro (es el centro quien informa, no
+   «la aplicación»), la fecha de la versión y el título. #}
+<header class="privacy-sheet__head">
+    <div class="privacy-sheet__top">
+        {{ include('partials/_brand_mark.html.twig', { size: 40 }) }}
+        {% if notice %}<span class="privacy-sheet__version">Versión del {{ notice.publishedAt|date('d/m/Y') }}</span>{% endif %}
+    </div>
+    <h1>Cómo trata el centro tus datos</h1>
+    <p class="privacy-sheet__lead">{{ lead }}</p>
+</header>
