@@ -6,136 +6,152 @@
 
 {% block body %}
     {% set times = slotTimes[cover.slotIndex] ?? null %}
+    {% set backUrl = path('guardia_index', { date: cover.date|date('Y-m-d', false), slot: cover.slotIndex }) %}
+    {# Quien tiene la guardia puede no estar en el horario de guardias de ese tramo (un doblete, un apoyo
+       puntual, un cambio a mano). Sin ofrecerlo como opción, el desplegable caía en «sin asignar» y guardar
+       cualquier otro campo le quitaba la guardia — o pedía explicar un cambio que nadie había hecho. #}
+    {% set assigned = cover.assignedGuardia %}
+    {% set assignedInPool = assigned and pool|filter(entry => entry.teacher.id == assigned.id)|length > 0 %}
+
     <div class="page-head">
         <div>
             <h1>Modificar guardia</h1>
-            <p class="lead">El reparto es automático: usa esto solo cuando algo se sale de lo normal. Si cambias de sustitución avisamos a las dos personas, y todo queda en el histórico.</p>
+            <p class="lead cover-edit__who">
+                <strong>{{ cover.groupName ?? 'Grupo' }}</strong>{% if cover.roomName %} <span class="mono">{{ cover.roomName }}</span>{% endif %}
+                · falta {{ cover.absentTeacher.fullName }}
+                · {{ cover.date|date('d/m/Y', false) }}, {% if times %}<span class="mono">{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}</span>{% else %}{{ cover.slotIndex + 1 }}ª hora{% endif %}
+            </p>
         </div>
     </div>
 
-    <div class="card">
-        <dl class="cover-summary">
-            <div><dt>Grupo</dt><dd><strong>{{ cover.groupName ?? '—' }}</strong>{% if cover.roomName %} <span class="muted mono">· {{ cover.roomName }}</span>{% endif %}</dd></div>
-            <div><dt>Docente ausente</dt><dd>{{ cover.absentTeacher.fullName }}</dd></div>
-            <div><dt>Día y hora</dt><dd>{{ cover.date|date('d/m/Y', false) }}{% if times %} · <span class="mono">{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}</span>{% else %} · {{ cover.slotIndex + 1 }}ª hora{% endif %}</dd></div>
-        </dl>
-
-        <form method="post" action="{{ path('guardia_cover_update', { id: cover.id }) }}" class="stack-form" enctype="multipart/form-data">
+    <div class="detail-cols">
+      <div class="detail-main">
+        <form method="post" action="{{ path('guardia_cover_update', { id: cover.id }) }}" class="card cover-edit" enctype="multipart/form-data">
             <input type="hidden" name="_token" value="{{ csrf_token('guardia_cover_update' ~ cover.id) }}">
 
-            <div class="field">
-                <label for="guardia">Docente de guardia asignado</label>
-                {% if pool is empty %}
-                    <p class="pill-value muted">No hay nadie de guardia en el horario para este tramo.</p>
-                    <input type="hidden" name="guardia" value="{{ cover.assignedGuardia ? cover.assignedGuardia.id }}">
-                {% else %}
-                    <select id="guardia" name="guardia">
-                        <option value="">— sin asignar —</option>
-                        {% for entry in pool %}
-                            <option value="{{ entry.teacher.id }}" {{ cover.assignedGuardia and cover.assignedGuardia.id == entry.teacher.id ? 'selected' }}>{{ entry.teacher.fullName }}</option>
-                        {% endfor %}
-                    </select>
-                {% endif %}
-            </div>
+            <fieldset class="cover-edit__section">
+                <legend>Quién la cubre</legend>
 
-            <div class="field">
-                <label>Documento de tarea</label>
-                {% if cover.taskDocumentPath %}
-                    <p class="doc-current">
-                        <a class="task-doc" href="{{ path('guardia_task_download', { id: cover.id }) }}">📎 {{ cover.taskDocumentName ?? 'Documento actual' }}</a>
-                        <label class="choice"><input type="checkbox" name="remove_document" value="1"> Quitar el documento</label>
-                    </p>
-                {% endif %}
-                <input type="file" name="document" data-max-bytes="{{ constant('App\\Support\\DocumentUpload::MAX_BYTES') }}">
-                <p class="field-help">{% if cover.taskDocumentPath %}Sube uno nuevo para reemplazarlo, o marca «Quitar».{% else %}Adjunta el documento con la tarea del grupo (opcional).{% endif %}</p>
-            </div>
-
-            <div class="field">
-                <label for="task_description">Descripción de la guardia</label>
-                <textarea id="task_description" name="task_description" rows="3" maxlength="1000" placeholder="Lo que no venga en el documento: página, ejercicios, dónde está el examen…">{{ cover.taskDescription }}</textarea>
-                <p class="field-help">La ve quien cubre la guardia. Déjalo vacío si no hace falta.</p>
-            </div>
-
-            {# Guardia sobrevenida: si el docente ausente no dejó dicho cuántas copias, lo anota aquí quien coordina. #}
-            <div class="field">
-                <label for="copies_needed">Copias que hacen falta</label>
-                <input type="number" id="copies_needed" name="copies_needed" min="1" max="500" inputmode="numeric" value="{{ cover.copiesNeeded }}" placeholder="p. ej. 28">
-                <p class="field-help">Opcional. Se propone al mandar la tarea a fotocopias; ahí siempre se puede ajustar.</p>
-            </div>
-
-            <div class="field">
-                <label for="absence_reason">Motivo de la ausencia <span class="muted">(privado)</span></label>
-                <textarea id="absence_reason" name="absence_reason" rows="2" maxlength="500" placeholder="Solo lo ve la coordinación y el docente ausente.">{{ cover.absence.reason }}</textarea>
-                <p class="field-help">No se muestra a quien cubre la guardia. Es común a todas las horas de esta ausencia.</p>
-            </div>
-
-            {# El hidden a 0 va DELANTE de la casilla a propósito: así `not_covered` viaja siempre y el
-               servidor puede distinguir «desmarcada» de «este POST no trae ese campo» (que es lo que no
-               debe borrar nada). Marcada, el navegador manda las dos y PHP se queda con la última. #}
-            <div class="field">
-                <input type="hidden" name="not_covered" value="0">
-                <label class="choice"><input type="checkbox" name="not_covered" value="1" {{ cover.notCovered ? 'checked' }}> No se cubrió</label>
-                <p class="field-help">Márcalo si al final nadie cubrió la guardia (quien iba a cubrirla no vino, o el docente ausente sí apareció). No cuenta para el reparto equitativo.</p>
-            </div>
-
-            {# La única palabra "Motivo" que queda arriba es la de la ausencia (privada). Este campo no la
-               usa a propósito: tener dos "motivos" en la misma pantalla era lo que despistaba al centro.
-
-               El asterisco nace oculto y solo aparece si se cambia de docente (change-note-presets.js):
-               es exactamente el caso en que el campo es obligatorio. Sin JS no se pierde nada — quien
-               manda de verdad es el servidor. #}
-            <div class="field field--change-note">
-                <label for="motivo">¿Por qué haces este cambio? <span class="req" data-change-note-req hidden>*</span></label>
-                <p class="field-help field-help--lead">Privado: esto lo lee <strong>solo el equipo directivo</strong>. No se envía al profesorado.</p>
-                {# Atajos: rellenan el campo de un clic y siguen siendo editables. Ocultos sin JS (no harían
-                   nada), y el campo se escribe a mano igual: mejora progresiva, no requisito. #}
-                <div class="change-note__presets" data-change-note-presets hidden role="group" aria-labelledby="change-note-presets-label">
-                    <span class="muted" id="change-note-presets-label">Casos habituales:</span>
-                    <button type="button">Quien tenía la guardia también falta hoy</button>
-                    <button type="button">Cambio acordado entre docentes</button>
-                    <button type="button">Corrijo un error del reparto</button>
-                    <button type="button">Al final no se cubrió</button>
+                <div class="field">
+                    <label for="guardia">Docente de guardia</label>
+                    {% if pool is empty and not assigned %}
+                        <p class="muted">No hay nadie de guardia en el horario para este tramo.</p>
+                    {% else %}
+                        <select id="guardia" name="guardia">
+                            <option value="">Sin asignar</option>
+                            {% if assigned and not assignedInPool %}
+                                <option value="{{ assigned.id }}" selected>{{ assigned.fullName }} (fuera de su horario de guardias)</option>
+                            {% endif %}
+                            {% for entry in pool %}
+                                <option value="{{ entry.teacher.id }}" {{ assigned and assigned.id == entry.teacher.id ? 'selected' }}>{{ entry.teacher.fullName }}</option>
+                            {% endfor %}
+                        </select>
+                        <p class="field-help">Si la cambias, avisamos a quien entra y a quien la deja.</p>
+                    {% endif %}
                 </div>
-                <textarea id="motivo" name="motivo" rows="3" maxlength="500" placeholder="Ej.: lo cubre otra persona porque a quien le tocaba le ha surgido una reunión fuera del centro."></textarea>
-                <p class="field-help">Obligatorio solo si cambias de docente de guardia. A las dos personas afectadas —quien entra y quien deja de hacerla— les avisamos del cambio, pero no les llega este texto.</p>
-            </div>
+
+                {# El hidden a 0 va DELANTE de la casilla a propósito: así `not_covered` viaja siempre y el
+                   servidor puede distinguir «desmarcada» de «este POST no trae ese campo» (que es lo que no
+                   debe borrar nada). Marcada, el navegador manda las dos y PHP se queda con la última. #}
+                <div class="field">
+                    <input type="hidden" name="not_covered" value="0">
+                    <label class="choice"><input type="checkbox" id="not_covered" name="not_covered" value="1" {{ cover.notCovered ? 'checked' }}> Al final no se cubrió</label>
+                    <p class="field-help">Nadie estuvo en el aula, o volvió quien faltaba. No cuenta en el reparto.</p>
+                </div>
+
+                {# «¿Por qué?» cuelga de los dos controles de arriba, que son los que cambian quién está en el aula:
+                   con JS solo aparece cuando se toca uno de ellos (change-note-presets.js); sin JS está siempre,
+                   y el servidor sigue siendo quien exige el motivo al cambiar de docente.
+                   La única palabra «Motivo» de la pantalla es la de la ausencia: dos «motivos» despistaban. #}
+                <div class="field field--change-note" data-change-note>
+                    <label for="motivo">¿Por qué haces este cambio? <span class="req" data-change-note-req hidden>*</span></label>
+                    <p class="field-help field-help--lead">Lo lee <strong>solo el equipo directivo</strong>. No se envía al profesorado.</p>
+                    {# Atajos: rellenan el campo de un clic y siguen siendo editables. Ocultos sin JS (no harían nada). #}
+                    <div class="change-note__presets" data-change-note-presets hidden role="group" aria-label="Casos habituales">
+                        <button type="button">Quien tenía la guardia también falta hoy</button>
+                        <button type="button">Cambio acordado entre docentes</button>
+                        <button type="button">Corrijo un error del reparto</button>
+                        <button type="button">Al final no se cubrió</button>
+                    </div>
+                    <textarea id="motivo" name="motivo" rows="2" maxlength="500" placeholder="Obligatorio si cambias de docente."></textarea>
+                </div>
+            </fieldset>
+
+            <fieldset class="cover-edit__section">
+                <legend>Para el grupo <span class="cover-edit__aside">lo ve quien cubre</span></legend>
+
+                <div class="field">
+                    <label for="task_description">Qué tiene que hacer</label>
+                    <textarea id="task_description" name="task_description" rows="3" maxlength="1000" placeholder="Página, ejercicios, dónde está el examen…">{{ cover.taskDescription }}</textarea>
+                </div>
+
+                <div class="field">
+                    <label for="document">Documento</label>
+                    {% if cover.taskDocumentPath %}
+                        <div class="cover-edit__doc">
+                            <a href="{{ path('guardia_task_download', { id: cover.id }) }}">{{ cover.taskDocumentName ?? 'Documento actual' }}</a>
+                            <label class="choice choice--inline"><input type="checkbox" name="remove_document" value="1"> Quitar</label>
+                        </div>
+                    {% endif %}
+                    <input type="file" id="document" name="document" data-max-bytes="{{ constant('App\\Support\\DocumentUpload::MAX_BYTES') }}">
+                    {% if cover.taskDocumentPath %}<p class="field-help">Si subes otro, sustituye al actual.</p>{% endif %}
+                </div>
+
+                <div class="field">
+                    <label for="copies_needed">Copias</label>
+                    <input type="number" class="cover-edit__copies" id="copies_needed" name="copies_needed" min="1" max="500" inputmode="numeric" value="{{ cover.copiesNeeded }}" placeholder="28">
+                    <p class="field-help">Se proponen al pedir las fotocopias; allí se pueden cambiar.</p>
+                </div>
+            </fieldset>
+
+            <fieldset class="cover-edit__section">
+                <legend>La ausencia <span class="cover-edit__aside">privado</span></legend>
+                <div class="field">
+                    <label for="absence_reason">Motivo de la ausencia</label>
+                    <textarea id="absence_reason" name="absence_reason" rows="2" maxlength="500">{{ cover.absence.reason }}</textarea>
+                    <p class="field-help">Solo lo ven la coordinación y quien falta. Vale para todas sus horas de ese día.</p>
+                </div>
+            </fieldset>
 
             <div class="form-actions">
                 <button type="submit" class="btn">Guardar cambios</button>
-                <a class="btn secondary" href="{{ path('guardia_index', { date: cover.date|date('Y-m-d', false), slot: cover.slotIndex }) }}">Cancelar</a>
+                <a class="btn secondary" href="{{ backUrl }}">Cancelar</a>
             </div>
         </form>
-    </div>
+      </div>
 
-    <div class="card">
-        <div class="page-head"><div><h2>Histórico de esta guardia</h2></div></div>
-        {% if events is empty %}
-            <p class="muted">Sin movimientos registrados todavía.</p>
-        {% else %}
-            <ol class="obj-timeline">
-                {% for row in events %}
-                    <li class="obj-timeline__item">
-                        <div class="obj-timeline__head">
-                            <span class="obj-timeline__verb">{{ row.verbLabel }}</span>
-                            <span class="obj-timeline__meta muted">{{ row.actor|default('Sistema') }} · <time datetime="{{ row.occurredAt|date('c') }}">{{ row.occurredAt|date('d/m/Y H:i') }}</time></span>
-                        </div>
-                        {% if row.motivo %}<p class="obj-timeline__summary">{{ row.motivo }}</p>{% endif %}
-                        {% if row.changes is not empty %}
-                            <ul class="obj-timeline__changes">
-                                {% for change in row.changes %}
-                                    <li>
-                                        <span class="obj-timeline__label">{{ change.label }}:</span>
-                                        <span class="obj-timeline__del">{{ change.old }}</span>
-                                        <span aria-hidden="true">→</span>
-                                        <span class="obj-timeline__add">{{ change.new }}</span>
-                                    </li>
-                                {% endfor %}
-                            </ul>
-                        {% endif %}
-                    </li>
-                {% endfor %}
-            </ol>
-        {% endif %}
+      <aside class="detail-aside">
+        <div class="side-card">
+            <div class="side-card__label">Histórico</div>
+            {% if events is empty %}
+                <p class="muted">Sin cambios todavía.</p>
+            {% else %}
+                <ol class="obj-timeline">
+                    {% for row in events %}
+                        <li class="obj-timeline__item">
+                            <div class="obj-timeline__head">
+                                <span class="obj-timeline__verb">{{ row.verbLabel }}</span>
+                                <span class="obj-timeline__meta muted">{{ row.actor|default('Sistema') }} · <time datetime="{{ row.occurredAt|date('c') }}">{{ row.occurredAt|date('d/m/Y H:i') }}</time></span>
+                            </div>
+                            {% if row.motivo %}<p class="obj-timeline__summary">{{ row.motivo }}</p>{% endif %}
+                            {% if row.changes is not empty %}
+                                <ul class="obj-timeline__changes">
+                                    {% for change in row.changes %}
+                                        <li>
+                                            <span class="obj-timeline__label">{{ change.label }}:</span>
+                                            <span class="obj-timeline__del">{{ change.old }}</span>
+                                            <span aria-hidden="true">→</span>
+                                            <span class="obj-timeline__add">{{ change.new }}</span>
+                                        </li>
+                                    {% endfor %}
+                                </ul>
+                            {% endif %}
+                        </li>
+                    {% endfor %}
+                </ol>
+            {% endif %}
+        </div>
+      </aside>
     </div>
 {% endblock %}
 
