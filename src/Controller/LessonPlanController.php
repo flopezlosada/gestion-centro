@@ -20,6 +20,7 @@ use App\Util\CalendarDate;
 use App\Util\GroupCode;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Clock\ClockInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -42,12 +43,16 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
 #[Route('/mis-clases')]
 final class LessonPlanController extends AbstractController
 {
+    /** How many classes of the group the strip shows at once. */
+    private const STRIP_SIZE = 5;
+
     public function __construct(
         private readonly MyClasses $myClasses,
         private readonly LessonPlanRepository $plans,
         private readonly TopicCatalog $topics,
         private readonly EntityManagerInterface $entityManager,
         private readonly LessonShift $shift,
+        private readonly ClockInterface $clock,
     ) {
     }
 
@@ -76,16 +81,9 @@ final class LessonPlanController extends AbstractController
                 LessonOutcome::tryFrom($request->request->getString('resultado2')),
                 $request->request->getString('nota'),
             );
-            $stored = $this->store($plan);
-            $this->flashStored($stored, 'Clase programada.');
+            $this->flashStored($this->store($plan), 'Clase guardada.');
 
-            // Recién marcada a medias y con las siguientes ya programadas: se vuelve a esta clase, que es
-            // donde se ofrece correrlas. Al día, la oferta pasaría desapercibida.
-            if ($stored && null !== $this->shift->offer($plan)) {
-                return $this->redirectToRoute('lesson_plan', ['fecha' => $fecha, 'tramo' => $tramo]);
-            }
-
-            return $this->backToDay($day);
+            return $this->backToClass($day, $tramo);
         }
 
         $topics = '' !== $subject ? $this->topics->offeredFor($subject, $level) : [];
@@ -120,6 +118,8 @@ final class LessonPlanController extends AbstractController
             'outcome2' => $entry2?->getOutcome(),
             'hasSecondTopic' => null !== $entry2,
             'shiftOffer' => null !== $plan ? $this->shift->offer($plan) : null,
+            'strip' => $this->strip($user, $day, $class, $groups, $subject, $request->query->getString('desde')),
+            'relativeDay' => $this->relativeDay($day),
         ]);
     }
 
@@ -147,7 +147,7 @@ final class LessonPlanController extends AbstractController
         $plan->continueFrom($previous);
         $this->flashStored($this->store($plan), sprintf('Programada igual que la clase del %s.', $previous->getDate()->format('d/m')));
 
-        return $this->backToDay($day);
+        return $this->backToClass($day, $tramo);
     }
 
     /**
@@ -170,7 +170,7 @@ final class LessonPlanController extends AbstractController
             ? $this->addFlash('warning', 'No había nada que correr: la clase siguiente ya no estaba programada con otra cosa, o ya ha empezado.')
             : $this->addFlash('success', sprintf('%d clase%s corrida%s una clase más tarde. La siguiente sigue con lo que quedó pendiente.', $moved, 1 === $moved ? '' : 's', 1 === $moved ? '' : 's'));
 
-        return $this->backToDay($day);
+        return $this->backToClass($day, $tramo);
     }
 
     /**
@@ -256,14 +256,129 @@ final class LessonPlanController extends AbstractController
     }
 
     /**
-     * Back to that day in the calendar, where the teacher's classes of the day are.
+     * Back to the class just saved, and not to the calendar: its strip shows it planned, and the next
+     * class with the group is one tap away — planning a week is save, next, save.
      *
-     * @param \DateTimeImmutable $day the day
-     *
-     * @return Response the redirect
+     * @param \DateTimeImmutable $day   the day of the class
+     * @param int                $tramo its period
      */
-    private function backToDay(\DateTimeImmutable $day): Response
+    private function backToClass(\DateTimeImmutable $day, int $tramo): Response
     {
-        return $this->redirectToRoute('calendar_index', ['vista' => 'dia', 'fecha' => $day->format('Y-m-d')]);
+        return $this->redirectToRoute('lesson_plan', ['fecha' => $day->format('Y-m-d'), 'tramo' => $tramo]);
+    }
+
+    /**
+     * A strip of the same class (these groups, this subject), to move between them without going back to
+     * the calendar, each saying whether it is planned — what is still to prepare shows at a glance.
+     *
+     * It holds STILL: it starts at the class named by "desde" (the strip's links carry it), so opening
+     * another class of the strip only moves the highlight. Without it, it starts one class before the one
+     * open. The arrows page it without opening a class, keeping the edge class as the anchor: from a strip
+     * starting on the 28th, "earlier" shows the one ending on the 28th. The plans of the strip come in one
+     * query.
+     *
+     * @param User               $teacher the teacher
+     * @param \DateTimeImmutable $day     the day of the class open
+     * @param ClassSession       $class   the class open
+     * @param string             $groups  its groups as shown
+     * @param string             $subject its subject
+     * @param string             $from    where the strip starts, "YYYY-MM-DD.slot", or '' for the default
+     *
+     * @return array{from: string, items: list<array{date: \DateTimeImmutable, slotIndex: int, ordinal: int, planned: bool, current: bool, past: bool, sameDayTwice: bool, newMonth: bool}>, today: array{date: \DateTimeImmutable, slotIndex: int, isToday: bool}|null, earlier: string|null, later: string|null}
+     */
+    private function strip(User $teacher, \DateTimeImmutable $day, ClassSession $class, string $groups, string $subject, string $from): array
+    {
+        $isSame = static fn (ClassSession $c): bool => $c->groupNames() === $groups && $c->subject() === $subject;
+        $start = $this->stripStart($teacher, $from, $isSame)
+            ?? $this->myClasses->preceding($teacher, $day, $class->slotIndex, $isSame, 1)[0]
+            ?? ['date' => $day, 'class' => $class];
+
+        $after = $this->myClasses->following($teacher, $start['date'], $start['class']->slotIndex, $isSame, self::STRIP_SIZE);
+        $classes = [$start, ...\array_slice($after, 0, self::STRIP_SIZE - 1)];
+        $before = $this->myClasses->preceding($teacher, $start['date'], $start['class']->slotIndex, $isSame, self::STRIP_SIZE - 1);
+
+        $plans = $this->plans->findForTeacherBetween($teacher, $classes[0]['date'], end($classes)['date']);
+        $perDay = array_count_values(array_map(static fn (array $c): string => $c['date']->format('Y-m-d'), $classes));
+        $now = $this->clock->now()->setTimezone($day->getTimezone());
+        $key = static fn (array $c): string => $c['date']->format('Y-m-d').'.'.$c['class']->slotIndex;
+
+        $items = [];
+        foreach ($classes as $i => $c) {
+            $date = $c['date']->format('Y-m-d');
+            $items[] = [
+                'date' => $c['date'],
+                'slotIndex' => $c['class']->slotIndex,
+                'ordinal' => $c['class']->ordinal,
+                'planned' => isset($plans[$date.'|'.$c['class']->slotIndex]),
+                'current' => $date === $day->format('Y-m-d') && $c['class']->slotIndex === $class->slotIndex,
+                // Given already: a class never planned there is a record of nothing, not a job to do.
+                'past' => ($c['class']->endsAt ?? $c['date']->modify('+1 day')) <= $now,
+                'sameDayTwice' => $perDay[$date] > 1,
+                // The month is shown on the first class and wherever it changes: a weekly class spans five weeks.
+                'newMonth' => 0 === $i || $c['date']->format('n') !== $classes[$i - 1]['date']->format('n'),
+            ];
+        }
+
+        // «Hoy»: the class of the group today or, without one today, the next one — where the teacher is in
+        // time. Not offered when it is the class open and the strip shows it: there is nowhere to go back to.
+        $today = $this->myClasses->following($teacher, $now->setTime(0, 0), -1, $isSame, 1)[0] ?? null;
+        $todayIsOpen = null !== $today && $today['date']->format('Y-m-d') === $day->format('Y-m-d') && $today['class']->slotIndex === $class->slotIndex;
+        $openIsShown = [] !== array_filter($items, static fn (array $item): bool => $item['current']);
+
+        return [
+            'from' => $key($start),
+            'items' => $items,
+            'today' => null !== $today && !($todayIsOpen && $openIsShown) ? [
+                'date' => $today['date'],
+                'slotIndex' => $today['class']->slotIndex,
+                'isToday' => $today['date']->format('Y-m-d') === $now->format('Y-m-d'),
+            ] : null,
+            // The strip that ends where this one starts, and the one that starts where this one ends.
+            'earlier' => [] !== $before ? $key(end($before)) : null,
+            'later' => \count($after) === self::STRIP_SIZE ? $key(end($classes)) : null,
+        ];
+    }
+
+    /**
+     * The class a strip starts at, from its "YYYY-MM-DD.slot" key — only when it is really a class of
+     * this group, so a stale or hand-made key falls back to the default strip instead of an error.
+     *
+     * @param User                        $teacher the teacher
+     * @param string                      $from    the key, or ''
+     * @param callable(ClassSession):bool $isSame  whether a class is the same class
+     *
+     * @return array{date: \DateTimeImmutable, class: ClassSession}|null the class, or null
+     */
+    private function stripStart(User $teacher, string $from, callable $isSame): ?array
+    {
+        if (1 !== preg_match('/^(\d{4}-\d{2}-\d{2})\.(\d+)$/', $from, $m) || null === $date = CalendarDate::parse($m[1], AppTime::zone())) {
+            return null;
+        }
+        foreach ($this->myClasses->on($teacher, $date) as $class) {
+            if ($class->slotIndex === (int) $m[2] && $isSame($class)) {
+                return ['date' => $date, 'class' => $class];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * «Hoy», «Mañana» or «Ayer» for the class's day, so moving between classes says where in time you are.
+     *
+     * @param \DateTimeImmutable $day the day of the class
+     *
+     * @return string|null the word, or null for any other day
+     */
+    private function relativeDay(\DateTimeImmutable $day): ?string
+    {
+        $today = $this->clock->now()->setTimezone($day->getTimezone())->setTime(0, 0);
+
+        return match ((int) $today->diff($day->setTime(0, 0))->format('%r%a')) {
+            0 => 'Hoy',
+            1 => 'Mañana',
+            -1 => 'Ayer',
+            default => null,
+        };
     }
 }

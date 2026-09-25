@@ -953,15 +953,6 @@ input[type="email"], input[type="text"], input[type="url"], select, textarea {
     padding-right: 36px;
     cursor: pointer;
 }
-/* Input con <datalist>: a diferencia de un <select>, el navegador no le pone ninguna flecha, así que
-   parece un campo de solo-texto aunque tenga una lista detrás. Mismo chevron que el select, de puro
-   adorno (list-driven, no abre nada al hacer click en él: el propio input ya abre la lista nativa). */
-input[list] {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none' stroke='%235C6159' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='1 1.5 6 6.5 11 1.5'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 14px center;
-    padding-right: 36px;
-}
 .form-row input:focus, .form-row select:focus, .form-row textarea:focus {
     border-color: var(--accent);
     outline-offset: 0;
@@ -1077,6 +1068,41 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .cselect__option[aria-selected="true"]::before { content: "\2713"; }
 .cselect__option[aria-selected="true"] { color: var(--accent-ink); font-weight: 500; }
 .cselect__option:hover, .cselect__option.is-active { background: var(--surface-sunken); }
+
+/* ---- Campo con lista de temas (topic-combobox.js) ----
+   Un <input> de texto con su lista propia debajo, en el lenguaje de .cselect: se elige un tema o se
+   escribe uno nuevo. Sin JS queda el <datalist> nativo del navegador. */
+.ccombo { position: relative; }
+.ccombo > input { padding-right: 44px; }
+/* Chrome deja pintado el indicador del datalist aunque el script le quite «list»: dos flechas. */
+.ccombo > input::-webkit-calendar-picker-indicator { display: none !important; }
+.ccombo.is-open > input { border-color: var(--accent); }
+.ccombo__toggle {
+    position: absolute; top: 1px; right: 1px; bottom: 1px; width: 40px; display: grid; place-items: center;
+    padding: 0; border: 0; border-radius: 0 var(--radius) var(--radius) 0; background: transparent;
+    color: var(--text-muted); cursor: pointer;
+}
+.ccombo__toggle:hover { color: var(--text); background: var(--surface-sunken); }
+.ccombo__toggle svg { transition: transform .14s ease; }
+.ccombo.is-open .ccombo__toggle svg { transform: rotate(180deg); }
+.ccombo__list {
+    position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + 4px);
+    max-height: 300px; margin: 0; padding: 4px; overflow-y: auto; list-style: none;
+    background: var(--surface); border: 1px solid var(--border-strong);
+    border-radius: var(--radius); box-shadow: var(--shadow-card);
+}
+.ccombo__option {
+    display: flex; align-items: baseline; gap: 12px; padding: 9px 10px;
+    border-radius: var(--radius-sm); color: var(--text); cursor: pointer;
+}
+.ccombo__option:hover, .ccombo__option.is-active { background: var(--surface-sunken); }
+.ccombo__option[aria-selected="true"] { color: var(--accent-ink); font-weight: 600; }
+/* El número del tema en el temario: mono y alineado, para que la lista se lea como un índice. */
+.ccombo__num { flex: none; min-width: 2ch; text-align: right; font: 500 11.5px var(--font-mono); color: var(--text-faint); }
+.ccombo__option[aria-selected="true"] .ccombo__num { color: inherit; }
+.ccombo__name mark { background: none; color: var(--accent-ink); font-weight: 600; }
+.ccombo__hint { padding: 9px 10px; font-size: 13px; color: var(--text-muted); }
+.ccombo__option + .ccombo__hint { margin-top: 4px; border-top: 1px solid var(--separator); }
 
 /* ---- Calendario propio de fecha (date-field.js) ----
    Reemplaza el selector nativo de <input type="date">. El input real pasa a type="hidden" (conserva
@@ -2761,6 +2787,138 @@ tr.is-not-covered { background: var(--danger-weak); }
 }
 .stack-form .field-group > summary { cursor: pointer; font-weight: 600; list-style: none; }
 .stack-form .field-group > * + * { margin-top: 14px; }
+
+/* ── Mi clase (lesson_plan/show) ─────────────────────────────────────────────
+   La página es la hoja del cuaderno de esa clase. Al moverse entre las clases de un grupo, el grupo no
+   cambia y la fecha sí: por eso la fecha es el titular y la tira de clases se queda quieta. */
+
+/* El punto de estado, el mismo en la tira y en la ficha: relleno = programada, hueco = sin programar.
+   Repetido en la ficha a propósito, para que la tira se lea sin leyenda. */
+.lesson-mark {
+    display: inline-block; flex: none; width: 9px; height: 9px; border-radius: 50%;
+    border: 2px solid var(--border-strong); box-sizing: border-box;
+}
+.is-planned .lesson-mark, .lesson-mark.is-on { background: var(--accent); border-color: var(--accent); }
+/* Ya dada y sin programar: no es algo pendiente, así que se apaga. */
+.is-past:not(.is-planned) .lesson-mark { border-style: dashed; opacity: .7; }
+
+/* Ancho de hoja: la tira y la ficha se leen de un vistazo, no estiradas a todo el escritorio. */
+.lesson-page { max-width: 680px; }
+.lesson-head { margin: 2px 0 22px; }
+.lesson-head__class { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0; font: 500 14px var(--font-body); color: var(--text-muted); }
+.lesson-head__groups { font: 500 12.5px var(--font-mono); letter-spacing: .02em; color: var(--text); }
+/* Malva: en todo el sistema, lo personal y privado. */
+.lesson-head__private {
+    align-self: center;
+    padding: 2px 9px; border-radius: 999px; background: var(--personal-weak); color: var(--personal-icon);
+    font: 500 10.5px var(--font-mono); text-transform: uppercase; letter-spacing: .1em;
+}
+.lesson-head__date {
+    margin: 8px 0 6px; font: 500 clamp(30px, 7vw, 42px)/1.06 var(--font-display);
+    letter-spacing: -.012em; text-wrap: balance;
+}
+.lesson-head__rel { font-style: italic; color: var(--accent-ink); }
+.lesson-head__meta { margin: 0; font: 500 12.5px var(--font-mono); color: var(--text-muted); }
+
+.lesson-strip { margin: 0 0 26px; }
+.lesson-strip__label {
+    display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 8px;
+    font: 500 11px var(--font-mono); text-transform: uppercase; letter-spacing: .14em; color: var(--text-faint);
+}
+.lesson-strip__range { color: var(--text-muted); }
+/* «Hoy», a la derecha del rótulo: píldora de contorno, no botón primario (la acción naranja es otra).
+   El rótulo guarda el alto de la píldora aunque no esté, para que la tira no salte al aparecer o irse. */
+.lesson-strip__label { align-items: center; min-height: 28px; }
+.lesson-strip__today {
+    margin-left: auto; padding: 0 12px; line-height: 26px; border: 1px solid var(--border-strong); border-radius: 999px;
+    color: var(--accent-ink); font: 600 11px var(--font-mono); letter-spacing: .08em; text-decoration: none;
+}
+.lesson-strip__today:hover { background: var(--accent-weak); border-color: var(--accent-weak-border); }
+.lesson-strip__row { display: flex; align-items: stretch; gap: 8px; }
+.lesson-strip__list { flex: 1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; min-width: 0; }
+.lesson-strip__list > li { display: flex; min-width: 0; }
+.lesson-strip__item {
+    flex: 1; display: grid; justify-items: center; align-content: center; gap: 4px;
+    min-height: 78px; padding: 8px 2px; border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--surface); color: var(--text); text-decoration: none;
+    transition: background-color .15s ease-out, border-color .15s ease-out;
+}
+.lesson-strip__item:hover { border-color: var(--border-strong); background: var(--surface-alt); }
+.lesson-strip__wd { font: 500 10.5px var(--font-mono); text-transform: uppercase; letter-spacing: .1em; color: var(--text-faint); }
+.lesson-strip__num { font: 600 19px/1 var(--font-mono); }
+/* El mes (donde empieza o cambia) o el ordinal si el grupo tiene dos clases ese día. Alto fijo aunque
+   vaya vacío, para que los puntos de todas las casillas queden alineados. */
+.lesson-strip__sub { min-height: 10px; font: 500 10px/1 var(--font-mono); color: var(--text-muted); }
+/* La clase abierta: la única pieza entintada de la tira. Al pasar a otra clase se desliza hasta ella
+   (view transition entre páginas de clase), así que se ve de dónde se viene y adónde se va. */
+.lesson-strip__item.is-current {
+    background: var(--text); border-color: var(--text); color: var(--bg);
+    box-shadow: var(--shadow-card); view-transition-name: lesson-current;
+}
+.lesson-strip__item.is-current .lesson-strip__wd,
+.lesson-strip__item.is-current .lesson-strip__sub { color: inherit; opacity: .72; }
+.lesson-strip__item.is-current:not(.is-planned) .lesson-mark { border-color: currentColor; opacity: .7; }
+.lesson-strip__step {
+    display: inline-flex; flex: none; align-items: center; justify-content: center; width: 40px;
+    border: 1px solid var(--border); border-radius: var(--radius); color: var(--text);
+    font: 400 22px/1 var(--font-body); text-decoration: none;
+}
+a.lesson-strip__step:hover { border-color: var(--border-strong); background: var(--surface-sunken); }
+.lesson-strip__step.is-disabled { color: var(--text-tenue); border-style: dashed; }
+::view-transition-group(lesson-current) { animation-duration: .38s; animation-timing-function: cubic-bezier(.16, 1, .3, 1); }
+
+/* Programada: la ficha de lo guardado. */
+.lesson-sheet {
+    margin: 0 0 14px; padding: 22px 24px; border: 1px solid var(--border); border-radius: var(--radius-lg);
+    background: var(--surface); box-shadow: var(--shadow-card);
+}
+.lesson-sheet__status {
+    display: flex; align-items: center; gap: 8px; margin: 0 0 10px;
+    font: 500 11px var(--font-mono); text-transform: uppercase; letter-spacing: .14em; color: var(--text-muted);
+}
+.lesson-sheet__topics { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.lesson-sheet__topics > li + li { padding-top: 14px; border-top: 1px solid var(--separator); }
+.lesson-sheet__topic { margin: 0; font: 500 27px/1.15 var(--font-display); text-wrap: balance; }
+.lesson-sheet__facts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 0; }
+.lesson-sheet__activity {
+    padding: 4px 12px; border: 1px solid var(--accent-weak-border); border-radius: 999px;
+    background: var(--accent-weak); color: var(--accent-ink); font: 600 13px var(--font-body);
+}
+.lesson-sheet__progress { margin: 12px 0 0; font: 500 11.5px var(--font-mono); color: var(--text-faint); }
+.lesson-sheet__note { margin: 12px 0 0; padding: 10px 14px; border-radius: var(--radius-sm); background: var(--surface-sunken); font-size: 15px; }
+.lesson-sheet__from { margin: 14px 0 0; font-size: 13px; color: var(--text-muted); }
+
+/* Sin programar: un hueco por rellenar (borde discontinuo, sin relleno), con lo probable a un toque. */
+.lesson-blank { margin: 0 0 14px; padding: 20px 24px 22px; border: 1.5px dashed var(--border-strong); border-radius: var(--radius-lg); }
+.lesson-blank__lead { margin: 0; color: var(--text-muted); }
+.lesson-blank__previous { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 6px 0 0; font: 400 22px/1.25 var(--font-display); }
+.lesson-blank__previous strong { font-weight: 500; }
+.lesson-blank__previous .badge { align-self: center; }
+.lesson-blank__repeat { margin-top: 16px; }
+
+/* Editar: recogido bajo la ficha si ya está programada; abierto si la clase está en blanco. */
+.lesson-edit { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+.lesson-edit.is-open { padding: 22px 24px; }
+.lesson-edit > summary {
+    display: flex; align-items: center; justify-content: space-between; padding: 14px 22px;
+    font: 600 14px var(--font-body); cursor: pointer; list-style: none;
+}
+.lesson-edit > summary::-webkit-details-marker { display: none; }
+.lesson-edit > summary::after { content: "+"; font: 400 20px/1 var(--font-body); color: var(--text-muted); }
+.lesson-edit[open] > summary { border-bottom: 1px solid var(--border); }
+.lesson-edit[open] > summary::after { content: "–"; }
+details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
+.lesson-edit__title { margin: 0 0 4px; font: 500 20px/1.2 var(--font-display); }
+.lesson-edit.is-open > .lesson-form { margin-top: 16px; }
+
+@media (max-width: 480px) {
+    .lesson-strip__row { gap: 4px; }
+    .lesson-strip__list { gap: 4px; }
+    .lesson-strip__step { width: 36px; }
+    .lesson-strip__num { font-size: 17px; }
+    .lesson-sheet, .lesson-blank, .lesson-edit.is-open { padding: 18px; }
+    .lesson-sheet__topic { font-size: 23px; }
+}
 .field-label { font-weight: 600; }
 .choice { display: flex; align-items: center; gap: 8px; font-weight: 400; cursor: pointer; }
 .choice--inline { display: inline-flex; }

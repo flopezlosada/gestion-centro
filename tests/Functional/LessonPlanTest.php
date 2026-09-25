@@ -54,7 +54,7 @@ final class LessonPlanTest extends WebTestCase
     {
         $this->save(self::FIRST, ['tema' => 'La novela del siglo XX', 'actividad' => 'ejercicios', 'resultado' => 'a_medias', 'nota' => 'pág. 52, ej. 1-8']);
 
-        self::assertResponseRedirects('/calendario?vista=dia&fecha='.self::FIRST);
+        self::assertResponseRedirects('/mis-clases/'.self::FIRST.'/7', null, 'se queda en la clase: la siguiente está a un toque');
         $plan = $this->planOn(self::FIRST);
         self::assertNotNull($plan);
         $topic = $plan->getTopic();
@@ -75,7 +75,7 @@ final class LessonPlanTest extends WebTestCase
         $crawler = $this->client->request('GET', '/mis-clases/'.self::NEXT.'/7');
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('body', 'La última clase con este grupo');
+        self::assertSelectorTextContains('.lesson-blank', 'La última clase, el lunes 12');
         self::assertSame('La novela del siglo XX', $crawler->filter('#tema')->attr('value'));
         self::assertSame('pág. 52', $crawler->filter('#nota')->attr('value'), 'lo que quedó a medias se propone');
     }
@@ -114,7 +114,7 @@ final class LessonPlanTest extends WebTestCase
 
         $this->client->submit($crawler->selectButton('Correr las siguientes una clase')->form());
 
-        self::assertResponseRedirects('/calendario?vista=dia&fecha='.self::FIRST);
+        self::assertResponseRedirects('/mis-clases/'.self::FIRST.'/7');
         $next = $this->planOn('2026-01-19');
         self::assertNotNull($next);
         self::assertSame('La novela del siglo XX', $next->getTopic()?->getName());
@@ -135,9 +135,73 @@ final class LessonPlanTest extends WebTestCase
 
         $this->save(self::FIRST, ['tema' => 'La novela del siglo XX', 'resultado' => 'a_medias']);
 
-        self::assertResponseRedirects('/calendario?vista=dia&fecha='.self::FIRST);
-        $this->client->request('GET', '/mis-clases/'.self::FIRST.'/7');
+        self::assertResponseRedirects('/mis-clases/'.self::FIRST.'/7');
+        $this->client->followRedirect();
         self::assertSelectorNotExists('.callout--warning');
+    }
+
+    /**
+     * Sin programar y programada no se parecen: el formulario viene relleno con la clase anterior, así que
+     * es la ficha la que dice si hay algo guardado. Programada, lo guardado manda y editar queda recogido.
+     */
+    public function testTheStateSaysWhetherTheClassIsPlanned(): void
+    {
+        $this->save(self::FIRST, ['tema' => 'La novela del siglo XX', 'actividad' => 'ejercicios']);
+
+        $crawler = $this->client->request('GET', '/mis-clases/'.self::NEXT.'/7');
+        self::assertSelectorTextContains('.lesson-blank', 'Sin programar');
+        self::assertSelectorNotExists('.lesson-sheet');
+        self::assertSame('La novela del siglo XX', $crawler->filter('#tema')->attr('value'), 'relleno, pero sin guardar');
+
+        $this->save(self::NEXT, ['tema' => 'El Romanticismo', 'actividad' => 'explicacion']);
+        $crawler = $this->client->followRedirect();
+        self::assertSelectorTextContains('.lesson-sheet .lesson-sheet__topic', 'El Romanticismo');
+        self::assertSelectorTextContains('.lesson-sheet .lesson-sheet__activity', 'Explicación');
+        self::assertSelectorNotExists('.lesson-blank');
+        self::assertNull($crawler->filter('details.lesson-edit')->attr('open'), 'cambiarlo queda recogido');
+    }
+
+    /**
+     * La tira de clases del grupo se queda QUIETA: pulsar una clase la abre sin mover la tira (sus enlaces
+     * llevan dónde empieza), y las flechas la hojean sin abrir ninguna, dejando la clase del borde de ancla.
+     * La fecha es el titular, con «Hoy» si toca.
+     */
+    public function testTheStripHoldsStillAndItsArrowsPageItKeepingTheEdgeClass(): void
+    {
+        // En mitad de la clase del día NEXT (13:35-14:30).
+        self::mockTime('2026-01-19 14:00');
+        $this->save(self::FIRST, ['tema' => 'La novela del siglo XX']);
+
+        $crawler = $this->client->request('GET', '/mis-clases/'.self::NEXT.'/7');
+
+        self::assertSelectorTextContains('h1', 'Hoy');
+        self::assertSelectorTextContains('h1', 'Lunes 19 de enero');
+        self::assertSelectorNotExists('.lesson-strip__today', 'ya estás en la clase de hoy');
+        $items = $crawler->filter('.lesson-strip__item');
+        self::assertCount(5, $items, 'la anterior, esta y tres más');
+        self::assertSame('/mis-clases/'.self::FIRST.'/7?desde='.self::FIRST.'.7', $items->first()->attr('href'), 'cada enlace lleva dónde empieza la tira');
+        self::assertSame('/mis-clases/'.self::NEXT.'/7?desde='.self::FIRST.'.7', $crawler->filter('.lesson-strip__item.is-current')->attr('href'));
+        self::assertCount(1, $crawler->filter('.lesson-strip__item.is-planned.is-past'), 'la del 12, programada y ya dada');
+        self::assertCount(1, $crawler->filter('.lesson-strip__item.is-planned'));
+
+        // Las flechas abren la MISMA clase con la tira en otro sitio: la siguiente empieza en la última de esta.
+        self::assertSame('/mis-clases/'.self::NEXT.'/7?desde=2026-02-09.7', $crawler->filter('.lesson-strip a[rel=next]')->attr('href'));
+        // Y la anterior acaba en la primera de esta: cuatro lunes antes del 12 empieza.
+        self::assertSame('/mis-clases/'.self::NEXT.'/7?desde=2025-12-15.7', $crawler->filter('.lesson-strip a[rel=prev]')->attr('href'));
+
+        $crawler = $this->client->request('GET', '/mis-clases/'.self::NEXT.'/7?desde=2025-12-15.7');
+        self::assertSelectorTextContains('h1', 'Lunes 19 de enero', 'hojear no cambia de clase');
+        self::assertSame('/mis-clases/'.self::FIRST.'/7?desde=2025-12-15.7', $crawler->filter('.lesson-strip__item')->last()->attr('href'), 'la clase del borde queda como ancla');
+        self::assertCount(0, $crawler->filter('.lesson-strip__item.is-current'), 'la abierta no está en esta tira');
+        self::assertSame('/mis-clases/'.self::NEXT.'/7', $crawler->filter('.lesson-strip__today')->attr('href'), '«Hoy» devuelve a la clase de hoy con su tira');
+        self::assertSame('Hoy', trim($crawler->filter('.lesson-strip__today')->text()));
+
+        $this->client->request('GET', '/mis-clases/'.self::NEXT.'/7?desde='.self::FIRST.'.7');
+        self::assertSelectorNotExists('.lesson-strip__today', 'llegar a la de hoy desde la tira, con ella a la vista, tampoco lo ofrece');
+
+        $this->client->request('GET', '/mis-clases/'.self::NEXT.'/7?desde=2026-01-13.7');
+        self::assertResponseIsSuccessful('un «desde» que no es una clase del grupo no rompe nada: tira por defecto');
+        self::assertSelectorExists('.lesson-strip__item.is-current');
     }
 
     /** Escribir el tema en otras mayúsculas es el mismo tema de la lista. */

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration;
 
+use App\Agenda\ClassSession;
 use App\Agenda\MyClasses;
 use App\Entity\AcademicYear;
 use App\Entity\NonLectiveDay;
@@ -115,6 +116,46 @@ final class MyClassesTest extends KernelTestCase
     public function testSomebodyWithNoTimetableHasNoClasses(): void
     {
         self::assertSame([], $this->classes->on($this->teacher, new \DateTimeImmutable(self::MONDAY)));
+    }
+
+    /**
+     * La misma clase hacia delante y hacia atrás, la más cercana primero: el mismo día a otra hora cuenta, y
+     * una clase de otro grupo no.
+     */
+    public function testFollowingAndPrecedingFindTheSameClassNearestFirst(): void
+    {
+        $this->cell(1, 'B1A', 'S ACTOS');
+        $this->cell(7, 'B1A', 'S ACTOS');
+        $this->cell(0, 'E1A', '0CS6');
+        $this->em->flush();
+        $isB1A = static fn (ClassSession $c): bool => 'B1A' === $c->groupNames();
+
+        $after = $this->classes->following($this->teacher, new \DateTimeImmutable(self::MONDAY), 1, $isB1A, 2);
+        $before = $this->classes->preceding($this->teacher, new \DateTimeImmutable(self::MONDAY), 7, $isB1A, 2);
+
+        self::assertSame(['2026-01-12 7', '2026-01-19 1'], $this->describe($after));
+        self::assertSame(['2026-01-12 1', '2026-01-05 7'], $this->describe($before));
+    }
+
+    /** Al principio y al final del curso no hay más: se para, sin buscar en el curso de al lado. */
+    public function testTheSameClassIsNotLookedForOutsideTheCourse(): void
+    {
+        $this->cell(7, 'B1A', 'S ACTOS');
+        $this->em->flush();
+        $any = static fn (ClassSession $c): bool => true;
+
+        self::assertSame([], $this->classes->preceding($this->teacher, new \DateTimeImmutable('2025-09-15'), 7, $any, 1), 'primer lunes del curso');
+        self::assertSame([], $this->classes->following($this->teacher, new \DateTimeImmutable('2026-06-22'), 7, $any, 1), 'último lunes del curso');
+    }
+
+    /**
+     * @param list<array{date: \DateTimeImmutable, class: ClassSession}> $classes
+     *
+     * @return list<string> "Y-m-d slot" of each class
+     */
+    private function describe(array $classes): array
+    {
+        return array_map(static fn (array $c): string => $c['date']->format('Y-m-d').' '.$c['class']->slotIndex, $classes);
     }
 
     private function cell(int $slotIndex, string $group, string $room): void

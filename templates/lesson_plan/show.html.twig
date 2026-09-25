@@ -1,6 +1,47 @@
 {% extends 'app_shell.html.twig' %}
 
+{# Una línea de lo que se hizo en una clase: tema, actividad, cómo fue y la nota. #}
+{% macro summary(topic, activity, outcome, note) -%}
+    {{- topic ? topic.name : 'Sin tema' -}}
+    {%- if activity %} · {{ activity.label }}{% endif -%}
+    {%- if outcome %} · <strong>{{ outcome.label }}</strong>{% endif -%}
+    {%- if note %} · {{ note }}{% endif -%}
+{%- endmacro %}
+
+{# Cómo fue, con el color de su estado: hecho es verde, a medias ámbar (queda algo), no dio tiempo rojo teja. #}
+{% macro outcome_badge(outcome) -%}
+    {%- if outcome -%}
+        <span class="badge badge--{{ {hecho: 'success', a_medias: 'amber', no_dio_tiempo: 'warning'}[outcome.value] }}">{{ outcome.label }}</span>
+    {%- endif -%}
+{%- endmacro %}
+
+{# Flecha que hojea la tira sin abrir ninguna clase: la misma clase, con la tira empezando en otro sitio. #}
+{% macro strip_step(day, class, from, rel, label) %}
+    {% set arrow = rel == 'prev' ? '‹' : '›' %}
+    {% if from %}
+        <a class="lesson-strip__step" rel="{{ rel }}" href="{{ path('lesson_plan', { fecha: day|date('Y-m-d', false), tramo: class.slotIndex, desde: from }) }}" aria-label="{{ label }}">{{ arrow }}</a>
+    {% else %}
+        <span class="lesson-strip__step is-disabled" aria-hidden="true">{{ arrow }}</span>
+    {% endif %}
+{% endmacro %}
+
 {% block title %}{{ class.groups|join(', ') }} · {{ app_organization_name }}{% endblock %}
+
+{# Pasar de una clase a otra de la semana desliza el resaltado del día en vez de recargar a secas: se ve
+   de dónde se viene y adónde se va. Solo entre páginas de clase (las dos tienen que pedirlo), y nada
+   para quien pide menos movimiento. #}
+{% block stylesheets %}
+    {{ parent() }}
+    <style>
+        @view-transition { navigation: auto; }
+        @media (prefers-reduced-motion: reduce) { @view-transition { navigation: none; } }
+    </style>
+{% endblock %}
+
+{% block page_scripts %}
+    <script src="{{ asset_ver('/js/topic-combobox.js') }}"></script>
+{% endblock %}
+
 {% block breadcrumb %}
     <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
     <a href="{{ path('calendar_index', { vista: 'dia', fecha: day|date('Y-m-d', false) }) }}">{{ day|date('d/m', false) }}</a><span class="sep">/</span>
@@ -9,19 +50,71 @@
 
 {% block body %}
     {% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
+    {% set iniciales = ['', 'L', 'M', 'X', 'J', 'V', 'S', 'D'] %}
+    {% set dias_semana = ['', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'] %}
+    {% set meses = ['', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'] %}
+    {% set meses_cortos = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'] %}
+    {% set fecha = day|date('Y-m-d', false) %}
 
-    <div class="page-head">
-        <div>
-            <p class="eyebrow">Mi clase · solo la ves tú</p>
-            <h1>{{ class.groups|join(', ') }}{% if subject %} · {{ subject }}{% endif %}</h1>
-            <p class="lead">
-                {{ dias[day|date('N', false)] }} {{ day|date('d/m', false) }} · {{ class.ordinal }}ª hora
-                {%- if class.startsAt %} ({{ class.startsAt|date('H:i') }}–{{ class.endsAt|date('H:i') }}){% endif %}
-                {%- if class.rooms is not empty %} · {{ class.rooms|join(', ') }}{% endif %}
-                {%- if class.isRelocated %} · aula cambiada{% endif %}
-            </p>
+    {# La FECHA es el titular: es lo único que cambia al pasar de una clase del grupo a la siguiente, así
+       que es lo que tiene que saltar a la vista. El grupo y la materia, que no cambian, van encima. #}
+    <div class="lesson-page">
+    <header class="lesson-head">
+        <p class="lesson-head__class">
+            {%- if subject %}<span>{{ subject }}</span>{% endif %}
+            <span class="lesson-head__groups">{{ class.groups|join(', ') }}</span>
+            <span class="lesson-head__private">solo la ves tú</span>
+        </p>
+        <h1 class="lesson-head__date">
+            {%- if relativeDay %}<span class="lesson-head__rel">{{ relativeDay }}</span> {% endif -%}
+            {{ dias[day|date('N', false)] }} {{ day|date('j', false) }} de {{ meses[day|date('n', false)] }}
+        </h1>
+        <p class="lesson-head__meta">
+            {{ class.ordinal }}ª hora
+            {%- if class.startsAt %} · {{ class.startsAt|date('H:i') }}–{{ class.endsAt|date('H:i') }}{% endif %}
+            {%- if class.rooms is not empty %} · {{ class.rooms|join(', ') }}{% endif %}
+            {%- if class.isRelocated %} · aula cambiada{% endif %}
+        </p>
+    </header>
+
+    {# Las clases del grupo, de cinco en cinco, QUIETAS: pulsar una la abre y la tira no se mueve (sus
+       enlaces llevan dónde empieza), así que se sabe dónde se estaba y adónde se ha ido. El punto dice si
+       cada una está programada. Las flechas hojean sin abrir nada y dejan la clase del borde como ancla. #}
+    {% set primera = strip.items|first %}
+    {% set ultima = strip.items|last %}
+    <nav class="lesson-strip" aria-label="Tus clases con este grupo">
+        <p class="lesson-strip__label">
+            Clases con este grupo
+            <span class="lesson-strip__range">{{ primera.date|date('j', false) }} {{ meses_cortos[primera.date|date('n', false)] }} – {{ ultima.date|date('j', false) }} {{ meses_cortos[ultima.date|date('n', false)] }}</span>
+            {% if strip.today %}
+                {# Vuelta al presente: la clase del grupo de hoy o, si hoy no hay, la siguiente. #}
+                <a class="lesson-strip__today" href="{{ path('lesson_plan', { fecha: strip.today.date|date('Y-m-d', false), tramo: strip.today.slotIndex }) }}">
+                    {{- strip.today.isToday ? 'Hoy' : 'Próxima · ' ~ dias_semana[strip.today.date|date('N', false)] ~ ' ' ~ strip.today.date|date('j', false) -}}
+                </a>
+            {% endif %}
+        </p>
+        <div class="lesson-strip__row">
+            {{ _self.strip_step(day, class, strip.earlier, 'prev', 'Clases anteriores') }}
+            <ol class="lesson-strip__list">
+                {% for c in strip.items %}
+                    {% set state = c.planned ? 'programada' : 'sin programar' %}
+                    <li>
+                        <a class="lesson-strip__item{{ c.current ? ' is-current' }}{{ c.planned ? ' is-planned' }}{{ c.past ? ' is-past' }}"
+                           href="{{ path('lesson_plan', { fecha: c.date|date('Y-m-d', false), tramo: c.slotIndex, desde: strip.from }) }}"
+                           title="{{ dias[c.date|date('N', false)] }} {{ c.date|date('d/m', false) }}, {{ c.ordinal }}ª hora: {{ state }}"
+                           {%- if c.current %} aria-current="page"{% endif %}>
+                            <span class="lesson-strip__wd">{{ iniciales[c.date|date('N', false)] }}</span>
+                            <span class="lesson-strip__num">{{ c.date|date('j', false) }}</span>
+                            <span class="lesson-strip__sub">{{ c.sameDayTwice ? c.ordinal ~ 'ª' : (c.newMonth ? meses_cortos[c.date|date('n', false)] : '') }}</span>
+                            <span class="lesson-mark" aria-hidden="true"></span>
+                            <span class="visually-hidden">{{ state }}</span>
+                        </a>
+                    </li>
+                {% endfor %}
+            </ol>
+            {{ _self.strip_step(day, class, strip.later, 'next', 'Clases siguientes') }}
         </div>
-    </div>
+    </nav>
 
     {# Quedó a medias y la clase siguiente ya estaba programada con otra cosa: se ofrece correr las
        programadas una clase, para que la siguiente siga con lo pendiente en vez de saltárselo. #}
@@ -29,35 +122,70 @@
         <div class="callout callout--warning">
             <p><strong>La clase siguiente ya estaba programada</strong> ({{ dias[shiftOffer.date|date('N', false)] }} {{ shiftOffer.date|date('d/m', false) }}: {{ shiftOffer.topic ? shiftOffer.topic.name : 'sin tema' }}).
                 Si la corres, esa clase y las programadas detrás de ella pasan una clase más tarde, y la del {{ shiftOffer.date|date('d/m', false) }} sigue con {{ plan.topic ? '«' ~ plan.topic.name ~ '»' : 'lo que quedó pendiente' }}.</p>
-            <form method="post" action="{{ path('lesson_plan_shift', { fecha: day|date('Y-m-d', false), tramo: class.slotIndex }) }}">
+            <form method="post" action="{{ path('lesson_plan_shift', { fecha: fecha, tramo: class.slotIndex }) }}">
                 <input type="hidden" name="_token" value="{{ csrf_token('lesson_plan') }}">
                 <button type="submit" class="btn">Correr las siguientes una clase</button>
             </form>
         </div>
     {% endif %}
 
-    {# «Dónde lo dejé»: la última clase con este mismo grupo y materia. Es lo que se mira cada día, y lo que
-       hace que la clase normal sea un solo toque. #}
-    {% if previous %}
-        <div class="card">
-            <p class="eyebrow">La última clase con este grupo · {{ dias[previous.date|date('N', false)] }} {{ previous.date|date('d/m', false) }}</p>
-            <p>
-                {{- previous.topic ? previous.topic.name : 'Sin tema' -}}
-                {%- if previous.activity %} · {{ previous.activity.label }}{% endif -%}
-                {%- if previous.outcome %} · <strong>{{ previous.outcome.label }}</strong>{% endif -%}
-                {%- if previous.note %} · {{ previous.note }}{% endif -%}
-            </p>
-            {% if plan is null %}
-                <form method="post" action="{{ path('lesson_plan_repeat', { fecha: day|date('Y-m-d', false), tramo: class.slotIndex }) }}">
+    {% if plan %}
+        {# Programada: lo guardado manda y se lee como una ficha; cambiarlo queda recogido debajo. #}
+        <article class="lesson-sheet">
+            <p class="lesson-sheet__status"><span class="lesson-mark is-on" aria-hidden="true"></span> Programada</p>
+            <ol class="lesson-sheet__topics">
+                {% for entry in plan.topics %}
+                    <li>
+                        <h2 class="lesson-sheet__topic">{{ entry.topic ? entry.topic.name : 'Sin tema' }}</h2>
+                        {% if entry.activity or entry.outcome %}
+                            <p class="lesson-sheet__facts">
+                                {% if entry.activity %}<span class="lesson-sheet__activity">{{ entry.activity.label }}</span>{% endif %}
+                                {{ _self.outcome_badge(entry.outcome) }}
+                            </p>
+                        {% endif %}
+                    </li>
+                {% else %}
+                    <li><h2 class="lesson-sheet__topic">Sin tema</h2></li>
+                {% endfor %}
+            </ol>
+            {% if progress %}<p class="lesson-sheet__progress">Tema {{ progress.position }} de {{ progress.total }}</p>{% endif %}
+            {% if plan.note %}<p class="lesson-sheet__note">{{ plan.note }}</p>{% endif %}
+            {% if previous %}
+                <p class="lesson-sheet__from">Viene del {{ dias[previous.date|date('N', false)]|lower }} {{ previous.date|date('j', false) }}: {{ _self.summary(previous.topic, previous.activity, previous.outcome, null) }}</p>
+            {% endif %}
+        </article>
+
+        <details class="lesson-edit">
+            <summary>Cambiar lo programado</summary>
+    {% else %}
+        {# Sin programar: una hoja en blanco, y lo más probable —seguir donde se quedó— a un toque. #}
+        <section class="lesson-blank">
+            <p class="lesson-sheet__status"><span class="lesson-mark" aria-hidden="true"></span> Sin programar</p>
+            {% if previous %}
+                {# «Dónde lo dejé»: la última clase con este mismo grupo y materia. #}
+                <p class="lesson-blank__lead">La última clase, el {{ dias[previous.date|date('N', false)]|lower }} {{ previous.date|date('j', false) }}:</p>
+                <p class="lesson-blank__previous">
+                    <strong>{{ previous.topic ? previous.topic.name : 'Sin tema' }}</strong>
+                    {%- if previous.activity %} · {{ previous.activity.label }}{% endif %}
+                    {{ _self.outcome_badge(previous.outcome) }}
+                </p>
+                {% if previous.note %}<p class="lesson-sheet__note">{{ previous.note }}</p>{% endif %}
+                <form method="post" action="{{ path('lesson_plan_repeat', { fecha: fecha, tramo: class.slotIndex }) }}" class="lesson-blank__repeat">
                     <input type="hidden" name="_token" value="{{ csrf_token('lesson_plan') }}">
                     <button type="submit" class="btn">Seguimos igual</button>
                 </form>
+            {% else %}
+                <p class="lesson-blank__lead">Aún no has programado ninguna clase con este grupo.</p>
             {% endif %}
-        </div>
-    {% endif %}
+        </section>
 
-    <div class="card">
-        <form method="post" class="stack-form">
+        <section class="lesson-edit is-open">
+            <h2 class="lesson-edit__title">{{ previous ? 'O programa otra cosa' : 'Programar la clase' }}</h2>
+            {% if previous %}
+                <p class="help">Viene relleno con la última clase para que solo toques lo que cambia. No se guarda hasta que pulses Guardar.</p>
+            {% endif %}
+    {% endif %}
+        <form method="post" class="stack-form lesson-form">
             <input type="hidden" name="_token" value="{{ csrf_token('lesson_plan') }}">
 
             {% if subject %}
@@ -65,7 +193,7 @@
                     <label for="tema">Tema</label>
                     {#- Elegir o escribir: la lista la comparte todo el profesorado de esta materia y nivel, y
                         crece sola la primera vez que alguien escribe un tema nuevo. -#}
-                    <input type="text" id="tema" name="tema" list="temas" maxlength="{{ constant('App\\Entity\\Topic::MAX_NAME') }}" value="{{ topicName }}" autocomplete="off" placeholder="Elige o escribe uno nuevo">
+                    <input type="text" id="tema" name="tema" list="temas" data-combobox maxlength="{{ constant('App\\Entity\\Topic::MAX_NAME') }}" value="{{ topicName }}" autocomplete="off" placeholder="Elige o escribe uno nuevo">
                     <datalist id="temas">
                         {% for t in topics %}<option value="{{ t.name }}">{% endfor %}
                     </datalist>
@@ -102,7 +230,7 @@
 
                     <div class="field">
                         <label for="tema2">Tema nuevo</label>
-                        <input type="text" id="tema2" name="tema2" list="temas" maxlength="{{ constant('App\\Entity\\Topic::MAX_NAME') }}" value="{{ topicName2 }}" autocomplete="off" placeholder="Elige o escribe uno nuevo">
+                        <input type="text" id="tema2" name="tema2" list="temas" data-combobox maxlength="{{ constant('App\\Entity\\Topic::MAX_NAME') }}" value="{{ topicName2 }}" autocomplete="off" placeholder="Elige o escribe uno nuevo">
                     </div>
 
                     <fieldset class="pick-chips">
@@ -131,9 +259,11 @@
             </div>
 
             <div class="form-actions">
-                <button type="submit" class="btn">Guardar</button>
+                {# Una sola acción naranja por pantalla: en blanco y con clase anterior, esa es «Seguimos igual». #}
+                <button type="submit" class="btn{{ plan is null and previous ? ' secondary' }}">Guardar</button>
                 <a class="btn secondary" href="{{ path('calendar_index', { vista: 'dia', fecha: day|date('Y-m-d', false) }) }}">Volver al día</a>
             </div>
         </form>
+    {% if plan %}</details>{% else %}</section>{% endif %}
     </div>
 {% endblock %}

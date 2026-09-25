@@ -27,6 +27,11 @@ use App\Util\SchoolYear;
  */
 final class MyClasses
 {
+    /** The first look for the same class: a week and a day, where the next one with a group almost always is. */
+    private const FIRST_WINDOW_DAYS = 8;
+    /** Each further look — past a two-week holiday. */
+    private const WINDOW_DAYS = 28;
+
     public function __construct(
         private readonly EffectiveTimetable $timetable,
         private readonly AcademicYearRepository $years,
@@ -100,6 +105,91 @@ final class MyClasses
         }
 
         return $byDay;
+    }
+
+    /**
+     * The next times the same class is given after one, soonest first — "the same class" being whatever
+     * the caller says (same groups and subject). Same day and a later period counts. Only within that
+     * course: the next one does not carry on from this one.
+     *
+     * @param User                        $teacher   the teacher
+     * @param \DateTimeImmutable          $day       the day of the class to start after
+     * @param int                         $slotIndex its period
+     * @param callable(ClassSession):bool $isSame    whether a class is the same class
+     * @param int                         $count     how many at most
+     *
+     * @return list<array{date: \DateTimeImmutable, class: ClassSession}> the classes
+     */
+    public function following(User $teacher, \DateTimeImmutable $day, int $slotIndex, callable $isSame, int $count): array
+    {
+        return $this->sameClass($teacher, $day, $slotIndex, $isSame, $count, 1);
+    }
+
+    /**
+     * The last times the same class was given before one, nearest first. Mirror of {@see following()}.
+     *
+     * @param User                        $teacher   the teacher
+     * @param \DateTimeImmutable          $day       the day of the class to start before
+     * @param int                         $slotIndex its period
+     * @param callable(ClassSession):bool $isSame    whether a class is the same class
+     * @param int                         $count     how many at most
+     *
+     * @return list<array{date: \DateTimeImmutable, class: ClassSession}> the classes
+     */
+    public function preceding(User $teacher, \DateTimeImmutable $day, int $slotIndex, callable $isSame, int $count): array
+    {
+        return $this->sameClass($teacher, $day, $slotIndex, $isSame, $count, -1);
+    }
+
+    /**
+     * Walks the timetable from one class, forwards or backwards, collecting the same class. Day by day the
+     * timetable costs a few queries, so the look starts short and grows only when the class is further
+     * away (a holiday), and it never leaves the course of the day it starts from.
+     *
+     * @param User                        $teacher   the teacher
+     * @param \DateTimeImmutable          $day       the day of the class to start from
+     * @param int                         $slotIndex its period
+     * @param callable(ClassSession):bool $isSame    whether a class is the same class
+     * @param int                         $count     how many at most
+     * @param int                         $direction 1 forwards, -1 backwards
+     *
+     * @return list<array{date: \DateTimeImmutable, class: ClassSession}> the classes, nearest first
+     */
+    private function sameClass(User $teacher, \DateTimeImmutable $day, int $slotIndex, callable $isSame, int $count, int $direction): array
+    {
+        $start = $day->setTime(0, 0);
+        // The course's calendar span, in the day's own zone: compared across zones, 1 September at midnight
+        // in Madrid would fall before 1 September at midnight in UTC.
+        [$courseStart, $courseEnd] = array_map(
+            static fn (\DateTimeImmutable $d): \DateTimeImmutable => new \DateTimeImmutable($d->format('Y-m-d'), $start->getTimezone()),
+            SchoolYear::bounds(SchoolYear::current($start)),
+        );
+        $found = [];
+
+        for ($offset = 0, $span = self::FIRST_WINDOW_DAYS; \count($found) < $count; $offset += $span, $span = self::WINDOW_DAYS) {
+            $near = $start->modify(sprintf('%+d days', $direction * $offset));
+            $far = $start->modify(sprintf('%+d days', $direction * ($offset + $span - 1)));
+            [$from, $to] = $direction > 0 ? [$near, min($far, $courseEnd)] : [max($far, $courseStart), $near];
+            if ($from > $to) {
+                break;
+            }
+
+            $byDay = $this->between($teacher, $from, $to);
+            foreach ($direction > 0 ? $byDay : array_reverse($byDay, true) as $date => $sessions) {
+                $date = new \DateTimeImmutable($date, $start->getTimezone());
+                foreach ($direction > 0 ? $sessions : array_reverse($sessions) as $session) {
+                    $beyond = $date != $start || ($direction > 0 ? $session->slotIndex > $slotIndex : $session->slotIndex < $slotIndex);
+                    if ($beyond && $isSame($session)) {
+                        $found[] = ['date' => $date, 'class' => $session];
+                        if (\count($found) === $count) {
+                            return $found;
+                        }
+                    }
+                }
+            }
+        }
+
+        return $found;
     }
 
     /**
