@@ -1,0 +1,25 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Protección de datos · {{ app_organization_name }}{% endblock %}
+
+{# Sin el menú de la aplicación a propósito: hasta pulsar «Entendido» no hay adónde ir, y un menú lleno de
+   enlaces que te devuelven aquí solo confunde. #}
+{% block shell %}
+    <div class="auth">
+        <div class="auth-card privacy-doc">
+            <p class="eyebrow">{{ app_organization_name }}</p>
+            <h1>Protección de datos</h1>
+            <p class="auth-lead">Antes de seguir, lee cómo trata el centro tus datos en esta aplicación. Solo te lo pediremos de nuevo si el texto cambia.</p>
+
+            {{ include('privacy_notice/_text.html.twig') }}
+
+            <form method="post" action="{{ path('privacy_notice_ack') }}">
+                <input type="hidden" name="_token" value="{{ csrf_token('privacy_notice_ack') }}">
+                <input type="hidden" name="version" value="{{ notice.id }}">
+                {% if back %}<input type="hidden" name="volver" value="{{ back }}">{% endif %}
+                <button class="btn" type="submit">Entendido</button>
+            </form>
+            <a class="auth-secondary" href="{{ path('app_logout') }}">Salir</a>
+        </div>
+    </div>
+{% endblock %}

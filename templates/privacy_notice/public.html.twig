@@ -1,0 +1,18 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Protección de datos · {{ app_organization_name }}{% endblock %}
+
+{% block shell %}
+    <div class="auth">
+        <div class="auth-card privacy-doc">
+            <p class="eyebrow">{{ app_organization_name }}</p>
+            <h1>Protección de datos</h1>
+            {% if notice %}
+                {{ include('privacy_notice/_text.html.twig', { open: true }) }}
+            {% else %}
+                <p class="auth-lead">El centro todavía no ha publicado la información sobre protección de datos de esta aplicación.</p>
+            {% endif %}
+            <a class="auth-secondary" href="{{ app.user ? path('app_homepage') : path('login') }}">{{ app.user ? 'Volver a la aplicación' : 'Ir a la entrada' }}</a>
+        </div>
+    </div>
+{% endblock %}

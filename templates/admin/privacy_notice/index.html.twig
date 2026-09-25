@@ -1,0 +1,52 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Protección de datos{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Protección de datos
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Administración</p>
+            <h1>Protección de datos</h1>
+            <p class="lead">La información que cada persona tiene que leer al entrar. Es información, no un consentimiento: el centro trata estos datos por obligación legal, y lo que se guarda es la prueba de que cada cual la ha leído.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        {% if current %}
+            <h2>Versión en vigor</h2>
+            <p>Publicada el {{ current.publishedAt|date('d/m/Y \\a \\l\\a\\s H:i') }}{% if current.publishedBy %} por {{ current.publishedBy.fullName }}{% endif %}. La han leído <strong>{{ readers }} de {{ activeUsers }}</strong> personas con la cuenta activa.</p>
+            <p><a href="{{ path('privacy_notice_public') }}">Ver cómo se muestra</a></p>
+        {% else %}
+            <div class="callout" role="note">
+                Todavía no hay ninguna versión publicada, así que <strong>no se le pide a nadie</strong>. En cuanto publiques la primera, cada persona la verá al abrir la aplicación y no podrá seguir hasta pulsar «Entendido».
+            </div>
+        {% endif %}
+    </div>
+
+    <form class="card stack-form" method="post" action="{{ path('admin_privacy_notice_publish') }}"
+          data-confirm="Al publicar, todo el personal tendrá que volver a leerla y pulsar «Entendido» antes de seguir. ¿Publicar?">
+        <input type="hidden" name="_token" value="{{ csrf_token('privacy_notice_publish') }}">
+        <h2>{{ current ? 'Publicar una versión nueva' : 'Publicar la primera versión' }}</h2>
+        <p class="help">El texto lo facilita el centro o la Consejería (su delegado o delegada de protección de datos): aquí solo se publica. Una versión publicada no se edita; cualquier cambio, aunque sea una errata, es una versión nueva.</p>
+
+        <div class="field">
+            <label for="summary">Resumen</label>
+            <p class="field-help">Lo primero que se lee: responsable, finalidad, base legal, destinatarios, derechos y contacto del DPD.</p>
+            <textarea id="summary" name="summary" rows="8" required maxlength="30000">{{ current ? current.summary }}</textarea>
+        </div>
+
+        <div class="field">
+            <label for="body">Información completa</label>
+            <p class="field-help">Aparece plegada bajo el resumen. Texto plano: se respetan los saltos de línea.</p>
+            <textarea id="body" name="body" rows="16" required maxlength="30000">{{ current ? current.body }}</textarea>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn">Publicar</button>
+        </div>
+    </form>
+{% endblock %}

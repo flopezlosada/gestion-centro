@@ -364,6 +364,7 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 500; color: var(--te
     line-height: 1.7;
     padding: 0 6px;
 }
+.sidebar .sidebar-foot a { color: inherit; }
 
 /* ---- Cabecera ----------------------------------------------------------- */
 .main { display: flex; flex-direction: column; min-width: 0; }
@@ -1372,6 +1373,16 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 }
 .auth-card .form-row { text-align: left; }
 .auth-card hr { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
+/* Protección de datos: el mismo marco centrado que la entrada, pero es un documento para LEER — más
+   ancho, alineado a la izquierda y con la medida de línea de un texto, no de un formulario. */
+.auth-card.privacy-doc { max-width: 640px; text-align: left; }
+.privacy-doc .auth-lead { margin-bottom: 20px; }
+.privacy-doc__summary { font-size: 14.5px; line-height: 1.6; max-width: 65ch; }
+.privacy-doc__full { margin: 18px 0 0; border-top: 1px solid var(--border); padding-top: 14px; }
+.privacy-doc__full > summary { cursor: pointer; font-weight: 600; color: var(--accent-ink); }
+.privacy-doc__body { margin-top: 12px; max-height: 45vh; overflow-y: auto; font-size: 14px; line-height: 1.6; color: var(--text-muted); max-width: 65ch; }
+.privacy-doc__version { margin: 16px 0 22px; font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
+.privacy-doc .auth-secondary { display: block; text-align: center; }
 
 /* =============================================================================
    Responsive: la barra lateral colapsa a una nav horizontal en móvil
@@ -1423,8 +1434,9 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
     .nav-account__user { display: flex; align-items: center; gap: 9px; color: var(--text); font-size: 14px; }
     .nav-account__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .nav-account .theme-toggle { align-self: flex-start; }
-    .nav-account__logout { color: var(--text-muted); font-size: 13px; text-decoration: none; }
+    .nav-account__logout, .nav-account__link { color: var(--text-muted); font-size: 13px; text-decoration: none; }
     .nav-account__logout:hover { color: var(--danger-text); }
+    .nav-account__link:hover { color: var(--text); }
 
     /* Orden de apilado del cajón "Más", y aquí es donde se decide: cajón (60) por encima de su
        fondo oscurecido (55), y el fondo por encima de la barra inferior (50), que si no se

@@ -172,6 +172,7 @@
                                estrecho que el resto de /admin, porque es el interruptor de la puerta. #}
                             {% if is_granted('ROLE_ADMIN') %}
                                 <a href="{{ path('admin_access_index') }}" class="{{ route starts with 'admin_access_' ? 'is-active' }}">Acceso</a>
+                                <a href="{{ path('admin_privacy_notice_index') }}" class="{{ route starts with 'admin_privacy_notice_' ? 'is-active' }}">Protección de datos</a>
                             {% endif %}
                         </div>
 
@@ -224,6 +225,8 @@
                         <button type="button" data-theme-value="light" aria-pressed="true">Claro</button>
                         <button type="button" data-theme-value="dark" aria-pressed="false">Oscuro</button>
                     </div>
+                    {# En móvil el pie de la barra lateral (con este mismo enlace) no se ve: aquí es donde queda. #}
+                    <a href="{{ path('privacy_notice_public') }}" class="nav-account__link">Protección de datos</a>
                     <a href="{{ path('app_logout') }}" class="nav-account__logout">Cerrar sesión</a>
                 </div>
             </nav>
@@ -232,7 +235,8 @@
 
             <div class="sidebar-foot">
                 {{ app_organization_name }}<br>
-                Gestión del día a día
+                Gestión del día a día<br>
+                <a href="{{ path('privacy_notice_public') }}">Protección de datos</a>
             </div>
         </aside>
 

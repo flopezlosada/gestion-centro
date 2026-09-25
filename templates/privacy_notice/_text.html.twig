@@ -1,0 +1,8 @@
+{# Las dos capas de la información: el resumen a la vista y el texto completo plegado debajo. Se escriben
+   como texto plano en el portal, así que se respetan los saltos de línea y nada más (sin HTML). #}
+<div class="privacy-doc__summary">{{ notice.summary|nl2br }}</div>
+<details class="privacy-doc__full"{{ open|default(false) ? ' open' }}>
+    <summary>Información completa</summary>
+    <div class="privacy-doc__body">{{ notice.body|nl2br }}</div>
+</details>
+<p class="privacy-doc__version">Versión del {{ notice.publishedAt|date('d/m/Y') }}</p>
