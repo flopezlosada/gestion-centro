@@ -1,0 +1,28 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Protección de datos · {{ app_organization_name }}{% endblock %}
+
+{# Sin el menú de la aplicación a propósito: hasta pulsar «Entendido» no hay adónde ir, y un menú lleno de
+   enlaces que te devuelven aquí solo confunde. #}
+{% block shell %}
+    <main class="privacy-page">
+        <article class="privacy-sheet">
+            {{ include('privacy_notice/_head.html.twig', { lead: 'Antes de empezar, lee qué datos tuyos usa esta aplicación y para qué. Solo te lo volveremos a pedir si el texto cambia.' }) }}
+
+            {{ include('privacy_notice/_text.html.twig') }}
+
+            <footer class="privacy-sheet__foot">
+                <form method="post" action="{{ path('privacy_notice_ack') }}">
+                    <input type="hidden" name="_token" value="{{ csrf_token('privacy_notice_ack') }}">
+                    <input type="hidden" name="version" value="{{ notice.id }}">
+                    {% if back %}<input type="hidden" name="volver" value="{{ back }}">{% endif %}
+                    <button class="btn" type="submit">Entendido</button>
+                </form>
+                {# Lo que el botón NO es: el centro trata estos datos por obligación legal, no porque tú
+                   aceptes. Decirlo evita que alguien crea que puede negarse, o que ha firmado algo. #}
+                <p class="privacy-sheet__note">No estás dando tu consentimiento: solo confirmas que has recibido esta información. Puedes volver a leerla cuando quieras desde el menú.</p>
+                <a class="privacy-sheet__exit" href="{{ path('app_logout') }}">Salir sin continuar</a>
+            </footer>
+        </article>
+    </main>
+{% endblock %}
