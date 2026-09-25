@@ -94,7 +94,7 @@ final class PrivacyNoticeTest extends WebTestCase
         $this->publish($this->user('publica@centro.test'), 'Resumen');
         $this->client->loginUser($this->user('profe@centro.test'));
 
-        $this->client->request('POST', '/tareas', [], [], ['HTTP_SEC_FETCH_MODE' => 'cors']);
+        $this->client->request('GET', '/tareas', [], [], ['HTTP_SEC_FETCH_MODE' => 'cors']);
 
         self::assertResponseStatusCodeSame(403);
     }
