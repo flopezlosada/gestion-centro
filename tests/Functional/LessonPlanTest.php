@@ -75,7 +75,7 @@ final class LessonPlanTest extends WebTestCase
         $crawler = $this->client->request('GET', '/mis-clases/'.self::NEXT.'/7');
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('body', 'La última clase con este grupo');
+        self::assertSelectorTextContains('.lesson-blank', 'La última clase, el lunes 12');
         self::assertSame('La novela del siglo XX', $crawler->filter('#tema')->attr('value'));
         self::assertSame('pág. 52', $crawler->filter('#nota')->attr('value'), 'lo que quedó a medias se propone');
     }
