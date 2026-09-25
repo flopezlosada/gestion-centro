@@ -1,0 +1,58 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Temas de {{ subject }}{% endblock %}
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('admin_topic_index') }}">Temas de las clases</a><span class="sep">/</span>
+    {{ subject }}
+{% endblock %}
+
+{% block body %}
+    {% set params = { subject: subject, level: level ? level.value : '' } %}
+    <div class="topics-page">
+        <header class="topic-head">
+            <p class="topic-head__level">{{ level ? level.label : 'Sin nivel reconocido' }}</p>
+            <h1 class="topic-head__subject">{{ subject }}</h1>
+            <p class="topic-head__meta">
+                {{- offered|length }} tema{{ offered|length == 1 ? '' : 's' -}}
+                {%- if retired is not empty %} · {{ retired|length }} retirado{{ retired|length == 1 ? '' : 's' }}{% endif -%}
+            </p>
+            {% if offered is not empty or retired is not empty %}
+                <div class="topic-head__actions">
+                    <a class="btn" href="{{ path('admin_topic_edit', params) }}">Editar la lista</a>
+                    <a class="btn secondary" href="{{ path('admin_topic_edit', params) }}#pegar">Pegar la programación</a>
+                </div>
+            {% endif %}
+        </header>
+
+        {% if offered is empty and retired is empty %}
+            <section class="topic-blank">
+                <h2>Aún no hay temas</h2>
+                <p>Pega el temario de la programación didáctica y quedará listo para todo el profesorado que da {{ subject }} en este curso. También crece solo: el primer tema que alguien escribe al programar una clase se añade aquí.</p>
+                <a class="btn" href="{{ path('admin_topic_edit', params) }}#pegar">Pegar la programación</a>
+            </section>
+        {% else %}
+            {# El temario tal como se da: el número es el que ve el profesorado («tema 4 de 9»). #}
+            {% if offered is not empty %}
+                <ol class="syllabus">
+                    {% for t in offered %}
+                        <li class="syllabus__item">
+                            <span class="syllabus__num">{{ loop.index }}</span>
+                            <span class="syllabus__name">{{ t.name }}</span>
+                        </li>
+                    {% endfor %}
+                </ol>
+            {% endif %}
+
+            {% if retired is not empty %}
+                <section class="syllabus-retired">
+                    <h2 class="syllabus-retired__title">Retirados</h2>
+                    <p class="help">Ya no se ofrecen al programar; las clases que los usaron los conservan.</p>
+                    <ul>
+                        {% for t in retired %}<li>{{ t.name }}</li>{% endfor %}
+                    </ul>
+                </section>
+            {% endif %}
+        {% endif %}
+    </div>
+{% endblock %}

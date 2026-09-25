@@ -84,4 +84,20 @@ final class TopicAdminPasteTest extends TestCase
     {
         self::assertSame([], $this->admin()->parsePaste('Matemáticas', EducationLevel::ESO_3, "\n  \n"));
     }
+
+    /**
+     * Un tema retirado que se vuelve a pegar no entra como nuevo (ya está en la lista) y tampoco se
+     * reactiva solo: se señala, para que la jefatura decida. Comparado sin mayúsculas ni tildes.
+     */
+    public function testARetiredTopicPastedAgainIsFlaggedNotAddedNorReinstated(): void
+    {
+        $retired = $this->topic('Generacion del 98');
+        $retired->retire();
+        $admin = $this->admin([$this->topic('Ecuaciones'), $retired]);
+        $raw = "Tema 3. Generación del 98\nEcuaciones\nPolinomios";
+
+        self::assertSame(['Polinomios'], $admin->parsePaste('Matemáticas', EducationLevel::ESO_3, $raw));
+        self::assertSame([$retired], $admin->retiredIn('Matemáticas', EducationLevel::ESO_3, $raw), 'solo el retirado, no el que está en uso');
+        self::assertTrue($retired->isRetired(), 'señalarlo no lo reactiva');
+    }
 }
