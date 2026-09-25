@@ -51,6 +51,27 @@ enum EducationLevel: string
     }
 
     /**
+     * The level in a few characters, for a chip beside a subject: «1º ESO», «2º Bach.».
+     *
+     * @return string the short label
+     */
+    public function shortLabel(): string
+    {
+        return match ($this) {
+            self::ESO_1 => '1º ESO',
+            self::ESO_2 => '2º ESO',
+            self::ESO_3 => '3º ESO',
+            self::ESO_4 => '4º ESO',
+            self::DIV_1 => '1º Div.',
+            self::DIV_2 => '2º Div.',
+            self::BACH_1 => '1º Bach.',
+            self::BACH_2 => '2º Bach.',
+            self::GB_1 => '1º GB',
+            self::GB_2 => '2º GB',
+        };
+    }
+
+    /**
      * Every level in teaching order (E.S.O. → Diversificación → Bachillerato → Grado Básico), the order
      * the pickers and the bank listing use.
      *

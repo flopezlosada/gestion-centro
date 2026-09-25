@@ -1,97 +1,120 @@
 {% extends 'app_shell.html.twig' %}
 
-{% block title %}Temas de {{ subject }}{% endblock %}
+{# Una fila de la lista. El número (tema_orden) es el orden: sin JS se escribe a mano; con JS lo llevan
+   las flechas. «Retirado» va por el id de la fila y no por su sitio, porque las filas se pueden mover. #}
+{% macro row(id, name, order, retired, isNew, repasted = false) %}
+    <li class="topic-row{{ retired ? ' is-retired' }}{{ isNew ? ' is-new' }}{{ repasted ? ' is-repasted' }}">
+        <input type="hidden" name="tema_id[]" value="{{ id }}">
+        <span class="topic-row__num" aria-hidden="true">{{ order }}</span>
+        <label class="topic-row__order"><span class="visually-hidden">Orden</span><input type="number" name="tema_orden[]" value="{{ order }}" min="1" required></label>
+        <input class="topic-row__name" type="text" name="tema_nombre[]" value="{{ name }}" maxlength="{{ constant('App\\Entity\\Topic::MAX_NAME') }}" required aria-label="Nombre del tema">
+        {% if isNew %}<span class="badge badge--accent">Nuevo</span>{% endif %}
+        {% if repasted %}<span class="badge badge--amber">Estaba retirado</span>{% endif %}
+        <label class="topic-row__retire"><input type="checkbox" name="tema_retirado[]" value="{{ id }}"{{ retired ? ' checked' }}> Retirado</label>
+        <span class="topic-row__move" hidden>
+            <button type="button" class="topic-row__btn" data-move="-1" aria-label="Subir"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 12V2M2.5 6.5 7 2l4.5 4.5"/></svg></button>
+            <button type="button" class="topic-row__btn" data-move="1" aria-label="Bajar"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 2v10M2.5 7.5 7 12l4.5-4.5"/></svg></button>
+        </span>
+    </li>
+{% endmacro %}
+
+{% block title %}Editar temas de {{ subject }}{% endblock %}
 {% block breadcrumb %}
+    {% set params = { subject: subject, level: level ? level.value : '' } %}
     <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
     <a href="{{ path('admin_topic_index') }}">Temas de las clases</a><span class="sep">/</span>
-    {{ subject }}
+    <a href="{{ path('admin_topic_show', params) }}">{{ subject }}</a><span class="sep">/</span>
+    Editar
+{% endblock %}
+
+{% block page_scripts %}
+    <script src="{{ asset_ver('/js/topic-editor.js') }}"></script>
 {% endblock %}
 
 {% block body %}
-    <div class="page-head">
-        <div>
-            <p class="eyebrow">Administración</p>
-            <h1>{{ subject }}{% if level %} · {{ level.label }}{% else %} · sin nivel reconocido{% endif %}</h1>
-            <p class="lead">El orden es el orden en que se dan los temas: es lo que usa el avance («tema 4 de 9»). Un tema retirado deja de ofrecerse, pero las clases ya programadas con él lo conservan tal cual.</p>
-        </div>
-    </div>
-
+    {% set params = { subject: subject, level: level ? level.value : '' } %}
     {% set csrf = csrf_token('admin_topic' ~ subject ~ (level ? level.value : '')) %}
+    {% set empty = topics is empty and pasted is empty %}
+    <div class="topics-page">
+        <header class="topic-head">
+            <p class="topic-head__level">{{ level ? level.label : 'Sin nivel reconocido' }}</p>
+            <h1 class="topic-head__subject">{{ subject }}</h1>
+            <p class="lead">El orden es el orden en que se dan: es el «tema 4 de 9» que ve el profesorado. Para quitar un tema, retíralo: deja de ofrecerse y las clases que ya lo usan lo conservan.</p>
+        </header>
 
-    {% if pasted is not empty %}
-        <div class="card">
-            <p class="eyebrow">Del pegado · {{ pasted|length }} tema{{ pasted|length == 1 ? '' : 's' }} nuevo{{ pasted|length == 1 ? '' : 's' }}</p>
-            <p class="help">Todavía no se ha guardado nada. Revísalos, corrígelos o quítalos abajo y pulsa «Guardar la lista».</p>
-        </div>
-    {% endif %}
+        {% if pasted is not empty %}
+            <div class="callout callout--accent topic-pasted">
+                <p><strong>{{ pasted|length }} tema{{ pasted|length == 1 ? '' : 's' }} nuevo{{ pasted|length == 1 ? '' : 's' }} del pegado</strong>, marcado{{ pasted|length == 1 ? '' : 's' }} abajo. Todavía no se ha guardado nada: revísalo{{ pasted|length == 1 ? '' : 's' }}, corrígelo{{ pasted|length == 1 ? '' : 's' }} y pulsa «Guardar la lista».</p>
+            </div>
+        {% endif %}
 
-    <div class="card">
-        <form method="post" class="stack-form" data-confirm="{% if topics is not empty or pasted is not empty %}¿Guardar la lista? Los temas que quites de aquí (o dejes en blanco) desaparecen.{% endif %}">
-            <input type="hidden" name="_token" value="{{ csrf }}">
+        {% if repasted is not empty %}
+            {# Pegar no reactiva nada solo: se avisa, y cada uno se recupera desmarcando «Retirado» en su fila. #}
+            <div class="callout callout--amber topic-pasted topic-repasted">
+                <p><strong>{{ repasted|length == 1 ? 'Un tema que has pegado estaba retirado' : repasted|length ~ ' temas que has pegado estaban retirados' }}</strong>:
+                    {% for t in repasted %}«{{ t.name }}»{{ loop.last ? '.' : ', ' }}{% endfor %}
+                    {{ repasted|length == 1 ? 'Sigue retirado' : 'Siguen retirados' }}: para recuperar{{ repasted|length == 1 ? 'lo' : 'los' }}, desmarca «Retirado» en su fila (marcada abajo) y guarda; si no, queda{{ repasted|length == 1 ? '' : 'n' }} como está{{ repasted|length == 1 ? '' : 'n' }}.</p>
+            </div>
+        {% endif %}
 
-            <table class="topic-editor">
-                <thead>
-                    <tr><th>Orden</th><th>Nombre</th><th>Retirado</th></tr>
-                </thead>
-                <tbody>
+        {% if empty %}
+            <p class="topic-editor__empty">Todavía no hay ningún tema. Pega la programación aquí debajo.</p>
+        {% else %}
+            <form method="post" class="topic-editor">
+                <input type="hidden" name="_token" value="{{ csrf }}">
+                <ol class="topic-rows" data-topic-rows>
                     {% for t in topics %}
-                        <tr>
-                            <td><input type="hidden" name="tema_id[]" value="{{ t.id }}"><input type="number" name="tema_orden[]" class="mono" value="{{ loop.index }}" min="1" required></td>
-                            <td><input type="text" name="tema_nombre[]" value="{{ t.name }}" maxlength="{{ constant('App\\Entity\\Topic::MAX_NAME') }}" required></td>
-                            <td><input type="checkbox" name="tema_retirado[]" value="{{ loop.index0 }}"{{ t.retired ? ' checked' }}></td>
-                        </tr>
+                        {{ _self.row(t.id, t.name, loop.index, t.retired, false, t.id in repastedIds) }}
                     {% endfor %}
                     {% for name in pasted %}
-                        <tr class="is-new">
-                            <td><input type="hidden" name="tema_id[]" value="new-{{ loop.index0 }}"><input type="number" name="tema_orden[]" class="mono" value="{{ topics|length + loop.index }}" min="1" required></td>
-                            <td><input type="text" name="tema_nombre[]" value="{{ name }}" maxlength="{{ constant('App\\Entity\\Topic::MAX_NAME') }}" required></td>
-                            <td><input type="checkbox" name="tema_retirado[]" value="{{ topics|length + loop.index0 }}"></td>
-                        </tr>
+                        {{ _self.row('new-' ~ loop.index0, name, topics|length + loop.index, false, true) }}
                     {% endfor %}
-                </tbody>
-            </table>
-            {% if topics is empty and pasted is empty %}
-                <p class="muted">Todavía no hay ningún tema. Pega la programación de abajo o espera a que el primero se cree solo al programar una clase.</p>
-            {% else %}
-                <p class="help">El número de la izquierda es el orden: cambia el número de un tema para moverlo (dos temas con el mismo número se ordenan como estaban).</p>
-            {% endif %}
-
-            <div class="form-actions">
-                <button type="submit" class="btn">Guardar la lista</button>
-                <a class="btn secondary" href="{{ path('admin_topic_index') }}">Volver</a>
-            </div>
-        </form>
-    </div>
-
-    {% if topics|length > 1 %}
-        <div class="card">
-            <p class="eyebrow">Fusionar un duplicado</p>
-            <p class="help">Junta dos temas que son el mismo (uno creado al vuelo con otro nombre que el de la programación). Las clases ya programadas con el primero pasan a contar como el segundo, y el primero desaparece. No se puede deshacer.</p>
-            <form method="post" action="{{ path('admin_topic_merge', { subject: subject, level: level ? level.value : '' }) }}" class="inline-form" data-confirm="¿Fusionar? No se puede deshacer.">
-                <input type="hidden" name="_token" value="{{ csrf }}">
-                <select name="desde" required>
-                    <option value="">— Este tema…</option>
-                    {% for t in topics %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
-                </select>
-                <span>se fusiona en</span>
-                <select name="hacia" required>
-                    <option value="">— …este otro —</option>
-                    {% for t in topics %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
-                </select>
-                <button type="submit" class="btn secondary">Fusionar</button>
+                </ol>
+                <div class="topic-editor__bar">
+                    <button type="submit" class="btn">Guardar la lista</button>
+                    <a class="btn secondary" href="{{ path('admin_topic_show', params) }}">Cancelar</a>
+                </div>
             </form>
-        </div>
-    {% endif %}
+        {% endif %}
 
-    <div class="card">
-        <p class="eyebrow">Pegar la programación</p>
-        <p class="help">Pega la lista de temas de la programación didáctica, uno por línea (vale con la numeración delante: «Tema 1. Ecuaciones», «UD 2 - Potencias»…). No se guarda nada todavía: primero se muestra la lista de arriba para revisarla.</p>
-        <form method="post" action="{{ path('admin_topic_paste_preview', { subject: subject, level: level ? level.value : '' }) }}">
-            <input type="hidden" name="_token" value="{{ csrf }}">
-            <textarea name="pegado" rows="6" placeholder="Tema 1. Números racionales&#10;Tema 2. Potencias y raíces&#10;Tema 3. Polinomios"></textarea>
-            <div class="form-actions">
-                <button type="submit" class="btn secondary">Ver los temas</button>
-            </div>
-        </form>
+        {# Pegar: lo normal al empezar un curso, así que va abierto si la lista está vacía. #}
+        <details class="topic-tool" id="pegar"{{ empty ? ' open' }}>
+            <summary>Pegar la programación</summary>
+            <form method="post" action="{{ path('admin_topic_paste_preview', params) }}" class="topic-tool__body">
+                <input type="hidden" name="_token" value="{{ csrf }}">
+                <p class="help">Un tema por línea, con la numeración delante si la trae («Tema 1. Ecuaciones», «UD 2 - Potencias»): se limpia sola. No se guarda nada todavía: primero salen en la lista para revisarlos.</p>
+                <textarea name="pegado" rows="7" aria-label="Temas de la programación" placeholder="Tema 1. Números racionales&#10;Tema 2. Potencias y raíces&#10;Tema 3. Polinomios"></textarea>
+                <div class="form-actions">
+                    <button type="submit" class="btn{{ empty ? '' : ' secondary' }}">Ver los temas</button>
+                </div>
+            </form>
+        </details>
+
+        {% if topics|length > 1 %}
+            <details class="topic-tool">
+                <summary>Fusionar dos temas repetidos</summary>
+                <form method="post" action="{{ path('admin_topic_merge', params) }}" class="topic-tool__body" data-confirm="¿Fusionar? No se puede deshacer.">
+                    <input type="hidden" name="_token" value="{{ csrf }}">
+                    <p class="help">Para cuando el mismo tema está dos veces (uno creado al programar una clase, con otro nombre que el de la programación). Las clases con el primero pasan a contar con el segundo, y el primero desaparece. No se puede deshacer.</p>
+                    <div class="topic-merge">
+                        <label class="field"><span>Este tema</span>
+                            <select name="desde" required>
+                                <option value="">Elige…</option>
+                                {% for t in topics %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+                            </select>
+                        </label>
+                        <label class="field"><span>se junta con</span>
+                            <select name="hacia" required>
+                                <option value="">Elige…</option>
+                                {% for t in topics %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+                            </select>
+                        </label>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn secondary">Fusionar</button>
+                    </div>
+                </form>
+            </details>
+        {% endif %}
     </div>
 {% endblock %}

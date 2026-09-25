@@ -980,4 +980,30 @@ class ScheduleEntryRepository extends ServiceEntityRepository
 
         return $rows;
     }
+
+    /**
+     * How many timetable cells of each subject each department's teachers give in a course — the raw
+     * material for telling which department a subject belongs to ({@see \App\Service\SubjectOwnership}),
+     * since Peñalara hangs departments from teachers, never from subjects.
+     *
+     * @param AcademicYear $year the course whose timetable to read
+     *
+     * @return list<array{subject: string, department: int, sessions: int}> one row per (subject, department)
+     */
+    public function sessionsBySubjectAndDepartment(AcademicYear $year): array
+    {
+        /** @var list<array{subject: string, department: int|string, sessions: int|string}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('s.subjectName AS subject, IDENTITY(t.unit) AS department, COUNT(s.id) AS sessions')
+            ->join('s.teacher', 't')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.subjectName IS NOT NULL')
+            ->andWhere('t.unit IS NOT NULL')
+            ->setParameter('year', $year)
+            ->groupBy('s.subjectName, t.unit')
+            ->getQuery()
+            ->getResult();
+
+        return array_map(static fn (array $r): array => ['subject' => $r['subject'], 'department' => (int) $r['department'], 'sessions' => (int) $r['sessions']], $rows);
+    }
 }

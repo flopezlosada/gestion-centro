@@ -58,13 +58,7 @@ final class TopicAdmin
         ), true);
 
         $names = [];
-        foreach (preg_split('/\r\n|\r|\n/', $raw) ?: [] as $line) {
-            // Numeración habitual delante del nombre: "Tema 1.", "UD 2 -", "3)", "1 -". El nombre real
-            // empieza donde acaba ese prefijo.
-            $name = mb_substr(trim((string) preg_replace('/^(tema|ud|unidad)?\s*\d+\s*[.\-:)]?\s*/iu', '', trim($line))), 0, Topic::MAX_NAME);
-            if ('' === $name) {
-                continue;
-            }
+        foreach ($this->pastedNames($raw) as $name) {
             $key = TextKey::of($name);
             if (isset($seen[$key])) {
                 continue;
@@ -73,6 +67,50 @@ final class TopicAdmin
             $names[] = $name;
             if (\count($names) >= self::MAX_PASTED_LINES) {
                 break;
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * The retired topics of the list that a paste names again. {@see parsePaste()} drops them as already
+     * in the list, and they would stay retired without a word — so the caller warns, and the head chooses
+     * to bring each back or leave it retired. Never reinstates anything by itself.
+     *
+     * @param string              $subject the subject the list belongs to
+     * @param EducationLevel|null $level   the level, or null
+     * @param string              $raw     the pasted text
+     *
+     * @return list<Topic> the retired topics pasted again, in list order
+     */
+    public function retiredIn(string $subject, ?EducationLevel $level, string $raw): array
+    {
+        $pasted = array_fill_keys(array_map(TextKey::of(...), $this->pastedNames($raw)), true);
+
+        return array_values(array_filter(
+            $this->topics->findListFor($subject, $level),
+            static fn (Topic $t): bool => $t->isRetired() && isset($pasted[TextKey::of($t->getName())]),
+        ));
+    }
+
+    /**
+     * The names in a paste, one per line, with the usual numbering ("Tema 1.", "UD 2 -", "3)") stripped,
+     * blank lines dropped and each capped to {@see Topic::MAX_NAME}.
+     *
+     * @param string $raw the pasted text
+     *
+     * @return list<string> the names, in the order pasted
+     */
+    private function pastedNames(string $raw): array
+    {
+        $names = [];
+        foreach (preg_split('/\r\n|\r|\n/', $raw) ?: [] as $line) {
+            // Numeración habitual delante del nombre: "Tema 1.", "UD 2 -", "3)", "1 -". El nombre real
+            // empieza donde acaba ese prefijo.
+            $name = mb_substr(trim((string) preg_replace('/^(tema|ud|unidad)?\s*\d+\s*[.\-:)]?\s*/iu', '', trim($line))), 0, Topic::MAX_NAME);
+            if ('' !== $name) {
+                $names[] = $name;
             }
         }
 

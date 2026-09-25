@@ -1262,6 +1262,7 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 .callout--warning { background: var(--warning-weak); border-color: var(--warning); color: var(--warning-text); }
 /* Variante en el naranja de la marca: la nota de trabajo que hay que leer pero que NO es un problema
    (el recordatorio de RAICES). El filete es el único naranja pleno del aviso; el fondo, tinte. */
+.callout--amber { background: var(--amber-weak); border-color: var(--amber-border); border-left-color: var(--amber); color: var(--amber-text); }
 .callout--accent { background: var(--accent-weak); border-color: var(--accent-weak-border); border-left-color: var(--accent); color: var(--text-muted); }
 .callout--accent strong { color: var(--text); }
 /* Enlace de salida dentro de un callout (p. ej. "Abrir RAICES"): destaca sin gritar y no parte en dos
@@ -2918,6 +2919,147 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
     .lesson-strip__num { font-size: 17px; }
     .lesson-sheet, .lesson-blank, .lesson-edit.is-open { padding: 18px; }
     .lesson-sheet__topic { font-size: 23px; }
+}
+
+/* ── Temas de las clases (admin/topic) ───────────────────────────────────────
+   El índice busca una materia; la ficha lee su temario como el índice de un libro; editar ordena y
+   corrige. Mismo ancho de hoja que «Mi clase». */
+.topics-page { max-width: 760px; }
+
+/* Los departamentos, para quien alcanza varios: una rejilla de tarjetas que se elige de un vistazo. */
+.topic-departments { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+.topic-department {
+    display: flex; flex-direction: column; gap: 6px; height: 100%; padding: 16px 18px; box-sizing: border-box;
+    border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface);
+    color: var(--text); text-decoration: none; transition: border-color .15s ease-out, background-color .15s ease-out;
+}
+.topic-department:hover { border-color: var(--accent); background: var(--surface-alt); }
+.topic-department__name { font: 500 17px/1.25 var(--font-display); }
+.topic-department__meta { font: 500 11.5px var(--font-mono); color: var(--text-muted); }
+.topic-department__name { display: flex; align-items: baseline; gap: 9px; }
+.topic-department__name .lesson-mark { position: relative; top: -1px; }
+/* Con temas: la tarjeta se enciende —borde y recuento en el naranja de «hecho/programado»—; sin ellos
+   queda en tono apagado, que es lo que falta por preparar. */
+.topic-department.has-topics { border-color: var(--accent-weak-border); box-shadow: var(--shadow-card); }
+.topic-department.has-topics .topic-department__meta strong { color: var(--accent-ink); font-weight: 600; }
+.topic-department:not(.has-topics):not(.is-empty) .topic-department__name { color: var(--text-muted); }
+.topic-department.is-empty { border-style: dashed; background: transparent; }
+.topic-department.is-empty .topic-department__name { color: var(--text-muted); }
+
+.topic-finder { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 0 0 16px; }
+.topic-finder input[type="search"] {
+    flex: 1 1 260px; max-width: 360px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius);
+    background: var(--surface); color: var(--text); font: 400 14px var(--font-body);
+}
+.topic-finder input[type="search"]:focus { border-color: var(--accent); }
+.topic-finder__count { margin: 0; font: 500 11.5px var(--font-mono); letter-spacing: .06em; color: var(--text-faint); }
+.topic-finder__none { color: var(--text-muted); }
+
+.topic-subjects { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
+.topic-subject {
+    display: grid; grid-template-columns: minmax(0, 17rem) minmax(0, 1fr); align-items: center; gap: 8px 20px;
+    padding: 12px 2px; border-bottom: 1px solid var(--separator);
+}
+.topic-subject[hidden] { display: none; }
+.topic-subject__name { display: flex; align-items: baseline; gap: 10px; min-width: 0; font: 500 15px var(--font-body); color: var(--text-muted); }
+.topic-subject__name .lesson-mark { position: relative; top: -1px; }
+.topic-subject.has-topics .topic-subject__name { color: var(--text); font-weight: 600; }
+.topic-subject__levels { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Un curso: su nombre corto y cuántos temas tiene. Con temas, relleno; sin ellos, un hueco por preparar. */
+.topic-level {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 6px 0 12px;
+    border: 1px dashed var(--border-strong); border-radius: 999px; color: var(--text-muted);
+    font: 500 12.5px var(--font-body); text-decoration: none; white-space: nowrap;
+}
+.topic-level:hover { border-color: var(--accent); color: var(--text); }
+.topic-level__count {
+    min-width: 22px; padding: 2px 6px; border-radius: 999px; text-align: center;
+    font: 600 11px var(--font-mono); color: var(--text-faint);
+}
+.topic-level.has-topics { border-style: solid; border-color: var(--accent-weak-border); background: var(--accent-weak); color: var(--accent-ink); }
+.topic-level.has-topics .topic-level__count { background: var(--surface); color: var(--accent-ink); }
+
+/* Cabecera de una materia: el curso encima, la materia de titular, el recuento en mono. */
+.topic-head { margin: 2px 0 24px; }
+.topic-head__level { margin: 0; font: 500 11px var(--font-mono); text-transform: uppercase; letter-spacing: .14em; color: var(--text-faint); }
+.topic-head__subject { margin: 6px 0 6px; font: 500 clamp(28px, 6vw, 38px)/1.1 var(--font-display); letter-spacing: -.01em; text-wrap: balance; }
+.topic-head__meta { margin: 0; font: 500 12.5px var(--font-mono); color: var(--text-muted); }
+.topic-head .lead { margin-top: 8px; }
+.topic-head__actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+
+/* El temario, como el índice de un libro: número en mono a la izquierda, tema a la derecha. */
+.syllabus {
+    margin: 0; padding: 6px 24px; list-style: none; counter-reset: none;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-card);
+}
+.syllabus__item { display: grid; grid-template-columns: 3ch minmax(0, 1fr); gap: 16px; align-items: baseline; padding: 13px 0; }
+.syllabus__item + .syllabus__item { border-top: 1px solid var(--separator); }
+.syllabus__num { font: 600 14px var(--font-mono); color: var(--accent-ink); text-align: right; }
+.syllabus__name { font: 400 17px/1.35 var(--font-display); }
+.syllabus-retired { margin-top: 26px; }
+.syllabus-retired__title { margin: 0; font: 500 11px var(--font-mono); text-transform: uppercase; letter-spacing: .14em; color: var(--text-faint); }
+.syllabus-retired ul { margin: 10px 0 0; padding: 0; list-style: none; }
+.syllabus-retired li { padding: 6px 0; color: var(--text-muted); text-decoration: line-through; text-decoration-color: var(--text-tenue); }
+
+.topic-blank { padding: 24px; border: 1.5px dashed var(--border-strong); border-radius: var(--radius-lg); }
+.topic-blank h2 { margin: 0 0 6px; font: 500 22px var(--font-display); }
+.topic-blank p { margin: 0 0 16px; max-width: 60ch; color: var(--text-muted); }
+
+/* Editar: filas con número, nombre, retirado y flechas. */
+.topic-pasted { margin-top: 0; }
+.topic-editor { margin: 0 0 18px; }
+.topic-rows {
+    margin: 0; padding: 4px 16px; list-style: none;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+}
+.topic-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 0; }
+.topic-row + .topic-row { border-top: 1px solid var(--separator); }
+.topic-row__num { flex: none; width: 3ch; text-align: right; font: 600 14px var(--font-mono); color: var(--accent-ink); }
+.topic-row__order input { width: 68px; font-family: var(--font-mono); }
+.topic-rows.is-enhanced .topic-row__order { display: none; }
+.topic-rows:not(.is-enhanced) .topic-row__num { display: none; }
+.topic-row__name { flex: 1 1 240px; min-width: 0; }
+.topic-row__retire { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted); cursor: pointer; white-space: nowrap; }
+.topic-row__move { display: inline-flex; gap: 4px; }
+.topic-row__move[hidden] { display: none; }
+.topic-row__btn {
+    width: 34px; height: 34px; display: grid; place-items: center; padding: 0;
+    border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+    color: var(--text-muted); font-size: 15px; cursor: pointer;
+}
+.topic-row__btn:hover { border-color: var(--border-strong); color: var(--text); background: var(--surface-sunken); }
+.topic-row:first-child .topic-row__btn[data-move="-1"], .topic-row:last-child .topic-row__btn[data-move="1"] { visibility: hidden; }
+.topic-row.is-retired .topic-row__name { color: var(--text-faint); text-decoration: line-through; }
+.topic-row.is-new .topic-row__name { border-color: var(--accent-weak-border); background: var(--accent-weak); }
+/* Pegado otra vez estando retirado: la fila se señala para decidir si se recupera. */
+.topic-row.is-repasted { border-radius: var(--radius); background: var(--amber-weak); box-shadow: 0 0 0 8px var(--amber-weak); }
+/* Guardar siempre a mano, también con una lista larga. */
+.topic-editor__bar {
+    position: sticky; bottom: env(safe-area-inset-bottom, 0px); z-index: 5; display: flex; flex-wrap: wrap; gap: 10px;
+    margin-top: 14px; padding: 12px 0; background: var(--bg);
+}
+.topic-editor__empty { margin: 0 0 14px; color: var(--text-muted); }
+
+/* Pegar y fusionar: herramientas plegadas bajo la lista. */
+.topic-tool { margin-top: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+.topic-tool > summary {
+    display: flex; align-items: center; justify-content: space-between; padding: 14px 20px;
+    font: 600 14px var(--font-body); cursor: pointer; list-style: none;
+}
+.topic-tool > summary::-webkit-details-marker { display: none; }
+.topic-tool > summary::after { content: "+"; font: 400 20px/1 var(--font-body); color: var(--text-muted); }
+.topic-tool[open] > summary { border-bottom: 1px solid var(--border); }
+.topic-tool[open] > summary::after { content: "–"; }
+.topic-tool__body { padding: 16px 20px 20px; }
+.topic-tool__body .help { margin: 0 0 12px; }
+.topic-tool__body textarea { font-family: var(--font-mono); font-size: 13px; }
+.topic-merge { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.topic-merge .field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-muted); }
+
+@media (max-width: 560px) {
+    .topic-subject { grid-template-columns: minmax(0, 1fr); }
+    .topic-row__retire { margin-left: calc(3ch + 12px); }
+    .syllabus { padding: 4px 16px; }
 }
 .field-label { font-weight: 600; }
 .choice { display: flex; align-items: center; gap: 8px; font-weight: 400; cursor: pointer; }
