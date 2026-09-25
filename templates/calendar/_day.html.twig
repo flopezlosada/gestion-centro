@@ -46,7 +46,11 @@
         </ol>
     {% endif %}
 
-    {% if day.timeline is empty %}
+    {# Un día lectivo pinta su rejilla aunque no tenga nada con hora: vacía, dice «día libre» igual que la
+       columna vacía de la semana; sin ella, un día con solo tareas parecía la vista de antes. Fin de
+       semana y días no lectivos ya tienen su rótulo arriba, así que ahí la rejilla vacía solo sobraría. #}
+    {% set showGrid = day.timeline is not empty or not (day.isWeekend or day.nonLective) %}
+    {% if not showGrid %}
         {% if not hasAllDay %}
             <div class="empty-state">
                 <p>No hay nada este día.</p>

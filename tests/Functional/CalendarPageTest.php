@@ -76,15 +76,57 @@ final class CalendarPageTest extends WebTestCase
         self::assertSelectorTextContains('.calendar-dayview', 'Memoria del departamento');
     }
 
-    public function testDayViewIsEmptyWhenNoTaskIsDue(): void
+    /**
+     * A weekday with nothing on it still draws its hourly grid, empty, like the week's empty column —
+     * not a bare message that looked like the old list view.
+     */
+    public function testDayViewDrawsAnEmptyGridOnAWeekdayWithNothingDue(): void
     {
         $teacher = $this->teacherWithTask(new \DateTimeImmutable('2026-07-15'), 'Memoria del departamento');
+
+        $this->client->loginUser($teacher);
+        // Thursday.
+        $crawler = $this->client->request('GET', '/calendario?vista=dia&fecha=2026-07-16');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('.calendar-dayview .cal-timeline');
+        self::assertCount(0, $crawler->filter('.calendar-dayview .cal-timeline__grid a'));
+        self::assertSelectorNotExists('.calendar-dayview .empty-state');
+    }
+
+    /**
+     * A weekend day with nothing on it keeps the plain message: its "Fin de semana" flag already says
+     * why, and an empty grid there would only add noise.
+     */
+    public function testDayViewIsEmptyOnAWeekendWithNothingDue(): void
+    {
+        $teacher = $this->teacherWithTask(new \DateTimeImmutable('2026-07-15'), 'Memoria del departamento');
+
+        $this->client->loginUser($teacher);
+        // Saturday.
+        $this->client->request('GET', '/calendario?vista=dia&fecha=2026-07-18');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('.calendar-dayview .empty-state');
+        self::assertSelectorNotExists('.calendar-dayview .cal-timeline');
+    }
+
+    /**
+     * A weekday holiday behaves like a weekend: its non-teaching flag already explains the empty day.
+     */
+    public function testDayViewIsEmptyOnAWeekdayHolidayWithNothingDue(): void
+    {
+        $teacher = $this->teacherWithTask(new \DateTimeImmutable('2026-07-15'), 'Memoria del departamento');
+        // Thursday.
+        $this->em->persist((new NonLectiveDay())->setDate(new \DateTimeImmutable('2026-07-16'))->setDescription('Festivo local'));
+        $this->em->flush();
 
         $this->client->loginUser($teacher);
         $this->client->request('GET', '/calendario?vista=dia&fecha=2026-07-16');
 
         self::assertResponseIsSuccessful();
         self::assertSelectorExists('.calendar-dayview .empty-state');
+        self::assertSelectorNotExists('.calendar-dayview .cal-timeline');
     }
 
     public function testWeekViewShowsTaskDueThatWeek(): void
