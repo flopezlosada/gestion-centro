@@ -577,6 +577,28 @@ final class GuardiaPageTest extends WebTestCase
     }
 
     /**
+     * Whoever holds the guardia stays selected even when the timetable does not list them on duty for
+     * that period (a doublet, a one-off support, a hand-made change). Without their own option the
+     * dropdown fell back to "Sin asignar", so saving any other field took the guardia away from them.
+     */
+    public function testTheAssignedTeacherStaysSelectedWhenOutsideTheDutyPool(): void
+    {
+        $this->login();
+        $absent = $this->user('Ausente Nueve', 'a9@centro.test');
+        $outside = $this->user('Fuera del Horario', 'fuera@centro.test');
+        $cover = $this->cover(new \DateTimeImmutable('2025-11-10'), 0, $absent, $outside);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/'.$cover->getId().'/modificar');
+
+        self::assertResponseIsSuccessful();
+        $selected = $crawler->filter('select#guardia option[selected]');
+        self::assertCount(1, $selected);
+        self::assertSame((string) $outside->getId(), $selected->attr('value'));
+        self::assertStringContainsString('Fuera del Horario', $selected->text());
+    }
+
+    /**
      * The LAST notice a teacher received, failing loudly when none was sent. Newest-first on purpose: a
      * teacher may already carry an earlier notice (assigned, then relieved), and taking the first one
      * would assert against the wrong event and pass for the wrong reason.

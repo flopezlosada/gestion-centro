@@ -3091,9 +3091,35 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 .cover-summary dd { margin: 0; }
 .req { color: var(--danger-text); }
 
-/* Explicación del cambio: el campo que de verdad viaja a los afectados, así que se marca como el
-   paso importante del formulario y no como un trámite más de la lista. */
-.field--change-note { border-left: 3px solid var(--accent); padding-left: 12px; }
+/* Explicación del cambio: cuelga de «quién la cubre», así que va hundida dentro de esa sección, como
+   una consecuencia de lo que se acaba de tocar y no como otro campo más de la lista. Con JS solo se ve
+   cuando se ha cambiado algo (change-note-presets.js); `.field` le pondría display:flex encima del
+   [hidden], de ahí la regla explícita (tras `.cover-edit .field`, que empata en especificidad). */
+.field--change-note { background: var(--surface-sunken); border-radius: var(--radius); padding: 14px; }
+.field--change-note textarea { background: var(--surface); }
+
+/* Modificar guardia: tres bloques por lo que tocan (quién está en el aula, qué hace el grupo, la
+   ausencia), separados por un filete y con su nombre en la serif de títulos. */
+.page-head .cover-edit__who { max-width: none; }
+.cover-edit__section { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.cover-edit__section + .cover-edit__section { border-top: 1px solid var(--border); margin-top: 26px; padding-top: 22px; }
+.cover-edit__section > legend {
+    padding: 0; margin: 0; float: left; width: 100%;
+    font-family: var(--font-display); font-size: 18px; font-weight: 500; line-height: 1.2; color: var(--text);
+}
+/* float en el legend: es la forma estándar de que entre en el flujo normal (si no, se pinta sobre el
+   borde del fieldset); el hueco hasta el primer campo lo pone el gap de la sección. */
+.cover-edit__section > legend + * { clear: both; }
+.cover-edit__aside { margin-left: 6px; font-family: var(--font-body); font-size: 13px; color: var(--text-muted); }
+.cover-edit .field { display: flex; flex-direction: column; gap: 6px; }
+.cover-edit .field[hidden] { display: none; }
+.cover-edit .field-help { margin: 0; }
+.cover-edit__doc { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.cover-edit__copies { max-width: 8rem; }
+.cover-edit input[type="number"] {
+    padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius);
+    font: 400 14px var(--font-body); background: var(--surface); color: var(--text);
+}
 .change-note__presets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 2px; }
 /* Sin esto el display:flex de arriba gana al [hidden] del navegador (misma especificidad, va después)
    y los atajos se verían aunque el JS no los haya activado. */
@@ -4071,8 +4097,12 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
     .decision:not(.decision--closed) .decision__minor { order: -1; justify-content: center; }
 }
 @media (min-width: 761px) {
-    /* Con la topbar en pantalla, su breadcrumb ya sitúa: la barra de volver sobra. */
-    .backbar { display: none; }
+    /* Con la topbar en pantalla, su breadcrumb ya sitúa: el «volver» sobra. Pero en la barra vive
+       también el «Modificar» de la ficha (guardia, reunión, tarea), que era el único acceso a editar:
+       se queda, a la derecha; y la barra solo desaparece entera cuando no lo lleva. */
+    .backbar__back { display: none; }
+    .backbar { justify-content: flex-end; }
+    .backbar:not(:has(.backbar__edit)) { display: none; }
 }
 
 /* =============================================================================
