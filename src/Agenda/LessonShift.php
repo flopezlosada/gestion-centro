@@ -26,13 +26,6 @@ use Psr\Clock\ClockInterface;
  */
 final class LessonShift
 {
-    /** The first look ahead: a week and a day, where the next class with a group almost always is. */
-    private const FIRST_WINDOW_DAYS = 8;
-    /** Each further look ahead — past a two-week holiday. */
-    private const WINDOW_DAYS = 28;
-    /** How far ahead to look at all: a course. */
-    private const HORIZON_DAYS = 330;
-
     public function __construct(
         private readonly MyClasses $myClasses,
         private readonly LessonPlanRepository $plans,
@@ -134,27 +127,13 @@ final class LessonShift
      */
     private function nextClasses(LessonPlan $plan, int $count): array
     {
-        $found = [];
-        $start = $plan->getDate();
-        // Day by day the timetable costs a few queries, so the look ahead starts short and grows only when
-        // the next class is further away (a holiday).
-        for ($offset = 0, $span = self::FIRST_WINDOW_DAYS; $offset < self::HORIZON_DAYS && \count($found) < $count; $offset += $span, $span = self::WINDOW_DAYS) {
-            $from = $start->modify(sprintf('+%d days', $offset));
-            foreach ($this->myClasses->between($plan->getTeacher(), $from, $from->modify(sprintf('+%d days', $span - 1))) as $day => $sessions) {
-                $date = new \DateTimeImmutable($day, $start->getTimezone());
-                foreach ($sessions as $session) {
-                    $later = $date > $start || $session->slotIndex > $plan->getSlotIndex();
-                    if ($later && $plan->isSameClassAs($session->groupNames(), $session->subject())) {
-                        $found[] = ['date' => $date, 'class' => $session];
-                        if (\count($found) === $count) {
-                            return $found;
-                        }
-                    }
-                }
-            }
-        }
-
-        return $found;
+        return $this->myClasses->following(
+            $plan->getTeacher(),
+            $plan->getDate(),
+            $plan->getSlotIndex(),
+            static fn (ClassSession $class): bool => $plan->isSameClassAs($class->groupNames(), $class->subject()),
+            $count,
+        );
     }
 
     /**
