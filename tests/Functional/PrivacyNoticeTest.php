@@ -47,7 +47,7 @@ final class PrivacyNoticeTest extends WebTestCase
     public function testAPersonMustReadTheCurrentVersionBeforeGoingOn(): void
     {
         $user = $this->user('profe@centro.test');
-        $notice = $this->publish($this->user('tic@centro.test'), 'Resumen de prueba');
+        $notice = $this->publish($this->user('publica@centro.test'), 'Resumen de prueba');
         $this->client->loginUser($user);
 
         $this->client->request('GET', '/tareas');
@@ -72,7 +72,7 @@ final class PrivacyNoticeTest extends WebTestCase
     public function testANewVersionAsksAgain(): void
     {
         $user = $this->user('profe@centro.test');
-        $publisher = $this->user('tic@centro.test');
+        $publisher = $this->user('publica@centro.test');
         $first = $this->publish($publisher, 'Primera');
         $this->em->persist(new PrivacyNoticeAck($user, $first, new \DateTimeImmutable('-1 day')));
         $this->em->flush();
@@ -91,7 +91,7 @@ final class PrivacyNoticeTest extends WebTestCase
      */
     public function testAScriptRequestIsRefusedInsteadOfRedirected(): void
     {
-        $this->publish($this->user('tic@centro.test'), 'Resumen');
+        $this->publish($this->user('publica@centro.test'), 'Resumen');
         $this->client->loginUser($this->user('profe@centro.test'));
 
         $this->client->request('POST', '/tareas', [], [], ['HTTP_SEC_FETCH_MODE' => 'cors']);
@@ -104,7 +104,7 @@ final class PrivacyNoticeTest extends WebTestCase
      */
     public function testThePublicCopyOpensWithoutSigningIn(): void
     {
-        $this->publish($this->user('tic@centro.test'), 'Texto visible sin entrar');
+        $this->publish($this->user('publica@centro.test'), 'Texto visible sin entrar');
 
         $this->client->request('GET', '/proteccion-datos');
 
@@ -118,7 +118,7 @@ final class PrivacyNoticeTest extends WebTestCase
      */
     public function testTheWayBackCannotLeaveTheSite(): void
     {
-        $this->publish($this->user('tic@centro.test'), 'Resumen');
+        $this->publish($this->user('publica@centro.test'), 'Resumen');
         $this->client->loginUser($this->user('profe@centro.test'));
 
         $this->client->request('GET', '/proteccion-datos/leer?volver=//evil.example');
@@ -185,7 +185,7 @@ final class PrivacyNoticeTest extends WebTestCase
      */
     private function admin(): User
     {
-        $role = (new Role())->setCode('tic')->setName('TIC')->setAdmin(true);
+        $role = (new Role())->setCode('ROLE_ADMIN')->setName('Administración del sistema')->setAdmin(true);
         $this->em->persist($role);
         $user = (new User())->setFullName('Admin')->setEmail('admin@centro.test')->addAssignedRole($role);
         $this->em->persist($user);
