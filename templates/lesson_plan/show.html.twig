@@ -40,6 +40,7 @@
 
 {% block page_scripts %}
     <script src="{{ asset_ver('/js/topic-combobox.js') }}"></script>
+    <script src="{{ asset_ver('/js/lesson-plan-form.js') }}"></script>
 {% endblock %}
 
 {% block breadcrumb %}
@@ -248,6 +249,10 @@
                         {% endfor %}
                         <label class="pick-chip"><input type="radio" name="resultado2" value=""{{ outcome2 is null ? ' checked' }}> Aún no</label>
                     </fieldset>
+
+                    {# Quitarlo es vaciar sus tres datos: con solo borrar el nombre, una actividad marcada lo
+                       mantenía como «Sin tema». Con JS; sin él, se vacía a mano. #}
+                    <button type="button" class="btn secondary btn-sm" data-remove-second-topic hidden>Quitar el segundo tema</button>
                 </details>
             {% endif %}
 
