@@ -4071,8 +4071,12 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
     .decision:not(.decision--closed) .decision__minor { order: -1; justify-content: center; }
 }
 @media (min-width: 761px) {
-    /* Con la topbar en pantalla, su breadcrumb ya sitúa: la barra de volver sobra. */
-    .backbar { display: none; }
+    /* Con la topbar en pantalla, su breadcrumb ya sitúa: el «volver» sobra. Pero en la barra vive
+       también el «Modificar» de la ficha (guardia, reunión, tarea), que era el único acceso a editar:
+       se queda, a la derecha; y la barra solo desaparece entera cuando no lo lleva. */
+    .backbar__back { display: none; }
+    .backbar { justify-content: flex-end; }
+    .backbar:not(:has(.backbar__edit)) { display: none; }
 }
 
 /* =============================================================================

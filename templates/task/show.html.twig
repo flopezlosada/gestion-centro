@@ -111,12 +111,13 @@
         'cancelled': {'cls': 'is-muted',   'label': 'Cancelada'},
     }[task.status]|default({'cls': 'is-pending', 'label': task.status}) %}
 
-    {# Barra de volver (solo móvil; en escritorio manda el breadcrumb de la topbar). #}
+    {# Barra de volver: el «volver» solo en móvil (en escritorio manda el breadcrumb de la topbar); el
+       «Editar» en los dos, salvo cuando la tarjeta de decisión ya lo trae (responsable y validador). #}
     <div class="backbar">
         <a class="backbar__back" href="{{ path('task_index') }}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>Tareas
         </a>
-        {% if canManage %}<a class="backbar__edit" href="{{ path('task_edit', { id: task.id }) }}">Editar</a>{% endif %}
+        {% if canManage and role not in ['responsible', 'validator'] %}<a class="backbar__edit" href="{{ path('task_edit', { id: task.id }) }}">Editar</a>{% endif %}
     </div>
 
     <div class="detail-cols detail-cols--task">
