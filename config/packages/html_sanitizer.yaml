@@ -11,3 +11,32 @@ framework:
                     - img
                     - figure
                 force_https_urls: true
+
+            # Texto con formato de una reunión (orden del día, desarrollo, acuerdos), tal como lo escribe
+            # el editor (Trix): lo justo para dar formato a un acta y nada que pueda ejecutar o incrustar.
+            # Un elemento que no está aquí se quita pero conserva su texto; los enlaces solo http(s) o
+            # correo, y siempre se abren aparte sin pasar la página de origen.
+            app.meeting_prose:
+                allow_elements:
+                    div: []
+                    p: []
+                    br: []
+                    strong: []
+                    b: []
+                    em: []
+                    i: []
+                    u: []
+                    s: []
+                    del: []
+                    h1: []
+                    blockquote: []
+                    pre: []
+                    ul: []
+                    ol: []
+                    li: []
+                    a: [href]
+                allowed_link_schemes: [http, https, mailto]
+                force_attributes:
+                    a:
+                        rel: noopener noreferrer
+                        target: _blank

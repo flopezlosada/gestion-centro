@@ -303,6 +303,49 @@ final class MeetingCrudTest extends WebTestCase
         self::assertSame(0, $this->noticesOf($this->em->getRepository(User::class)->find($attendee->getId()), 'meeting.rescheduled'));
     }
 
+    /**
+     * El orden del día con formato se ve con formato en el detalle; lo que no es formato (un script) no
+     * llega ni a guardarse ni a pintarse. El cuadro del formulario lleva el editor.
+     */
+    public function testAFormattedAgendaIsShownFormattedAndAScriptIsNot(): void
+    {
+        $coordinator = $this->user('Lucía Formato', 'lucia.formato@centro.test');
+        $attendee = $this->user('Pedro Formato', 'pedro.formato@centro.test');
+        $meeting = $this->meeting($coordinator, $attendee);
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+
+        $this->client->loginUser($coordinator);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id.'/editar');
+        self::assertCount(1, $crawler->filter('textarea[name="meeting_form[agenda]"][data-rich-text]'), 'el orden del día lleva el editor');
+        $values = $crawler->selectButton('Guardar')->form()->getPhpValues();
+        $values['meeting_form']['agenda'] = '<div><strong>Presupuesto</strong> y <a href="https://ejemplo.test/doc">el documento</a><script>alert(1)</script></div>';
+        $this->client->request('POST', '/reuniones/'.$id.'/editar', $values);
+        self::assertResponseRedirects();
+
+        $this->client->loginUser($attendee);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+
+        self::assertSame('Presupuesto', $crawler->filter('.detail-prose strong')->text());
+        self::assertSame('https://ejemplo.test/doc', $crawler->filter('.detail-prose a')->attr('href'));
+        self::assertStringNotContainsString('alert(1)', (string) $this->client->getResponse()->getContent());
+    }
+
+    /** Lo guardado antes del editor (texto plano) se sigue leyendo con sus saltos de línea. */
+    public function testAPlainTextAgendaKeepsItsLineBreaks(): void
+    {
+        $coordinator = $this->user('Lucía Plano', 'lucia.plano@centro.test');
+        $meeting = $this->meeting($coordinator);
+        $meeting->setAgenda('<div>1. Presupuesto<br>2. Salidas</div>'); // como lo deja la migración
+        $this->em->flush();
+
+        $this->client->loginUser($coordinator);
+        $crawler = $this->client->request('GET', '/reuniones/'.$meeting->getId());
+
+        self::assertCount(1, $crawler->filter('.detail-prose br'));
+        self::assertStringContainsString('2. Salidas', $crawler->filter('.detail-prose')->first()->text());
+    }
+
     public function testCancellingWarnsThePeopleConvened(): void
     {
         $coordinator = $this->user('Lucía Coordina', 'lucia6.meet@centro.test');
@@ -471,8 +514,8 @@ final class MeetingCrudTest extends WebTestCase
         $this->em->clear();
         $stored = $this->em->getRepository(Meeting::class)->find($id);
         self::assertInstanceOf(Meeting::class, $stored);
-        self::assertSame('Se abre la sesión a las 12:00.', $stored->getDiscussion(), 'el desarrollo ya no se pierde al guardar la lista');
-        self::assertSame('1. Se aprueba la programación.', $stored->getAgreements());
+        self::assertSame('<div>Se abre la sesión a las 12:00.</div>', $stored->getDiscussion(), 'el desarrollo ya no se pierde al guardar la lista');
+        self::assertSame('<div>1. Se aprueba la programación.</div>', $stored->getAgreements());
         self::assertTrue($stored->isAttendanceTaken());
         self::assertCount(1, $stored->getAttended());
     }
@@ -593,7 +636,7 @@ final class MeetingCrudTest extends WebTestCase
         $stored = $this->em->getRepository(Meeting::class)->find($id);
         self::assertInstanceOf(Meeting::class, $stored);
         self::assertTrue($stored->isMinutesPublished(), 'la corrección ha salido');
-        self::assertSame('Versión corregida.', $stored->getDiscussion());
+        self::assertSame('<div>Versión corregida.</div>', $stored->getDiscussion());
         // Y vuelve a estar en el archivo de actas, que es de donde la había sacado el regenerado.
         $this->client->request('GET', '/reuniones/actas');
         self::assertSelectorTextContains('body', 'CCP de diciembre');
