@@ -44,6 +44,11 @@ final class MeetingFormData
     #[Assert\Length(max: 120)]
     public ?string $place = null;
 
+    /** The video call, when it is held online. Only http(s): anything else would be a link nobody should follow. */
+    #[Assert\Url(message: 'Pega el enlace completo de la videollamada (empieza por https://).', protocols: ['https', 'http'], requireTld: true)]
+    #[Assert\Length(max: 500)]
+    public ?string $onlineUrl = null;
+
     #[Assert\NotNull(message: 'Pon el día de la reunión.')]
     public ?\DateTimeImmutable $day = null;
 
@@ -124,6 +129,7 @@ final class MeetingFormData
         $data->type = $meeting->getType();
         $data->agenda = $meeting->getAgenda();
         $data->place = $meeting->getPlace();
+        $data->onlineUrl = $meeting->getOnlineUrl();
         $data->day = $meeting->getStartAt()->setTime(0, 0);
         // The instants go in whole: the time field renders only their "HH:MM".
         $data->startTime = $meeting->getStartAt();

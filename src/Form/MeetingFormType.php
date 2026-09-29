@@ -17,6 +17,7 @@ use Symfony\Component\Form\Extension\Core\Type\EnumType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\Extension\Core\Type\TimeType;
+use Symfony\Component\Form\Extension\Core\Type\UrlType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 
@@ -92,7 +93,13 @@ final class MeetingFormType extends AbstractType
             ->add('place', TextType::class, [
                 'label' => 'Lugar',
                 'required' => false,
-                'help' => 'Sala de profesores, aula 12, videollamada…',
+                'help' => 'Sala de profesores, aula 12…',
+            ])
+            ->add('onlineUrl', UrlType::class, [
+                'label' => 'Enlace de la videollamada',
+                'required' => false,
+                'default_protocol' => 'https',
+                'help' => 'Solo si es telemática: pega el enlace de Meet, Jitsi, Teams… Lo verán las personas convocadas.',
             ])
             ->add('reminder', EnumType::class, [
                 'label' => 'Avisar antes',

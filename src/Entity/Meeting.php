@@ -104,6 +104,14 @@ class Meeting implements Auditable
     #[Assert\Length(max: 120)]
     private ?string $place = null;
 
+    /**
+     * The video call to join when it is held online (Meet, Jitsi, Teams…), or null when it is in person.
+     * Apart from {@see $place} because it is a link to open, not a room to walk to — and a link typed
+     * into the place box could not be tapped. Only http(s) is ever accepted, by the form.
+     */
+    #[ORM\Column(name: 'online_url', length: 500, nullable: true)]
+    private ?string $onlineUrl = null;
+
     /** When it starts (day and time: a meeting is a moment, never a deadline). */
     #[ORM\Column(name: 'start_at', type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $startAt;
@@ -500,6 +508,28 @@ class Meeting implements Auditable
     public function setPlace(?string $place): static
     {
         $this->place = $place;
+
+        return $this;
+    }
+
+    /**
+     * The link to the video call, when the meeting is held online.
+     *
+     * @return string|null the URL, or null when it is in person
+     */
+    public function getOnlineUrl(): ?string
+    {
+        return $this->onlineUrl;
+    }
+
+    /**
+     * Sets the link to the video call; blank means it is held in person.
+     *
+     * @param string|null $onlineUrl the URL, already validated as http(s)
+     */
+    public function setOnlineUrl(?string $onlineUrl): static
+    {
+        $this->onlineUrl = null !== $onlineUrl && '' !== trim($onlineUrl) ? trim($onlineUrl) : null;
 
         return $this;
     }
