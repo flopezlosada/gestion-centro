@@ -35,6 +35,8 @@ use App\Util\CalendarDate;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\Form\FormError;
+use Symfony\Component\Form\FormInterface;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -60,6 +62,8 @@ final class TaskController extends AbstractController
 
     /** Private-storage subdirectory for the files handed in with a task. */
     private const string DELIVERABLE_SUBDIR = 'task-deliverables';
+    /** Private storage subdirectory for the files with what is needed to do a task. */
+    private const string INFO_SUBDIR = 'task-info';
 
     /** Ceiling for a comment, matching the column's validation on {@see TaskComment}. */
     private const int COMMENT_MAX = 2000;
@@ -342,7 +346,7 @@ final class TaskController extends AbstractController
      * task then belongs to its own person's department ({@see TaskFormData::departmentFor()}).
      */
     #[Route('/tareas/nueva', name: 'task_new', methods: ['GET', 'POST'])]
-    public function new(Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, EntityManagerInterface $entityManager, TaskAssignmentNotifier $assignmentNotifier): Response
+    public function new(Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, EntityManagerInterface $entityManager, TaskAssignmentNotifier $assignmentNotifier, FileUploader $uploader): Response
     {
         $units = $this->assignableDepartments($user, $hierarchy);
         $roleChoices = $this->assignableRoles($user, $roles->findAllOrdered(), $hierarchy);
@@ -365,15 +369,20 @@ final class TaskController extends AbstractController
         ]);
         $form->handleRequest($request);
 
-        if ($form->isSubmitted() && $form->isValid()) {
+        if ($form->isSubmitted() && $form->isValid() && $this->infoFileAcceptable($form, $data)) {
             $this->assertResponsibilityAllowed($data, $roleChoices, $units, $userChoices);
 
             // Lo que hay que entregar también nombra el tipo de tarea: con entregable o simple.
             $type = $data->deliverable->isRequired() ? TaskType::WITH_DELIVERABLE : TaskType::SIMPLE;
+            // El archivo se guarda UNA vez aunque la tarea sea para ochenta personas: todas apuntan a él.
+            $info = $this->storeInfoFile($data, $uploader);
             $created = [];
             foreach ($data->responsibleUsers() as $person) {
                 $task = new Task($data->title, SchoolYear::current($data->dueDate), $data->dueDate, $type);
                 $this->applyFormData($task, $data, $person);
+                if (null !== $info) {
+                    $task->attachInfoFile($info['path'], $info['name']);
+                }
                 $task->setCreatedBy($user);
                 $entityManager->persist($task);
                 $created[] = $task;
@@ -406,7 +415,7 @@ final class TaskController extends AbstractController
      * not editable (it governs the lifecycle already in progress).
      */
     #[Route('/tareas/{id}/editar', name: 'task_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
-    public function edit(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, EntityManagerInterface $entityManager): Response
+    public function edit(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, RoleRepository $roles, EntityManagerInterface $entityManager, FileUploader $uploader, TaskRepository $tasks): Response
     {
         if (!$this->canManage($task, $user, $hierarchy)) {
             throw $this->createAccessDeniedException('No puedes editar esta tarea.');
@@ -438,14 +447,23 @@ final class TaskController extends AbstractController
             'assignable_units' => $units,
             'assignable_users' => $userChoices,
             'include_deliverable' => false,
+            'has_info_file' => null !== $task->getInfoFilePath(),
         ]);
         $form->handleRequest($request);
 
-        if ($form->isSubmitted() && $form->isValid()) {
+        if ($form->isSubmitted() && $form->isValid() && $this->infoFileAcceptable($form, $data)) {
             $this->assertResponsibilityAllowed($data, $roleChoices, $units, $userChoices);
 
+            $previous = $task->getInfoFilePath();
+            $info = $this->storeInfoFile($data, $uploader);
+            if (null !== $info) {
+                $task->attachInfoFile($info['path'], $info['name']);
+            } elseif ($data->removeInfoFile) {
+                $task->attachInfoFile(null, null);
+            }
             $this->applyFormData($task, $data);
             $entityManager->flush();
+            $this->removeInfoFileIfUnused($previous, $task, $tasks, $uploader);
             $this->addFlash('success', 'Tarea actualizada.');
 
             return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
@@ -458,7 +476,7 @@ final class TaskController extends AbstractController
      * Deletes a task. Allowed to its creator, a superior of its unit, or an admin.
      */
     #[Route('/tareas/{id}/borrar', name: 'task_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function delete(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, EntityManagerInterface $entityManager): Response
+    public function delete(Task $task, Request $request, #[CurrentUser] User $user, OrganizationHierarchy $hierarchy, EntityManagerInterface $entityManager, FileUploader $uploader, TaskRepository $tasks): Response
     {
         if (!$this->isCsrfTokenValid('task_delete'.$task->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
@@ -467,8 +485,10 @@ final class TaskController extends AbstractController
             throw $this->createAccessDeniedException('No puedes borrar esta tarea.');
         }
 
+        $infoFile = $task->getInfoFilePath();
         $entityManager->remove($task);
         $entityManager->flush();
+        $this->removeInfoFileIfUnused($infoFile, null, $tasks, $uploader);
         $this->addFlash('success', 'Tarea borrada.');
 
         return $this->redirectToRoute('task_index');
@@ -884,6 +904,88 @@ final class TaskController extends AbstractController
     }
 
     /**
+     * Serves the file with what is needed to do the task, to whoever can see the task — same gate as
+     * the delivered file ({@see downloadDeliverable()}): stored outside the web root, this is the only
+     * way to it.
+     */
+    #[Route('/tareas/{id}/informacion/archivo', name: 'task_info_download', requirements: ['id' => '\d+'], methods: ['GET'])]
+    public function downloadInfo(Task $task, #[CurrentUser] User $user, TaskVisibility $visibility, FileUploader $uploader): Response
+    {
+        if (!$visibility->isVisibleTo($task, $user, $this->isGranted('ROLE_ADMIN'))) {
+            throw $this->createAccessDeniedException('No puedes ver esta tarea.');
+        }
+
+        $path = $task->getInfoFilePath();
+        if (null === $path) {
+            throw $this->createNotFoundException('Esta tarea no tiene archivo con información.');
+        }
+
+        return $this->file($uploader->absolutePath($path), $task->getInfoFileName() ?? 'documento');
+    }
+
+    /**
+     * Whether the information file of a submit (if any) passes the upload policy
+     * ({@see DocumentUpload}); when not, the reason goes on the field and the submit is refused, so no
+     * task is created or changed half-way.
+     *
+     * @param FormInterface<TaskFormData> $form the submitted form
+     * @param TaskFormData                $data the submitted data
+     *
+     * @return bool true when the submit may proceed
+     */
+    private function infoFileAcceptable(FormInterface $form, TaskFormData $data): bool
+    {
+        if (!DocumentUpload::isPresent($data->infoFile)) {
+            return true;
+        }
+        $problem = DocumentUpload::problem($data->infoFile);
+        if (null === $problem) {
+            return true;
+        }
+        $form->get('infoFile')->addError(new FormError($problem));
+
+        return false;
+    }
+
+    /**
+     * Stores the information file of an accepted submit, if one was chosen.
+     *
+     * @param TaskFormData $data     the submitted data, already accepted by {@see infoFileAcceptable()}
+     * @param FileUploader $uploader the private-storage uploader
+     *
+     * @return array{path: string, name: string}|null where it was stored and its original name, or null when none was sent
+     */
+    private function storeInfoFile(TaskFormData $data, FileUploader $uploader): ?array
+    {
+        $file = $data->infoFile;
+        if (!$file instanceof UploadedFile || !DocumentUpload::isPresent($file)) {
+            return null;
+        }
+
+        return ['path' => $uploader->upload($file, self::INFO_SUBDIR), 'name' => DocumentUpload::nameOf($file)];
+    }
+
+    /**
+     * Deletes an information file nobody points at any more. It can be SHARED — creating one task for
+     * several people stores it once — so replacing it on one task, or deleting that task, must not take
+     * it away from the others: it goes only when no task references it.
+     *
+     * @param string|null    $path     the file the task had before, if any
+     * @param Task|null      $task     the task after the change, or null when it was deleted
+     * @param TaskRepository $tasks    the tasks, to count who else points at the file
+     * @param FileUploader   $uploader the private-storage uploader
+     */
+    private function removeInfoFileIfUnused(?string $path, ?Task $task, TaskRepository $tasks, FileUploader $uploader): void
+    {
+        if (null === $path || $path === $task?->getInfoFilePath()) {
+            return;
+        }
+        if (0 === $tasks->count(['infoFilePath' => $path])) {
+            $uploader->remove($path);
+        }
+    }
+
+    /**
      * The lifecycle transitions to offer as buttons: those enabled now, keeping the superior-only ones
      * (validate/review); "submit" (Entregar) for whoever works on the task; and "cancel" only for
      * whoever may manage it AND while the task is still within its deadline.
@@ -957,6 +1059,7 @@ final class TaskController extends AbstractController
         \assert(null !== $data->dueDate && null !== $data->responsibilityRole);
         $task->setTitle($data->title)
             ->setDescription($data->description)
+            ->setInfoUrl($data->infoUrl)
             ->setDueDate($data->dueDate)
             ->setSchoolYear(SchoolYear::current($data->dueDate))
             ->setMandatory($data->mandatory)
