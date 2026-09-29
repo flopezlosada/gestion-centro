@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Agenda\MyClasses;
 use App\Entity\AcademicYear;
 use App\Entity\AuditLog;
 use App\Entity\GuardiaCover;
@@ -269,9 +270,13 @@ final class GuardiaController extends AbstractController
      * Their break duty rota comes too, and as a standing fact rather than a list of days: it is fixed for
      * the whole course, so what the teacher needs is "los martes, patio, 11:10–11:35" once, not one row
      * per Tuesday of the year.
+     *
+     * So do the guardia hours of their timetable, for the same reason — and because without them a day on
+     * guardia with nobody absent read "hoy no te toca guardia", which is exactly the day a teacher has to
+     * be available.
      */
     #[Route('/mias', name: 'guardia_mine', methods: ['GET'])]
-    public function mine(#[CurrentUser] User $user, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years, TeacherGuardiaDay $day, BreakDutyAssignmentRepository $breakDuties, TimeSlotRepository $timeSlots): Response
+    public function mine(#[CurrentUser] User $user, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years, TeacherGuardiaDay $day, BreakDutyAssignmentRepository $breakDuties, TimeSlotRepository $timeSlots, MyClasses $myClasses): Response
     {
         $today = new \DateTimeImmutable('today');
         $now = new \DateTimeImmutable('now');
@@ -279,6 +284,9 @@ final class GuardiaController extends AbstractController
         $slotTimes = $this->slotTimes($schedule, $year);
 
         return $this->render('guardia/mine.html.twig', [
+            // Las horas de guardia del horario: fijas todo el curso (la tabla) y las de hoy (el estado vacío).
+            'dutyCells' => $year instanceof AcademicYear ? $schedule->dutyCellsFor($year, $user) : [],
+            'todayDuties' => $myClasses->dutiesBetween($user, $today, $today)[$today->format('Y-m-d')] ?? [],
             // El mismo view-model que usa el hero de Inicio (App\Guardia\TeacherGuardiaDay): así las dos
             // pantallas no pueden discrepar sobre cuál es "tu próxima guardia".
             'today' => $day->forDay($covers->findAssignedTo($user, $today), $slotTimes, $now),

@@ -10,12 +10,15 @@ use App\Entity\GuardiaCover;
 use App\Entity\Notification;
 use App\Entity\Role;
 use App\Entity\ScheduleEntry;
+use App\Entity\TimeSlot;
 use App\Entity\User;
 use App\Enum\Area;
 use App\Enum\PermissionLevel;
 use App\Enum\ScheduleActivityKind;
+use App\Enum\TimeSlotKind;
 use App\Enum\Weekday;
 use App\Service\FileUploader;
+use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -957,6 +960,47 @@ final class GuardiaPageTest extends WebTestCase
      * Y no aparece un aviso de "apunta las ausencias" en un día sin guardias: no hay sesión ninguna de la
      * que tomar lista.
      */
+    /**
+     * Las horas de guardia del horario salen en «Mis guardias» como hecho fijo del curso, falte o no
+     * alguien: era lo que no aparecía en ningún sitio. La del recreo, con su nombre y su hora real.
+     */
+    public function testMisGuardiasListsTheStandingGuardiaHoursOfTheTimetable(): void
+    {
+        $user = $this->login(false);
+        $year = $this->academicYear(SchoolYear::current(new \DateTimeImmutable('today')));
+        $this->em->persist($year);
+        $this->em->persist((new TimeSlot())->setAcademicYear($year)->setSlotIndex(3)->setKind(TimeSlotKind::BREAK_TIME)
+            ->setStartsAt(new \DateTimeImmutable('11:10'))->setEndsAt(new \DateTimeImmutable('11:35')));
+        $this->guardiaEntry($year, $user, new \DateTimeImmutable('2026-01-12'), 0); // lunes, 08:25–09:20
+        $this->em->persist((new ScheduleEntry())->setAcademicYear($year)->setTeacher($user)
+            ->setWeekday(Weekday::FRIDAY)->setSlotIndex(3)->setKind(ScheduleActivityKind::GUARDIA)
+            ->setStartsAt(new \DateTimeImmutable('11:10'))->setEndsAt(new \DateTimeImmutable('11:35')));
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/mias');
+
+        self::assertResponseIsSuccessful();
+        $rows = $crawler->filterXPath('//section[h2[normalize-space()="Mis horas de guardia"]]//tbody/tr');
+        self::assertCount(2, $rows);
+        self::assertStringContainsString('Lunes', $rows->eq(0)->text());
+        self::assertStringContainsString('08:25–09:20', $rows->eq(0)->text());
+        self::assertStringContainsString('Guardia de recreo', $rows->eq(1)->text());
+        self::assertStringContainsString('11:10–11:35', $rows->eq(1)->text());
+    }
+
+    /** Sin horas de guardia en el horario (conserjería, quien no hace guardias) no hay tabla vacía. */
+    public function testMisGuardiasWithoutGuardiaHoursShowsNoTable(): void
+    {
+        $this->login(false);
+        $this->em->persist($this->academicYear(SchoolYear::current(new \DateTimeImmutable('today'))));
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/mias');
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(0, $crawler->filterXPath('//h2[normalize-space()="Mis horas de guardia"]'));
+    }
+
     public function testMisGuardiasWithoutGuardiasTodayCarriesNoRaicesReminder(): void
     {
         $this->login(false);

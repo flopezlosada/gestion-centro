@@ -77,4 +77,25 @@ trait BuildsTheCentresTimetable
             ->setKind(ScheduleActivityKind::LECTIVE)
             ->setGroupName($group)->setRoomName($room)->setSubjectName($subject));
     }
+
+    /**
+     * Persists one guardia cell of the timetable (not flushed), with its own clock times — as Peñalara
+     * writes them, recreos included.
+     *
+     * @param EntityManagerInterface $em        the entity manager
+     * @param AcademicYear           $year      the course
+     * @param User                   $teacher   who is on guardia
+     * @param Weekday                $weekday   the day of the week
+     * @param int                    $slotIndex the period index
+     * @param string                 $from      start time, "H:i"
+     * @param string                 $to        end time, "H:i"
+     */
+    private function guardiaCell(EntityManagerInterface $em, AcademicYear $year, User $teacher, Weekday $weekday, int $slotIndex, string $from, string $to): void
+    {
+        $em->persist((new ScheduleEntry())
+            ->setAcademicYear($year)->setTeacher($teacher)
+            ->setWeekday($weekday)->setSlotIndex($slotIndex)
+            ->setStartsAt(new \DateTimeImmutable($from))->setEndsAt(new \DateTimeImmutable($to))
+            ->setKind(ScheduleActivityKind::GUARDIA));
+    }
 }

@@ -475,6 +475,30 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
+     * A teacher's duty cells (guardia and collaborator) in a course, ordered by weekday then period — the
+     * standing "cuándo estoy de guardia" of their timetable, recreos included.
+     *
+     * @param AcademicYear $year    the course whose timetable to read
+     * @param User         $teacher the teacher
+     *
+     * @return ScheduleEntry[] the teacher's duty cells in that course
+     */
+    public function dutyCellsFor(AcademicYear $year, User $teacher): array
+    {
+        return $this->createQueryBuilder('s')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.teacher = :teacher')
+            ->andWhere('s.kind IN (:kinds)')
+            ->setParameter('year', $year)
+            ->setParameter('teacher', $teacher)
+            ->setParameter('kinds', [ScheduleActivityKind::GUARDIA, ScheduleActivityKind::COLLABORATOR])
+            ->orderBy('s.weekday', 'ASC')
+            ->addOrderBy('s.slotIndex', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * Every timetable cell a teacher has in a course, of any kind, ordered by weekday then period —
      * the data behind the manual "horario de guardias" grid, which shows the imported lective cells as
      * read-only context and lets the duty cells be edited.

@@ -28,8 +28,18 @@
         {# ESTADO VACÍO — mensaje positivo + la siguiente guardia prevista (si la hay). #}
         <section class="card guardia-empty">
             <div class="guardia-empty__badge" aria-hidden="true">✓</div>
-            <h2>Hoy no te toca guardia</h2>
-            <p>Estás libre de guardias. Te avisaremos en cuanto se te asigne una nueva.</p>
+            {#- Sin nadie a quien cubrir no es lo mismo que sin guardia: si su horario le pone de guardia hoy,
+                tiene que estar disponible, y decirle "estás libre" era justo lo contrario. -#}
+            {% if todayDuties is not empty %}
+                <h2>Hoy estás de guardia</h2>
+                <p>
+                    {{ todayDuties|map(d => d.startsAt|date('H:i', false) ~ (d.duringBreak ? ' (recreo)' : ''))|join(', ', ' y ') }}.
+                    De momento no falta nadie: si te toca cubrir a alguien, te avisaremos.
+                </p>
+            {% else %}
+                <h2>Hoy no te toca guardia</h2>
+                <p>Estás libre de guardias. Te avisaremos en cuanto se te asigne una nueva.</p>
+            {% endif %}
 
             {% set nextDay = upcoming|first %}
             {% if nextDay %}
@@ -138,6 +148,31 @@
                 </div>
             </aside>
         </div>
+    {% endif %}
+
+    {# Las horas de guardia del horario, como hecho fijo del curso (igual que el recreo de abajo): cuándo
+       tienes que estar disponible, haya o no a quien cubrir. #}
+    {% if dutyCells is not empty %}
+        {% set breakIndexes = breakSlots|map(s => s.slotIndex) %}
+        <section class="card">
+            <h2>Mis horas de guardia</h2>
+            <table class="worklist">
+                <thead><tr><th scope="col">Día</th><th scope="col">Qué</th><th scope="col">Horas</th></tr></thead>
+                <tbody>
+                    {% for cell in dutyCells %}
+                        <tr>
+                            <td>
+                                <strong>{{ cell.weekday.label }}</strong>
+                                {% if cell.weekday.value == todayWeekday.value %}<span class="badge badge--accent">Hoy</span>{% endif %}
+                            </td>
+                            <td>{{ cell.kind.label }}{{ cell.slotIndex in breakIndexes ? ' de recreo' }}</td>
+                            <td class="mono">{{ cell.startsAt|date('H:i', false) }}–{{ cell.endsAt|date('H:i', false) }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <p class="help">Son las de tu horario, las mismas todo el curso. Si falta alguien a esa hora, te llegará aviso con el grupo y el aula.</p>
+        </section>
     {% endif %}
 
     {# La guardia de recreo NO es una fila más del día: es fija todo el curso, así que se cuenta una vez

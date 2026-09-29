@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Agenda;
 
 use App\Entity\AcademicYear;
+use App\Entity\ScheduleEntry;
+use App\Entity\TimeSlot;
 use App\Entity\User;
 use App\Repository\AcademicYearRepository;
+use App\Repository\ScheduleEntryRepository;
 use App\Repository\TimeSlotRepository;
 use App\Service\SchoolCalendar;
 use App\Space\EffectiveTimetable;
@@ -24,6 +27,9 @@ use App\Util\SchoolYear;
  *
  * Only teaching days of an existing course have classes: a weekend, a registered non-teaching day, or a
  * day before the course starts or after it ends has none.
+ *
+ * The same walk also gives the teacher's standing duty periods ({@see dutiesBetween()}): the other half
+ * of what the timetable says they have to turn up to.
  */
 final class MyClasses
 {
@@ -37,6 +43,7 @@ final class MyClasses
         private readonly AcademicYearRepository $years,
         private readonly TimeSlotRepository $timeSlots,
         private readonly SchoolCalendar $calendar,
+        private readonly ScheduleEntryRepository $schedule,
     ) {
     }
 
@@ -65,25 +72,12 @@ final class MyClasses
      */
     public function between(User $teacher, \DateTimeImmutable $from, \DateTimeImmutable $to): array
     {
-        /** @var array<string, array{year: AcademicYear|null, frame: array<int, array{startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}>}> $courses */
-        $courses = [];
+        /** @var array<string, array<int, array{startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}>> $frames */
+        $frames = [];
         $byDay = [];
 
-        for ($day = $from->setTime(0, 0); $day <= $to; $day = $day->modify('+1 day')) {
-            $schoolYear = SchoolYear::current($day);
-            if (!isset($courses[$schoolYear])) {
-                $year = $this->years->findBySchoolYear($schoolYear);
-                $courses[$schoolYear] = [
-                    'year' => $year,
-                    'frame' => null !== $year ? $this->timeSlots->lectiveTimesWithFallback($year)['slots'] : [],
-                ];
-            }
-            ['year' => $year, 'frame' => $frame] = $courses[$schoolYear];
-
-            if (null === $year || !$this->isTeachingDay($year, $day)) {
-                continue;
-            }
-
+        foreach ($this->teachingDays($from, $to) as [$day, $year]) {
+            $frame = $frames[$year->getSchoolYear()] ??= $this->timeSlots->lectiveTimesWithFallback($year)['slots'];
             $ordinals = array_flip(array_keys($frame));
             $sessions = [];
             foreach ($this->timetable->forTeacherOn($year, $teacher, $day) as $slotIndex => $lessons) {
@@ -101,6 +95,48 @@ final class MyClasses
             }
             if ([] !== $sessions) {
                 $byDay[$day->format('Y-m-d')] = $sessions;
+            }
+        }
+
+        return $byDay;
+    }
+
+    /**
+     * A teacher's duty periods (guardia and collaborator) day by day over a range — the standing ones the
+     * timetable gives them, whether or not anybody turns out to be absent ({@see DutySlot}). Same days as
+     * {@see between()}: none outside a course or on a non-teaching day. The cells and the recreos are read
+     * once per course touched.
+     *
+     * @param User               $teacher the teacher
+     * @param \DateTimeImmutable $from    the first day (inclusive)
+     * @param \DateTimeImmutable $to      the last day (inclusive)
+     *
+     * @return array<string, list<DutySlot>> "Y-m-d" → that day's duty periods, earliest first
+     */
+    public function dutiesBetween(User $teacher, \DateTimeImmutable $from, \DateTimeImmutable $to): array
+    {
+        /** @var array<string, array{byWeekday: array<int, list<ScheduleEntry>>, breaks: array<int, true>}> $courses */
+        $courses = [];
+        $byDay = [];
+
+        foreach ($this->teachingDays($from, $to) as [$day, $year]) {
+            $course = $courses[$year->getSchoolYear()] ??= [
+                'byWeekday' => $this->dutyCellsByWeekday($year, $teacher),
+                'breaks' => array_fill_keys(array_map(static fn (TimeSlot $slot): int => $slot->getSlotIndex(), $this->timeSlots->findBreaksByYear($year)), true),
+            ];
+
+            $slots = array_map(
+                static fn (ScheduleEntry $cell): DutySlot => new DutySlot(
+                    $cell->getKind(),
+                    $cell->getSlotIndex(),
+                    isset($course['breaks'][$cell->getSlotIndex()]),
+                    CalendarDate::at($day, $cell->getStartsAt()),
+                    CalendarDate::at($day, $cell->getEndsAt()),
+                ),
+                $course['byWeekday'][(int) $day->format('N')] ?? [],
+            );
+            if ([] !== $slots) {
+                $byDay[$day->format('Y-m-d')] = $slots;
             }
         }
 
@@ -190,6 +226,53 @@ final class MyClasses
         }
 
         return $found;
+    }
+
+    /**
+     * The teaching days of a range, each with its course — the walk {@see between()} and
+     * {@see dutiesBetween()} share, so the two can never disagree about which days count. The course is
+     * looked up once per school year touched, not once per day.
+     *
+     * @param \DateTimeImmutable $from the first day (inclusive)
+     * @param \DateTimeImmutable $to   the last day (inclusive)
+     *
+     * @return \Generator<int, array{\DateTimeImmutable, AcademicYear}> each teaching day at midnight, with its course
+     */
+    private function teachingDays(\DateTimeImmutable $from, \DateTimeImmutable $to): \Generator
+    {
+        /** @var array<string, AcademicYear|null> $years */
+        $years = [];
+
+        for ($day = $from->setTime(0, 0); $day <= $to; $day = $day->modify('+1 day')) {
+            $schoolYear = SchoolYear::current($day);
+            if (!\array_key_exists($schoolYear, $years)) {
+                $years[$schoolYear] = $this->years->findBySchoolYear($schoolYear);
+            }
+            $year = $years[$schoolYear];
+
+            if (null !== $year && $this->isTeachingDay($year, $day)) {
+                yield [$day, $year];
+            }
+        }
+    }
+
+    /**
+     * A teacher's duty cells in a course, grouped by ISO weekday and earliest period first — one query
+     * for the whole range instead of one per day.
+     *
+     * @param AcademicYear $year    the course
+     * @param User         $teacher the teacher
+     *
+     * @return array<int, list<ScheduleEntry>> ISO weekday (1 = Monday) → that weekday's duty cells
+     */
+    private function dutyCellsByWeekday(AcademicYear $year, User $teacher): array
+    {
+        $byWeekday = [];
+        foreach ($this->schedule->dutyCellsFor($year, $teacher) as $cell) {
+            $byWeekday[$cell->getWeekday()->value][] = $cell;
+        }
+
+        return $byWeekday;
     }
 
     /**
