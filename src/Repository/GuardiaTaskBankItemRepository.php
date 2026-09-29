@@ -84,18 +84,22 @@ class GuardiaTaskBankItemRepository extends ServiceEntityRepository
      * @param AcademicYear   $year      the course to pick from
      * @param EducationLevel $level     the level of the class
      * @param string         $subject   the subject the class was going to have
+     * The tasks the group has already done are left out of the draw ({@code $doneByGroup}), unless it has
+     * done every one: then a repeat is still better than sending the class nothing.
+     *
      * @param string|null    $groupName    the group being covered, to respect any section restriction
      * @param int|null       $departmentId narrow to one department, when the screen was filtered by it
+     * @param list<int>      $doneByGroup  ids of the tasks this group has already done
      *
      * @return GuardiaTaskBankItem|null the chosen task, or null when the bank has none for that class
      */
-    public function pickRandom(AcademicYear $year, EducationLevel $level, string $subject, ?string $groupName = null, ?int $departmentId = null): ?GuardiaTaskBankItem
+    public function pickRandom(AcademicYear $year, EducationLevel $level, string $subject, ?string $groupName = null, ?int $departmentId = null, array $doneByGroup = []): ?GuardiaTaskBankItem
     {
         $qb = $this->createQueryBuilder('i')->orderBy('i.timesUsed', 'ASC');
         $this->applyFilters($qb, $year, $level, $subject, $departmentId, false);
 
         /** @var list<GuardiaTaskBankItem> $rows */
-        $rows = self::fittingGroup($qb->getQuery()->getResult(), $groupName);
+        $rows = self::withoutDoneByGroup(self::fittingGroup($qb->getQuery()->getResult(), $groupName), $doneByGroup);
         if ([] === $rows) {
             return null;
         }
@@ -105,6 +109,27 @@ class GuardiaTaskBankItemRepository extends ServiceEntityRepository
         $candidates = array_values(array_filter($rows, static fn (GuardiaTaskBankItem $i): bool => $i->getTimesUsed() === $fewest));
 
         return $candidates[random_int(0, \count($candidates) - 1)];
+    }
+
+    /**
+     * The tasks a group has NOT done yet, keeping their order — or all of them when it has done every
+     * one, since a repeat beats handing the class nothing. Shared by the draw and by the card the bank
+     * screen suggests, so the suggestion stays one the dice could give.
+     *
+     * @param list<GuardiaTaskBankItem> $items       the candidate tasks, in the order to keep
+     * @param list<int>                 $doneByGroup ids of the tasks the group has already done
+     *
+     * @return list<GuardiaTaskBankItem> the tasks still new to the group, or all of them
+     */
+    public static function withoutDoneByGroup(array $items, array $doneByGroup): array
+    {
+        if ([] === $doneByGroup) {
+            return $items;
+        }
+        $done = array_flip($doneByGroup);
+        $fresh = array_values(array_filter($items, static fn (GuardiaTaskBankItem $i): bool => !isset($done[(int) $i->getId()])));
+
+        return [] !== $fresh ? $fresh : $items;
     }
 
     /**

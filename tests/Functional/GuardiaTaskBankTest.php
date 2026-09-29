@@ -21,6 +21,7 @@ use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\DomCrawler\Crawler;
 
 /**
  * The guardia task bank: any teacher may browse it and contribute to it (filling it is the
@@ -144,6 +145,28 @@ final class GuardiaTaskBankTest extends WebTestCase
         $this->em->persist($cover);
 
         return $cover;
+    }
+
+    /**
+     * An earlier guardia (first day of the course) in which a group was given a bank task. Its own absent
+     * teacher, since there is one absence per teacher and day.
+     *
+     * @param GuardiaTaskBankItem $item        the task the group was given
+     * @param string              $group       the group
+     * @param string              $absentEmail the absent teacher's e-mail, unique per call
+     * @param bool                $notCovered  whether that guardia ended as an incident
+     */
+    private function pastCoverWithTask(GuardiaTaskBankItem $item, string $group, string $absentEmail, bool $notCovered = false): void
+    {
+        $absent = (new User())->setFullName('Ausente '.$absentEmail)->setEmail($absentEmail);
+        $this->em->persist($absent);
+        $date = $this->year->getTerm1Start();
+        $absence = (new Absence())->setAbsentTeacher($absent)->setDate($date);
+        $this->em->persist($absence);
+        $this->em->persist((new GuardiaCover())
+            ->setAbsence($absence)->setDate($date)->setSlotIndex(1)
+            ->setAbsentTeacher($absent)->setGroupName($group)->setSubjectName('Matemáticas')
+            ->setBankItem($item)->setNotCovered($notCovered));
     }
 
     /**
@@ -311,6 +334,82 @@ final class GuardiaTaskBankTest extends WebTestCase
         self::assertStringContainsString('Muy usada', $cards->eq(1)->text());
         self::assertStringContainsString('Sugerida', $cards->eq(0)->text(), 'la primera de las menos usadas es la que se propone');
         self::assertCount(1, $crawler->filter('.bank-card.is-suggested'), 'solo se propone una');
+    }
+
+    /**
+     * Eligiendo para un grupo, la tarjeta dice si ESE grupo ya hizo la tarea en otra guardia, y cuándo.
+     * Que la hiciera otro grupo no cuenta, ni una guardia que acabó en incidencia (no llegó a darse).
+     */
+    public function testPickingFlagsTheTasksTheGroupHasAlreadyDone(): void
+    {
+        $maths = $this->department();
+        $guardia = $this->login('guardia@centro.test');
+        $absent = (new User())->setFullName('Ausente')->setEmail('ausente@centro.test');
+        $this->em->persist($absent);
+        $done = $this->bankItem($maths, EducationLevel::ESO_4, 'Ya hecha');
+        $byOther = $this->bankItem($maths, EducationLevel::ESO_4, 'La hizo otro grupo');
+        $incident = $this->bankItem($maths, EducationLevel::ESO_4, 'Guardia con incidencia');
+        $this->pastCoverWithTask($done, 'E4D', 'pasada1@centro.test');
+        $this->pastCoverWithTask($byOther, 'E4A', 'pasada2@centro.test');
+        $this->pastCoverWithTask($incident, 'E4D', 'pasada3@centro.test', notCovered: true);
+        $cover = $this->cover($absent, $guardia);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/banco?para='.$cover->getId());
+
+        self::assertResponseIsSuccessful();
+        $card = static fn (string $title): Crawler => $crawler->filter('.bank-card')->reduce(static fn (Crawler $c): bool => str_contains($c->text(), $title));
+        $expectedDay = $this->year->getTerm1Start()->format('d/m');
+        self::assertStringContainsString('Ya la hizo E4D · '.$expectedDay, $card('Ya hecha')->text());
+        self::assertStringNotContainsString('Ya la hizo', $card('La hizo otro grupo')->text());
+        self::assertStringNotContainsString('Ya la hizo', $card('Guardia con incidencia')->text());
+    }
+
+    /**
+     * Ni se sugiere ni sale en el sorteo una tarea que el grupo ya hizo, aunque sea la menos usada: la
+     * sugerida tiene que seguir siendo una que el azar podría dar.
+     */
+    public function testNeitherTheSuggestionNorTheDrawRepeatATaskForTheSameGroup(): void
+    {
+        $maths = $this->department();
+        $guardia = $this->login('guardia@centro.test');
+        $absent = (new User())->setFullName('Ausente')->setEmail('ausente@centro.test');
+        $this->em->persist($absent);
+        $done = $this->bankItem($maths, EducationLevel::ESO_4, 'Ya hecha', timesUsed: 0);
+        $other = $this->bankItem($maths, EducationLevel::ESO_4, 'Nueva para el grupo', timesUsed: 5);
+        $this->pastCoverWithTask($done, 'E4D', 'pasada1@centro.test');
+        $cover = $this->cover($absent, $guardia);
+        $this->em->flush();
+        $coverId = (int) $cover->getId();
+
+        $crawler = $this->client->request('GET', '/guardias/banco?para='.$coverId);
+        self::assertStringContainsString('Nueva para el grupo', $crawler->filter('.bank-card.is-suggested')->text());
+
+        $token = (string) $crawler->filter('input[name="_token"]')->first()->attr('value');
+        $this->client->request('POST', '/guardias/banco/asignar/'.$coverId, ['_token' => $token]);
+
+        self::assertResponseRedirects();
+        self::assertSame($other->getId(), $this->reloadCover($coverId)->getBankItem()?->getId());
+    }
+
+    /** Si el grupo ya las hizo todas, el sorteo repite antes que dejar a la clase sin nada. */
+    public function testTheDrawRepeatsWhenTheGroupHasDoneEveryTask(): void
+    {
+        $maths = $this->department();
+        $guardia = $this->login('guardia@centro.test');
+        $absent = (new User())->setFullName('Ausente')->setEmail('ausente@centro.test');
+        $this->em->persist($absent);
+        $only = $this->bankItem($maths, EducationLevel::ESO_4, 'La única');
+        $this->pastCoverWithTask($only, 'E4D', 'pasada1@centro.test');
+        $cover = $this->cover($absent, $guardia);
+        $this->em->flush();
+        $coverId = (int) $cover->getId();
+
+        $token = $this->applyToken($coverId);
+        $this->client->request('POST', '/guardias/banco/asignar/'.$coverId, ['_token' => $token]);
+
+        self::assertResponseRedirects();
+        self::assertSame($only->getId(), $this->reloadCover($coverId)->getBankItem()?->getId());
     }
 
     public function testTheCatalogueDoesNotSuggestAnything(): void

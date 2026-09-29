@@ -116,6 +116,40 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
+     * The bank tasks a group has ALREADY been given in other guardias, each with the last day it was —
+     * so whoever picks one for that group can tell it has done it before, and the suggestion and the draw
+     * can skip it. A guardia marked as an incident does not count: it did not take place, so neither did
+     * its task. The bank is per course and so are its ids, so no course filter is needed.
+     *
+     * @param string $groupName      the group, as the parte line names it
+     * @param int    $excludeCoverId the parte line being picked for, which is not "another" guardia
+     *
+     * @return array<int, \DateTimeImmutable> bank task id → the last day the group had it
+     */
+    public function bankTasksDoneByGroup(string $groupName, int $excludeCoverId): array
+    {
+        /** @var list<array{item: int|string, lastDate: string}> $rows */
+        $rows = $this->createQueryBuilder('c')
+            ->select('IDENTITY(c.bankItem) AS item', 'MAX(c.date) AS lastDate')
+            ->andWhere('c.bankItem IS NOT NULL')
+            ->andWhere('c.groupName = :group')
+            ->andWhere('c.id <> :cover')
+            ->andWhere('c.notCovered = false')
+            ->setParameter('group', $groupName)
+            ->setParameter('cover', $excludeCoverId)
+            ->groupBy('c.bankItem')
+            ->getQuery()
+            ->getArrayResult();
+
+        $done = [];
+        foreach ($rows as $row) {
+            $done[(int) $row['item']] = new \DateTimeImmutable($row['lastDate']);
+        }
+
+        return $done;
+    }
+
+    /**
      * The still-ungrouped parte lines of a date and period among the given ids, LOCKED FOR UPDATE.
      *
      * This is what makes grouping safe when two people do it at once. {@code grouping_id} is the one field

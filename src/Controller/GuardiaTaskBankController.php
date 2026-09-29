@@ -106,6 +106,8 @@ final class GuardiaTaskBankController extends AbstractController
         if ([] === $items && null !== $departmentId) {
             $hiddenByDepartment = \count($bank->findFiltered($year, $level, $subject, $cover?->getGroupName(), null, $includeRetired, $picking));
         }
+        // Lo que ese grupo ya hizo en otras guardias: se avisa en la tarjeta y ni se sugiere ni se sortea.
+        $doneByGroup = $this->doneByGroup($cover, $covers);
 
         return $this->render('guardia/bank/index.html.twig', [
             'noCourse' => null,
@@ -116,7 +118,15 @@ final class GuardiaTaskBankController extends AbstractController
             // exactamente una de las que el sorteo podría dar. Solo existe eligiendo para una clase y
             // solo si el sorteo es posible (nivel y materia conocidos): sin eso, "sugerida" sería
             // una etiqueta sin criterio detrás.
-            'suggestedId' => $picking && null !== $level && null !== $subject ? self::firstActiveId($items) : null,
+            'suggestedId' => $picking && null !== $level && null !== $subject
+                // Entre las que están en oferta, como el sorteo: si no, una retirada sin estrenar podía
+                // dejar la pantalla sin sugerida mientras el sorteo sí repetía una ya hecha.
+                ? self::firstActiveId(GuardiaTaskBankItemRepository::withoutDoneByGroup(
+                    array_values(array_filter($items, static fn (GuardiaTaskBankItem $i): bool => $i->isActive())),
+                    array_keys($doneByGroup),
+                ))
+                : null,
+            'doneByGroup' => $doneByGroup,
             // Which rows offer an "editar": resolved here rather than in the template, which cannot ask
             // the chain of command, and so that nobody is shown a link that would 403.
             'curatableIds' => $this->curatableIds($items, $user, $hierarchy),
@@ -165,6 +175,24 @@ final class GuardiaTaskBankController extends AbstractController
             'nivel' => $coverId > 0 ? null : $item->getLevel()->value,
             'retiradas' => $request->request->getBoolean('retiradas') ? '1' : null,
         ]));
+    }
+
+    /**
+     * The bank tasks the covered group has already done in other guardias, with the last day — empty
+     * when just browsing or when the parte line has no group to go by.
+     *
+     * @param GuardiaCover|null      $cover  the parte line being picked for, if any
+     * @param GuardiaCoverRepository $covers the parte lines
+     *
+     * @return array<int, \DateTimeImmutable> bank task id → the last day the group had it
+     */
+    private function doneByGroup(?GuardiaCover $cover, GuardiaCoverRepository $covers): array
+    {
+        $group = $cover?->getGroupName();
+
+        return null !== $cover && null !== $group && '' !== $group
+            ? $covers->bankTasksDoneByGroup($group, (int) $cover->getId())
+            : [];
     }
 
     /**
@@ -271,7 +299,7 @@ final class GuardiaTaskBankController extends AbstractController
      * actually be solved (pick another one, or add the first task for that level).
      */
     #[Route('/asignar/{cover}', name: 'guardia_bank_apply', requirements: ['cover' => '\d+'], methods: ['POST'])]
-    public function apply(GuardiaCover $cover, Request $request, GuardiaTaskBankItemRepository $bank, EntityManagerInterface $em, AcademicYearRepository $years): Response
+    public function apply(GuardiaCover $cover, Request $request, GuardiaTaskBankItemRepository $bank, EntityManagerInterface $em, AcademicYearRepository $years, GuardiaCoverRepository $covers): Response
     {
         $this->denyAccessUnlessGranted(GuardiaCoverVoter::WORK_ON_TASK, $cover);
         $this->assertCsrf($request, 'guardia_bank_apply'.$cover->getId());
@@ -304,7 +332,7 @@ final class GuardiaTaskBankController extends AbstractController
             return $this->redirectToRoute('guardia_bank_index', ['para' => $cover->getId()]);
         } else {
             // El sorteo respeta lo que se está viendo, filtro de departamento incluido.
-            $item = $bank->pickRandom($year, $level, $subject, $cover->getGroupName(), (int) $request->request->get('depto') ?: null);
+            $item = $bank->pickRandom($year, $level, $subject, $cover->getGroupName(), (int) $request->request->get('depto') ?: null, array_keys($this->doneByGroup($cover, $covers)));
         }
 
         if (!$item instanceof GuardiaTaskBankItem || !$item->isActive()) {

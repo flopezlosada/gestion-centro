@@ -213,6 +213,9 @@
                         <span class="bank-card__origin">
                             {% if suggested %}<span class="bank-card__flag">Sugerida · menos usada</span>{% endif %}
                             {% if not item.active %}<span class="bank-card__flag bank-card__flag--muted">Retirada</span>{% endif %}
+                            {#- Que el grupo ya la hizo es lo primero que quiere saber quien elige para él:
+                                repetirle la ficha de la semana pasada es tirar la hora. -#}
+                            {% if doneByGroup[item.id] is defined %}<span class="bank-card__flag bank-card__flag--muted">Ya la hizo {{ cover.groupName }} · {{ doneByGroup[item.id]|date('d/m', false) }}</span>{% endif %}
                             <span class="bank-card__from">Dpto. {{ item.department.name }}</span>
                         </span>
 
