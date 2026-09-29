@@ -27,7 +27,7 @@
         {{ form_start(form, { attr: { novalidate: 'novalidate' } }) }}
             {{ f.submit_error(form) }}
             {{ form_errors(form) }}
-            {{ f.section('Qué y cuándo', [form.title, form.day, form.startTime, form.endTime, form.place, form.reminder]) }}
+            {{ f.section('Qué y cuándo', [form.title, form.day, form.startTime, form.endTime, form.place, form.onlineUrl, form.reminder]) }}
             {# Con quién es la reunión decide el resto de la pantalla: con alumnado o con familias no hay
                acta que rellenar aquí (va a RAICES), y meeting-form.js esconde esos bloques. Sin JS se ven
                igual y el servidor los ignora — ver Meeting::setScope(). #}

@@ -304,6 +304,67 @@ final class MeetingCrudTest extends WebTestCase
     }
 
     /**
+     * Una reunión telemática lleva su enlace, y quien está convocado lo tiene a un toque en el detalle.
+     * Se abre aparte y sin pasar la página de origen (noopener/noreferrer).
+     */
+    public function testAnOnlineMeetingShowsItsVideoCallLinkToThePeopleConvened(): void
+    {
+        $coordinator = $this->user('Lucía Enlace', 'lucia.enlace@centro.test');
+        $attendee = $this->user('Pedro Enlace', 'pedro.enlace@centro.test');
+        $meeting = $this->meeting($coordinator, $attendee);
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+
+        $this->client->loginUser($coordinator);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id.'/editar');
+        $values = $crawler->selectButton('Guardar')->form()->getPhpValues();
+        $values['meeting_form']['onlineUrl'] = 'https://meet.google.com/abc-defg-hij';
+        $this->client->request('POST', '/reuniones/'.$id.'/editar', $values);
+        self::assertResponseRedirects();
+
+        $this->client->loginUser($attendee);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $join = $crawler->selectLink('Unirse a la videollamada');
+        self::assertCount(1, $join);
+        self::assertSame('https://meet.google.com/abc-defg-hij', $join->attr('href'));
+        self::assertSame('noopener noreferrer', $join->attr('rel'));
+    }
+
+    /** Solo http(s): un «javascript:» o un texto suelto no se guarda como enlace. */
+    public function testTheVideoCallLinkMustBeAWebAddress(): void
+    {
+        $coordinator = $this->user('Lucía Mal Enlace', 'lucia.malenlace@centro.test');
+        $meeting = $this->meeting($coordinator);
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+
+        $this->client->loginUser($coordinator);
+        foreach (['javascript:alert(1)', 'sala de profesores'] as $bad) {
+            $crawler = $this->client->request('GET', '/reuniones/'.$id.'/editar');
+            $values = $crawler->selectButton('Guardar')->form()->getPhpValues();
+            $values['meeting_form']['onlineUrl'] = $bad;
+            $this->client->request('POST', '/reuniones/'.$id.'/editar', $values);
+            self::assertResponseStatusCodeSame(422, $bad);
+        }
+
+        $this->em->clear();
+        self::assertNull($this->em->getRepository(Meeting::class)->find($id)?->getOnlineUrl());
+    }
+
+    /** Una presencial no enseña botón de videollamada. */
+    public function testAnInPersonMeetingOffersNoVideoCall(): void
+    {
+        $coordinator = $this->user('Lucía Presencial', 'lucia.presencial@centro.test');
+        $meeting = $this->meeting($coordinator);
+        $this->em->flush();
+
+        $this->client->loginUser($coordinator);
+        $crawler = $this->client->request('GET', '/reuniones/'.$meeting->getId());
+
+        self::assertCount(0, $crawler->selectLink('Unirse a la videollamada'));
+    }
+
+    /**
      * El orden del día con formato se ve con formato en el detalle; lo que no es formato (un script) no
      * llega ni a guardarse ni a pintarse. El cuadro del formulario lleva el editor.
      */
