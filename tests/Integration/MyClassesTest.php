@@ -149,6 +149,40 @@ final class MyClassesTest extends KernelTestCase
     }
 
     /**
+     * Las horas de guardia del horario salen con SU hora (no la del marco lectivo, que no tiene los
+     * recreos), y la del recreo se llama así. Una clase no es una guardia ni al revés.
+     */
+    public function testDutiesComeWithTheirOwnTimesAndTheRecreoIsNamed(): void
+    {
+        $this->cell(0, 'E1A', '0CS6');
+        $this->guardiaCell($this->em, $this->year, $this->teacher, Weekday::MONDAY, 3, '11:10', '11:35');
+        $this->guardiaCell($this->em, $this->year, $this->teacher, Weekday::MONDAY, 2, '10:15', '11:10');
+        $this->em->flush();
+
+        $duties = $this->classes->dutiesBetween($this->teacher, new \DateTimeImmutable(self::MONDAY), new \DateTimeImmutable(self::MONDAY))[self::MONDAY] ?? [];
+
+        self::assertCount(2, $duties, 'la clase de 1ª no es una guardia');
+        self::assertSame('Guardia', $duties[0]->label());
+        self::assertSame('2026-01-12 10:15', $duties[0]->startsAt->format('Y-m-d H:i'));
+        self::assertTrue($duties[1]->duringBreak);
+        self::assertSame('Guardia de recreo', $duties[1]->label());
+        self::assertSame('2026-01-12 11:35', $duties[1]->endsAt->format('Y-m-d H:i'));
+        self::assertCount(1, $this->classes->on($this->teacher, new \DateTimeImmutable(self::MONDAY)), 'y la guardia no es una clase');
+    }
+
+    /** Mismos días que las clases: la guardia del lunes no sale un lunes festivo ni el martes. */
+    public function testDutiesOnlyOnTheirWeekdayAndOnTeachingDays(): void
+    {
+        $this->guardiaCell($this->em, $this->year, $this->teacher, Weekday::MONDAY, 2, '10:15', '11:10');
+        $this->em->persist((new NonLectiveDay())->setDate(new \DateTimeImmutable('2026-01-19'))->setDescription('Fiesta local'));
+        $this->em->flush();
+
+        $twoWeeks = $this->classes->dutiesBetween($this->teacher, new \DateTimeImmutable(self::MONDAY), new \DateTimeImmutable('2026-01-25'));
+
+        self::assertSame([self::MONDAY], array_keys($twoWeeks), 'el lunes 19 es festivo y el resto de días no tiene guardia');
+    }
+
+    /**
      * @param list<array{date: \DateTimeImmutable, class: ClassSession}> $classes
      *
      * @return list<string> "Y-m-d slot" of each class

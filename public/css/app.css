@@ -2463,6 +2463,9 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 }
 .cal-block:hover, .cal-block:focus-visible { background: color-mix(in srgb, var(--event-color, var(--accent)) 28%, var(--surface)); outline: none; }
 .cal-block.is-flagged { border-left-style: dashed; }
+/* Hora de guardia del horario sin nadie a quien cubrir todavía: mismo color que una guardia asignada,
+   pero más tenue, porque es "estás disponible", no "te toca este grupo". */
+.cal-block--duty { background: color-mix(in srgb, var(--event-color, var(--accent)) 7%, var(--surface)); }
 .cal-block__time { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); }
 .cal-block__title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cal-block__subtitle { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

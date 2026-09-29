@@ -6,6 +6,7 @@ namespace App\Controller;
 
 use App\Agenda\ClassSession;
 use App\Agenda\DayTimeline;
+use App\Agenda\DutySlot;
 use App\Agenda\MyClasses;
 use App\Agenda\TimelineBlock;
 use App\Entity\AcademicYear;
@@ -127,6 +128,9 @@ final class CalendarController extends AbstractController
         // Calculadas ya aquí (no dentro del render, como antes) porque la rejilla horaria las necesita
         // para colocar sus bloques.
         $classesByDay = \in_array($view, ['dia', 'semana'], true) ? $myClasses->between($user, $rangeStart, $rangeEnd) : [];
+        // Y sus horas de guardia fijas del horario, haya o no a quien cubrir: sin ellas, un día de guardia
+        // sin ausencias parecía un día sin guardia.
+        $dutiesByDay = \in_array($view, ['dia', 'semana'], true) ? $myClasses->dutiesBetween($user, $rangeStart, $rangeEnd) : [];
         $plansByClass = \in_array($view, ['dia', 'semana'], true) ? $lessonPlans->findForTeacherBetween($user, $rangeStart, $rangeEnd) : [];
         // El marco horario del curso de ese rango, para dar hora real a las guardias (que solo guardan su
         // tramo): mismo origen que MyClasses usa para las clases, así los bloques de una y otra cuadran.
@@ -135,8 +139,8 @@ final class CalendarController extends AbstractController
             : [];
 
         $model = match ($view) {
-            'dia' => $this->dayModel($anchor, $today, $byDay, $eventsByDay, $guardiasByDay, $meetingsByDay, $nonLectiveByDay, $schoolCalendar, $classesByDay, $plansByClass, $frame, $timeline),
-            'semana' => $this->weekModel($anchor, $today, $byDay, $eventsByDay, $guardiasByDay, $meetingsByDay, $nonLectiveByDay, $schoolCalendar, $classesByDay, $plansByClass, $frame, $timeline),
+            'dia' => $this->dayModel($anchor, $today, $byDay, $eventsByDay, $guardiasByDay, $meetingsByDay, $nonLectiveByDay, $schoolCalendar, $classesByDay, $dutiesByDay, $plansByClass, $frame, $timeline),
+            'semana' => $this->weekModel($anchor, $today, $byDay, $eventsByDay, $guardiasByDay, $meetingsByDay, $nonLectiveByDay, $schoolCalendar, $classesByDay, $dutiesByDay, $plansByClass, $frame, $timeline),
             'anio' => $this->yearModel($anchor, $today, $byDay, $eventsByDay, $guardiasByDay, $nonLectiveByDay, $schoolCalendar, $academicYears),
             default => $this->monthModel($anchor, $today, $byDay, $eventsByDay, $nonLectiveByDay, $schoolCalendar),
         };
@@ -309,13 +313,14 @@ final class CalendarController extends AbstractController
      * @param array<string, NonLectiveDay>                                               $nonLectiveByDay non-teaching days indexed by day
      * @param SchoolCalendar                                                             $schoolCalendar  the teaching-day calendar
      * @param array<string, list<ClassSession>>                                          $classesByDay    the teacher's classes indexed by day
+     * @param array<string, list<DutySlot>>                                              $dutiesByDay     the teacher's standing duty periods indexed by day
      * @param array<string, LessonPlan>                                      $plansByClass    "Y-m-d|tramo" → plan
      * @param array<int, array{startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}> $frame           the course's periods, index → clock times
      * @param DayTimeline                                                                $timeline        the grid layout engine
      *
      * @return array{template: string, label: string, day: array<string, mixed>} the template and view data
      */
-    private function dayModel(\DateTimeImmutable $anchor, \DateTimeImmutable $today, array $byDay, array $eventsByDay, array $guardiasByDay, array $meetingsByDay, array $nonLectiveByDay, SchoolCalendar $schoolCalendar, array $classesByDay, array $plansByClass, array $frame, DayTimeline $timeline): array
+    private function dayModel(\DateTimeImmutable $anchor, \DateTimeImmutable $today, array $byDay, array $eventsByDay, array $guardiasByDay, array $meetingsByDay, array $nonLectiveByDay, SchoolCalendar $schoolCalendar, array $classesByDay, array $dutiesByDay, array $plansByClass, array $frame, DayTimeline $timeline): array
     {
         $cell = $this->cell($anchor, null, $today, $byDay, $eventsByDay, $nonLectiveByDay, $schoolCalendar);
         $key = $anchor->format('Y-m-d');
@@ -327,7 +332,7 @@ final class CalendarController extends AbstractController
         // Los eventos personales se quedan en la lista, no en la rejilla: es donde vive su toque de
         // "hecho" (agenda-check en taskUi.event_item), y un bloque de la rejilla no tiene sitio para un
         // <form> dentro de un enlace.
-        $blocks = $this->timedBlocks($anchor, $classes, $cell['guardias'], $cell['meetings'], $frame, $plansByClass);
+        $blocks = $this->timedBlocks($anchor, $classes, $dutiesByDay[$key] ?? [], $cell['guardias'], $cell['meetings'], $frame, $plansByClass);
         [$windowStart, $windowEnd] = $timeline->windowFor($blocks, $anchor);
         $cell['hourMarks'] = $timeline->hourMarks($windowStart, $windowEnd);
         $cell['timeline'] = $timeline->layout($blocks, $windowStart, $windowEnd);
@@ -354,13 +359,14 @@ final class CalendarController extends AbstractController
      * @param array<string, NonLectiveDay>                                               $nonLectiveByDay non-teaching days indexed by day
      * @param SchoolCalendar                                                             $schoolCalendar  the teaching-day calendar
      * @param array<string, list<ClassSession>>                                          $classesByDay    the teacher's classes indexed by day
+     * @param array<string, list<DutySlot>>                                              $dutiesByDay     the teacher's standing duty periods indexed by day
      * @param array<string, LessonPlan>                                      $plansByClass    "Y-m-d|tramo" → plan
      * @param array<int, array{startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}> $frame           the course's periods, index → clock times
      * @param DayTimeline                                                                $timeline        the grid layout engine
      *
      * @return array{template: string, label: string, week: list<array<string, mixed>>, hourMarks: list<array{label: string, top: float}>} the template and view data
      */
-    private function weekModel(\DateTimeImmutable $anchor, \DateTimeImmutable $today, array $byDay, array $eventsByDay, array $guardiasByDay, array $meetingsByDay, array $nonLectiveByDay, SchoolCalendar $schoolCalendar, array $classesByDay, array $plansByClass, array $frame, DayTimeline $timeline): array
+    private function weekModel(\DateTimeImmutable $anchor, \DateTimeImmutable $today, array $byDay, array $eventsByDay, array $guardiasByDay, array $meetingsByDay, array $nonLectiveByDay, SchoolCalendar $schoolCalendar, array $classesByDay, array $dutiesByDay, array $plansByClass, array $frame, DayTimeline $timeline): array
     {
         $start = $this->weekStart($anchor);
         $end = $start->modify('+6 days');
@@ -376,7 +382,7 @@ final class CalendarController extends AbstractController
             $cell['meetings'] = $meetingsByDay[$key] ?? [];
             $cell['unscheduledClasses'] = array_values(array_filter($classes, static fn (ClassSession $c): bool => null === $c->startsAt));
 
-            $blocksByDay[$key] = $this->timedBlocks($date, $classes, $cell['guardias'], $cell['meetings'], $frame, $plansByClass);
+            $blocksByDay[$key] = $this->timedBlocks($date, $classes, $dutiesByDay[$key] ?? [], $cell['guardias'], $cell['meetings'], $frame, $plansByClass);
             $week[] = $cell;
         }
 
@@ -412,6 +418,7 @@ final class CalendarController extends AbstractController
      *
      * @param \DateTimeImmutable                                                         $day          the day the blocks belong to
      * @param list<ClassSession>                                                         $classes      the day's classes
+     * @param list<DutySlot>                                                             $duties       the day's standing duty periods
      * @param list<GuardiaCover>                                                         $guardias     the day's guardias
      * @param list<Meeting>                                                              $meetings     the day's meetings
      * @param array<int, array{startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}> $frame        the course's periods, index → clock times
@@ -419,10 +426,28 @@ final class CalendarController extends AbstractController
      *
      * @return list<TimelineBlock> the blocks
      */
-    private function timedBlocks(\DateTimeImmutable $day, array $classes, array $guardias, array $meetings, array $frame, array $plansByClass): array
+    private function timedBlocks(\DateTimeImmutable $day, array $classes, array $duties, array $guardias, array $meetings, array $frame, array $plansByClass): array
     {
         $dayKey = $day->format('Y-m-d');
         $blocks = [];
+
+        // Una hora de guardia con alguien ya a quien cubrir la cuenta su cobertura (abajo), que dice más:
+        // a quién y dónde. Pintar las dos sería el mismo rato dos veces.
+        $covered = array_flip(array_map(static fn (GuardiaCover $g): int => $g->getSlotIndex(), $guardias));
+        foreach ($duties as $duty) {
+            if (isset($covered[$duty->slotIndex])) {
+                continue;
+            }
+            $blocks[] = new TimelineBlock(
+                'duty',
+                $duty->startsAt,
+                $duty->endsAt,
+                $duty->label(),
+                null,
+                $this->generateUrl('guardia_mine'),
+                self::GUARDIA_COLOR,
+            );
+        }
 
         foreach ($classes as $class) {
             if (null === $class->startsAt || null === $class->endsAt) {
