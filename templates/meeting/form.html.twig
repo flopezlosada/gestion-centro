@@ -52,6 +52,13 @@
     </div>
 {% endblock %}
 
+{% block stylesheets %}
+    {{ parent() }}
+    <link rel="stylesheet" href="{{ asset_ver('/vendor/trix/trix.css') }}">
+{% endblock %}
+
 {% block page_scripts %}
     <script src="{{ asset_ver('/js/meeting-form.js') }}"></script>
+    <script src="{{ asset_ver('/vendor/trix/trix.umd.min.js') }}"></script>
+    <script src="{{ asset_ver('/js/rich-text.js') }}"></script>
 {% endblock %}

@@ -38,7 +38,7 @@
         <div class="detail-block">
             <div class="detail-block__label">Orden del día</div>
             {% if meeting.agenda %}
-                <p class="detail-prose">{{ meeting.agenda|nl2br }}</p>
+                <div class="detail-prose document-body">{{ meeting.agenda|sanitize_html('app.meeting_prose') }}</div>
             {% else %}
                 {#- Las semanales se crean solas y sin orden del día: quien puede escribirlo lo tiene aquí a mano,
                     no solo en el «Modificar» de la barra de arriba, que pasaba desapercibido. -#}
@@ -215,11 +215,11 @@
                                parte que se busca meses después. El orden del día se escribe al convocar. #}
                             <div class="form-row">
                                 <label for="tratado">Desarrollo de la reunión</label>
-                                <textarea id="tratado" name="tratado" rows="8" placeholder="Se abre la sesión a las…&#10;Sobre el primer punto…">{{ meeting.discussion }}</textarea>
+                                <textarea id="tratado" name="tratado" rows="8" data-rich-text placeholder="Se abre la sesión a las…&#10;Sobre el primer punto…">{{ meeting.discussion }}</textarea>
                             </div>
                             <div class="form-row">
                                 <label for="acuerdos">Acuerdos</label>
-                                <textarea id="acuerdos" name="acuerdos" rows="6" placeholder="1. Se acuerda…&#10;2. Se aprueba…">{{ meeting.agreements }}</textarea>
+                                <textarea id="acuerdos" name="acuerdos" rows="6" data-rich-text placeholder="1. Se acuerda…&#10;2. Se aprueba…">{{ meeting.agreements }}</textarea>
                             </div>
                         {% endif %}
                         <div class="detail-block__label">Asistencia</div>
@@ -246,13 +246,13 @@
                 {% else %}
                     {% if meeting.keepsMinutes %}
                         {% if meeting.discussion %}
-                            <p class="detail-prose">{{ meeting.discussion|nl2br }}</p>
+                            <div class="detail-prose document-body">{{ meeting.discussion|sanitize_html('app.meeting_prose') }}</div>
                         {% else %}
                             <p class="help">Todavía no se ha recogido el desarrollo.</p>
                         {% endif %}
                         {% if meeting.agreements %}
                             <div class="detail-block__label">Acuerdos</div>
-                            <p class="detail-prose">{{ meeting.agreements|nl2br }}</p>
+                            <div class="detail-prose document-body">{{ meeting.agreements|sanitize_html('app.meeting_prose') }}</div>
                         {% endif %}
                         <div class="detail-block__label">Asistencia</div>
                     {% endif %}
@@ -354,4 +354,17 @@
         {% endif %}
       </aside>{# /detail-aside #}
     </div>{# /detail-cols #}
+{% endblock %}
+
+{#- El editor con formato solo hace falta a quien escribe el acta; al resto le basta el texto ya pintado. -#}
+{% block stylesheets %}
+    {{ parent() }}
+    {% if canWriteMinutes %}<link rel="stylesheet" href="{{ asset_ver('/vendor/trix/trix.css') }}">{% endif %}
+{% endblock %}
+
+{% block page_scripts %}
+    {% if canWriteMinutes %}
+        <script src="{{ asset_ver('/vendor/trix/trix.umd.min.js') }}"></script>
+        <script src="{{ asset_ver('/js/rich-text.js') }}"></script>
+    {% endif %}
 {% endblock %}

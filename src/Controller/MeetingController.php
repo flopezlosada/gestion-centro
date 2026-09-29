@@ -21,6 +21,7 @@ use App\Service\MeetingNotifier;
 use App\Service\MinutesMailer;
 use App\Service\MinutesPdfRenderer;
 use App\Support\DocumentUpload;
+use App\Support\MeetingProse;
 use App\Util\CalendarDate;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -56,6 +57,11 @@ final class MeetingController extends AbstractController
 {
     /** Private storage subdirectory for the minutes; the accepted files are the shared {@see DocumentUpload}. */
     private const string MINUTES_SUBDIR = 'meeting-minutes';
+
+    public function __construct(
+        private readonly MeetingProse $prose,
+    ) {
+    }
 
     /**
      * "Mis reuniones": what is coming (with the agenda and the place) and the archive of the ones already
@@ -383,13 +389,11 @@ final class MeetingController extends AbstractController
         // aparecer como asistente.
         $present = [] !== $ids ? $users->findBy(['id' => array_map('intval', $ids)]) : [];
 
-        $discussion = trim((string) $request->request->get('tratado'));
-        $agreements = trim((string) $request->request->get('acuerdos'));
         $wasPublished = $meeting->isMinutesPublished();
 
         $meeting->recordSession(
-            '' !== $discussion ? $discussion : null,
-            '' !== $agreements ? $agreements : null,
+            $this->prose->clean((string) $request->request->get('tratado')),
+            $this->prose->clean((string) $request->request->get('acuerdos')),
             $present,
             new \DateTimeImmutable(),
         );
@@ -655,7 +659,7 @@ final class MeetingController extends AbstractController
         $meeting->setScope($data->scope)
             ->setType($data->type)
             ->setTitle($data->title)
-            ->setAgenda($data->agenda)
+            ->setAgenda($this->prose->clean($data->agenda))
             ->setPlace($data->place)
             ->setOnlineUrl($data->onlineUrl)
             ->setEndAt(null !== $data->endTime ? CalendarDate::at($data->day, $data->endTime) : null)

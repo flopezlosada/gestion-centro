@@ -852,7 +852,7 @@ a.badge:hover { border-color: currentColor; }
 .field-help--lead { color: var(--text); margin: 0 0 6px; }
 /* Aviso de fichero rechazado en cliente (file-size-guard.js), antes de que el servidor lo vea siquiera. */
 .field-help--error { color: var(--danger-text); }
-.document-editor trix-editor {
+.document-editor trix-editor, trix-editor.rich-text-editor {
     min-height: 340px;
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);
@@ -862,7 +862,18 @@ a.badge:hover { border-color: currentColor; }
     line-height: 1.55;
     padding: 14px 16px;
 }
-.document-editor trix-toolbar .trix-button-group { border-color: var(--border-strong); }
+trix-toolbar .trix-button-group { border-color: var(--border-strong); }
+/* Los cuadros de una reunión (rich-text.js): el mismo editor, del tamaño de un textarea de formulario. */
+trix-editor.rich-text-editor { min-height: 140px; font-size: 14px; padding: 10px 12px; }
+/* Sin adjuntos: no hay dónde guardarlos, y rich-text.js rechaza el fichero si alguien lo arrastra. */
+trix-toolbar .trix-button-group--file-tools { display: none; }
+/* Botones de la barra en los colores del tema; los iconos de Trix son SVG oscuros, así que en el tema
+   oscuro se invierten para que no desaparezcan sobre el fondo. */
+trix-toolbar .trix-button { background: var(--surface); color: var(--text); border-bottom-color: var(--border-strong); }
+trix-toolbar .trix-button.trix-active { background: var(--accent-weak); color: var(--accent-ink); }
+[data-theme="dark"] trix-toolbar .trix-button--icon::before { filter: invert(1); }
+/* El subrayado no es de serie en Trix: botón de texto (una U subrayada) en vez de icono. */
+trix-toolbar .trix-button--icon-underline { width: 2.6em; font-weight: 600; text-decoration: underline; }
 /* Cuerpo renderizado del documento en la ficha y en otras vistas. */
 .document-body { line-height: 1.6; }
 .document-body :where(ul, ol) { padding-left: 1.4em; }

@@ -34,7 +34,11 @@
         table.data td { padding: 2pt 0; vertical-align: top; }
         table.data td.k { width: 32%; color: #555; }
         p { margin: 4pt 0; }
-        .prose { white-space: pre-wrap; }
+        /* HTML del editor (div, br, listas…), no texto plano: sus saltos ya son etiquetas, así que el
+           pre-wrap de antes doblaría los saltos del propio marcado. */
+        .prose ul, .prose ol { margin: 2pt 0 2pt 14pt; padding: 0; }
+        .prose blockquote { margin: 2pt 0 2pt 10pt; padding-left: 6pt; border-left: 1.5pt solid #bbb; color: #444; }
+        .prose h1 { font-size: 11pt; margin: 6pt 0 2pt; }
         .none { color: #777; font-style: italic; }
         /* Pie de firmas. `width: 100%` en la TABLA y no solo el 50% de las celdas: sin ella Dompdf
            encoge la tabla a su contenido y los dos rótulos salían pegados en la misma línea
@@ -92,14 +96,14 @@
 
     <h2>Orden del día</h2>
     {% if meeting.agenda %}
-        <div class="prose">{{ meeting.agenda }}</div>
+        <div class="prose">{{ meeting.agenda|sanitize_html('app.meeting_prose') }}</div>
     {% else %}
         <p class="none">No se fijó orden del día.</p>
     {% endif %}
 
     <h2>Desarrollo de la reunión</h2>
     {% if meeting.discussion %}
-        <div class="prose">{{ meeting.discussion }}</div>
+        <div class="prose">{{ meeting.discussion|sanitize_html('app.meeting_prose') }}</div>
     {% else %}
         <p class="none">No se recogió el desarrollo.</p>
     {% endif %}
@@ -107,7 +111,7 @@
     {# Los acuerdos, con epígrafe propio: es la parte del acta que se busca meses después. #}
     <h2>Acuerdos</h2>
     {% if meeting.agreements %}
-        <div class="prose">{{ meeting.agreements }}</div>
+        <div class="prose">{{ meeting.agreements|sanitize_html('app.meeting_prose') }}</div>
     {% else %}
         <p class="none">No se recogieron acuerdos.</p>
     {% endif %}

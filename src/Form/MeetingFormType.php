@@ -114,6 +114,8 @@ final class MeetingFormType extends AbstractType
                 'required' => false,
                 'help' => 'Los puntos a tratar. Lo verán los convocados.',
                 'row_attr' => ['data-staff-only' => '1'],
+                // Editor con formato (negrita, listas, enlaces…) montado por rich-text.js sobre este cuadro.
+                'attr' => ['data-rich-text' => '1', 'rows' => 6],
             ])
             ->add('project', EntityType::class, [
                 'label' => 'Proyecto',
