@@ -14,6 +14,10 @@
             {% if error is defined and error %}
                 <p class="form-error">{{ error }}</p>
             {% endif %}
+            {# The idle timeout lands here with its warning; without this it vanished unread. #}
+            {% for message in app.flashes('warning') %}
+                <p class="form-error" role="alert">{{ message }}</p>
+            {% endfor %}
 
             {# One form, two ways in. SSO is the main one where it is configured; the e-mail link is
                always there too, because SSO depends on the Educamadrid domain letting the app in.

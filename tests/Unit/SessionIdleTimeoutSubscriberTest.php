@@ -16,8 +16,9 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
 /**
- * A stale session is closed and sent to the login, except for whoever ticked "Recordarme": their
- * request goes on so the firewall signs them back in from the cookie.
+ * A stale signed-in session is closed and sent to the login, except for whoever ticked "Recordarme":
+ * their request goes on so the firewall signs them back in from the cookie. A session of someone who
+ * has not signed in yet is never expired: it would bounce the login form itself.
  */
 final class SessionIdleTimeoutSubscriberTest extends TestCase
 {
@@ -46,6 +47,17 @@ final class SessionIdleTimeoutSubscriberTest extends TestCase
         self::assertFalse($session->has('marca'), 'la sesión caducada se invalida igual');
     }
 
+    public function testAStaleAnonymousSessionIsLeftAlone(): void
+    {
+        // The login page left open over the timeout, then the form sent: it must reach the
+        // controller and send the link, not come back to the login with nothing said.
+        $event = $this->requestAfterIdling(self::TIMEOUT + 60, [], signedIn: false);
+
+        $this->subscriber()->onKernelRequest($event);
+
+        self::assertNull($event->getResponse());
+    }
+
     public function testAFreshSessionIsLeftAloneWithOrWithoutTheCookie(): void
     {
         foreach ([[], [self::COOKIE => 'firmada']] as $cookies) {
@@ -66,11 +78,12 @@ final class SessionIdleTimeoutSubscriberTest extends TestCase
     }
 
     /**
-     * A main request carrying an existing session last used the given seconds ago.
+     * A main request carrying an existing session last used the given seconds ago, signed in
+     * unless told otherwise.
      *
      * @param array<string, string> $cookies extra cookies besides the session one
      */
-    private function requestAfterIdling(int $idleSeconds, array $cookies): RequestEvent
+    private function requestAfterIdling(int $idleSeconds, array $cookies, bool $signedIn = true): RequestEvent
     {
         $lastUsed = time() - $idleSeconds;
         $storage = new MockArraySessionStorage();
@@ -78,7 +91,7 @@ final class SessionIdleTimeoutSubscriberTest extends TestCase
             MetadataBag::CREATED => $lastUsed,
             MetadataBag::UPDATED => $lastUsed,
             MetadataBag::LIFETIME => 0,
-        ]]);
+        ], '_sf2_attributes' => $signedIn ? ['_security_main' => 'token serializado'] : []]);
         $session = new Session($storage);
 
         $request = new Request(cookies: [$session->getName() => 'id-de-sesion'] + $cookies);
