@@ -20,9 +20,20 @@ final class LoginPageTest extends WebTestCase
 {
     private const SSO_CLIENT_ID = 'sso-client-id.apps.example.test';
 
+    /**
+     * The value .env gives the SSO client id (empty). Restored rather than unset after each test:
+     * unsetting it leaves %env(GOOGLE_CLIENT_ID)% unresolvable for every later test.
+     */
+    private mixed $originalClientId;
+
+    protected function setUp(): void
+    {
+        $this->originalClientId = $_SERVER['GOOGLE_CLIENT_ID'] ?? '';
+    }
+
     protected function tearDown(): void
     {
-        unset($_SERVER['GOOGLE_CLIENT_ID'], $_ENV['GOOGLE_CLIENT_ID']);
+        $_SERVER['GOOGLE_CLIENT_ID'] = $_ENV['GOOGLE_CLIENT_ID'] = $this->originalClientId;
         parent::tearDown();
     }
 
