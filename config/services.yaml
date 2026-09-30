@@ -36,6 +36,9 @@ parameters:
     # Idle-session timeout in seconds. 0 disables it (dev/test, so development sessions don't drop);
     # production overrides it in the when@prod block below.
     app.session_idle_timeout: 0
+    # Name of the "Recordarme" cookie, shared by the firewall (security.yaml) and the idle-timeout
+    # subscriber, which must let a remembered visitor through instead of sending them to the login.
+    app.remember_me_cookie: REMEMBERME
 
 services:
     # default configuration for services in *this* file
@@ -47,6 +50,7 @@ services:
             string $publicDir: '%kernel.project_dir%/public'
             string $pendingImportsDir: '%kernel.project_dir%/var/timetable-imports'
             int $sessionIdleTimeout: '%app.session_idle_timeout%'
+            string $rememberMeCookie: '%app.remember_me_cookie%'
 
     # makes classes in src/ available to be used as services
     # this creates a service per class whose id is the fully-qualified class name
@@ -58,8 +62,8 @@ services:
 
 when@prod:
     parameters:
-        # 30 minutes of inactivity. SSO (Google/Educamadrid) makes re-login a single click, so the
-        # UX cost is low while it protects sessions left open on shared staff-room computers.
+        # 30 minutes of inactivity: protects sessions left open on shared staff-room computers. On a
+        # personal device the "Recordarme" cookie signs the user back in transparently.
         app.session_idle_timeout: 1800
 
 when@test:

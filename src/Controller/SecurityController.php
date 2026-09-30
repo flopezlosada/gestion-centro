@@ -25,17 +25,11 @@ class SecurityController extends AbstractController
 {
     /**
      * SSO is enabled only when the Google/Educamadrid OAuth client id is set (in .env.local);
-     * empty by default, which keeps the "Entrar con Educamadrid" button disabled.
+     * empty by default, which keeps the "Entrar con Educamadrid" button disabled. The magic-link
+     * form is always offered too: SSO depends on the Educamadrid domain letting the app in, and the
+     * day it does not, the e-mail link is the way in.
      */
     private readonly bool $googleSsoEnabled;
-
-    /**
-     * The magic-link e-mail form is only offered when SSO is NOT configured. In production SSO is
-     * the sole entry point (so staff don't mistakenly type their e-mail instead of using SSO);
-     * in dev, where SSO is off, the magic link remains the way in. This coupling makes the
-     * "both entry points visible in production" state unrepresentable rather than config-dependent.
-     */
-    private readonly bool $magicLinkEnabled;
 
     public function __construct(
         #[Autowire('%env(GOOGLE_CLIENT_ID)%')]
@@ -46,11 +40,15 @@ class SecurityController extends AbstractController
         private readonly string $mailerFrom,
     ) {
         $this->googleSsoEnabled = '' !== $googleClientId;
-        $this->magicLinkEnabled = !$this->googleSsoEnabled;
     }
 
     /**
      * Shows the e-mail form and, on submit, sends a magic login link to a known user.
+     *
+     * The "Recordarme" checkbox is ticked here but the cookie is set wherever the link is followed,
+     * so the choice travels inside the link as the remember-me parameter. It sits outside the signed
+     * part of the URL, which is fine: it only decides whether the person who legitimately follows
+     * the link stays signed in on that device.
      */
     #[Route('/login', name: 'login', methods: ['GET', 'POST'])]
     public function login(Request $request, UserRepository $users, LoginLinkHandlerInterface $loginLinkHandler, MailerInterface $mailer, AuthenticationUtils $authenticationUtils): Response
@@ -66,12 +64,6 @@ class SecurityController extends AbstractController
                 'google_sso_enabled' => $this->googleSsoEnabled,
                 'error' => $error?->getMessageKey(),
             ]);
-        }
-
-        // When SSO is the sole entry point the e-mail form is not rendered; reject any stray POST
-        // (e.g. a stale/bookmarked form or a script) instead of quietly sending a link.
-        if (!$this->magicLinkEnabled) {
-            return $this->redirectToRoute('login');
         }
 
         // Throttle per IP to prevent abuse / mail-bombing a user with link requests.
@@ -94,12 +86,15 @@ class SecurityController extends AbstractController
         $user = $users->findActiveByEmail($email);
 
         if (null !== $user) {
-            $loginLink = $loginLinkHandler->createLoginLink($user);
+            $url = $loginLinkHandler->createLoginLink($user)->getUrl();
+            if ($request->request->getBoolean('_remember_me')) {
+                $url .= '&_remember_me=1';
+            }
             $mailer->send((new Email())
                 ->from($this->mailerFrom)
                 ->to($user->getEmail())
                 ->subject('Tu enlace de acceso')
-                ->text("Entra en la aplicación con este enlace (válido 10 minutos):\n\n".$loginLink->getUrl()));
+                ->text("Entra en la aplicación con este enlace (válido 10 minutos):\n\n".$url));
         }
 
         // Always show the same confirmation, even if the e-mail is unknown, so the page does

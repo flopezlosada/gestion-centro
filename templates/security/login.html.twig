@@ -15,20 +15,23 @@
                 <p class="form-error">{{ error }}</p>
             {% endif %}
 
-            {# Exactly one entry point is ever shown: SSO when it is configured (production),
-               otherwise the magic-link e-mail form (dev). They are mutually exclusive by design
-               so staff can't confuse one for the other. #}
-            {% if google_sso_enabled %}
-                <a class="btn" href="{{ path('connect_google') }}">Entrar con cuenta institucional</a>
-            {% else %}
-                <form id="login-form" method="post" action="{{ path('login') }}" novalidate>
-                    <div class="form-row">
-                        <label for="email">Correo electrónico</label>
-                        <input type="email" id="email" name="email" required autofocus inputmode="email" autocomplete="email">
-                    </div>
-                    <button class="btn" type="submit">Enviar enlace de acceso</button>
-                </form>
-            {% endif %}
+            {# One form, two ways in. SSO is the main one where it is configured; the e-mail link is
+               always there too, because SSO depends on the Educamadrid domain letting the app in.
+               A single form lets one "Recordarme" checkbox serve both: the SSO button submits it
+               by GET to /connect/google (formaction), the other button by POST for the link. #}
+            <form id="login-form" method="post" action="{{ path('login') }}" novalidate>
+                {% if google_sso_enabled %}
+                    <button class="btn" type="submit" formaction="{{ path('connect_google') }}" formmethod="get" formnovalidate data-sso>Entrar con cuenta institucional</button>
+                    <p class="auth-or">Si no puedes, te enviamos un enlace a tu correo</p>
+                {% endif %}
+                <div class="form-row">
+                    <label for="email">Correo electrónico</label>
+                    <input type="email" id="email" name="email" required {{ google_sso_enabled ? '' : 'autofocus' }} inputmode="email" autocomplete="email">
+                </div>
+                <button class="btn{{ google_sso_enabled ? ' secondary' }}" type="submit" data-magic-link>Enviar enlace de acceso</button>
+                <label class="choice auth-remember"><input type="checkbox" name="_remember_me" value="1"> Recordarme en este dispositivo</label>
+                <p class="auth-hint">Seguirás dentro 30 días. No lo marques en un ordenador compartido.</p>
+            </form>
 
             <a class="auth-secondary" href="{{ path('privacy_notice_public') }}">Protección de datos</a>
             <p class="auth-foot">Gestión del día a día del centro</p>
@@ -47,9 +50,23 @@
                 return;
             }
             var email = document.getElementById('email');
+            var magicLink = form.querySelector('[data-magic-link]');
             var emailPattern = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
+            // Enter in the e-mail field would submit through the FIRST button, which is the SSO one
+            // when it is shown; whoever typed an address wants the link.
+            email.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    form.requestSubmit(magicLink);
+                }
+            });
+
             form.addEventListener('submit', function (event) {
+                // The SSO button needs no address.
+                if (event.submitter && event.submitter.hasAttribute('data-sso')) {
+                    return;
+                }
                 var value = (email.value || '').trim();
                 if (value === '' || !emailPattern.test(value)) {
                     event.preventDefault();

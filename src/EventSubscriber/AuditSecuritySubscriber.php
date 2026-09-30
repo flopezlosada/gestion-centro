@@ -6,11 +6,14 @@ namespace App\EventSubscriber;
 
 use App\Service\AuditLogger;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+use Symfony\Component\Security\Http\Authenticator\RememberMeAuthenticator;
 use Symfony\Component\Security\Http\Event\LoginSuccessEvent;
 use Symfony\Component\Security\Http\Event\LogoutEvent;
 
 /**
- * Records sign-ins and sign-outs (magic link or SSO) in the activity trail.
+ * Records sign-ins and sign-outs (magic link or SSO) in the activity trail. A session rebuilt from
+ * the "Recordarme" cookie is recorded apart: it is not someone typing their way in, and on a
+ * remembered device it happens after every idle timeout.
  */
 class AuditSecuritySubscriber implements EventSubscriberInterface
 {
@@ -29,9 +32,17 @@ class AuditSecuritySubscriber implements EventSubscriberInterface
         ];
     }
 
+    /**
+     * Logs a sign-in, telling a fresh one from a session rebuilt from the "Recordarme" cookie.
+     */
     public function onLoginSuccess(LoginSuccessEvent $event): void
     {
-        $this->auditLogger->log('user.login', summary: 'Inicio de sesión correcto.', actor: $event->getUser()->getUserIdentifier());
+        $remembered = $event->getAuthenticator() instanceof RememberMeAuthenticator;
+        $this->auditLogger->log(
+            $remembered ? 'user.login_remembered' : 'user.login',
+            summary: $remembered ? 'Sesión recuperada con «Recordarme».' : 'Inicio de sesión correcto.',
+            actor: $event->getUser()->getUserIdentifier(),
+        );
     }
 
     public function onLogout(LogoutEvent $event): void
