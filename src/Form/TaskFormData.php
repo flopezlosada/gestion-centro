@@ -10,6 +10,7 @@ use App\Entity\Task;
 use App\Entity\TaskResponsibility;
 use App\Entity\User;
 use App\Enum\DeliverableRequirement;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
@@ -28,6 +29,20 @@ final class TaskFormData
     public string $title = '';
 
     public ?string $description = null;
+
+    /** A link with what is needed to do the task. Only http(s): anything else is a link nobody should follow. */
+    #[Assert\Url(message: 'Pega el enlace completo (empieza por https://).', protocols: ['https', 'http'], requireTld: true)]
+    #[Assert\Length(max: 500)]
+    public ?string $infoUrl = null;
+
+    /**
+     * A file with what is needed to do the task. Not validated here but by the controller with
+     * {@see \App\Support\DocumentUpload}, the one policy for uploaded documents, which also stores it.
+     */
+    public ?UploadedFile $infoFile = null;
+
+    /** Ticked, when editing, to drop the information file the task already had. */
+    public bool $removeInfoFile = false;
 
     #[Assert\NotNull(message: 'Pon una fecha límite.')]
     public ?\DateTimeImmutable $dueDate = null;
@@ -168,6 +183,7 @@ final class TaskFormData
         $data = new self();
         $data->title = $task->getTitle();
         $data->description = $task->getDescription();
+        $data->infoUrl = $task->getInfoUrl();
         $data->dueDate = $task->getDueDate();
         $data->mandatory = $task->isMandatory();
         $data->deliverable = $task->getDeliverable();

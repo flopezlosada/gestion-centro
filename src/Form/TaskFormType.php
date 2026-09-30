@@ -9,13 +9,16 @@ use App\Entity\Role;
 use App\Entity\User;
 use App\Enum\DeliverableRequirement;
 use App\Service\SchoolCalendar;
+use App\Support\DocumentUpload;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
 use Symfony\Component\Form\Extension\Core\Type\EnumType;
+use Symfony\Component\Form\Extension\Core\Type\FileType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
+use Symfony\Component\Form\Extension\Core\Type\UrlType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -42,6 +45,21 @@ final class TaskFormType extends AbstractType
         $builder
             ->add('title', TextType::class, ['label' => 'Título'])
             ->add('description', TextareaType::class, ['label' => 'Descripción', 'required' => false])
+            // Lo que hace falta para hacer la tarea: un enlace, un archivo o los dos. Es lo que SALE con la
+            // tarea; lo que vuelve es el entregable.
+            ->add('infoUrl', UrlType::class, [
+                'label' => 'Enlace con información',
+                'required' => false,
+                'default_protocol' => 'https',
+                'help' => 'Opcional: el documento, la carpeta o el formulario que hace falta para hacerla.',
+            ])
+            ->add('infoFile', FileType::class, [
+                'label' => 'Archivo con información',
+                'required' => false,
+                'help' => sprintf('Opcional. PDF, Office, texto o imagen. Máximo %d MB.', intdiv(DocumentUpload::MAX_BYTES, 1024 * 1024)),
+                // Avisa del tamaño antes de enviar (file-size-guard.js), con el mismo límite que el servidor.
+                'attr' => ['data-max-bytes' => DocumentUpload::MAX_BYTES],
+            ])
             ->add('dueDate', DateType::class, [
                 'label' => 'Fecha límite',
                 'widget' => 'single_text',
@@ -112,6 +130,13 @@ final class TaskFormType extends AbstractType
             ]);
         }
 
+        if (true === $options['has_info_file']) {
+            $builder->add('removeInfoFile', CheckboxType::class, [
+                'label' => 'Quitar el archivo actual',
+                'required' => false,
+            ]);
+        }
+
         // Qué hay que entregar. Solo al crear: cambiarlo con la tarea en marcha dejaría a alguien con un
         // enlace ya entregado y un cartel pidiéndole un archivo.
         if (true === $options['include_deliverable']) {
@@ -150,11 +175,13 @@ final class TaskFormType extends AbstractType
             'assignable_users' => [],
             'include_deliverable' => true,
             'multiple_assignees' => false,
+            'has_info_file' => false,
         ]);
         $resolver->setAllowedTypes('assignable_roles', 'array');
         $resolver->setAllowedTypes('assignable_units', 'array');
         $resolver->setAllowedTypes('assignable_users', 'array');
         $resolver->setAllowedTypes('include_deliverable', 'bool');
         $resolver->setAllowedTypes('multiple_assignees', 'bool');
+        $resolver->setAllowedTypes('has_info_file', 'bool');
     }
 }

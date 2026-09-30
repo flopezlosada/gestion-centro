@@ -23,6 +23,12 @@
                 {{ form_errors(form.title) }}
             </div>
             {{ f.field(form.description) }}
+            {{ f.field(form.infoUrl) }}
+            {{ f.field(form.infoFile) }}
+            {% if form.removeInfoFile is defined %}
+                <p class="help">Archivo actual: {{ task.infoFileName }}. Si subes otro, lo sustituye.</p>
+                {{ f.toggles([form.removeInfoFile]) }}
+            {% endif %}
             {{ f.field(form.dueDate) }}
             {{ f.responsibility(form) }}
             {{ f.toggles([form.mandatory]) }}

@@ -132,6 +132,26 @@ class Task implements Auditable
     #[ORM\Column(name: 'deliverable_file_name', length: 255, nullable: true)]
     private ?string $deliverableFileName = null;
 
+    /**
+     * A link with what is needed to do the task (the document to fill in, the instructions, the
+     * form…), set by whoever creates it. The opposite direction of {@see $deliverableReference}: that
+     * one is what comes BACK, this one is what goes out with the task. Only http(s), by the form.
+     */
+    #[ORM\Column(name: 'info_url', length: 500, nullable: true)]
+    private ?string $infoUrl = null;
+
+    /**
+     * A file with what is needed to do the task, in private storage and served only to whoever can see
+     * the task. Set with {@see $infoFileName} through {@see attachInfoFile()}. Creating one task for
+     * several people stores the file ONCE and all their tasks point at it, so a path may be shared.
+     */
+    #[ORM\Column(name: 'info_file_path', length: 255, nullable: true)]
+    private ?string $infoFilePath = null;
+
+    /** Original client filename of the information file, so the download keeps a meaningful name. */
+    #[ORM\Column(name: 'info_file_name', length: 255, nullable: true)]
+    private ?string $infoFileName = null;
+
     #[ORM\Column(name: 'created_at', type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
 
@@ -522,6 +542,53 @@ class Task implements Auditable
     {
         $this->deliverableFilePath = null !== $path && '' !== $path ? $path : null;
         $this->deliverableFileName = null !== $this->deliverableFilePath ? ($name ?? 'documento') : null;
+
+        return $this;
+    }
+
+    /**
+     * The link with what is needed to do the task, if its creator left one.
+     *
+     * @return string|null the URL, or null
+     */
+    public function getInfoUrl(): ?string
+    {
+        return $this->infoUrl;
+    }
+
+    /**
+     * Sets the link with what is needed to do the task; blank drops it.
+     *
+     * @param string|null $infoUrl the URL, already validated as http(s)
+     */
+    public function setInfoUrl(?string $infoUrl): static
+    {
+        $this->infoUrl = null !== $infoUrl && '' !== trim($infoUrl) ? trim($infoUrl) : null;
+
+        return $this;
+    }
+
+    public function getInfoFilePath(): ?string
+    {
+        return $this->infoFilePath;
+    }
+
+    public function getInfoFileName(): ?string
+    {
+        return $this->infoFileName;
+    }
+
+    /**
+     * Attaches (or, with nulls, drops) the information file. Path and name move together, same as
+     * {@see attachDeliverableFile()}: a path without a name is a file nobody can download.
+     *
+     * @param string|null $path the storage-relative path, or null to drop it
+     * @param string|null $name the original filename, or null to drop it
+     */
+    public function attachInfoFile(?string $path, ?string $name): static
+    {
+        $this->infoFilePath = null !== $path && '' !== $path ? $path : null;
+        $this->infoFileName = null !== $this->infoFilePath ? ($name ?? 'documento') : null;
 
         return $this;
     }

@@ -604,6 +604,127 @@ final class TaskCrudTest extends WebTestCase
         return new UploadedFile($path, $name, null, null, true);
     }
 
+    /**
+     * Quien crea la tarea puede mandar con ella lo que hace falta para hacerla: un enlace y un archivo. Para
+     * varias personas el archivo se guarda UNA vez y todas lo tienen; lo descarga quien ve la tarea, y
+     * nadie más.
+     *
+     * @return array{0: int, 1: int, 2: User} the two task ids and an outsider who cannot see them
+     */
+    private function createTwoTasksWithInformation(): array
+    {
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $other = (new Department())->setCode('lang')->setName('Lengua');
+        $this->em->persist($unit);
+        $this->em->persist($other);
+        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
+        $this->em->persist($headRole);
+        $this->em->persist($teacherRole);
+        $boss = $this->user('jefa@centro.test', $unit);
+        $boss->addAssignedRole($headRole);
+        $one = $this->user('uno@centro.test', $unit);
+        $one->addAssignedRole($teacherRole);
+        $two = $this->user('dos@centro.test', $unit);
+        $two->addAssignedRole($teacherRole);
+        $outsider = $this->user('ajeno@centro.test', $other);
+        $this->em->flush();
+        $this->client->loginUser($boss);
+
+        $crawler = $this->client->request('GET', '/tareas/nueva');
+        $form = $crawler->selectButton('Crear tarea')->form();
+        $form['task_form[title]'] = 'Rellenar la encuesta';
+        $form['task_form[dueDate]'] = '2026-09-15';
+        $form['task_form[responsibilityRole]'] = (string) $teacherRole->getId();
+        $form['task_form[responsibilityUnit]'] = (string) $unit->getId();
+        $form['task_form[infoUrl]'] = 'https://docs.ejemplo.test/encuesta';
+        $values = $form->getPhpValues();
+        $values['task_form']['responsibilityUsers'] = [(string) $one->getId(), (string) $two->getId()];
+        $this->client->request('POST', $form->getUri(), $values, ['task_form' => ['infoFile' => $this->upload('instrucciones.pdf')]]);
+        self::assertResponseRedirects('/tareas');
+
+        $ids = array_map(
+            static fn (Task $t): int => (int) $t->getId(),
+            self::getContainer()->get(EntityManagerInterface::class)->getRepository(Task::class)->findBy(['title' => 'Rellenar la encuesta'], ['id' => 'ASC']),
+        );
+        self::assertCount(2, $ids);
+
+        return [$ids[0], $ids[1], $outsider];
+    }
+
+    public function testATaskCarriesItsInformationLinkAndFileForEveryoneItIsFor(): void
+    {
+        [$first, $second, $outsider] = $this->createTwoTasksWithInformation();
+
+        $a = $this->reloadTask($first);
+        $b = $this->reloadTask($second);
+        self::assertSame('https://docs.ejemplo.test/encuesta', $a->getInfoUrl());
+        self::assertSame('instrucciones.pdf', $a->getInfoFileName());
+        self::assertNotNull($a->getInfoFilePath());
+        self::assertSame($a->getInfoFilePath(), $b->getInfoFilePath(), 'un solo archivo para las dos');
+
+        $this->client->loginUser($a->getAssignedUser() ?? throw new \LogicException());
+        $crawler = $this->client->request('GET', '/tareas/'.$first);
+        self::assertSame('https://docs.ejemplo.test/encuesta', $crawler->selectLink('Abrir el enlace con información')->attr('href'));
+        self::assertSame('noopener noreferrer', $crawler->selectLink('Abrir el enlace con información')->attr('rel'));
+        $this->client->request('GET', '/tareas/'.$first.'/informacion/archivo');
+        self::assertResponseIsSuccessful();
+        self::assertStringContainsString('instrucciones.pdf', (string) $this->client->getResponse()->headers->get('Content-Disposition'));
+
+        $this->client->loginUser($outsider);
+        $this->client->request('GET', '/tareas/'.$first.'/informacion/archivo');
+        self::assertResponseStatusCodeSame(403);
+    }
+
+    /** Quitarle el archivo a UNA de las tareas no se lo quita a las demás: el fichero sigue en su sitio. */
+    public function testDroppingTheFileFromOneTaskKeepsItForTheOthers(): void
+    {
+        [$first, $second] = $this->createTwoTasksWithInformation();
+        $shared = (string) $this->reloadTask($first)->getInfoFilePath();
+
+        $crawler = $this->client->request('GET', '/tareas/'.$first.'/editar');
+        $form = $crawler->selectButton('Guardar')->form();
+        $values = $form->getPhpValues();
+        $values['task_form']['removeInfoFile'] = '1';
+        $this->client->request('POST', $form->getUri(), $values);
+        self::assertResponseRedirects();
+
+        self::assertNull($this->reloadTask($first)->getInfoFilePath());
+        self::assertSame($shared, $this->reloadTask($second)->getInfoFilePath());
+        self::assertFileExists(self::getContainer()->get(FileUploader::class)->absolutePath($shared), 'la otra tarea lo sigue usando');
+    }
+
+    /** El archivo pasa por la política de documentos del centro: un ejecutable no se guarda ni crea tareas. */
+    public function testTheInformationFileMustBeAnAcceptedDocument(): void
+    {
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $headRole = (new Role())->setCode('head_dept')->setName('Jefatura de departamento')->setPerDepartment(true)->setHierarchyLevel(10);
+        $teacherRole = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
+        $this->em->persist($headRole);
+        $this->em->persist($teacherRole);
+        $boss = $this->user('jefa@centro.test', $unit);
+        $boss->addAssignedRole($headRole);
+        $me = $this->user('profe@centro.test', $unit);
+        $me->addAssignedRole($teacherRole);
+        $this->em->flush();
+        $this->client->loginUser($boss);
+
+        $crawler = $this->client->request('GET', '/tareas/nueva');
+        $form = $crawler->selectButton('Crear tarea')->form();
+        $form['task_form[title]'] = 'Con adjunto malo';
+        $form['task_form[dueDate]'] = '2026-09-15';
+        $form['task_form[responsibilityRole]'] = (string) $teacherRole->getId();
+        $form['task_form[responsibilityUnit]'] = (string) $unit->getId();
+        $values = $form->getPhpValues();
+        $values['task_form']['responsibilityUsers'] = [(string) $me->getId()];
+        $this->client->request('POST', $form->getUri(), $values, ['task_form' => ['infoFile' => $this->upload('programa.exe')]]);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertStringContainsString('tipo de archivo no admitido', (string) $this->client->getResponse()->getContent());
+        self::assertCount(0, self::getContainer()->get(EntityManagerInterface::class)->getRepository(Task::class)->findBy(['title' => 'Con adjunto malo']));
+    }
+
     /** Devolver sin decir qué cambiar deja a la otra persona adivinando: el servidor lo frena. */
     public function testATaskCannotBeSentBackWithoutSayingWhatToChange(): void
     {

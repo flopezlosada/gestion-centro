@@ -25,6 +25,8 @@
                 {{ form_errors(form.title) }}
             </div>
             {{ f.field(form.description) }}
+            {{ f.field(form.infoUrl) }}
+            {{ f.field(form.infoFile) }}
             {{ f.field(form.dueDate) }}
             {{ f.responsibility(form) }}
             {{ f.toggles([form.mandatory]) }}

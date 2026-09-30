@@ -267,6 +267,14 @@
         <div class="detail-block">
             <div class="detail-block__label">Instrucciones</div>
             {% if task.description %}<p class="detail-prose">{{ task.description|nl2br }}</p>{% else %}<p class="detail-prose detail-prose--absent">Esta tarea no tenía descripción.</p>{% endif %}
+            {#- Lo que hace falta para hacerla, si quien la creó lo dejó: junto a las instrucciones, que es
+                donde se busca. El enlace se abre aparte; el archivo pasa por su ruta, que mira quién puede verla. -#}
+            {% if task.infoUrl or task.infoFilePath %}
+                <ul class="task-info">
+                    {% if task.infoUrl %}<li><a href="{{ task.infoUrl }}" target="_blank" rel="noopener noreferrer">Abrir el enlace con información</a></li>{% endif %}
+                    {% if task.infoFilePath %}<li><a href="{{ path('task_info_download', { id: task.id }) }}">Descargar «{{ task.infoFileName }}»</a></li>{% endif %}
+                </ul>
+            {% endif %}
         </div>
 
         {# Con qué se entrega: un DATO de la tarea, en fila neutra, y solo mientras no hay entrega. Iba en
