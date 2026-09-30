@@ -28,6 +28,14 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
  */
 class SessionIdleTimeoutSubscriber implements EventSubscriberInterface
 {
+    /**
+     * Where the firewall's ContextListener keeps the signed-in token ("_security_" + the "main"
+     * firewall's context). A session without it belongs to someone who has not signed in yet (the
+     * login page, a requested link): there is nothing to protect, and expiring it would bounce the
+     * login form itself back to the login, silently.
+     */
+    private const SIGNED_IN_SESSION_KEY = '_security_main';
+
     public function __construct(
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly int $sessionIdleTimeout,
@@ -48,7 +56,8 @@ class SessionIdleTimeoutSubscriber implements EventSubscriberInterface
     /**
      * Invalidates the session and redirects to the login page when the time since its last use
      * exceeds the configured idle timeout. No-op when the timeout is disabled, on sub-requests, or
-     * when the request carries no pre-existing session cookie (nothing to expire). A remembered
+     * when the request carries no pre-existing session cookie (nothing to expire). Only a signed-in
+     * session expires: an anonymous one (someone on the login page) is left alone. A remembered
      * visitor gets the session invalidated but no redirect: the firewall signs them back in.
      */
     public function onKernelRequest(RequestEvent $event): void
@@ -67,6 +76,10 @@ class SessionIdleTimeoutSubscriber implements EventSubscriberInterface
             // Starting an already-existing session (the cookie is present) just reloads its data;
             // it is also needed a moment later for the authenticated request anyway.
             $session->start();
+        }
+
+        if (!$session->has(self::SIGNED_IN_SESSION_KEY)) {
+            return;
         }
 
         // getLastUsed() returns the previous request's timestamp: MetadataBag::initialize() captures
