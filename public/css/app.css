@@ -1373,6 +1373,9 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 }
 .auth-card .form-row { text-align: left; }
 .auth-card hr { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
+.auth-card .auth-or { color: var(--text-muted); font-size: 14px; margin: 18px 0 10px; }
+.auth-card .auth-remember { margin-top: 16px; font-size: 14.5px; }
+.auth-card .auth-hint { text-align: left; color: var(--text-muted); font-size: 13px; margin: 4px 0 0 26px; }
 /* =============================================================================
    Protección de datos — una hoja para LEER, no un formulario: la medida de línea de un texto, la
    información básica como ficha (etiqueta · texto) y el botón al pie, después de lo leído.
