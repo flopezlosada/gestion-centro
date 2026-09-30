@@ -16,6 +16,7 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
 use Symfony\Component\Security\Core\Exception\AuthenticationException;
 use Symfony\Component\Security\Core\Exception\CustomUserMessageAuthenticationException;
+use Symfony\Component\Security\Http\Authenticator\Passport\Badge\RememberMeBadge;
 use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
 use Symfony\Component\Security\Http\SecurityRequestAttributes;
 use Symfony\Component\Security\Http\Authenticator\Passport\Passport;
@@ -28,6 +29,12 @@ use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPasspor
  */
 class GoogleAuthenticator extends OAuth2Authenticator
 {
+    /**
+     * Session key where {@see \App\Controller\GoogleController::connect()} parks the "Recordarme"
+     * choice for the length of the round trip to Google.
+     */
+    public const REMEMBER_ME_SESSION_KEY = 'google_sso.remember_me';
+
     public function __construct(
         private readonly ClientRegistry $clientRegistry,
         private readonly UserRepository $users,
@@ -45,6 +52,10 @@ class GoogleAuthenticator extends OAuth2Authenticator
      * verified by Google (the standard OAuth/OIDC flow never issues a token for an unverified
      * address); hence no explicit $googleUser->isEmailTrustworthy() check is needed. The
      * allow-list lookup below is the actual access control.
+     *
+     * The callback request does not carry the "Recordarme" checkbox (Google builds it), so the
+     * remember-me badge is enabled here from the choice parked in the session, which is consumed so
+     * it never leaks into a later sign-in.
      */
     public function authenticate(Request $request): Passport
     {
@@ -56,6 +67,10 @@ class GoogleAuthenticator extends OAuth2Authenticator
         }
 
         $email = strtolower(trim((string) $googleUser->getEmail()));
+        $rememberMe = new RememberMeBadge();
+        if (true === $request->getSession()->remove(self::REMEMBER_ME_SESSION_KEY)) {
+            $rememberMe->enable();
+        }
 
         return new SelfValidatingPassport(new UserBadge($email, function (string $identifier): User {
             $user = $this->users->findActiveByEmail($identifier);
@@ -67,7 +82,7 @@ class GoogleAuthenticator extends OAuth2Authenticator
             }
 
             return $user;
-        }));
+        }), [$rememberMe]);
     }
 
     public function onAuthenticationSuccess(Request $request, TokenInterface $token, string $firewallName): ?Response

@@ -22,13 +22,16 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
  * Disabled when the timeout is 0 (dev/test); production sets it via app.session_idle_timeout.
  * Runs before the firewall (priority 9 > firewall's 8): when the session is stale it is invalidated
  * and a redirect is returned, which stops propagation, so the firewall never authenticates a
- * doomed session.
+ * doomed session. The exception is a visitor carrying the "Recordarme" cookie: they asked to stay
+ * signed in on this device, so the request goes on and the firewall signs them back in from the
+ * cookie (a fresh authentication, user checker included) instead of bouncing them to the login.
  */
 class SessionIdleTimeoutSubscriber implements EventSubscriberInterface
 {
     public function __construct(
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly int $sessionIdleTimeout,
+        private readonly string $rememberMeCookie,
     ) {
     }
 
@@ -45,7 +48,8 @@ class SessionIdleTimeoutSubscriber implements EventSubscriberInterface
     /**
      * Invalidates the session and redirects to the login page when the time since its last use
      * exceeds the configured idle timeout. No-op when the timeout is disabled, on sub-requests, or
-     * when the request carries no pre-existing session cookie (nothing to expire).
+     * when the request carries no pre-existing session cookie (nothing to expire). A remembered
+     * visitor gets the session invalidated but no redirect: the firewall signs them back in.
      */
     public function onKernelRequest(RequestEvent $event): void
     {
@@ -73,6 +77,10 @@ class SessionIdleTimeoutSubscriber implements EventSubscriberInterface
         }
 
         $session->invalidate();
+        if ($request->cookies->has($this->rememberMeCookie)) {
+            return;
+        }
+
         // getSession() is typed as SessionInterface, which has no flash bag; the concrete session
         // (FlashBagAwareSessionInterface) does. Guard the cast so the warning is best-effort.
         if ($session instanceof FlashBagAwareSessionInterface) {

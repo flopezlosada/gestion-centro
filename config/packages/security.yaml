@@ -1,6 +1,6 @@
 security:
-    # Passwordless system: users authenticate with a magic link sent by e-mail (and, later,
-    # Google/Educamadrid SSO). No password hashers are configured on purpose.
+    # Passwordless system: users authenticate with Google/Educamadrid SSO or with a magic link sent
+    # by e-mail. No password hashers are configured on purpose.
     providers:
         app_user_provider:
             entity:
@@ -27,6 +27,17 @@ security:
                 signature_properties: ['id']
                 lifetime: 600 # the link is valid for 10 minutes
                 max_uses: 1 # single-use: the link is invalidated after the first successful use
+            # "Recordarme en este dispositivo": opt-in from the login page, so a shared staff-room
+            # computer keeps the short idle timeout while a personal phone stays signed in. Every
+            # re-entry through the cookie is a new authentication, so the UserChecker (deactivated
+            # account, sign-in closed) applies to it just as to any other sign-in.
+            remember_me:
+                secret: '%kernel.secret%'
+                name: '%app.remember_me_cookie%'
+                lifetime: 2592000 # 30 days
+                signature_properties: ['id']
+                secure: auto
+                samesite: lax
             logout:
                 path: app_logout
                 target: login
