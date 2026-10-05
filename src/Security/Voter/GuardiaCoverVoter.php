@@ -20,8 +20,7 @@ use Symfony\Component\Security\Core\Authorization\AccessDecisionManagerInterface
  * The rule is the one the centre works by: the guardia teacher covering it (it is their class in an
  * hour), the absent teacher (it is their group), or whoever coordinates guardias. Deliberately NOT the
  * same as reading the parte: read access to the area is enough to look, never to touch someone else's
- * class. The private reason for the absence is not gated here — that one lives on {@see \App\Entity\Absence}
- * and is only ever shown to the coordination.
+ * class.
  *
  * @extends Voter<string, GuardiaCover>
  */

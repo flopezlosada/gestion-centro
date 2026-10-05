@@ -11,14 +11,12 @@ use Doctrine\ORM\Mapping as ORM;
 
 /**
  * A teacher being away on a given day. It groups the {@see GuardiaCover} lines generated for each
- * period they would have taught, and holds the one piece of information that belongs to the absence
- * as a whole rather than to any single period: the {@see $reason} it happened.
+ * period they would have taught.
  *
- * The reason is PRIVATE: only the absent teacher and the guardia coordinator may read it — never the
- * guardia teacher who covers a class (they get the task and its document, not why a colleague is
- * away). Keeping it here, in a single row per (teacher, day), is what makes that privacy enforceable
- * and keeps the reason from ever diverging between the day's periods — the footgun a per-cover copy
- * would create.
+ * It deliberately does NOT record WHY the teacher is away. The application organises who covers each
+ * class; it is not where staff absences are justified or registered — that stays in the Consejería's
+ * own tools. A free-text reason ended up holding exactly what must not live here ("médico", "baja"),
+ * so there is no column for it and no way to type one.
  *
  * The absent teacher and date are also snapshotted onto each {@see GuardiaCover} (alongside its group
  * and room), so the parte and every analytics query keep reading per period without a join; those
@@ -30,12 +28,10 @@ use Doctrine\ORM\Mapping as ORM;
  * the rota happily kept the guardia on them or handed them another. Storing the periods makes "who is
  * away at this period" a fact to read instead of a shape to guess.
  *
- * {@see Auditable}, and it has to be: the two things it owns are the ones somebody edits AFTER the fact
- * and then has to be able to account for. The private reason travels to nobody — it stays in the app for
- * the leadership team — so if it is silently rewritten there is no e-mail, no notice and no second copy
- * anywhere to compare it against. And the periods decide who the rota may hand a guardia to. Both used
- * to change without leaving a trace, on an entity every cover of the day hangs off. Its trail is shown
- * on each of those covers' "modificar guardia" screen, which is the only place it would be looked for.
+ * {@see Auditable}, and it has to be: the periods it owns decide who the rota may hand a guardia to, and
+ * they are edited AFTER the fact. They used to change without leaving a trace, on an entity every cover
+ * of the day hangs off. Its trail is shown on each of those covers' "modificar guardia" screen, which is
+ * the only place it would be looked for.
  */
 #[ORM\Entity(repositoryClass: AbsenceRepository::class)]
 #[ORM\Table(name: 'guardia_absence')]
@@ -55,14 +51,6 @@ class Absence implements Auditable
     /** The day of the absence. */
     #[ORM\Column(name: 'absence_date', type: Types::DATE_IMMUTABLE)]
     private \DateTimeImmutable $date;
-
-    /**
-     * Why the teacher is away, filled by the teacher themselves or the coordinator. PRIVATE: shown
-     * only on the coordinator's surfaces and to the absent teacher, never to the covering guardia.
-     * Nullable — a last-minute absence may be registered without a reason.
-     */
-    #[ORM\Column(name: 'reason', type: Types::TEXT, nullable: true)]
-    private ?string $reason = null;
 
     /**
      * The period indexes the absence spans, ascending and without repeats.
@@ -101,18 +89,6 @@ class Absence implements Auditable
     public function setDate(\DateTimeImmutable $date): static
     {
         $this->date = $date;
-
-        return $this;
-    }
-
-    public function getReason(): ?string
-    {
-        return $this->reason;
-    }
-
-    public function setReason(?string $reason): static
-    {
-        $this->reason = null !== $reason && '' !== trim($reason) ? trim($reason) : null;
 
         return $this;
     }

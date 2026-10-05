@@ -109,7 +109,7 @@ final class GuardiaPageTest extends WebTestCase
 
     private function cover(\DateTimeImmutable $date, int $slot, User $absent, ?User $assigned = null, bool $notCovered = false, string $group = '1ºA'): GuardiaCover
     {
-        // The day's periods for one teacher share a single absence (its private reason lives there),
+        // The day's periods for one teacher share a single absence,
         // matching the unique (absent teacher, day) constraint.
         $key = spl_object_id($absent).'|'.$date->format('Y-m-d');
         $absence = $this->absences[$key] ?? null;
@@ -353,8 +353,7 @@ final class GuardiaPageTest extends WebTestCase
     /**
      * A POST that does not carry a field leaves that field ALONE. This is the footgun the screen used to
      * have: every value was read straight off the request, so any partial submit silently blanked the task
-     * description, the copies and — worst of all — the private reason of the absence, which is SHARED by
-     * every period of that day. It also dropped the substitute, because a missing "guardia" read as "".
+     * description and the copies. It also dropped the substitute, because a missing "guardia" read as "".
      *
      * Asserted against a hand-made POST rather than the rendered form on purpose: the form does send
      * everything, so it can never catch this. What can is the next partial form somebody adds.
@@ -370,7 +369,6 @@ final class GuardiaPageTest extends WebTestCase
         $this->guardiaEntry($year, $guardia, $date);
         $cover = $this->cover($date, 0, $absent, $guardia, true);
         $cover->setTaskDescription('Ejercicios 3 y 4 de la página 88.')->setCopiesNeeded(28);
-        $cover->getAbsence()->setReason('Cita médica.');
         $this->em->flush();
         $id = (int) $cover->getId();
         $action = '/guardias/'.$id.'/modificar';
@@ -384,7 +382,6 @@ final class GuardiaPageTest extends WebTestCase
         self::assertTrue($reloaded->isNotCovered(), 'un POST sin la casilla no desmarca "no se cubrió"');
         self::assertSame('Ejercicios 3 y 4 de la página 88.', $reloaded->getTaskDescription());
         self::assertSame(28, $reloaded->getCopiesNeeded());
-        self::assertSame('Cita médica.', $reloaded->getAbsence()->getReason(), 'el motivo es de TODAS las horas del día: un POST parcial no lo puede borrar');
     }
 
     /**
@@ -522,47 +519,8 @@ final class GuardiaPageTest extends WebTestCase
     }
 
     /**
-     * Editing the private reason of the absence lands in the guardia's event log. It is the one thing on
-     * these screens that travels to nobody — no notice, no e-mail, no second copy — so without a trail a
-     * silent rewrite of "cita médica" into anything else was unaccountable. It lives on the shared
-     * {@see Absence} (so it cannot diverge between the day's periods), which is precisely why its trail
-     * has to be pulled into the log of every cover that hangs off it.
-     */
-    public function testEditingThePrivateReasonLandsInTheGuardiaLog(): void
-    {
-        $this->login();
-        $year = $this->academicYear('2025-2026');
-        $this->em->persist($year);
-        $guardia = $this->user('Guardia Once', 'g11@centro.test');
-        $absent = $this->user('Ausente Once', 'a11@centro.test');
-        $date = new \DateTimeImmutable('2025-11-10');
-        $this->guardiaEntry($year, $guardia, $date);
-        $cover = $this->cover($date, 0, $absent, $guardia);
-        $cover->getAbsence()->setReason('Cita médica.');
-        $this->em->flush();
-        $action = '/guardias/'.$cover->getId().'/modificar';
-
-        $crawler = $this->client->request('GET', $action);
-        $this->client->request('POST', $action, [
-            '_token' => $this->tokenFrom($crawler, $action),
-            'guardia' => (string) $guardia->getId(),
-            'absence_reason' => 'Asuntos propios.',
-            'motivo' => '',
-        ]);
-        self::assertResponseRedirects();
-
-        $crawler = $this->client->request('GET', $action);
-        self::assertResponseIsSuccessful();
-        $timeline = $crawler->filter('.obj-timeline')->text();
-        self::assertStringContainsString('Cambio en la ausencia del día', $timeline, 'un cambio de la falta NO se lee igual que un cambio del parte');
-        self::assertStringContainsString('Motivo de la ausencia', $timeline);
-        self::assertStringContainsString('Cita médica.', $timeline, 'el histórico dice qué decía antes');
-        self::assertStringContainsString('Asuntos propios.', $timeline);
-    }
-
-    /**
-     * The screen names the field for what it does — no second "motivo" to confuse with the private
-     * reason of the absence — and says out loud WHO reads it: only the leadership team.
+     * The screen names the field for what it does — why the CHANGE is made, not why anybody is away —
+     * and says out loud WHO reads it: only the leadership team.
      */
     public function testTheChangeFieldSaysWhoReadsIt(): void
     {
@@ -815,27 +773,66 @@ final class GuardiaPageTest extends WebTestCase
     }
 
     /**
-     * The private reason for the absence is shown to the coordinator on a cover's detail, but never to
-     * the guardia teacher who covers it — even when they open their own cover.
+     * The application organises who covers a class; it does not record why anybody is away. Neither the
+     * detail nor the modify screen of a guardia offers anywhere to read or type a reason, even to the
+     * coordinator who sees everything else.
      */
-    public function testAbsenceReasonIsHiddenFromTheCoveringTeacher(): void
+    public function testNoGuardiaScreenAsksWhyTheTeacherIsAway(): void
     {
-        $this->login(); // coordinator
+        $this->login(); // coordinator: the role that used to see and edit the reason
         $guardia = $this->user('Guardia Ver', 'gver@centro.test');
         $absent = $this->user('Ausente Ver', 'aver@centro.test');
         $cover = $this->cover(new \DateTimeImmutable('2025-11-10'), 0, $absent, $guardia);
-        $cover->getAbsence()->setReason('Cita médica confidencial.');
         $this->em->flush();
-        $url = '/guardias/'.$cover->getId().'/ver';
 
-        $this->client->request('GET', $url); // coordinator sees it
-        self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('body', 'Cita médica confidencial.');
+        foreach (['/ver', '/modificar'] as $suffix) {
+            $crawler = $this->client->request('GET', '/guardias/'.$cover->getId().$suffix);
+            self::assertResponseIsSuccessful();
+            self::assertCount(0, $crawler->filter('textarea[name="absence_reason"], textarea[name="reason"]'), $suffix.': no field to type a reason');
+            self::assertStringNotContainsString('Motivo de la ausencia', $crawler->html(), $suffix);
+        }
+    }
 
-        $this->client->loginUser($guardia); // the covering teacher must not
-        $crawler = $this->client->request('GET', $url);
+    /**
+     * The stats screen breaks absences down by department only: a ranking of who is away most would be
+     * monitoring attendance. Seeded with an absence inside the course looked at (the screen would say
+     * "sin ausencias" otherwise), and the absent teacher covers nothing, so their name has no legitimate
+     * reason to appear anywhere on the page.
+     */
+    public function testTheStatsScreenHasNoRankingOfAbsentTeachers(): void
+    {
+        $this->login();
+        $absent = $this->user('Ausente Ranking', 'aranking@centro.test');
+        $this->cover(new \DateTimeImmutable('2025-11-10'), 0, $absent);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/estadisticas?p[]=2025-2026');
+
         self::assertResponseIsSuccessful();
-        self::assertStringNotContainsString('Cita médica confidencial.', $crawler->html());
+        self::assertStringNotContainsString('Quién falta más', $crawler->html());
+        self::assertStringNotContainsString('Ausente Ranking', $crawler->html(), 'nobody is listed for being away');
+    }
+
+    /**
+     * The per-teacher export counts the guardias each teacher covered and nothing else: a column of
+     * absences per teacher would be a ranking of who is away most, which is monitoring attendance.
+     */
+    public function testTheStatsExportHasNoAbsencesPerTeacher(): void
+    {
+        $this->login();
+        $guardia = $this->user('Guardia Csv', 'gcsv@centro.test');
+        $absent = $this->user('Ausente Csv', 'acsv@centro.test');
+        $this->cover(new \DateTimeImmutable('2025-11-10'), 0, $absent, $guardia);
+        $this->em->flush();
+
+        $this->client->request('GET', '/guardias/estadisticas.csv');
+
+        self::assertResponseIsSuccessful();
+        $csv = (string) $this->client->getResponse()->getContent();
+        $lines = explode("\r\n", trim($csv));
+        self::assertSame("\u{FEFF}Docente;Guardias cubiertas", $lines[0]);
+        self::assertStringContainsString('"Guardia Csv";1', $csv);
+        self::assertStringNotContainsString('Ausente Csv', $csv, 'whoever was only away does not appear at all');
     }
 
     /**

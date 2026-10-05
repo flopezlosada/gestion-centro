@@ -182,21 +182,6 @@ final class CopyShopMailerTest extends TestCase
         self::assertStringContainsString('Leer el texto y responder a las preguntas', $body);
     }
 
-    public function testThePrivateReasonForTheAbsenceNeverReachesTheCopyRoom(): void
-    {
-        // Requisito explícito del centro: quien cubre no ve por qué falta el compañero, y conserjería
-        // menos. Este test existe para que nadie lo cuele mañana metiendo el contexto de la ausencia.
-        [$mailer, $sent] = $this->recordingMailer();
-        $cover = $this->cover();
-        $cover->getAbsence()->setReason('Operación de rodilla');
-
-        $this->mailerUnder($mailer)->send($this->order()->setCover($cover));
-
-        $message = (string) $sent[0]->getSubject().' '.(string) $sent[0]->getTextBody();
-        self::assertStringNotContainsString('rodilla', $message);
-        self::assertStringNotContainsString('Operación', $message);
-    }
-
     public function testAttachesTheDocumentWhenItIsStillOnDisk(): void
     {
         [$mailer, $sent] = $this->recordingMailer();
