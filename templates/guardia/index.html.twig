@@ -345,7 +345,6 @@
                     <table class="parte-table">
                         <thead>
                             <tr><th>Grupo · Aula</th><th>Docente ausente</th><th>Tarea para el grupo</th><th>Cubre</th><th></th></tr>
-                            {# El "motivo" junto al ausente es el motivo de la ausencia (privado): solo aquí y en el detalle del coordinador. #}
                         </thead>
                         <tbody>
                             {% for cover in covers %}
@@ -362,7 +361,6 @@
                                     </td>
                                     <td>
                                         {{ cover.absentTeacher.fullName }}
-                                        {% if cover.absence.reason %}<span class="reason-note muted" title="Motivo (privado): {{ cover.absence.reason }}">· motivo ▾</span>{% endif %}
                                     </td>
                                     <td class="task-cell">
                                         {% if cover.hasTask %}

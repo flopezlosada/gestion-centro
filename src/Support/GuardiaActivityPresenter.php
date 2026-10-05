@@ -27,7 +27,7 @@ final class GuardiaActivityPresenter
 {
     /**
      * The fields shown in the friendly diff, with their label and value formatter. Covers the guardia
-     * cover's own fields and the two the shared absence owns ({@code reason}, {@code slotIndexes}) —
+     * cover's own fields and the one the shared absence owns ({@code slotIndexes}) —
      * anything unmapped is dropped, so a field nobody needs to read never leaks into the timeline.
      */
     private const array FIELDS = [
@@ -40,7 +40,6 @@ final class GuardiaActivityPresenter
         'groupName' => ['label' => 'Grupo', 'kind' => 'text'],
         'roomName' => ['label' => 'Aula', 'kind' => 'text'],
         // De la ausencia (compartida por todas las horas de ese día).
-        'reason' => ['label' => 'Motivo de la ausencia', 'kind' => 'text'],
         'slotIndexes' => ['label' => 'Horas en las que falta', 'kind' => 'slots'],
     ];
 
@@ -48,8 +47,8 @@ final class GuardiaActivityPresenter
 
     /**
      * Cómo se lee cada movimiento, por sujeto y verbo. El sujeto importa: un `updated` de la guardia es
-     * un cambio del parte, y uno de la ausencia es un cambio de la falta —el motivo, o las horas que
-     * abarca—, que afecta a la vez a TODAS las guardias de ese día. Llamar «Cambio manual» a los dos
+     * un cambio del parte, y uno de la ausencia es un cambio de la falta —las horas que abarca—, que
+     * afecta a la vez a TODAS las guardias de ese día. Llamar «Cambio manual» a los dos
      * dejaría al lector sin saber qué acaba de cambiar de sitio.
      *
      * @var array<string, array<string, string>>

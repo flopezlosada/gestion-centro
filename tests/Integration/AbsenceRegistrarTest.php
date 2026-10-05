@@ -76,7 +76,6 @@ final class AbsenceRegistrarTest extends KernelTestCase
             $this->absent,
             new \DateTimeImmutable(self::MONDAY),
             null,
-            'Cita médica.',
             [0 => ['description' => 'Ejercicios pág. 42']],
         );
 
@@ -91,9 +90,8 @@ final class AbsenceRegistrarTest extends KernelTestCase
         self::assertSame('Ejercicios pág. 42', $covers[0]->getTaskDescription(), 'per-class description lands on its cover');
         self::assertNull($covers[2]->getTaskDescription(), 'a class with no task carries none');
 
-        // The reason is single-sourced: both periods hang off the SAME absence, which holds it.
+        // Both periods hang off the SAME absence.
         self::assertSame($covers[0]->getAbsence(), $covers[2]->getAbsence(), 'one absence groups the day');
-        self::assertSame('Cita médica.', $covers[0]->getAbsence()->getReason());
     }
 
     public function testMultiGroupPeriodFoldsIntoOneCoverListingEveryGroup(): void
@@ -104,7 +102,7 @@ final class AbsenceRegistrarTest extends KernelTestCase
         $this->lective($this->absent, 3, 'E4A', 'S ACTOS');
         $this->em->flush();
 
-        $result = $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), [3], null);
+        $result = $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), [3]);
 
         self::assertSame(1, $result->createdCount(), 'a multi-group period is one cover, not one per group');
         $covers = $this->coversFor($this->absent);
@@ -123,7 +121,7 @@ final class AbsenceRegistrarTest extends KernelTestCase
         $this->lective($this->absent, 4, 'E4A', 'S ACTOS');
         $this->em->flush();
 
-        $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), [4], null);
+        $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), [4]);
 
         $covers = $this->coversFor($this->absent);
         self::assertSame('E4A', $covers[4]->getGroupName(), 'the null group is folded away, only the real one kept');
@@ -137,7 +135,7 @@ final class AbsenceRegistrarTest extends KernelTestCase
         $this->lective($teacher, 0, '1ºA', 'A1', 'Matemáticas');
         $this->em->flush();
 
-        $this->registrar->register($this->year, $teacher, new \DateTimeImmutable(self::MONDAY), [0], null);
+        $this->registrar->register($this->year, $teacher, new \DateTimeImmutable(self::MONDAY), [0]);
 
         $cover = $this->em->getRepository(GuardiaCover::class)->findOneBy(['absentTeacher' => $teacher, 'slotIndex' => 0]);
         self::assertInstanceOf(GuardiaCover::class, $cover);
@@ -154,7 +152,7 @@ final class AbsenceRegistrarTest extends KernelTestCase
         $this->lective($teacher, 0, '1ºB', 'A2', 'Física y Química');
         $this->em->flush();
 
-        $this->registrar->register($this->year, $teacher, new \DateTimeImmutable(self::MONDAY), [0], null);
+        $this->registrar->register($this->year, $teacher, new \DateTimeImmutable(self::MONDAY), [0]);
 
         $cover = $this->em->getRepository(GuardiaCover::class)->findOneBy(['absentTeacher' => $teacher, 'slotIndex' => 0]);
         self::assertInstanceOf(GuardiaCover::class, $cover);
@@ -169,7 +167,7 @@ final class AbsenceRegistrarTest extends KernelTestCase
         $this->lective($teacher, 0, '1ºA', 'A1');
         $this->em->flush();
 
-        $this->registrar->register($this->year, $teacher, new \DateTimeImmutable(self::MONDAY), [0], null, [0 => ['copies' => 31]]);
+        $this->registrar->register($this->year, $teacher, new \DateTimeImmutable(self::MONDAY), [0], [0 => ['copies' => 31]]);
 
         $cover = $this->em->getRepository(GuardiaCover::class)->findOneBy(['absentTeacher' => $teacher, 'slotIndex' => 0]);
         self::assertInstanceOf(GuardiaCover::class, $cover);
@@ -212,7 +210,7 @@ final class AbsenceRegistrarTest extends KernelTestCase
         $this->em->persist($line);
         $this->em->flush();
 
-        $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), [0], null);
+        $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), [0]);
 
         $covers = $this->coversFor($this->absent);
         self::assertSame('0LC7', $covers[0]->getRoomName(), 'the parte sends the substitute where the class really is');
@@ -235,7 +233,7 @@ final class AbsenceRegistrarTest extends KernelTestCase
         $this->em->persist($plan);
         $this->em->flush();
 
-        $result = $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), [0], null);
+        $result = $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), [0]);
 
         self::assertSame(0, $result->createdCount());
         self::assertSame(1, $result->skippedFree, 'a lesson that does not happen is as good as a free period');
@@ -244,7 +242,7 @@ final class AbsenceRegistrarTest extends KernelTestCase
 
     public function testSpecificPeriodsSkipsTheFreeOne(): void
     {
-        $result = $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), [0, 1, 2], null);
+        $result = $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), [0, 1, 2]);
 
         self::assertSame(2, $result->createdCount());
         self::assertSame(1, $result->skippedFree, 'slot 1 has no class, so it is skipped');
@@ -253,8 +251,8 @@ final class AbsenceRegistrarTest extends KernelTestCase
     public function testDoesNotDuplicateAnAlreadyRegisteredPeriod(): void
     {
         $date = new \DateTimeImmutable(self::MONDAY);
-        $this->registrar->register($this->year, $this->absent, $date, [0], null);
-        $result = $this->registrar->register($this->year, $this->absent, $date, [0], null);
+        $this->registrar->register($this->year, $this->absent, $date, [0]);
+        $result = $this->registrar->register($this->year, $this->absent, $date, [0]);
 
         self::assertSame(0, $result->createdCount());
         self::assertSame(1, $result->skippedExisting);
@@ -269,7 +267,7 @@ final class AbsenceRegistrarTest extends KernelTestCase
         $this->duty($this->absent, 1, ScheduleActivityKind::GUARDIA);
         $this->em->flush();
 
-        $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), null, null);
+        $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), null);
 
         $absence = $this->absenceFor($this->absent);
         self::assertNotNull($absence);
@@ -282,7 +280,7 @@ final class AbsenceRegistrarTest extends KernelTestCase
         // The bug. Gonzalo is on call at period 0 and picks up Ana's class; then Gonzalo reports that he
         // is away too. His guardia used to stay on him: a group nobody would turn up for.
         $date = new \DateTimeImmutable(self::MONDAY);
-        $this->registrar->register($this->year, $this->absent, $date, [0], null);
+        $this->registrar->register($this->year, $this->absent, $date, [0]);
         $anasCover = $this->coversFor($this->absent)[0];
         self::assertSame($this->g1->getId(), $anasCover->getAssignedGuardia()?->getId(), 'precondition: Gonzalo is covering it');
 
@@ -291,7 +289,7 @@ final class AbsenceRegistrarTest extends KernelTestCase
         $this->duty($spare, 0, ScheduleActivityKind::GUARDIA);
         $this->em->flush();
 
-        $result = $this->registrar->register($this->year, $this->g1, $date, [0], 'Baja.');
+        $result = $this->registrar->register($this->year, $this->g1, $date, [0]);
 
         self::assertSame([0], $result->relievedSlots, 'the period he was covering is reported as relieved');
         $this->em->clear();
@@ -305,11 +303,11 @@ final class AbsenceRegistrarTest extends KernelTestCase
         // With nobody else on call, the class is left uncovered rather than given back to the absentee:
         // "somebody is away" is now read from the absence, so the assigner cannot pick them.
         $date = new \DateTimeImmutable(self::MONDAY);
-        $this->registrar->register($this->year, $this->absent, $date, [0], null);
+        $this->registrar->register($this->year, $this->absent, $date, [0]);
         $cover = $this->coversFor($this->absent)[0];
         self::assertSame($this->g1->getId(), $cover->getAssignedGuardia()?->getId());
 
-        $this->registrar->register($this->year, $this->g1, $date, [0], null);
+        $this->registrar->register($this->year, $this->g1, $date, [0]);
 
         $this->em->clear();
         $reloaded = $this->em->getRepository(GuardiaCover::class)->find($cover->getId());
@@ -322,24 +320,23 @@ final class AbsenceRegistrarTest extends KernelTestCase
         // Gonzalo teaches nothing on Monday; he only has a guardia. Under the old lazy persist this
         // produced no cover and therefore no absence at all, so he stayed available to the rota.
         $date = new \DateTimeImmutable(self::MONDAY);
-        $result = $this->registrar->register($this->year, $this->g1, $date, null, 'Formación.');
+        $result = $this->registrar->register($this->year, $this->g1, $date, null);
 
         self::assertSame(0, $result->createdCount(), 'a guardia hour has no class to cover');
         $absence = $this->absenceFor($this->g1);
         self::assertNotNull($absence, 'the absence is recorded even with nothing to cover');
         self::assertSame([0], $absence->getSlotIndexes());
-        self::assertSame('Formación.', $absence->getReason());
     }
 
     public function testGuardiasOutsideTheAbsenceAreLeftAlone(): void
     {
         // Away first thing does not mean away all day: Gema's period-2 guardia is none of its business.
         $date = new \DateTimeImmutable(self::MONDAY);
-        $this->registrar->register($this->year, $this->absent, $date, [0, 2], null);
+        $this->registrar->register($this->year, $this->absent, $date, [0, 2]);
         $gemasCover = $this->coversFor($this->absent)[2];
         self::assertSame($this->g2->getId(), $gemasCover->getAssignedGuardia()?->getId());
 
-        $result = $this->registrar->register($this->year, $this->g2, $date, [0], null);
+        $result = $this->registrar->register($this->year, $this->g2, $date, [0]);
 
         self::assertSame([], $result->relievedSlots, 'her period-2 guardia is outside the absence');
         $this->em->clear();
@@ -352,8 +349,8 @@ final class AbsenceRegistrarTest extends KernelTestCase
     {
         // The morning is signed up by the teacher and the afternoon added by the coordinator later.
         $date = new \DateTimeImmutable(self::MONDAY);
-        $this->registrar->register($this->year, $this->absent, $date, [0], null);
-        $this->registrar->register($this->year, $this->absent, $date, [2], null);
+        $this->registrar->register($this->year, $this->absent, $date, [0]);
+        $this->registrar->register($this->year, $this->absent, $date, [2]);
 
         $absence = $this->absenceFor($this->absent);
         self::assertNotNull($absence);

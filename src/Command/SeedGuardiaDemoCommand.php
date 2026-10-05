@@ -208,7 +208,7 @@ final class SeedGuardiaDemoCommand extends Command
 
             $count = 0;
             foreach (\array_slice($candidates, 0, self::ABSENCES_PER_DAY) as $teacher) {
-                $result = $this->registrar->register($year, $teacher, $date, null, 'Ejercicios de repaso del tema; se recogen al final de la hora.');
+                $result = $this->registrar->register($year, $teacher, $date, null);
                 $coversTotal += $result->createdCount();
                 ++$count;
             }

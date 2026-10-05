@@ -37,7 +37,7 @@ final class GuardiaCoverRepositoryTest extends KernelTestCase
 
     private function cover(User $guardia, User $absent, \DateTimeImmutable $date, int $slot): void
     {
-        // One absence per (absent teacher, day): its private reason lives there, matching the constraint.
+        // One absence per (absent teacher, day), matching the constraint.
         $absence = (new Absence())->setAbsentTeacher($absent)->setDate($date);
         $this->em->persist($absence);
         $cover = (new GuardiaCover())
