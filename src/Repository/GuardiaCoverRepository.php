@@ -656,38 +656,6 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
-     * The teachers absent most this course, teacher eager-loaded, busiest first — a different lens for
-     * leadership (who is away, not who covers). Queried from {@see User} as root, like
-     * {@see coveredTotalsByTeacher()} (DQL cannot select a joined entity alongside scalars).
-     *
-     * @param int                     $limit how many to return
-     * @param \DateTimeImmutable|null  $from  lower date bound (inclusive), or null for the whole history
-     * @param \DateTimeImmutable|null  $to    upper date bound (inclusive), or null
-     *
-     * @return list<array{teacher: User, total: int}> the ranking, most absences first
-     */
-    public function absencesByTeacher(int $limit = 10, ?\DateTimeImmutable $from = null, ?\DateTimeImmutable $to = null): array
-    {
-        $qb = $this->getEntityManager()->createQueryBuilder()
-            ->select('g', 'COUNT(c.id) AS total')
-            ->from(User::class, 'g')
-            ->join(GuardiaCover::class, 'c', 'WITH', 'c.absentTeacher = g')
-            ->groupBy('g.id')
-            ->orderBy('total', 'DESC')
-            ->addOrderBy('g.fullName', 'ASC')
-            ->setMaxResults($limit);
-        $this->applyWindow($qb, $from, $to);
-
-        /** @var list<array{0: User, total: int}> $rows */
-        $rows = $qb->getQuery()->getResult();
-
-        return array_map(
-            static fn (array $r): array => ['teacher' => $r[0], 'total' => (int) $r['total']],
-            $rows,
-        );
-    }
-
-    /**
      * The parte lines matching the coordinator's history filters, absent teacher and assigned guardia
      * eager-loaded, most recent first. Every filter is optional; passing none returns the full log.
      *

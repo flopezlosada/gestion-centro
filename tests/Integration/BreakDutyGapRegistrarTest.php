@@ -156,7 +156,7 @@ final class BreakDutyGapRegistrarTest extends KernelTestCase
             ->setKind(ScheduleActivityKind::LECTIVE)->setGroupName('1ºA')->setRoomName('A10'));
         $this->em->flush();
 
-        $result = $this->absences->register($this->year, $this->onDuty, new \DateTimeImmutable(self::MONDAY), [0], null, [], true);
+        $result = $this->absences->register($this->year, $this->onDuty, new \DateTimeImmutable(self::MONDAY), [0], [], true);
 
         self::assertSame(1, $result->createdCount(), 'the taught period still becomes a cover');
         self::assertCount(1, $result->breakGaps, 'the recreo is recorded as a gap');
@@ -168,7 +168,7 @@ final class BreakDutyGapRegistrarTest extends KernelTestCase
     {
         // No lective cells at all: without the gap this absence would have no visible consequence, and
         // the zone would quietly go unwatched.
-        $result = $this->absences->register($this->year, $this->onDuty, new \DateTimeImmutable(self::MONDAY), [], null, [], true);
+        $result = $this->absences->register($this->year, $this->onDuty, new \DateTimeImmutable(self::MONDAY), [], [], true);
 
         self::assertSame(0, $result->createdCount());
         self::assertCount(1, $result->breakGaps);
@@ -178,7 +178,7 @@ final class BreakDutyGapRegistrarTest extends KernelTestCase
     public function testNotAskingAboutTheRecreoLeavesItAlone(): void
     {
         // The flag is explicit: a teacher who only misses one class does not lose their recreo.
-        $result = $this->absences->register($this->year, $this->onDuty, new \DateTimeImmutable(self::MONDAY), [0], null, [], false);
+        $result = $this->absences->register($this->year, $this->onDuty, new \DateTimeImmutable(self::MONDAY), [0], [], false);
 
         self::assertSame([], $result->breakGaps);
         self::assertSame([], $this->em->getRepository(BreakDutyGap::class)->findAll());

@@ -237,14 +237,6 @@
             </div>
         {% endif %}
 
-        {# El motivo de la ausencia es privado: solo coordinación (y el ausente), nunca quien cubre. #}
-        {% if canSeeReason and cover.absence.reason %}
-            <div class="side-card">
-                <div class="side-card__label">Motivo de la ausencia · privado</div>
-                <p class="detail-prose">{{ cover.absence.reason|nl2br }}</p>
-                <p class="help">Solo visible para la coordinación de guardias y el docente ausente.</p>
-            </div>
-        {% endif %}
       </aside>{# /detail-aside #}
     </div>{# /detail-cols #}
 {% endblock %}

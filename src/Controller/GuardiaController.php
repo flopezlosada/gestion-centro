@@ -362,7 +362,10 @@ final class GuardiaController extends AbstractController
      * The coordinator's analytics dashboard. Several lenses over the course's covers: coverage health
      * (registered vs covered vs incident vs unassigned), fairness of the split (descriptive measures +
      * a Gini-based balance reading), monthly evolution, a weekday × period heatmap of where cover is
-     * needed, absences by department and the busiest teachers on both sides. Read access is enough.
+     * needed, absences by department and the guardias each teacher covered. Read access is enough.
+     *
+     * There is no per-teacher count of ABSENCES, on purpose: ranking who is away most is monitoring
+     * staff attendance, which is not what this application is for nor where it may be done.
      */
     #[Route('/estadisticas', name: 'guardia_stats', methods: ['GET'])]
     public function stats(Request $request, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years, GuardiaStatistics $statistics, SubstitutionRepository $substitutions): Response
@@ -390,16 +393,12 @@ final class GuardiaController extends AbstractController
             $periods,
         );
 
-        // Absences by department and by teacher as matrices: a row per department/teacher, a cell per
-        // period, sorted by the total across the selected periods (busiest first).
+        // Absences by department as a matrix: a row per department, a cell per period, sorted by the
+        // total across the selected periods (busiest first).
         $byDepartment = $this->comparisonMatrix($periods, static fn (array $p): array => array_map(
             static fn (array $r): array => ['key' => $r['name'], 'name' => $r['name'], 'total' => $r['total']],
             $covers->absencesByDepartment($p['from'], $p['to']),
         ));
-        $absentRanking = \array_slice($this->comparisonMatrix($periods, static fn (array $p): array => array_map(
-            static fn (array $r): array => ['key' => (string) $r['teacher']->getId(), 'name' => $r['teacher']->getFullName(), 'total' => $r['total']],
-            $covers->absencesByTeacher(1000, $p['from'], $p['to']),
-        )), 0, 15);
 
         // For one period the analytics rows feed BOTH the monthly evolution and the heatmap, so fetch
         // them once and share (avoids a duplicate full-window query on the default, unfiltered view).
@@ -445,7 +444,6 @@ final class GuardiaController extends AbstractController
             'kpis' => $kpis,
             'evolution' => $evolution,
             'byDepartment' => $byDepartment,
-            'absentRanking' => $absentRanking,
         ] + $singleExtras);
     }
 
@@ -661,30 +659,18 @@ final class GuardiaController extends AbstractController
     }
 
     /**
-     * The per-teacher guardia figures as a CSV (Excel-friendly, UTF-8 BOM): every teacher who covered
-     * or was absent, with guardias covered and absences. Read access to the guardia area is enough.
+     * The per-teacher guardia figures as a CSV (Excel-friendly, UTF-8 BOM): every teacher who covered a
+     * guardia, with how many. No absences column, for the same reason as {@see stats()}. Read access to
+     * the guardia area is enough.
      */
     #[Route('/estadisticas.csv', name: 'guardia_stats_csv', methods: ['GET'])]
     public function statsCsv(GuardiaCoverRepository $covers): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
-        // Union of both rankings keyed by teacher, so a teacher shows up whether they covered, were
-        // absent, or both.
-        $byTeacher = [];
+        $lines = ["\u{FEFF}Docente;Guardias cubiertas"];
         foreach ($covers->coveredTotalsByTeacher() as $row) {
-            $byTeacher[$row['teacher']->getId()] = ['name' => $row['teacher']->getFullName(), 'covered' => $row['total'], 'absences' => 0];
-        }
-        foreach ($covers->absencesByTeacher(100000) as $row) {
-            $id = $row['teacher']->getId();
-            $byTeacher[$id] ??= ['name' => $row['teacher']->getFullName(), 'covered' => 0, 'absences' => 0];
-            $byTeacher[$id]['absences'] = $row['total'];
-        }
-        usort($byTeacher, static fn (array $a, array $b): int => $b['covered'] <=> $a['covered'] ?: strcasecmp($a['name'], $b['name']));
-
-        $lines = ["\u{FEFF}Docente;Guardias cubiertas;Ausencias"];
-        foreach ($byTeacher as $r) {
-            $lines[] = sprintf('"%s";%d;%d', str_replace('"', '""', $r['name']), $r['covered'], $r['absences']);
+            $lines[] = sprintf('"%s";%d', str_replace('"', '""', $row['teacher']->getFullName()), $row['total']);
         }
 
         return new Response(implode("\r\n", $lines)."\r\n", Response::HTTP_OK, [
@@ -796,8 +782,7 @@ final class GuardiaController extends AbstractController
     /**
      * Registers the absence for the periods ticked and lets {@see AbsenceRegistrar} generate a cover per
      * taught period (with its own task document and/or description) and run the equitable assignment.
-     * The private reason for the absence is stored once on the {@see \App\Entity\Absence}. Free periods
-     * and already-registered ones are reported as skipped. A non-coordinator may only register their own
+     * Free periods and already-registered ones are reported as skipped. A non-coordinator may only register their own
      * absence (the posted teacher is ignored for them).
      *
      * Two people registering the same absence at the same instant lose to the table's UNIQUE rather than
@@ -838,8 +823,7 @@ final class GuardiaController extends AbstractController
             return $this->redirectToRoute('guardia_absence_new', ['date' => $date->format('Y-m-d'), 'teacher' => $teacher->getId()]);
         }
 
-        // One reason for the whole absence (private); a document and/or a description per class.
-        $reason = trim((string) $request->request->get('reason'));
+        // A document and/or a description per class.
         /** @var array<int|string, mixed> $descriptions */
         $descriptions = $request->request->all('description');
         /** @var array<int|string, mixed> $copies */
@@ -871,7 +855,7 @@ final class GuardiaController extends AbstractController
         // escrito ni media fila (la primera descarga del flush es la que revienta) y la segunda pasada
         // encontrará la ausencia ya creada y le colgará las horas que falten.
         try {
-            $result = $registrar->register($year, $teacher, $date, $slotIndexes, '' !== $reason ? $reason : null, $taskBySlot, $missesBreak);
+            $result = $registrar->register($year, $teacher, $date, $slotIndexes, $taskBySlot, $missesBreak);
         } catch (UniqueConstraintViolationException) {
             // Los documentos ya están subidos y no los referencia nada: fuera, o se quedan ahí para siempre.
             foreach ($taskBySlot as $task) {
@@ -1045,7 +1029,6 @@ final class GuardiaController extends AbstractController
      * Serves the task document left for a cover's group, as an attachment named after the original
      * upload. Reachable by the guardia teacher assigned to the cover and by the absent teacher (they
      * need / left the work), or by anyone with read access to the guardia area; everyone else is denied.
-     * The private reason for the absence is never in this file.
      */
     #[Route('/{id}/tarea', name: 'guardia_task_download', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function downloadTask(GuardiaCover $cover, #[CurrentUser] User $user, FileUploader $uploader): Response
@@ -1073,8 +1056,7 @@ final class GuardiaController extends AbstractController
      * The read-only detail of a single guardia: its group/room, day and time, the absent teacher, the
      * task left and how it ended (covered / incident / unassigned). Open to the assigned guardia teacher
      * for THEIR own cover (self-service, no WRITE needed) and to the coordinator (READ). This is where
-     * "mis guardias" links each row; coordinators additionally get a link to modify it. The private
-     * reason for the absence is shown only to the coordinator, never to the covering guardia.
+     * "mis guardias" links each row; coordinators additionally get a link to modify it.
      *
      * "Falta tanto" y "ya pasó" NO son un estado guardado: los deduce del reloj el MISMO view-model que
      * usan el hero de Inicio y "Mis guardias" ({@see TeacherGuardiaDay}), para que las tres pantallas no
@@ -1123,7 +1105,6 @@ final class GuardiaController extends AbstractController
             // El resto del día solo cuando hay resto: una lista de una fila sería la misma guardia otra vez.
             'dayItems' => \count($items) > 1 ? $items : [],
             'canEdit' => $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS),
-            'canSeeReason' => $canManage,
             // Quien cubre ve el recordatorio de RAICES (apuntar las ausencias del alumnado de la sesión);
             // la coordinación mirando la guardia de otra persona, no: no es su tarea.
             'isAssignedGuardia' => $isOwner,
@@ -1205,12 +1186,12 @@ final class GuardiaController extends AbstractController
 
     /**
      * The event log of one guardia: its own movements plus the changes made to the {@see \App\Entity\Absence}
-     * it hangs off — the private reason and the periods the teacher is away for.
+     * it hangs off — the periods the teacher is away for.
      *
      * Two subjects in one timeline because that is what the reader is asking: "¿qué ha pasado con esta
-     * guardia?". The reason and the periods are owned by the absence precisely so they cannot diverge
-     * between the day's periods, and the cost of that (correct) choice was that editing them left no
-     * trace on any of the covers they affect. This is that cost paid back.
+     * guardia?". The periods are owned by the absence precisely so they cannot diverge between the
+     * day's covers, and the cost of that (correct) choice was that editing them left no trace on any of
+     * the covers they affect. This is that cost paid back.
      *
      * Only the absence's UPDATES come in. Its creation happens in the very same flush as the cover's, so
      * showing both would print "Ausencia registrada" twice at the same minute.
@@ -1245,10 +1226,8 @@ final class GuardiaController extends AbstractController
      * description or ticking "no se cubrió" no longer forces a paragraph nobody will read.
      *
      * ⚠️ Cada campo se escribe SOLO si la petición lo trae. Antes se leían todos a pelo, así que un POST
-     * que no llevara `task_description` o `absence_reason` los borraba —y el motivo de la ausencia es
-     * COMPARTIDO por todas las horas del día, así que se perdía en las cinco a la vez—, y uno sin
-     * `guardia` dejaba la guardia sin sustituto sin que nadie lo hubiera pedido. No es paranoia: esta
-     * pantalla es un POST a mano (sin Symfony Form), y cualquier formulario parcial que se le añada
+     * que no llevara `task_description` la borraba, y uno sin `guardia` dejaba la guardia sin sustituto
+     * sin que nadie lo hubiera pedido. No es paranoia: esta pantalla es un POST a mano (sin Symfony Form), y cualquier formulario parcial que se le añada
      * mañana —un «marcar sin cubrir» desde el parte, por ejemplo— caería en la trampa sin un solo error.
      * Para que "casilla desmarcada" siga distinguiéndose de "campo que no viene", las casillas del
      * formulario llevan delante un hidden con el valor 0 (ver `guardia/cover_edit.html.twig`).
@@ -1300,14 +1279,6 @@ final class GuardiaController extends AbstractController
         } elseif ($request->request->getBoolean('remove_document') && null !== $cover->getTaskDocumentPath()) {
             $oldDocumentPath = $cover->getTaskDocumentPath();
             $cover->setTaskDocumentPath(null)->setTaskDocumentName(null);
-        }
-
-        // Private reason for the absence (optional): lives on the shared Absence, so editing it here
-        // updates it for every period of that day at once — no per-cover copy to drift. Which is also
-        // why it is the field a partial POST must never touch by accident: one missing input would wipe
-        // the reason for the whole day.
-        if ($request->request->has('absence_reason')) {
-            $cover->getAbsence()->setReason((string) $request->request->get('absence_reason'));
         }
 
         // The reason rides along into the audit entry this flush produces (see EntityAuditSubscriber).

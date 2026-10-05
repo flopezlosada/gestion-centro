@@ -61,8 +61,7 @@
 
                 {# «¿Por qué?» cuelga de los dos controles de arriba, que son los que cambian quién está en el aula:
                    con JS solo aparece cuando se toca uno de ellos (change-note-presets.js); sin JS está siempre,
-                   y el servidor sigue siendo quien exige el motivo al cambiar de docente.
-                   La única palabra «Motivo» de la pantalla es la de la ausencia: dos «motivos» despistaban. #}
+                   y el servidor sigue siendo quien exige el motivo al cambiar de docente. #}
                 <div class="field field--change-note" data-change-note>
                     <label for="motivo">¿Por qué haces este cambio? <span class="req" data-change-note-req hidden>*</span></label>
                     <p class="field-help field-help--lead">Lo lee <strong>solo el equipo directivo</strong>. No se envía al profesorado.</p>
@@ -101,15 +100,6 @@
                     <label for="copies_needed">Copias</label>
                     <input type="number" class="cover-edit__copies" id="copies_needed" name="copies_needed" min="1" max="500" inputmode="numeric" value="{{ cover.copiesNeeded }}" placeholder="28">
                     <p class="field-help">Se proponen al pedir las fotocopias; allí se pueden cambiar.</p>
-                </div>
-            </fieldset>
-
-            <fieldset class="cover-edit__section">
-                <legend>La ausencia <span class="cover-edit__aside">privado</span></legend>
-                <div class="field">
-                    <label for="absence_reason">Motivo de la ausencia</label>
-                    <textarea id="absence_reason" name="absence_reason" rows="2" maxlength="500">{{ cover.absence.reason }}</textarea>
-                    <p class="field-help">Solo lo ven la coordinación y quien falta. Vale para todas sus horas de ese día.</p>
                 </div>
             </fieldset>
 

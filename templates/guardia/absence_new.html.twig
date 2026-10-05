@@ -188,13 +188,6 @@
                         </div>
                     {% endif %}
 
-                    <div class="form-row field--reason">
-                        <label class="eyebrow" for="absence_reason">Motivo de la ausencia · privado</label>
-                        <textarea id="absence_reason" name="reason" rows="2" maxlength="500"
-                                  placeholder="Solo lo veréis el docente ausente y la coordinación de guardias. Quien cubra la guardia no lo ve."></textarea>
-                        <p class="field-help">Opcional. Queda guardado con la ausencia y no se muestra a quien cubre la clase.</p>
-                    </div>
-
                     <div class="stackform__foot">
                         <button type="submit" class="btn-lg btn-lg--primary">{{ dayClasses is empty ? 'Registrar la ausencia' : 'Generar y repartir guardias' }}</button>
                     </div>
