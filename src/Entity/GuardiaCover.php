@@ -23,8 +23,8 @@ use Doctrine\ORM\Mapping as ORM;
  * guardia can see: an uploaded document ({@see $taskDocumentPath}) and/or a free-text description
  * ({@see $taskDescription}). Both are per class, because each group gets its own work. When the absent
  * teacher left nothing, the covering guardia can pull one from the departments' task bank instead
- * ({@see $bankItem}), which then plays the same role. Why the teacher is away is NOT here — that is
- * the private {@see Absence::$reason}, off-limits to the covering guardia.
+ * ({@see $bankItem}), which then plays the same role. Why the teacher is away is recorded nowhere in the
+ * application (see {@see Absence}).
  *
  * An assigned cover counts as done by default — the centre's rule is "the less they have to touch,
  * the better". The only human gesture is flagging an incident after the fact ({@see $notCovered}):
@@ -51,7 +51,7 @@ class GuardiaCover implements Auditable
     #[ORM\Column]
     private ?int $id = null;
 
-    /** The absence this cover belongs to (the teacher being away that day); holds the private reason. */
+    /** The absence this cover belongs to (the teacher being away that day). */
     #[ORM\ManyToOne(targetEntity: Absence::class)]
     #[ORM\JoinColumn(name: 'absence_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
     private Absence $absence;

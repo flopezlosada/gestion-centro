@@ -21,7 +21,7 @@ class AbsenceRepository extends ServiceEntityRepository
 
     /**
      * The absence of a teacher on a day, if already registered — the row the covers of that day hang
-     * off. Used to reuse the same absence when more periods are added later, so the reason stays in
+     * off. Used to reuse the same absence when more periods are added later, so its periods stay in
      * one place.
      *
      * @param User               $teacher the absent teacher

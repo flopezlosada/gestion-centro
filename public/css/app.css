@@ -3154,7 +3154,6 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 .step-hint { margin: 18px 0 0; padding-top: 18px; border-top: 1px solid var(--border); }
 /* Las clases del día ya no son una rejilla .class-row sino tarjetas conmutables (ver .classcard, más
    abajo): las reglas de aquel montaje se han retirado al quedar sin uso. */
-.field--reason { border-left: 3px solid var(--border); padding-left: 12px; }
 
 /* ── Guardias · celda de tarea del parte y pantalla de modificar ───────────── */
 /* Sin display:flex: esta clase va en un <td> y un display distinto de table-cell lo saca de la rejilla
@@ -3163,7 +3162,6 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 .task-cell > * { display: block; }
 .task-doc { display: inline-block; }
 .task-desc { display: block; }
-.reason-note { font-size: 12px; cursor: help; white-space: nowrap; }
 .doc-current { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0 0 8px; }
 .cover-summary { display: flex; flex-wrap: wrap; gap: 10px 32px; margin: 0 0 20px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
 /* La tipografía la pone la regla común de arriba; aquí solo el hueco propio de esta ficha. */
@@ -4791,8 +4789,6 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 .classcard:has(input[type="checkbox"]:not(:checked)) .classcard__state--asiste { display: inline; }
 /* Sin falta no hay guardia que cubrir, así que la tarea de esa hora no procede. */
 .classcard:has(input[type="checkbox"]:not(:checked)) .classcard__task { display: none; }
-
-.field--reason { margin-top: 22px; }
 
 /* ============================================================================
    DOCUMENTO PUBLICABLE DE ESPACIOS

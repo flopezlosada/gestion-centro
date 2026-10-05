@@ -59,8 +59,6 @@ final class AbsenceRegistrar
      * @param User               $teacher     the absent teacher
      * @param \DateTimeImmutable $date        the day of the absence
      * @param list<int>|null     $slotIndexes the periods to register, or null for the whole teaching day
-     * @param string|null        $reason      the private reason for the absence; only set when non-empty,
-     *                                         so re-registering more periods without retyping it keeps it
      * @param array<int, array{documentPath?: ?string, documentName?: ?string, description?: ?string, copies?: ?int}> $taskBySlot
      *                                         per-period task (slot index → the group's document and/or
      *                                         description, plus the copies it needs); each period/group
@@ -86,7 +84,7 @@ final class AbsenceRegistrar
      *                                           a enviarlo" — see
      *                                           {@see \App\Controller\GuardiaController::createAbsence()}
      */
-    public function register(AcademicYear $year, User $teacher, \DateTimeImmutable $date, ?array $slotIndexes, ?string $reason, array $taskBySlot = [], bool $missesBreakDuty = false): AbsenceRegistrationResult
+    public function register(AcademicYear $year, User $teacher, \DateTimeImmutable $date, ?array $slotIndexes, array $taskBySlot = [], bool $missesBreakDuty = false): AbsenceRegistrationResult
     {
         $weekday = Weekday::from((int) $date->format('N'));
         // An all-day absence spans every period the teacher is booked in, guardia hours included — not
@@ -94,8 +92,8 @@ final class AbsenceRegistrar
         // cover), but the absence has to know about the rest or the rota keeps handing them work.
         $slots = $slotIndexes ?? $this->schedule->bookedSlotsFor($year, $teacher, $weekday);
 
-        // One absence per (teacher, day): reuse it if the day is already partly registered, so the
-        // reason stays single-sourced.
+        // One absence per (teacher, day): reuse it if the day is already partly registered, so its
+        // periods stay single-sourced.
         $absence = $this->absences->findForTeacherAndDate($teacher, $date);
         $absenceIsNew = null === $absence;
         if ($absenceIsNew) {
@@ -150,12 +148,6 @@ final class AbsenceRegistrar
                 ->setTaskDescription($task['description'] ?? null)
                 ->setCopiesNeeded($task['copies'] ?? null));
             $createdSlots[] = $slotIndex;
-        }
-
-        // Apply the reason only when the absence is (or already was) real: one that spans some period, or
-        // an update to an already-persisted absence. Never on a brand-new absence with nothing in it.
-        if ((null !== $reason && '' !== trim($reason)) && ([] !== $spanned || !$absenceIsNew)) {
-            $absence->setReason($reason);
         }
 
         // The unattended recreos join THIS flush, before it happens, and are alerted after. They are a
