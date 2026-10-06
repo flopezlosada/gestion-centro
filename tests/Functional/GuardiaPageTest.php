@@ -10,13 +10,12 @@ use App\Entity\GuardiaCover;
 use App\Entity\Notification;
 use App\Entity\Role;
 use App\Entity\ScheduleEntry;
-use App\Entity\TimeSlot;
 use App\Entity\User;
 use App\Enum\Area;
 use App\Enum\PermissionLevel;
 use App\Enum\ScheduleActivityKind;
-use App\Enum\TimeSlotKind;
 use App\Enum\Weekday;
+use App\Guardia\TeacherGuardiaWeek;
 use App\Service\FileUploader;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
@@ -292,29 +291,30 @@ final class GuardiaPageTest extends WebTestCase
     }
 
     /**
-     * The teacher's own "hoy" section lists only the guardias assigned to THEM today — including one
-     * flagged as an incident (it is still their guardia today) — and never another teacher's.
+     * The teacher's own week lists only the guardias assigned to THEM — including one flagged as an
+     * incident (it is still their guardia) — and never another teacher's.
      */
-    public function testMisGuardiasShowsOnlyMyTodayCovers(): void
+    public function testMisGuardiasShowsOnlyMyCoversInTheWeek(): void
     {
         $me = $this->login(coordinator: false);
         $other = $this->user('Otro Guardia', 'otro@centro.test');
         $absent = $this->user('Profe Ausente', 'ausente@centro.test');
-        $today = new \DateTimeImmutable('today');
+        // Un día de la semana que enseña la pantalla, no «hoy»: en fin de semana enseña la siguiente.
+        $day = TeacherGuardiaWeek::daysAround(new \DateTimeImmutable('today'))[2];
 
-        $this->cover($today, 0, $absent, $me, false, '1ºA');
-        $this->cover($today, 1, $absent, $me, false, '2ºB');
-        $this->cover($today, 2, $absent, $me, true, '3ºC'); // incidencia, pero es mía y de hoy: se muestra
-        // A cover assigned to someone else the same day must not leak into my list.
-        $this->cover($today, 3, $absent, $other, false, '4ºD-AJENA');
+        $this->cover($day, 0, $absent, $me, false, '1ºA');
+        $this->cover($day, 1, $absent, $me, false, '2ºB');
+        $this->cover($day, 2, $absent, $me, true, '3ºC'); // incidencia, pero es mía: se muestra
+        // A cover assigned to someone else the same day must not leak into my week.
+        $this->cover($day, 3, $absent, $other, false, '4ºD-AJENA');
         $this->em->flush();
 
         $this->client->request('GET', '/guardias/mias');
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('.today-guardias', '1ºA');
-        self::assertSelectorTextContains('.today-guardias', '3ºC');
-        self::assertSelectorTextNotContains('.today-guardias', '4ºD-AJENA');
+        self::assertSelectorTextContains('.duty-week', '1ºA');
+        self::assertSelectorTextContains('.duty-week', '3ºC');
+        self::assertSelectorTextNotContains('.duty-week', '4ºD-AJENA');
     }
 
     /**
@@ -954,39 +954,31 @@ final class GuardiaPageTest extends WebTestCase
     }
 
     /**
-     * Y no aparece un aviso de "apunta las ausencias" en un día sin guardias: no hay sesión ninguna de la
-     * que tomar lista.
+     * Una cobertura de la semana que se enseña sale rellena, con el grupo y a quién cubres. Sin horario
+     * importado no cae en ninguna hora de guardia, así que lleva la marca de «fuera de tu horario»: no
+     * desaparece. El día sale de la semana mostrada (no de hoy) para que el test valga también en fin de
+     * semana, cuando la pantalla enseña la semana siguiente.
      */
-    /**
-     * Las horas de guardia del horario salen en «Mis guardias» como hecho fijo del curso, falte o no
-     * alguien: era lo que no aparecía en ningún sitio. La del recreo, con su nombre y su hora real.
-     */
-    public function testMisGuardiasListsTheStandingGuardiaHoursOfTheTimetable(): void
+    public function testMisGuardiasShowsACoverOfTheWeekFilledIn(): void
     {
         $user = $this->login(false);
-        $year = $this->academicYear(SchoolYear::current(new \DateTimeImmutable('today')));
-        $this->em->persist($year);
-        $this->em->persist((new TimeSlot())->setAcademicYear($year)->setSlotIndex(3)->setKind(TimeSlotKind::BREAK_TIME)
-            ->setStartsAt(new \DateTimeImmutable('11:10'))->setEndsAt(new \DateTimeImmutable('11:35')));
-        $this->guardiaEntry($year, $user, new \DateTimeImmutable('2026-01-12'), 0); // lunes, 08:25–09:20
-        $this->em->persist((new ScheduleEntry())->setAcademicYear($year)->setTeacher($user)
-            ->setWeekday(Weekday::FRIDAY)->setSlotIndex(3)->setKind(ScheduleActivityKind::GUARDIA)
-            ->setStartsAt(new \DateTimeImmutable('11:10'))->setEndsAt(new \DateTimeImmutable('11:35')));
+        $absent = $this->user('Ausente Semana', 'asemana@centro.test');
+        $wednesday = TeacherGuardiaWeek::daysAround(new \DateTimeImmutable('today'))[2];
+        $this->cover($wednesday, 1, $absent, $user, group: '2ºB');
         $this->em->flush();
 
         $crawler = $this->client->request('GET', '/guardias/mias');
 
         self::assertResponseIsSuccessful();
-        $rows = $crawler->filterXPath('//section[h2[normalize-space()="Mis horas de guardia"]]//tbody/tr');
-        self::assertCount(2, $rows);
-        self::assertStringContainsString('Lunes', $rows->eq(0)->text());
-        self::assertStringContainsString('08:25–09:20', $rows->eq(0)->text());
-        self::assertStringContainsString('Guardia de recreo', $rows->eq(1)->text());
-        self::assertStringContainsString('11:10–11:35', $rows->eq(1)->text());
+        $chip = $crawler->filter('.duty-week .duty-chip--cover');
+        self::assertCount(1, $chip);
+        self::assertStringContainsString('2ºB', $chip->text());
+        self::assertStringContainsString('Cubres a Ausente Semana', $chip->text());
+        self::assertStringContainsString('fuera de tu horario', $chip->text());
     }
 
-    /** Sin horas de guardia en el horario (conserjería, quien no hace guardias) no hay tabla vacía. */
-    public function testMisGuardiasWithoutGuardiaHoursShowsNoTable(): void
+    /** Sin horas de guardia ni coberturas en la semana (conserjería, quien no hace guardias) no hay semana vacía. */
+    public function testMisGuardiasWithoutGuardiaHoursShowsNoWeek(): void
     {
         $this->login(false);
         $this->em->persist($this->academicYear(SchoolYear::current(new \DateTimeImmutable('today'))));
@@ -995,9 +987,14 @@ final class GuardiaPageTest extends WebTestCase
         $crawler = $this->client->request('GET', '/guardias/mias');
 
         self::assertResponseIsSuccessful();
-        self::assertCount(0, $crawler->filterXPath('//h2[normalize-space()="Mis horas de guardia"]'));
+        self::assertCount(0, $crawler->filter('.duty-week__days'));
+        self::assertSelectorTextContains('.duty-week', 'Tu horario no tiene horas de guardia esta semana.');
     }
 
+    /**
+     * Y no aparece un aviso de "apunta las ausencias" en un día sin guardias: no hay sesión ninguna de la
+     * que tomar lista.
+     */
     public function testMisGuardiasWithoutGuardiasTodayCarriesNoRaicesReminder(): void
     {
         $this->login(false);

@@ -23,6 +23,7 @@ use App\Guardia\BreakDutyGapRegistrar;
 use App\Guardia\GuardiaScheduler;
 use App\Guardia\GuardiaStatistics;
 use App\Guardia\TeacherGuardiaDay;
+use App\Guardia\TeacherGuardiaWeek;
 use App\Repository\AbsenceRepository;
 use App\Repository\AcademicYearRepository;
 use App\Repository\AuditLogRepository;
@@ -264,33 +265,43 @@ final class GuardiaController extends AbstractController
     }
 
     /**
-     * The teacher's own "mis guardias": today's guardias front and centre (period time, group, room,
-     * absent teacher and any task left), plus the ones coming up on later days. Shows only their own.
+     * The teacher's own "mis guardias": their guardia WEEK ({@see TeacherGuardiaWeek}) — every guardia hour
+     * of their timetable, empty or filled with whoever they cover — with the countdown to the next cover
+     * still to do today on top, and the covers beyond that week underneath. Shows only their own.
+     *
+     * The guardia hours are there even with nobody absent: without them a day on guardia read "hoy no te
+     * toca guardia", which is exactly the day a teacher has to be available.
      *
      * Their break duty rota comes too, and as a standing fact rather than a list of days: it is fixed for
      * the whole course, so what the teacher needs is "los martes, patio, 11:10–11:35" once, not one row
      * per Tuesday of the year.
-     *
-     * So do the guardia hours of their timetable, for the same reason — and because without them a day on
-     * guardia with nobody absent read "hoy no te toca guardia", which is exactly the day a teacher has to
-     * be available.
      */
     #[Route('/mias', name: 'guardia_mine', methods: ['GET'])]
-    public function mine(#[CurrentUser] User $user, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years, TeacherGuardiaDay $day, BreakDutyAssignmentRepository $breakDuties, TimeSlotRepository $timeSlots, MyClasses $myClasses): Response
+    public function mine(#[CurrentUser] User $user, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years, TeacherGuardiaDay $day, TeacherGuardiaWeek $week, BreakDutyAssignmentRepository $breakDuties, TimeSlotRepository $timeSlots, MyClasses $myClasses): Response
     {
         $today = new \DateTimeImmutable('today');
         $now = new \DateTimeImmutable('now');
         $year = $years->findBySchoolYear(SchoolYear::current($today));
         $slotTimes = $this->slotTimes($schedule, $year);
+        $days = TeacherGuardiaWeek::daysAround($today);
+        [$monday, $friday] = [$days[0], $days[4]];
 
         return $this->render('guardia/mine.html.twig', [
-            // Las horas de guardia del horario: fijas todo el curso (la tabla) y las de hoy (el estado vacío).
-            'dutyCells' => $year instanceof AcademicYear ? $schedule->dutyCellsFor($year, $user) : [],
-            'todayDuties' => $myClasses->dutiesBetween($user, $today, $today)[$today->format('Y-m-d')] ?? [],
+            // La semana como horario de guardias: cada hora de guardia, vacía o con a quién cubres.
+            'week' => $week->forDays(
+                $days,
+                $myClasses->dutiesBetween($user, $monday, $friday),
+                $covers->findAssignedToBetween($user, $monday, $friday),
+                $slotTimes,
+                $today,
+                $now,
+            ),
+            'weekIsNext' => $monday > $today,
             // El mismo view-model que usa el hero de Inicio (App\Guardia\TeacherGuardiaDay): así las dos
             // pantallas no pueden discrepar sobre cuál es "tu próxima guardia".
             'today' => $day->forDay($covers->findAssignedTo($user, $today), $slotTimes, $now),
-            'upcoming' => $this->groupByDay($covers->findUpcomingAssignedTo($user, $today->modify('+1 day')), $today),
+            // Lo que ya sale en la semana no se repite debajo: «Más adelante» empieza el lunes siguiente.
+            'upcoming' => $this->groupByDay($covers->findUpcomingAssignedTo($user, $friday->modify('+1 day')), $today),
             'slotTimes' => $slotTimes,
             // El cuadrante de recreo solo se ve cuando está ANUNCIADO: mientras es borrador, el equipo
             // directivo lo está retocando y enseñarlo haría que la gente apunte un reparto que va a cambiar.

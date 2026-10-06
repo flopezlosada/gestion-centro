@@ -1,8 +1,7 @@
-{# Lista de "Próximas" guardias agrupadas por día. Se incluye tanto dentro de la columna de "Hoy"
-   (para que herede su ancho) como en el estado vacío. Recibe del contexto: upcoming, slotTimes,
-   weekdayNames. #}
+{# Las guardias asignadas MÁS ALLÁ de la semana que enseña _week, agrupadas por día. Va debajo de la semana.
+   Recibe del contexto: upcoming, slotTimes, weekdayNames. #}
 {% if upcoming is not empty %}
-    <div class="section-head" id="proximas"><h2>Próximas</h2></div>
+    <div class="section-head" id="proximas"><h2>Más adelante</h2></div>
     <div class="card upcoming">
         {% for day in upcoming %}
             <div class="upcoming__day">
