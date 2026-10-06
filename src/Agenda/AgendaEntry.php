@@ -29,6 +29,7 @@ final readonly class AgendaEntry
     public const string KIND_MEETING = 'meeting';
     public const string KIND_BREAK_DUTY = 'break_duty';
     public const string KIND_CLASS = 'class';
+    public const string KIND_DUTY = 'duty';
 
     private function __construct(
         // One of the self::KIND_* constants.
@@ -43,6 +44,7 @@ final readonly class AgendaEntry
         public ?Meeting $meeting = null,
         public ?BreakDutyAssignment $breakDuty = null,
         public ?ClassSession $class = null,
+        public ?DutySlot $duty = null,
     ) {
     }
 
@@ -150,5 +152,20 @@ final readonly class AgendaEntry
     public static function fromClass(ClassSession $class, \DateTimeImmutable $day): self
     {
         return new self(self::KIND_CLASS, $class->startsAt ?? $day, false, null, null, null, null, null, $class);
+    }
+
+    /**
+     * Wraps one of the viewer's guardia periods of a day as their timetable gives it, keyed by the instant
+     * it starts — the standing "estás de guardia a esta hora", shown even when nobody is absent. The
+     * caller only passes the periods WITHOUT a cover: one with a cover is shown as that cover
+     * ({@see fromGuardia()}), which says more (who and where). Never "done", like a guardia.
+     *
+     * @param DutySlot $duty the duty period on that day
+     *
+     * @return self the agenda entry
+     */
+    public static function fromDuty(DutySlot $duty): self
+    {
+        return new self(self::KIND_DUTY, $duty->startsAt, false, null, null, duty: $duty);
     }
 }

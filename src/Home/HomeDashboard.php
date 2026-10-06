@@ -6,6 +6,7 @@ namespace App\Home;
 
 use App\Agenda\AgendaEntry;
 use App\Agenda\ClassSession;
+use App\Agenda\DutySlot;
 use App\Agenda\MyClasses;
 use App\Agenda\PersonalAgenda;
 use App\Dashboard\CentreDashboard;
@@ -164,7 +165,7 @@ final readonly class HomeDashboard
             'guardiasTodayCount' => $guardias['todayCount'],
             'upcomingGuardia' => $guardias['upcomingGuardia'],
             'breakDutiesToday' => $breakDuties,
-            'dayTimeline' => $this->dayTimeline($guardias['todayItems'], $breakDuties, $buckets['today'], $now, $this->myClasses->on($user, $today)),
+            'dayTimeline' => $this->dayTimeline($guardias['todayItems'], $breakDuties, $buckets['today'], $now, $this->myClasses->on($user, $today), $this->idleDutiesOn($user, $today, $guardias['todayItems'], $breakDuties)),
             'todos' => \array_slice($ahead, 0, self::TODOS_SHOWN),
             // Todo lo que hay por hacer, no lo que se pinta: es la cifra de la cabecera y del pie, y los
             // dos llevan a la lista donde está entero.
@@ -206,10 +207,11 @@ final readonly class HomeDashboard
      * @param AgendaEntry[]                                                                                                              $todayEntries the agenda's "today" bucket (meetings and events are taken from it)
      * @param \DateTimeImmutable                                                                                                         $now          the current instant
      * @param list<ClassSession>                                                                                                         $classes      the viewer's own classes today ({@see MyClasses})
+     * @param list<DutySlot>                                                                                                             $duties       the viewer's guardia periods today with nobody to cover ({@see idleDutiesOn()})
      *
      * @return list<array{entry: AgendaEntry, startsAt: ?\DateTimeImmutable, minutesUntil: ?int, state: string}> the day's rows, earliest first
      */
-    private function dayTimeline(array $guardiaItems, array $breakItems, array $todayEntries, \DateTimeImmutable $now, array $classes): array
+    private function dayTimeline(array $guardiaItems, array $breakItems, array $todayEntries, \DateTimeImmutable $now, array $classes, array $duties): array
     {
         $minutesUntil = static fn (?\DateTimeImmutable $startsAt): ?int => null !== $startsAt && $startsAt > $now
             ? intdiv($startsAt->getTimestamp() - $now->getTimestamp(), 60)
@@ -243,6 +245,16 @@ final readonly class HomeDashboard
                 'startsAt' => $class->startsAt,
                 'minutesUntil' => $minutesUntil($class->startsAt),
                 'over' => null !== $class->endsAt && $class->endsAt < $now,
+            ];
+        }
+        // Las horas de guardia sin nadie a quien cubrir: también se está de guardia, y sin esta fila un día
+        // de guardia sin ausencias no la enseñaba en ningún sitio de Inicio.
+        foreach ($duties as $duty) {
+            $rows[] = [
+                'entry' => AgendaEntry::fromDuty($duty),
+                'startsAt' => $duty->startsAt,
+                'minutesUntil' => $minutesUntil($duty->startsAt),
+                'over' => $duty->endsAt < $now,
             ];
         }
         foreach ($todayEntries as $entry) {
@@ -286,6 +298,37 @@ final readonly class HomeDashboard
         }
 
         return $timeline;
+    }
+
+    /**
+     * The viewer's guardia periods today as their timetable gives them, minus those already shown another
+     * way: a period with a cover assigned (the cover says who and where, as in the calendar) and a recreo
+     * the break rota already puts them on at an overlapping time (the same half hour, twice). None on a
+     * non-teaching day: {@see MyClasses::dutiesBetween()} skips them.
+     *
+     * @param User                                                                                                     $user         the viewer
+     * @param \DateTimeImmutable                                                                                       $today        today (midnight)
+     * @param list<array{cover: GuardiaCover, done: bool, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable, minutesUntil: ?int}> $guardiaItems today's covers
+     * @param list<array{duty: BreakDutyAssignment, entry: AgendaEntry, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable}>      $breakItems   today's recreos on the rota
+     *
+     * @return list<DutySlot> the periods with nobody to cover, earliest first
+     */
+    private function idleDutiesOn(User $user, \DateTimeImmutable $today, array $guardiaItems, array $breakItems): array
+    {
+        $covered = array_flip(array_map(static fn (array $item): int => $item['cover']->getSlotIndex(), $guardiaItems));
+        // El recreo del cuadrante se reconoce por SOLAPE de horas y no por tramo ni por hora exacta: el
+        // cuadrante resuelve su hora del marco horario por posición, la celda de Peñalara trae la suya, y un
+        // minuto de diferencia entre las dos no debe pintar el mismo recreo dos veces.
+        $rotaTimes = array_values(array_filter($breakItems, static fn (array $item): bool => null !== $item['startsAt'] && null !== $item['endsAt']));
+        $onTheRota = static fn (DutySlot $duty): bool => $duty->duringBreak && [] !== array_filter(
+            $rotaTimes,
+            static fn (array $item): bool => $duty->startsAt < $item['endsAt'] && $item['startsAt'] < $duty->endsAt,
+        );
+
+        return array_values(array_filter(
+            $this->myClasses->dutiesBetween($user, $today, $today)[$today->format('Y-m-d')] ?? [],
+            static fn (DutySlot $duty): bool => !isset($covered[$duty->slotIndex]) && !$onTheRota($duty),
+        ));
     }
 
     /**

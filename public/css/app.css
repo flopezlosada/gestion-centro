@@ -2674,11 +2674,6 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 /* Utilidades de visibilidad por ancho para servir móvil y escritorio con un solo marcado. */
 .g-narrow { display: none; }
 
-/* Cabecera de HOY: título, fecha y chip con lo que queda pendiente. */
-.today__head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
-.today__title { margin: 0; font-size: 22px; }
-.today__date { color: var(--text-muted); font-size: 14px; text-transform: capitalize; }
-.count-chip { margin-left: auto; font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent-ink); background: var(--accent-weak); border: 1px solid var(--accent); border-radius: 999px; padding: 3px 11px; white-space: nowrap; }
 /* Recordatorio de RAICES en la vista del día: una línea, no un callout. El callout es para UNA guardia
    concreta; aquí encabeza una lista y a ese tamaño competiría con las filas, que son lo que hay que leer.
    Mismo tinte naranja que el callout para que se reconozca como el mismo aviso, y por lo mismo: es una
@@ -2691,33 +2686,6 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 }
 .raices-line a { color: var(--accent-ink); font-weight: 600; }
 
-/* Rejilla de dos columnas: el resto del día a la izquierda; la próxima guardia (protagonista)
-   y el resumen a la derecha, fijos al hacer scroll. En móvil se apila y el protagonista sube. */
-.today-guardias { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 28px; align-items: start; margin-bottom: 18px; }
-.today-guardias__aside { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 20px; }
-
-/* Filas del día: cuándo → (eyebrow) dónde/a quién → estado → ir. */
-.today-list { display: flex; flex-direction: column; gap: 10px; }
-.today-row { display: grid; grid-template-columns: 66px minmax(0, 1fr) auto 18px; align-items: center; gap: 16px; padding: 14px 18px; text-decoration: none; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 18px; }
-.today-row:hover, .today-row:focus-visible { border-color: var(--border-strong); }
-.today-row__slot { display: flex; flex-direction: column; line-height: 1.15; }
-.today-row__slot strong { font-size: 17px; font-weight: 700; color: var(--accent-ink); }
-.today-row__slot span { font-size: 12px; color: var(--text-faint); }
-.today-row__place { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.today-row__eyebrow { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--accent-ink); }
-.today-row__where { font-family: var(--font-display); font-size: 18px; }
-.today-row__teacher { font-size: 13px; color: var(--text-muted); }
-.today-row__teacher strong { color: var(--text); font-weight: 600; }
-.today-row__done { color: var(--success); font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
-.today-row__notask { color: var(--text-faint); font-family: var(--font-mono); font-size: 11px; }
-.today-row__go { color: var(--text-faint); font-size: 22px; line-height: 1; text-align: center; }
-.today-row.is-done { opacity: .7; }
-.today-row.is-done .today-row__slot strong { color: var(--success); text-decoration: line-through; }
-.today-row.is-incident { border-color: var(--danger); background: var(--danger-weak); }
-.today-row.is-incident .today-row__slot strong { color: var(--danger); }
-/* Fila destacada = tu próxima guardia: borde de acento + barra izquierda + relieve. */
-.today-row.is-next { border: 1.5px solid var(--accent); box-shadow: inset 4px 0 0 var(--accent), var(--shadow-card); padding: 16px 16px 16px 18px; }
-.today-row.is-next:hover, .today-row.is-next:focus-visible { border-color: var(--accent); }
 
 /* Protagonista: tu próxima guardia, en tarjeta de acento. */
 .hero-guardia { display: flex; flex-direction: column; background: var(--accent); color: var(--on-accent); border-radius: 22px; padding: 22px; text-decoration: none; box-shadow: var(--shadow-card); }
@@ -2743,13 +2711,6 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 .hero-guardia.is-incident .hero-guardia__cta { color: var(--danger); }
 
 /* Resumen del día. */
-.today-summary { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 6px 20px; }
-.today-summary__title { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint); padding: 14px 0 6px; }
-.today-summary__row { display: flex; align-items: center; justify-content: space-between; padding: 11px 0; font-size: 14px; color: var(--text-muted); }
-.today-summary__row + .today-summary__row { border-top: 1px solid var(--border); }
-.today-summary__row .mono { font-size: 16px; font-weight: 600; color: var(--text); }
-.today-summary__pending { color: var(--accent-ink) !important; }
-.today-summary__task { color: var(--warning-text) !important; }
 
 /* PRÓXIMAS: deliberadamente en segundo plano; no debe competir con "Hoy". */
 .section-head h2 { color: var(--text-muted); font-size: 16px; }
@@ -2769,37 +2730,67 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 .upcoming__teacher { font-size: 12.5px; color: var(--text-muted); }
 .upcoming__go { color: var(--text-faint); font-size: 20px; line-height: 1; text-align: center; }
 
-/* Estado vacío positivo + la siguiente guardia prevista. */
-.guardia-empty { text-align: center; padding: 48px 24px; }
-.guardia-empty__badge { width: 96px; height: 96px; margin: 0 auto 20px; border-radius: 999px; background: var(--accent-weak); color: var(--accent-ink); font-size: 42px; display: flex; align-items: center; justify-content: center; }
-.guardia-empty h2 { font-size: 24px; margin: 0 0 8px; }
+/* Texto del estado vacío del detalle de la guardia («No han dejado tarea»); la caja está más abajo. */
 .guardia-empty > p { color: var(--text-muted); margin: 0 auto; max-width: 42ch; }
-.next-preview { text-align: left; max-width: 520px; margin: 28px auto 0; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 18px 20px; }
-.next-preview__title { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 12px; }
-.next-preview__row { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; align-items: center; gap: 16px; }
-.next-preview__time { display: flex; flex-direction: column; line-height: 1.15; }
-.next-preview__time strong { font-size: 17px; font-weight: 700; color: var(--accent-ink); }
-.next-preview__time span { font-size: 11px; color: var(--text-faint); }
-.next-preview__place { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.next-preview__where { font-family: var(--font-display); font-size: 17px; }
-.next-preview__teacher { font-size: 13px; color: var(--text-muted); }
-.guardia-empty .btn { margin-top: 24px; }
+
+/* «Mis guardias»: arriba solo la cuenta atrás de la próxima de hoy y el recordatorio de RAICES. */
+.mine-today { display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); align-items: center; gap: 12px 28px; margin-bottom: 24px; }
+.mine-today > .raices-line:only-child { grid-column: 1 / -1; }
+@media (max-width: 760px) { .mine-today { grid-template-columns: minmax(0, 1fr); } }
+
+/* «Mis guardias»: tu semana de guardias. Una columna por día; cada hora de guardia es una casilla. Vacía,
+   callada sobre el papel hundido; con alguien a quien cubrir, rellena del naranja de «tu próxima
+   guardia». El contraste es el mensaje: lo naranja es lo que tienes que hacer. */
+.duty-week { margin-bottom: 18px; }
+.duty-week__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-top: 0; }
+.duty-week__range { font-size: 12.5px; color: var(--text-faint); }
+.duty-week__none { margin: 0; color: var(--text-muted); }
+.duty-week__days { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 0; padding: 0; list-style: none; overflow: hidden; border-radius: 18px; }
+.duty-day { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding: 18px 14px 20px; }
+.duty-day + .duty-day { border-left: 1px solid var(--separator); }
+.duty-day.is-today { background: var(--surface-alt); box-shadow: inset 0 3px 0 var(--accent); }
+.duty-day__head { display: flex; align-items: baseline; gap: 8px; }
+.duty-day__name { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint); }
+.duty-day__num { font-family: var(--font-display); font-size: 26px; line-height: 1; color: var(--text); }
+.duty-day.is-today .duty-day__name { color: var(--accent-ink); font-weight: 600; }
+.duty-day.is-today .duty-day__num { color: var(--accent-ink); }
+.duty-day__slots { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.duty-day__none { font-size: 12.5px; color: var(--text-tenue); }
+
+.duty-chip { display: flex; flex-direction: column; gap: 1px; min-width: 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-sunken); color: var(--text-muted); font-size: 12.5px; line-height: 1.35; }
+.duty-chip__time { font-size: 11.5px; color: var(--text-faint); }
+.duty-chip__label { font-weight: 600; color: var(--text); }
+.duty-chip__state { color: var(--text-faint); }
+.duty-chip--cover { background: var(--accent); color: var(--on-accent); text-decoration: none; box-shadow: var(--shadow-card); transition: transform .12s ease, box-shadow .12s ease; }
+.duty-chip--cover:hover, .duty-chip--cover:focus-visible { transform: translateY(-1px); box-shadow: 0 16px 28px -18px rgba(60, 40, 0, .55); }
+.duty-chip--cover .duty-chip__time { color: var(--on-accent); opacity: .75; }
+.duty-chip__where { font-weight: 700; font-size: 14px; overflow-wrap: anywhere; }
+.duty-chip__who { overflow-wrap: anywhere; }
+.duty-chip__tag { align-self: flex-start; margin-top: 6px; padding: 1px 8px; border-radius: 999px; background: var(--accent-hover); background: color-mix(in srgb, var(--on-accent) 14%, transparent); font-size: 11px; font-weight: 600; }
+/* Incidencia: la guardia no se cubrió. El rojo de esta paleta significa justo eso, «sin cubrir». */
+.duty-chip--cover.is-incident { background: var(--danger-weak); color: var(--danger-text); box-shadow: inset 4px 0 0 var(--danger); }
+.duty-chip--cover.is-incident .duty-chip__time { color: var(--danger-text); }
+.duty-chip.is-past { opacity: .5; box-shadow: none; }
+.duty-chip--cover.is-incident.is-past { box-shadow: inset 4px 0 0 var(--danger); }
+.duty-week__help { margin-top: 10px; }
+
+@media (max-width: 760px) {
+    /* Móvil: un día por fila, la fecha a la izquierda y sus casillas a la derecha. */
+    .duty-week__days { grid-template-columns: minmax(0, 1fr); }
+    .duty-day { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px; padding: 14px; }
+    .duty-day + .duty-day { border-left: 0; border-top: 1px solid var(--separator); }
+    .duty-day.is-today { box-shadow: inset 3px 0 0 var(--accent); }
+    .duty-day__head { flex-direction: column; align-items: flex-start; gap: 2px; padding-top: 2px; }
+    .duty-day__none { padding-top: 6px; }
+}
 
 @media (max-width: 900px) {
-    /* Móvil: una columna, el protagonista arriba y el resumen fuera. La próxima guardia ya vive
-       en el protagonista, así que se quita de la lista, que pasa a ser solo "el resto de hoy". */
     .g-wide { display: none; }
     .g-narrow { display: revert; }
-    .today-guardias { grid-template-columns: 1fr; gap: 18px; }
-    .today-guardias__aside { position: static; order: -1; }
-    .today-guardias__main.is-only-next { display: none; }
-    .today-summary { display: none; }
-    .today-row.is-next { display: none; }
-    .today__title { font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--text-faint); }
 }
 @media (max-width: 560px) {
-    .today-row, .upcoming__row { grid-template-columns: 56px minmax(0, 1fr) auto; }
-    .today-row__go, .upcoming__go { display: none; }
+    .upcoming__row { grid-template-columns: 56px minmax(0, 1fr) auto; }
+    .upcoming__go { display: none; }
 }
 
 /* Invitación a activar avisos push tras el login. */

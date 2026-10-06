@@ -112,6 +112,13 @@
                                 contradiría con la fila que "Tu día" pinta justo al lado. La tira habla de las de
                                 sustitución, así que lo que cambia es la frase, no lo que se enseña. -#}
                             Hoy solo tienes {{ breakDutiesToday|length == 1 ? 'el recreo' : 'los recreos' }}
+                        {%- elseif dayTimeline|filter(r => r.entry.kind == 'duty' and not r.entry.duty.duringBreak) is not empty -%}
+                            {#- Lo mismo con las horas de guardia del horario: «Tu día» las pinta, así que aquí
+                                «no tienes guardia» sería falso. Lo que no hay es nadie a quien cubrir. -#}
+                            Hoy no tienes a nadie a quien cubrir
+                        {%- elseif dayTimeline|filter(r => r.entry.kind == 'duty') is not empty -%}
+                            {#- Solo recreos del horario: ahí no se cubre a nadie, se vigila. -#}
+                            Hoy solo tienes el recreo
                         {%- else -%}
                             Hoy no tienes guardia
                         {%- endif -%}
@@ -326,7 +333,8 @@
                     {#- Las clases cuentan aparte: «9 citas» con seis clases dentro leería como un día lleno de
                         compromisos cuando es un día normal. -#}
                     {% set nClases = dayTimeline|filter(r => r.entry.kind == 'class')|length %}
-                    {% set nCitas = dayTimeline|length - nClases %}
+                    {#- Una hora de guardia sin nadie a quien cubrir tampoco es una cita: es el horario de siempre. -#}
+                    {% set nCitas = dayTimeline|length - nClases - dayTimeline|filter(r => r.entry.kind == 'duty')|length %}
                     {{ ui.section_head('Tu día', (nCitas ~ (nCitas == 1 ? ' cita' : ' citas')) ~ (nClases > 0 ? ' · ' ~ nClases ~ (nClases == 1 ? ' clase' : ' clases') : ''), '+ Nuevo', path('personal_event_new')) }}
 
                     <div class="panel panel--day">
@@ -351,6 +359,14 @@
                                     {% set url = path('guardia_mine') %}
                                     {% set titulo = bd.period.label ~ ' · ' ~ bd.zone.name %}
                                     {% set sub = (row.minutesUntil is not null ? 'en ' ~ row.minutesUntil ~ ' min · ' : '') ~ 'guardia de recreo' %}
+                                    {% set tipo = 'guardia' %}
+                                {% elseif entry.kind == 'duty' %}
+                                    {#- Una hora de guardia del horario sin nadie a quien cubrir: también se está de
+                                        guardia (disponible), y sin esta fila no salía en Inicio. Con cobertura no
+                                        llega aquí: se pinta la cobertura, que dice a quién y dónde. -#}
+                                    {% set url = path('guardia_mine') %}
+                                    {% set titulo = entry.duty.label %}
+                                    {% set sub = (row.minutesUntil is not null ? 'en ' ~ row.minutesUntil ~ ' min · ' : '') ~ (entry.duty.duringBreak ? 'vigilancia del recreo' : 'nadie a quien cubrir') %}
                                     {% set tipo = 'guardia' %}
                                 {% elseif entry.kind == 'meeting' %}
                                     {% set m = entry.meeting %}

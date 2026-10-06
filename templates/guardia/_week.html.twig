@@ -1,0 +1,64 @@
+{# Tu semana de guardias: una columna por día con tus horas de guardia del horario. Una hora sin nadie a
+   quien cubrir es una casilla callada; una con cobertura se rellena de naranja (el color de «tu próxima
+   guardia») con el grupo, el aula y a quién cubres, y enlaza al detalle. Sustituye a la tabla de horas
+   fijas, que no decía si había alguien a quien cubrir, y al «Hoy estás de guardia», que era cierto todos
+   los días para quien tiene guardia a diario.
+   Recibe del contexto: week, weekIsNext. #}
+{% set dayNames = {1: 'Lun', 2: 'Mar', 3: 'Mié', 4: 'Jue', 5: 'Vie'} %}
+{% set monthNames = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'] %}
+{% set first = (week|first).date %}
+{% set last = (week|last).date %}
+{% set anySlot = week|filter(d => d.slots is not empty)|length > 0 %}
+
+<section class="duty-week" aria-labelledby="duty-week-title">
+    <div class="section-head duty-week__head">
+        <h2 id="duty-week-title">{{ weekIsNext ? 'Tus guardias de la semana que viene' : 'Tus guardias de esta semana' }}</h2>
+        <span class="duty-week__range mono">{{ first|date('j', false) }}{{ first|date('n', false) != last|date('n', false) ? ' ' ~ monthNames[first|date('n', false) - 1] }}–{{ last|date('j', false) }} {{ monthNames[last|date('n', false) - 1] }}</span>
+    </div>
+
+    {% if not anySlot %}
+        <p class="card duty-week__none">Tu horario no tiene horas de guardia esta semana.</p>
+    {% else %}
+        <ol class="card duty-week__days">
+            {% for day in week %}
+                <li class="duty-day{{ day.isToday ? ' is-today' }}">
+                    <div class="duty-day__head">
+                        <span class="duty-day__name mono">{{ dayNames[day.date|date('N', false)] }}</span>
+                        <span class="duty-day__num">{{ day.date|date('j', false) }}</span>
+                        {% if day.isToday %}<span class="visually-hidden">(hoy)</span>{% endif %}
+                    </div>
+
+                    <ul class="duty-day__slots">
+                        {% for slot in day.slots %}
+                            {% set time = slot.startsAt ? slot.startsAt|date('H:i', false) : (slot.slotIndex + 1) ~ 'ª' %}
+                            {% for cover in slot.covers %}
+                                <li>
+                                    <a class="duty-chip duty-chip--cover{{ cover.notCovered ? ' is-incident' }}{{ slot.past ? ' is-past' }}" href="{{ path('guardia_cover_show', { id: cover.id }) }}">
+                                        <span class="duty-chip__time mono">{{ time }}{{ slot.isOffDuty ? ' · fuera de tu horario' }}</span>
+                                        <span class="duty-chip__where">{{ [cover.groupName, cover.effectiveRoomName]|filter(v => v)|join(' · ') ?: 'Sin especificar' }}</span>
+                                        {#- Una incidencia es una guardia que NO se cubrió: decir «Cubriste a…» era justo lo contrario. -#}
+                                        <span class="duty-chip__who">{% if cover.notCovered %}Sin cubrir · ausente {{ cover.absentTeacher.fullName }}{% else %}{{ slot.past ? 'Cubriste' : 'Cubres' }} a {{ cover.absentTeacher.fullName }}{% endif %}</span>
+                                        {% if cover.notCovered %}<span class="duty-chip__tag">Incidencia</span>
+                                        {% elseif cover.hasTask %}<span class="duty-chip__tag">Tiene tarea</span>{% endif %}
+                                    </a>
+                                </li>
+                            {% else %}
+                                <li>
+                                    <div class="duty-chip{{ slot.past ? ' is-past' }}">
+                                        <span class="duty-chip__time mono">{{ time }}</span>
+                                        <span class="duty-chip__label">{{ slot.label }}</span>
+                                        {#- En el recreo no hay clases: nunca hay a quien cubrir, se vigila. -#}
+                                        <span class="duty-chip__state">{{ slot.duringBreak ? 'Vigilancia' : 'Nadie a quien cubrir' }}</span>
+                                    </div>
+                                </li>
+                            {% endfor %}
+                        {% else %}
+                            <li class="duty-day__none">Sin guardia</li>
+                        {% endfor %}
+                    </ul>
+                </li>
+            {% endfor %}
+        </ol>
+        <p class="help duty-week__help">Son tus horas de guardia del horario. Si falta alguien en una hora de clase, se rellena y te llega el aviso; las de recreo son de vigilancia.</p>
+    {% endif %}
+</section>
