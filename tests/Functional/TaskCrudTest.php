@@ -665,8 +665,10 @@ final class TaskCrudTest extends WebTestCase
 
         $this->client->loginUser($a->getAssignedUser() ?? throw new \LogicException());
         $crawler = $this->client->request('GET', '/tareas/'.$first);
-        self::assertSame('https://docs.ejemplo.test/encuesta', $crawler->selectLink('Enlace con información')->attr('href'));
-        self::assertSame('noopener noreferrer', $crawler->selectLink('Enlace con información')->attr('rel'));
+        $link = $crawler->filter('.task-info a[target="_blank"]');
+        self::assertSame('https://docs.ejemplo.test/encuesta', $link->attr('href'));
+        self::assertSame('noopener noreferrer', $link->attr('rel'));
+        self::assertStringContainsString('docs.ejemplo.test/encuesta', $link->text(), 'la dirección se ve antes de pulsar');
         $this->client->request('GET', '/tareas/'.$first.'/informacion/archivo');
         self::assertResponseIsSuccessful();
         self::assertStringContainsString('instrucciones.pdf', (string) $this->client->getResponse()->headers->get('Content-Disposition'));
