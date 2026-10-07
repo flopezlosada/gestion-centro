@@ -557,7 +557,7 @@ final class MeetingCrudTest extends WebTestCase
 
         // Un solo formulario para todo el bloque: el textarea del desarrollo y las casillas de asistencia
         // están DENTRO del mismo, que es lo que hace que se envíen juntos.
-        $form = $crawler->selectButton('Guardar el acta')->form();
+        $form = $crawler->selectButton('Guardar')->form();
         self::assertStringEndsWith('/acta/registro', $form->getUri());
         self::assertCount(1, $crawler->filter('form[action$="/acta/registro"] textarea[name="tratado"]'));
         self::assertCount(1, $crawler->filter('form[action$="/acta/registro"] textarea[name="acuerdos"]'));
