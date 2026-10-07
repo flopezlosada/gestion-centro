@@ -601,11 +601,7 @@ final class MeetingCrudTest extends WebTestCase
         $crawler = $this->client->request('GET', '/reuniones/'.$id);
         $recordUrl = '/reuniones/'.$id.'/acta/registro';
         $token = (string) $crawler->filter('form[action="'.$recordUrl.'"] input[name="_token"]')->attr('value');
-        $this->client->request('POST', $recordUrl, ['_token' => $token, 'tratado' => 'Lo tratado.', 'asistentes' => [(string) $attendee->getId()]]);
-        $crawler = $this->client->request('GET', '/reuniones/'.$id);
-        $generateUrl = '/reuniones/'.$id.'/acta/generar';
-        $token = (string) $crawler->filter('form[action="'.$generateUrl.'"] input[name="_token"]')->attr('value');
-        $this->client->request('POST', $generateUrl, ['_token' => $token]);
+        $this->client->request('POST', $recordUrl, ['_token' => $token, 'tratado' => 'Lo tratado.', 'asistentes' => [(string) $attendee->getId()], 'generar' => '1']);
         $crawler = $this->client->request('GET', '/reuniones/'.$id);
         $publishUrl = '/reuniones/'.$id.'/acta/publicar';
         $token = (string) $crawler->filter('form[action="'.$publishUrl.'"] input[name="_token"]')->attr('value');
@@ -661,12 +657,11 @@ final class MeetingCrudTest extends WebTestCase
         $this->em->flush();
         $id = (int) $meeting->getId();
         $recordUrl = '/reuniones/'.$id.'/acta/registro';
-        $generateUrl = '/reuniones/'.$id.'/acta/generar';
         $publishUrl = '/reuniones/'.$id.'/acta/publicar';
 
         // 1. La secretaría la escribe, la genera y la publica.
         $this->client->loginUser($secretary);
-        foreach ([[$recordUrl, ['tratado' => 'Versión con el dato mal.']], [$generateUrl, []], [$publishUrl, []]] as [$url, $extra]) {
+        foreach ([[$recordUrl, ['tratado' => 'Versión con el dato mal.', 'generar' => '1']], [$publishUrl, []]] as [$url, $extra]) {
             $crawler = $this->client->request('GET', '/reuniones/'.$id);
             $token = (string) $crawler->filter('form[action="'.$url.'"] input[name="_token"]')->attr('value');
             $this->client->request('POST', $url, ['_token' => $token] + $extra);
@@ -682,8 +677,8 @@ final class MeetingCrudTest extends WebTestCase
 
         // 3. Y regenera el PDF, que la devuelve a borrador…
         $crawler = $this->client->request('GET', '/reuniones/'.$id);
-        $token = (string) $crawler->filter('form[action="'.$generateUrl.'"] input[name="_token"]')->attr('value');
-        $this->client->request('POST', $generateUrl, ['_token' => $token]);
+        $token = (string) $crawler->filter('form[action="'.$recordUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $recordUrl, ['_token' => $token, 'tratado' => 'Versión corregida.', 'generar' => '1']);
         self::assertResponseRedirects();
 
         // 4. …y la ficha le SIGUE ofreciendo publicarla. Esto es lo que se rompía.
@@ -720,11 +715,7 @@ final class MeetingCrudTest extends WebTestCase
         $this->client->loginUser($convener);
         $crawler = $this->client->request('GET', '/reuniones/'.$id);
         $token = (string) $crawler->filter('form[action="'.$recordUrl.'"] input[name="_token"]')->attr('value');
-        $this->client->request('POST', $recordUrl, ['_token' => $token, 'tratado' => 'Primera versión.', 'asistentes' => [(string) $attendee->getId()]]);
-        $crawler = $this->client->request('GET', '/reuniones/'.$id);
-        $generateUrl = '/reuniones/'.$id.'/acta/generar';
-        $token = (string) $crawler->filter('form[action="'.$generateUrl.'"] input[name="_token"]')->attr('value');
-        $this->client->request('POST', $generateUrl, ['_token' => $token]);
+        $this->client->request('POST', $recordUrl, ['_token' => $token, 'tratado' => 'Primera versión.', 'asistentes' => [(string) $attendee->getId()], 'generar' => '1']);
 
         // Recién generada, el archivo coincide con el texto: no hay nada que avisar.
         $this->client->request('GET', '/reuniones/'.$id);
@@ -824,7 +815,7 @@ final class MeetingCrudTest extends WebTestCase
 
         self::assertResponseIsSuccessful();
         self::assertSelectorTextContains('body', 'se registran en RAICES');
-        self::assertSelectorNotExists('form[action$="/acta/generar"]', 'no se ofrece generar un acta que no existe');
+        self::assertSelectorNotExists('button[name="generar"]', 'no se ofrece generar un acta que no existe');
         self::assertSelectorNotExists('textarea[name="tratado"]', 'ni escribir un desarrollo que no va aquí');
 
         // La lista sí se ofrece, y guardarla no arrastra el texto que se cuele en el POST.
@@ -850,19 +841,14 @@ final class MeetingCrudTest extends WebTestCase
         $this->em->flush();
         $id = (int) $meeting->getId();
 
-        // 1. Se escribe el acta.
+        // 1-2. Se escribe el acta y, sin guardar antes, se pide el PDF: el botón es del MISMO formulario,
+        // así que lo recién escrito se guarda y es lo que sale en el PDF. Con un botón aparte se perdía.
         $this->client->loginUser($convener);
         $crawler = $this->client->request('GET', '/reuniones/'.$id);
         $recordAction = '/reuniones/'.$id.'/acta/registro';
+        self::assertSelectorExists('form[action="'.$recordAction.'"] button[name="generar"]', 'generar está dentro del formulario del acta');
         $token = (string) $crawler->filter('form[action="'.$recordAction.'"] input[name="_token"]')->attr('value');
-        $this->client->request('POST', $recordAction, ['_token' => $token, 'tratado' => "1. Se aprueba la programación.\n2. Se acuerda repetir en mayo."]);
-        self::assertResponseRedirects();
-
-        // 2. Se pide el acta en PDF: no es automática, sale de lo recogido.
-        $crawler = $this->client->request('GET', '/reuniones/'.$id);
-        $generateAction = '/reuniones/'.$id.'/acta/generar';
-        $token = (string) $crawler->filter('form[action="'.$generateAction.'"] input[name="_token"]')->attr('value');
-        $this->client->request('POST', $generateAction, ['_token' => $token]);
+        $this->client->request('POST', $recordAction, ['_token' => $token, 'tratado' => "1. Se aprueba la programación.\n2. Se acuerda repetir en mayo.", 'generar' => '1']);
         self::assertResponseRedirects();
 
         $this->em->clear();
@@ -909,7 +895,7 @@ final class MeetingCrudTest extends WebTestCase
         self::assertSelectorNotExists('input[name="asistentes[]"]', 'ni pasar lista, que ahora es parte del mismo acta');
         $this->client->request('POST', '/reuniones/'.$id.'/acta/registro', ['_token' => 'irrelevante', 'tratado' => 'Lo que me apetezca.']);
         self::assertResponseStatusCodeSame(403);
-        $this->client->request('POST', '/reuniones/'.$id.'/acta/generar', ['_token' => 'irrelevante']);
+        $this->client->request('POST', '/reuniones/'.$id.'/acta/registro', ['_token' => 'irrelevante', 'generar' => '1']);
         self::assertResponseStatusCodeSame(403);
     }
 
@@ -922,8 +908,8 @@ final class MeetingCrudTest extends WebTestCase
 
         $this->client->loginUser($convener);
         $this->client->request('GET', '/reuniones/'.$id);
-        self::assertSelectorNotExists('form[action="/reuniones/'.$id.'/acta/generar"]');
-        $this->client->request('POST', '/reuniones/'.$id.'/acta/generar', ['_token' => 'irrelevante']);
+        self::assertSelectorNotExists('button[name="generar"]');
+        $this->client->request('POST', '/reuniones/'.$id.'/acta/registro', ['_token' => 'irrelevante', 'generar' => '1']);
         self::assertResponseStatusCodeSame(403);
     }
 

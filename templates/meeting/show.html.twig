@@ -159,17 +159,6 @@
             {% endif %}
 
             {% if canWriteMinutes and isHeld %}
-                {#- Generar el acta: NO es automático (no todas las reuniones necesitan PDF), se hace cuando
-                    alguien la pide. Sale del orden del día, la asistencia y lo tratado, y pasa a ser EL acta
-                    de la reunión. -#}
-                <form method="post" action="{{ path('meeting_minutes_generate', { id: meeting.id }) }}" class="deliverable-form"{% if meeting.hasMinutes %} data-confirm="Ya hay un acta guardada. ¿Generarla de nuevo y sustituir la anterior?"{% endif %}>
-                    <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
-                    <button class="btn" type="submit">{{ meeting.hasMinutes ? 'Volver a generar el acta en PDF' : 'Generar el acta en PDF' }}</button>
-                </form>
-                <p class="help">Se genera con el orden del día, la asistencia y lo tratado. Puedes generarla otra vez si corriges algo.</p>
-            {% endif %}
-
-            {% if canWriteMinutes and isHeld %}
                 {# O subir un fichero propio, para un acta escrita fuera. Sustituir vale para corregir una
                    equivocada: el fichero anterior se borra del disco. #}
                 <form method="post" action="{{ path('meeting_minutes_upload', { id: meeting.id }) }}" enctype="multipart/form-data" class="deliverable-form">
@@ -236,6 +225,12 @@
                         </div>
                         <div class="form-actions">
                             <button class="btn" type="submit">{% if meeting.keepsMinutes %}Guardar el acta{% else %}Guardar la asistencia{% endif %}</button>
+                            {#- Generar el PDF NO es automático (no todas las reuniones lo necesitan), pero sale de
+                                este mismo formulario: guarda primero y genera después. Era un botón aparte, más
+                                arriba, que no mandaba lo escrito: se perdía y el PDF salía de lo anterior. -#}
+                            {% if meeting.keepsMinutes %}
+                                <button class="btn secondary" type="submit" name="generar" value="1"{% if meeting.hasMinutes %} data-confirm="Ya hay un acta guardada. ¿Generarla de nuevo y sustituir la anterior?"{% endif %}>{{ meeting.hasMinutes ? 'Guardar y volver a generar el PDF' : 'Guardar y generar el PDF' }}</button>
+                            {% endif %}
                         </div>
                         {#- Se dice que el botón guarda TAMBIÉN la lista: guardar es declarar quién vino, y
                             una lista vacía guardada significa «no vino nadie», que es distinto de no haber
