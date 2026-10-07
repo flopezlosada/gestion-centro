@@ -268,12 +268,25 @@
             <div class="detail-block__label">Instrucciones</div>
             {% if task.description %}<p class="detail-prose">{{ task.description|nl2br }}</p>{% else %}<p class="detail-prose detail-prose--absent">Esta tarea no tenía descripción.</p>{% endif %}
             {#- Lo que hace falta para hacerla, si quien la creó lo dejó: junto a las instrucciones, que es
-                donde se busca. El enlace se abre aparte; el archivo pasa por su ruta, que mira quién puede verla. -#}
+                donde se busca. Con las mismas tarjetas que lo entregado y la dirección a la vista: un «Abrir
+                el enlace» suelto no dice a dónde lleva. El archivo pasa por su ruta, que mira quién puede verla. -#}
             {% if task.infoUrl or task.infoFilePath %}
-                <ul class="task-info">
-                    {% if task.infoUrl %}<li><a href="{{ task.infoUrl }}" target="_blank" rel="noopener noreferrer">Abrir el enlace con información</a></li>{% endif %}
-                    {% if task.infoFilePath %}<li><a href="{{ path('task_info_download', { id: task.id }) }}">Descargar «{{ task.infoFileName }}»</a></li>{% endif %}
-                </ul>
+                <div class="task-info">
+                    {% if task.infoUrl %}
+                        <a class="doc-card" href="{{ task.infoUrl }}" target="_blank" rel="noopener noreferrer">
+                            <span class="doc-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span>
+                            <span class="doc-card__body"><span class="doc-card__name">{{ task.infoUrl|replace({'https://': '', 'http://': ''}) }}</span><span class="doc-card__meta">Enlace con información</span></span>
+                            <span class="doc-card__open">Abrir ↗</span>
+                        </a>
+                    {% endif %}
+                    {% if task.infoFilePath %}
+                        <a class="doc-card" href="{{ path('task_info_download', { id: task.id }) }}">
+                            <span class="doc-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span>
+                            <span class="doc-card__body"><span class="doc-card__name">{{ task.infoFileName }}</span><span class="doc-card__meta">Archivo con información</span></span>
+                            <span class="doc-card__open">Descargar</span>
+                        </a>
+                    {% endif %}
+                </div>
             {% endif %}
         </div>
 

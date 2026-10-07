@@ -3957,8 +3957,7 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
    una ausencia y no como el texto de la tarea. */
 .detail-prose--absent { color: var(--text-faint); font-style: italic; }
 /* El enlace y el archivo con información de una tarea, bajo sus instrucciones. */
-.task-info { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
-.task-info a { color: var(--accent-ink); }
+.task-info { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
 
 /* Por qué volvió: lo primero del contenido cuando la tarea está devuelta. Azul pizarra y no rojo, el mismo
    de "en revisión" en el listado y en el hilo: hay trabajo que hacer, pero nada ha ido mal — y el rojo ya
