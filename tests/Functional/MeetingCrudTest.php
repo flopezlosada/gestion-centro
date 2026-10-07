@@ -324,7 +324,7 @@ final class MeetingCrudTest extends WebTestCase
 
         $this->client->loginUser($attendee);
         $crawler = $this->client->request('GET', '/reuniones/'.$id);
-        $join = $crawler->selectLink('Unirse a la videollamada');
+        $join = $crawler->selectLink('Unirse');
         self::assertCount(1, $join);
         self::assertSame('https://meet.google.com/abc-defg-hij', $join->attr('href'));
         self::assertSame('noopener noreferrer', $join->attr('rel'));
@@ -361,7 +361,7 @@ final class MeetingCrudTest extends WebTestCase
         $this->client->loginUser($coordinator);
         $crawler = $this->client->request('GET', '/reuniones/'.$meeting->getId());
 
-        self::assertCount(0, $crawler->selectLink('Unirse a la videollamada'));
+        self::assertCount(0, $crawler->selectLink('Unirse'));
     }
 
     /**
