@@ -865,8 +865,10 @@ a.badge:hover { border-color: currentColor; }
 trix-toolbar .trix-button-group { border-color: var(--border-strong); }
 /* Los cuadros de una reunión (rich-text.js): el mismo editor, del tamaño de un textarea de formulario. */
 trix-editor.rich-text-editor { min-height: 140px; font-size: 14px; padding: 10px 12px; }
-/* Sin adjuntos: no hay dónde guardarlos, y rich-text.js rechaza el fichero si alguien lo arrastra. */
-trix-toolbar .trix-button-group--file-tools { display: none; }
+/* Sin adjuntos: no hay dónde guardarlos, y rich-text.js rechaza el fichero si alguien lo arrastra. Con
+   las dos clases, porque trix.css se carga DESPUÉS y su `trix-toolbar .trix-button-group { display: flex }`
+   empata en especificidad con una sola y gana por orden: el clip seguía a la vista. */
+trix-toolbar .trix-button-group.trix-button-group--file-tools { display: none; }
 /* Botones de la barra en los colores del tema; los iconos de Trix son SVG oscuros, así que en el tema
    oscuro se invierten para que no desaparezcan sobre el fondo. */
 trix-toolbar .trix-button { background: var(--surface); color: var(--text); border-bottom-color: var(--border-strong); }
@@ -1151,9 +1153,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 /* Errores de formulario de Symfony: form_errors los renderiza como <ul><li> SIN clase (no hay tema
    propio de formulario). El :not([class]) es lo que impide que esto pinte de rojo cualquier lista que
    una plantilla ponga dentro de un form con su propia clase — pasaba con las horas de "apuntar
-   ausencia", que salían con el grupo en rojo sin razón. */
-.form-row ul:not([class]), form > ul:not([class]) { list-style: none; margin: 6px 0 0; padding: 0; }
-.form-row ul:not([class]) li, form > ul:not([class]) li { color: var(--danger-text); font-size: 13px; }
+   ausencia", que salían con el grupo en rojo sin razón. El :not(trix-editor *) hace lo mismo con las listas
+   que se ESCRIBEN en un cuadro con formato (orden del día, acta): tampoco llevan clase, y salían en rojo
+   y sin viñetas, como si fueran un error. */
+.form-row ul:not([class]):not(trix-editor *), form > ul:not([class]) { list-style: none; margin: 6px 0 0; padding: 0; }
+.form-row ul:not([class]):not(trix-editor *) li, form > ul:not([class]) li { color: var(--danger-text); font-size: 13px; }
 .form-row input[aria-invalid="true"], .form-row select[aria-invalid="true"] { border-color: var(--danger); }
 
 /* Bloque de error global del formulario (también usado en login). */
