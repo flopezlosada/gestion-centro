@@ -360,7 +360,7 @@ final class GuardiaTaskBankTest extends WebTestCase
         self::assertResponseIsSuccessful();
         $card = static fn (string $title): Crawler => $crawler->filter('.bank-card')->reduce(static fn (Crawler $c): bool => str_contains($c->text(), $title));
         $expectedDay = $this->year->getTerm1Start()->format('d/m');
-        self::assertStringContainsString('Ya la hizo E4D · '.$expectedDay, $card('Ya hecha')->text());
+        self::assertStringContainsString('Ya la hizo E4D el '.$expectedDay, $card('Ya hecha')->text());
         self::assertStringNotContainsString('Ya la hizo', $card('La hizo otro grupo')->text());
         self::assertStringNotContainsString('Ya la hizo', $card('Guardia con incidencia')->text());
     }

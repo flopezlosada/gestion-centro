@@ -205,7 +205,7 @@
                 {% set meta = meta|merge([item.timesUsed == 0 ? 'Sin estrenar' : (item.timesUsed == 1 ? 'Usada 1 vez' : 'Usada ' ~ item.timesUsed ~ ' veces')]) %}
                 {% if item.hasDocument and item.suggestedCopies %}{% set meta = meta|merge([item.suggestedCopies ~ ' copias']) %}{% endif %}
 
-                <article class="bank-card{{ suggested ? ' is-suggested' }}{{ not item.active ? ' is-retired' }}">
+                <article class="bank-card{{ suggested ? ' is-suggested' }}{{ not item.active ? ' is-retired' }}{{ doneByGroup[item.id] is defined ? ' is-done-by-group' }}">
                     <div class="bank-card__top">
                         {#- La procedencia se muestra SIEMPRE (es de quién te fías al coger la ficha) y el
                             chip la acompaña, en vez de sustituirla: cuando la sugerida perdía el
@@ -215,7 +215,7 @@
                             {% if not item.active %}<span class="bank-card__flag bank-card__flag--muted">Retirada</span>{% endif %}
                             {#- Que el grupo ya la hizo es lo primero que quiere saber quien elige para él:
                                 repetirle la ficha de la semana pasada es tirar la hora. -#}
-                            {% if doneByGroup[item.id] is defined %}<span class="bank-card__flag bank-card__flag--muted">Ya la hizo {{ cover.groupName }} · {{ doneByGroup[item.id]|date('d/m', false) }}</span>{% endif %}
+                            {% if doneByGroup[item.id] is defined %}<span class="bank-card__flag bank-card__flag--done">Ya la hizo {{ cover.groupName }} el {{ doneByGroup[item.id]|date('d/m', false) }}</span>{% endif %}
                             <span class="bank-card__from">Dpto. {{ item.department.name }}</span>
                         </span>
 

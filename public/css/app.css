@@ -4955,6 +4955,11 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
     color: var(--accent-ink); background: var(--accent-weak); border: 1px solid var(--accent-weak-border);
 }
 .bank-card__flag--muted { color: var(--text-muted); background: var(--surface-sunken); border-color: var(--border); }
+/* Que el grupo ya la hizo tiene que verse al pasar la vista: en gris se perdía entre la procedencia.
+   El color de aviso va en la etiqueta y la tarjeta se apaga un poco; elegirla sigue estando permitido. */
+.bank-card__flag--done { color: var(--warning-text); background: var(--warning-weak); border-color: var(--warning-border); }
+.bank-card.is-done-by-group { background: var(--bg); }
+.bank-card.is-done-by-group .bank-card__title, .bank-card.is-done-by-group .bank-card__desc { color: var(--text-muted); }
 .bank-card__title { font-family: var(--font-display); font-weight: 500; font-size: 20px; line-height: 1.25; margin: 0; }
 .bank-card__desc { margin: 7px 0 0; font-size: 13.5px; line-height: 1.55; color: var(--text); }
 /* margin-top:auto en el pie (y no flex:1 en la descripción): alinea los pies de las tarjetas de una
