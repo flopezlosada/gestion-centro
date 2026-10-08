@@ -45,15 +45,15 @@ final class MeetingGroupSeriesTest extends WebTestCase
         $this->client->loginUser($keeper);
         $crawler = $this->client->request('GET', '/reuniones/'.$next->getId());
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('body', 'Acta anterior · pendiente de aprobación');
+        self::assertSelectorTextContains('body', 'está pendiente de aprobar');
 
-        $this->client->submit($crawler->selectButton('Dar el acta anterior por aprobada')->form());
+        $this->client->submit($crawler->selectButton('Dar por aprobada')->form());
 
         self::assertResponseRedirects('/reuniones/'.$next->getId(), null, 'vuelve a la reunión en la que se estaba');
         $this->em->clear();
         self::assertTrue($this->em->getRepository(Meeting::class)->find($previous->getId())?->areMinutesApproved());
         $this->client->request('GET', '/reuniones/'.$next->getId());
-        self::assertSelectorTextNotContains('body', 'Acta anterior · pendiente de aprobación', 'aprobada, deja de salir');
+        self::assertSelectorTextNotContains('body', 'está pendiente de aprobar', 'aprobada, deja de salir');
     }
 
     /** Quien no levantó el acta la ve pendiente, pero no la aprueba. */
@@ -71,7 +71,7 @@ final class MeetingGroupSeriesTest extends WebTestCase
         $this->client->loginUser($member);
         $this->client->request('GET', '/reuniones/'.$next->getId());
 
-        self::assertSelectorTextContains('body', 'Acta anterior · pendiente de aprobación');
+        self::assertSelectorTextContains('body', 'está pendiente de aprobar');
         self::assertSelectorNotExists('input[name="volver"]');
     }
 
@@ -88,7 +88,7 @@ final class MeetingGroupSeriesTest extends WebTestCase
         $this->client->loginUser($keeper);
         $this->client->request('GET', '/reuniones/'.$next->getId());
 
-        self::assertSelectorTextContains('body', 'todavía no se ha publicado');
+        self::assertSelectorTextContains('body', 'Todavía no se ha publicado');
         self::assertSelectorNotExists('input[name="volver"]');
     }
 
@@ -104,7 +104,7 @@ final class MeetingGroupSeriesTest extends WebTestCase
         $this->client->request('GET', '/reuniones/'.$meeting->getId());
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextNotContains('body', 'Acta anterior');
+        self::assertSelectorTextNotContains('body', 'pendiente de aprobar');
     }
 
     /** Añadir a mano a alguien que Peñalara no tiene (Rober en la TIC) marca el grupo para el próximo import. */

@@ -956,15 +956,17 @@ final class GuardiaPageTest extends WebTestCase
     /**
      * Una cobertura de la semana que se enseña sale rellena, con el grupo y a quién cubres. Sin horario
      * importado no cae en ninguna hora de guardia, así que lleva la marca de «fuera de tu horario»: no
-     * desaparece. El día sale de la semana mostrada (no de hoy) para que el test valga también en fin de
-     * semana, cuando la pantalla enseña la semana siguiente.
+     * desaparece. El día es el primero de la semana mostrada que aún no ha pasado (hoy entre semana, el
+     * lunes siguiente en fin de semana): sin horas importadas, una cobertura de un día ya terminado sale
+     * como «Cubriste», y un miércoles fijo rompía el test de jueves a viernes.
      */
     public function testMisGuardiasShowsACoverOfTheWeekFilledIn(): void
     {
         $user = $this->login(false);
         $absent = $this->user('Ausente Semana', 'asemana@centro.test');
-        $wednesday = TeacherGuardiaWeek::daysAround(new \DateTimeImmutable('today'))[2];
-        $this->cover($wednesday, 1, $absent, $user, group: '2ºB');
+        $today = new \DateTimeImmutable('today');
+        $day = array_values(array_filter(TeacherGuardiaWeek::daysAround($today), static fn (\DateTimeImmutable $d): bool => $d >= $today))[0];
+        $this->cover($day, 1, $absent, $user, group: '2ºB');
         $this->em->flush();
 
         $crawler = $this->client->request('GET', '/guardias/mias');

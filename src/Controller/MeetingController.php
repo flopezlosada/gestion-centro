@@ -211,7 +211,7 @@ final class MeetingController extends AbstractController
      * team ({@see MeetingAccess::isLeadership()}); nobody else.
      */
     #[Route('/{id}', name: 'meeting_show', requirements: ['id' => '\d+'], methods: ['GET'])]
-    public function show(Meeting $meeting, #[CurrentUser] User $user, MeetingAccess $access, MeetingRemarkRepository $remarks, MeetingRepository $meetings): Response
+    public function show(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, MeetingRemarkRepository $remarks, MeetingRepository $meetings): Response
     {
         $isAdmin = $this->isGranted('ROLE_ADMIN');
         if (!$access->canSee($meeting, $user, $isAdmin)) {
@@ -226,8 +226,16 @@ final class MeetingController extends AbstractController
             $previous = null;
         }
 
+        $now = new \DateTimeImmutable();
+
         return $this->render('meeting/show.html.twig', [
             'meeting' => $meeting,
+            // En qué punto está el acta: decide la píldora, el paso encendido y la ÚNICA acción principal.
+            'stage' => $meeting->minutesStage($now),
+            // Un acta publicada se LEE, también quien la escribe; corregirla es un gesto aparte («Corregir
+            // el texto») que abre el formulario. Sin él, cada visita a un acta cerrada era un formulario
+            // abierto a un clic de dejarla desactualizada.
+            'correcting' => $request->query->getBoolean('corregir'),
             'canManage' => $access->canManage($meeting, $user, $isAdmin),
             // Quien levanta el acta: no siempre quien convoca. Es quien la sube, la publica y la da por
             // aprobada. Se llama canKeepMinutes y no keepsMinutes porque Meeting::keepsMinutes() ya
@@ -243,7 +251,7 @@ final class MeetingController extends AbstractController
             // borrador, y con la otra condición el hilo desaparecía de la pantalla justo entonces.
             'remarks' => $meeting->wereMinutesEverPublished() ? $remarks->findThreadFor($meeting) : [],
             // Pasar lista solo tiene sentido cuando la reunión ya ha empezado: antes no hay nada que contar.
-            'isHeld' => $meeting->isPast(new \DateTimeImmutable()),
+            'isHeld' => $meeting->isPast($now),
             'previousPending' => $previous,
             // Aprobarla es de quien levantó ESA acta, igual que en su propia página.
             'canApprovePrevious' => null !== $previous && $access->canKeepMinutes($previous, $user, $isAdmin),

@@ -1,4 +1,30 @@
 {% extends 'app_shell.html.twig' %}
+{% import '_macros/task.html.twig' as t %}
+{% import _self as m %}
+
+{#- Iconos de trazo de esta pantalla. -#}
+{% macro icon(name) %}
+    {%- set paths = {
+        back: '<path d="M15 5l-7 7 7 7"/>',
+        calendar: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+        place: '<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',
+        video: '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/>',
+        pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
+        external: '<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+        download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+        check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+        clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+        alert: '<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17.2v.1"/>',
+        file: '<path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>',
+        chevron: '<path d="M9 6l6 6-6 6"/>',
+    } -%}
+    <svg class="mtg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ paths[name]|raw }}</svg>
+{%- endmacro %}
+
+{#- «hoy a las 10:42» o «el 06/10 a las 10:42». Sellos guardados: sin pasar por la zona (`false`), como el resto de la ficha. -#}
+{% macro when(at) %}
+    {%- if at|date('Y-m-d', false) == 'now'|date('Y-m-d') %}hoy a las {{ at|date('H:i', false) }}{% else %}el {{ at|date('d/m', false) }} a las {{ at|date('H:i', false) }}{% endif -%}
+{% endmacro %}
 
 {% block title %}{{ meeting.title }} · {{ app_organization_name }}{% endblock %}
 
@@ -12,366 +38,506 @@
 {% block bottomnav %}{% endblock %}
 
 {% block body %}
-    <div class="backbar">
-        <a class="backbar__back" href="{{ path('meeting_index') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>Reuniones</a>
-        {% if canManage %}<a class="backbar__edit" href="{{ path('meeting_edit', { id: meeting.id }) }}">Modificar</a>{% endif %}
-    </div>
+    {% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
+    {% set people = meeting.people %}
+    {% set approval = meeting.minutesApprovalRequired %}
+    {% set orgName = meeting.type ? meeting.type.name : null %}
 
-    <div class="page-head">
-        <div>
-            <p class="eyebrow">{% if meeting.project %}{{ meeting.project.name }}{% else %}Reunión{% endif %}</p>
+    {#- Quién hace qué en esta visita.
+        - writes: puede escribir el acta (o pasar lista) y la reunión ya ha empezado.
+        - editing: el acta está abierta a edición. Un acta publicada se LEE, también quien la escribe:
+          corregirla es un gesto aparte («Corregir el texto», ?corregir=1). Sin acta (familias, alumnado)
+          solo hay lista, y esa siempre se edita. -#}
+    {% set writes = canWriteMinutes and isHeld %}
+    {% set editing = writes and (stage is null or stage.value in ['sin_pdf', 'desactualizada', 'borrador'] or correcting) %}
+    {% set published = stage is not null and stage.value in ['publicada', 'aprobada'] %}
+    {#- Aprobar: lo publicado, aunque el texto se haya corregido después (el órgano aprueba lo que recibió). -#}
+    {% set canApprove = canKeepMinutes and approval and meeting.keepsMinutes and meeting.minutesPublished and not meeting.areMinutesApproved %}
+
+    {#- La ÚNICA acción principal de la pantalla, según el estado del acta. En escritorio va en su sitio
+        (la barra del formulario, el siguiente paso, las observaciones); en el móvil, además, fija abajo
+        (.mtg-dock), que la envía con form="…". -#}
+    {% set primary = null %}
+    {% if editing and stage is null %}
+        {% set primary = { form: 'acta-form', label: 'Guardar la asistencia' } %}
+    {% elseif editing and stage.value in ['sin_pdf', 'desactualizada'] %}
+        {% set primary = { form: 'acta-form', label: meeting.hasMinutes ? 'Guardar y volver a generar el PDF' : 'Guardar y generar el PDF', name: 'generar', confirm: meeting.hasMinutes } %}
+    {% elseif writes and stage.value == 'borrador' %}
+        {% set primary = { form: 'publish-form', label: 'Publicar y enviar por correo' } %}
+    {% elseif canApprove and stage.value == 'publicada' and not correcting %}
+        {% set primary = { form: 'approve-form', label: 'Marcar como aprobada' } %}
+    {% elseif canRemark and published and not writes %}
+        {% set primary = { form: 'obs-form', label: 'Enviar observación' } %}
+    {% endif %}
+    {% set regenerateConfirm = 'Se sustituirá el PDF que hay ahora por uno nuevo con lo que has escrito. ¿Seguir?' %}
+
+  <div class="mtg{{ primary ? ' mtg--dock' }}">
+    <a class="mtg-back" href="{{ path('meeting_index') }}">{{ m.icon('back') }}Reuniones</a>
+
+    <header class="mtg-head">
+        <div class="mtg-head__text">
+            <p class="mtg-eyebrow mtg-eyebrow--accent">Reunión{% if orgName %} · {{ orgName }}{% elseif not meeting.keepsMinutes %} · {{ meeting.scope.label|lower }}{% endif %}</p>
             <h1>{{ meeting.title }}</h1>
-            <p class="lead">
-                {{ meeting.startAt|date('d/m/Y') }} · {{ meeting.startAt|date('H:i') }}{% if meeting.endAt %}–{{ meeting.endAt|date('H:i') }}{% endif %}
-                {%- if meeting.place %} · {{ meeting.place }}{% endif %}
-                {%- if meeting.onlineUrl %} · por videollamada{% endif %}
+            <p class="mtg-head__meta">
+                <span>{{ m.icon('calendar') }}{{ dias[meeting.startAt|date('N')] }} {{ meeting.startAt|date('d/m/Y') }} · {{ meeting.startAt|date('H:i') }}{% if meeting.endAt %}–{{ meeting.endAt|date('H:i') }}{% endif %}</span>
+                {%- if meeting.place %}<span>{{ m.icon('place') }}{{ meeting.place }}</span>{% endif %}
+                {%- if meeting.onlineUrl %}<span>{{ m.icon('video') }}Por videollamada</span>{% endif %}
             </p>
         </div>
-    </div>
+        {% if canManage %}<a class="btn secondary sm mtg-head__edit" href="{{ path('meeting_edit', { id: meeting.id }) }}">{{ m.icon('pencil') }}Modificar</a>{% endif %}
+    </header>
 
-    <div class="detail-cols">
-      <div class="detail-main">
+    <div class="mtg-cols">
+      <div class="mtg-main">
         {#- La videollamada, lo primero de la columna que se lee: es a lo que se viene a esta pantalla cinco
-            minutos antes. Una fila con su dirección a la vista (se sabe a dónde lleva antes de pulsar), no un
-            botón suelto en la esquina de la cabecera, lejos de todo lo demás. -#}
-        {% if meeting.onlineUrl %}
-            <div class="handin handin--call">
-                <span class="handin__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg></span>
-                <div class="handin__text">
-                    <div class="handin__title">Por videollamada</div>
-                    <div class="handin__sub">{{ meeting.onlineUrl|replace({'https://': '', 'http://': ''}) }}</div>
+            minutos antes. Una fila con su dirección a la vista (se sabe a dónde lleva antes de pulsar). -#}
+        {% if meeting.onlineUrl or previousPending %}
+          <div class="mtg-stack">
+            {% if meeting.onlineUrl %}
+                <div class="mtg-call">
+                    <span class="mtg-call__icon">{{ m.icon('video') }}</span>
+                    <div class="mtg-call__text">
+                        <span class="mtg-eyebrow">Videollamada</span>
+                        <span class="mtg-call__url">{{ meeting.onlineUrl|replace({'https://': '', 'http://': ''}) }}</span>
+                    </div>
+                    <a class="btn secondary sm" href="{{ meeting.onlineUrl }}" target="_blank" rel="noopener noreferrer">Unirse{{ m.icon('external') }}</a>
                 </div>
-                <a class="btn btn-sm" href="{{ meeting.onlineUrl }}" target="_blank" rel="noopener noreferrer">Unirse</a>
-            </div>
-        {% endif %}
-        <div class="detail-block">
-            <div class="detail-block__label">Orden del día</div>
-            {% if meeting.agenda %}
-                <div class="detail-prose document-body">{{ meeting.agenda|sanitize_html('app.meeting_prose') }}</div>
-            {% else %}
-                {#- Las semanales se crean solas y sin orden del día: quien puede escribirlo lo tiene aquí a mano,
-                    no solo en el «Modificar» de la barra de arriba, que pasaba desapercibido. -#}
-                <p class="help">Sin orden del día.{% if canManage %} <a href="{{ path('meeting_edit', { id: meeting.id }) }}#meeting_form_agenda">Escribir el orden del día</a>{% endif %}</p>
             {% endif %}
-        </div>
 
-        {# ---- El acta de la reunión anterior del mismo grupo, mientras esté por aprobar: su aprobación es el
-               primer punto de esta, y el centro pidió darla desde aquí con un clic una vez vistas las
-               observaciones, sin ir a buscar la otra reunión. Solo quien levantó ESA acta la da por aprobada. ---- #}
-        {% if previousPending %}
-            <div class="detail-block">
-                <div class="detail-block__label">Acta anterior · pendiente de aprobación</div>
-                <p>Reunión del {{ previousPending.startAt|date('d/m/Y') }}.
-                    {%- if previousPending.wereMinutesEverPublished %}
-                        <a href="{{ path('meeting_show', { id: previousPending.id }) }}">Ver el acta{% if previousRemarks > 0 %} y sus {{ previousRemarks }} observacion{{ previousRemarks == 1 ? '' : 'es' }}{% endif %}</a>.
-                    {%- else %}
-                        Su acta todavía no se ha publicado, así que aún no se puede aprobar.
-                    {%- endif %}
-                </p>
-                {% if canApprovePrevious and previousPending.wereMinutesEverPublished %}
-                    <form method="post" action="{{ path('meeting_minutes_approve', { id: previousPending.id }) }}" data-confirm="¿Dar por aprobada el acta de la reunión del {{ previousPending.startAt|date('d/m/Y') }}?">
-                        <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ previousPending.id) }}">
-                        <input type="hidden" name="volver" value="{{ meeting.id }}">
-                        <button type="submit" class="btn secondary">Dar el acta anterior por aprobada</button>
-                    </form>
-                {% endif %}
-            </div>
+            {# ---- El acta de la reunión anterior del mismo grupo, mientras esté por aprobar: su aprobación es
+                   el primer punto de esta, y el centro pidió darla desde aquí con un clic una vez vistas las
+                   observaciones, sin ir a buscar la otra reunión. Solo quien levantó ESA acta la aprueba. ---- #}
+            {% if previousPending %}
+                <div class="mtg-warn">
+                    <p>
+                        <strong>El acta de la reunión del {{ previousPending.startAt|date('d/m/Y') }} está pendiente de aprobar.</strong>
+                        {% if not previousPending.wereMinutesEverPublished %}Todavía no se ha publicado, así que aún no se puede aprobar.
+                        {%- elseif canApprovePrevious %}Apruébala en esta reunión.{% endif %}
+                        {% if previousPending.wereMinutesEverPublished %}<a href="{{ path('meeting_show', { id: previousPending.id }) }}">Ver el acta{% if previousRemarks > 0 %} y sus {{ previousRemarks }} observacion{{ previousRemarks == 1 ? '' : 'es' }}{% endif %}</a>{% endif %}
+                    </p>
+                    {% if canApprovePrevious and previousPending.wereMinutesEverPublished %}
+                        <form method="post" action="{{ path('meeting_minutes_approve', { id: previousPending.id }) }}" data-confirm="¿Dar por aprobada el acta de la reunión del {{ previousPending.startAt|date('d/m/Y') }}?">
+                            <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ previousPending.id) }}">
+                            <input type="hidden" name="volver" value="{{ meeting.id }}">
+                            <button type="submit" class="btn secondary sm">Dar por aprobada</button>
+                        </form>
+                    {% endif %}
+                </div>
+            {% endif %}
+          </div>
         {% endif %}
 
-        {# ---- El acta: lo que pasó en la sesión (asistencia, desarrollo, acuerdos) y el documento que sale de ello.
+        <section class="mtg-section">
+            <h2 class="mtg-section__title">Orden del día</h2>
+            {% if meeting.agenda %}
+                <div class="detail-prose document-body mtg-prose">{{ meeting.agenda|sanitize_html('app.meeting_prose') }}</div>
+            {% else %}
+                {#- Las semanales se crean solas y sin orden del día: quien puede escribirlo lo tiene aquí a mano. -#}
+                <div class="mtg-empty">
+                    <p>Todavía no hay orden del día.</p>
+                    {% if canManage %}<a class="btn tertiary" href="{{ path('meeting_edit', { id: meeting.id }) }}#meeting_form_agenda">+ Escribir el orden del día</a>{% endif %}
+                </div>
+            {% endif %}
+        </section>
 
-               Quien la ESCRIBE la ve en el orden en que se trabaja: pasar lista, escribir, generar el PDF y
-               publicarlo. Antes iba al revés —arriba el PDF con seis botones del mismo peso, abajo lo que se
-               escribe, y «Guardar» al final de la lista de asistencia— y generar el PDF era un formulario
-               aparte que no mandaba lo escrito: se perdía. Ahora es un único formulario con su barra de
-               acciones pegada abajo, y debajo el documento con UNA acción principal según en qué punto esté.
-
-               Quien solo asiste ve el acta publicada y el texto, como siempre.
+        {# ---- El acta: lo que pasó en la sesión (asistencia, desarrollo, acuerdos) y el documento que sale de
+               ello, en el orden en que se trabaja: pasar lista, escribir, generar el PDF y publicarlo.
 
                Con alumnado o con familias no hay acta AQUÍ —eso va a RAICES, y duplicarlo dejaría dos medios
                registros— pero sí lista: quién vino a una entrevista es un dato de esta cita. ---- #}
-        {% if not meeting.keepsMinutes %}
-            <div class="callout">
-                <p>{{ meeting.scope.note }}</p>
-            </div>
-        {% endif %}
-
-        {% set minutesState = not meeting.hasMinutes ? null : (not meeting.minutesPublished ? 'borrador' : 'publicada') %}
-        {% set minutesLabel -%}
-            {%- if meeting.keepsMinutes %}Acta
-                {%- if minutesState %} · {{ minutesState }}{% endif %}
-                {%- if meeting.minutesApprovalRequired and meeting.minutesPublished %} · {% if meeting.areMinutesApproved %}aprobada el {{ meeting.minutesApprovedAt|date('d/m/Y') }}{% else %}pendiente de aprobación{% endif %}{% endif %}
-            {%- else %}Asistencia{% endif -%}
-        {%- endset %}
-
-        {% if canWriteMinutes and isHeld %}
-            <div class="detail-block">
-                <div class="detail-block__label">{{ minutesLabel }}</div>
-
-                {# El PDF es más viejo que lo escrito: alguien ha corregido después de generarlo. #}
-                {% if meeting.keepsMinutes and meeting.minutesOutdated %}
-                    <div class="callout callout--warning">
-                        <p><strong>El acta se ha modificado después de generar el PDF.</strong>
-                        {%- if meeting.minutesPublished %} El archivo publicado es el anterior: genéralo otra vez y publícalo para que la corrección llegue.
-                        {%- else %} Genéralo otra vez para que recoja los cambios.{% endif %}</p>
-                    </div>
+        <section class="mtg-section" id="acta">
+            <div class="mtg-section__head">
+                <h2 class="mtg-section__title">{{ meeting.keepsMinutes ? 'Acta' : 'Asistencia' }}</h2>
+                {% if stage and (writes or published or stage.value == 'antes') %}
+                    {% set labels = stage.labels(approval) %}
+                    <span class="mtg-pill mtg-pill--{{ stage.value }}"><span class="mtg-pill__long">{{ labels[0] }}</span><span class="mtg-pill__short">{{ labels[1] }}</span></span>
+                {% elseif not meeting.keepsMinutes %}
+                    <span class="mtg-pill">Sin acta · solo asistencia</span>
                 {% endif %}
+            </div>
 
-                <form method="post" action="{{ path('meeting_record', { id: meeting.id }) }}" class="minutes-form">
+            {% if not meeting.keepsMinutes %}
+                <p class="mtg-section__sub">{{ meeting.scope.note }}</p>
+            {% endif %}
+
+            {#- El ciclo, para quien escribe el acta. Sin aprobación son cuatro pasos. -#}
+            {% if stage and writes %}
+                {% set steps = ['Asistencia', 'Redacción', 'PDF', 'Publicación']|merge(approval ? ['Aprobación'] : []) %}
+                {% set current = stage.step %}
+                <ol class="mtg-steps" aria-label="Pasos del acta">
+                    {% for label in steps %}
+                        {% set n = loop.index %}
+                        {% set state = n < current ? 'done' : (n == current ? (stage.value == 'desactualizada' ? 'warning' : 'current') : 'todo') %}
+                        <li class="mtg-steps__step is-{{ state }}"{% if n == current %} aria-current="step"{% endif %}>
+                            <span class="mtg-steps__dot">{% if state == 'done' %}{{ m.icon('check') }}{% elseif state == 'warning' %}!{% else %}{{ n }}{% endif %}</span>
+                            <span class="mtg-steps__label">{{ label }}</span>
+                        </li>
+                    {% endfor %}
+                </ol>
+                {% if current <= steps|length %}
+                    <p class="mtg-steps__mobile">Paso {{ current }} de {{ steps|length }} · <strong>{{ {3: 'Generar el PDF', 4: 'Publicar', 5: 'Aprobar'}[current] ?? steps[current - 1] }}</strong></p>
+                {% endif %}
+            {% elseif stage and published %}
+                <p class="mtg-section__sub">
+                    Publicada el {{ meeting.minutesPublishedAt|date('d/m/Y', false) }}{% if meeting.minutesPublishedBy %} por {{ meeting.minutesPublishedBy.fullName }}{% endif %}.
+                    {%- if stage.value == 'aprobada' %} Aprobada el {{ meeting.minutesApprovedAt|date('d/m/Y', false) }}.
+                    {%- elseif approval %} Pendiente de aprobar en la próxima reunión{% if orgName %} de la {{ orgName }}{% endif %}.{% endif %}
+                </p>
+            {% endif %}
+
+            <div class="mtg-acta">
+            {% if not isHeld %}
+                {#- Antes de la hora no hay nada que contar. -#}
+                <div class="mtg-wait">
+                    <span class="mtg-wait__icon">{{ m.icon('clock') }}</span>
+                    <div>
+                        <p class="mtg-wait__title">Todavía no ha empezado</p>
+                        {% if canWriteMinutes %}
+                            <p class="mtg-wait__text">Podrás pasar lista{% if meeting.keepsMinutes %} y escribir el acta{% endif %} en cuanto empiece la reunión, el {{ dias[meeting.startAt|date('N')]|lower }} {{ meeting.startAt|date('d/m') }} a las {{ meeting.startAt|date('H:i') }}.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+            {% elseif editing %}
+                {#- Un único formulario para todo lo que se escribe: generar el PDF sale de AQUÍ y no de un botón
+                    aparte, así que guarda primero y el PDF es siempre lo que hay en pantalla. -#}
+                <form method="post" action="{{ path('meeting_record', { id: meeting.id }) }}" id="acta-form" class="mtg-acta__form">
                     <input type="hidden" name="_token" value="{{ csrf_token('meeting_record' ~ meeting.id) }}">
 
-                    {#- La lista primero: se pasa al empezar, y en columnas para que un claustro no empuje lo
-                        demás varias pantallas abajo. Guardarla vacía es «no vino nadie», distinto de no
-                        haber pasado lista. -#}
-                    <fieldset class="minutes-roll">
-                        <legend class="minutes-roll__head">
-                            <span>Asistencia</span>
-                            {% if meeting.attendanceTaken %}<span class="minutes-roll__count">· asistieron {{ meeting.attended|length }} de {{ meeting.people|length }}</span>{% endif %}
-                        </legend>
-                        <button type="button" class="link-btn minutes-roll__all" data-check-all="asistentes[]" hidden>Marcar a todos</button>
-                        <div class="minutes-roll__grid">
-                            {% for person in meeting.people %}
-                                <label class="minutes-roll__person" title="{{ person.unit ? person.unit.name : 'Sin departamento' }}">
+                    {% if stage and stage.value == 'desactualizada' %}
+                        <div class="mtg-acta__notice">
+                            {{ m.icon('alert') }}
+                            <p><strong>El acta se ha modificado después de generar el PDF.</strong>
+                            {% if meeting.minutesPublished %}El archivo publicado es el anterior: genéralo otra vez y publícalo para que la corrección llegue.
+                            {%- else %}El PDF es {{ m.when(meeting.minutesUploadedAt) }}: genéralo otra vez para poder publicarlo.{% endif %}</p>
+                        </div>
+                    {% endif %}
+
+                    {#- La lista primero: se pasa al empezar. Guardarla vacía es «no vino nadie», distinto de no
+                        haber pasado lista. Las casillas son reales y van dentro de su etiqueta: el aspecto de
+                        marcado sale de :has(:checked), sin JS. -#}
+                    {% set dense = people|length > 12 %}
+                    <fieldset class="mtg-part mtg-roll" data-roll>
+                        <legend class="visually-hidden">Asistencia</legend>
+                        <div class="mtg-roll__head">
+                            <span class="mtg-eyebrow" aria-hidden="true">Asistencia</span>
+                            <span class="mtg-roll__count"><b data-roll-count>{{ meeting.attended|length }}</b> de {{ people|length }} asistieron</span>
+                            <button type="button" class="btn tertiary mtg-roll__all" data-check-all="asistentes[]" hidden>Marcar a todos</button>
+                        </div>
+                        <div class="mtg-roll__meter" aria-hidden="true"><span data-roll-meter style="width: {{ people is empty ? 0 : (meeting.attended|length * 100 / people|length)|round }}%"></span></div>
+                        {% if dense %}
+                            <div class="mtg-roll__search" data-roll-search-box hidden>
+                                <label class="visually-hidden" for="roll-search">Buscar por nombre</label>
+                                <input type="search" id="roll-search" placeholder="Buscar por nombre" autocomplete="off" data-roll-search>
+                            </div>
+                        {% endif %}
+                        <div class="mtg-roll__grid{{ dense ? ' mtg-roll__grid--dense' }}">
+                            {% for person in people %}
+                                <label class="mtg-person" title="{{ person.unit ? person.unit.name : 'Sin departamento' }}" data-roll-name="{{ person.fullName|lower }}">
                                     <input type="checkbox" name="asistentes[]" value="{{ person.id }}"{{ meeting.attended.contains(person) ? ' checked' : '' }}>
-                                    <span>{{ person.fullName }}</span>
+                                    {% if not dense %}{{ t.avatar(person, 'mtg-person__avatar') }}{% endif %}
+                                    <span class="mtg-person__name">{{ person.fullName }}</span>
+                                    <span class="mtg-person__box" aria-hidden="true">{{ m.icon('check') }}</span>
                                 </label>
                             {% endfor %}
                         </div>
+                        {% if dense %}<p class="mtg-roll__none" data-roll-none hidden>Nadie coincide con «<span data-roll-query></span>».</p>{% endif %}
                     </fieldset>
 
                     {% if meeting.keepsMinutes %}
-                        {# Dos cuadros y no uno: el centro los pidió por su nombre, y los acuerdos son la parte
-                           que se busca meses después. El orden del día se escribe al convocar. #}
-                        <div class="form-row">
-                            <label for="tratado">Desarrollo de la reunión</label>
-                            <textarea id="tratado" name="tratado" rows="8" data-rich-text placeholder="Se abre la sesión a las…&#10;Sobre el primer punto…">{{ meeting.discussion }}</textarea>
+                        {# Dos cuadros y no uno: el centro los pidió por su nombre, y los acuerdos son la parte que se
+                           busca meses después. El orden del día se escribe al convocar. #}
+                        <div class="mtg-part">
+                            <label class="mtg-eyebrow" for="tratado">Desarrollo de la reunión</label>
+                            <div class="mtg-editor">
+                                <textarea id="tratado" name="tratado" rows="8" data-rich-text placeholder="Se abre la sesión a las…&#10;Sobre el primer punto…">{{ meeting.discussion }}</textarea>
+                            </div>
                         </div>
-                        <div class="form-row">
-                            <label for="acuerdos">Acuerdos</label>
-                            <textarea id="acuerdos" name="acuerdos" rows="6" data-rich-text placeholder="1. Se acuerda…&#10;2. Se aprueba…">{{ meeting.agreements }}</textarea>
+                        <div class="mtg-part">
+                            <label class="mtg-eyebrow" for="acuerdos">Acuerdos</label>
+                            <div class="mtg-editor">
+                                <textarea id="acuerdos" name="acuerdos" rows="6" data-rich-text placeholder="1. Se acuerda…&#10;2. Se aprueba…">{{ meeting.agreements }}</textarea>
+                            </div>
                         </div>
                     {% endif %}
 
-                    {#- Pegada abajo mientras se escribe: guardar no puede quedar al final de una lista larga.
-                        Generar el PDF sale de AQUÍ y no de un botón aparte: guarda primero y genera después,
-                        así que el PDF es siempre lo que hay en pantalla. -#}
-                    {#- Una sola acción principal en pantalla: generar mientras no hay PDF o el que hay se ha
-                        quedado viejo; si está al día, lo siguiente es publicarlo, y el naranja va allí. -#}
-                    {% set generateIsNext = not meeting.hasMinutes or meeting.minutesOutdated %}
-                    <div class="minutes-form__bar">
-                        <button class="btn{{ meeting.keepsMinutes ? ' secondary' }}" type="submit">{{ meeting.keepsMinutes ? 'Guardar' : 'Guardar la asistencia' }}</button>
-                        {% if meeting.keepsMinutes %}
-                            <button class="btn{{ generateIsNext ? '' : ' secondary' }}" type="submit" name="generar" value="1"{% if meeting.hasMinutes %} data-confirm="Se sustituirá el PDF que hay ahora por uno nuevo con lo que has escrito. ¿Seguir?"{% endif %}>{{ meeting.hasMinutes ? 'Guardar y volver a generar el PDF' : 'Guardar y generar el PDF' }}</button>
-                        {% endif %}
+                    {#- Pegada abajo en escritorio mientras se escribe: guardar no puede quedar al final de una lista larga. -#}
+                    <div class="mtg-bar">
+                        <span class="mtg-bar__note">
+                            {%- if stage and stage.value in ['borrador', 'publicada', 'aprobada'] %}Si cambias el texto, el PDF quedará desactualizado.
+                            {%- elseif meeting.attendanceTaken %}Guardado {{ m.when(meeting.attendanceTakenAt) }}.{% endif -%}
+                        </span>
+                        <div class="mtg-bar__actions">
+                            {% if stage is null %}
+                                <button class="btn mtg-primary" type="submit">Guardar la asistencia</button>
+                            {% elseif stage.value in ['sin_pdf', 'desactualizada'] %}
+                                <button class="btn secondary" type="submit">Guardar</button>
+                                <button class="btn mtg-primary" type="submit" name="generar" value="1"{% if meeting.hasMinutes %} data-confirm="{{ regenerateConfirm }}"{% endif %}>{{ primary.label }}</button>
+                            {% else %}
+                                <button class="btn tertiary" type="submit" name="generar" value="1" data-confirm="{{ regenerateConfirm }}">Guardar y volver a generar el PDF</button>
+                                <button class="btn secondary" type="submit">Guardar</button>
+                            {% endif %}
+                        </div>
                     </div>
                 </form>
 
-                {% if meeting.keepsMinutes %}
-                    <div class="minutes-doc">
-                        <div class="detail-block__label">El documento</div>
-                        {% if meeting.hasMinutes %}
-                            <a class="doc-card" href="{{ path('meeting_minutes_download', { id: meeting.id }) }}">
-                                <span class="doc-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span>
-                                <span class="doc-card__body">
-                                    <span class="doc-card__name">{{ meeting.minutesName ?: 'Acta de la reunión' }}</span>
-                                    <span class="doc-card__meta">
-                                        Subida{% if meeting.minutesUploadedAt %} el {{ meeting.minutesUploadedAt|date('d/m/Y') }}{% endif %}
-                                        {%- if meeting.minutesUploadedBy %} por {{ meeting.minutesUploadedBy.fullName }}{% endif %}
-                                    </span>
-                                </span>
-                                <span class="doc-card__open">Descargar</span>
-                            </a>
-
-                            {#- Una sola acción principal, la que toca: publicar el borrador o, ya publicada,
-                                darla por aprobada si la reunión lo requiere. Aprobar un borrador que nadie ha
-                                leído no tiene sentido, así que no se ofrece antes de publicar. Aprobarla y
-                                quitarla son de quien LEVANTA el acta: certifican o destruyen el registro. -#}
-                            {% if not meeting.minutesPublished %}
-                                <div class="minutes-doc__next">
-                                    <p class="help"><strong>Es un borrador.</strong> Solo lo ves tú hasta que lo publiques.</p>
-                                    <form method="post" action="{{ path('meeting_minutes_publish', { id: meeting.id }) }}" data-confirm="¿Publicar el acta? Se enviará por correo, con el PDF adjunto, a todas las personas convocadas.">
-                                        <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
-                                        <button type="submit" class="btn{{ meeting.minutesOutdated ? ' secondary' }}">Publicar y enviar por correo</button>
-                                    </form>
-                                </div>
-                            {% else %}
-                                <div class="minutes-doc__next">
-                                    <p class="help">Publicada el {{ meeting.minutesPublishedAt|date('d/m/Y', false) }}{% if meeting.minutesPublishedBy %} por {{ meeting.minutesPublishedBy.fullName }}{% endif %}. Ya la tienen todos por correo y en su apartado de actas.</p>
-                                    {% if canKeepMinutes and meeting.minutesApprovalRequired and not meeting.areMinutesApproved %}
-                                        <form method="post" action="{{ path('meeting_minutes_approve', { id: meeting.id }) }}" data-confirm="¿Dar el acta por aprobada?">
-                                            <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
-                                            <button type="submit" class="btn">Dar el acta por aprobada</button>
-                                        </form>
-                                    {% endif %}
-                                </div>
-                            {% endif %}
-                        {% else %}
-                            <p class="help">Todavía no hay PDF. Sale de lo escrito arriba con «Guardar y generar el PDF».</p>
-                        {% endif %}
-
-                        {#- Lo que se usa poco, plegado: un acta escrita fuera de la app, o quitarla. -#}
-                        <details class="minutes-more">
-                            <summary>Otras opciones</summary>
-                            <form method="post" action="{{ path('meeting_minutes_upload', { id: meeting.id }) }}" enctype="multipart/form-data" class="deliverable-form">
-                                <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
-                                <label class="classcard__file">
-                                    <span class="visually-hidden">Archivo del acta</span>
-                                    <input type="file" name="acta" required data-max-bytes="{{ constant('App\\Support\\DocumentUpload::MAX_BYTES') }}">
-                                </label>
-                                <button class="btn secondary" type="submit">{{ meeting.hasMinutes ? 'Sustituir por este archivo' : 'Subir un acta hecha aparte' }}</button>
-                            </form>
-                            <p class="help">Si el acta se ha escrito fuera de la app. PDF, Office, texto o imagen, hasta {{ (constant('App\\Support\\DocumentUpload::MAX_BYTES') / 1024 / 1024)|round }} MB.</p>
-                            {% if canKeepMinutes and meeting.hasMinutes %}
-                                <form method="post" action="{{ path('meeting_minutes_delete', { id: meeting.id }) }}" data-confirm="¿Quitar el acta de esta reunión?">
-                                    <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
-                                    <button type="submit" class="link-danger">Quitar el acta</button>
-                                </form>
-                            {% endif %}
-                        </details>
-                    </div>
-                {% endif %}
-            </div>
-        {% else %}
-            {# Quien no la escribe (o todavía no se puede): el documento si ya salió, y el texto. #}
-            {% if meeting.keepsMinutes %}
-                <div class="detail-block">
-                    <div class="detail-block__label">{{ minutesLabel }}</div>
-                    {% if meeting.minutesOutdated and meeting.minutesPublished %}
-                        <div class="callout callout--warning">
+            {% else %}
+                {#- Modo lectura: el acta publicada (también para quien la escribe) o la vista de quien asiste. El
+                    texto solo se enseña cuando coincide con lo publicado: un borrador —también el de una
+                    corrección, que regenerar devuelve a borrador— es de quien lo escribe («solo lo ves tú»). -#}
+                {% set showText = stage is not null and stage.value in ['publicada', 'aprobada'] %}
+                {% if meeting.keepsMinutes and not showText %}
+                    {% set fixing = meeting.wereMinutesEverPublished %}
+                    {% if fixing and meeting.minutesOutdated and meeting.minutesPublished %}
+                        <div class="mtg-acta__notice">
+                            {{ m.icon('alert') }}
                             <p><strong>El acta se ha modificado después de generar el PDF.</strong> El archivo publicado es el anterior.</p>
                         </div>
                     {% endif %}
-                    {% if meeting.hasMinutes and meeting.minutesPublished %}
-                        <a class="doc-card" href="{{ path('meeting_minutes_download', { id: meeting.id }) }}">
-                            <span class="doc-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span>
-                            <span class="doc-card__body">
-                                <span class="doc-card__name">{{ meeting.minutesName ?: 'Acta de la reunión' }}</span>
-                                <span class="doc-card__meta">Publicada el {{ meeting.minutesPublishedAt|date('d/m/Y', false) }}</span>
-                            </span>
-                            <span class="doc-card__open">Descargar</span>
-                        </a>
-                    {% elseif meeting.hasMinutes %}
-                        <p class="help">El acta está en preparación. Cuando se publique, la recibirás por correo.</p>
-                    {% elseif not isHeld and canWriteMinutes %}
-                        <p class="help">Podrás pasar lista y escribir el acta en cuanto empiece la reunión ({{ meeting.startAt|date('d/m/Y H:i') }}).</p>
-                    {% else %}
-                        <p class="help">Todavía no hay acta de esta reunión.</p>
-                    {% endif %}
-                </div>
-            {% elseif not isHeld and canWriteMinutes %}
-                <div class="detail-block">
-                    <div class="detail-block__label">Asistencia</div>
-                    <p class="help">Podrás pasar lista en cuanto empiece la reunión ({{ meeting.startAt|date('d/m/Y H:i') }}).</p>
-                </div>
-            {% endif %}
-
-            {% if isHeld %}
-                <div class="detail-block">
-                    {% if meeting.keepsMinutes %}
-                        <div class="detail-block__label">Desarrollo de la reunión</div>
-                        {% if meeting.discussion %}
-                            <div class="detail-prose document-body">{{ meeting.discussion|sanitize_html('app.meeting_prose') }}</div>
-                        {% else %}
-                            <p class="help">Todavía no se ha recogido el desarrollo.</p>
-                        {% endif %}
-                        {% if meeting.agreements %}
-                            <div class="detail-block__label">Acuerdos</div>
-                            <div class="detail-prose document-body">{{ meeting.agreements|sanitize_html('app.meeting_prose') }}</div>
-                        {% endif %}
-                    {% endif %}
-                    <div class="detail-block__label">Asistencia{% if meeting.attendanceTaken %} · asistieron {{ meeting.attended|length }} de {{ meeting.people|length }}{% endif %}</div>
-                    {% if meeting.attendanceTaken %}
-                        <p class="detail-prose">Asistió: {% for person in meeting.attended %}{{ person.fullName }}{% if not loop.last %} · {% endif %}{% else %}nadie{% endfor %}</p>
-                        {% if meeting.absentees is not empty %}
-                            <p class="help">No asistió: {% for person in meeting.absentees %}{{ person.fullName }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
-                        {% endif %}
-                    {% else %}
-                        <p class="help">Todavía no se ha pasado lista.</p>
-                    {% endif %}
-                </div>
-            {% endif %}
-        {% endif %}
-
-        {# ---- Observaciones al acta publicada. El acta no la reescribe quien asiste, pero puede decir que
-               una línea no dice lo que se acordó: eso es esto. No entra en el PDF —el acta es lo que aprobó
-               el órgano, no un hilo— y llega como aviso a quien la levanta y a quien convocó, que son los
-               dos que pueden corregirla. ---- #}
-        {% if meeting.wereMinutesEverPublished and meeting.keepsMinutes and (remarks is not empty or canRemark) %}
-            <div class="detail-block" id="observaciones">
-                <div class="detail-block__label">Observaciones al acta{% if remarks is not empty %} · {{ remarks|length }}{% endif %}</div>
-                {% if remarks is empty %}
-                    <p class="help">Nadie ha puntualizado el acta.</p>
+                    <div class="mtg-wait">
+                        <span class="mtg-wait__icon">{{ m.icon('file') }}</span>
+                        <div>
+                            <p class="mtg-wait__title">{{ fixing ? 'El acta se está corrigiendo' : (meeting.hasMinutes ? 'El acta está en preparación' : 'Todavía no hay acta') }}</p>
+                            <p class="mtg-wait__text">Cuando se publique{{ fixing ? ' de nuevo' }}, la recibirás por correo.</p>
+                        </div>
+                    </div>
                 {% else %}
-                    <ol class="thread">
-                        {% for remark in remarks %}
-                            <li class="thread__item">
-                                <div class="thread__head">
-                                    <span class="thread__who">{{ remark.author ? remark.author.fullName : 'Alguien que ya no está en el centro' }}</span>
-                                    <time class="thread__when" datetime="{{ remark.createdAt|date('c') }}">{{ remark.createdAt|date('d/m/Y H:i', false) }}</time>
+                    <div class="mtg-part">
+                        <p class="mtg-eyebrow">Asistencia</p>
+                        {% if meeting.attendanceTaken %}
+                            {% set absent = meeting.absentees %}
+                            <p class="mtg-attlist__title"><span class="mtg-attlist__dot" aria-hidden="true"></span>Asistieron · {{ meeting.attended|length }}</p>
+                            <ul class="mtg-attlist{{ people|length > 12 ? ' mtg-attlist--dense' }}">
+                                {% for person in meeting.attended %}<li>{{ person.fullName }}</li>{% else %}<li>Nadie</li>{% endfor %}
+                            </ul>
+                            {% if absent is not empty %}
+                                <p class="mtg-attlist__title mtg-attlist__title--absent"><span class="mtg-attlist__ring" aria-hidden="true"></span>No asistieron · {{ absent|length }}</p>
+                                <ul class="mtg-attlist mtg-attlist--absent{{ people|length > 12 ? ' mtg-attlist--dense' }}">
+                                    {% for person in absent %}<li>{{ person.fullName }}</li>{% endfor %}
+                                </ul>
+                            {% endif %}
+                        {% else %}
+                            <p class="mtg-muted">Todavía no se ha pasado lista.</p>
+                        {% endif %}
+                    </div>
+                    {% if showText %}
+                        <div class="mtg-part">
+                            <div class="mtg-part__head">
+                                <p class="mtg-eyebrow">Desarrollo de la reunión</p>
+                                {% if writes %}<a class="btn tertiary" href="{{ path('meeting_show', { id: meeting.id, corregir: 1 }) }}#acta">{{ m.icon('pencil') }}Corregir el texto</a>{% endif %}
+                            </div>
+                            {% if meeting.discussion %}
+                                <div class="detail-prose document-body mtg-prose">{{ meeting.discussion|sanitize_html('app.meeting_prose') }}</div>
+                            {% else %}
+                                <p class="mtg-muted">No se recogió el desarrollo.</p>
+                            {% endif %}
+                        </div>
+                        {% if meeting.agreements %}
+                            <div class="mtg-part">
+                                <p class="mtg-eyebrow">Acuerdos</p>
+                                <div class="detail-prose document-body mtg-prose">{{ meeting.agreements|sanitize_html('app.meeting_prose') }}</div>
+                            </div>
+                        {% endif %}
+                    {% endif %}
+                {% endif %}
+            {% endif %}
+
+            {#- El documento: quien escribe lo ve siempre; el resto, solo publicado (la descarga de un borrador
+                es de quien lo levanta). -#}
+            {% if meeting.keepsMinutes and isHeld and (writes or (meeting.hasMinutes and meeting.minutesPublished)) %}
+                <div class="mtg-part">
+                    <p class="mtg-eyebrow">Documento</p>
+                    {% if meeting.hasMinutes %}
+                        {% set stale = meeting.minutesOutdated %}
+                        {% set ext = (meeting.minutesName ?: 'acta.pdf')|split('.')|last|upper %}
+                        <div class="mtg-doc{{ stale ? ' mtg-doc--stale' }}">
+                            <span class="mtg-doc__icon" aria-hidden="true">{{ m.icon('file') }}<span>{{ ext|length <= 4 ? ext : 'DOC' }}</span></span>
+                            <div class="mtg-doc__body">
+                                <span class="mtg-doc__name">{{ meeting.minutesName ?: 'Acta de la reunión' }}{% if stale %} <span class="mtg-doc__flag">Desactualizado</span>{% endif %}</span>
+                                <span class="mtg-doc__meta">
+                                    {%- if stale %}Del {{ meeting.minutesUploadedAt|date('d/m', false) }} a las {{ meeting.minutesUploadedAt|date('H:i', false) }} · anterior a las correcciones
+                                    {%- elseif meeting.minutesPublished %}Publicado el {{ meeting.minutesPublishedAt|date('d/m/Y', false) }}{% if meeting.minutesPublishedBy %} por {{ meeting.minutesPublishedBy.fullName }}{% endif %}
+                                    {%- elseif meeting.minutesUploadedAt %}Preparado {{ m.when(meeting.minutesUploadedAt) }} · solo lo ves tú{% endif -%}
+                                </span>
+                            </div>
+                            <a class="btn secondary sm" href="{{ path('meeting_minutes_download', { id: meeting.id }) }}">{{ m.icon('download') }}Descargar</a>
+                        </div>
+                    {% else %}
+                        <p class="mtg-doc mtg-doc--empty">Aún no hay PDF. Se genera a partir del texto de arriba y solo lo verás tú hasta que lo publiques.</p>
+                    {% endif %}
+                </div>
+            {% endif %}
+
+            {#- El siguiente paso, cuando no es el del formulario: publicar el borrador o aprobar lo publicado.
+                Aprobar un borrador que nadie ha leído no tiene sentido. Aprobarla y quitarla son de quien
+                LEVANTA el acta: certifican o destruyen el registro. -#}
+            {% if writes and stage and stage.value == 'borrador' %}
+                <div class="mtg-next">
+                    <p><strong>Es un borrador al día.</strong> Solo lo ves tú. Al publicarlo se envía por correo a las {{ people|length }} personas de la reunión.</p>
+                    <form method="post" action="{{ path('meeting_minutes_publish', { id: meeting.id }) }}" id="publish-form" data-confirm="¿Publicar el acta? Se enviará por correo, con el PDF adjunto, a todas las personas convocadas." data-confirm-unsaved="Tienes cambios sin guardar en el acta y no irán en lo que se envía: se publica el PDF que ya está generado, y lo escrito se perderá. ¿Publicar igualmente?">
+                        <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
+                        <button type="submit" class="btn mtg-primary">Publicar y enviar por correo</button>
+                    </form>
+                </div>
+            {% elseif canApprove %}
+                <div class="mtg-next">
+                    <p><strong>Publicada y enviada.</strong> {{ orgName ? 'La ' ~ orgName : 'El órgano' }} la aprueba en su siguiente reunión; márcala cuando se haya aprobado.</p>
+                    <form method="post" action="{{ path('meeting_minutes_approve', { id: meeting.id }) }}" id="approve-form" data-confirm="¿Dar el acta por aprobada?">
+                        <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
+                        <button type="submit" class="btn{{ primary and primary.form == 'approve-form' ? ' mtg-primary' : ' secondary' }}">Marcar como aprobada</button>
+                    </form>
+                </div>
+            {% endif %}
+
+            {#- Lo que se usa poco, plegado: un acta escrita fuera de la app, o quitarla. -#}
+            {% if writes and meeting.keepsMinutes %}
+                {% set maxBytes = constant('App\\Support\\DocumentUpload::MAX_BYTES') %}
+                <details class="mtg-more">
+                    <summary>{{ m.icon('chevron') }}<span>Otras opciones</span><span class="mtg-more__hint">· subir un acta escrita fuera de la app{% if canKeepMinutes and meeting.hasMinutes %}, quitar el acta{% endif %}</span></summary>
+                    <div class="mtg-more__body">
+                        <form method="post" action="{{ path('meeting_minutes_upload', { id: meeting.id }) }}" enctype="multipart/form-data" class="mtg-option">
+                            <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
+                            <div class="mtg-option__text">
+                                <p class="mtg-option__title">Subir un acta escrita fuera de la app</p>
+                                <p class="mtg-option__sub">PDF, Office, texto o imagen, hasta {{ (maxBytes / 1024 / 1024)|round }} MB.{% if meeting.hasMinutes %} Sustituye al documento que hay ahora.{% endif %}</p>
+                                <p class="mtg-option__file" data-file-name hidden></p>
+                            </div>
+                            <div class="mtg-option__actions">
+                                <label class="btn secondary sm mtg-file">
+                                    <input type="file" name="acta" required data-max-bytes="{{ maxBytes }}" data-file-pick>
+                                    Elegir archivo…
+                                </label>
+                                <button class="btn tertiary" type="submit">Subir</button>
+                            </div>
+                        </form>
+                        {% if canKeepMinutes and meeting.hasMinutes %}
+                            {#- Quita el DOCUMENTO y la publicación; el texto y la lista se quedan (Meeting::clearMinutes). -#}
+                            <form method="post" action="{{ path('meeting_minutes_delete', { id: meeting.id }) }}" class="mtg-option mtg-option--danger" data-confirm="¿Quitar el acta de esta reunión? Se borra el documento y deja de estar publicada.">
+                                <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
+                                <div class="mtg-option__text">
+                                    <p class="mtg-option__title">Quitar el acta</p>
+                                    <p class="mtg-option__sub">Se borra el documento y deja de estar publicada. El texto y la asistencia se quedan para volver a generarla.</p>
                                 </div>
-                                <p class="thread__body">{{ remark.body|nl2br }}</p>
+                                <button type="submit" class="btn danger sm">Quitar el acta…</button>
+                            </form>
+                        {% endif %}
+                    </div>
+                </details>
+            {% endif %}
+            </div>{# /mtg-acta #}
+        </section>
+
+        {# ---- Observaciones al acta publicada. El acta no la reescribe quien asiste, pero puede decir que una
+               línea no dice lo que se acordó: eso es esto. No entra en el PDF —el acta es lo que aprobó el
+               órgano, no un hilo— y llega como aviso a quien la levanta y a quien convocó. ---- #}
+        {% if meeting.wereMinutesEverPublished and meeting.keepsMinutes and (remarks is not empty or canRemark) %}
+            <section class="mtg-section" id="observaciones">
+                <div class="mtg-section__head">
+                    <h2 class="mtg-section__title">Observaciones al acta</h2>
+                    {% if remarks is not empty %}<span class="mtg-count">{{ remarks|length }}</span>{% endif %}
+                </div>
+                <p class="mtg-section__sub">Las ve todo el que puede leer el acta y se revisan antes de aprobarla.</p>
+
+                {% if remarks is not empty %}
+                    <ol class="mtg-thread">
+                        {% for remark in remarks %}
+                            <li class="mtg-thread__item">
+                                {% if remark.author %}{{ t.avatar(remark.author, 'mtg-thread__avatar') }}{% else %}<span class="person__avatar mtg-thread__avatar" aria-hidden="true">?</span>{% endif %}
+                                <div class="mtg-thread__body">
+                                    <div class="mtg-thread__head">
+                                        <span class="mtg-thread__who">{{ remark.author ? remark.author.fullName : 'Alguien que ya no está en el centro' }}</span>
+                                        <time class="mtg-thread__when" datetime="{{ remark.createdAt|date('c') }}">{{ remark.createdAt|date('d/m/Y H:i', false) }}</time>
+                                    </div>
+                                    <p class="mtg-thread__text">{{ remark.body|nl2br }}</p>
+                                </div>
                             </li>
                         {% endfor %}
                     </ol>
                 {% endif %}
 
                 {% if canRemark %}
-                    <form method="post" action="{{ path('meeting_remark', { id: meeting.id }) }}" class="thread__form">
+                    <form method="post" action="{{ path('meeting_remark', { id: meeting.id }) }}" id="obs-form" class="mtg-obs-form">
                         <input type="hidden" name="_token" value="{{ csrf_token('meeting_remark' ~ meeting.id) }}">
-                        <label class="visually-hidden" for="observacion">Escribe una observación al acta</label>
-                        <textarea id="observacion" name="observacion" rows="2" maxlength="{{ constant('App\\Entity\\MeetingRemark::MAX_LENGTH') }}" placeholder="Ej.: en el punto 3 se acordó aplazarlo, no aprobarlo."></textarea>
-                        <button type="submit" class="btn secondary">Añadir observación</button>
+                        <label for="observacion">Añadir una observación</label>
+                        <textarea id="observacion" name="observacion" rows="3" required maxlength="{{ constant('App\\Entity\\MeetingRemark::MAX_LENGTH') }}" placeholder="Ej.: en el punto 3 se acordó aplazarlo, no aprobarlo."></textarea>
+                        <div class="mtg-obs-form__foot">
+                            <p class="mtg-muted">No cambia el acta: la comenta. Se avisa a quien la levanta y a quien convocó.</p>
+                            <button type="submit" class="btn{{ primary and primary.form == 'obs-form' ? ' mtg-primary' : ' secondary' }}">Enviar observación</button>
+                        </div>
                     </form>
-                    <p class="help">No cambia el acta: la comenta. Se avisa a quien la levanta y a quien convocó, que son quienes pueden corregirla y volver a publicarla.</p>
                 {% endif %}
-            </div>
+            </section>
         {% endif %}
-      </div>{# /detail-main #}
+      </div>{# /mtg-main #}
 
-      <aside class="detail-aside">
-        <div class="detail-block">
-            <div class="detail-block__label">La convocatoria</div>
-            <dl class="meta-grid">
-                <div class="meta-grid__cell"><dt>Convoca</dt><dd>{{ meeting.convener ? meeting.convener.fullName : '—' }}</dd></div>
-                <div class="meta-grid__cell"><dt>Levanta el acta</dt><dd>{{ meeting.minutesKeeper ? meeting.minutesKeeper.fullName : '—' }}</dd></div>
-                <div class="meta-grid__cell"><dt>Cuándo</dt><dd>{{ meeting.startAt|date('d/m/Y H:i') }}</dd></div>
-                <div class="meta-grid__cell"><dt>Lugar</dt><dd>{{ meeting.place ?: '—' }}</dd></div>
-                <div class="meta-grid__cell"><dt>Proyecto</dt><dd>{{ meeting.project ? meeting.project.name : '—' }}</dd></div>
-                {#- Se enseña a todos, no solo a quien convoca: saber si vas a recibir el aviso (o si te
-                    tienes que acordar tú) es justo lo que uno quiere comprobar al leer la convocatoria. -#}
-                <div class="meta-grid__cell"><dt>Aviso</dt><dd>{{ meeting.reminder ? meeting.reminder.label : 'Sin aviso' }}</dd></div>
+      <aside class="mtg-aside">
+        <div class="mtg-card">
+            <h2>La convocatoria</h2>
+            <dl class="mtg-facts">
+                <div><dt>Convoca</dt><dd>{% if meeting.convener %}{{ t.avatar(meeting.convener, 'mtg-avatar') }}{{ meeting.convener.fullName }}{% else %}—{% endif %}</dd></div>
+                {% if meeting.keepsMinutes %}
+                    <div><dt>Levanta el acta</dt><dd>{% if meeting.minutesKeeper %}{{ t.avatar(meeting.minutesKeeper, 'mtg-avatar') }}{{ meeting.minutesKeeper.fullName }}{% else %}—{% endif %}</dd></div>
+                {% endif %}
+                <div><dt>Cuándo</dt><dd>{{ meeting.startAt|date('d/m/Y') }} · {{ meeting.startAt|date('H:i') }}{% if meeting.endAt %}–{{ meeting.endAt|date('H:i') }}{% endif %}</dd></div>
+                <div><dt>Lugar</dt><dd>{{ meeting.place ?: (meeting.onlineUrl ? 'Videollamada' : '—') }}</dd></div>
+                <div><dt>Proyecto</dt><dd>{% if meeting.project %}{{ meeting.project.name }}{% else %}<span class="mtg-faint">Ninguno</span>{% endif %}</dd></div>
+                {#- Se enseña a todos, no solo a quien convoca: saber si vas a recibir el aviso es justo lo que uno
+                    quiere comprobar al leer la convocatoria. -#}
+                <div><dt>Aviso</dt><dd>{{ meeting.reminder ? meeting.reminder.label : 'Sin aviso' }}</dd></div>
             </dl>
         </div>
 
-        <div class="detail-block">
-            <div class="detail-block__label">Personas convocadas · {{ meeting.attendees|length }}</div>
+        <div class="mtg-card">
+            <h2>Personas convocadas{% if meeting.attendees is not empty %} <span class="mtg-count">{{ meeting.attendees|length }}</span>{% endif %}</h2>
             {% if meeting.attendees is empty %}
-                <p class="help">Nadie más está convocado.</p>
+                <p class="mtg-muted">Nadie más está convocado.</p>
             {% else %}
-                {#- Como prosa separada por puntos, no como lista: en la columna estrecha del aside una
-                    lista de una línea por nombre ocupa media pantalla y no aporta nada. -#}
-                <p class="detail-prose">{% for attendee in meeting.attendees %}{{ attendee.fullName }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+                {#- Con un claustro, siete y el resto plegado: la lista entera empujaría lo demás pantallas abajo. -#}
+                {% set many = meeting.attendees|length > 12 %}
+                <ul class="mtg-people">
+                    {% for attendee in many ? meeting.attendees|slice(0, 7) : meeting.attendees %}
+                        <li>{{ t.avatar(attendee, 'mtg-avatar') }}{{ attendee.fullName }}</li>
+                    {% endfor %}
+                </ul>
+                {% if many %}
+                    <details class="mtg-people-more">
+                        <summary class="btn tertiary">Ver las {{ meeting.attendees|length }} personas</summary>
+                        <ul class="mtg-people">
+                            {% for attendee in meeting.attendees|slice(7) %}
+                                <li>{{ t.avatar(attendee, 'mtg-avatar') }}{{ attendee.fullName }}</li>
+                            {% endfor %}
+                        </ul>
+                    </details>
+                {% endif %}
             {% endif %}
         </div>
 
         {% if canManage %}
-            <div class="detail-block">
-                <div class="detail-block__label">Cancelar</div>
-                <form method="post" action="{{ path('meeting_delete', { id: meeting.id }) }}" data-confirm="¿Cancelar la reunión «{{ meeting.title }}»? Se borra también su acta.">
-                    <input type="hidden" name="_token" value="{{ csrf_token('meeting_delete' ~ meeting.id) }}">
-                    <button type="submit" class="link-danger">Cancelar la reunión</button>
-                </form>
-                <p class="help">Se avisa a todas las personas convocadas de que la reunión se ha cancelado.</p>
-            </div>
+            <form method="post" action="{{ path('meeting_delete', { id: meeting.id }) }}" class="mtg-danger" data-confirm="¿Cancelar la reunión «{{ meeting.title }}»? Se borra también su acta.">
+                <input type="hidden" name="_token" value="{{ csrf_token('meeting_delete' ~ meeting.id) }}">
+                <p class="mtg-danger__title">Cancelar la reunión</p>
+                <p class="mtg-danger__text">Se avisa por correo a todas las personas convocadas. El acta y lo escrito se pierden.</p>
+                <button type="submit" class="btn danger sm">Cancelar la reunión…</button>
+            </form>
         {% endif %}
-      </aside>{# /detail-aside #}
-    </div>{# /detail-cols #}
+      </aside>
+    </div>{# /mtg-cols #}
+
+    {#- Móvil: la acción principal, fija abajo y a ancho completo. Fuera de su formulario: lo envía con form="…". -#}
+    {% if primary %}
+        <div class="mtg-dock">
+            <button type="submit" class="btn" form="{{ primary.form }}"{% if primary.name is defined %} name="{{ primary.name }}" value="1"{% endif %}{% if primary.confirm ?? false %} data-confirm="{{ regenerateConfirm }}"{% endif %}>{{ primary.label }}</button>
+        </div>
+    {% endif %}
+  </div>{# /mtg #}
 {% endblock %}
 
-{#- El editor con formato solo hace falta a quien escribe el acta; al resto le basta el texto ya pintado. -#}
 {% block stylesheets %}
     {{ parent() }}
+    {#- El editor con formato solo hace falta a quien escribe el acta; al resto le basta el texto ya pintado.
+        Antes que meeting.css: sus reglas de la barra empatan con las de trix.css y tiene que ganar la nuestra. -#}
     {% if canWriteMinutes %}<link rel="stylesheet" href="{{ asset_ver('/vendor/trix/trix.css') }}">{% endif %}
+    <link rel="stylesheet" href="{{ asset_ver('/css/meeting.css') }}">
 {% endblock %}
 
 {% block page_scripts %}
@@ -379,5 +545,6 @@
         <script src="{{ asset_ver('/vendor/trix/trix.umd.min.js') }}"></script>
         <script src="{{ asset_ver('/js/rich-text.js') }}"></script>
         <script src="{{ asset_ver('/js/check-all.js') }}"></script>
+        <script src="{{ asset_ver('/js/meeting-acta.js') }}"></script>
     {% endif %}
 {% endblock %}

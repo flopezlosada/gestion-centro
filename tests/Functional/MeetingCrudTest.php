@@ -668,9 +668,14 @@ final class MeetingCrudTest extends WebTestCase
             self::assertResponseRedirects();
         }
 
-        // 2. Quien convocó no la tocaba mientras era borrador, pero ya ha salido: ahora sí la corrige.
+        // 2. Quien convocó no la tocaba mientras era borrador, pero ya ha salido: ahora sí la corrige. Publicada
+        //    se LEE: el formulario no está a la vista, sino detrás de «Corregir el texto».
         $this->client->loginUser($convener);
         $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        self::assertSelectorNotExists('form[action="'.$recordUrl.'"]', 'el acta publicada se lee, no se edita sin pedirlo');
+        $correct = $crawler->filter('a[href*="corregir=1"]');
+        self::assertCount(1, $correct, 'quien puede corregirla tiene el enlace');
+        $crawler = $this->client->request('GET', (string) $correct->attr('href'));
         $token = (string) $crawler->filter('form[action="'.$recordUrl.'"] input[name="_token"]')->attr('value');
         $this->client->request('POST', $recordUrl, ['_token' => $token, 'tratado' => 'Versión corregida.']);
         self::assertResponseRedirects();
@@ -733,6 +738,50 @@ final class MeetingCrudTest extends WebTestCase
         $stored = $this->em->getRepository(Meeting::class)->find($id);
         self::assertInstanceOf(Meeting::class, $stored);
         self::assertTrue($stored->minutesOutdated());
+        self::getContainer()->get(FileUploader::class)->remove((string) $stored->getMinutesPath());
+    }
+
+    /**
+     * El órgano aprueba lo que recibió: corregir el texto después de publicar deja el PDF desactualizado, pero
+     * no quita la opción de darla por aprobada (el servidor la admite, y la ficha la ofrecía antes del rediseño).
+     */
+    public function testAPublishedActaCanStillBeApprovedWhileItsTextIsBeingCorrected(): void
+    {
+        $convener = $this->user('Lucía Coordina', 'lucia35.meet@centro.test');
+        $attendee = $this->user('Pedro Convocado', 'pedro35.meet@centro.test');
+        $meeting = new Meeting($convener, 'CCP de febrero', new \DateTimeImmutable('-2 hours'));
+        $meeting->addAttendee($attendee);
+        $meeting->setMinutesApprovalRequired(true);
+        $this->em->persist($meeting);
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+        $recordUrl = '/reuniones/'.$id.'/acta/registro';
+        $publishUrl = '/reuniones/'.$id.'/acta/publicar';
+        $approveUrl = '/reuniones/'.$id.'/acta/aprobar';
+
+        $this->client->loginUser($convener);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $token = (string) $crawler->filter('form[action="'.$recordUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $recordUrl, ['_token' => $token, 'tratado' => 'Lo tratado.', 'generar' => '1']);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        self::assertSelectorNotExists('form[action="'.$approveUrl.'"]', 'un borrador no se aprueba');
+        $token = (string) $crawler->filter('form[action="'.$publishUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $publishUrl, ['_token' => $token]);
+
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        self::assertSelectorExists('form[action="'.$approveUrl.'"]', 'publicada, se ofrece aprobarla');
+
+        $crawler = $this->client->request('GET', '/reuniones/'.$id.'?corregir=1');
+        $token = (string) $crawler->filter('form[action="'.$recordUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $recordUrl, ['_token' => $token, 'tratado' => 'Lo tratado, corregido.']);
+
+        $this->client->request('GET', '/reuniones/'.$id);
+        self::assertSelectorTextContains('body', 'se ha modificado después de generar el PDF');
+        self::assertSelectorExists('form[action="'.$approveUrl.'"]', 'con el PDF desactualizado se sigue pudiendo aprobar');
+
+        $this->em->clear();
+        $stored = $this->em->getRepository(Meeting::class)->find($id);
+        self::assertInstanceOf(Meeting::class, $stored);
         self::getContainer()->get(FileUploader::class)->remove((string) $stored->getMinutesPath());
     }
 
@@ -897,6 +946,59 @@ final class MeetingCrudTest extends WebTestCase
         self::assertResponseStatusCodeSame(403);
         $this->client->request('POST', '/reuniones/'.$id.'/acta/registro', ['_token' => 'irrelevante', 'generar' => '1']);
         self::assertResponseStatusCodeSame(403);
+    }
+
+    /**
+     * El borrador es de quien lo escribe («solo lo ves tú»): quien asiste no lee el texto hasta que se publica.
+     * Antes la ficha enseñaba el desarrollo a todo el grupo en cuanto se guardaba, aunque el PDF no se pudiera
+     * descargar.
+     */
+    public function testWhoeverAttendsReadsTheTextOnlyOnceTheActaIsPublished(): void
+    {
+        $convener = $this->user('Lucía Coordina', 'lucia34.meet@centro.test');
+        $attendee = $this->user('Pedro Convocado', 'pedro34.meet@centro.test');
+        $meeting = new Meeting($convener, 'CCP de enero', new \DateTimeImmutable('-2 hours'));
+        $meeting->addAttendee($attendee);
+        $this->em->persist($meeting);
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+        $recordUrl = '/reuniones/'.$id.'/acta/registro';
+        $publishUrl = '/reuniones/'.$id.'/acta/publicar';
+
+        $this->client->loginUser($convener);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $token = (string) $crawler->filter('form[action="'.$recordUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $recordUrl, ['_token' => $token, 'tratado' => 'Texto todavía en borrador.', 'asistentes' => [(string) $attendee->getId()], 'generar' => '1']);
+
+        $this->client->loginUser($attendee);
+        $this->client->request('GET', '/reuniones/'.$id);
+        self::assertSelectorTextNotContains('body', 'Texto todavía en borrador', 'el borrador no se enseña a quien asiste');
+        self::assertSelectorTextContains('body', 'El acta está en preparación');
+
+        $this->client->loginUser($convener);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $token = (string) $crawler->filter('form[action="'.$publishUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $publishUrl, ['_token' => $token]);
+
+        $this->client->loginUser($attendee);
+        $this->client->request('GET', '/reuniones/'.$id);
+        self::assertSelectorTextContains('body', 'Texto todavía en borrador', 'publicada, se lee');
+
+        // Una corrección regenerada vuelve a ser borrador: tampoco se enseña hasta que se publique otra vez.
+        $this->client->loginUser($convener);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id.'?corregir=1');
+        $token = (string) $crawler->filter('form[action="'.$recordUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $recordUrl, ['_token' => $token, 'tratado' => 'Corrección sin publicar.', 'asistentes' => [(string) $attendee->getId()], 'generar' => '1']);
+
+        $this->client->loginUser($attendee);
+        $this->client->request('GET', '/reuniones/'.$id);
+        self::assertSelectorTextNotContains('body', 'Corrección sin publicar', 'la corrección es borrador de quien la escribe');
+        self::assertSelectorTextContains('body', 'El acta se está corrigiendo');
+
+        $this->em->clear();
+        $stored = $this->em->getRepository(Meeting::class)->find($id);
+        self::assertInstanceOf(Meeting::class, $stored);
+        self::getContainer()->get(FileUploader::class)->remove((string) $stored->getMinutesPath());
     }
 
     public function testTheActaCannotBeGeneratedBeforeTheMeetingHappens(): void
