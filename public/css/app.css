@@ -3988,6 +3988,12 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 .handin__icon svg { width: 15px; height: 15px; }
 .handin__title { font-size: 13.5px; color: var(--text); font-weight: 500; }
 .handin__sub { font-size: 12px; color: var(--text-faint); margin-top: 1px; }
+/* La misma fila, con la videollamada de una reunión: a la altura del primer bloque y con «Unirse» a la
+   derecha. Un enlace de Teams mide cientos de caracteres: se corta. */
+.handin--call { margin-top: 22px; }
+.handin__text { flex: 1; min-width: 0; }
+.handin--call .handin__sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.handin--call .btn { flex: none; }
 
 .doc-card { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 13px 15px; text-decoration: none; color: inherit; }
 .doc-card:hover { border-color: var(--border-strong); }
