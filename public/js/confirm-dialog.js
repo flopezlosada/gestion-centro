@@ -94,17 +94,21 @@
         if (!(form instanceof HTMLFormElement)) {
             return;
         }
-        var message = form.getAttribute('data-confirm');
+        // The question can hang from the pressed button instead of the form: a form with two submit
+        // buttons may only need to ask before one of them.
+        var submitter = event.submitter || null;
+        var message = (submitter && submitter.getAttribute('data-confirm')) || form.getAttribute('data-confirm');
         if (!message || form.dataset.confirmed === 'yes') {
             return;
         }
 
         event.preventDefault();
         openDialog(message, function () {
-            // Mark as confirmed and re-submit; requestSubmit keeps native validation and the button.
+            // Mark as confirmed and re-submit with the SAME button: without it the browser sends the form
+            // as if none was pressed, and a named button's value would be lost on the way.
             form.dataset.confirmed = 'yes';
             if (typeof form.requestSubmit === 'function') {
-                form.requestSubmit();
+                form.requestSubmit(submitter);
             } else {
                 form.submit();
             }

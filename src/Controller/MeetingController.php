@@ -368,12 +368,16 @@ final class MeetingController extends AbstractController
      * dropped the desarrollo somebody had just typed. One form, one endpoint, one entity operation
      * ({@see Meeting::recordSession()}): saving half the acta is no longer something the app can do.
      *
+     * The PDF is generated from here too, with the "generar" button of the same form: it saves first and
+     * renders after, so the PDF is always what is on screen. It used to be a form of its own that only
+     * posted its token, and whatever had been typed and not saved was lost and missing from the PDF.
+     *
      * A meeting with families or students keeps NO acta here (it goes to RAICES) but it does keep its roll,
      * so this is not refused for them: the entity ignores the text and records who came. That is why the
      * old 403 on scope is gone — the screen only ever offers the half that applies.
      */
     #[Route('/{id}/acta/registro', name: 'meeting_record', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function recordSession(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, UserRepository $users, EntityManagerInterface $entityManager): Response
+    public function recordSession(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, UserRepository $users, EntityManagerInterface $entityManager, FileUploader $uploader, MinutesPdfRenderer $renderer): Response
     {
         if (!$this->isCsrfTokenValid('meeting_record'.$meeting->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
@@ -399,14 +403,29 @@ final class MeetingController extends AbstractController
         );
         $entityManager->flush();
 
+        // «Guardar y generar el PDF» sale de ESTE formulario y no de uno aparte: con un botón suelto que
+        // solo mandaba su token, lo recién escrito se quedaba sin guardar y el PDF salía de lo anterior.
+        if ($meeting->keepsMinutes() && $request->request->has('generar')) {
+            $path = $uploader->store($renderer->render($meeting), self::MINUTES_SUBDIR, 'pdf');
+            $replaced = $this->keepMinutes($meeting, $path, $renderer->fileNameFor($meeting), $user, $entityManager, $uploader);
+            $this->addFlash('success', \sprintf(
+                'Acta guardada y generada en PDF%s. Asistencia: %d de %d. Revísala y, cuando esté, publícala.',
+                $replaced ? ', sustituye a la anterior' : '',
+                \count($meeting->getAttended()),
+                \count($meeting->people()),
+            ));
+
+            return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
+        }
+
         // El siguiente paso depende de dónde estaba: corregir un acta YA publicada deja el PDF que la gente
         // recibió diciendo otra cosa, y eso se dice aquí —no solo con el aviso de la ficha— porque es el
         // momento en que se acaba de hacer. Y en una reunión sin acta (alumnado, familias) no se menciona
         // ninguna: ahí solo se ha pasado lista.
         $next = match (true) {
             !$meeting->keepsMinutes() => '',
-            $wasPublished => ' Vuelve a generar el PDF y a publicarlo para que la corrección llegue a quien ya tiene el acta.',
-            default => ' Cuando esté lista, genera el acta y publícala.',
+            $wasPublished => ' Genera el PDF otra vez y publícalo para que la corrección llegue a quien ya tiene el acta.',
+            default => ' Cuando esté lista, genera el PDF y publícalo.',
         };
         $this->addFlash('success', \sprintf(
             '%s Asistencia: %d de %d.%s',
@@ -415,30 +434,6 @@ final class MeetingController extends AbstractController
             \count($meeting->people()),
             $next,
         ));
-
-        return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
-    }
-
-    /**
-     * Generates the acta as a PDF from what the app already knows: the convocatoria, the roll, the agenda and
-     * what was recorded. It is NOT automatic — the centre was explicit that not every meeting needs a PDF —
-     * so it happens when somebody asks for it by pressing the button, and the result becomes THE acta of the
-     * meeting (replacing a previous file, uploaded or generated).
-     */
-    #[Route('/{id}/acta/generar', name: 'meeting_minutes_generate', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function generateMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, FileUploader $uploader, MinutesPdfRenderer $renderer): Response
-    {
-        if (!$this->isCsrfTokenValid('meeting_minutes'.$meeting->getId(), (string) $request->request->get('_token'))) {
-            throw $this->createAccessDeniedException('Token CSRF inválido.');
-        }
-        if (!$access->canWriteMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
-            throw $this->createAccessDeniedException('El acta la genera quien la levanta.');
-        }
-        $this->denyUnlessStarted($meeting);
-
-        $path = $uploader->store($renderer->render($meeting), self::MINUTES_SUBDIR, 'pdf');
-        $replaced = $this->keepMinutes($meeting, $path, $renderer->fileNameFor($meeting), $user, $entityManager, $uploader);
-        $this->addFlash('success', $replaced ? 'Acta generada; sustituye a la anterior. Revísala y publícala.' : 'Acta generada en PDF. Revísala y, cuando esté, publícala.');
 
         return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
     }

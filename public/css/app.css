@@ -4124,6 +4124,39 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 .fix-link__toggle::-webkit-details-marker { display: none; }
 .fix-link__toggle:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: var(--radius-sm); }
 
+/* El acta de una reunión, para quien la escribe (meeting/show): lista, texto y una barra de acciones; debajo,
+   el documento con una sola acción principal y lo poco usado plegado. */
+.minutes-roll { border: 0; padding: 0; margin: 0 0 20px; min-width: 0; }
+.minutes-roll__head {
+    padding: 0; margin-bottom: 8px;
+    font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint);
+}
+.minutes-roll__count { margin-left: 4px; }
+.minutes-roll__all { display: block; margin: 0 0 6px; padding: 0; background: none; border: 0; cursor: pointer; font: 600 12.5px var(--font-body); color: var(--accent-ink); }
+.minutes-roll__all:hover { text-decoration: underline; }
+/* En columnas: un claustro son decenas de nombres y no pueden empujar el texto varias pantallas abajo. */
+.minutes-roll__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 2px 12px; }
+.minutes-roll__person { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 8px; border-radius: var(--radius-sm); font-size: 13.5px; cursor: pointer; }
+.minutes-roll__person:hover { background: var(--surface-sunken); }
+.minutes-roll__person input { flex: none; margin: 0; accent-color: var(--accent); }
+.minutes-roll__person span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.minutes-form__bar { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 6px; padding: 12px 0; border-top: 1px solid var(--separator); background: var(--bg); }
+/* Pegada abajo mientras se escribe, solo en escritorio: en móvil la barra inferior de navegación ya
+   ocupa ese borde. */
+@media (min-width: 761px) {
+    .minutes-form__bar { position: sticky; bottom: 0; z-index: 2; }
+}
+.minutes-doc { margin-top: 28px; padding-top: 22px; border-top: 1px solid var(--separator); }
+.minutes-doc__next { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-top: 12px; }
+.minutes-doc__next .help { margin: 0; }
+.minutes-more { margin-top: 18px; }
+.minutes-more > summary { display: inline-flex; cursor: pointer; font: 600 12.5px var(--font-body); color: var(--text-muted); }
+.minutes-more > summary:hover { color: var(--accent-ink); }
+.minutes-more > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: var(--radius-sm); }
+.minutes-more[open] > summary { margin-bottom: 12px; }
+.minutes-more .link-danger { margin: 10px 0 0; }
+
 /* El histórico campo a campo, plegado y al final: es para auditar, no para saber dónde está la tarea. */
 .task-history > summary { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; font: 600 12.5px var(--font-body); color: var(--text-faint); list-style: none; }
 .task-history > summary::-webkit-details-marker { display: none; }
