@@ -8,6 +8,7 @@ use App\Entity\Meeting;
 use App\Entity\User;
 use App\Enum\EventReminderOffset;
 use App\Enum\MeetingScope;
+use App\Enum\MinutesStage;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -350,6 +351,65 @@ final class MeetingTest extends TestCase
         $meeting->clearMinutes();
 
         self::assertFalse($meeting->minutesOutdated(), 'sin acta no hay nada desfasado que avisar');
+    }
+
+    public function testTheStageFollowsTheActaThroughItsWholeCycle(): void
+    {
+        $convener = $this->user('Coordina');
+        $meeting = $this->meeting($convener)->setMinutesApprovalRequired(true);
+        $before = new \DateTimeImmutable('2026-09-15 13:00');
+        $at = new \DateTimeImmutable('2026-09-15 15:00');
+
+        self::assertSame(MinutesStage::NOT_STARTED, $meeting->minutesStage($before));
+        self::assertSame(MinutesStage::NO_PDF, $meeting->minutesStage($at), 'empezada y sin PDF');
+
+        $meeting->recordSession('Lo tratado.', null, [], $at);
+        self::assertSame(MinutesStage::NO_PDF, $meeting->minutesStage($at), 'escribir no genera nada');
+
+        $meeting->attachMinutes('meeting-minutes/uuid-1.pdf', 'acta.pdf', $convener, $at);
+        self::assertSame(MinutesStage::DRAFT, $meeting->minutesStage($at));
+
+        $meeting->publishMinutes($convener);
+        self::assertSame(MinutesStage::PUBLISHED, $meeting->minutesStage($at));
+
+        $meeting->approveMinutes($convener, $at);
+        self::assertSame(MinutesStage::APPROVED, $meeting->minutesStage($at));
+    }
+
+    public function testAStaleFileWinsOverPublished(): void
+    {
+        // Lo que recibió la gente ya no dice lo que dice el acta: eso es lo siguiente que hay que arreglar,
+        // aunque siga publicada.
+        $convener = $this->user('Coordina');
+        $meeting = $this->meeting($convener);
+        $at = new \DateTimeImmutable('2026-09-15 15:00');
+        $meeting->attachMinutes('meeting-minutes/uuid-1.pdf', 'acta.pdf', $convener, $at);
+        $meeting->publishMinutes($convener);
+
+        $meeting->recordSession('Corregida.', null, [], $at);
+
+        self::assertTrue($meeting->isMinutesPublished());
+        self::assertSame(MinutesStage::OUTDATED, $meeting->minutesStage($at));
+    }
+
+    public function testAPublishedActaWhoseBodyApprovesNothingIsDoneWithoutApproval(): void
+    {
+        $convener = $this->user('Coordina');
+        $meeting = $this->meeting($convener);
+        $at = new \DateTimeImmutable('2026-09-15 15:00');
+        $meeting->attachMinutes('meeting-minutes/uuid-1.pdf', 'acta.pdf', $convener, $at);
+        $meeting->publishMinutes($convener);
+
+        self::assertSame(MinutesStage::PUBLISHED, $meeting->minutesStage($at));
+        // Sin aprobación el ciclo tiene 4 pasos: el 5 de «publicada» ya está más allá del último.
+        self::assertSame(5, $meeting->minutesStage($at)->step());
+    }
+
+    public function testAMeetingThatKeepsNoActaHasNoStage(): void
+    {
+        $meeting = $this->meeting($this->user('Coordina'))->setScope(MeetingScope::FAMILIES);
+
+        self::assertNull($meeting->minutesStage(new \DateTimeImmutable('2026-09-15 15:00')));
     }
 
     public function testIsPastComparesAgainstTheStart(): void

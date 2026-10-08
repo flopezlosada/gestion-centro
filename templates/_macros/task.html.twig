@@ -131,9 +131,14 @@
     {%- if user is null -%}
         <span class="cell-muted">—</span>
     {%- else -%}
-        {#- Color estable por persona: el id reparte uniformemente entre la paleta (8 tonos); si no hay
-            id (usuario sin persistir), cae al largo del nombre. -#}
-        {%- set tint = (user.id ?? user.fullName|length) % 8 -%}
-        <span class="person"><span class="person__avatar person__avatar--{{ tint }}" aria-hidden="true">{{ user.fullName|initials }}</span><span class="person__name">{{ user.fullName }}</span></span>
+        <span class="person">{{ _self.avatar(user) }}<span class="person__name">{{ user.fullName }}</span></span>
     {%- endif -%}
 {% endmacro %}
+
+{% macro avatar(user, extraClass = '') %}
+    {#- Solo el avatar con iniciales, para listas que ya pintan el nombre a su manera. Color estable por
+        persona: el id reparte uniformemente entre la paleta (8 tonos); si no hay id (usuario sin
+        persistir), cae al largo del nombre. -#}
+    {%- set tint = (user.id ?? user.fullName|length) % 8 -%}
+    <span class="person__avatar person__avatar--{{ tint }}{{ extraClass ? ' ' ~ extraClass }}" aria-hidden="true">{{ user.fullName|initials }}</span>
+{%- endmacro %}

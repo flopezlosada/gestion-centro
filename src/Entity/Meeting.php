@@ -7,6 +7,7 @@ namespace App\Entity;
 use App\Contract\Auditable;
 use App\Enum\EventReminderOffset;
 use App\Enum\MeetingScope;
+use App\Enum\MinutesStage;
 use App\Repository\MeetingRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
@@ -894,6 +895,31 @@ class Meeting implements Auditable
     public function minutesOutdated(): bool
     {
         return $this->minutesStale && null !== $this->minutesPath;
+    }
+
+    /**
+     * Where the acta is in its life ({@see MinutesStage}), read off the fields this meeting already keeps.
+     * Null for a meeting that keeps no acta (students, families): there is only a roll there, and a stage
+     * would promise a PDF that never comes.
+     *
+     * The order of the checks is the meaning: a stale file wins over "published", because what the people
+     * received no longer says what the acta says, and that is the next thing to fix.
+     *
+     * @param \DateTimeImmutable $now the instant to read "has it started" against
+     *
+     * @return MinutesStage|null the stage, or null when the meeting keeps no acta
+     */
+    public function minutesStage(\DateTimeImmutable $now): ?MinutesStage
+    {
+        return match (true) {
+            !$this->keepsMinutes() => null,
+            !$this->isPast($now) => MinutesStage::NOT_STARTED,
+            !$this->hasMinutes() => MinutesStage::NO_PDF,
+            $this->minutesOutdated() => MinutesStage::OUTDATED,
+            !$this->isMinutesPublished() => MinutesStage::DRAFT,
+            $this->minutesApprovalRequired && $this->areMinutesApproved() => MinutesStage::APPROVED,
+            default => MinutesStage::PUBLISHED,
+        };
     }
 
     /**
