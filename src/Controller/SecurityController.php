@@ -103,13 +103,18 @@ class SecurityController extends AbstractController
     }
 
     /**
-     * Target of the magic link; the request is intercepted and processed by the login_link
-     * authenticator, so this method is never executed.
+     * Target of the magic link. Opening it only shows an "Entrar" button that posts back to the same
+     * address, link parameters included; the login_link authenticator intercepts that POST, so it never
+     * reaches this method. A visit alone does not spend the link: mail scanners and phones that open
+     * it twice would otherwise use it up before or alongside the person.
      */
-    #[Route('/login/check', name: 'login_check', methods: ['GET'])]
-    public function check(): never
+    #[Route('/login/check', name: 'login_check', methods: ['GET', 'POST'])]
+    public function check(Request $request): Response
     {
-        throw new \LogicException('This route is handled by the login_link authenticator.');
+        return $this->render('security/login_check.html.twig', [
+            'email' => $request->query->getString('user'),
+            'action' => $request->getRequestUri(),
+        ]);
     }
 
     /**
