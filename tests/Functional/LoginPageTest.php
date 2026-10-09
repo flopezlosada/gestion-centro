@@ -7,6 +7,7 @@ namespace App\Tests\Functional;
 use App\Entity\User;
 use App\Security\GoogleAuthenticator;
 use Doctrine\ORM\EntityManagerInterface;
+use Monolog\Handler\TestHandler;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Mime\Email;
@@ -134,6 +135,61 @@ final class LoginPageTest extends WebTestCase
     /**
      * A browser against a production-like configuration, with the SSO credentials present.
      */
+    public function testAnAcceptedLinkIsLoggedWithoutTheWholeHash(): void
+    {
+        // An accepted link may still be usable, so only enough of the hash to group visits is kept.
+        $client = static::createClient();
+        $this->user($client, 'acepta@educa.madrid.org');
+        $client->request('POST', '/login', ['email' => 'acepta@educa.madrid.org']);
+        $link = $this->sentLink();
+        parse_str((string) parse_url($link, \PHP_URL_QUERY), $query);
+
+        $client->request('GET', $link, server: ['HTTP_USER_AGENT' => 'Mozilla/5.0 (iPhone) Mail']);
+
+        $records = $this->loginLinkLog()->getRecords();
+        self::assertCount(1, $records);
+        self::assertSame('login link accepted', $records[0]->message);
+        self::assertSame('acepta@educa.madrid.org', $records[0]->context['user']);
+        self::assertSame(substr((string) $query['hash'], 0, 8), $records[0]->context['hash']);
+        self::assertSame('Mozilla/5.0 (iPhone) Mail', $records[0]->context['user_agent']);
+        self::assertNull($records[0]->context['sec_purpose']);
+        self::assertArrayNotHasKey('raw_uri', $records[0]->context);
+    }
+
+    public function testARefusedLinkIsLoggedRawWithItsRootCause(): void
+    {
+        // What the person sees is the same for every cause; the log has to tell them apart and
+        // show the address exactly as it arrived, to catch a link mangled on its way.
+        $client = static::createClient();
+        $this->user($client, 'mangled@educa.madrid.org');
+        $client->request('POST', '/login', ['email' => 'mangled@educa.madrid.org']);
+        $mangled = (string) str_replace('hash=', 'hash=X', $this->sentLink());
+
+        $client->request('GET', $mangled, server: ['HTTP_SEC_PURPOSE' => 'prefetch']);
+
+        $records = $this->loginLinkLog()->getRecords();
+        self::assertCount(1, $records);
+        self::assertSame('login link refused', $records[0]->message);
+        self::assertSame('prefetch', $records[0]->context['sec_purpose']);
+        self::assertSame(substr($mangled, (int) strpos($mangled, '/login/check')), $records[0]->context['raw_uri']);
+        self::assertStringEndsWith('InvalidSignatureException: Invalid or expired signature.', $records[0]->context['reason']);
+    }
+
+    public function testALinkMissingItsHashIsLoggedWithoutOne(): void
+    {
+        $client = static::createClient();
+        $this->user($client, 'cortado@educa.madrid.org');
+        $client->request('POST', '/login', ['email' => 'cortado@educa.madrid.org']);
+        $cut = (string) preg_replace('~&hash=.*$~', '', $this->sentLink());
+
+        $client->request('GET', $cut);
+
+        $records = $this->loginLinkLog()->getRecords();
+        self::assertCount(1, $records);
+        self::assertNull($records[0]->context['hash']);
+        self::assertStringEndsWith('Missing "hash" parameter.', $records[0]->context['reason']);
+    }
+
     private function clientWithSso(): KernelBrowser
     {
         $_SERVER['GOOGLE_CLIENT_ID'] = $_ENV['GOOGLE_CLIENT_ID'] = self::SSO_CLIENT_ID;
@@ -165,5 +221,16 @@ final class LoginPageTest extends WebTestCase
         self::assertSame(1, preg_match('~https?://\S+~', (string) $last->getTextBody(), $match));
 
         return $match[0];
+    }
+
+    /**
+     * What the magic-link check logged during the test, kept in memory by the test handler.
+     */
+    private function loginLinkLog(): TestHandler
+    {
+        $handler = static::getContainer()->get('monolog.handler.login_link');
+        self::assertInstanceOf(TestHandler::class, $handler);
+
+        return $handler;
     }
 }
