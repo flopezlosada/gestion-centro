@@ -24,6 +24,10 @@ security:
                 interval: '15 minutes'
             login_link:
                 check_route: login_check
+                # Opening the link only shows an "Entrar" button; pressing it (a POST) spends the link.
+                # Mail scanners and phones that open a link twice in a row spend it just by visiting
+                # it, and the person then lands on "invalid or expired".
+                check_post_only: true
                 signature_properties: ['id']
                 lifetime: 600 # the link is valid for 10 minutes
                 max_uses: 1 # single-use: the link is invalidated after the first successful use

@@ -90,7 +90,7 @@ final class LoginPageTest extends WebTestCase
         $this->user($client, 'movil@educa.madrid.org');
 
         $client->request('POST', '/login', ['email' => 'movil@educa.madrid.org', '_remember_me' => '1']);
-        $client->request('GET', $this->sentLink());
+        $this->follow($client, $this->sentLink());
 
         self::assertResponseRedirects();
         self::assertNotNull($client->getCookieJar()->get('REMEMBERME'), 'marcada la casilla, el dispositivo queda recordado');
@@ -104,7 +104,7 @@ final class LoginPageTest extends WebTestCase
         $this->user($client, 'sala@educa.madrid.org');
 
         $client->request('POST', '/login', ['email' => 'sala@educa.madrid.org']);
-        $client->request('GET', $this->sentLink());
+        $this->follow($client, $this->sentLink());
 
         self::assertResponseRedirects();
         self::assertNull($client->getCookieJar()->get('REMEMBERME'));
@@ -132,6 +132,41 @@ final class LoginPageTest extends WebTestCase
         self::assertFalse($client->getRequest()->getSession()->get(GoogleAuthenticator::REMEMBER_ME_SESSION_KEY));
     }
 
+    public function testOpeningTheLinkOnlyShowsTheButton(): void
+    {
+        // A mail scanner opens every link it sees: the visit alone must neither sign in nor
+        // spend the link.
+        $client = static::createClient();
+        $this->user($client, 'visita@educa.madrid.org');
+        $client->request('POST', '/login', ['email' => 'visita@educa.madrid.org']);
+
+        $client->request('GET', $this->sentLink());
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('.auth-lead', 'visita@educa.madrid.org');
+        self::assertSelectorExists('form[method="post"] button[type="submit"]');
+        self::assertCount(0, $this->loginLinkLog()->getRecords());
+    }
+
+    public function testALinkOpenedTwiceStillSignsIn(): void
+    {
+        // The phone that opens the link twice in a row, with a scanner on top: only pressing
+        // the button spends it.
+        $client = static::createClient();
+        $this->user($client, 'doble@educa.madrid.org');
+        $client->request('POST', '/login', ['email' => 'doble@educa.madrid.org']);
+        $link = $this->sentLink();
+        $client->request('GET', $link);
+        $client->request('GET', $link);
+
+        $this->follow($client, $link);
+
+        self::assertResponseRedirects();
+        $records = $this->loginLinkLog()->getRecords();
+        self::assertCount(1, $records);
+        self::assertSame('login link accepted', $records[0]->message);
+    }
+
     /**
      * A browser against a production-like configuration, with the SSO credentials present.
      */
@@ -144,7 +179,7 @@ final class LoginPageTest extends WebTestCase
         $link = $this->sentLink();
         parse_str((string) parse_url($link, \PHP_URL_QUERY), $query);
 
-        $client->request('GET', $link, server: ['HTTP_USER_AGENT' => 'Mozilla/5.0 (iPhone) Mail']);
+        $this->follow($client, $link, ['HTTP_USER_AGENT' => 'Mozilla/5.0 (iPhone) Mail']);
 
         $records = $this->loginLinkLog()->getRecords();
         self::assertCount(1, $records);
@@ -165,7 +200,7 @@ final class LoginPageTest extends WebTestCase
         $client->request('POST', '/login', ['email' => 'mangled@educa.madrid.org']);
         $mangled = (string) str_replace('hash=', 'hash=X', $this->sentLink());
 
-        $client->request('GET', $mangled, server: ['HTTP_SEC_PURPOSE' => 'prefetch']);
+        $this->follow($client, $mangled, ['HTTP_SEC_PURPOSE' => 'prefetch']);
 
         $records = $this->loginLinkLog()->getRecords();
         self::assertCount(1, $records);
@@ -182,7 +217,7 @@ final class LoginPageTest extends WebTestCase
         $client->request('POST', '/login', ['email' => 'cortado@educa.madrid.org']);
         $cut = (string) preg_replace('~&hash=.*$~', '', $this->sentLink());
 
-        $client->request('GET', $cut);
+        $this->follow($client, $cut);
 
         $records = $this->loginLinkLog()->getRecords();
         self::assertCount(1, $records);
@@ -221,6 +256,18 @@ final class LoginPageTest extends WebTestCase
         self::assertSame(1, preg_match('~https?://\S+~', (string) $last->getTextBody(), $match));
 
         return $match[0];
+    }
+
+    /**
+     * Opens a login link and presses its "Entrar" button, as the person does; the button posts
+     * back to the link's own address, so the server parameters go with the press.
+     *
+     * @param array<string, string> $server
+     */
+    private function follow(KernelBrowser $client, string $link, array $server = []): void
+    {
+        $client->request('GET', $link);
+        $client->submitForm('Entrar', serverParameters: $server);
     }
 
     /**

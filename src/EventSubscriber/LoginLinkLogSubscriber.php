@@ -13,12 +13,13 @@ use Symfony\Component\Security\Http\Event\LoginFailureEvent;
 use Symfony\Component\Security\Http\Event\LoginSuccessEvent;
 
 /**
- * Writes one line per visit to the magic-link check, success or failure, to its own log file.
+ * Writes one line per press of the magic link's "Entrar" button, success or failure, to its own log
+ * file; merely opening the link checks nothing, so it leaves no line.
  *
  * The person sees the same "invalid or expired link" whatever went wrong; the exception chain
  * underneath does tell the causes apart (already used, expired, bad signature, unknown user), and
- * the user agent and prefetch headers tell whether a mail app or a link preview opened the link
- * before the person did. The hash prefix groups the visits made with the same link.
+ * the user agent and prefetch headers tell who pressed it. The hash prefix groups the presses made
+ * with the same link.
  */
 #[WithMonologChannel('login_link')]
 class LoginLinkLogSubscriber implements EventSubscriberInterface
