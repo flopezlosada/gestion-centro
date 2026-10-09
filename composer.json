@@ -26,6 +26,7 @@
         "symfony/framework-bundle": "7.4.*",
         "symfony/html-sanitizer": "7.4.*",
         "symfony/mailer": "7.4.*",
+        "symfony/monolog-bundle": "^4.1",
         "symfony/rate-limiter": "7.4.*",
         "symfony/runtime": "7.4.*",
         "symfony/security-bundle": "7.4.*",

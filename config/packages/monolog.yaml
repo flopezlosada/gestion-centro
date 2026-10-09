@@ -1,0 +1,70 @@
+monolog:
+    channels: # To see all channels, run bin/console debug:autowiring logger
+        - deprecation # Deprecations are logged in the dedicated "deprecation" channel when it exists
+        - login_link # Every visit to the magic-link check, to its own file (LoginLinkLogSubscriber)
+
+when@dev:
+    monolog:
+        handlers:
+            main:
+                type: stream
+                path: "%kernel.logs_dir%/%kernel.environment%.log"
+                level: debug
+                channels: ["!event", "!login_link"]
+            login_link:
+                type: stream
+                path: "%kernel.logs_dir%/login_link.log"
+                level: info
+                channels: [login_link]
+            console:
+                type: console
+                process_psr_3_messages: false
+                channels: ["!event", "!doctrine", "!console"]
+
+when@test:
+    monolog:
+        handlers:
+            main:
+                type: fingers_crossed
+                action_level: error
+                handler: nested
+                excluded_http_codes: [404, 405]
+                channels: ["!event", "!login_link"]
+            nested:
+                type: stream
+                path: "%kernel.logs_dir%/%kernel.environment%.log"
+                level: debug
+            # Kept in memory so a test can read what was logged.
+            login_link:
+                type: test
+                level: info
+                channels: [login_link]
+
+# Files rather than the recipe's php://stderr: on the shared hosting stderr ends up in the web
+# server's log, which is not readable from the account. The files rotate daily and only the last
+# 14 days are kept, since they hold personal data (e-mail address, IP).
+when@prod:
+    monolog:
+        handlers:
+            main:
+                type: fingers_crossed
+                action_level: error
+                handler: nested
+                excluded_http_codes: [404, 405]
+                channels: ["!deprecation", "!login_link"]
+                buffer_size: 50 # How many messages should be saved? Prevent memory leaks
+            nested:
+                type: rotating_file
+                path: "%kernel.logs_dir%/%kernel.environment%.log"
+                max_files: 14
+                level: debug
+            login_link:
+                type: rotating_file
+                path: "%kernel.logs_dir%/login_link.log"
+                max_files: 14
+                level: info
+                channels: [login_link]
+            console:
+                type: console
+                process_psr_3_messages: false
+                channels: ["!event", "!doctrine"]
