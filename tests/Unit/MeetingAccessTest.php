@@ -305,18 +305,17 @@ final class MeetingAccessTest extends TestCase
         self::assertFalse($access->canRemark($meeting, $stranger));
     }
 
-    public function testWhoeverConvenesMayConveneAnybodyOnTheStaffButThemselves(): void
+    public function testWhoeverConvenesMayConveneAnybodyOnTheStaffThemselvesIncluded(): void
     {
         // No se acota a "la gente a la que mandas": una tutoría convoca a su equipo docente y no manda en
         // nadie. La reunión solo existe para quien está convocado, así que una lista amplia es larga, no
-        // indiscreta.
+        // indiscreta. Y quien convoca está en ella: convocar no es asistir, se marca o no como cualquiera.
         $tutor = $this->user('Marta', $this->tutor, $this->teacher);
         $anyone = $this->user('Pedro', $this->teacher);
         $head = $this->user('María', $this->headDept, $this->teacher);
 
-        $people = $this->access([], [$tutor, $anyone, $head])->convenablePeople($tutor);
+        $people = $this->access([], [$tutor, $anyone, $head])->convenablePeople();
 
-        self::assertNotContains($tutor, $people, 'convocarte a ti misma no tiene sentido: convocas');
-        self::assertSame(['Pedro', 'María'], array_map(static fn (User $u): string => $u->getFullName(), $people));
+        self::assertSame(['Marta', 'Pedro', 'María'], array_map(static fn (User $u): string => $u->getFullName(), $people));
     }
 }

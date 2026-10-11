@@ -155,7 +155,7 @@ final class MeetingFormType extends AbstractType
                 'choice_attr' => static fn (User $person): array => [
                     'data-description' => $person->getUnit()?->getName() ?? 'Sin departamento',
                 ],
-                'help' => 'Quien esté en la lista recibe un aviso con el día, la hora y el lugar. Tú convocas, así que no hace falta marcarte.',
+                'help' => 'Quien esté en la lista recibe un aviso con el día, la hora y el lugar. Tu nombre viene marcado: quítalo si convocas pero no vas a asistir.',
             ]);
     }
 

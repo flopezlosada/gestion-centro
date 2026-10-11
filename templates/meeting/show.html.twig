@@ -490,7 +490,7 @@
         <div class="mtg-card">
             <h2>Personas convocadas{% if meeting.attendees is not empty %} <span class="mtg-count">{{ meeting.attendees|length }}</span>{% endif %}</h2>
             {% if meeting.attendees is empty %}
-                <p class="mtg-muted">Nadie más está convocado.</p>
+                <p class="mtg-muted">Nadie está convocado.</p>
             {% else %}
                 {#- Con un claustro, siete y el resto plegado: la lista entera empujaría lo demás pantallas abajo. -#}
                 {% set many = meeting.attendees|length > 12 %}
