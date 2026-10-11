@@ -468,6 +468,25 @@
                 {% endif %}
             </section>
         {% endif %}
+
+        {# ---- La vida de la reunión: quién la convocó, qué cambió, cuándo se pasó lista y se publicó el acta.
+               Plegada y al final: es para quien quiere comprobar algo, no para el día a día. Nunca dice qué
+               ponía el acta o el orden del día, solo que cambiaron. ---- #}
+        {% if history is not empty %}
+            <details class="mtg-history" id="historial">
+                <summary>{{ m.icon('clock') }}<span>Historial</span><span class="mtg-count">{{ history|length }}</span>{{ m.icon('chevron') }}</summary>
+                <ol class="mtg-history__list" role="list">
+                    {% for row in history %}
+                        <li class="mtg-history__item">
+                            <p class="mtg-history__meta"><time datetime="{{ row.occurredAt|date('c', false) }}">{{ row.occurredAt|date('d/m/Y H:i', false) }}</time> · {{ row.actor|default('La aplicación') }}</p>
+                            <ul class="mtg-history__events" role="list">
+                                {% for event in row.events %}<li>{{ event }}</li>{% endfor %}
+                            </ul>
+                        </li>
+                    {% endfor %}
+                </ol>
+            </details>
+        {% endif %}
       </div>{# /mtg-main #}
 
       <aside class="mtg-aside">
