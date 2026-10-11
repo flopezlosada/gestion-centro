@@ -228,8 +228,10 @@ final class MeetingGroupSeriesTest extends WebTestCase
         );
         $next = $attendeesOf($tomorrow);
         sort($next);
-        self::assertSame(['invitado4@educa.madrid.org', 'rober4@educa.madrid.org'], $next, 'entra Rober, sale Ana, el invitado se queda y quien convoca no se convoca');
-        self::assertSame(['ana4@educa.madrid.org'], $attendeesOf($past), 'la reunión pasada queda como fue');
+        self::assertSame(['carolina4@educa.madrid.org', 'invitado4@educa.madrid.org', 'rober4@educa.madrid.org'], $next, 'entra Rober, sale Ana, el invitado se queda y quien convoca sigue convocada');
+        $past = $attendeesOf($past);
+        sort($past);
+        self::assertSame(['ana4@educa.madrid.org', 'carolina4@educa.madrid.org'], $past, 'la reunión pasada queda como fue');
     }
 
     /** El nombre del listado lleva a la ficha, que dice con nombres lo que el listado solo cuenta. */
@@ -304,7 +306,8 @@ final class MeetingGroupSeriesTest extends WebTestCase
         $meeting = (new Meeting($convener, $group->getName(), (new \DateTimeImmutable($when))->setTime(10, 15)))
             ->setMeetingGroup($group)
             ->setMinutesApprovalRequired($approval);
-        $meeting->addAttendee($attendee);
+        // Como la genera la serie: quien convoca va convocado.
+        $meeting->addAttendee($convener)->addAttendee($attendee);
         $this->em->persist($meeting);
 
         return $meeting;

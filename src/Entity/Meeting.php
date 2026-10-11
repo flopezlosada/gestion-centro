@@ -142,8 +142,9 @@ class Meeting implements Auditable
     private ?MeetingGroup $meetingGroup = null;
 
     /**
-     * The people convened. They see the meeting in their agenda and may read the minutes; they get no
-     * say over it (only the convener manages it).
+     * The people convened: everybody expected at the meeting, the convener included when they attend it
+     * (the form ticks them by default). They see the meeting in their agenda and may read the minutes;
+     * they get no say over it (only the convener manages it).
      *
      * @var Collection<int, User>
      */
@@ -325,8 +326,9 @@ class Meeting implements Auditable
     /**
      * Hands the meeting to another convener, as when a weekly group changes who convenes it. Whoever was
      * going to take the minutes because they convened now hands that over too (someone else named on
-     * purpose keeps it), and the new convener leaves the convened list: nobody is convened to a meeting
-     * they call themselves.
+     * purpose keeps it). The new convener joins the convened list, as a convener does by default, and the
+     * previous one leaves it: whether they still come is the group's call ({@see
+     * \App\Service\RecurringMeetingGenerator}), which brings them back when they are still a member.
      *
      * @param User $newConvener who convenes from now on
      *
@@ -337,8 +339,11 @@ class Meeting implements Auditable
         if ($this->minutesTakenBy === $this->convener) {
             $this->minutesTakenBy = $newConvener;
         }
+        if (null !== $this->convener) {
+            $this->attendees->removeElement($this->convener);
+        }
         $this->convener = $newConvener;
-        $this->attendees->removeElement($newConvener);
+        $this->addAttendee($newConvener);
 
         return $this;
     }
@@ -661,9 +666,19 @@ class Meeting implements Auditable
         return $this;
     }
 
+    /**
+     * Takes somebody off the convened list, and off the roll with them: {@see $attended} is a subset of
+     * the convened, so a convener who unticks themselves after the roll was taken does not stay on it
+     * ("5 de 4 asistieron", and their name in an acta they were not convened to).
+     *
+     * @param User $attendee the person to take off
+     *
+     * @return static the meeting
+     */
     public function removeAttendee(User $attendee): static
     {
         $this->attendees->removeElement($attendee);
+        $this->attended->removeElement($attendee);
 
         return $this;
     }
@@ -673,6 +688,8 @@ class Meeting implements Auditable
      * have to be told. Returning that here (instead of letting each caller diff the collection) keeps
      * "who is new" impossible to get wrong: the notice is sent from the same operation that changed the
      * list.
+     *
+     * Whoever leaves the list leaves the roll too ({@see removeAttendee()}).
      *
      * @param list<User> $people the full list of people who must end up convened
      *
@@ -689,7 +706,7 @@ class Meeting implements Auditable
 
         foreach ($this->attendees->toArray() as $current) {
             if (!\in_array($current, $people, true)) {
-                $this->attendees->removeElement($current);
+                $this->removeAttendee($current);
             }
         }
         foreach ($added as $person) {
@@ -727,21 +744,16 @@ class Meeting implements Auditable
     }
 
     /**
-     * Everybody who has to be at the meeting: whoever convened it plus the convened, deduplicated. Unlike
-     * {@see concerns()} (a predicate about one person), this is the LIST — and it is what the reminder
-     * notifies: the convener has to turn up too, so leaving them out of a "empieza en 10 minutos" would be
-     * the one notice they actually need.
+     * Everybody who has to be at the meeting: the convened list, as a plain list. Whoever convenes is on it
+     * by default but not by force — the head of studies convenes the tutors of a level and does not always
+     * sit in — so this is NOT {@see concerns()}: the convener always concerns the meeting (they run it),
+     * but is only expected at it, reminded of it, on its roll and in its acta when convened.
      *
      * @return list<User> the people expected at the meeting
      */
     public function people(): array
     {
-        $people = $this->attendees->toArray();
-        if (null !== $this->convener && !\in_array($this->convener, $people, true)) {
-            $people[] = $this->convener;
-        }
-
-        return array_values($people);
+        return array_values($this->attendees->toArray());
     }
 
     public function getMinutesTakenBy(): ?User

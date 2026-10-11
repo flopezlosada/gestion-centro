@@ -157,21 +157,40 @@ final class MeetingTest extends TestCase
         self::assertNull($meeting->getRemindAt());
     }
 
-    public function testThePeopleExpectedAreTheConvenedPlusTheConvener(): void
+    public function testAConvenerWhoDoesNotAttendIsNotExpectedButStillConcerned(): void
     {
+        // Jefatura convoca a los tutores de un nivel y no se sienta: no va a la lista, ni al recordatorio,
+        // ni al acta; pero la reunión sigue siendo suya.
         $convener = $this->user('Coordina');
         $attendee = $this->user('Convocado');
         $meeting = $this->meeting($convener)->addAttendee($attendee);
 
-        self::assertSame([$attendee, $convener], $meeting->people());
+        self::assertSame([$attendee], $meeting->people());
+        self::assertTrue($meeting->concerns($convener));
     }
 
-    public function testTheConvenerIsNotCountedTwiceWhenAlsoConvened(): void
+    public function testAConvenerWhoAttendsIsExpectedLikeAnyoneElse(): void
     {
         $convener = $this->user('Coordina');
-        $meeting = $this->meeting($convener)->addAttendee($convener);
+        $attendee = $this->user('Convocado');
+        $meeting = $this->meeting($convener)->addAttendee($convener)->addAttendee($attendee)->addAttendee($convener);
 
-        self::assertSame([$convener], $meeting->people());
+        self::assertSame([$convener, $attendee], $meeting->people(), 'una vez, en el orden de la convocatoria');
+    }
+
+    public function testHandingOverMovesTheConvenerOnTheListToo(): void
+    {
+        // Quien convoca va convocado por defecto: el nuevo entra y el anterior sale (si sigue en el grupo, lo
+        // vuelve a añadir el generador de la serie).
+        $before = $this->user('Antes');
+        $after = $this->user('Después');
+        $member = $this->user('Miembro');
+        $meeting = $this->meeting($before)->addAttendee($before)->addAttendee($member);
+
+        $meeting->handOverTo($after);
+
+        self::assertSame($after, $meeting->getConvener());
+        self::assertSame([$member, $after], $meeting->people());
     }
 
     public function testTheRollKeepsOnlyThePeopleExpectedAndDerivesTheAbsentees(): void
@@ -187,7 +206,23 @@ final class MeetingTest extends TestCase
         self::assertTrue($meeting->isAttendanceTaken());
         // El de fuera se descarta aunque venga en el POST, y el orden es el de la convocatoria.
         self::assertSame([$came], $meeting->getAttended()->toArray());
-        self::assertSame([$missed, $convener], $meeting->absentees());
+        self::assertSame([$missed], $meeting->absentees(), 'quien convoca y no está convocado no cuenta como ausente');
+    }
+
+    public function testWhoeverLeavesTheConvenedListLeavesTheRollToo(): void
+    {
+        // Quien convoca se deja marcada, se pasa lista con ella y luego se desmarca al editar: no puede
+        // quedar «5 de 4 asistieron» ni su nombre en un acta a la que ya no está convocada.
+        $convener = $this->user('Coordina');
+        $came = $this->user('Vino');
+        $meeting = $this->meeting($convener)->addAttendee($convener)->addAttendee($came);
+        $meeting->recordSession(null, null, [$convener, $came], new \DateTimeImmutable('2026-09-15 15:00'));
+
+        $meeting->syncAttendees([$came]);
+
+        self::assertSame([$came], array_values($meeting->getAttended()->toArray()));
+        self::assertSame([], $meeting->absentees());
+        self::assertTrue($meeting->isAttendanceTaken(), 'la lista sigue pasada: solo sale quien ya no está convocado');
     }
 
     public function testTheRollCanBeCorrectedToNobody(): void
@@ -203,7 +238,7 @@ final class MeetingTest extends TestCase
 
         self::assertCount(0, $meeting->getAttended());
         self::assertTrue($meeting->isAttendanceTaken(), 'sigue constando que se pasó lista');
-        self::assertSame([$came, $convener], $meeting->absentees());
+        self::assertSame([$came], $meeting->absentees());
     }
 
     /**

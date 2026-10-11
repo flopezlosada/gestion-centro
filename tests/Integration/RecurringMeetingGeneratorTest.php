@@ -90,7 +90,7 @@ final class RecurringMeetingGeneratorTest extends KernelTestCase
         self::assertSame($this->convener, $meeting->getConvener());
         self::assertSame($this->group, $meeting->getMeetingGroup());
         self::assertTrue($meeting->minutesApprovalRequired(), 'lo decide el tipo del grupo');
-        self::assertSame([$this->member], array_values($meeting->getAttendees()->toArray()), 'quien convoca no se convoca a sí mismo');
+        self::assertEqualsCanonicalizing([$this->convener, $this->member], array_values($meeting->getAttendees()->toArray()), 'quien convoca va convocada, como en el formulario, y una sola vez aunque sea miembro');
     }
 
     /**
@@ -277,7 +277,7 @@ final class RecurringMeetingGeneratorTest extends KernelTestCase
         $meeting = $this->onlyMeeting();
         self::assertSame($this->member, $meeting->getConvener());
         self::assertSame($this->member, $meeting->getMinutesTakenBy());
-        self::assertSame([$this->convener], array_values($meeting->getAttendees()->toArray()), 'quien convocaba sigue en el grupo: pasa a convocado');
+        self::assertEqualsCanonicalizing([$this->member, $this->convener], array_values($meeting->getAttendees()->toArray()), 'la nueva convocante entra y quien convocaba, que sigue en el grupo, sigue convocada');
         self::assertSame(1, $this->noticesTo($this->member, 'meeting.generated'));
     }
 

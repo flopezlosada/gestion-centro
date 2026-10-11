@@ -124,9 +124,9 @@ final class MeetingCrudTest extends WebTestCase
         self::assertResponseIsSuccessful();
 
         // El "por defecto" del centro: los profes del proyecto llegan ya marcados, resuelto en el
-        // servidor (sin JS).
+        // servidor (sin JS), y quien convoca también, porque lo normal es que asista.
         $checked = $crawler->filter('input[type="checkbox"][name^="meeting_form[attendees]"]:checked')->extract(['value']);
-        self::assertEqualsCanonicalizing([(string) $member->getId(), (string) $other->getId()], $checked);
+        self::assertEqualsCanonicalizing([(string) $coordinator->getId(), (string) $member->getId(), (string) $other->getId()], $checked);
 
         $form = $crawler->selectButton('Convocar')->form();
         $values = $form->getPhpValues();
@@ -141,12 +141,42 @@ final class MeetingCrudTest extends WebTestCase
         $meeting = $this->em->getRepository(Meeting::class)->findOneBy(['title' => 'Seguimiento de movilidades']);
         self::assertInstanceOf(Meeting::class, $meeting);
         self::assertSame('14:00', $meeting->getStartAt()->format('H:i'), 'el día y la hora se componen en un instante');
-        self::assertCount(2, $meeting->getAttendees());
+        self::assertCount(3, $meeting->getAttendees());
         self::assertSame($project->getId(), $meeting->getProject()?->getId());
 
         // Convocar ES avisar.
         self::assertSame(1, $this->noticesOf($this->em->getRepository(User::class)->find($member->getId()), 'meeting.convened'));
         self::assertSame(0, $this->noticesOf($this->em->getRepository(User::class)->find($coordinator->getId()), 'meeting.convened'), 'quien convoca no se avisa a sí misma');
+    }
+
+    public function testAConvenerWhoUnticksThemselvesConvenesWithoutAttending(): void
+    {
+        // Jefatura convoca a los tutores de un nivel y no se sienta: se desmarca, y la reunión queda sin ella
+        // en la lista (ni recordatorio, ni lista, ni acta), pero sigue siendo suya.
+        $coordinator = $this->user('Lucía Coordina', 'lucia90.meet@centro.test');
+        $member = $this->user('Pedro Miembro', 'pedro9.meet@centro.test');
+        $project = $this->project($coordinator, [$member]);
+        $this->em->flush();
+        $this->client->loginUser($coordinator);
+
+        $crawler = $this->client->request('GET', '/reuniones/nueva?proyecto='.$project->getId());
+        $form = $crawler->selectButton('Convocar')->form();
+        $values = $form->getPhpValues();
+        $values['meeting_form']['title'] = 'Tutores sin jefatura';
+        $values['meeting_form']['day'] = (new \DateTimeImmutable('+3 days'))->format('Y-m-d');
+        $values['meeting_form']['startTime'] = '14:00';
+        $values['meeting_form']['attendees'] = [(string) $member->getId()];
+        $this->client->request('POST', $form->getUri(), $values);
+
+        self::assertResponseRedirects();
+        $this->em->clear();
+        $meeting = $this->em->getRepository(Meeting::class)->findOneBy(['title' => 'Tutores sin jefatura']);
+        self::assertInstanceOf(Meeting::class, $meeting);
+        self::assertSame([$member->getId()], array_map(static fn (User $u): ?int => $u->getId(), $meeting->people()));
+        self::assertSame($coordinator->getId(), $meeting->getConvener()?->getId());
+
+        $this->client->request('GET', '/reuniones/'.$meeting->getId());
+        self::assertResponseIsSuccessful('quien convoca sigue viendo su reunión aunque no asista');
     }
 
     public function testAMeetingIsOnlyVisibleToThePeopleItConcerns(): void
@@ -534,7 +564,7 @@ final class MeetingCrudTest extends WebTestCase
         self::assertInstanceOf(Meeting::class, $stored);
         self::assertTrue($stored->isAttendanceTaken());
         self::assertSame(['Pedro Vino'], array_map(static fn (User $u): string => $u->getFullName(), $stored->getAttended()->toArray()));
-        self::assertSame(['Ana Faltó', 'Lucía Coordina'], array_map(static fn (User $u): string => $u->getFullName(), $stored->absentees()));
+        self::assertSame(['Ana Faltó'], array_map(static fn (User $u): string => $u->getFullName(), $stored->absentees()), 'quien convoca sin estar convocada no cuenta como ausente');
     }
 
     /**
@@ -794,7 +824,8 @@ final class MeetingCrudTest extends WebTestCase
         $convener = $this->user('Lucía Coordina', 'lucia20.meet@centro.test');
         $attendee = $this->user('Pedro Convocado', 'pedro20.meet@centro.test');
         $meeting = new Meeting($convener, 'CCP de octubre', new \DateTimeImmutable('-2 hours'));
-        $meeting->addAttendee($attendee);
+        // Quien convoca va convocada, como la deja el formulario: también recibe el acta.
+        $meeting->addAttendee($convener)->addAttendee($attendee);
         $this->em->persist($meeting);
         $this->em->flush();
         $id = (int) $meeting->getId();

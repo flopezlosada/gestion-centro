@@ -13,8 +13,8 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 /**
- * The meeting reminder sweep: one notice per meeting fans out to everybody expected there (the convened
- * AND whoever convened it, who also has to turn up), exactly once, and never by e-mail — a "empieza en 10
+ * The meeting reminder sweep: one notice per meeting fans out to everybody expected there (the convened,
+ * whoever convened it among them when they attend), exactly once, and never by e-mail — a "empieza en 10
  * minutos" is worth nothing in an inbox. Nobody outside the meeting hears about it.
  *
  * Every instant here is built without an explicit zone, i.e. in PHP's default one — the same the sweep and
@@ -44,13 +44,16 @@ final class MeetingReminderNotifierTest extends KernelTestCase
     }
 
     /**
-     * @param list<User> $attendees the people convened
+     * A meeting whose convener attends it, as the form leaves it by default, unless told otherwise.
+     *
+     * @param list<User> $attendees       the people convened besides the convener
+     * @param bool       $convenerAttends whether the convener is on the convened list too
      */
-    private function meeting(User $convener, array $attendees, string $start, ?EventReminderOffset $reminder, ?string $place = 'Sala de profesores'): Meeting
+    private function meeting(User $convener, array $attendees, string $start, ?EventReminderOffset $reminder, ?string $place = 'Sala de profesores', bool $convenerAttends = true): Meeting
     {
         $meeting = new Meeting($convener, 'Reunión de departamento', new \DateTimeImmutable($start));
         $meeting->setPlace($place)->setReminder($reminder);
-        foreach ($attendees as $attendee) {
+        foreach ($convenerAttends ? [$convener, ...$attendees] : $attendees as $attendee) {
             $meeting->addAttendee($attendee);
         }
         $this->em->persist($meeting);
@@ -76,6 +79,18 @@ final class MeetingReminderNotifierTest extends KernelTestCase
         self::assertSame('Hoy a las 14:00, en Sala de profesores.', $notice->getBody());
         self::assertCount(1, $this->notifications->findRecentFor($convener));
         self::assertNotNull($meeting->getReminderSentAt());
+    }
+
+    public function testAConvenerWhoDoesNotAttendIsNotReminded(): void
+    {
+        // Convoca pero no se sienta (se desmarcó al convocar): el «empieza en 10 minutos» no es para ella.
+        $convener = $this->user('coordina@centro.test');
+        $attendee = $this->user('convocado@centro.test');
+        $this->meeting($convener, [$attendee], '2026-09-15 14:00', EventReminderOffset::TEN_MINUTES, convenerAttends: false);
+        $this->em->flush();
+
+        self::assertSame(1, $this->notifier->sendDue(new \DateTimeImmutable('2026-09-15 13:52')));
+        self::assertCount(0, $this->notifications->findRecentFor($convener));
     }
 
     public function testAMeetingWithoutAPlaceStillReadsAsASentence(): void

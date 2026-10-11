@@ -169,7 +169,8 @@ final class DemoFixtures extends AbstractDemoFixture implements DependentFixture
             ->setAgenda("1. Estado de las movilidades del segundo trimestre.\n2. Reparto de tareas de difusión.\n3. Presupuesto pendiente.")
             ->setEndAt($today->modify('+2 days')->setTime(15, 0))
             ->setProject($project);
-        array_map($upcomingMeeting->addAttendee(...), $project->getMembers()->toArray());
+        // Quien convoca va en la lista, como la deja el formulario por defecto.
+        array_map($upcomingMeeting->addAttendee(...), [$projectCoordinator, ...$project->getMembers()->toArray()]);
         $manager->persist($upcomingMeeting);
 
         $heldMeeting = new Meeting($mathsHead, 'Reunión de departamento de Matemáticas', $today->modify('-7 days')->setTime(12, 30));
@@ -177,7 +178,7 @@ final class DemoFixtures extends AbstractDemoFixture implements DependentFixture
         // la jefatura del departamento, que es quien convoca.
         $heldMeeting->setPlace('Aula 12')->setMinutesApprovalRequired(true)
             ->setAgenda("1. Resultados del trimestre.\n2. Criterios de recuperación.");
-        array_map($heldMeeting->addAttendee(...), [$teacher, ...$mathsTeachers]);
+        array_map($heldMeeting->addAttendee(...), [$mathsHead, $teacher, ...$mathsTeachers]);
         $manager->persist($heldMeeting);
 
         // A couple of demo notices for the teacher so the inbox and its badge are not empty.

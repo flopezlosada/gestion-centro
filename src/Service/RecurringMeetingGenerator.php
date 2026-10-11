@@ -147,18 +147,23 @@ final class RecurringMeetingGenerator
             $previousConvener = $meeting->getConvener();
             if (null !== $after['convener'] && $previousConvener !== $after['convener']) {
                 $meeting->handOverTo($after['convener']);
-                // Quien convocaba y sigue en el grupo pasa a ser un convocado más.
+                // Quien convocaba deja la lista al pasar el testigo; si sigue en el grupo, vuelve como uno más.
                 if (null !== $previousConvener && \in_array($previousConvener, $after['members'], true) && $previousConvener->isActive()) {
                     $meeting->addAttendee($previousConvener);
                 }
                 $handedOver[] = $meeting;
             }
             foreach ($added as $person) {
-                if ($person !== $meeting->getConvener() && $person->isActive()) {
+                if ($person->isActive()) {
                     $meeting->addAttendee($person);
                 }
             }
-            array_map($meeting->removeAttendee(...), $removed);
+            // Salir del grupo no saca a quien convoca: está convocado por convocar, no por ser miembro.
+            foreach ($removed as $person) {
+                if ($person !== $meeting->getConvener()) {
+                    $meeting->removeAttendee($person);
+                }
+            }
 
             if ($placeMoved || $timeMoved) {
                 $moved[] = $meeting;
@@ -330,11 +335,12 @@ final class RecurringMeetingGenerator
             ->setReminder($group->getReminder())
             ->setMinutesApprovalRequired($type?->isMinutesApprovalRequired() ?? false)
             ->setMeetingGroup($group);
-        // Quien convoca no se convoca a sí mismo: es lo mismo que hace el formulario, que no le ofrece.
-        $meeting->syncAttendees(array_values(array_filter(
+        // Quien convoca va convocado, como en el formulario, que le marca por defecto; si una semana no va, se
+        // desmarca en esa reunión.
+        $meeting->syncAttendees([$convener, ...array_values(array_filter(
             $group->getMembers()->toArray(),
             static fn (User $member): bool => $member !== $convener && $member->isActive(),
-        )));
+        ))]);
         $this->entityManager->persist($meeting);
 
         return $meeting;

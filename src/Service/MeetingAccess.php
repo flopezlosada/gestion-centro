@@ -244,23 +244,19 @@ final readonly class MeetingAccess
     }
 
     /**
-     * The people that may be convened: everybody still on the staff, minus the convener (who is at the
-     * meeting by convening it).
+     * The people that may be convened: everybody still on the staff, the convener included — convening a
+     * meeting does not mean attending it (the head of studies convenes the tutors of a level and does not
+     * always sit in), so whoever convenes ticks themselves like anybody else.
      *
      * Deliberately NOT narrowed to "the people you command", which is how tasks work: a tutoría convenes
      * the equipo docente of its group and commands nobody, and the same goes for TIC or biblioteca. Since
      * a meeting only exists for the people called to it, the risk of a wide list is a long list — not a
      * leak — and that is what the project/department shortcuts are for.
      *
-     * @param User $user the person convening
-     *
-     * @return list<User> the people they may convene
+     * @return list<User> the people that may be convened
      */
-    public function convenablePeople(User $user): array
+    public function convenablePeople(): array
     {
-        return array_values(array_filter(
-            $this->users->findActive(),
-            static fn (User $candidate): bool => $candidate !== $user,
-        ));
+        return array_values($this->users->findActive());
     }
 }

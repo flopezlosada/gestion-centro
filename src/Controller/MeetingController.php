@@ -140,7 +140,7 @@ final class MeetingController extends AbstractController
         }
 
         $projects = $access->convenableProjects($user, $isAdmin);
-        $people = $access->convenablePeople($user);
+        $people = $access->convenablePeople();
 
         $data = new MeetingFormData();
         // Prefill from the shortcut of a project (its people come ticked) and from the calendar's date.
@@ -178,6 +178,11 @@ final class MeetingController extends AbstractController
                     static fn (User $candidate): bool => $groupMembers->contains($candidate),
                 ));
             }
+        }
+        // Quien convoca sale marcado, haya atajo o no: lo normal es que asista. Si no va a ir (jefatura convoca
+        // a los tutores de un nivel y no siempre se sienta), se desmarca como cualquiera.
+        if (!\in_array($user, $data->attendees, true)) {
+            array_unshift($data->attendees, $user);
         }
         $data->day = CalendarDate::parse($request->query->getString('fecha'), new \DateTimeZone(date_default_timezone_get()));
 
@@ -280,7 +285,7 @@ final class MeetingController extends AbstractController
             $projects[] = $current;
         }
         // Same for the people already convened: they must stay ticked even if they left the project.
-        $people = $access->convenablePeople($user);
+        $people = $access->convenablePeople();
         foreach ($meeting->getAttendees() as $attendee) {
             if (!\in_array($attendee, $people, true)) {
                 $people[] = $attendee;
