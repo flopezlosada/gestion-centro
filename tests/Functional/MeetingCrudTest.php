@@ -824,7 +824,8 @@ final class MeetingCrudTest extends WebTestCase
         $convener = $this->user('Lucía Coordina', 'lucia20.meet@centro.test');
         $attendee = $this->user('Pedro Convocado', 'pedro20.meet@centro.test');
         $meeting = new Meeting($convener, 'CCP de octubre', new \DateTimeImmutable('-2 hours'));
-        $meeting->addAttendee($attendee);
+        // Quien convoca va convocada, como la deja el formulario: también recibe el acta.
+        $meeting->addAttendee($convener)->addAttendee($attendee);
         $this->em->persist($meeting);
         $this->em->flush();
         $id = (int) $meeting->getId();
