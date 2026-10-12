@@ -124,6 +124,64 @@ final class CloudMinutes
     }
 
     /**
+     * Moves an acta written in the app to the cloud, keeping its life as it was: the text, when there is
+     * one, becomes the draft (.odt from the template, with the text in it) so it can still be corrected
+     * there; a published acta gets as its published copy the very FILE the people convened received, not a
+     * new rendering of the text. An unpublished file beside a text goes too, unshared, as the "documento
+     * anterior": it may say something else, and nothing is thrown away. Shared like any cloud acta. Nobody
+     * is told: this is a move, not a publication, and they already had it.
+     *
+     * Safe to run again after a failure halfway: what is already in the cloud is taken, not duplicated.
+     *
+     * @param Meeting     $meeting a meeting whose acta was written in the app
+     * @param string|null $file    the bytes of its file here, or null when it has none
+     *
+     * @return list<string> the people it could NOT be shared with, and why
+     *
+     * @throws CloudException  when no account is connected or the cloud fails
+     * @throws \LogicException when there is nothing to move, or a published acta has no file
+     */
+    public function moveToCloud(Meeting $meeting, ?string $file): array
+    {
+        $hasText = null !== $meeting->getDiscussion() || null !== $meeting->getAgreements();
+        if (!$hasText && null === $file) {
+            throw new \LogicException('Esta reunión no tiene acta escrita en la aplicación.');
+        }
+        if ($meeting->isMinutesPublished() && null === $file) {
+            throw new \LogicException('Un acta publicada sin su fichero no se puede pasar a la nube tal como se envió.');
+        }
+
+        $credentials = $this->requireCredentials();
+        $folder = $this->folderFor($meeting);
+        $base = $folder.'/'.substr(self::fileNameFor($meeting), 0, -\strlen('.odt'));
+        $fileExtension = self::extensionOf($meeting->getMinutesName());
+        $this->cloud->ensureFolder($credentials, $folder);
+
+        // Lo que se escribe: el texto en la plantilla, o el fichero tal cual si no hay texto.
+        $draftPath = $base.($hasText ? '.odt' : '.'.$fileExtension);
+        $draftId = $this->uploadOrAdopt($credentials, $draftPath, $hasText ? $this->renderer->render($meeting) : (string) $file, $meeting);
+
+        // Lo que se leyó: el fichero que recibieron las personas convocadas.
+        $publishedPath = null;
+        $publishedId = null;
+        if ($meeting->isMinutesPublished()) {
+            $publishedPath = self::publishedPathFor($base.'.'.$fileExtension);
+            $publishedId = $this->uploadOrAdopt($credentials, $publishedPath, (string) $file, $meeting);
+        } elseif ($hasText && null !== $file) {
+            // Un fichero sin publicar junto a un texto: puede ser un acta subida de fuera que no dice lo
+            // mismo. No se tira: va al lado, sin compartir, para quien lleva la cuenta del centro.
+            $this->uploadOrAdopt($credentials, $base.' (documento anterior).'.$fileExtension, $file, $meeting);
+        }
+
+        $meeting->moveMinutesToCloud($draftId, $publishedId);
+
+        $keeper = $meeting->minutesKeeper();
+        $problems = null === $keeper ? [] : $this->shareWithPeople($credentials, $draftPath, [$keeper], EducamadridCloud::PERMISSION_EDIT);
+
+        return null === $publishedPath ? $problems : [...$problems, ...$this->shareWithPeople($credentials, $publishedPath, $meeting->people(), EducamadridCloud::PERMISSION_READ)];
+    }
+
+    /**
      * The link that opens the DRAFT, the document whoever keeps the minutes writes in.
      */
     public function urlFor(Meeting $meeting): ?string
@@ -273,6 +331,12 @@ final class CloudMinutes
     private static function fileNameFor(Meeting $meeting): string
     {
         return $meeting->getStartAt()->format('Y-m-d H.i').' '.self::safeName($meeting->getTitle()).'.odt';
+    }
+
+    /** "pdf" from "acta.PDF"; a file kept here with no usable extension is taken as a PDF. */
+    private static function extensionOf(?string $name): string
+    {
+        return 1 === preg_match('#\.([A-Za-z0-9]{1,5})$#', (string) $name, $m) ? strtolower($m[1]) : 'pdf';
     }
 
     /** A title with nothing in it that a path would read as a separator or a cloud would refuse. */

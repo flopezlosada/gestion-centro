@@ -9,6 +9,7 @@ use App\Entity\MeetingGroup;
 use App\Entity\MeetingType;
 use App\Entity\Project;
 use App\Entity\User;
+use App\Enum\MeetingScope;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
@@ -252,5 +253,24 @@ class MeetingRepository extends ServiceEntityRepository
         }
 
         return $qb->orderBy('m.startAt', 'DESC')->getQuery()->getResult();
+    }
+
+    /**
+     * The meetings whose acta was written in the app — text, a file, or both — and has not moved to the
+     * EducaMadrid cloud yet: what {@see \App\Command\MoveMinutesToCloudCommand} moves. Staff meetings
+     * only; the others keep no acta.
+     *
+     * @return list<Meeting> oldest first
+     */
+    public function findMinutesWrittenInApp(): array
+    {
+        return $this->createQueryBuilder('m')
+            ->andWhere('m.scope = :staff')
+            ->andWhere('m.minutesCloudFileId IS NULL')
+            ->andWhere('m.discussion IS NOT NULL OR m.agreements IS NOT NULL OR m.minutesPath IS NOT NULL')
+            ->setParameter('staff', MeetingScope::STAFF)
+            ->orderBy('m.startAt', 'ASC')
+            ->getQuery()
+            ->getResult();
     }
 }

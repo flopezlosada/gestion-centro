@@ -314,4 +314,62 @@ final class CloudMinutesTest extends KernelTestCase
         self::assertStringEndsWith('/Actas/acta.docx', $copy[0]['url']);
         self::assertSame(['/Actas/acta (publicada).docx'], array_column($this->shares(), 'path'));
     }
+
+    public function testMovingAnActaWrittenHereKeepsTheTextToEditAndTheVeryFileThatWasSent(): void
+    {
+        $secretary = $this->user('Natalia', 'natalia.x@educa.madrid.org');
+        $luis = $this->user('Luis', 'luis.y@educa.madrid.org');
+        $meeting = $this->heldMeeting($secretary, $secretary, $luis);
+        $meeting->recordSession('<div>Lo <strong>tratado</strong></div>', '<div>Lo acordado</div>', [$secretary], self::at());
+        $meeting->attachMinutes('meeting-minutes/uuid-1.pdf', 'acta-ccp.PDF', $secretary, self::at());
+        $meeting->publishMinutes($secretary);
+
+        $problems = $this->minutes('all')->moveToCloud($meeting, '%PDF-1.4 el que se envió');
+
+        self::assertSame([], $problems);
+        $puts = array_values(array_filter($this->sent, static fn (array $r): bool => 'PUT' === $r['method']));
+        self::assertCount(2, $puts);
+        self::assertStringEndsWith('/2026-09-15%2014.00%20Reuni%C3%B3n%20de%20seguimiento.odt', $puts[0]['url'], 'el borrador, con el texto, para poder corregirlo');
+        self::assertStringEndsWith('/2026-09-15%2014.00%20Reuni%C3%B3n%20de%20seguimiento%20%28publicada%29.pdf', $puts[1]['url'], 'lo publicado es el PDF que se envió');
+        self::assertSame('%PDF-1.4 el que se envió', $puts[1]['body']);
+        self::assertSame('900', $meeting->getMinutesCloudPublishedFileId());
+        self::assertNull($meeting->getDiscussion(), 'el texto deja de estar aquí');
+        self::assertTrue($meeting->isMinutesPublished(), 'moverla no la despublica');
+        self::assertSame([
+            ['path' => '/Actas/2026-2027/Otras reuniones/2026-09-15 14.00 Reunión de seguimiento.odt', 'shareWith' => 'natalia.x', 'permissions' => (string) EducamadridCloud::PERMISSION_EDIT],
+            ['path' => '/Actas/2026-2027/Otras reuniones/2026-09-15 14.00 Reunión de seguimiento (publicada).pdf', 'shareWith' => 'natalia.x', 'permissions' => (string) EducamadridCloud::PERMISSION_READ],
+            ['path' => '/Actas/2026-2027/Otras reuniones/2026-09-15 14.00 Reunión de seguimiento (publicada).pdf', 'shareWith' => 'luis.y', 'permissions' => (string) EducamadridCloud::PERMISSION_READ],
+        ], $this->shares());
+    }
+
+    public function testAnUploadedActaWithoutTextMovesAsTheFileItIs(): void
+    {
+        $secretary = $this->user('Natalia', 'natalia.x@educa.madrid.org');
+        $meeting = $this->heldMeeting($secretary, $secretary);
+        $meeting->attachMinutes('meeting-minutes/uuid-1.docx', 'acta.docx', $secretary, self::at());
+
+        $this->minutes('all')->moveToCloud($meeting, 'bytes del docx');
+
+        $puts = array_values(array_filter($this->sent, static fn (array $r): bool => 'PUT' === $r['method']));
+        self::assertCount(1, $puts, 'sin publicar, no hay copia publicada');
+        self::assertStringEndsWith('seguimiento.docx', $puts[0]['url']);
+        self::assertSame('bytes del docx', $puts[0]['body']);
+        self::assertFalse($meeting->isMinutesPublished());
+    }
+
+    public function testAnUnpublishedFileBesideTheTextIsKeptAndNotThrownAway(): void
+    {
+        $secretary = $this->user('Natalia', 'natalia.x@educa.madrid.org');
+        $meeting = $this->heldMeeting($secretary, $secretary);
+        $meeting->recordSession('<div>Lo tratado</div>', null, [], self::at());
+        $meeting->attachMinutes('meeting-minutes/uuid-1.pdf', 'acta.pdf', $secretary, self::at());
+
+        $this->minutes('all')->moveToCloud($meeting, 'el pdf subido de fuera');
+
+        $puts = array_values(array_filter($this->sent, static fn (array $r): bool => 'PUT' === $r['method']));
+        self::assertCount(2, $puts);
+        self::assertStringEndsWith('seguimiento%20%28documento%20anterior%29.pdf', $puts[1]['url']);
+        self::assertSame('el pdf subido de fuera', $puts[1]['body']);
+        self::assertCount(1, $this->shares(), 'el documento anterior no se comparte con nadie');
+    }
 }

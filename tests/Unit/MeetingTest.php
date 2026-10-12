@@ -541,4 +541,38 @@ final class MeetingTest extends TestCase
         self::assertTrue($meeting->isAttendanceTaken());
         self::assertFalse($meeting->minutesOutdated(), 'no hay fichero aquí que se haya quedado viejo');
     }
+
+    public function testMovingAnActaToTheCloudClearsItHereAndKeepsItsLife(): void
+    {
+        $convener = $this->user('Coordina');
+        $meeting = $this->meeting($convener);
+        $at = new \DateTimeImmutable('2026-09-15 15:00');
+        $meeting->recordSession('<p>Lo tratado</p>', '<p>Lo acordado</p>', [], $at);
+        $meeting->attachMinutes('meeting-minutes/uuid-1.pdf', 'acta.pdf', $convener, $at);
+        $meeting->publishMinutes($convener);
+        $publishedAt = $meeting->getMinutesPublishedAt();
+
+        $removed = $meeting->moveMinutesToCloud('776650601', '776650606');
+
+        self::assertSame('meeting-minutes/uuid-1.pdf', $removed, 'el fichero de aquí, para que quien llama lo borre');
+        self::assertNull($meeting->getDiscussion());
+        self::assertNull($meeting->getAgreements());
+        self::assertNull($meeting->getMinutesPath());
+        self::assertSame('776650606', $meeting->getMinutesCloudPublishedFileId());
+        self::assertSame($publishedAt, $meeting->getMinutesPublishedAt(), 'moverla no es volver a publicarla');
+        self::assertSame($convener, $meeting->getMinutesUploadedBy());
+        self::assertSame(MinutesStage::PUBLISHED, $meeting->minutesStage($at));
+    }
+
+    public function testAPublishedActaCannotMoveWithoutWhatWasPublished(): void
+    {
+        $convener = $this->user('Coordina');
+        $meeting = $this->meeting($convener);
+        $meeting->attachMinutes('meeting-minutes/uuid-1.pdf', 'acta.pdf', $convener, new \DateTimeImmutable('2026-09-15 15:00'));
+        $meeting->publishMinutes($convener);
+
+        $this->expectException(\LogicException::class);
+
+        $meeting->moveMinutesToCloud('776650601', null);
+    }
 }
