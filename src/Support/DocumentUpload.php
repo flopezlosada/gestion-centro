@@ -79,6 +79,28 @@ final class DocumentUpload
             : sprintf('«%s» no es un PDF. Para fotocopias solo se admite PDF: guárdalo o expórtalo como PDF.', $file->getClientOriginalName());
     }
 
+    /** What an acta written outside the app may be: a text document, editable in the cloud or a PDF. */
+    public const array MINUTES_EXTENSIONS = ['odt', 'docx', 'doc', 'rtf', 'pdf'];
+
+    /**
+     * Like {@see problem()}, but only a text document passes: what an acta written outside the app is.
+     *
+     * @param UploadedFile $file the uploaded file
+     *
+     * @return string|null the reason to reject it, or null when acceptable
+     */
+    public static function minutesProblem(UploadedFile $file): ?string
+    {
+        $problem = self::problem($file);
+        if (null !== $problem || \UPLOAD_ERR_NO_FILE === $file->getError()) {
+            return $problem;
+        }
+
+        return \in_array(strtolower($file->getClientOriginalExtension()), self::MINUTES_EXTENSIONS, true)
+            ? null
+            : sprintf('«%s» no es un documento de texto. Sube el acta en Word, LibreOffice o PDF.', $file->getClientOriginalName());
+    }
+
     /**
      * Whether the field actually carries a file (as opposed to being left empty).
      *
