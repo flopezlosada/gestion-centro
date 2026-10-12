@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\EventSubscriber;
 
 use App\Contract\Auditable;
+use App\Contract\AuditRedacted;
 use App\Entity\AuditLog;
 use App\Support\AuditContext;
 use App\Support\ChangeNormalizer;
@@ -41,6 +42,9 @@ final class EntityAuditSubscriber
     /** True while writing log rows, so the resulting flush does not recurse into this listener. */
     private bool $persisting = false;
 
+    /** @var array<class-string, list<string>> per entity class, its {@see AuditRedacted} properties */
+    private array $redactedFields = [];
+
     public function __construct(
         private readonly Security $security,
         private readonly AuditContext $auditContext,
@@ -66,13 +70,13 @@ final class EntityAuditSubscriber
         foreach ($uow->getScheduledEntityInsertions() as $entity) {
             if ($entity instanceof Auditable) {
                 // The generated id is not available yet; it is resolved in postFlush.
-                $records[spl_object_id($entity)] = ['entity' => $entity, 'action' => 'created', 'changes' => ChangeNormalizer::diff($uow->getEntityChangeSet($entity)), 'subjectId' => null];
+                $records[spl_object_id($entity)] = ['entity' => $entity, 'action' => 'created', 'changes' => $this->redact($em, $entity, ChangeNormalizer::diff($uow->getEntityChangeSet($entity))), 'subjectId' => null];
             }
         }
 
         foreach ($uow->getScheduledEntityUpdates() as $entity) {
             if ($entity instanceof Auditable) {
-                $records[spl_object_id($entity)] = ['entity' => $entity, 'action' => 'updated', 'changes' => ChangeNormalizer::diff($uow->getEntityChangeSet($entity)), 'subjectId' => $this->resolveSubjectId($em, $entity)];
+                $records[spl_object_id($entity)] = ['entity' => $entity, 'action' => 'updated', 'changes' => $this->redact($em, $entity, ChangeNormalizer::diff($uow->getEntityChangeSet($entity))), 'subjectId' => $this->resolveSubjectId($em, $entity)];
             }
         }
 
@@ -148,6 +152,46 @@ final class EntityAuditSubscriber
         } finally {
             $this->persisting = false;
         }
+    }
+
+    /**
+     * Replaces the values of the entity's {@see AuditRedacted} fields by {@see AuditRedacted::MARK},
+     * keeping only whether each one was set: the trail says the text changed, never what it said.
+     *
+     * @param array<string, mixed> $changes the field diff
+     *
+     * @return array<string, mixed> the same diff, without the redacted contents
+     */
+    private function redact(EntityManagerInterface $em, object $entity, array $changes): array
+    {
+        // El nombre real y no $entity::class: un proxy de Doctrine es una subclase y su reflexión no ve
+        // las propiedades privadas de la entidad.
+        foreach ($this->redactedFieldsOf($em->getClassMetadata($entity::class)->getName()) as $field) {
+            if (\is_array($changes[$field] ?? null)) {
+                $changes[$field] = array_map(
+                    static fn (mixed $value): ?string => null === $value || '' === $value ? null : AuditRedacted::MARK,
+                    $changes[$field],
+                );
+            }
+        }
+
+        return $changes;
+    }
+
+    /**
+     * @param class-string $class
+     *
+     * @return list<string> the class's properties marked {@see AuditRedacted}, read once per class
+     */
+    private function redactedFieldsOf(string $class): array
+    {
+        return $this->redactedFields[$class] ??= array_values(array_map(
+            static fn (\ReflectionProperty $property): string => $property->getName(),
+            array_filter(
+                (new \ReflectionClass($class))->getProperties(),
+                static fn (\ReflectionProperty $property): bool => [] !== $property->getAttributes(AuditRedacted::class),
+            ),
+        ));
     }
 
     /**

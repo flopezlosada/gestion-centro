@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration;
 
+use App\Contract\AuditRedacted;
 use App\Entity\AuditLog;
+use App\Entity\Meeting;
 use App\Entity\Role;
 use App\Entity\User;
 use App\Enum\Area;
@@ -122,5 +124,37 @@ final class EntityAuditSubscriberTest extends KernelTestCase
         self::assertArrayHasKey('assignedRoles', $changes, 'assigning a role must be tracked (sensitive action)');
         self::assertContains($role->getId(), $changes['assignedRoles']['added']);
         self::assertSame([], $changes['assignedRoles']['removed']);
+    }
+
+    public function testTheTextOfAnActaIsAuditedAsChangedButNeverKept(): void
+    {
+        self::bootKernel();
+        $em = $this->entityManager();
+        $secret = 'Se trata el expediente del alumno X';
+        $convener = (new User())->setFullName('Convoca')->setEmail('convoca@centro.test');
+        $meeting = (new Meeting($convener, 'Equipo docente', new \DateTimeImmutable('2026-09-15 14:00')))->setAgenda('<p>'.$secret.'</p>');
+        $em->persist($convener);
+        $em->persist($meeting);
+        $em->flush();
+
+        $created = $this->latestChanges($em, 'meeting.created', 'Meeting');
+        self::assertSame(['old' => null, 'new' => AuditRedacted::MARK], $created['agenda'] ?? null, 'consta que se escribió, no qué');
+
+        $meeting->recordSession('<p>'.$secret.'</p>', '<p>1. '.$secret.'</p>', [], new \DateTimeImmutable('2026-09-15 15:00'));
+        $em->flush();
+        $session = $this->latestChanges($em, 'meeting.updated', 'Meeting');
+        self::assertSame(['old' => null, 'new' => AuditRedacted::MARK], $session['discussion'] ?? null);
+        self::assertSame(['old' => null, 'new' => AuditRedacted::MARK], $session['agreements'] ?? null);
+
+        // Por un proxy de Doctrine, que es una subclase: la marca tiene que verse igual.
+        $id = $meeting->getId();
+        $em->clear();
+        $em->getReference(Meeting::class, $id)->setAgenda(null);
+        $em->flush();
+        $cleared = $this->latestChanges($em, 'meeting.updated', 'Meeting');
+        self::assertSame(['old' => AuditRedacted::MARK, 'new' => null], $cleared['agenda'] ?? null, 'que se borró sí consta');
+
+        $trail = array_map(static fn (AuditLog $entry): mixed => $entry->getChanges(), $em->getRepository(AuditLog::class)->findBy(['subjectType' => 'Meeting', 'subjectId' => (string) $id]));
+        self::assertStringNotContainsString('expediente', json_encode($trail, \JSON_UNESCAPED_UNICODE) ?: '');
     }
 }
