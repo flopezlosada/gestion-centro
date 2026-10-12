@@ -158,12 +158,16 @@ final class EntityAuditSubscriber
      * Replaces the values of the entity's {@see AuditRedacted} fields by {@see AuditRedacted::MARK},
      * keeping only whether each one was set: the trail says the text changed, never what it said.
      *
-     * @param array<string, mixed> $changes the field diff
+     * @param array<string, mixed>|null $changes the field diff, or null when there is nothing to record
      *
-     * @return array<string, mixed> the same diff, without the redacted contents
+     * @return array<string, mixed>|null the same diff, without the redacted contents
      */
-    private function redact(EntityManagerInterface $em, object $entity, array $changes): array
+    private function redact(EntityManagerInterface $em, object $entity, ?array $changes): ?array
     {
+        if (null === $changes) {
+            return null;
+        }
+
         // El nombre real y no $entity::class: un proxy de Doctrine es una subclase y su reflexión no ve
         // las propiedades privadas de la entidad.
         foreach ($this->redactedFieldsOf($em->getClassMetadata($entity::class)->getName()) as $field) {
