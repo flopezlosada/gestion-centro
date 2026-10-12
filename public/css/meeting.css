@@ -209,6 +209,22 @@
 .mtg-next strong { color: var(--text); }
 .mtg-next form { margin: 0; flex: none; }
 
+/* ---- Historial: la vida de la reunión, plegada al final ------------------- */
+.mtg-history { margin-top: 40px; border-top: 1px solid var(--border); }
+.mtg-history > summary { display: flex; align-items: center; gap: 8px; padding: 16px 0; list-style: none; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--text-muted); }
+.mtg-history > summary::-webkit-details-marker { display: none; }
+.mtg-history > summary:hover { color: var(--text); }
+.mtg-history > summary .mtg-icon:last-child { margin-left: auto; transition: transform .15s ease; }
+.mtg-history[open] > summary .mtg-icon:last-child { transform: rotate(90deg); }
+.mtg-history > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
+.mtg-history__list { list-style: none; margin: 0; padding: 0 0 8px; }
+.mtg-history__item { position: relative; padding: 0 0 18px 22px; border-left: 1px solid var(--border); margin-left: 6px; }
+.mtg-history__item:last-child { border-left-color: transparent; }
+.mtg-history__item::before { content: ""; position: absolute; left: -5px; top: 4px; width: 9px; height: 9px; border-radius: 99px; background: var(--surface); border: 1.5px solid var(--border-strong); }
+.mtg-history__meta { margin: 0 0 4px; font: 400 11.5px/1.4 var(--font-mono); color: var(--text-muted); }
+.mtg-history__events { margin: 0; padding: 0; list-style: none; font-size: 14px; line-height: 1.5; color: var(--text); }
+.mtg-history__events li + li { margin-top: 2px; }
+
 /* ---- Otras opciones ------------------------------------------------------ */
 .mtg-more > summary { display: flex; align-items: center; gap: 8px; padding: 16px 28px; list-style: none; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--text-muted); }
 .mtg-more > summary::-webkit-details-marker { display: none; }

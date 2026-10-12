@@ -10,6 +10,7 @@ use App\Entity\Project;
 use App\Entity\User;
 use App\Form\MeetingFormData;
 use App\Form\MeetingFormType;
+use App\Repository\AuditLogRepository;
 use App\Repository\MeetingGroupRepository;
 use App\Repository\MeetingRemarkRepository;
 use App\Repository\MeetingRepository;
@@ -21,6 +22,7 @@ use App\Service\MeetingNotifier;
 use App\Service\MinutesMailer;
 use App\Service\MinutesPdfRenderer;
 use App\Support\DocumentUpload;
+use App\Support\MeetingActivityPresenter;
 use App\Support\MeetingProse;
 use App\Util\CalendarDate;
 use Doctrine\ORM\EntityManagerInterface;
@@ -216,7 +218,7 @@ final class MeetingController extends AbstractController
      * team ({@see MeetingAccess::isLeadership()}); nobody else.
      */
     #[Route('/{id}', name: 'meeting_show', requirements: ['id' => '\d+'], methods: ['GET'])]
-    public function show(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, MeetingRemarkRepository $remarks, MeetingRepository $meetings): Response
+    public function show(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, MeetingRemarkRepository $remarks, MeetingRepository $meetings, AuditLogRepository $auditLog, MeetingActivityPresenter $activity): Response
     {
         $isAdmin = $this->isGranted('ROLE_ADMIN');
         if (!$access->canSee($meeting, $user, $isAdmin)) {
@@ -261,6 +263,9 @@ final class MeetingController extends AbstractController
             // Aprobarla es de quien levantó ESA acta, igual que en su propia página.
             'canApprovePrevious' => null !== $previous && $access->canKeepMinutes($previous, $user, $isAdmin),
             'previousRemarks' => null !== $previous && $previous->wereMinutesEverPublished() ? \count($remarks->findThreadFor($previous)) : 0,
+            // La vida de la reunión, contada como hechos y sin el texto del acta ni del orden del día. La ve
+            // quien puede ver la reunión: lo que cuenta (quién convocó a quién, cuándo se publicó) ya lo sabe.
+            'history' => $activity->present($auditLog->findForSubject('Meeting', (string) $meeting->getId(), limit: 500)),
         ]);
     }
 

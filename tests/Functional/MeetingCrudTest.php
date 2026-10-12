@@ -147,6 +147,11 @@ final class MeetingCrudTest extends WebTestCase
         // Convocar ES avisar.
         self::assertSame(1, $this->noticesOf($this->em->getRepository(User::class)->find($member->getId()), 'meeting.convened'));
         self::assertSame(0, $this->noticesOf($this->em->getRepository(User::class)->find($coordinator->getId()), 'meeting.convened'), 'quien convoca no se avisa a sí misma');
+
+        // Y queda en la vida de la reunión, contado como un hecho y con quién lo hizo.
+        $this->client->request('GET', '/reuniones/'.$meeting->getId());
+        self::assertSelectorTextContains('#historial', 'Convocó la reunión');
+        self::assertSelectorTextContains('#historial', 'Lucía Coordina');
     }
 
     public function testAConvenerWhoUnticksThemselvesConvenesWithoutAttending(): void
