@@ -43,11 +43,16 @@ final class MeetingActivityPresenter
      * Presents a meeting's audit trail as events, newest first as received. An entry that changed only
      * bookkeeping (the reminder's internal instants, a stale flag) yields no row.
      *
-     * @param AuditLog[] $entries the meeting's audit entries
+     * Who was taken OFF the convocatoria is told only to whoever manages the meeting: the rest of the
+     * people convened have no need to read that somebody was removed, and the person removed no longer
+     * sees the meeting at all.
+     *
+     * @param AuditLog[] $entries      the meeting's audit entries
+     * @param bool       $showRemovals whether the viewer manages the meeting and may read who was removed
      *
      * @return list<array{actor: ?string, occurredAt: \DateTimeImmutable, events: list<string>}> the view rows
      */
-    public function present(array $entries): array
+    public function present(array $entries, bool $showRemovals): array
     {
         $people = $this->resolvePeople($entries);
         $actors = $this->resolveActorNames($entries);
@@ -58,7 +63,7 @@ final class MeetingActivityPresenter
             $changes = $entry->getChanges() ?? [];
             $events = str_ends_with($entry->getAction(), '.created')
                 ? $this->creationEvents($changes, $people)
-                : $this->updateEvents($changes, $people, $names);
+                : $this->updateEvents($changes, $people, $names, $showRemovals);
             if ([] === $events) {
                 continue;
             }
@@ -102,11 +107,12 @@ final class MeetingActivityPresenter
      *
      * @param array<string, mixed>                    $changes the raw diff of the update
      * @param array<int, string>                      $people  user id → full name
-     * @param array<class-string, array<int, string>> $names   other entities' id → name, by class
+     * @param array<class-string, array<int, string>> $names        other entities' id → name, by class
+     * @param bool                                    $showRemovals whether to tell who was taken off the convocatoria
      *
      * @return list<string> the events
      */
-    private function updateEvents(array $changes, array $people, array $names): array
+    private function updateEvents(array $changes, array $people, array $names, bool $showRemovals): array
     {
         $events = [];
         $old = static fn (string $field): mixed => $changes[$field]['old'] ?? null;
@@ -144,7 +150,8 @@ final class MeetingActivityPresenter
         if ($has('minutesApprovalRequired')) {
             $events[] = $new('minutesApprovalRequired') ? 'El acta pasa a necesitar aprobación' : 'El acta deja de necesitar aprobación';
         }
-        foreach (['added' => 'Convocó a ', 'removed' => 'Retiró de la convocatoria a '] as $side => $verb) {
+        $sides = ['added' => 'Convocó a '] + ($showRemovals ? ['removed' => 'Retiró de la convocatoria a '] : []);
+        foreach ($sides as $side => $verb) {
             $ids = $changes['attendees'][$side] ?? [];
             if ([] !== $ids) {
                 $events[] = $verb.$this->people($ids, $people);
@@ -162,6 +169,10 @@ final class MeetingActivityPresenter
         }
         if ($has('minutesPath')) {
             $events[] = null === $new('minutesPath') ? 'Quitó el documento del acta' : 'Generó o subió el documento del acta';
+        }
+        // El acta en la nube: aquí solo se sabe que se creó; lo que se escribe en ella lo guarda la nube.
+        if ($has('minutesCloudFileId') && null !== $new('minutesCloudFileId')) {
+            $events[] = 'Creó el acta en la nube de EducaMadrid';
         }
         if ($has('minutesPublishedAt')) {
             $events[] = match (true) {

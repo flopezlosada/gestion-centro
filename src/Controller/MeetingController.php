@@ -16,6 +16,9 @@ use App\Repository\MeetingRemarkRepository;
 use App\Repository\MeetingRepository;
 use App\Repository\MeetingTypeRepository;
 use App\Repository\UserRepository;
+use App\Service\Cloud\CloudAccount;
+use App\Service\Cloud\CloudException;
+use App\Service\Cloud\CloudMinutes;
 use App\Service\FileUploader;
 use App\Service\MeetingAccess;
 use App\Service\MeetingNotifier;
@@ -218,7 +221,7 @@ final class MeetingController extends AbstractController
      * team ({@see MeetingAccess::isLeadership()}); nobody else.
      */
     #[Route('/{id}', name: 'meeting_show', requirements: ['id' => '\d+'], methods: ['GET'])]
-    public function show(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, MeetingRemarkRepository $remarks, MeetingRepository $meetings, AuditLogRepository $auditLog, MeetingActivityPresenter $activity): Response
+    public function show(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, MeetingRemarkRepository $remarks, MeetingRepository $meetings, AuditLogRepository $auditLog, MeetingActivityPresenter $activity, CloudAccount $cloudAccount, CloudMinutes $cloudMinutes): Response
     {
         $isAdmin = $this->isGranted('ROLE_ADMIN');
         if (!$access->canSee($meeting, $user, $isAdmin)) {
@@ -265,7 +268,10 @@ final class MeetingController extends AbstractController
             'previousRemarks' => null !== $previous && $previous->wereMinutesEverPublished() ? \count($remarks->findThreadFor($previous)) : 0,
             // La vida de la reunión, contada como hechos y sin el texto del acta ni del orden del día. La ve
             // quien puede ver la reunión: lo que cuenta (quién convocó a quién, cuándo se publicó) ya lo sabe.
-            'history' => $activity->present($auditLog->findForSubject('Meeting', (string) $meeting->getId(), limit: 500)),
+            'history' => $activity->present($auditLog->findForSubject('Meeting', (string) $meeting->getId(), limit: 500), showRemovals: $access->canManage($meeting, $user, $isAdmin)),
+            'cloudMode' => $meeting->writesMinutesInCloud($cloudAccount->isConnected()),
+            'cloudUrl' => $cloudMinutes->urlFor($meeting),
+            'cloudPublishedUrl' => $cloudMinutes->publishedUrlFor($meeting),
         ]);
     }
 
@@ -345,7 +351,7 @@ final class MeetingController extends AbstractController
      * file already gone.
      */
     #[Route('/{id}/acta', name: 'meeting_minutes_upload', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function uploadMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, FileUploader $uploader): Response
+    public function uploadMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, FileUploader $uploader, CloudAccount $cloudAccount): Response
     {
         if (!$this->isCsrfTokenValid('meeting_minutes'.$meeting->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
@@ -353,6 +359,7 @@ final class MeetingController extends AbstractController
         if (!$access->canWriteMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
             throw $this->createAccessDeniedException('El acta la sube quien la levanta.');
         }
+        $this->denyIfInCloud($meeting, $cloudAccount);
         $this->denyUnlessStarted($meeting);
 
         $file = $request->files->get('acta');
@@ -395,7 +402,7 @@ final class MeetingController extends AbstractController
      * old 403 on scope is gone — the screen only ever offers the half that applies.
      */
     #[Route('/{id}/acta/registro', name: 'meeting_record', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function recordSession(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, UserRepository $users, EntityManagerInterface $entityManager, FileUploader $uploader, MinutesPdfRenderer $renderer): Response
+    public function recordSession(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, UserRepository $users, EntityManagerInterface $entityManager, FileUploader $uploader, MinutesPdfRenderer $renderer, CloudAccount $cloudAccount): Response
     {
         if (!$this->isCsrfTokenValid('meeting_record'.$meeting->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
@@ -403,6 +410,7 @@ final class MeetingController extends AbstractController
         if (!$access->canWriteMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
             throw $this->createAccessDeniedException('El acta la escribe quien la levanta.');
         }
+        $this->denyIfInCloud($meeting, $cloudAccount);
         $this->denyUnlessStarted($meeting);
 
         /** @var list<string> $ids */
@@ -466,7 +474,7 @@ final class MeetingController extends AbstractController
      * ({@see Meeting::attachMinutes()}), así que lo publicado y lo que hay siempre coinciden.
      */
     #[Route('/{id}/acta/publicar', name: 'meeting_minutes_publish', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function publishMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, MeetingNotifier $notifier, MinutesMailer $mailer): Response
+    public function publishMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, MeetingNotifier $notifier, MinutesMailer $mailer, CloudMinutes $cloudMinutes): Response
     {
         if (!$this->isCsrfTokenValid('meeting_minutes'.$meeting->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
@@ -475,6 +483,30 @@ final class MeetingController extends AbstractController
             throw $this->createAccessDeniedException('El acta la publica quien la levanta.');
         }
         $this->denyUnlessStarted($meeting);
+
+        // El acta en la nube: la nube hace una copia congelada y es esa la que se comparte para leer. Primero
+        // la copia y después «publicada»: si la nube falla, el acta no queda publicada sin nada que leer. No
+        // hay PDF que mandar por correo: el texto no sale de EducaMadrid.
+        if ($meeting->hasCloudMinutes()) {
+            $again = $meeting->isMinutesPublished();
+            try {
+                $problems = $cloudMinutes->publish($meeting, $user);
+            } catch (CloudException $e) {
+                $this->addFlash('error', $e->getMessage());
+
+                return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId(), '_fragment' => 'acta']);
+            }
+            $entityManager->flush();
+            $notifier->notifyMinutes($meeting, $meeting->people());
+            $this->addFlash('success', $again
+                ? 'Corrección publicada: las personas convocadas leen ya la versión nueva y reciben el aviso.'
+                : 'Acta publicada: compartida en la nube, para leer, con las personas convocadas, que reciben el aviso.');
+            if ([] !== $problems) {
+                $this->addFlash('error', 'No se pudo compartir con: '.implode('; ', $problems).'.');
+            }
+
+            return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId(), '_fragment' => 'acta']);
+        }
 
         if (!$meeting->publishMinutes($user)) {
             $this->addFlash('error', 'Primero sube o genera el acta; después se publica.');
@@ -492,6 +524,85 @@ final class MeetingController extends AbstractController
         $this->addFlash('success', sprintf('Acta publicada. Enviada por correo a %d persona%s.', $sent, 1 === $sent ? '' : 's'));
 
         return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
+    }
+
+    /**
+     * Takes the roll of a meeting whose acta is written in the EducaMadrid cloud: the one part of the
+     * session the app keeps there. Refused for an acta written here, whose roll is saved with its text in
+     * {@see recordSession()} so that half an acta cannot be saved.
+     */
+    #[Route('/{id}/acta/asistencia', name: 'meeting_roll', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function takeRoll(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, UserRepository $users, EntityManagerInterface $entityManager, CloudAccount $cloudAccount): Response
+    {
+        if (!$this->isCsrfTokenValid('meeting_record'.$meeting->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+        if (!$access->canWriteMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
+            throw $this->createAccessDeniedException('El acta la escribe quien la levanta.');
+        }
+        if (!$meeting->writesMinutesInCloud($cloudAccount->isConnected())) {
+            throw $this->createAccessDeniedException('La asistencia de esta acta se guarda con su texto.');
+        }
+        $this->denyUnlessStarted($meeting);
+
+        /** @var list<string> $ids */
+        $ids = array_values($request->request->all('asistentes'));
+        // Como en recordSession(): la entidad se queda solo con quien estaba convocado.
+        $present = [] !== $ids ? $users->findBy(['id' => array_map('intval', $ids)]) : [];
+        $meeting->takeRoll($present, new \DateTimeImmutable());
+        $entityManager->flush();
+
+        // El documento ya creado no se reescribe (la nube no machaca un acta): quien la levanta lo corrige allí.
+        $this->addFlash('success', \sprintf(
+            'Asistencia guardada: %d de %d.%s',
+            \count($meeting->getAttended()),
+            \count($meeting->people()),
+            $meeting->hasCloudMinutes() ? ' El acta ya estaba creada: corrige también allí quién asistió.' : '',
+        ));
+
+        return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId(), '_fragment' => 'acta']);
+    }
+
+    /**
+     * Creates the acta as a document in the centre's EducaMadrid cloud, from a template with what the app
+     * already knows (heading, roll, agenda), shares it to edit with whoever keeps the minutes, and goes
+     * straight to its editor: the form is sent from a new tab, so creating and opening are one click.
+     * Once only: a second document would leave two actas, and the cloud refuses to overwrite — so a
+     * second press just opens the one there is.
+     */
+    #[Route('/{id}/acta/nube', name: 'meeting_minutes_cloud_create', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function createCloudMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, CloudAccount $cloudAccount, CloudMinutes $cloudMinutes): Response
+    {
+        if (!$this->isCsrfTokenValid('meeting_minutes'.$meeting->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+        if (!$access->canWriteMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
+            throw $this->createAccessDeniedException('El acta la escribe quien la levanta.');
+        }
+        // Un acta empezada aquí (PDF o texto) sigue aquí: una segunda acta en la nube la dejaría escondida.
+        if (!$meeting->writesMinutesInCloud($cloudAccount->isConnected())) {
+            throw $this->createAccessDeniedException('Esta acta se escribe en la aplicación.');
+        }
+        $this->denyUnlessStarted($meeting);
+        if (!$meeting->hasCloudMinutes()) {
+            try {
+                $problems = $cloudMinutes->create($meeting, $user, new \DateTimeImmutable());
+                $entityManager->flush();
+                // El aviso lo ve la ficha que se quedó detrás, al recargarse cuando se vuelve a ella.
+                $this->addFlash('success', 'Acta creada en la nube de EducaMadrid.');
+                if ([] !== $problems) {
+                    $this->addFlash('error', 'No se pudo compartir con: '.implode('; ', $problems).'.');
+                }
+            } catch (CloudException $e) {
+                $this->addFlash('error', $e->getMessage());
+
+                return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId(), '_fragment' => 'acta']);
+            }
+        }
+
+        $url = $cloudMinutes->urlFor($meeting);
+
+        return null !== $url ? $this->redirect($url) : $this->redirectToRoute('meeting_show', ['id' => $meeting->getId(), '_fragment' => 'acta']);
     }
 
     /**
@@ -574,7 +685,7 @@ final class MeetingController extends AbstractController
      * keeps it: publishing is the deliberate gesture that hands the acta to the group.
      */
     #[Route('/{id}/acta/descargar', name: 'meeting_minutes_download', requirements: ['id' => '\d+'], methods: ['GET'])]
-    public function downloadMinutes(Meeting $meeting, #[CurrentUser] User $user, MeetingAccess $access, FileUploader $uploader): Response
+    public function downloadMinutes(Meeting $meeting, #[CurrentUser] User $user, MeetingAccess $access, FileUploader $uploader, CloudMinutes $cloudMinutes): Response
     {
         $isAdmin = $this->isGranted('ROLE_ADMIN');
         if (!$access->canSee($meeting, $user, $isAdmin)) {
@@ -585,6 +696,11 @@ final class MeetingController extends AbstractController
         // para comprobar la corrección antes de volver a publicarla.
         if (!$meeting->isMinutesPublished() && !$access->canWriteMinutes($meeting, $user, $isAdmin)) {
             throw $this->createAccessDeniedException('El acta es todavía un borrador: solo la ve quien la levanta.');
+        }
+        // Un acta en la nube no se descarga de aquí: se abre allí. Así cualquier enlace a «el acta» (los
+        // listados, el archivo del proyecto) lleva a lo publicado, o al borrador a quien lo escribe.
+        if ($meeting->hasCloudMinutes()) {
+            return $this->redirect((string) ($meeting->isMinutesPublished() ? $cloudMinutes->publishedUrlFor($meeting) : $cloudMinutes->urlFor($meeting)));
         }
 
         $path = $meeting->getMinutesPath();
@@ -605,7 +721,7 @@ final class MeetingController extends AbstractController
      * convened the meeting or an admin.
      */
     #[Route('/{id}/acta/borrar', name: 'meeting_minutes_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function deleteMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, FileUploader $uploader): Response
+    public function deleteMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, FileUploader $uploader, CloudAccount $cloudAccount): Response
     {
         if (!$this->isCsrfTokenValid('meeting_minutes'.$meeting->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
@@ -613,6 +729,7 @@ final class MeetingController extends AbstractController
         if (!$access->canKeepMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
             throw $this->createAccessDeniedException('El acta la gestiona quien la levanta.');
         }
+        $this->denyIfInCloud($meeting, $cloudAccount);
 
         $removed = $meeting->clearMinutes();
         $entityManager->flush();
@@ -717,6 +834,24 @@ final class MeetingController extends AbstractController
         }
 
         return null !== $replaced;
+    }
+
+    /**
+     * Refuses the acta's in-app ways (writing its text, uploading or removing its file) for an acta that is
+     * written in the EducaMadrid cloud: its text must never land in this database, and a second acta beside
+     * the cloud one would leave two versions both called "el acta". The screen does not offer them; this
+     * is for a request that does not come from it.
+     *
+     * @param Meeting      $meeting      the meeting
+     * @param CloudAccount $cloudAccount the centre's cloud connection
+     *
+     * @throws AccessDeniedException when the acta goes, or already went, to the cloud
+     */
+    private function denyIfInCloud(Meeting $meeting, CloudAccount $cloudAccount): void
+    {
+        if ($meeting->writesMinutesInCloud($cloudAccount->isConnected())) {
+            throw $this->createAccessDeniedException('Esta acta se escribe en la nube de EducaMadrid.');
+        }
     }
 
     /**

@@ -6,6 +6,8 @@
  *  - Buscador por nombre en listas largas: llega oculto ([data-roll-search-box]) y solo se enseña aquí.
  *  - El nombre del archivo elegido para subir, que el botón «Elegir archivo…» no enseña por sí solo.
  *  - Avisar, al publicar un borrador, de que hay cambios sin guardar que no irán en lo enviado.
+ *  - Recargar la ficha al volver a ella tras un formulario que se envió a otra pestaña ([data-reload-on-return],
+ *    crear el acta en la nube): la pestaña de detrás seguiría ofreciendo crearla.
  *
  * Mejora progresiva: sin JS la lista se marca igual (casillas reales; el aspecto sale de :has(:checked)) y el
  * recuento es el que pintó el servidor.
@@ -112,7 +114,21 @@
         }, true);
     }
 
+    function setUpReloadOnReturn(form) {
+        form.addEventListener('submit', function () {
+            var reload = function () {
+                if (document.visibilityState === 'visible') {
+                    document.removeEventListener('visibilitychange', reload);
+                    window.location.reload();
+                }
+            };
+            // Al enviar, esta pestaña aún está visible: se espera a que la nueva tome el foco y se vuelva.
+            document.addEventListener('visibilitychange', reload);
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
+        Array.prototype.forEach.call(document.querySelectorAll('form[data-reload-on-return]'), setUpReloadOnReturn);
         Array.prototype.forEach.call(document.querySelectorAll('[data-roll]'), setUpRoll);
         Array.prototype.forEach.call(document.querySelectorAll('input[data-file-pick]'), setUpFilePick);
         var actaForm = document.getElementById('acta-form');

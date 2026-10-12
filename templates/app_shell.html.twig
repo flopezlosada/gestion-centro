@@ -173,6 +173,7 @@
                             {% if is_granted('ROLE_ADMIN') %}
                                 <a href="{{ path('admin_access_index') }}" class="{{ route starts with 'admin_access_' ? 'is-active' }}">Acceso</a>
                                 <a href="{{ path('admin_privacy_notice_index') }}" class="{{ route starts with 'admin_privacy_notice_' ? 'is-active' }}">Protección de datos</a>
+                                <a href="{{ path('admin_cloud_index') }}" class="{{ route starts with 'admin_cloud_' ? 'is-active' }}">Nube de EducaMadrid</a>
                             {% endif %}
                         </div>
 

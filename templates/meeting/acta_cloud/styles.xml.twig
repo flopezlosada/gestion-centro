@@ -1,0 +1,179 @@
+{#- Los ESTILOS del acta (.odt): página A4, cabecera con el logo del centro, pie con el número de página y la
+    tipografía de lectura. Fuentes Liberation a propósito: vienen con cualquier LibreOffice y con el editor de
+    EducaMadrid (Collabora), así que el documento se ve igual en todos sitios sin incrustar nada. El carácter
+    lo ponen la marca y la jerarquía, no las fuentes: naranja del logo en el rótulo de la cabecera, el filete
+    de la ficha, los números de sección y la barra de cada punto; serif grande para el título y las
+    secciones; fondo cálido para lo que son datos (la ficha, las firmas) frente a lo que se escribe. -#}
+{% set start = meeting.startAt -%}
+{% set firstYear = start|date('n') >= 9 ? start|date('Y') : start|date('Y') - 1 -%}
+{% set meses = ['', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'] -%}
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document-styles xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:version="1.3">
+ <office:font-face-decls>
+  <style:font-face style:name="Liberation Sans" svg:font-family="'Liberation Sans'" style:font-family-generic="swiss" style:font-pitch="variable"/>
+  <style:font-face style:name="Liberation Serif" svg:font-family="'Liberation Serif'" style:font-family-generic="roman" style:font-pitch="variable"/>
+ </office:font-face-decls>
+ <office:styles>
+  <style:default-style style:family="paragraph">
+   <style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0.2cm" fo:line-height="145%" fo:orphans="2" fo:widows="2"/>
+   <style:text-properties style:font-name="Liberation Sans" fo:font-size="10.5pt" fo:color="#1F1D19" fo:language="es" fo:country="ES" fo:hyphenate="false"/>
+  </style:default-style>
+  <style:default-style style:family="table-cell">
+   <style:table-cell-properties fo:padding="0.12cm"/>
+  </style:default-style>
+  <style:style style:name="Standard" style:family="paragraph" style:class="text"/>
+
+  {#- Donde se escribe: justificado, como un acta, y sin nada de muestra que heredar. -#}
+  <style:style style:name="Body" style:display-name="Cuerpo del acta" style:family="paragraph" style:parent-style-name="Standard" style:class="text">
+   <style:paragraph-properties fo:text-align="justify" fo:margin-bottom="0.25cm"/>
+  </style:style>
+
+  {#- El arranque: rótulo naranja y título grande en serif. -#}
+  <style:style style:name="Eyebrow" style:display-name="Rótulo" style:family="paragraph" style:parent-style-name="Standard">
+   <style:paragraph-properties fo:margin-top="0.3cm" fo:margin-bottom="0.1cm"/>
+   <style:text-properties fo:font-size="8.5pt" fo:font-weight="bold" fo:letter-spacing="0.07cm" fo:text-transform="uppercase" fo:color="#B86A00"/>
+  </style:style>
+  <style:style style:name="Title" style:display-name="Título" style:family="paragraph" style:parent-style-name="Standard" style:class="chapter">
+   <style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0.4cm" fo:line-height="110%"/>
+   <style:text-properties style:font-name="Liberation Serif" fo:font-size="26pt" fo:color="#1F1D19"/>
+  </style:style>
+
+  {#- La ficha de datos. -#}
+  <style:style style:name="CardLabel" style:display-name="Ficha · etiqueta" style:family="paragraph" style:parent-style-name="Standard">
+   <style:paragraph-properties fo:margin-top="0.05cm" fo:margin-bottom="0cm" fo:line-height="120%"/>
+   <style:text-properties fo:font-size="7.5pt" fo:font-weight="bold" fo:letter-spacing="0.04cm" fo:text-transform="uppercase" fo:color="#8A7A55"/>
+  </style:style>
+  <style:style style:name="CardValue" style:display-name="Ficha · valor" style:family="paragraph" style:parent-style-name="Standard">
+   <style:paragraph-properties fo:margin-bottom="0cm" fo:line-height="125%"/>
+   <style:text-properties fo:font-weight="bold"/>
+  </style:style>
+
+  {#- La fórmula de apertura. -#}
+  <style:style style:name="Opening" style:display-name="Apertura" style:family="paragraph" style:parent-style-name="Body">
+   <style:paragraph-properties fo:margin-bottom="0.3cm"/>
+  </style:style>
+
+  {#- Secciones: número naranja y título en serif sobre un filete; puntos del desarrollo con su barra. -#}
+  <style:style style:name="Heading_20_1" style:display-name="Heading 1" style:family="paragraph" style:parent-style-name="Standard" style:next-style-name="Body" style:default-outline-level="1" style:class="text">
+   <style:paragraph-properties fo:margin-top="0.75cm" fo:margin-bottom="0.3cm" fo:padding-bottom="0.12cm" fo:border-bottom="0.75pt solid #E0D3B0" fo:line-height="115%" fo:keep-with-next="always">
+    <style:tab-stops><style:tab-stop style:position="0.8cm"/></style:tab-stops>
+   </style:paragraph-properties>
+   <style:text-properties style:font-name="Liberation Serif" fo:font-size="16pt" fo:color="#1F1D19"/>
+  </style:style>
+  <style:style style:name="Heading_20_2" style:display-name="Heading 2" style:family="paragraph" style:parent-style-name="Standard" style:next-style-name="Body" style:default-outline-level="2" style:class="text">
+   <style:paragraph-properties fo:margin-top="0.45cm" fo:margin-bottom="0.15cm" fo:padding-top="0.08cm" fo:padding-bottom="0.08cm" fo:padding-left="0.3cm" fo:border-left="3pt solid #F7A100" fo:border-right="none" fo:border-top="none" fo:border-bottom="none" fo:background-color="#FAF6EC" fo:keep-with-next="always"/>
+   <style:text-properties fo:font-size="10.5pt" fo:font-weight="bold" fo:color="#1F1D19"/>
+  </style:style>
+  <style:style style:name="AgendaItem" style:display-name="Punto del orden del día" style:family="paragraph" style:parent-style-name="Standard">
+   <style:paragraph-properties fo:margin-left="0.8cm" fo:text-indent="-0.8cm" fo:margin-bottom="0.12cm">
+    <style:tab-stops><style:tab-stop style:position="0cm"/></style:tab-stops>
+   </style:paragraph-properties>
+  </style:style>
+  <style:style style:name="Agreement" style:display-name="Acuerdo" style:family="paragraph" style:parent-style-name="Body" style:list-style-name="Agreements"/>
+  {#- Los acuerdos se numeran solos: Intro y sale el siguiente, con el número en el naranja de las secciones. -#}
+  <style:style style:name="AgreementNumber" style:family="text"><style:text-properties fo:color="#B86A00"/></style:style>
+  <text:list-style style:name="Agreements" style:display-name="Acuerdos">
+   <text:list-level-style-number text:level="1" text:style-name="AgreementNumber" style:num-suffix="." style:num-format="1">
+    <style:list-level-properties text:list-level-position-and-space-mode="label-alignment">
+     <style:list-level-label-alignment text:label-followed-by="listtab" text:list-tab-stop-position="0.8cm" fo:text-indent="-0.8cm" fo:margin-left="0.8cm"/>
+    </style:list-level-properties>
+   </text:list-level-style-number>
+  </text:list-style>
+
+  {#- La relación de asistencia. -#}
+  <style:style style:name="ListHead" style:display-name="Lista · título" style:family="paragraph" style:parent-style-name="Standard">
+   <style:paragraph-properties fo:margin-top="0.05cm" fo:margin-bottom="0.15cm" fo:keep-with-next="always"/>
+   <style:text-properties fo:font-size="7.5pt" fo:font-weight="bold" fo:letter-spacing="0.04cm" fo:text-transform="uppercase" fo:color="#8A7A55"/>
+  </style:style>
+  <style:style style:name="Person" style:display-name="Persona" style:family="paragraph" style:parent-style-name="Standard">
+   <style:paragraph-properties fo:margin-bottom="0.04cm" fo:line-height="130%"/>
+  </style:style>
+
+  {#- El cierre y las firmas. -#}
+  <style:style style:name="Closing" style:display-name="Cierre" style:family="paragraph" style:parent-style-name="Body">
+   <style:paragraph-properties fo:margin-top="0.9cm" fo:margin-bottom="0.3cm" fo:keep-with-next="always"/>
+  </style:style>
+  <style:style style:name="SignRole" style:display-name="Firma · cargo" style:family="paragraph" style:parent-style-name="Standard">
+   <style:paragraph-properties fo:margin-bottom="1.8cm" fo:keep-with-next="always"/>
+   <style:text-properties fo:font-size="7.5pt" fo:font-weight="bold" fo:letter-spacing="0.04cm" fo:text-transform="uppercase" fo:color="#8A7A55"/>
+  </style:style>
+  <style:style style:name="SignName" style:display-name="Firma · nombre" style:family="paragraph" style:parent-style-name="Standard">
+   <style:paragraph-properties fo:margin-bottom="0cm" fo:padding-top="0.12cm" fo:border-top="0.75pt solid #C9B88A"/>
+   <style:text-properties fo:font-weight="bold"/>
+  </style:style>
+
+  {#- Cabecera y pie. -#}
+  <style:style style:name="Header" style:family="paragraph" style:parent-style-name="Standard" style:class="extra">
+   <style:paragraph-properties fo:margin-bottom="0cm" fo:line-height="120%"/>
+   <style:text-properties fo:font-size="8.5pt" fo:color="#6B6350"/>
+  </style:style>
+  <style:style style:name="HeaderName" style:family="paragraph" style:parent-style-name="Header">
+   <style:paragraph-properties fo:margin-bottom="0.05cm"/>
+   <style:text-properties style:font-name="Liberation Serif" fo:font-size="14pt" fo:color="#1F1D19"/>
+  </style:style>
+  <style:style style:name="HeaderTag" style:family="paragraph" style:parent-style-name="Header">
+   <style:paragraph-properties fo:text-align="center" fo:padding-top="0.1cm" fo:padding-bottom="0.1cm" fo:background-color="#B86A00"/>
+   <style:text-properties fo:font-size="8pt" fo:font-weight="bold" fo:letter-spacing="0.08cm" fo:text-transform="uppercase" fo:color="#FFFFFF"/>
+  </style:style>
+  <style:style style:name="Footer" style:family="paragraph" style:parent-style-name="Standard" style:class="extra">
+   <style:paragraph-properties fo:margin-bottom="0cm" fo:padding-top="0.15cm" fo:border-top="0.75pt solid #E0D3B0">
+    <style:tab-stops><style:tab-stop style:position="17cm" style:type="right"/></style:tab-stops>
+   </style:paragraph-properties>
+   <style:text-properties fo:font-size="7.5pt" fo:color="#8A7A55"/>
+  </style:style>
+  <style:style style:name="LogoFrame" style:family="graphic">
+   <style:graphic-properties style:wrap="none" style:vertical-pos="middle" style:vertical-rel="paragraph" style:horizontal-pos="left" style:horizontal-rel="paragraph" fo:border="none" fo:padding="0cm"/>
+  </style:style>
+ </office:styles>
+
+ <office:automatic-styles>
+  <style:page-layout style:name="A4">
+   <style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" style:print-orientation="portrait" fo:margin-top="1.1cm" fo:margin-bottom="1.1cm" fo:margin-left="2cm" fo:margin-right="2cm"/>
+   <style:header-style>
+    <style:header-footer-properties fo:min-height="1.9cm" fo:margin-bottom="0.5cm" fo:padding-bottom="0.25cm" fo:border-bottom="1.5pt solid #F7A100"/>
+   </style:header-style>
+   <style:footer-style>
+    <style:header-footer-properties fo:min-height="0.8cm" fo:margin-top="0.5cm"/>
+   </style:footer-style>
+  </style:page-layout>
+  <style:style style:name="HeaderTable" style:family="table">
+   <style:table-properties style:width="17cm" table:align="left"/>
+  </style:style>
+  <style:style style:name="HeaderTable.Logo" style:family="table-column"><style:table-column-properties style:column-width="2.1cm"/></style:style>
+  <style:style style:name="HeaderTable.Name" style:family="table-column"><style:table-column-properties style:column-width="12.4cm"/></style:style>
+  <style:style style:name="HeaderTable.Tag" style:family="table-column"><style:table-column-properties style:column-width="2.5cm"/></style:style>
+  <style:style style:name="HeaderCell" style:family="table-cell">
+   <style:table-cell-properties fo:padding="0cm" style:vertical-align="middle" fo:border="none"/>
+  </style:style>
+  <style:style style:name="HeaderTagCell" style:family="table-cell">
+   <style:table-cell-properties fo:padding="0cm" style:vertical-align="middle" fo:border="none"/>
+  </style:style>
+ </office:automatic-styles>
+
+ <office:master-styles>
+  <style:master-page style:name="Standard" style:page-layout-name="A4">
+   <style:header>
+    <table:table table:name="Cabecera" table:style-name="HeaderTable">
+     <table:table-column table:style-name="HeaderTable.Logo"/>
+     <table:table-column table:style-name="HeaderTable.Name"/>
+     <table:table-column table:style-name="HeaderTable.Tag"/>
+     <table:table-row>
+      <table:table-cell table:style-name="HeaderCell" office:value-type="string">
+       <text:p text:style-name="Standard"><draw:frame draw:style-name="LogoFrame" draw:name="Logo del centro" text:anchor-type="as-char" svg:width="1.6cm" svg:height="1.78cm"><draw:image xlink:href="Pictures/logo.png" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/></draw:frame></text:p>
+      </table:table-cell>
+      <table:table-cell table:style-name="HeaderCell" office:value-type="string">
+       <text:p text:style-name="HeaderName">{{ app_organization_name }}</text:p>
+       <text:p text:style-name="Header">Curso {{ firstYear }}-{{ firstYear + 1 }}</text:p>
+      </table:table-cell>
+      <table:table-cell table:style-name="HeaderTagCell" office:value-type="string">
+       <text:p text:style-name="HeaderTag">Acta</text:p>
+      </table:table-cell>
+     </table:table-row>
+    </table:table>
+   </style:header>
+   <style:footer>
+    <text:p text:style-name="Footer">{{ app_organization_name }} · Acta · {{ meeting.title }} · {{ start|date('j') }} de {{ meses[start|date('n')] }} de {{ start|date('Y') }}<text:tab/>Página <text:page-number text:select-page="current">1</text:page-number> de <text:page-count>1</text:page-count></text:p>
+   </style:footer>
+  </style:master-page>
+ </office:master-styles>
+</office:document-styles>
