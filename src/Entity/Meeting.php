@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Contract\Auditable;
+use App\Contract\AuditRedacted;
 use App\Enum\EventReminderOffset;
 use App\Enum\MeetingScope;
 use App\Enum\MinutesStage;
@@ -64,6 +65,7 @@ class Meeting implements Auditable
 
     /** The agenda ("orden del día"): what is going to be discussed. Free text, optional. */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
+    #[AuditRedacted]
     private ?string $agenda = null;
 
     /**
@@ -76,6 +78,7 @@ class Meeting implements Auditable
      * how their own acta template is laid out, so they are three.
      */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
+    #[AuditRedacted]
     private ?string $discussion = null;
 
     /**
@@ -83,6 +86,7 @@ class Meeting implements Auditable
      * reads the acta FOR, and the part that has to be findable months later.
      */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
+    #[AuditRedacted]
     private ?string $agreements = null;
 
     /**

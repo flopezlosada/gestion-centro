@@ -14,8 +14,9 @@ use Doctrine\ORM\EntityManagerInterface;
  * Turns the raw {@see AuditLog} trail of a meeting into its LIFE, told as events: "Convocó la reunión",
  * "Cambió el día o la hora: … → …", "Convocó a Pedro", "Pasó lista", "Publicó el acta", "La dio por
  * aprobada". Unlike the task history ({@see TaskActivityPresenter}) it is not a field-by-field diff, and
- * on purpose it never shows a raw value, not even to an admin: the trail of a meeting holds the text of
- * its acta and its agenda, and the history says THAT they changed, never what they said. The same goes
+ * on purpose it never shows a raw value, not even to an admin: the history says THAT the acta or the
+ * agenda changed, never what they said (the trail itself no longer keeps their text, see
+ * {@see \App\Contract\AuditRedacted}). The same goes
  * for an OLD title: whoever renames a meeting may be taking a pupil's name out of it.
  *
  * Only the fields listed here make events (a whitelist): one added to the meeting later stays silent
