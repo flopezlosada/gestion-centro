@@ -26,6 +26,74 @@
     {%- if at|date('Y-m-d', false) == 'now'|date('Y-m-d') %}hoy a las {{ at|date('H:i', false) }}{% else %}el {{ at|date('d/m', false) }} a las {{ at|date('H:i', false) }}{% endif -%}
 {% endmacro %}
 
+{#- La lista de asistencia: casillas reales dentro de su etiqueta (el marcado sale de :has(:checked), sin JS).
+    La usan el acta escrita aquí, dentro de su formulario, y el acta en la nube, en uno propio. -#}
+{% macro roll(meeting, people) %}
+    {% import _self as m %}
+    {% import '_macros/task.html.twig' as t %}
+        {% set dense = people|length > 12 %}
+        <fieldset class="mtg-part mtg-roll" data-roll>
+            <legend class="visually-hidden">Asistencia</legend>
+            <div class="mtg-roll__head">
+                <span class="mtg-eyebrow" aria-hidden="true">Asistencia</span>
+                <span class="mtg-roll__count"><b data-roll-count>{{ meeting.attended|length }}</b> de {{ people|length }} asistieron</span>
+                <button type="button" class="btn tertiary mtg-roll__all" data-check-all="asistentes[]" hidden>Marcar a todos</button>
+            </div>
+            <div class="mtg-roll__meter" aria-hidden="true"><span data-roll-meter style="width: {{ people is empty ? 0 : (meeting.attended|length * 100 / people|length)|round }}%"></span></div>
+            {% if dense %}
+                <div class="mtg-roll__search" data-roll-search-box hidden>
+                    <label class="visually-hidden" for="roll-search">Buscar por nombre</label>
+                    <input type="search" id="roll-search" placeholder="Buscar por nombre" autocomplete="off" data-roll-search>
+                </div>
+            {% endif %}
+            <div class="mtg-roll__grid{{ dense ? ' mtg-roll__grid--dense' }}">
+                {% for person in people %}
+                    <label class="mtg-person" title="{{ person.unit ? person.unit.name : 'Sin departamento' }}" data-roll-name="{{ person.fullName|lower }}">
+                        <input type="checkbox" name="asistentes[]" value="{{ person.id }}"{{ meeting.attended.contains(person) ? ' checked' : '' }}>
+                        {% if not dense %}{{ t.avatar(person, 'mtg-person__avatar') }}{% endif %}
+                        <span class="mtg-person__name">{{ person.fullName }}</span>
+                        <span class="mtg-person__box" aria-hidden="true">{{ m.icon('check') }}</span>
+                    </label>
+                {% endfor %}
+            </div>
+            {% if dense %}<p class="mtg-roll__none" data-roll-none hidden>Nadie coincide con «<span data-roll-query></span>».</p>{% endif %}
+        </fieldset>
+{% endmacro %}
+
+{#- La asistencia en solo lectura: quién vino y quién no, para quien lee el acta. -#}
+{% macro attendance(meeting, people) %}
+        <div class="mtg-part">
+            <p class="mtg-eyebrow">Asistencia</p>
+            {% if meeting.attendanceTaken %}
+                {% set absent = meeting.absentees %}
+                <p class="mtg-attlist__title"><span class="mtg-attlist__dot" aria-hidden="true"></span>Asistieron · {{ meeting.attended|length }}</p>
+                <ul class="mtg-attlist{{ people|length > 12 ? ' mtg-attlist--dense' }}">
+                    {% for person in meeting.attended %}<li>{{ person.fullName }}</li>{% else %}<li>Nadie</li>{% endfor %}
+                </ul>
+                {% if absent is not empty %}
+                    <p class="mtg-attlist__title mtg-attlist__title--absent"><span class="mtg-attlist__ring" aria-hidden="true"></span>No asistieron · {{ absent|length }}</p>
+                    <ul class="mtg-attlist mtg-attlist--absent{{ people|length > 12 ? ' mtg-attlist--dense' }}">
+                        {% for person in absent %}<li>{{ person.fullName }}</li>{% endfor %}
+                    </ul>
+                {% endif %}
+            {% else %}
+                <p class="mtg-muted">Todavía no se ha pasado lista.</p>
+            {% endif %}
+        </div>
+{% endmacro %}
+
+{#- Una persona de la convocatoria. Con la lista ya pasada, dice además si vino: tick quien asistió, nombre
+    atenuado quien no. Antes de pasar lista no se marca nada, que «sin tick» no se lea como «no vino». -#}
+{% macro convened(meeting, person) %}
+    {% import _self as m %}
+    {% import '_macros/task.html.twig' as t %}
+    {% set roll = meeting.attendanceTaken %}
+    {% set came = roll and meeting.attended.contains(person) %}
+    <li{% if roll and not came %} class="is-absent"{% endif %}>{{ t.avatar(person, 'mtg-avatar') }}<span class="mtg-people__name">{{ person.fullName }}</span>
+        {%- if roll %}<span class="mtg-people__mark" title="{{ came ? 'Asistió' : 'No asistió' }}">{% if came %}{{ m.icon('check') }}{% else %}<span class="mtg-attlist__ring" aria-hidden="true"></span>{% endif %}<span class="visually-hidden">{{ came ? 'Asistió' : 'No asistió' }}</span></span>{% endif -%}
+    </li>
+{% endmacro %}
+
 {% block title %}{{ meeting.title }} · {{ app_organization_name }}{% endblock %}
 
 {% block breadcrumb %}
@@ -58,7 +126,19 @@
         (la barra del formulario, el siguiente paso, las observaciones); en el móvil, además, fija abajo
         (.mtg-dock), que la envía con form="…". -#}
     {% set primary = null %}
-    {% if editing and stage is null %}
+    {% if cloudMode %}
+        {#- El acta en la nube: la principal es abrir el documento, o crearlo si aún no existe. -#}
+        {% if writes and not meeting.hasCloudMinutes %}
+            {% set primary = meeting.attendanceTaken
+                ? { form: 'cloud-create-form', label: 'Crear el acta' }
+                : { form: 'cloud-roll-form', label: 'Guardar la asistencia' } %}
+        {% elseif isHeld and cloudUrl and meeting.hasCloudMinutes and (writes or meeting.minutesPublished) %}
+            {#- Publicada, todo el mundo abre la copia congelada; antes, quien la escribe abre el borrador. -#}
+            {% set primary = meeting.minutesPublished
+                ? { href: cloudPublishedUrl, label: 'Ver el acta' }
+                : { href: cloudUrl, label: 'Escribir el acta' } %}
+        {% endif %}
+    {% elseif editing and stage is null %}
         {% set primary = { form: 'acta-form', label: 'Guardar la asistencia' } %}
     {% elseif editing and stage.value in ['sin_pdf', 'desactualizada'] %}
         {% set primary = { form: 'acta-form', label: meeting.hasMinutes ? 'Guardar y volver a generar el PDF' : 'Guardar y generar el PDF', name: 'generar', confirm: meeting.hasMinutes } %}
@@ -140,6 +220,147 @@
             {% endif %}
         </section>
 
+        {% if cloudMode %}
+        {# ---- El acta en la nube de EducaMadrid: el texto se escribe y se guarda ALLÍ, con su editor; aquí solo
+               se crea el documento desde la plantilla, se abre, se publica y se aprueba. Por eso el documento
+               no es un adjunto más sino la pieza del bloque, y abrirlo es SIEMPRE su acción principal: el paso
+               siguiente (publicar, aprobar) va debajo y en secundario. ---- #}
+        {% set cloudPublished = meeting.minutesPublished %}
+        <section class="mtg-section" id="acta">
+            <div class="mtg-section__head">
+                <h2 class="mtg-section__title">Acta</h2>
+                {% if meeting.areMinutesApproved %}<span class="mtg-pill mtg-pill--aprobada">Aprobada</span>
+                {% elseif cloudPublished %}<span class="mtg-pill mtg-pill--publicada">Publicada</span>
+                {% elseif meeting.hasCloudMinutes and writes %}<span class="mtg-pill mtg-pill--borrador">Borrador</span>{% endif %}
+            </div>
+
+            {#- El ciclo, para quien escribe el acta: el mismo componente que el acta en PDF, con sus pasos. -#}
+            {% if writes %}
+                {% set steps = ['Asistencia', 'Crear', 'Redacción', 'Publicación']|merge(approval ? ['Aprobación'] : []) %}
+                {% set current = meeting.areMinutesApproved ? 6 : (cloudPublished ? 5 : (meeting.hasCloudMinutes ? 3 : (meeting.attendanceTaken ? 2 : 1))) %}
+                <ol class="mtg-steps" aria-label="Pasos del acta">
+                    {% for label in steps %}
+                        {% set n = loop.index %}
+                        {% set state = n < current ? 'done' : (n == current ? 'current' : 'todo') %}
+                        <li class="mtg-steps__step is-{{ state }}"{% if n == current %} aria-current="step"{% endif %}>
+                            <span class="mtg-steps__dot">{% if state == 'done' %}{{ m.icon('check') }}{% else %}{{ n }}{% endif %}</span>
+                            <span class="mtg-steps__label">{{ label }}</span>
+                        </li>
+                    {% endfor %}
+                </ol>
+                {% if current <= steps|length %}
+                    <p class="mtg-steps__mobile">Paso {{ current }} de {{ steps|length }} · <strong>{{ {1: 'Pasar lista', 2: 'Crear el acta', 3: 'Escribir y publicar', 5: 'Aprobar'}[current] }}</strong></p>
+                {% endif %}
+            {% else %}
+                <p class="mtg-section__sub">Se escribe y se guarda en la nube de EducaMadrid del centro, no en esta aplicación.</p>
+            {% endif %}
+
+            <div class="mtg-acta">
+            {% if not isHeld %}
+                <div class="mtg-wait">
+                    <span class="mtg-wait__icon">{{ m.icon('clock') }}</span>
+                    <div>
+                        <p class="mtg-wait__title">Todavía no ha empezado</p>
+                        {% if canWriteMinutes %}<p class="mtg-wait__text">Podrás crear el acta en cuanto empiece la reunión, el {{ dias[meeting.startAt|date('N')]|lower }} {{ meeting.startAt|date('d/m') }} a las {{ meeting.startAt|date('H:i') }}.</p>{% endif %}
+                    </div>
+                </div>
+
+            {% else %}
+            {#- La asistencia se pasa aquí: es lo único de la sesión que la app guarda. Antes de crear el acta,
+                porque el documento sale con asistentes y ausentes ya puestos. -#}
+            {% if writes %}
+                <form method="post" action="{{ path('meeting_roll', { id: meeting.id }) }}" id="cloud-roll-form" class="mtg-acta__form">
+                    <input type="hidden" name="_token" value="{{ csrf_token('meeting_record' ~ meeting.id) }}">
+                    {{ m.roll(meeting, people) }}
+                    <div class="mtg-bar">
+                        <span class="mtg-bar__note">
+                            {%- if meeting.hasCloudMinutes %}El acta ya está creada: si cambias la asistencia, corrígela también allí.
+                            {%- elseif meeting.attendanceTaken %}Guardada {{ m.when(meeting.attendanceTakenAt) }}.{% endif -%}
+                        </span>
+                        <div class="mtg-bar__actions">
+                            <button class="btn{{ primary and primary.form is defined and primary.form == 'cloud-roll-form' ? ' mtg-primary' : ' secondary' }}" type="submit">Guardar la asistencia</button>
+                        </div>
+                    </div>
+                </form>
+            {% endif %}
+
+            {% if writes and not meeting.hasCloudMinutes %}
+                <div class="mtg-cloud">
+                    <span class="mtg-cloud__icon" aria-hidden="true">{{ m.icon('file') }}<span>ODT</span></span>
+                    <div class="mtg-cloud__body">
+                        <p class="mtg-cloud__name">Aún no hay acta</p>
+                        <p class="mtg-cloud__text">Se crea en la nube de EducaMadrid y se abre allí, en otra pestaña, con la cabecera, {{ meeting.attendanceTaken ? 'quién asistió' : 'las ' ~ people|length ~ ' personas de la reunión' }} y el orden del día ya puestos: tú solo completas lo tratado y los acuerdos.{% if not meeting.attendanceTaken %} Pasa lista antes y saldrán asistentes y ausentes.{% endif %}</p>
+                    </div>
+                    <form method="post" action="{{ path('meeting_minutes_cloud_create', { id: meeting.id }) }}" id="cloud-create-form" class="mtg-cloud__action" target="_blank" data-reload-on-return>
+                        <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
+                        <button type="submit" class="btn{{ meeting.attendanceTaken ? ' mtg-primary' : ' secondary' }}">Crear el acta</button>
+                    </form>
+                </div>
+
+            {% elseif meeting.hasCloudMinutes and cloudUrl and (writes or cloudPublished) %}
+                <div class="mtg-cloud">
+                    <span class="mtg-cloud__icon" aria-hidden="true">{{ m.icon('file') }}<span>ODT</span></span>
+                    <div class="mtg-cloud__body">
+                        <p class="mtg-cloud__name">Acta de la reunión</p>
+                        <p class="mtg-cloud__meta">
+                            {%- if meeting.areMinutesApproved %}Aprobada el {{ meeting.minutesApprovedAt|date('d/m/Y', false) }}
+                            {%- elseif cloudPublished %}Publicada el {{ meeting.minutesPublishedAt|date('d/m/Y', false) }}{% if meeting.minutesPublishedBy %} por {{ meeting.minutesPublishedBy.fullName }}{% endif %}
+                            {%- else %}Borrador · solo lo ves tú{% endif -%}
+                        </p>
+                    </div>
+                    <div class="mtg-cloud__action">
+                        <a class="btn mtg-primary" href="{{ cloudPublished ? cloudPublishedUrl : cloudUrl }}" target="_blank" rel="noopener noreferrer">{{ cloudPublished ? 'Ver el acta' : 'Escribir el acta' }}{{ m.icon('external') }}</a>
+                        <span class="mtg-cloud__hint">Se abre en EducaMadrid</span>
+                    </div>
+                    {#- Lo publicado es una copia congelada: corregir es cambiar el borrador y volver a publicar,
+                        y hasta entonces se sigue leyendo la versión anterior. -#}
+                    {% if writes and cloudPublished %}
+                        <div class="mtg-cloud__note">
+                            <p class="mtg-cloud__text">Se lee la versión publicada{% if meeting.minutesPublishedAt %} el {{ meeting.minutesPublishedAt|date('d/m', false) }}{% endif %}. Para corregirla, cambia el borrador y publica la corrección.</p>
+                            <div class="mtg-cloud__fix">
+                                <a class="btn tertiary sm" href="{{ cloudUrl }}" target="_blank" rel="noopener noreferrer">Abrir el borrador{{ m.icon('external') }}</a>
+                                <form method="post" action="{{ path('meeting_minutes_publish', { id: meeting.id }) }}" data-confirm="¿Publicar la corrección? Las personas convocadas pasarán a leer el borrador tal como está ahora y recibirán el aviso.">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
+                                    <button type="submit" class="btn secondary sm">Publicar la corrección</button>
+                                </form>
+                            </div>
+                        </div>
+                    {% endif %}
+                </div>
+
+                {% if not writes %}{{ m.attendance(meeting, people) }}{% endif %}
+
+                {% if writes and not cloudPublished %}
+                    <div class="mtg-next">
+                        <p><strong>Cuando la tengas terminada, publícala.</strong> Se guarda una copia tal como esté, que es la que leen las {{ people|length }} personas de la reunión, y les llega el aviso.</p>
+                        <form method="post" action="{{ path('meeting_minutes_publish', { id: meeting.id }) }}" data-confirm="¿Publicar el acta? Se compartirá para leer con todas las personas convocadas.">
+                            <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
+                            <button type="submit" class="btn secondary">Publicar el acta</button>
+                        </form>
+                    </div>
+                {% elseif canApprove %}
+                    <div class="mtg-next">
+                        <p><strong>Pendiente de aprobar.</strong> {{ orgName ? 'La ' ~ orgName : 'El órgano' }} la aprueba en su siguiente reunión; márcala cuando se haya aprobado.</p>
+                        <form method="post" action="{{ path('meeting_minutes_approve', { id: meeting.id }) }}" data-confirm="¿Dar el acta por aprobada?">
+                            <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
+                            <button type="submit" class="btn secondary">Marcar como aprobada</button>
+                        </form>
+                    </div>
+                {% endif %}
+
+            {% else %}
+                <div class="mtg-wait">
+                    <span class="mtg-wait__icon">{{ m.icon('clock') }}</span>
+                    <div>
+                        <p class="mtg-wait__title">{{ meeting.hasCloudMinutes ? 'El acta está en preparación' : 'Todavía no hay acta' }}</p>
+                        <p class="mtg-wait__text">Te llegará un aviso cuando se publique.</p>
+                    </div>
+                </div>
+            {% endif %}
+            {% endif %}
+            </div>
+        </section>
+        {% else %}
         {# ---- El acta: lo que pasó en la sesión (asistencia, desarrollo, acuerdos) y el documento que sale de
                ello, en el orden en que se trabaja: pasar lista, escribir, generar el PDF y publicarlo.
 
@@ -216,33 +437,7 @@
                     {#- La lista primero: se pasa al empezar. Guardarla vacía es «no vino nadie», distinto de no
                         haber pasado lista. Las casillas son reales y van dentro de su etiqueta: el aspecto de
                         marcado sale de :has(:checked), sin JS. -#}
-                    {% set dense = people|length > 12 %}
-                    <fieldset class="mtg-part mtg-roll" data-roll>
-                        <legend class="visually-hidden">Asistencia</legend>
-                        <div class="mtg-roll__head">
-                            <span class="mtg-eyebrow" aria-hidden="true">Asistencia</span>
-                            <span class="mtg-roll__count"><b data-roll-count>{{ meeting.attended|length }}</b> de {{ people|length }} asistieron</span>
-                            <button type="button" class="btn tertiary mtg-roll__all" data-check-all="asistentes[]" hidden>Marcar a todos</button>
-                        </div>
-                        <div class="mtg-roll__meter" aria-hidden="true"><span data-roll-meter style="width: {{ people is empty ? 0 : (meeting.attended|length * 100 / people|length)|round }}%"></span></div>
-                        {% if dense %}
-                            <div class="mtg-roll__search" data-roll-search-box hidden>
-                                <label class="visually-hidden" for="roll-search">Buscar por nombre</label>
-                                <input type="search" id="roll-search" placeholder="Buscar por nombre" autocomplete="off" data-roll-search>
-                            </div>
-                        {% endif %}
-                        <div class="mtg-roll__grid{{ dense ? ' mtg-roll__grid--dense' }}">
-                            {% for person in people %}
-                                <label class="mtg-person" title="{{ person.unit ? person.unit.name : 'Sin departamento' }}" data-roll-name="{{ person.fullName|lower }}">
-                                    <input type="checkbox" name="asistentes[]" value="{{ person.id }}"{{ meeting.attended.contains(person) ? ' checked' : '' }}>
-                                    {% if not dense %}{{ t.avatar(person, 'mtg-person__avatar') }}{% endif %}
-                                    <span class="mtg-person__name">{{ person.fullName }}</span>
-                                    <span class="mtg-person__box" aria-hidden="true">{{ m.icon('check') }}</span>
-                                </label>
-                            {% endfor %}
-                        </div>
-                        {% if dense %}<p class="mtg-roll__none" data-roll-none hidden>Nadie coincide con «<span data-roll-query></span>».</p>{% endif %}
-                    </fieldset>
+                    {{ m.roll(meeting, people) }}
 
                     {% if meeting.keepsMinutes %}
                         {# Dos cuadros y no uno: el centro los pidió por su nombre, y los acuerdos son la parte que se
@@ -302,24 +497,7 @@
                         </div>
                     </div>
                 {% else %}
-                    <div class="mtg-part">
-                        <p class="mtg-eyebrow">Asistencia</p>
-                        {% if meeting.attendanceTaken %}
-                            {% set absent = meeting.absentees %}
-                            <p class="mtg-attlist__title"><span class="mtg-attlist__dot" aria-hidden="true"></span>Asistieron · {{ meeting.attended|length }}</p>
-                            <ul class="mtg-attlist{{ people|length > 12 ? ' mtg-attlist--dense' }}">
-                                {% for person in meeting.attended %}<li>{{ person.fullName }}</li>{% else %}<li>Nadie</li>{% endfor %}
-                            </ul>
-                            {% if absent is not empty %}
-                                <p class="mtg-attlist__title mtg-attlist__title--absent"><span class="mtg-attlist__ring" aria-hidden="true"></span>No asistieron · {{ absent|length }}</p>
-                                <ul class="mtg-attlist mtg-attlist--absent{{ people|length > 12 ? ' mtg-attlist--dense' }}">
-                                    {% for person in absent %}<li>{{ person.fullName }}</li>{% endfor %}
-                                </ul>
-                            {% endif %}
-                        {% else %}
-                            <p class="mtg-muted">Todavía no se ha pasado lista.</p>
-                        {% endif %}
-                    </div>
+                    {{ m.attendance(meeting, people) }}
                     {% if showText %}
                         <div class="mtg-part">
                             <div class="mtg-part__head">
@@ -426,11 +604,12 @@
             {% endif %}
             </div>{# /mtg-acta #}
         </section>
+        {% endif %}
 
         {# ---- Observaciones al acta publicada. El acta no la reescribe quien asiste, pero puede decir que una
                línea no dice lo que se acordó: eso es esto. No entra en el PDF —el acta es lo que aprobó el
                órgano, no un hilo— y llega como aviso a quien la levanta y a quien convocó. ---- #}
-        {% if meeting.wereMinutesEverPublished and meeting.keepsMinutes and (remarks is not empty or canRemark) %}
+        {% if not cloudMode and meeting.wereMinutesEverPublished and meeting.keepsMinutes and (remarks is not empty or canRemark) %}
             <section class="mtg-section" id="observaciones">
                 <div class="mtg-section__head">
                     <h2 class="mtg-section__title">Observaciones al acta</h2>
@@ -515,7 +694,7 @@
                 {% set many = meeting.attendees|length > 12 %}
                 <ul class="mtg-people">
                     {% for attendee in many ? meeting.attendees|slice(0, 7) : meeting.attendees %}
-                        <li>{{ t.avatar(attendee, 'mtg-avatar') }}{{ attendee.fullName }}</li>
+                        {{ m.convened(meeting, attendee) }}
                     {% endfor %}
                 </ul>
                 {% if many %}
@@ -523,7 +702,7 @@
                         <summary class="btn tertiary">Ver las {{ meeting.attendees|length }} personas</summary>
                         <ul class="mtg-people">
                             {% for attendee in meeting.attendees|slice(7) %}
-                                <li>{{ t.avatar(attendee, 'mtg-avatar') }}{{ attendee.fullName }}</li>
+                                {{ m.convened(meeting, attendee) }}
                             {% endfor %}
                         </ul>
                     </details>
@@ -545,7 +724,11 @@
     {#- Móvil: la acción principal, fija abajo y a ancho completo. Fuera de su formulario: lo envía con form="…". -#}
     {% if primary %}
         <div class="mtg-dock">
+            {% if primary.href is defined %}
+            <a class="btn" href="{{ primary.href }}" target="_blank" rel="noopener noreferrer">{{ primary.label }}{{ m.icon('external') }}</a>
+            {% else %}
             <button type="submit" class="btn" form="{{ primary.form }}"{% if primary.name is defined %} name="{{ primary.name }}" value="1"{% endif %}{% if primary.confirm ?? false %} data-confirm="{{ regenerateConfirm }}"{% endif %}>{{ primary.label }}</button>
+            {% endif %}
         </div>
     {% endif %}
   </div>{# /mtg #}

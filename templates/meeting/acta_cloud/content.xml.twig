@@ -1,0 +1,160 @@
+{#- El contenido de la PLANTILLA del acta (.odt). Solo lo que la app ya sabe: los datos de la sesión, la
+    asistencia y el orden del día, con la forma de un acta (lugar y tiempo, asistentes, orden del día,
+    deliberaciones, acuerdos, cierre y firmas). Lo tratado y lo acordado se escribe en la nube.
+
+    Donde se escribe NO hay texto de muestra: el título de cada punto ya dice qué va debajo, y un texto que
+    hay que borrar antes de escribir es un paso de más (y, en gris, lo escrito encima heredaba el gris). Hay
+    un párrafo vacío con el estilo del cuerpo, y los acuerdos son una lista numerada de verdad: Intro y sale
+    el siguiente número. Los estilos, la cabecera y el pie están en styles.xml. -#}
+{% set meses = ['', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'] -%}
+{% set start = meeting.startAt -%}
+{% set keeper = meeting.minutesKeeper -%}
+{% set date = start|date('j') ~ ' de ' ~ meses[start|date('n')] ~ ' de ' ~ start|date('Y') -%}
+{% set where = meeting.place ?: (meeting.onlineUrl ? 'Videollamada' : null) -%}
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.3">
+ <office:automatic-styles>
+  {#- La ficha: rejilla de cuatro columnas (etiqueta, valor, etiqueta, valor) sobre un fondo cálido. -#}
+  <style:style style:name="Card" style:family="table"><style:table-properties style:width="17cm" table:align="left" fo:margin-top="0.1cm" fo:margin-bottom="0.5cm" fo:background-color="#FAF6EC"/></style:style>
+  <style:style style:name="Card.Label" style:family="table-column"><style:table-column-properties style:column-width="2.9cm"/></style:style>
+  <style:style style:name="Card.Value" style:family="table-column"><style:table-column-properties style:column-width="5.6cm"/></style:style>
+  <style:style style:name="Card.Cell" style:family="table-cell"><style:table-cell-properties fo:background-color="#FAF6EC" fo:padding-top="0.16cm" fo:padding-bottom="0.16cm" fo:padding-left="0.35cm" fo:padding-right="0.15cm" fo:border="none" style:vertical-align="top"/></style:style>
+  <style:style style:name="Card.Top" style:family="table-cell"><style:table-cell-properties fo:background-color="#FAF6EC" fo:padding-top="0.3cm" fo:padding-bottom="0.16cm" fo:padding-left="0.35cm" fo:padding-right="0.15cm" fo:border-top="1.5pt solid #F7A100" fo:border-bottom="none" fo:border-left="none" fo:border-right="none" style:vertical-align="top"/></style:style>
+  <style:style style:name="Card.Bottom" style:family="table-cell"><style:table-cell-properties fo:background-color="#FAF6EC" fo:padding-top="0.16cm" fo:padding-bottom="0.3cm" fo:padding-left="0.35cm" fo:padding-right="0.15cm" fo:border="none" style:vertical-align="top"/></style:style>
+  <style:style style:name="Card.Single" style:family="table-cell"><style:table-cell-properties fo:background-color="#FAF6EC" fo:padding-top="0.3cm" fo:padding-bottom="0.3cm" fo:padding-left="0.35cm" fo:padding-right="0.15cm" fo:border-top="1.5pt solid #F7A100" fo:border-bottom="none" fo:border-left="none" fo:border-right="none" style:vertical-align="top"/></style:style>
+
+  {#- La asistencia: dos columnas de nombres, una persona por línea. -#}
+  <style:style style:name="List" style:family="table"><style:table-properties style:width="17cm" table:align="left" fo:margin-bottom="0.2cm"/></style:style>
+  <style:style style:name="List.Col" style:family="table-column"><style:table-column-properties style:column-width="8.5cm"/></style:style>
+  <style:style style:name="List.Cell" style:family="table-cell"><style:table-cell-properties fo:padding-top="0cm" fo:padding-bottom="0cm" fo:padding-left="0cm" fo:padding-right="0.4cm" fo:border="none" style:vertical-align="top"/></style:style>
+
+  {#- Las firmas: dos huecos con aire para firmar, nunca partidos entre páginas. -#}
+  <style:style style:name="Sign" style:family="table"><style:table-properties style:width="17cm" table:align="left" fo:margin-top="0.3cm" style:may-break-between-rows="false"/></style:style>
+  <style:style style:name="Sign.A" style:family="table-column"><style:table-column-properties style:column-width="7.5cm"/></style:style>
+  <style:style style:name="Sign.Gap" style:family="table-column"><style:table-column-properties style:column-width="2cm"/></style:style>
+  <style:style style:name="Sign.Cell" style:family="table-cell"><style:table-cell-properties fo:padding-top="0.3cm" fo:padding-bottom="0.3cm" fo:padding-left="0.35cm" fo:padding-right="0.35cm" fo:border="none" fo:background-color="#FAF6EC" style:vertical-align="bottom"/></style:style>
+  <style:style style:name="Sign.Space" style:family="table-cell"><style:table-cell-properties fo:padding="0cm" fo:border="none"/></style:style>
+
+  <style:style style:name="Strong" style:family="text"><style:text-properties fo:font-weight="bold"/></style:style>
+  <style:style style:name="Num" style:family="text"><style:text-properties fo:color="#B86A00"/></style:style>
+ </office:automatic-styles>
+ <office:body>
+  <office:text>
+   <text:p text:style-name="Eyebrow">{{ meeting.type ? meeting.type.name : 'Reunión' }}</text:p>
+   <text:p text:style-name="Title">{{ meeting.title }}</text:p>
+
+   {% set facts = [
+       ['Fecha', date],
+       ['Horario', start|date('H:i') ~ (meeting.endAt ? ' a ' ~ meeting.endAt|date('H:i') : '') ~ ' h'],
+       ['Lugar', where ?: '—'],
+       ['Convoca', meeting.convener ? meeting.convener.fullName : '—'],
+       ['Levanta el acta', keeper ? keeper.fullName : '—'],
+       meeting.project ? ['Proyecto', meeting.project.name] : null,
+   ]|filter(f => f is not null) %}
+   {% set rows = facts|batch(2) %}
+   <table:table table:name="Datos" table:style-name="Card">
+    <table:table-column table:style-name="Card.Label"/>
+    <table:table-column table:style-name="Card.Value"/>
+    <table:table-column table:style-name="Card.Label"/>
+    <table:table-column table:style-name="Card.Value"/>
+    {% for row in rows %}
+    {% set cell = rows|length == 1 ? 'Card.Single' : (loop.first ? 'Card.Top' : (loop.last ? 'Card.Bottom' : 'Card.Cell')) %}
+    <table:table-row>
+     {% for fact in row %}
+     <table:table-cell table:style-name="{{ cell }}" office:value-type="string"><text:p text:style-name="CardLabel">{{ fact[0] }}</text:p></table:table-cell>
+     <table:table-cell table:style-name="{{ cell }}" office:value-type="string"><text:p text:style-name="CardValue">{{ fact[1] }}</text:p></table:table-cell>
+     {% endfor %}
+     {% if row|length < 2 %}
+     <table:table-cell table:style-name="{{ cell }}" office:value-type="string"><text:p text:style-name="CardLabel"/></table:table-cell>
+     <table:table-cell table:style-name="{{ cell }}" office:value-type="string"><text:p text:style-name="CardValue"/></table:table-cell>
+     {% endif %}
+    </table:table-row>
+    {% endfor %}
+   </table:table>
+
+   {#- La apertura de un acta: lugar, hora y fecha, quién convoca y para qué. -#}
+   <text:p text:style-name="Opening">En {{ meeting.place ?: (meeting.onlineUrl ? 'videollamada' : app_organization_name) }}, siendo las {{ start|date('H:i') }} horas del {{ date }}, se reúnen las personas que figuran en la relación de asistencia{% if meeting.convener %}, convocadas por {{ meeting.convener.fullName }},{% endif %} para tratar {{ agendaItems is empty ? 'los asuntos que se recogen a continuación' : 'el siguiente orden del día' }}.</text:p>
+
+   <text:h text:style-name="Heading_20_1" text:outline-level="1"><text:span text:style-name="Num">1</text:span><text:tab/>Asistencia</text:h>
+   {% if meeting.attendanceTaken %}
+   {#- Con la lista pasada en la app, sale ya repartida en quien vino y quien no. -#}
+   {% set present = meeting.attended|map(p => p.fullName)|sort %}
+   {% set absent = meeting.absentees|map(p => p.fullName)|sort %}
+   <table:table table:name="Asistencia" table:style-name="List">
+    <table:table-column table:style-name="List.Col" table:number-columns-repeated="2"/>
+    <table:table-row>
+     <table:table-cell table:style-name="List.Cell" office:value-type="string">
+      <text:p text:style-name="ListHead">Asisten ({{ present|length }})</text:p>
+      {% for name in present %}<text:p text:style-name="Person">{{ name }}</text:p>{% else %}<text:p text:style-name="Person">Nadie</text:p>{% endfor %}
+     </table:table-cell>
+     <table:table-cell table:style-name="List.Cell" office:value-type="string">
+      <text:p text:style-name="ListHead">No asisten ({{ absent|length }})</text:p>
+      {% for name in absent %}<text:p text:style-name="Person">{{ name }}</text:p>{% else %}<text:p text:style-name="Person">Ninguna persona</text:p>{% endfor %}
+     </table:table-cell>
+    </table:table-row>
+   </table:table>
+   {% else %}
+   {#- Sin lista pasada: todas las personas convocadas, en dos columnas, y el hueco para decir quién faltó. -#}
+   {% set names = meeting.people|map(p => p.fullName)|sort %}
+   {% set half = (names|length / 2)|round(0, 'ceil') %}
+   <text:p text:style-name="ListHead">Personas convocadas ({{ names|length }})</text:p>
+   <table:table table:name="Convocadas" table:style-name="List">
+    <table:table-column table:style-name="List.Col" table:number-columns-repeated="2"/>
+    <table:table-row>
+     {% for column in names|batch(max(half, 1)) %}
+     <table:table-cell table:style-name="List.Cell" office:value-type="string">
+      {% for name in column %}<text:p text:style-name="Person">{{ name }}</text:p>{% endfor %}
+     </table:table-cell>
+     {% endfor %}
+     {% if names|length < 2 %}<table:table-cell table:style-name="List.Cell" office:value-type="string"><text:p text:style-name="Person"/></table:table-cell>{% endif %}
+    </table:table-row>
+   </table:table>
+   <text:p text:style-name="Body"><text:span text:style-name="Strong">No asisten: </text:span></text:p>
+   {% endif %}
+
+   <text:h text:style-name="Heading_20_1" text:outline-level="1"><text:span text:style-name="Num">2</text:span><text:tab/>Orden del día</text:h>
+   {% for item in agendaItems %}
+   <text:p text:style-name="AgendaItem"><text:span text:style-name="Num">{{ loop.index }}.</text:span><text:tab/>{{ item }}</text:p>
+   {% else %}
+   <text:p text:style-name="Body"/>
+   {% endfor %}
+
+   <text:h text:style-name="Heading_20_1" text:outline-level="1"><text:span text:style-name="Num">3</text:span><text:tab/>Desarrollo de la sesión</text:h>
+   {% for item in agendaItems %}
+   <text:h text:style-name="Heading_20_2" text:outline-level="2">{{ loop.index }}. {{ item }}</text:h>
+   <text:p text:style-name="Body"/>
+   {% else %}
+   <text:p text:style-name="Body"/>
+   {% endfor %}
+
+   <text:h text:style-name="Heading_20_1" text:outline-level="1"><text:span text:style-name="Num">4</text:span><text:tab/>Acuerdos</text:h>
+   <text:list text:style-name="Agreements"><text:list-item><text:p text:style-name="Agreement"/></text:list-item></text:list>
+
+   {#- El cierre va pegado a las firmas: una página con solo las firmas no dice de qué acta son. -#}
+   <text:p text:style-name="Closing">Y no habiendo más asuntos que tratar, se levanta la sesión a las {{ meeting.endAt ? meeting.endAt|date('H:i') : '______' }} horas, de todo lo cual se extiende la presente acta.</text:p>
+
+   {#- Firma quien levanta el acta con el visto bueno de quien convoca; si son la misma persona, una firma. -#}
+   {% set signers = keeper and meeting.convener and keeper != meeting.convener
+       ? [['Levanta el acta', keeper], ['Vº Bº · Convoca', meeting.convener]]
+       : [[(meeting.convener ? 'Convoca y levanta el acta' : 'Levanta el acta'), keeper ?: meeting.convener]] %}
+   <table:table table:name="Firmas" table:style-name="Sign">
+    <table:table-column table:style-name="Sign.A"/>
+    <table:table-column table:style-name="Sign.Gap"/>
+    <table:table-column table:style-name="Sign.A"/>
+    <table:table-row>
+     {% for signer in signers %}
+     {% if not loop.first %}<table:table-cell table:style-name="Sign.Space" office:value-type="string"><text:p text:style-name="Standard"/></table:table-cell>{% endif %}
+     <table:table-cell table:style-name="Sign.Cell" office:value-type="string">
+      <text:p text:style-name="SignRole">{{ signer[0] }}</text:p>
+      <text:p text:style-name="SignName">{{ signer[1] ? signer[1].fullName : '' }}</text:p>
+     </table:table-cell>
+     {% endfor %}
+     {% if signers|length == 1 %}
+     <table:table-cell table:style-name="Sign.Space" office:value-type="string"><text:p text:style-name="Standard"/></table:table-cell>
+     <table:table-cell table:style-name="Sign.Space" office:value-type="string"><text:p text:style-name="Standard"/></table:table-cell>
+     {% endif %}
+    </table:table-row>
+   </table:table>
+  </office:text>
+ </office:body>
+</office:document-content>

@@ -236,6 +236,22 @@ class Meeting implements Auditable
     private ?\DateTimeImmutable $minutesUploadedAt = null;
 
     /**
+     * The acta's document in the centre's EducaMadrid cloud, by its file id there — the id and not the
+     * path, because it survives the document being renamed or moved, and it is what a link is built from.
+     * When it is set, the acta IS that document: its text is written and kept there, never here.
+     */
+    #[ORM\Column(name: 'minutes_cloud_file_id', length: 32, nullable: true)]
+    private ?string $minutesCloudFileId = null;
+
+    /**
+     * The PUBLISHED copy of the cloud acta: a frozen copy made by the cloud at each publication and shared
+     * to read with the people convened, so what they read is what was published and not the draft that
+     * whoever keeps the minutes may still be correcting. A new copy (and a new id) at every publication.
+     */
+    #[ORM\Column(name: 'minutes_cloud_published_file_id', length: 32, nullable: true)]
+    private ?string $minutesCloudPublishedFileId = null;
+
+    /**
      * When the acta was PUBLISHED, or null while it is still a draft.
      *
      * The centre asked for the two steps by name ("hay que dar opción de guardar y de publicar"), and the
@@ -494,7 +510,7 @@ class Meeting implements Auditable
      */
     public function publishMinutes(User $by): bool
     {
-        if (null === $this->minutesPath) {
+        if (null === $this->minutesPath && null === $this->minutesCloudFileId) {
             return false;
         }
 
@@ -886,6 +902,23 @@ class Meeting implements Auditable
             $this->agreements = $agreements;
         }
 
+        return $this->takeRoll($present, $at);
+    }
+
+    /**
+     * Records ONLY the roll, for an acta whose text is not written here: one kept in the EducaMadrid cloud
+     * ({@see hasCloudMinutes()}), where the roll is the one part of the session the app still keeps. With
+     * the text written here, the roll goes through {@see recordSession()} instead, so that saving half the
+     * acta stays impossible.
+     *
+     * @param list<User>         $present the people who came
+     * @param \DateTimeImmutable $at      when the roll was taken
+     *
+     * @throws \LogicException when the meeting has not started yet at $at
+     */
+    public function takeRoll(array $present, \DateTimeImmutable $at): static
+    {
+        $this->assertHeldAt($at);
         $this->recordAttendance($present, $at);
         // Lo que hay en el disco deja de decir lo que dice el acta. Solo si hay fichero: sin acta generada
         // todavía no hay nada que se haya quedado viejo.
@@ -938,8 +971,8 @@ class Meeting implements Auditable
      * Records who attended, from the people expected ({@see people()}); anybody else in the list is
      * ignored, so "asistió quien no estaba convocado" cannot be stored whatever the form posts.
      *
-     * Private: the roll only ever changes as part of writing the acta ({@see recordSession()}), which is
-     * what keeps the whole block one save.
+     * Private: the roll only ever changes through {@see takeRoll()}, on its own only for an acta written in
+     * the cloud and otherwise as part of writing the acta ({@see recordSession()}).
      *
      * @param list<User>         $present the people who came
      * @param \DateTimeImmutable $at      when the roll was taken
@@ -1009,14 +1042,94 @@ class Meeting implements Auditable
     }
 
     /**
-     * Whether the minutes have been uploaded. Reads the path, which is the only thing that makes the
-     * download possible.
+     * Whether the meeting has an acta document: a file here, or a document in the EducaMadrid cloud
+     * ({@see hasCloudMinutes()}). Both count for everything that asks "is there an acta" — its stage,
+     * approving it, the lists — so an acta in the cloud is never read as "sin acta".
      *
      * @return bool true when this meeting has minutes
      */
     public function hasMinutes(): bool
     {
-        return null !== $this->minutesPath;
+        return null !== $this->minutesPath || null !== $this->minutesCloudFileId;
+    }
+
+    /**
+     * Whether the acta is a document in the EducaMadrid cloud ({@see $minutesCloudFileId}).
+     */
+    public function hasCloudMinutes(): bool
+    {
+        return null !== $this->minutesCloudFileId;
+    }
+
+    /**
+     * Whether this meeting's acta is written in the EducaMadrid cloud: it already is there, or the cloud is
+     * connected and nothing of the acta has been written HERE yet — neither a file nor a word of text. An
+     * acta started in the app keeps its own way when the cloud gets connected halfway: switching it would
+     * hide what was already written.
+     *
+     * @param bool $cloudConnected whether the centre's cloud account is connected
+     *
+     * @return bool true when the acta goes, or already went, to the cloud
+     */
+    public function writesMinutesInCloud(bool $cloudConnected): bool
+    {
+        if (!$this->keepsMinutes()) {
+            return false;
+        }
+
+        return $this->hasCloudMinutes()
+            || ($cloudConnected && null === $this->minutesPath && null === $this->discussion && null === $this->agreements);
+    }
+
+    public function getMinutesCloudFileId(): ?string
+    {
+        return $this->minutesCloudFileId;
+    }
+
+    public function getMinutesCloudPublishedFileId(): ?string
+    {
+        return $this->minutesCloudPublishedFileId;
+    }
+
+    /**
+     * Publishes the cloud acta with the frozen copy just made of it ({@see $minutesCloudPublishedFileId}):
+     * the copy and the publication go together, so a published cloud acta always has what to read.
+     *
+     * @param string $publishedFileId the copy's id in the cloud
+     * @param User   $by              who publishes it
+     *
+     * @throws \LogicException when the meeting has no cloud acta
+     */
+    public function publishCloudMinutes(string $publishedFileId, User $by): void
+    {
+        if (null === $this->minutesCloudFileId) {
+            throw new \LogicException('Esta reunión no tiene acta en la nube.');
+        }
+
+        $this->minutesCloudPublishedFileId = $publishedFileId;
+        $this->publishMinutes($by);
+    }
+
+    /**
+     * Records the acta's document in the cloud. Leaves it a draft, like {@see attachMinutes()}: creating
+     * the document is the start of writing it, not sending it.
+     *
+     * @param string             $fileId the document's id in the cloud
+     * @param User               $by     who created it
+     * @param \DateTimeImmutable $at     when
+     *
+     * @throws \LogicException when the meeting has not started yet at $at
+     */
+    public function attachCloudMinutes(string $fileId, User $by, \DateTimeImmutable $at): void
+    {
+        $this->assertHeldAt($at);
+
+        $this->minutesCloudFileId = $fileId;
+        $this->minutesCloudPublishedFileId = null;
+        $this->minutesUploadedBy = $by;
+        $this->minutesUploadedAt = $at;
+        $this->minutesPublishedAt = null;
+        $this->minutesPublishedBy = null;
     }
 
     /**

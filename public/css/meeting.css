@@ -203,6 +203,26 @@
 .mtg-doc__flag { display: inline-block; margin-left: 6px; padding: 2px 7px; border-radius: 6px; font: 600 10px/1.4 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--warning-text); background: var(--warning-weak); vertical-align: 2px; }
 .mtg-doc__meta { font: 400 11.5px/1.4 var(--font-mono); color: var(--text-faint); }
 
+/* ---- El acta en la nube --------------------------------------------------
+   El documento ES el acta, no un adjunto: ocupa la tarjeta y lleva la acción principal (abrirlo). La hoja
+   es más grande que la de .mtg-doc y el nombre va en serif porque es el título de algo que se lee. */
+.mtg-cloud { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 18px 22px; padding: 28px; }
+.mtg-cloud__icon { position: relative; width: 56px; height: 68px; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; background: var(--accent-weak); color: var(--accent-ink); box-shadow: inset 0 0 0 1px var(--accent-weak-border); }
+.mtg-cloud__icon .mtg-icon { width: 24px; height: 24px; stroke-width: 1.7; }
+.mtg-cloud__icon span { font: 600 10px/1 var(--font-mono); letter-spacing: .08em; }
+.mtg-cloud__body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.mtg-cloud__body p { margin: 0; }
+.mtg-cloud__name { font: 500 19px/1.25 var(--font-display); color: var(--text); overflow-wrap: anywhere; text-wrap: balance; }
+.mtg-cloud__meta { font: 400 12px/1.4 var(--font-mono); color: var(--text-faint); }
+.mtg-cloud__text { max-width: 60ch; font-size: 14px; line-height: 1.5; color: var(--text-muted); }
+.mtg-cloud__action { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.mtg-cloud__action .btn { height: 46px; padding: 0 22px; font-size: 15px; gap: 8px; }
+.mtg-cloud__hint { font-size: 12px; color: var(--text-faint); }
+.mtg-cloud__note { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; padding-top: 16px; border-top: 1px solid var(--separator); }
+.mtg-cloud__note .mtg-cloud__text { flex: 1 1 260px; margin: 0; }
+.mtg-cloud__fix { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.mtg-cloud__fix form { margin: 0; }
+
 /* ---- Siguiente paso ------------------------------------------------------ */
 .mtg-next { display: flex; align-items: center; justify-content: space-between; gap: 12px 24px; padding: 20px 28px; background: color-mix(in oklab, var(--accent-weak) 70%, var(--surface)); }
 .mtg-next p { margin: 0; flex: 1 1 280px; font-size: 14px; line-height: 1.5; color: var(--text-muted); }
@@ -275,6 +295,11 @@
 .mtg-facts dd { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); }
 .mtg-people { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 .mtg-people li { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 14px; }
+.mtg-people__name { flex: 1; min-width: 0; }
+.mtg-people__mark { flex: none; display: inline-grid; place-items: center; width: 20px; height: 20px; color: var(--success); }
+.mtg-people__mark .mtg-icon { width: 16px; height: 16px; stroke-width: 2.6; }
+.mtg-people li.is-absent .mtg-people__name { color: var(--text-muted); }
+.mtg-people li.is-absent .mtg-avatar { opacity: .55; }
 .mtg-people-more > summary { list-style: none; margin-top: 6px; }
 .mtg-people-more > summary::-webkit-details-marker { display: none; }
 .mtg-people-more[open] > summary { display: none; }
@@ -322,6 +347,11 @@
     .mtg-person { min-height: 48px; }
     .mtg-person__box { order: -1; margin-left: 0; }
     .mtg-attlist, .mtg-attlist--dense { columns: 2 140px; }
+    .mtg-cloud { grid-template-columns: auto minmax(0, 1fr); padding: 22px 16px; }
+    .mtg-cloud__icon { width: 44px; height: 54px; }
+    .mtg-cloud__action { grid-column: 1 / -1; align-items: stretch; }
+    .mtg--dock .mtg-cloud__action { display: none; }
+    .mtg-cloud__note { grid-column: 1 / -1; }
     .mtg-doc { flex-wrap: wrap; }
     .mtg-doc .btn { width: 100%; }
     .mtg-call .btn { flex: none; }

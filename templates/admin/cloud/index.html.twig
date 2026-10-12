@@ -1,0 +1,70 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Nube de EducaMadrid{% endblock %}
+
+{% block stylesheets %}
+    {{ parent() }}
+    <style>
+        .cloud-folder { margin: 18px 0 22px; padding-top: 18px; border-top: 1px solid var(--border); }
+        .cloud-folder label { display: block; font-weight: 600; }
+        .cloud-folder .help { margin: 4px 0 10px; }
+        .cloud-folder__row { display: flex; flex-wrap: wrap; gap: 10px; }
+        .cloud-folder__row input { flex: 1 1 260px; min-width: 0; }
+    </style>
+{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Nube de EducaMadrid
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Administración</p>
+            <h1>Nube de EducaMadrid</h1>
+            <p class="lead">Las actas de las reuniones se escriben y se guardan en la nube de EducaMadrid del centro, no en esta aplicación. Aquí se conecta esa cuenta una sola vez.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        {% if connected %}
+            <p><strong>Conectada</strong>{% if login %} con la cuenta <strong>{{ login }}</strong>{% endif %}.</p>
+            <p class="muted">Las actas se crean en la carpeta de abajo, con una subcarpeta por curso y tipo de reunión. Cada acta se comparte, sola, con quien la escribe y, al publicarla, con quien estaba convocado: nadie ve la carpeta ni el resto de la cuenta.</p>
+            {% if not login %}
+                <p class="muted">La clave guardada no se puede abrir (¿ha cambiado CLOUD_TOKEN_KEY?). Desconecta y vuelve a conectar.</p>
+            {% endif %}
+            <form method="post" action="{{ path('admin_cloud_folder') }}" class="cloud-folder">
+                <input type="hidden" name="_token" value="{{ csrf_token('admin_cloud') }}">
+                <label for="cloud-folder">Carpeta de las actas</label>
+                <p class="help" id="cloud-folder-help">Dentro de la cuenta, con «/» entre carpetas: por ejemplo, «Documentación/Actas». Solo afecta a las actas nuevas; las que ya hay se encuentran aunque se muevan.</p>
+                <div class="cloud-folder__row">
+                    <input type="text" id="cloud-folder" name="folder" value="{{ folder }}" required aria-describedby="cloud-folder-help" autocomplete="off">
+                    <button type="submit" class="btn secondary">Guardar</button>
+                </div>
+            </form>
+            <form method="post" action="{{ path('admin_cloud_disconnect') }}" data-confirm="¿Desconectar la nube? Hasta que se vuelva a conectar no se podrán crear actas nuevas. Las que ya hay se quedan en la nube.">
+                <input type="hidden" name="_token" value="{{ csrf_token('admin_cloud') }}">
+                <button type="submit" class="btn danger sm">Desconectar</button>
+            </form>
+        {% elseif not canSeal %}
+            <p><strong>No se puede conectar todavía.</strong> Falta en el servidor la clave con la que se guarda la de la nube: <code>CLOUD_TOKEN_KEY</code> en <code>.env.local</code>, 32 bytes en base64 (<code>openssl rand -base64 32</code>).</p>
+        {% elseif pendingLoginUrl %}
+            <ol>
+                <li>Abre <a href="{{ pendingLoginUrl }}" target="_blank" rel="noopener noreferrer"><strong>la página de autorización de EducaMadrid</strong></a> (se abre en otra pestaña).</li>
+                <li>Entra con la <strong>cuenta del centro</strong>, no con la tuya, y pulsa «Conceder acceso».</li>
+                <li>Vuelve aquí y pulsa «Ya lo he autorizado».</li>
+            </ol>
+            <form method="post" action="{{ path('admin_cloud_check') }}">
+                <input type="hidden" name="_token" value="{{ csrf_token('admin_cloud') }}">
+                <button type="submit" class="btn">Ya lo he autorizado</button>
+            </form>
+        {% else %}
+            <p>No hay ninguna cuenta conectada.</p>
+            <p class="muted">Conecta la cuenta institucional del centro, no la de una persona: las actas son del centro y deben quedarse aunque cambie quien ocupa la secretaría. La aplicación nunca ve la contraseña; recibe una clave que se puede revocar desde la propia nube.</p>
+            <form method="post" action="{{ path('admin_cloud_connect') }}">
+                <input type="hidden" name="_token" value="{{ csrf_token('admin_cloud') }}">
+                <button type="submit" class="btn">Conectar la nube</button>
+            </form>
+        {% endif %}
+    </div>
+{% endblock %}

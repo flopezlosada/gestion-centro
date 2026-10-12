@@ -22,6 +22,15 @@ final class AppSettings
     /** Whether anyone on the allow-list may sign in, or only the users granted early access. */
     public const LOGIN_OPEN = 'access.login_open';
 
+    /** The centre's EducaMadrid cloud account, sealed by {@see Cloud\CloudAccount}; absent while not connected. */
+    public const CLOUD_ACCOUNT = 'cloud.account';
+
+    /** The folder of that account the actas are created under ("Documentación/Actas"). */
+    public const CLOUD_MINUTES_FOLDER = 'cloud.minutes_folder';
+
+    /** Where the actas go until somebody chooses: a folder of their own at the root of the account. */
+    public const DEFAULT_CLOUD_MINUTES_FOLDER = 'Actas';
+
     /** @var array<string, AppSetting> the settings read for this request, keyed by name */
     private array $loaded = [];
 
@@ -87,6 +96,70 @@ final class AppSettings
     }
 
     /**
+     * The sealed cloud account, opaque to this class: {@see Cloud\CloudAccount} seals and opens it.
+     *
+     * @return string|null the stored value, or null while no account is connected
+     */
+    public function getCloudAccount(): ?string
+    {
+        $this->load();
+
+        return isset($this->loaded[self::CLOUD_ACCOUNT]) ? $this->loaded[self::CLOUD_ACCOUNT]->getValue() : null;
+    }
+
+    /**
+     * Stores the sealed cloud account, or deletes the row when null: a disconnected account leaves
+     * nothing behind, not even its sealed key.
+     *
+     * @param string|null $sealed the sealed account, or null to forget it
+     */
+    public function setCloudAccount(?string $sealed): void
+    {
+        if (null !== $sealed) {
+            $this->write(self::CLOUD_ACCOUNT, $sealed);
+
+            return;
+        }
+
+        $this->load();
+        if (isset($this->loaded[self::CLOUD_ACCOUNT])) {
+            $this->em->remove($this->loaded[self::CLOUD_ACCOUNT]);
+            unset($this->loaded[self::CLOUD_ACCOUNT]);
+            $this->em->flush();
+        }
+    }
+
+    /**
+     * The folder of the cloud account the actas are created under, relative to its root.
+     *
+     * @return string the folder, without leading or trailing slash
+     */
+    public function getCloudMinutesFolder(): string
+    {
+        $this->load();
+
+        return isset($this->loaded[self::CLOUD_MINUTES_FOLDER]) ? $this->loaded[self::CLOUD_MINUTES_FOLDER]->getValue() : self::DEFAULT_CLOUD_MINUTES_FOLDER;
+    }
+
+    /**
+     * Chooses the folder the actas are created under. Only NEW actas go there: the ones already created
+     * stay where they are, and the app keeps finding them by their id.
+     *
+     * @param string $folder the folder, relative to the account root ("Documentación/Actas")
+     *
+     * @throws \InvalidArgumentException when it is empty or climbs out of the account ("..")
+     */
+    public function setCloudMinutesFolder(string $folder): void
+    {
+        $segments = array_values(array_filter(array_map('trim', explode('/', str_replace('\\', '/', $folder))), static fn (string $s): bool => '' !== $s));
+        if ([] === $segments || \in_array('..', $segments, true) || \in_array('.', $segments, true)) {
+            throw new \InvalidArgumentException('Escribe una carpeta de la nube, como «Documentación/Actas».');
+        }
+
+        $this->write(self::CLOUD_MINUTES_FOLDER, implode('/', $segments));
+    }
+
+    /**
      * Reads a boolean setting, falling back to the code default while the row does not exist.
      *
      * @param string $name    the setting name
@@ -109,9 +182,19 @@ final class AppSettings
      */
     private function writeBool(string $name, bool $value): void
     {
+        $this->write($name, $value ? '1' : '0');
+    }
+
+    /**
+     * Writes a setting as stored, creating the row on first write.
+     *
+     * @param string $name   the setting name
+     * @param string $stored the value to store
+     */
+    private function write(string $name, string $stored): void
+    {
         $this->load();
 
-        $stored = $value ? '1' : '0';
         $setting = $this->loaded[$name] ?? null;
         if (null === $setting) {
             $setting = new AppSetting($name, $stored);

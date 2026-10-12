@@ -88,7 +88,7 @@ final class MeetingActivityPresenterTest extends TestCase
                 'project' => ['old' => null, 'new' => null],
                 'attendees' => ['added' => [274, 273, 242, 259], 'removed' => []],
             ]),
-        ]);
+        ], showRemovals: true);
 
         self::assertCount(1, $rows);
         self::assertSame('Natalia Rodríguez Mora', $rows[0]['actor']);
@@ -106,7 +106,7 @@ final class MeetingActivityPresenterTest extends TestCase
                 'place' => ['old' => null, 'new' => 'Sala de profesores'],
                 'attendees' => ['added' => [273, 242], 'removed' => [259]],
             ]),
-        ]);
+        ], showRemovals: true);
 
         self::assertSame([
             'Cambió el día o la hora: 09/10/2026 a las 11:45 → 13/10/2026 a las 10:15',
@@ -114,6 +114,23 @@ final class MeetingActivityPresenterTest extends TestCase
             'Convocó a María Belén Rodríguez Martínez y Pedro Andrés Juez Pérez',
             'Retiró de la convocatoria a Beatriz Moraga Molina',
         ], $rows[0]['events']);
+    }
+
+    public function testOnlyWhoeverManagesTheMeetingReadsWhoWasTakenOffIt(): void
+    {
+        $presenter = new MeetingActivityPresenter($this->em($this->staff()));
+        $trail = [
+            $this->entry('meeting.updated', ['attendees' => ['added' => [], 'removed' => [259]]]),
+            $this->entry('meeting.updated', ['attendees' => ['added' => [273], 'removed' => [259]]]),
+        ];
+
+        $convened = $presenter->present($trail, showRemovals: false);
+
+        // Una retirada sola no deja fila; con más cosas, se cuentan las demás.
+        self::assertCount(1, $convened);
+        self::assertSame(['Convocó a María Belén Rodríguez Martínez'], $convened[0]['events']);
+        self::assertStringNotContainsString('Beatriz', json_encode($convened, \JSON_UNESCAPED_UNICODE) ?: '');
+        self::assertCount(2, $presenter->present($trail, showRemovals: true));
     }
 
     public function testTheActaTextAndTheAgendaAreNeverShown(): void
@@ -127,7 +144,7 @@ final class MeetingActivityPresenterTest extends TestCase
                 'attendanceTakenAt' => ['old' => null, 'new' => '2026-10-09T12:41:00+02:00'],
                 'attended' => ['added' => [274, 242], 'removed' => []],
             ]),
-        ]);
+        ], showRemovals: true);
 
         self::assertSame(['Modificó el orden del día', 'Modificó el desarrollo del acta', 'Modificó los acuerdos del acta', 'Pasó lista'], $rows[0]['events']);
         self::assertStringNotContainsString('expediente', json_encode($rows, \JSON_UNESCAPED_UNICODE) ?: '');
@@ -141,7 +158,7 @@ final class MeetingActivityPresenterTest extends TestCase
                 'title' => ['old' => 'Seguimiento disciplinario de Juan P. (3ºB)', 'new' => 'Reunión de tutoría'],
                 'place' => ['old' => 'Aula 12', 'new' => null],
             ]),
-        ]);
+        ], showRemovals: true);
 
         self::assertSame(['Cambió el título', 'Quitó el lugar'], $rows[0]['events']);
         self::assertStringNotContainsString('Juan', json_encode($rows, \JSON_UNESCAPED_UNICODE) ?: '');
@@ -152,7 +169,7 @@ final class MeetingActivityPresenterTest extends TestCase
         // En invierno el rastro va en +01:00 y en CI la zona es UTC: la hora que se pinta es la grabada.
         $rows = (new MeetingActivityPresenter($this->em([])))->present([
             $this->entry('meeting.updated', ['startAt' => ['old' => '2026-12-14T09:30:00+01:00', 'new' => '2026-12-14T08:30:00+00:00']]),
-        ]);
+        ], showRemovals: true);
 
         self::assertSame(['Cambió el día o la hora: 14/12/2026 a las 09:30 → 14/12/2026 a las 08:30'], $rows[0]['events']);
     }
@@ -168,7 +185,7 @@ final class MeetingActivityPresenterTest extends TestCase
                 'minutesPublishedBy' => ['old' => null, 'new' => 274],
             ]),
             $this->entry('meeting.updated', ['minutesPublishedAt' => ['old' => '2026-10-11T14:11:29+02:00', 'new' => null], 'minutesPath' => ['old' => 'a.pdf', 'new' => 'b.pdf']]),
-        ]);
+        ], showRemovals: true);
 
         self::assertSame(['Dio el acta por aprobada'], $rows[0]['events']);
         self::assertSame(['Publicó una corrección del acta'], $rows[1]['events']);
@@ -176,11 +193,32 @@ final class MeetingActivityPresenterTest extends TestCase
         self::assertSame(['Generó o subió el documento del acta', 'El acta vuelve a borrador'], $rows[3]['events']);
     }
 
+    public function testAnActaInTheCloudTellsItsCreationAndItsPublicationButNeverWhatItSays(): void
+    {
+        // Las dos entradas tal como las deja la auditoría al crear y publicar un acta en la nube.
+        $rows = (new MeetingActivityPresenter($this->em($this->staff())))->present([
+            $this->entry('meeting.updated', [
+                'minutesCloudPublishedFileId' => ['old' => null, 'new' => '776612791'],
+                'minutesPublishedAt' => ['old' => null, 'new' => '2026-10-12T11:01:23+02:00'],
+                'minutesFirstPublishedAt' => ['old' => null, 'new' => '2026-10-12T11:01:23+02:00'],
+                'minutesPublishedBy' => ['old' => null, 'new' => 274],
+            ]),
+            $this->entry('meeting.updated', [
+                'minutesUploadedAt' => ['old' => null, 'new' => '2026-10-12T10:56:34+02:00'],
+                'minutesCloudFileId' => ['old' => null, 'new' => '776611541'],
+                'minutesUploadedBy' => ['old' => null, 'new' => 274],
+            ]),
+        ], showRemovals: true);
+
+        self::assertSame(['Publicó el acta'], $rows[0]['events']);
+        self::assertSame(['Creó el acta en la nube de EducaMadrid'], $rows[1]['events']);
+    }
+
     public function testCorrectingTheRollIsNotTakingItAgain(): void
     {
         $rows = (new MeetingActivityPresenter($this->em($this->staff())))->present([
             $this->entry('meeting.updated', ['attendanceTakenAt' => ['old' => '2026-10-11T13:35:30+02:00', 'new' => '2026-10-11T13:42:49+02:00'], 'attended' => ['added' => [242], 'removed' => []]]),
-        ]);
+        ], showRemovals: true);
 
         self::assertSame(['Corrigió la asistencia'], $rows[0]['events']);
     }
@@ -192,7 +230,7 @@ final class MeetingActivityPresenterTest extends TestCase
         $rows = (new MeetingActivityPresenter($this->em([])))->present([
             $this->entry('meeting.updated', ['remindAt' => ['old' => null, 'new' => '2026-10-09T11:35:00+02:00'], 'reminderSentAt' => ['old' => null, 'new' => '2026-10-09T11:35:02+02:00']], null),
             $this->entry('meeting.updated', ['minutesStale' => ['old' => false, 'new' => true]]),
-        ]);
+        ], showRemovals: true);
 
         self::assertSame([], $rows);
     }
@@ -207,7 +245,7 @@ final class MeetingActivityPresenterTest extends TestCase
                 'project' => ['old' => 3, 'new' => 9],
                 'minutesTakenBy' => ['old' => 274, 'new' => 999],
             ], 'sistema-borrado@centro.test'),
-        ]);
+        ], showRemovals: true);
 
         self::assertSame('Una persona dada de baja', $rows[0]['actor'], 'sin persona detrás no se enseña su correo: es un dato personal');
         self::assertSame([

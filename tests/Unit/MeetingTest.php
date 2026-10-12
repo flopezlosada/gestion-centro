@@ -454,4 +454,91 @@ final class MeetingTest extends TestCase
         self::assertTrue($meeting->isPast(new \DateTimeImmutable('2026-09-15 14:01')));
         self::assertFalse($meeting->isPast(new \DateTimeImmutable('2026-09-15 13:59')));
     }
+
+    public function testAnActaIsWrittenInTheCloudOnlyWhenNothingOfItWasWrittenHere(): void
+    {
+        $convener = $this->user('Coordina');
+        $at = new \DateTimeImmutable('2026-09-15 15:00');
+
+        self::assertFalse($this->meeting($convener)->writesMinutesInCloud(false), 'sin nube conectada, el acta es de la app');
+        self::assertTrue($this->meeting($convener)->writesMinutesInCloud(true), 'con la nube conectada y nada escrito, a la nube');
+
+        $withText = $this->meeting($convener)->recordSession('<p>Se trató el horario.</p>', null, [], $at);
+        self::assertFalse($withText->writesMinutesInCloud(true), 'un acta empezada aquí no se esconde al conectar la nube');
+
+        $withFile = $this->meeting($convener);
+        $withFile->attachMinutes('meeting-minutes/uuid-1.pdf', 'acta.pdf', $convener, $at);
+        self::assertFalse($withFile->writesMinutesInCloud(true), 'ni una con su PDF');
+
+        $rollOnly = $this->meeting($convener)->takeRoll([$convener], $at);
+        self::assertTrue($rollOnly->writesMinutesInCloud(true), 'pasar lista no es escribir el acta');
+
+        $inCloud = $this->meeting($convener);
+        $inCloud->attachCloudMinutes('776060721', $convener, $at);
+        self::assertTrue($inCloud->writesMinutesInCloud(false), 'la que ya está en la nube sigue allí aunque se desconecte');
+
+        $families = $this->meeting($convener)->setScope(MeetingScope::FAMILIES);
+        self::assertFalse($families->writesMinutesInCloud(true), 'una reunión sin acta no tiene acta que llevar a ninguna parte');
+    }
+
+    public function testACloudActaIsAnActaForItsStageAndStartsAsADraft(): void
+    {
+        $convener = $this->user('Coordina');
+        $meeting = $this->meeting($convener);
+        $at = new \DateTimeImmutable('2026-09-15 15:00');
+
+        $meeting->attachCloudMinutes('776060721', $convener, $at);
+
+        self::assertTrue($meeting->hasMinutes(), 'en la nube también hay acta: no puede leerse como «sin acta»');
+        self::assertSame(MinutesStage::DRAFT, $meeting->minutesStage($at));
+        self::assertSame($convener, $meeting->getMinutesUploadedBy());
+    }
+
+    public function testPublishingACloudActaKeepsTheFrozenCopyItIsReadFrom(): void
+    {
+        $convener = $this->user('Coordina');
+        $meeting = $this->meeting($convener);
+        $at = new \DateTimeImmutable('2026-09-15 15:00');
+        $meeting->attachCloudMinutes('776060721', $convener, $at);
+
+        $meeting->publishCloudMinutes('900', $convener);
+
+        self::assertTrue($meeting->isMinutesPublished());
+        self::assertSame('900', $meeting->getMinutesCloudPublishedFileId());
+        self::assertSame('776060721', $meeting->getMinutesCloudFileId(), 'el borrador sigue siendo el mismo documento');
+        self::assertSame(MinutesStage::PUBLISHED, $meeting->minutesStage($at));
+
+        // Publicar una corrección: la nube hace una copia nueva, con otro id.
+        $meeting->publishCloudMinutes('901', $convener);
+        self::assertSame('901', $meeting->getMinutesCloudPublishedFileId());
+    }
+
+    public function testACloudActaCannotBePublishedWithoutTheDocument(): void
+    {
+        $this->expectException(\LogicException::class);
+
+        $this->meeting($this->user('Coordina'))->publishCloudMinutes('900', $this->user('Coordina'));
+    }
+
+    public function testACloudActaCannotBeCreatedBeforeTheMeeting(): void
+    {
+        $convener = $this->user('Coordina');
+
+        $this->expectException(\LogicException::class);
+
+        $this->meeting($convener)->attachCloudMinutes('776060721', $convener, new \DateTimeImmutable('2026-09-15 13:00'));
+    }
+
+    public function testTakingTheRollAloneLeavesNoFileOutdated(): void
+    {
+        $convener = $this->user('Coordina');
+        $meeting = $this->meeting($convener);
+        $at = new \DateTimeImmutable('2026-09-15 15:00');
+        $meeting->attachCloudMinutes('776060721', $convener, $at);
+
+        $meeting->takeRoll([$convener], $at);
+
+        self::assertTrue($meeting->isAttendanceTaken());
+        self::assertFalse($meeting->minutesOutdated(), 'no hay fichero aquí que se haya quedado viejo');
+    }
 }
