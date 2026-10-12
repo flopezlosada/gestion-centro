@@ -91,7 +91,7 @@ final class MoveMinutesToCloudCommand extends Command
         }
 
         try {
-            $problems = $this->cloudMinutes->moveToCloud($meeting, null === $path ? null : (string) file_get_contents($this->uploader->absolutePath($path)));
+            $sharing = $this->cloudMinutes->moveToCloud($meeting, null === $path ? null : (string) file_get_contents($this->uploader->absolutePath($path)));
             $this->entityManager->flush();
         } catch (CloudException $e) {
             $this->entityManager->refresh($meeting);
@@ -103,9 +103,9 @@ final class MoveMinutesToCloudCommand extends Command
         if (null !== $path) {
             $this->uploader->remove($path);
         }
-        $io->writeln(\sprintf('Reunión %d: movida%s.', $id, [] === $problems ? '' : \sprintf(' (sin compartir con %d persona%s)', \count($problems), 1 === \count($problems) ? '' : 's')));
-        foreach ($problems as $problem) {
-            $io->writeln('   · '.$problem, OutputInterface::VERBOSITY_VERBOSE);
+        $io->writeln(\sprintf('Reunión %d: movida%s.', $id, 0 === $sharing['pending'] ? '' : \sprintf(' (%d comparticiones en cola: las hará la tarea programada)', $sharing['pending'])));
+        foreach ($sharing['problems'] as $problem) {
+            $io->writeln('   · sin compartir con '.$problem);
         }
 
         return true;

@@ -6,6 +6,7 @@ namespace App\Tests\Unit;
 
 use App\Service\Cloud\CloudCredentials;
 use App\Service\Cloud\CloudException;
+use App\Service\Cloud\CloudRateLimitedException;
 use App\Service\Cloud\EducamadridCloud;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -126,20 +127,42 @@ final class EducamadridCloudTest extends TestCase
         self::assertStringContainsString('<d:literal>1</d:literal></d:eq>', (string) $this->sent[0]['options']['body']);
     }
 
-    public function testSharingSaysWhyPerPersonInsteadOfThrowing(): void
+    public function testSharingSaysWhyForThatPersonInsteadOfThrowing(): void
     {
         $cloud = $this->cloud([
-            new MockResponse('', ['http_code' => 200]),
+            new MockResponse('{"ocs":{"meta":{"status":"ok"}}}', ['http_code' => 200]),
             new MockResponse('{"ocs":{"meta":{"status":"failure","statuscode":404,"message":"No se ha encontrado el usuario"}}}', ['http_code' => 404]),
+            new MockResponse('<html>Forbidden</html>', ['http_code' => 403]),
         ]);
 
-        self::assertSame(
-            ['natalia.x' => null, 'nadie' => 'No se ha encontrado el usuario'],
-            $cloud->shareWithEach($this->credentials(), 'Actas/acta.odt', ['natalia.x', 'nadie'], EducamadridCloud::PERMISSION_READ),
-        );
+        self::assertNull($cloud->share($this->credentials(), 'Actas/acta.odt', 'natalia.x', EducamadridCloud::PERMISSION_READ));
+        self::assertSame('No se ha encontrado el usuario', $cloud->share($this->credentials(), 'Actas/acta.odt', 'nadie', EducamadridCloud::PERMISSION_READ));
+        self::assertSame('HTTP 403', $cloud->share($this->credentials(), 'Actas/acta.odt', 'otro', EducamadridCloud::PERMISSION_READ), 'una respuesta que no es JSON tampoco para a los demás');
 
         parse_str((string) $this->sent[0]['options']['body'], $body);
         self::assertSame(['path' => '/Actas/acta.odt', 'shareType' => '0', 'shareWith' => 'natalia.x', 'permissions' => '1'], $body);
+    }
+
+    public function testTheCloudsLimitOnSharesIsItsOwnException(): void
+    {
+        $cloud = $this->cloud([new MockResponse('', ['http_code' => 429])]);
+
+        $this->expectException(CloudRateLimitedException::class);
+
+        $cloud->share($this->credentials(), 'Actas/acta.odt', 'natalia.x', EducamadridCloud::PERMISSION_READ);
+    }
+
+    public function testSharedWithListsOnlyTheUsersAFileIsSharedWith(): void
+    {
+        $cloud = $this->cloud([new MockResponse((string) json_encode(['ocs' => ['data' => [
+            ['share_type' => 0, 'share_with' => 'Natalia.X'],
+            ['share_type' => 3, 'share_with' => null],
+            ['share_type' => 1, 'share_with' => 'claustro'],
+        ]]]), ['http_code' => 200])]);
+
+        self::assertSame(['natalia.x'], $cloud->sharedWith($this->credentials(), 'Actas/acta (publicada).odt'));
+        self::assertSame('GET', $this->sent[0]['method']);
+        self::assertStringContainsString('path=%2FActas%2Facta+%28publicada%29.odt', $this->sent[0]['url']);
     }
 
     public function testEnsureFolderCreatesEachLevelAndAcceptsTheOnesThatExist(): void

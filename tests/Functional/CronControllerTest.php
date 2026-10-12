@@ -91,17 +91,18 @@ final class CronControllerTest extends WebTestCase
         $this->em->clear();
         self::assertNotNull($this->em->getRepository(PersonalEvent::class)->find($id)?->getReminderSentAt());
 
-        // El endpoint lleva los CUATRO barridos de la misma cadencia (agenda, RAICES, los recordatorios de
-        // guardia de la tarde anterior y esa mañana, y reuniones), y ahora cada uno deja SU propia fila en
-        // el registro con su propio resultado. Aquí no hay ninguna guardia en curso ni mañana, ni reunión a
-        // punto de empezar, así que la de agenda es la única que declara trabajo hecho.
+        // El endpoint lleva los CINCO barridos de la misma cadencia (agenda, RAICES, los recordatorios de
+        // guardia de la tarde anterior y esa mañana, reuniones y actas por compartir en la nube), y cada uno
+        // deja SU propia fila en el registro con su propio resultado. Aquí no hay ninguna guardia en curso ni
+        // mañana, ni reunión a punto de empezar, ni acta en cola, así que la de agenda es la única que declara
+        // trabajo hecho.
         $runs = self::getContainer()->get(CronRunRepository::class)->findLastRunPerTask();
 
         self::assertArrayHasKey(CentreCronManifest::CRON_EVENT_REMINDERS, $runs);
         self::assertSame(CronRun::STATUS_DONE, $runs[CentreCronManifest::CRON_EVENT_REMINDERS]->getStatus());
         self::assertStringContainsString('1 avisos de agenda enviados', (string) $runs[CentreCronManifest::CRON_EVENT_REMINDERS]->getDetail());
 
-        foreach ([CentreCronManifest::CRON_GUARDIA_RAICES_REMINDERS, CentreCronManifest::CRON_GUARDIA_DUTY_REMINDERS, CentreCronManifest::CRON_MEETING_REMINDERS] as $sinTrabajo) {
+        foreach ([CentreCronManifest::CRON_GUARDIA_RAICES_REMINDERS, CentreCronManifest::CRON_GUARDIA_DUTY_REMINDERS, CentreCronManifest::CRON_MEETING_REMINDERS, CentreCronManifest::CRON_CLOUD_SHARES] as $sinTrabajo) {
             self::assertArrayHasKey($sinTrabajo, $runs, \sprintf('El barrido "%s" no se ha ejecutado.', $sinTrabajo));
             self::assertSame(
                 CronRun::STATUS_NOTHING_TO_DO,
