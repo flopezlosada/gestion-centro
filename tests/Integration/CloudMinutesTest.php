@@ -284,4 +284,34 @@ final class CloudMinutesTest extends KernelTestCase
             }
         }
     }
+
+    public function testAnActaWrittenOutsideTheAppIsCreatedFromItsFileAndSharedLikeAnyOther(): void
+    {
+        $secretary = $this->user('Natalia', 'natalia.x@educa.madrid.org');
+        $meeting = $this->heldMeeting($secretary, $secretary);
+
+        $problems = $this->minutes('all')->upload($meeting, $secretary, self::at(), 'bytes del docx', 'DOCX');
+
+        self::assertSame([], $problems);
+        $puts = array_values(array_filter($this->sent, static fn (array $r): bool => 'PUT' === $r['method']));
+        self::assertCount(1, $puts);
+        self::assertStringEndsWith('/2026-09-15%2014.00%20Reuni%C3%B3n%20de%20seguimiento.docx', $puts[0]['url'], 'con su extensión: es la que dice a la nube cómo abrirlo');
+        self::assertSame('bytes del docx', $puts[0]['body']);
+        self::assertSame('776060721', $meeting->getMinutesCloudFileId());
+        self::assertSame([['path' => '/Actas/2026-2027/Otras reuniones/2026-09-15 14.00 Reunión de seguimiento.docx', 'shareWith' => 'natalia.x', 'permissions' => (string) EducamadridCloud::PERMISSION_EDIT]], $this->shares());
+    }
+
+    public function testPublishingAnUploadedActaKeepsItsExtension(): void
+    {
+        $secretary = $this->user('Natalia', 'natalia.x@educa.madrid.org');
+        $meeting = $this->heldMeeting($secretary, $secretary);
+        $meeting->attachCloudMinutes('776060721', $secretary, self::at());
+        $this->draftNowAt = 'Actas/acta.docx';
+
+        $this->minutes('all')->publish($meeting, $secretary);
+
+        $copy = array_values(array_filter($this->sent, static fn (array $r): bool => 'COPY' === $r['method']));
+        self::assertStringEndsWith('/Actas/acta.docx', $copy[0]['url']);
+        self::assertSame(['/Actas/acta (publicada).docx'], array_column($this->shares(), 'path'));
+    }
 }

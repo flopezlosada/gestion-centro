@@ -296,6 +296,28 @@
                         <button type="submit" class="btn{{ meeting.attendanceTaken ? ' mtg-primary' : ' secondary' }}">Crear el acta</button>
                     </form>
                 </div>
+                {#- Para quien ya la escribió fuera (Word, su nube): la sube y acaba en la nube del centro igual. -#}
+                {% set maxBytes = constant('App\\Support\\DocumentUpload::MAX_BYTES') %}
+                <details class="mtg-more">
+                    <summary>{{ m.icon('chevron') }}<span>¿Ya la tienes escrita?</span><span class="mtg-more__hint">· en Word, LibreOffice o tu nube de EducaMadrid</span></summary>
+                    <div class="mtg-more__body">
+                        <form method="post" action="{{ path('meeting_minutes_cloud_upload', { id: meeting.id }) }}" enctype="multipart/form-data" class="mtg-option">
+                            <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
+                            <div class="mtg-option__text">
+                                <p class="mtg-option__title">Subir el acta ya escrita</p>
+                                <p class="mtg-option__sub">Word, LibreOffice o PDF, hasta {{ (maxBytes / 1024 / 1024)|round }} MB. Se guarda en la nube del centro en lugar de la plantilla. Si la tienes en tu nube de EducaMadrid, descárgala antes (menú «…» → Descargar).</p>
+                                <p class="mtg-option__file" data-file-name hidden></p>
+                            </div>
+                            <div class="mtg-option__actions">
+                                <label class="btn secondary sm mtg-file">
+                                    <input type="file" name="acta" required accept=".odt,.docx,.doc,.rtf,.pdf" data-max-bytes="{{ maxBytes }}" data-file-pick>
+                                    Elegir archivo…
+                                </label>
+                                <button class="btn tertiary" type="submit">Subir</button>
+                            </div>
+                        </form>
+                    </div>
+                </details>
 
             {% elseif meeting.hasCloudMinutes and cloudUrl and (writes or cloudPublished) %}
                 <div class="mtg-cloud">

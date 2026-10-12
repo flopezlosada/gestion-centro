@@ -222,4 +222,48 @@ final class MeetingCloudMinutesTest extends WebTestCase
         $this->client->request('GET', '/admin/nube');
         self::assertResponseIsSuccessful();
     }
+
+    public function testAnActaWrittenOutsideIsCheckedBeforeItGoesAnywhere(): void
+    {
+        $secretary = $this->user('Natalia', 'natalia.x@educa.madrid.org');
+        $meeting = $this->heldMeeting($secretary);
+        $this->connectCloud();
+        $this->em->flush();
+        $this->client->loginUser($secretary);
+        $crawler = $this->show($meeting);
+        self::assertCount(1, $crawler->filter('form[action$="/acta/nube/subir"]'), 'quien escribe el acta puede subirla ya escrita');
+        $token = self::token($crawler, 'form[action$="/acta/nube/subir"]');
+
+        $image = tempnam(sys_get_temp_dir(), 'acta');
+        file_put_contents((string) $image, 'no es un acta');
+        $this->client->request('POST', '/reuniones/'.$meeting->getId().'/acta/nube/subir', ['_token' => $token], ['acta' => new UploadedFile((string) $image, 'foto.png', 'image/png', null, true)]);
+        self::assertResponseRedirects();
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('.flash.error', 'no es un documento de texto');
+
+        $this->client->request('POST', '/reuniones/'.$meeting->getId().'/acta/nube/subir', ['_token' => $token]);
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('.flash.error', 'Elige el documento del acta');
+
+        self::assertFalse($this->reload($meeting)->hasCloudMinutes(), 'nada ha llegado a la nube');
+    }
+
+    public function testAnActaAlreadyInTheCloudIsNotReplacedByAnUpload(): void
+    {
+        $secretary = $this->user('Natalia', 'natalia.x@educa.madrid.org');
+        $meeting = $this->heldMeeting($secretary);
+        $meeting->attachCloudMinutes('776060721', $secretary, new \DateTimeImmutable());
+        $this->em->flush();
+        $this->client->loginUser($secretary);
+        $crawler = $this->show($meeting);
+        self::assertCount(0, $crawler->filter('form[action$="/acta/nube/subir"]'));
+
+        $doc = tempnam(sys_get_temp_dir(), 'acta');
+        file_put_contents((string) $doc, 'acta');
+        $this->client->request('POST', '/reuniones/'.$meeting->getId().'/acta/nube/subir', ['_token' => self::token($crawler, 'form[action$="/acta/publicar"]')], ['acta' => new UploadedFile((string) $doc, 'acta.docx', null, null, true)]);
+        $this->client->followRedirect();
+
+        self::assertSelectorTextContains('.flash.error', 'ya tiene acta en la nube');
+        self::assertSame('776060721', $this->reload($meeting)->getMinutesCloudFileId());
+    }
 }

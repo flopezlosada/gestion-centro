@@ -53,12 +53,44 @@ final class CloudMinutes
      */
     public function create(Meeting $meeting, User $by, \DateTimeImmutable $now): array
     {
+        return $this->createFrom($meeting, $by, $now, $this->renderer->render($meeting), 'odt');
+    }
+
+    /**
+     * Creates the acta from a document written outside the app — in Word, LibreOffice, or downloaded from
+     * somebody's own cloud — instead of the template, so whoever keeps the minutes their own way is not left
+     * out. The file lands in the centre's account like any acta, and from there it is the same: shared to
+     * edit with whoever keeps the minutes, published by copying it. Its bytes pass through here on their
+     * way and are not kept.
+     *
+     * @param Meeting            $meeting   the meeting, already started
+     * @param User               $by        who uploads it
+     * @param \DateTimeImmutable $now       the current instant
+     * @param string             $content   the document's bytes
+     * @param string             $extension its extension ("docx"), which the cloud uses to open it
+     *
+     * @return list<string> the people it could NOT be shared with, and why
+     *
+     * @throws CloudException when no account is connected or the cloud fails
+     */
+    public function upload(Meeting $meeting, User $by, \DateTimeImmutable $now, string $content, string $extension): array
+    {
+        return $this->createFrom($meeting, $by, $now, $content, strtolower($extension));
+    }
+
+    /**
+     * @return list<string> the people it could NOT be shared with, and why
+     *
+     * @throws CloudException when no account is connected or the cloud fails
+     */
+    private function createFrom(Meeting $meeting, User $by, \DateTimeImmutable $now, string $content, string $extension): array
+    {
         $credentials = $this->requireCredentials();
         $folder = $this->folderFor($meeting);
-        $path = $folder.'/'.self::fileNameFor($meeting);
+        $path = $folder.'/'.substr(self::fileNameFor($meeting), 0, -\strlen('.odt')).'.'.$extension;
 
         $this->cloud->ensureFolder($credentials, $folder);
-        $fileId = $this->uploadOrAdopt($credentials, $path, $meeting);
+        $fileId = $this->uploadOrAdopt($credentials, $path, $content, $meeting);
         $meeting->attachCloudMinutes($fileId, $by, $now);
 
         $keeper = $meeting->minutesKeeper();
@@ -177,10 +209,10 @@ final class CloudMinutes
      *
      * @throws CloudException when the path holds another meeting's acta, or the cloud fails
      */
-    private function uploadOrAdopt(CloudCredentials $credentials, string $path, Meeting $meeting): string
+    private function uploadOrAdopt(CloudCredentials $credentials, string $path, string $content, Meeting $meeting): string
     {
         try {
-            return $this->cloud->upload($credentials, $path, $this->renderer->render($meeting));
+            return $this->cloud->upload($credentials, $path, $content);
         } catch (CloudFileExistsException $e) {
             $fileId = $this->cloud->fileIdAt($credentials, $path);
             $owner = $this->meetings->findOneBy(['minutesCloudFileId' => $fileId]);
@@ -227,12 +259,12 @@ final class CloudMinutes
     }
 
     /**
-     * "…/2026-10-13 Reunión de departamento (publicada).odt": the frozen copy goes beside its draft, so
-     * whoever browses the folder sees both and which is which.
+     * "…/2026-10-13 Reunión de departamento (publicada).odt": the frozen copy goes beside its draft, with
+     * its extension, so whoever browses the folder sees both and which is which.
      */
     private static function publishedPathFor(string $draft): string
     {
-        return preg_replace('#(\.odt)?$#i', ' (publicada).odt', $draft, 1) ?? $draft.' (publicada).odt';
+        return 1 === preg_match('#^(.*?)(\.[A-Za-z0-9]{1,5})?$#', $draft, $parts) ? $parts[1].' (publicada)'.($parts[2] ?? '') : $draft.' (publicada)';
     }
 
     /**

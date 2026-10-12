@@ -606,6 +606,56 @@ final class MeetingController extends AbstractController
     }
 
     /**
+     * Creates the acta in the cloud from a document written outside the app — Word, LibreOffice, or
+     * downloaded from somebody's own cloud — instead of the template ({@see CloudMinutes::upload()}). The
+     * file is read and sent on, never stored here. Once only, like creating it from the template.
+     */
+    #[Route('/{id}/acta/nube/subir', name: 'meeting_minutes_cloud_upload', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function uploadCloudMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, CloudAccount $cloudAccount, CloudMinutes $cloudMinutes): Response
+    {
+        if (!$this->isCsrfTokenValid('meeting_minutes'.$meeting->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+        if (!$access->canWriteMinutes($meeting, $user, $this->isGranted('ROLE_ADMIN'))) {
+            throw $this->createAccessDeniedException('El acta la escribe quien la levanta.');
+        }
+        if (!$meeting->writesMinutesInCloud($cloudAccount->isConnected())) {
+            throw $this->createAccessDeniedException('Esta acta se escribe en la aplicación.');
+        }
+        $this->denyUnlessStarted($meeting);
+        $back = $this->redirectToRoute('meeting_show', ['id' => $meeting->getId(), '_fragment' => 'acta']);
+        if ($meeting->hasCloudMinutes()) {
+            $this->addFlash('error', 'Esta reunión ya tiene acta en la nube: ábrela y corrígela allí.');
+
+            return $back;
+        }
+
+        $file = $request->files->get('acta');
+        $problem = $file instanceof UploadedFile && DocumentUpload::isPresent($file) ? DocumentUpload::minutesProblem($file) : 'Elige el documento del acta.';
+        if (null !== $problem) {
+            $this->addFlash('error', $problem);
+
+            return $back;
+        }
+        \assert($file instanceof UploadedFile);
+
+        try {
+            $problems = $cloudMinutes->upload($meeting, $user, new \DateTimeImmutable(), (string) file_get_contents($file->getPathname()), $file->getClientOriginalExtension());
+            $entityManager->flush();
+        } catch (CloudException $e) {
+            $this->addFlash('error', $e->getMessage());
+
+            return $back;
+        }
+        $this->addFlash('success', 'Acta subida a la nube de EducaMadrid. Ábrela para revisarla y, cuando esté, publícala.');
+        if ([] !== $problems) {
+            $this->addFlash('error', 'No se pudo compartir con: '.implode('; ', $problems).'.');
+        }
+
+        return $back;
+    }
+
+    /**
      * Adds an observation to a published acta ({@see MeetingRemark}): the way somebody who was AT the
      * meeting says a line of its acta is wrong, without being able to rewrite it.
      *
