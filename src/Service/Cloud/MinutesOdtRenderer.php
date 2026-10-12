@@ -35,6 +35,9 @@ final class MinutesOdtRenderer
         $content = $this->twig->render('meeting/acta_cloud/content.xml.twig', [
             'meeting' => $meeting,
             'agendaItems' => self::agendaItems($meeting->getAgenda()),
+            // Solo un acta escrita en la app tiene texto: al pasarla a la nube, se lo lleva puesto.
+            'discussion' => ProseToOdt::convert($meeting->getDiscussion()),
+            'agreements' => ProseToOdt::convert($meeting->getAgreements()),
         ]);
         // La cabecera y el pie de cada página dicen de qué reunión es el acta: también necesitan la reunión.
         $styles = $this->twig->render('meeting/acta_cloud/styles.xml.twig', ['meeting' => $meeting]);

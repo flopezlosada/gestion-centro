@@ -80,6 +80,37 @@
    </text:list-level-style-number>
   </text:list-style>
 
+  {#- El texto de un acta escrita en la app, al pasarla a la nube (App\Service\Cloud\ProseToOdt). -#}
+  <style:style style:name="ProseHeading" style:display-name="Cuerpo · subtítulo" style:family="paragraph" style:parent-style-name="Body">
+   <style:paragraph-properties fo:margin-top="0.3cm" fo:keep-with-next="always"/>
+   <style:text-properties fo:font-weight="bold"/>
+  </style:style>
+  <style:style style:name="Quote" style:display-name="Cita" style:family="paragraph" style:parent-style-name="Body">
+   <style:paragraph-properties fo:margin-left="0.6cm" fo:padding-left="0.3cm" fo:border-left="1.5pt solid #E0D3B0" fo:border-right="none" fo:border-top="none" fo:border-bottom="none"/>
+   <style:text-properties fo:color="#4A453A"/>
+  </style:style>
+  <style:style style:name="ListBody" style:display-name="Lista · elemento" style:family="paragraph" style:parent-style-name="Body">
+   <style:paragraph-properties fo:margin-bottom="0.1cm"/>
+  </style:style>
+  <style:style style:name="Strong" style:family="text"><style:text-properties fo:font-weight="bold"/></style:style>
+  <style:style style:name="Em" style:family="text"><style:text-properties fo:font-style="italic"/></style:style>
+  <style:style style:name="Underline" style:family="text"><style:text-properties style:text-underline-style="solid" style:text-underline-width="auto" style:text-underline-color="font-color"/></style:style>
+  <style:style style:name="Strike" style:family="text"><style:text-properties style:text-line-through-style="solid"/></style:style>
+  <text:list-style style:name="Bullets" style:display-name="Viñetas">
+   <text:list-level-style-bullet text:level="1" text:bullet-char="•">
+    <style:list-level-properties text:list-level-position-and-space-mode="label-alignment">
+     <style:list-level-label-alignment text:label-followed-by="listtab" text:list-tab-stop-position="0.6cm" fo:text-indent="-0.4cm" fo:margin-left="0.6cm"/>
+    </style:list-level-properties>
+   </text:list-level-style-bullet>
+  </text:list-style>
+  <text:list-style style:name="Numbers" style:display-name="Numeración">
+   <text:list-level-style-number text:level="1" style:num-suffix="." style:num-format="1">
+    <style:list-level-properties text:list-level-position-and-space-mode="label-alignment">
+     <style:list-level-label-alignment text:label-followed-by="listtab" text:list-tab-stop-position="0.7cm" fo:text-indent="-0.6cm" fo:margin-left="0.7cm"/>
+    </style:list-level-properties>
+   </text:list-level-style-number>
+  </text:list-style>
+
   {#- La relación de asistencia. -#}
   <style:style style:name="ListHead" style:display-name="Lista · título" style:family="paragraph" style:parent-style-name="Standard">
    <style:paragraph-properties fo:margin-top="0.05cm" fo:margin-bottom="0.15cm" fo:keep-with-next="always"/>

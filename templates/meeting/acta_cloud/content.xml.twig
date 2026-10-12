@@ -12,7 +12,7 @@
 {% set date = start|date('j') ~ ' de ' ~ meses[start|date('n')] ~ ' de ' ~ start|date('Y') -%}
 {% set where = meeting.place ?: (meeting.onlineUrl ? 'Videollamada' : null) -%}
 <?xml version="1.0" encoding="UTF-8"?>
-<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.3">
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" office:version="1.3">
  <office:automatic-styles>
   {#- La ficha: rejilla de cuatro columnas (etiqueta, valor, etiqueta, valor) sobre un fondo cálido. -#}
   <style:style style:name="Card" style:family="table"><style:table-properties style:width="17cm" table:align="left" fo:margin-top="0.1cm" fo:margin-bottom="0.5cm" fo:background-color="#FAF6EC"/></style:style>
@@ -35,7 +35,6 @@
   <style:style style:name="Sign.Cell" style:family="table-cell"><style:table-cell-properties fo:padding-top="0.3cm" fo:padding-bottom="0.3cm" fo:padding-left="0.35cm" fo:padding-right="0.35cm" fo:border="none" fo:background-color="#FAF6EC" style:vertical-align="bottom"/></style:style>
   <style:style style:name="Sign.Space" style:family="table-cell"><style:table-cell-properties fo:padding="0cm" fo:border="none"/></style:style>
 
-  <style:style style:name="Strong" style:family="text"><style:text-properties fo:font-weight="bold"/></style:style>
   <style:style style:name="Num" style:family="text"><style:text-properties fo:color="#B86A00"/></style:style>
  </office:automatic-styles>
  <office:body>
@@ -120,6 +119,10 @@
    {% endfor %}
 
    <text:h text:style-name="Heading_20_1" text:outline-level="1"><text:span text:style-name="Num">3</text:span><text:tab/>Desarrollo de la sesión</text:h>
+   {#- Un acta escrita en la app trae su texto (ya convertido y escapado por ProseToOdt); una nueva, los huecos. -#}
+   {% if discussion %}
+   {{ discussion|raw }}
+   {% else %}
    {% for item in agendaItems %}
    <text:h text:style-name="Heading_20_2" text:outline-level="2">{{ loop.index }}. {{ item }}</text:h>
    <text:p text:style-name="Body"/>
@@ -127,8 +130,14 @@
    <text:p text:style-name="Body"/>
    {% endfor %}
 
+   {% endif %}
+
    <text:h text:style-name="Heading_20_1" text:outline-level="1"><text:span text:style-name="Num">4</text:span><text:tab/>Acuerdos</text:h>
+   {% if agreements %}
+   {{ agreements|raw }}
+   {% else %}
    <text:list text:style-name="Agreements"><text:list-item><text:p text:style-name="Agreement"/></text:list-item></text:list>
+   {% endif %}
 
    {#- El cierre va pegado a las firmas: una página con solo las firmas no dice de qué acta son. -#}
    <text:p text:style-name="Closing">Y no habiendo más asuntos que tratar, se levanta la sesión a las {{ meeting.endAt ? meeting.endAt|date('H:i') : '______' }} horas, de todo lo cual se extiende la presente acta.</text:p>

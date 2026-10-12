@@ -1115,6 +1115,39 @@ class Meeting implements Auditable
     }
 
     /**
+     * Moves an acta written in the app to the cloud: its documents there replace the text and the file
+     * kept here, which are cleared, while its LIFE stays as it was — who wrote it and when, when it was
+     * published and approved. Moving is not publishing again: the people convened already received it.
+     *
+     * @param string      $fileId          the draft's id in the cloud
+     * @param string|null $publishedFileId the id of what was published, for an acta that was
+     *
+     * @return string|null the file kept here that the caller now has to delete, or null if there was none
+     *
+     * @throws \LogicException when the acta is already in the cloud, or a published acta has no copy
+     */
+    public function moveMinutesToCloud(string $fileId, ?string $publishedFileId): ?string
+    {
+        if (null !== $this->minutesCloudFileId) {
+            throw new \LogicException('El acta de esta reunión ya está en la nube.');
+        }
+        if (null !== $this->minutesPublishedAt && null === $publishedFileId) {
+            throw new \LogicException('Un acta publicada necesita su copia publicada en la nube.');
+        }
+
+        $removed = $this->minutesPath;
+        $this->minutesCloudFileId = $fileId;
+        $this->minutesCloudPublishedFileId = $publishedFileId;
+        $this->discussion = null;
+        $this->agreements = null;
+        $this->minutesPath = null;
+        $this->minutesName = null;
+        $this->minutesStale = false;
+
+        return $removed;
+    }
+
+    /**
      * Records the acta's document in the cloud. Leaves it a draft, like {@see attachMinutes()}: creating
      * the document is the start of writing it, not sending it.
      *
