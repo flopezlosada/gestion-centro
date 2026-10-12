@@ -207,8 +207,9 @@ final class MeetingCloudMinutesTest extends WebTestCase
 
     public function testOnlyASuperuserReachesTheCloudConnection(): void
     {
-        $this->client->loginUser($this->user('Docente', 'docente@educa.madrid.org'));
+        $teacher = $this->user('Docente', 'docente@educa.madrid.org');
         $this->em->flush();
+        $this->client->loginUser($teacher);
         $this->client->request('GET', '/admin/nube');
         self::assertResponseStatusCodeSame(403);
 
