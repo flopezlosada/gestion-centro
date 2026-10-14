@@ -872,19 +872,19 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
-     * The guardias already over that still keep the absent teacher's task document.
+     * The guardias before a day that still keep the absent teacher's task document.
      *
-     * @param \DateTimeImmutable $today the first day whose documents are still kept
+     * @param \DateTimeImmutable $day the first day whose documents are still kept
      *
      * @return list<GuardiaCover> the covers whose document can go
      */
-    public function findWithTaskDocumentBefore(\DateTimeImmutable $today): array
+    public function findWithTaskDocumentBefore(\DateTimeImmutable $day): array
     {
         /** @var list<GuardiaCover> $rows */
         $rows = $this->createQueryBuilder('c')
             ->andWhere('c.taskDocumentPath IS NOT NULL')
-            ->andWhere('c.date < :today')
-            ->setParameter('today', $today->setTime(0, 0))
+            ->andWhere('c.date < :day')
+            ->setParameter('day', $day->setTime(0, 0))
             ->getQuery()
             ->getResult();
 

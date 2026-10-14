@@ -117,7 +117,7 @@ final class CopyRequestController extends AbstractController
 
         // Sin esto saldría a conserjería un encargo sin nada que imprimir.
         if (null !== $cover->getTaskDocumentPurgedAt() && null === $cover->getPrintableDocumentPath()) {
-            $this->addFlash('error', 'El documento de esta guardia ya se borró al pasar su día: no hay nada que fotocopiar.');
+            $this->addFlash('error', 'El documento de esta guardia ya se borró: no hay nada que fotocopiar.');
 
             return $this->redirectToRoute('guardia_cover_show', ['id' => $cover->getId()]);
         }

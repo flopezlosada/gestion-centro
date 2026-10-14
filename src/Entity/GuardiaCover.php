@@ -121,9 +121,9 @@ class GuardiaCover implements Auditable
     private ?string $taskDocumentName = null;
 
     /**
-     * When the task document was deleted because its guardia was over (it may carry pupils' data, and
-     * nobody needs it afterwards). Kept so a past guardia still says it HAD a document instead of reading
-     * as a class left without work. Null while the document is kept, or when there never was one.
+     * When the task document was deleted because its school year was over (it may carry pupils' data).
+     * Kept so a past guardia still says it HAD a document instead of reading as a class left without work.
+     * Null while the document is kept, or when there never was one.
      */
     #[ORM\Column(name: 'task_document_purged_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $taskDocumentPurgedAt = null;
@@ -349,7 +349,7 @@ class GuardiaCover implements Auditable
     }
 
     /**
-     * Forgets the task document once its guardia is over, keeping only when that happened. The name goes
+     * Forgets the task document once its school year is over, keeping only when that happened. The name goes
      * too: a filename like «examen adaptado de …» is personal data as well.
      *
      * @param \DateTimeImmutable $at when the purge runs
@@ -370,7 +370,7 @@ class GuardiaCover implements Auditable
     }
 
     /**
-     * When the task document was deleted for being past its guardia, or null.
+     * When the task document was deleted for being from a past school year, or null.
      */
     public function getTaskDocumentPurgedAt(): ?\DateTimeImmutable
     {

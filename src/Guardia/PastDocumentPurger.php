@@ -9,16 +9,18 @@ use App\Entity\GuardiaCover;
 use App\Repository\CopyRequestRepository;
 use App\Repository\GuardiaCoverRepository;
 use App\Service\FileUploader;
+use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Filesystem\Exception\IOExceptionInterface;
 
 /**
- * Deletes the documents of guardias and copy orders whose day is over.
+ * Deletes the documents of copy orders whose day is over, and the task documents of guardias from a past
+ * school year.
  *
- * They exist for that day only: the group works on the task during the guardia, and the copy room gets the
- * file by e-mail, so the app's copy is not what anyone reprints from. Kept any longer they are just pupils'
- * data waiting around (an adapted exam carries a name). The bank of tasks is not touched: its documents are
- * the departments' material, meant to be reused.
+ * A copy order's file exists for that day only: the copy room gets it by e-mail and prints from there.
+ * A guardia's task document is kept for the whole course, so the centre can look back at the work left
+ * for a group; once the course is over it is just pupils' data waiting around (an adapted exam carries a
+ * name). The bank of tasks is not touched: its documents are the departments' material, meant to be reused.
  *
  * The records stay, marked as purged, so a past guardia still says it had a document. The files go only
  * after the change is committed: a failed flush must not leave a row pointing at a file already gone. Each
@@ -36,9 +38,9 @@ final class PastDocumentPurger
     }
 
     /**
-     * Purges every document whose day is before today.
+     * Purges the copy orders' documents from before today and the guardias' from before this course.
      *
-     * @param \DateTimeImmutable $now the moment of the run; its day is the first one still kept
+     * @param \DateTimeImmutable $now the moment of the run
      *
      * @return array{covers: int, orders: int, unremoved: list<string>} how many documents of each kind were
      *                                                                   purged, and the files that could not
@@ -48,7 +50,7 @@ final class PastDocumentPurger
     {
         $coverFiles = array_values(array_filter(array_map(
             static fn (GuardiaCover $cover): ?string => $cover->purgeTaskDocument($now),
-            $this->covers->findWithTaskDocumentBefore($now),
+            $this->covers->findWithTaskDocumentBefore(SchoolYear::bounds(SchoolYear::current($now))[0]),
         )));
         $orderFiles = array_values(array_filter(array_map(
             static fn (CopyRequest $order): ?string => $order->purgeDocument($now),

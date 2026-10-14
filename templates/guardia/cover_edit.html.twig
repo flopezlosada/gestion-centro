@@ -93,7 +93,7 @@
                         </div>
                     {% endif %}
                     <input type="file" id="document" name="document" data-max-bytes="{{ constant('App\\Support\\DocumentUpload::MAX_BYTES') }}">
-                    <p class="field-help">{% if cover.taskDocumentPath %}Si subes otro, sustituye al actual. {% endif %}Se borra de la aplicación al pasar el día de la guardia. Si no hace falta, que no lleve nombres ni datos del alumnado.</p>
+                    <p class="field-help">{% if cover.taskDocumentPath %}Si subes otro, sustituye al actual. {% endif %}Se borra de la aplicación al acabar el curso. Si no hace falta, que no lleve nombres ni datos del alumnado.</p>
                 </div>
 
                 <div class="field">
