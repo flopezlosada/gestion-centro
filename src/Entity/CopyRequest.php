@@ -76,6 +76,14 @@ class CopyRequest
     private ?string $documentName = null;
 
     /**
+     * When the document was deleted because the day it was for had passed: the copy room got it by
+     * e-mail, so the app's copy only serves that day, and it may carry pupils' data. Kept so the listing
+     * says there WAS a document. Null while it is kept, or for a text-only order.
+     */
+    #[ORM\Column(name: 'document_purged_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $documentPurgedAt = null;
+
+    /**
      * One-line summary of what the copies are for, snapshotted when the order is placed ("4º de ESO ·
      * E4D · aula A12 · 30/07, 3ª hora"). Read by the copy room in the subject line and by the app in
      * the listing, so neither depends on the cover still existing.
@@ -173,11 +181,47 @@ class CopyRequest
         return $this->documentPath;
     }
 
+    /**
+     * Sets the document; a new one also clears the mark of an earlier one purged, so an order never holds
+     * a document and says it was deleted at once.
+     */
     public function setDocumentPath(?string $documentPath): static
     {
         $this->documentPath = $documentPath;
+        if (null !== $documentPath) {
+            $this->documentPurgedAt = null;
+        }
 
         return $this;
+    }
+
+    /**
+     * Forgets the document once the day it was for has passed, keeping only when that happened. The
+     * name goes too: a filename can be personal data as well.
+     *
+     * @param \DateTimeImmutable $at when the purge runs
+     *
+     * @return string|null the storage-relative path of the file to delete, or null if there was none
+     */
+    public function purgeDocument(\DateTimeImmutable $at): ?string
+    {
+        $path = $this->documentPath;
+        if (null === $path) {
+            return null;
+        }
+        $this->documentPath = null;
+        $this->documentName = null;
+        $this->documentPurgedAt = $at;
+
+        return $path;
+    }
+
+    /**
+     * When the document was deleted for being past its day, or null.
+     */
+    public function getDocumentPurgedAt(): ?\DateTimeImmutable
+    {
+        return $this->documentPurgedAt;
     }
 
     public function getDocumentName(): ?string

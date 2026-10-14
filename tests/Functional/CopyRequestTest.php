@@ -420,4 +420,44 @@ final class CopyRequestTest extends WebTestCase
         $this->em->clear();
         self::assertFalse($this->em->getRepository(CopyRequest::class)->find($id)?->isDone());
     }
+
+    /**
+     * Once the day is over the document is deleted (the copy room got it by e-mail): the listing says so,
+     * and the order can no longer be resent — it would reach the copy room with nothing to print.
+     */
+    public function testAnOrderWhoseDocumentWasPurgedSaysSoAndCannotBeResent(): void
+    {
+        $user = $this->login();
+        $order = (new CopyRequest())->setRequestedBy($user)->setCopies(10)->setContext('Examen adaptado')
+            ->setRecipient('fotocopias@centro.test')
+            ->setDocumentPath('copy-requests/no-existe.pdf')->setDocumentName('Examen de Lucía.pdf')
+            ->markSent(new \DateTimeImmutable('2026-01-15 08:30'));
+        $this->em->persist($order);
+        $this->em->flush();
+        $id = (int) $order->getId();
+
+        // El token se coge de la página de antes del borrado: así llega quien la tenía abierta desde ayer.
+        $crawler = $this->client->request('GET', '/fotocopias');
+        $action = '/fotocopias/'.$id.'/reenviar';
+        $token = (string) $crawler->filter('form[action="'.$action.'"] input[name="_token"]')->attr('value');
+
+        $order->purgeDocument(new \DateTimeImmutable('2026-01-16 03:00'));
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/fotocopias');
+        $row = $crawler->filter('table')->text();
+        self::assertStringContainsString('Borrado al pasar el día', $row);
+        self::assertStringNotContainsString('Examen de Lucía', $row, 'el nombre del fichero se fue con él');
+        self::assertCount(0, $crawler->filter('form[action="'.$action.'"]'), 'sin documento no se ofrece reenviar');
+
+        $this->client->request('POST', $action, ['_token' => $token]);
+
+        self::assertResponseRedirects('/fotocopias');
+        $this->em->clear();
+        self::assertEquals(
+            new \DateTimeImmutable('2026-01-15 08:30'),
+            $this->em->getRepository(CopyRequest::class)->find($id)?->getSentAt(),
+            'no ha salido un correo nuevo',
+        );
+    }
 }

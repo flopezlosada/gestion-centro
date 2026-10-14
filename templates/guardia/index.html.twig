@@ -312,6 +312,8 @@
                                 <div class="parte-card__taskline">
                                     {% if cover.taskDocumentPath %}
                                         <a class="task-doc" href="{{ path('guardia_task_download', { id: cover.id }) }}">{{ cover.taskDocumentName ?? 'Documento' }}</a>
+                                    {% elseif cover.taskDocumentPurgedAt %}
+                                        <span class="parte-card__taskdesc">Documento borrado al pasar la guardia</span>
                                     {% endif %}
                                     {% if cover.taskDescription %}
                                         <span class="parte-card__taskdesc">{{ cover.taskDescription|excerpt(80) }}</span>
@@ -369,6 +371,8 @@
                                                 <span class="parte-task__text">
                                                     {% if cover.taskDocumentPath %}
                                                         <a class="task-doc" href="{{ path('guardia_task_download', { id: cover.id }) }}">{{ cover.taskDocumentName ?? 'Documento' }}</a>
+                                                    {% elseif cover.taskDocumentPurgedAt %}
+                                                        Documento borrado al pasar la guardia
                                                     {% endif %}
                                                     {# La del banco se distingue de la que dejó el profesor: no es su trabajo, es de repuesto. #}
                                                     {% if cover.hasBankTask %}Ficha del banco · {{ cover.bankItem.title|excerpt(48) }}{% endif %}

@@ -115,6 +115,13 @@ final class CopyRequestController extends AbstractController
     {
         $this->denyAccessUnlessGranted(GuardiaCoverVoter::WORK_ON_TASK, $cover);
 
+        // Sin esto saldría a conserjería un encargo sin nada que imprimir.
+        if (null !== $cover->getTaskDocumentPurgedAt() && null === $cover->getPrintableDocumentPath()) {
+            $this->addFlash('error', 'El documento de esta guardia ya se borró al pasar su día: no hay nada que fotocopiar.');
+
+            return $this->redirectToRoute('guardia_cover_show', ['id' => $cover->getId()]);
+        }
+
         $bankItem = $cover->getBankItem();
 
         $data = new CopyRequestFormData();
@@ -156,6 +163,12 @@ final class CopyRequestController extends AbstractController
         $this->assertMaySee($order, $user);
         $this->assertCsrf($request, 'copy_request_resend'.$order->getId());
 
+        if (null !== $order->getDocumentPurgedAt()) {
+            $this->addFlash('error', 'El documento de este encargo ya se borró al pasar su día: si hace falta, haz un encargo nuevo.');
+
+            return $this->redirectToRoute('copy_request_index');
+        }
+
         if ($mailer->send($order)) {
             $order->markSent(new \DateTimeImmutable());
             $em->flush();
@@ -195,7 +208,9 @@ final class CopyRequestController extends AbstractController
 
         $path = $order->getDocumentPath();
         if (null === $path) {
-            throw $this->createNotFoundException('Este encargo no llevaba documento.');
+            throw $this->createNotFoundException(null !== $order->getDocumentPurgedAt()
+                ? 'El documento de este encargo se borró al pasar su día.'
+                : 'Este encargo no llevaba documento.');
         }
 
         $absolute = $uploader->absolutePath($path);

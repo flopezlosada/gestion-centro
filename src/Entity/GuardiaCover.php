@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Contract\Auditable;
+use App\Contract\AuditRedacted;
 use App\Repository\GuardiaCoverRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
@@ -111,9 +112,21 @@ class GuardiaCover implements Auditable
     #[ORM\Column(name: 'task_document_path', length: 255, nullable: true)]
     private ?string $taskDocumentPath = null;
 
-    /** The original client filename of the task document, kept so the download is served with a name. */
+    /**
+     * The original client filename of the task document, kept so the download is served with a name. Kept
+     * out of the audit log: a filename like «examen adaptado de …» may name a pupil.
+     */
     #[ORM\Column(name: 'task_document_name', length: 255, nullable: true)]
+    #[AuditRedacted]
     private ?string $taskDocumentName = null;
+
+    /**
+     * When the task document was deleted because its guardia was over (it may carry pupils' data, and
+     * nobody needs it afterwards). Kept so a past guardia still says it HAD a document instead of reading
+     * as a class left without work. Null while the document is kept, or when there never was one.
+     */
+    #[ORM\Column(name: 'task_document_purged_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $taskDocumentPurgedAt = null;
 
     /**
      * Free-text explanation for the group that does not come in the document ("el examen está en
@@ -321,11 +334,47 @@ class GuardiaCover implements Auditable
         return $this->taskDocumentPath;
     }
 
+    /**
+     * Sets the task document; a new one also clears the mark of an earlier one purged, so a cover never
+     * holds a document and says it was deleted at once.
+     */
     public function setTaskDocumentPath(?string $taskDocumentPath): static
     {
         $this->taskDocumentPath = $taskDocumentPath;
+        if (null !== $taskDocumentPath) {
+            $this->taskDocumentPurgedAt = null;
+        }
 
         return $this;
+    }
+
+    /**
+     * Forgets the task document once its guardia is over, keeping only when that happened. The name goes
+     * too: a filename like «examen adaptado de …» is personal data as well.
+     *
+     * @param \DateTimeImmutable $at when the purge runs
+     *
+     * @return string|null the storage-relative path of the file to delete, or null if there was none
+     */
+    public function purgeTaskDocument(\DateTimeImmutable $at): ?string
+    {
+        $path = $this->taskDocumentPath;
+        if (null === $path) {
+            return null;
+        }
+        $this->taskDocumentPath = null;
+        $this->taskDocumentName = null;
+        $this->taskDocumentPurgedAt = $at;
+
+        return $path;
+    }
+
+    /**
+     * When the task document was deleted for being past its guardia, or null.
+     */
+    public function getTaskDocumentPurgedAt(): ?\DateTimeImmutable
+    {
+        return $this->taskDocumentPurgedAt;
     }
 
     public function getTaskDocumentName(): ?string
@@ -365,15 +414,15 @@ class GuardiaCover implements Auditable
     }
 
     /**
-     * Whether this cover carries anything for the covering guardia to work with — a task document, a
-     * description, or one taken from the bank. Drives the "tiene tarea / sin tarea" cues across the
-     * guardia screens.
+     * Whether this cover carries anything for the covering guardia to work with — a task document (also
+     * one already purged: the class did have work), a description, or one taken from the bank. Drives
+     * the "tiene tarea / sin tarea" cues across the guardia screens.
      *
-     * @return bool true if there is a document, a description or a bank task
+     * @return bool true if there is or was a document, a description or a bank task
      */
     public function hasTask(): bool
     {
-        return null !== $this->taskDocumentPath || null !== $this->taskDescription || null !== $this->bankItem;
+        return null !== $this->taskDocumentPath || null !== $this->taskDocumentPurgedAt || null !== $this->taskDescription || null !== $this->bankItem;
     }
 
     /**

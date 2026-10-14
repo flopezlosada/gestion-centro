@@ -1054,7 +1054,9 @@ final class GuardiaController extends AbstractController
     {
         $path = $cover->getTaskDocumentPath();
         if (null === $path) {
-            throw $this->createNotFoundException('Esta guardia no tiene documento de tarea.');
+            throw $this->createNotFoundException(null !== $cover->getTaskDocumentPurgedAt()
+                ? 'El documento de tarea de esta guardia se borró al pasar su día.'
+                : 'Esta guardia no tiene documento de tarea.');
         }
 
         $isGuardia = $cover->getAssignedGuardia()?->getId() === $user->getId();

@@ -59,6 +59,9 @@ final class CentreCronManifest implements CronManifest
 
     public const string CRON_CLOUD_SHARES = 'cron.cloud_shares';
 
+    /** Borrado de los documentos de tarea y de fotocopias cuyo día ya pasó. */
+    public const string CRON_PURGE_PAST_DOCUMENTS = 'cron.purge_past_documents';
+
     /**
      * Cuántos minutos entre pasadas de los barridos con antelación en minutos.
      *
@@ -163,6 +166,16 @@ final class CentreCronManifest implements CronManifest
             'needs_recipient' => false,
             'dry' => false,
         ],
+        self::CRON_PURGE_PAST_DOCUMENTS => [
+            'command' => 'app:guardias:purge-past-documents',
+            // De madrugada: el día anterior ya está cerrado y el de hoy aún no ha empezado.
+            'schedule' => ['freq' => 'daily', 'hour' => 3],
+            'max_delay_hours' => 36,
+            'requires' => [],
+            'depends_on' => [],
+            'needs_recipient' => false,
+            'dry' => false,
+        ],
         self::CRON_PURGE_LOG => [
             'command' => 'app:cron:purge-log',
             // De madrugada, cuando nadie está usando la aplicación y el registro del día ya está
@@ -185,6 +198,7 @@ final class CentreCronManifest implements CronManifest
         self::CRON_MEETING_REMINDERS => 'Avisos de reuniones',
         self::CRON_CLOUD_SHARES => 'Actas por compartir en la nube',
         self::CRON_RECURRING_MEETINGS => 'Reuniones periódicas',
+        self::CRON_PURGE_PAST_DOCUMENTS => 'Borrado de documentos de días pasados',
         self::CRON_PURGE_LOG => 'Poda del registro de ejecuciones',
     ];
 
