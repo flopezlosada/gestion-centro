@@ -58,6 +58,9 @@
             <script src="{{ asset_ver('/js/task-form.js') }}"></script>
             <script src="{{ asset_ver('/js/table-tools.js') }}"></script>
             <script src="{{ asset_ver('/js/confirm-dialog.js') }}"></script>
+            {#- Global, como el aviso de tamaño: un formulario ya enviado no se vuelve a mandar por pulsar otra vez
+                el botón mientras la conexión va lenta. -#}
+            <script src="{{ asset_ver('/js/form-once.js') }}"></script>
             <script src="{{ asset_ver('/js/toast.js') }}"></script>
             <script src="{{ asset_ver('/js/calendar-filter.js') }}"></script>
             <script src="{{ asset_ver('/js/day-add.js') }}"></script>

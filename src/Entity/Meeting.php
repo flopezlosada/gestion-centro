@@ -469,6 +469,16 @@ class Meeting implements Auditable
         return $this->minutesPublishedAt;
     }
 
+    /**
+     * Which publication of the acta a page was showing: the publish form carries it, and a publish that
+     * arrives with an older one is a repeat — a second press, another tab — of something already done.
+     * Empty while unpublished.
+     */
+    public function minutesPublicationVersion(): string
+    {
+        return null === $this->minutesPublishedAt ? '' : (string) $this->minutesPublishedAt->getTimestamp();
+    }
+
     public function getMinutesPublishedBy(): ?User
     {
         return $this->minutesPublishedBy;

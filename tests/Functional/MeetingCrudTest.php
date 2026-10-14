@@ -821,6 +821,54 @@ final class MeetingCrudTest extends WebTestCase
     }
 
     /**
+     * With a slow connection the button gets pressed again, and every press is a whole request. The second
+     * one arrives carrying the page's version of the acta, already outdated by the first: it must not send
+     * the acta and the notices to everybody again.
+     */
+    public function testASecondPressOnPublishFromTheSamePageDoesNotPublishAgain(): void
+    {
+        $convener = $this->user('Lucía Coordina', 'lucia40.meet@centro.test');
+        $attendee = $this->user('Pedro Convocado', 'pedro40.meet@centro.test');
+        $meeting = new Meeting($convener, 'CCP de noviembre', new \DateTimeImmutable('-2 hours'));
+        $meeting->addAttendee($convener)->addAttendee($attendee);
+        $this->em->persist($meeting);
+        $this->em->flush();
+        $id = (int) $meeting->getId();
+
+        $this->client->loginUser($convener);
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $uploadUrl = '/reuniones/'.$id.'/acta';
+        $token = (string) $crawler->filter('form[action="'.$uploadUrl.'"] input[name="_token"]')->attr('value');
+        $this->client->request('POST', $uploadUrl, ['_token' => $token], ['acta' => $this->actaFile()]);
+
+        // Los dos envíos salen de la MISMA página: mismo token, misma versión (sin publicar todavía).
+        $crawler = $this->client->request('GET', '/reuniones/'.$id);
+        $publishUrl = '/reuniones/'.$id.'/acta/publicar';
+        $form = $crawler->filter('form[action="'.$publishUrl.'"]');
+        $fields = [
+            '_token' => (string) $form->filter('input[name="_token"]')->attr('value'),
+            'version' => (string) $form->filter('input[name="version"]')->attr('value'),
+        ];
+        self::assertSame('', $fields['version'], 'un acta sin publicar va sin versión');
+
+        $this->client->request('POST', $publishUrl, $fields);
+        self::assertResponseRedirects();
+        $this->client->request('POST', $publishUrl, $fields);
+        self::assertResponseRedirects();
+        $this->client->followRedirect();
+        self::assertAnySelectorTextContains('.flash.success', 'no se ha repetido');
+
+        $this->em->clear();
+        self::assertSame(1, $this->noticesOf($this->em->getRepository(User::class)->find($attendee->getId()), 'meeting.minutes'), 'un solo aviso, no dos');
+
+        // Una corrección de verdad sale de una página cargada DESPUÉS de publicar, que ya lleva esta versión.
+        $stored = $this->em->getRepository(Meeting::class)->find($id);
+        self::assertInstanceOf(Meeting::class, $stored);
+        self::assertNotSame('', $stored->minutesPublicationVersion());
+        self::getContainer()->get(FileUploader::class)->remove((string) $stored->getMinutesPath());
+    }
+
+    /**
      * Los dos pasos que pidió el centro: guardar deja un borrador que no ve nadie, y PUBLICAR es el gesto
      * que la reparte — aviso a los convocados y el PDF por correo, adjunto.
      */

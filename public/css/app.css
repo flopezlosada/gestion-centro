@@ -496,6 +496,8 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 500; color: var(--te
     transition: background .12s ease, border-color .12s ease;
 }
 .btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+/* El formulario ya va de camino (js/form-once.js): el botón se queda quieto y dice «espera». */
+.is-submitting, .is-submitting:hover { opacity: .6; cursor: progress; }
 .btn.secondary, .btn-secondary {
     background: transparent;
     color: var(--accent-ink);

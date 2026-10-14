@@ -343,6 +343,7 @@
                                 <a class="btn tertiary sm" href="{{ cloudUrl }}" target="_blank" rel="noopener noreferrer">Abrir el borrador{{ m.icon('external') }}</a>
                                 <form method="post" action="{{ path('meeting_minutes_publish', { id: meeting.id }) }}" data-confirm="¿Publicar la corrección? Las personas convocadas pasarán a leer el borrador tal como está ahora y recibirán el aviso.">
                                     <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
+                                    <input type="hidden" name="version" value="{{ meeting.minutesPublicationVersion }}">
                                     <button type="submit" class="btn secondary sm">Publicar la corrección</button>
                                 </form>
                             </div>
@@ -369,6 +370,7 @@
                         <p><strong>Cuando la tengas terminada, publícala.</strong> Se guarda una copia tal como esté, que es la que leen las {{ people|length }} personas de la reunión, y les llega el aviso.</p>
                         <form method="post" action="{{ path('meeting_minutes_publish', { id: meeting.id }) }}" data-confirm="¿Publicar el acta? Se compartirá para leer con todas las personas convocadas.">
                             <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
+                            <input type="hidden" name="version" value="{{ meeting.minutesPublicationVersion }}">
                             <button type="submit" class="btn secondary">Publicar el acta</button>
                         </form>
                     </div>
@@ -588,6 +590,7 @@
                     <p><strong>Es un borrador al día.</strong> Solo lo ves tú. Al publicarlo se envía por correo a las {{ people|length }} personas de la reunión.</p>
                     <form method="post" action="{{ path('meeting_minutes_publish', { id: meeting.id }) }}" id="publish-form" data-confirm="¿Publicar el acta? Se enviará por correo, con el PDF adjunto, a todas las personas convocadas." data-confirm-unsaved="Tienes cambios sin guardar en el acta y no irán en lo que se envía: se publica el PDF que ya está generado, y lo escrito se perderá. ¿Publicar igualmente?">
                         <input type="hidden" name="_token" value="{{ csrf_token('meeting_minutes' ~ meeting.id) }}">
+                        <input type="hidden" name="version" value="{{ meeting.minutesPublicationVersion }}">
                         <button type="submit" class="btn mtg-primary">Publicar y enviar por correo</button>
                     </form>
                 </div>
