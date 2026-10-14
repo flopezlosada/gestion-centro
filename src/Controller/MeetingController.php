@@ -20,6 +20,7 @@ use App\Service\Cloud\CloudAccount;
 use App\Service\Cloud\CloudException;
 use App\Service\Cloud\CloudMinutes;
 use App\Service\Cloud\CloudShareQueue;
+use App\Service\Cron\TaskLock;
 use App\Service\FileUploader;
 use App\Service\MeetingAccess;
 use App\Service\MeetingNotifier;
@@ -478,7 +479,7 @@ final class MeetingController extends AbstractController
      * ({@see Meeting::attachMinutes()}), así que lo publicado y lo que hay siempre coinciden.
      */
     #[Route('/{id}/acta/publicar', name: 'meeting_minutes_publish', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function publishMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, MeetingNotifier $notifier, MinutesMailer $mailer, CloudMinutes $cloudMinutes): Response
+    public function publishMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, MeetingNotifier $notifier, MinutesMailer $mailer, CloudMinutes $cloudMinutes, TaskLock $lock): Response
     {
         if (!$this->isCsrfTokenValid('meeting_minutes'.$meeting->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
@@ -488,6 +489,39 @@ final class MeetingController extends AbstractController
         }
         $this->denyUnlessStarted($meeting);
 
+        // Publicar avisa y comparte con todas las personas de la reunión: hacerlo dos veces es repetirles todo.
+        // El cerrojo para las dos peticiones a la vez (dos pestañas, dos personas); la versión, para la que
+        // llega cuando la primera ya terminó (el segundo clic con la conexión lenta).
+        $key = 'meeting.publish.'.$meeting->getId();
+        if (!$lock->acquire($key)) {
+            $this->addFlash('warning', 'El acta se está publicando ahora mismo: espera unos segundos y recarga la página.');
+
+            return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId(), '_fragment' => 'acta']);
+        }
+        try {
+            $entityManager->refresh($meeting);
+            if ($request->request->has('version') && (string) $request->request->get('version') !== $meeting->minutesPublicationVersion()) {
+                // Si ya no está publicada es que alguien la cambió desde otra página: publicar lo que esta no
+                // enseñaba sería una sorpresa, así que tampoco, pero sin decir que ya está hecho.
+                $this->addFlash(...$meeting->isMinutesPublished()
+                    ? ['success', 'El acta ya está publicada: este segundo envío no se ha repetido.']
+                    : ['warning', 'El acta ha cambiado desde que abriste la página: revísala y vuelve a publicarla.']);
+
+                return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId(), '_fragment' => 'acta']);
+            }
+
+            return $this->publishLocked($meeting, $user, $entityManager, $notifier, $mailer, $cloudMinutes);
+        } finally {
+            $lock->release($key);
+        }
+    }
+
+    /**
+     * Publishes the acta, with the meeting's publish lock already held: the cloud copy and its shares, or
+     * the PDF by e-mail.
+     */
+    private function publishLocked(Meeting $meeting, User $user, EntityManagerInterface $entityManager, MeetingNotifier $notifier, MinutesMailer $mailer, CloudMinutes $cloudMinutes): Response
+    {
         // El acta en la nube: la nube hace una copia congelada y es esa la que se comparte para leer. Primero
         // la copia y después «publicada»: si la nube falla, el acta no queda publicada sin nada que leer. No
         // hay PDF que mandar por correo: el texto no sale de EducaMadrid.
