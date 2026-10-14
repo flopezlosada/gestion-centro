@@ -30,6 +30,9 @@ final class EducamadridCloud
     /** OCS share permission: read and update — what editing a document takes. */
     public const int PERMISSION_EDIT = 3;
 
+    /** OCS share type: with one user of the same cloud. */
+    private const int SHARE_TYPE_USER = 0;
+
     /**
      * Seconds without an answer before a call is given up. Without it a cloud that hangs holds the request
      * until PHP kills it, halfway through whatever it was doing.
@@ -217,43 +220,69 @@ final class EducamadridCloud
     }
 
     /**
-     * Shares a file with several cloud users at once: the requests go out together and are read as they
-     * come back, so sharing with a whole claustro takes about as long as the slowest share and not the
-     * sum of them all.
+     * Shares a file with one cloud user. One at a time on purpose: the cloud lets an account create only 20
+     * shares every 10 minutes, so firing a whole claustro at once only gets more of them refused.
      *
      * @param CloudCredentials $credentials the owner's account
      * @param string           $path        the file, relative to the account root
-     * @param list<string>     $logins      the other users' cloud logins
+     * @param string           $login       the other user's cloud login
      * @param int              $permissions {@see PERMISSION_READ} or {@see PERMISSION_EDIT}
      *
-     * @return array<string, string|null> per login, null when shared or the reason it was not (unknown
-     *                                    user, cloud unreachable…) — a reason and not an exception, because
-     *                                    one person who cannot be reached must not stop the rest
+     * @return string|null null when shared, or the cloud's reason when it refused this person (an unknown
+     *                     user…) — a reason and not an exception, because one person who cannot be reached
+     *                     must not stop the rest
+     *
+     * @throws CloudRateLimitedException when the account has used up its shares for now
+     * @throws CloudException            when the cloud cannot be reached
      */
-    public function shareWithEach(CloudCredentials $credentials, string $path, array $logins, int $permissions): array
+    public function share(CloudCredentials $credentials, string $path, string $login, int $permissions): ?string
     {
-        $responses = [];
-        foreach ($logins as $login) {
-            $responses[$login] = $this->httpClient->request('POST', self::BASE_URL.'/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json', [
-                'auth_basic' => [$credentials->login, $credentials->appPassword],
-                'headers' => ['OCS-APIRequest' => 'true'],
-                'body' => ['path' => '/'.ltrim($path, '/'), 'shareType' => 0, 'shareWith' => $login, 'permissions' => $permissions],
-                'timeout' => self::TIMEOUT,
-            ]);
+        $response = $this->send('POST', self::BASE_URL.'/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json', [
+            'auth_basic' => [$credentials->login, $credentials->appPassword],
+            'headers' => ['OCS-APIRequest' => 'true'],
+            'body' => ['path' => '/'.ltrim($path, '/'), 'shareType' => self::SHARE_TYPE_USER, 'shareWith' => $login, 'permissions' => $permissions],
+        ]);
+        $status = $response->getStatusCode();
+        if (200 === $status) {
+            return null;
+        }
+        if (429 === $status) {
+            throw new CloudRateLimitedException('La nube de EducaMadrid no deja compartir más por ahora: se reintentará en unos minutos.');
+        }
+        try {
+            $message = $this->json($response)['ocs']['meta']['message'] ?? null;
+        } catch (CloudException) {
+            $message = null;
         }
 
-        return array_map(function (ResponseInterface $response): ?string {
-            try {
-                if (200 === $response->getStatusCode()) {
-                    return null;
-                }
-                $data = $response->toArray(false);
+        return \is_string($message) && '' !== $message ? $message : 'HTTP '.$status;
+    }
 
-                return (string) ($data['ocs']['meta']['message'] ?? 'HTTP '.$response->getStatusCode());
-            } catch (ExceptionInterface) {
-                return 'No se pudo contactar con la nube de EducaMadrid.';
-            }
-        }, $responses);
+    /**
+     * The cloud users a file is already shared with. Reading shares does not count against the limit on
+     * creating them, so asking first is how a retry skips who already has it — instead of creating it
+     * again and reading "already shared" out of a translated error.
+     *
+     * @param CloudCredentials $credentials the owner's account
+     * @param string           $path        the file, relative to the account root
+     *
+     * @return list<string> their cloud logins
+     *
+     * @throws CloudException when the cloud cannot be reached or answers something else
+     */
+    public function sharedWith(CloudCredentials $credentials, string $path): array
+    {
+        $response = $this->send('GET', self::BASE_URL.'/ocs/v2.php/apps/files_sharing/api/v1/shares?'.http_build_query(['format' => 'json', 'path' => '/'.ltrim($path, '/')]), [
+            'auth_basic' => [$credentials->login, $credentials->appPassword],
+            'headers' => ['OCS-APIRequest' => 'true'],
+        ]);
+        $this->expect($response->getStatusCode(), [200], 'leer con quién está compartido el documento');
+        $shares = $this->json($response)['ocs']['data'] ?? [];
+
+        return array_values(array_map(
+            static fn (array $share): string => strtolower((string) $share['share_with']),
+            array_filter(\is_array($shares) ? $shares : [], static fn (mixed $share): bool => \is_array($share) && self::SHARE_TYPE_USER === (int) ($share['share_type'] ?? -1) && isset($share['share_with'])),
+        ));
     }
 
     /**

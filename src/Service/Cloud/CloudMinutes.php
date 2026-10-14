@@ -8,8 +8,6 @@ use App\Entity\Meeting;
 use App\Entity\User;
 use App\Repository\MeetingRepository;
 use App\Service\AppSettings;
-use Psr\Log\LoggerInterface;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
  * The acta as a document in the centre's EducaMadrid cloud: created from a template in the centre's
@@ -18,24 +16,18 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * published while the draft can still be corrected; correcting is publishing again. The app keeps only
  * the documents' ids; the text never comes back here, not even to make the copy.
  *
- * Who it is shared with goes through CLOUD_SHARE_WITH, and the default is NOBODY: "all" in production, a
- * comma-separated list of cloud logins anywhere else. A development database holds the real staff list,
- * and sharing a document makes the cloud notify a real person — so forgetting to configure it must fail
- * silent, not loud.
+ * Sharing goes through a queue ({@see CloudShareQueue}): the cloud allows only so many shares at a time,
+ * so each method shares what fits at once and says what is left.
  */
 final class CloudMinutes
 {
-    private const string EDUCAMADRID_DOMAIN = '@educa.madrid.org';
-
     public function __construct(
         private readonly CloudAccount $account,
         private readonly EducamadridCloud $cloud,
         private readonly MinutesOdtRenderer $renderer,
         private readonly AppSettings $settings,
         private readonly MeetingRepository $meetings,
-        private readonly LoggerInterface $logger,
-        #[Autowire(env: 'default::CLOUD_SHARE_WITH')]
-        private readonly ?string $shareWith,
+        private readonly CloudShareQueue $queue,
     ) {
     }
 
@@ -47,7 +39,7 @@ final class CloudMinutes
      * @param User               $by      who asked for it
      * @param \DateTimeImmutable $now     the current instant
      *
-     * @return list<string> the people it could NOT be shared with, and why, for the screen to say
+     * @return array{pending: int, problems: list<string>} the shares still to be made, and who was left out and why
      *
      * @throws CloudException when no account is connected or the cloud fails
      */
@@ -69,7 +61,7 @@ final class CloudMinutes
      * @param string             $content   the document's bytes
      * @param string             $extension its extension ("docx"), which the cloud uses to open it
      *
-     * @return list<string> the people it could NOT be shared with, and why
+     * @return array{pending: int, problems: list<string>} the shares still to be made, and who was left out and why
      *
      * @throws CloudException when no account is connected or the cloud fails
      */
@@ -79,7 +71,7 @@ final class CloudMinutes
     }
 
     /**
-     * @return list<string> the people it could NOT be shared with, and why
+     * @return array{pending: int, problems: list<string>} the shares still to be made, and who was left out and why
      *
      * @throws CloudException when no account is connected or the cloud fails
      */
@@ -94,8 +86,9 @@ final class CloudMinutes
         $meeting->attachCloudMinutes($fileId, $by, $now);
 
         $keeper = $meeting->minutesKeeper();
+        $this->queue->enqueue($meeting, $fileId, null === $keeper ? [] : [$keeper], EducamadridCloud::PERMISSION_EDIT, notify: false);
 
-        return null === $keeper ? [] : $this->shareWithPeople($credentials, $path, [$keeper], EducamadridCloud::PERMISSION_EDIT);
+        return $this->shareNow($meeting);
     }
 
     /**
@@ -107,7 +100,7 @@ final class CloudMinutes
      * @param Meeting $meeting a meeting whose acta is in the cloud
      * @param User    $by      who publishes it
      *
-     * @return list<string> the people it could NOT be shared with, and why
+     * @return array{pending: int, problems: list<string>} the shares still to be made, and who was left out and why
      *
      * @throws CloudException when no account is connected, the draft is gone or the cloud fails
      */
@@ -119,8 +112,9 @@ final class CloudMinutes
 
         $copyId = $this->cloud->copy($credentials, $draft, self::publishedPathFor($draft));
         $meeting->publishCloudMinutes($copyId, $by);
+        $this->queue->enqueue($meeting, $copyId, $meeting->people(), EducamadridCloud::PERMISSION_READ, notify: true);
 
-        return $this->shareWithPeople($credentials, self::publishedPathFor($draft), $meeting->people(), EducamadridCloud::PERMISSION_READ);
+        return $this->shareNow($meeting);
     }
 
     /**
@@ -136,7 +130,7 @@ final class CloudMinutes
      * @param Meeting     $meeting a meeting whose acta was written in the app
      * @param string|null $file    the bytes of its file here, or null when it has none
      *
-     * @return list<string> the people it could NOT be shared with, and why
+     * @return array{pending: int, problems: list<string>} the shares still to be made, and who was left out and why
      *
      * @throws CloudException  when no account is connected or the cloud fails
      * @throws \LogicException when there is nothing to move, or a published acta has no file
@@ -162,11 +156,9 @@ final class CloudMinutes
         $draftId = $this->uploadOrAdopt($credentials, $draftPath, $hasText ? $this->renderer->render($meeting) : (string) $file, $meeting);
 
         // Lo que se leyó: el fichero que recibieron las personas convocadas.
-        $publishedPath = null;
         $publishedId = null;
         if ($meeting->isMinutesPublished()) {
-            $publishedPath = self::publishedPathFor($base.'.'.$fileExtension);
-            $publishedId = $this->uploadOrAdopt($credentials, $publishedPath, (string) $file, $meeting);
+            $publishedId = $this->uploadOrAdopt($credentials, self::publishedPathFor($base.'.'.$fileExtension), (string) $file, $meeting);
         } elseif ($hasText && null !== $file) {
             // Un fichero sin publicar junto a un texto: puede ser un acta subida de fuera que no dice lo
             // mismo. No se tira: va al lado, sin compartir, para quien lleva la cuenta del centro.
@@ -175,10 +167,7 @@ final class CloudMinutes
 
         $meeting->moveMinutesToCloud($draftId, $publishedId);
 
-        $keeper = $meeting->minutesKeeper();
-        $problems = null === $keeper ? [] : $this->shareWithPeople($credentials, $draftPath, [$keeper], EducamadridCloud::PERMISSION_EDIT);
-
-        return null === $publishedPath ? $problems : [...$problems, ...$this->shareWithPeople($credentials, $publishedPath, $meeting->people(), EducamadridCloud::PERMISSION_READ)];
+        return $this->reshare($meeting);
     }
 
     /**
@@ -203,60 +192,26 @@ final class CloudMinutes
     }
 
     /**
-     * A person's login in the EducaMadrid cloud: their e-mail's local part, when the e-mail is an
-     * EducaMadrid one (checked against a real account: natalia.x@educa.madrid.org logs in as natalia.x).
+     * Queues again every share a cloud acta should have — the draft to EDIT with whoever keeps the
+     * minutes, what was published to READ with everybody convened — without telling anybody: whoever
+     * already has it is skipped, so this only fills in what is missing (shares the cloud refused, a
+     * person convened after it was published).
      *
-     * @return string|null the login, or null for somebody without an EducaMadrid e-mail
-     */
-    public static function cloudLoginOf(User $user): ?string
-    {
-        $email = strtolower($user->getEmail());
-
-        return str_ends_with($email, self::EDUCAMADRID_DOMAIN) ? substr($email, 0, -\strlen(self::EDUCAMADRID_DOMAIN)) : null;
-    }
-
-    /**
-     * @param list<User> $people
+     * @param Meeting $meeting a meeting whose acta is in the cloud
      *
-     * @return list<string> who it could not be shared with, and why
+     * @return array{pending: int, problems: list<string>} the shares still to be made, and who was left out and why
      */
-    private function shareWithPeople(CloudCredentials $credentials, string $path, array $people, int $permissions): array
+    public function reshare(Meeting $meeting): array
     {
-        $allowed = $this->allowedLogins();
-        $problems = [];
-        $toShare = [];
-        foreach ($people as $person) {
-            $login = self::cloudLoginOf($person);
-            $problem = match (true) {
-                null === $login => 'no tiene correo de EducaMadrid',
-                $login === strtolower($credentials->login) => null,
-                null !== $allowed && !\in_array($login, $allowed, true) => 'fuera de CLOUD_SHARE_WITH (entorno de pruebas)',
-                default => false,
-            };
-            if (false === $problem) {
-                $toShare[$login] = $person;
-            } elseif (null !== $problem) {
-                $problems[] = $this->noteUnshared($person, $problem);
-            }
+        $draftId = $meeting->getMinutesCloudFileId() ?? throw new \LogicException('Esta reunión no tiene acta en la nube.');
+        $keeper = $meeting->minutesKeeper();
+        $this->queue->enqueue($meeting, $draftId, null === $keeper ? [] : [$keeper], EducamadridCloud::PERMISSION_EDIT, notify: false);
+        $publishedId = $meeting->getMinutesCloudPublishedFileId();
+        if (null !== $publishedId) {
+            $this->queue->enqueue($meeting, $publishedId, $meeting->people(), EducamadridCloud::PERMISSION_READ, notify: false);
         }
 
-        foreach ($this->cloud->shareWithEach($credentials, $path, array_map(strval(...), array_keys($toShare)), $permissions) as $login => $problem) {
-            if (null !== $problem) {
-                $problems[] = $this->noteUnshared($toShare[$login], $problem);
-            }
-        }
-
-        return $problems;
-    }
-
-    /**
-     * @return string the line the screen shows for somebody it could not be shared with
-     */
-    private function noteUnshared(User $person, string $problem): string
-    {
-        $this->logger->info('Acta en la nube no compartida', ['user' => $person->getId(), 'reason' => $problem]);
-
-        return $person->getFullName().': '.$problem;
+        return $this->shareNow($meeting);
     }
 
     /**
@@ -283,16 +238,16 @@ final class CloudMinutes
     }
 
     /**
-     * @return list<string>|null the logins it may be shared with, or null for everybody
+     * Shares what the cloud allows right now — this meeting's and whatever was waiting before it — and says
+     * what is left of this meeting's.
+     *
+     * @return array{pending: int, problems: list<string>}
      */
-    private function allowedLogins(): ?array
+    private function shareNow(Meeting $meeting): array
     {
-        $setting = trim((string) $this->shareWith);
+        $this->queue->process();
 
-        return 'all' === $setting ? null : array_values(array_filter(array_map(
-            static fn (string $l): string => strtolower(trim($l)),
-            explode(',', $setting),
-        )));
+        return $this->queue->leftFor($meeting);
     }
 
     /**

@@ -54,6 +54,7 @@ final class CronController extends AbstractController
         CentreCronManifest::CRON_GUARDIA_RAICES_REMINDERS,
         CentreCronManifest::CRON_GUARDIA_DUTY_REMINDERS,
         CentreCronManifest::CRON_MEETING_REMINDERS,
+        CentreCronManifest::CRON_CLOUD_SHARES,
     ];
 
     public function __construct(
@@ -85,7 +86,7 @@ final class CronController extends AbstractController
     }
 
     /**
-     * Cada pocos minutos: los cuatro barridos con antelación de minutos.
+     * Cada pocos minutos: los barridos con antelación de minutos.
      *
      * Ninguno detiene a los demás si falla, al contrario que antes. El cambio es deliberado: el runner
      * registra cada tarea con su propio resultado, así que un fallo persistente ya se ve en el registro

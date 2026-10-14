@@ -348,6 +348,18 @@
                             </div>
                         </div>
                     {% endif %}
+                    {#- La nube solo deja compartir unas pocas cada diez minutos: lo que falta lo completa la tarea
+                        programada, y lo que no se pudo se dice con su motivo. -#}
+                    {% if cloudSharing and (cloudSharing.pending > 0 or cloudSharing.problems is not empty) %}
+                        <div class="mtg-cloud__note">
+                            {% if cloudSharing.pending > 0 %}
+                                <p class="mtg-cloud__text">Falta compartirla con {{ cloudSharing.pending }} persona{{ cloudSharing.pending == 1 ? '' : 's' }}: la nube de EducaMadrid solo deja unas pocas cada diez minutos, así que se completa sola.</p>
+                            {% endif %}
+                            {% if cloudSharing.problems is not empty %}
+                                <p class="mtg-cloud__text">No se pudo compartir con: {{ cloudSharing.problems|join('; ') }}.</p>
+                            {% endif %}
+                        </div>
+                    {% endif %}
                 </div>
 
                 {% if not writes %}{{ m.attendance(meeting, people) }}{% endif %}

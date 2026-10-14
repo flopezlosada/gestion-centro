@@ -273,4 +273,18 @@ class MeetingRepository extends ServiceEntityRepository
             ->getQuery()
             ->getResult();
     }
+
+    /**
+     * The meetings whose acta is a document in the EducaMadrid cloud, oldest first.
+     *
+     * @return list<Meeting>
+     */
+    public function findWithCloudMinutes(): array
+    {
+        return $this->createQueryBuilder('m')
+            ->andWhere('m.minutesCloudFileId IS NOT NULL')
+            ->orderBy('m.startAt', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
 }

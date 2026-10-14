@@ -19,6 +19,7 @@ use App\Repository\UserRepository;
 use App\Service\Cloud\CloudAccount;
 use App\Service\Cloud\CloudException;
 use App\Service\Cloud\CloudMinutes;
+use App\Service\Cloud\CloudShareQueue;
 use App\Service\FileUploader;
 use App\Service\MeetingAccess;
 use App\Service\MeetingNotifier;
@@ -221,7 +222,7 @@ final class MeetingController extends AbstractController
      * team ({@see MeetingAccess::isLeadership()}); nobody else.
      */
     #[Route('/{id}', name: 'meeting_show', requirements: ['id' => '\d+'], methods: ['GET'])]
-    public function show(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, MeetingRemarkRepository $remarks, MeetingRepository $meetings, AuditLogRepository $auditLog, MeetingActivityPresenter $activity, CloudAccount $cloudAccount, CloudMinutes $cloudMinutes): Response
+    public function show(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, MeetingRemarkRepository $remarks, MeetingRepository $meetings, AuditLogRepository $auditLog, MeetingActivityPresenter $activity, CloudAccount $cloudAccount, CloudMinutes $cloudMinutes, CloudShareQueue $shareQueue): Response
     {
         $isAdmin = $this->isGranted('ROLE_ADMIN');
         if (!$access->canSee($meeting, $user, $isAdmin)) {
@@ -272,6 +273,9 @@ final class MeetingController extends AbstractController
             'cloudMode' => $meeting->writesMinutesInCloud($cloudAccount->isConnected()),
             'cloudUrl' => $cloudMinutes->urlFor($meeting),
             'cloudPublishedUrl' => $cloudMinutes->publishedUrlFor($meeting),
+            // Lo que queda por compartir en la nube y con quién no se pudo: lo ve solo quien escribe el acta,
+            // que es quien puede hacer algo (avisar a esa persona, pedir que se dé de alta).
+            'cloudSharing' => $meeting->hasCloudMinutes() && $access->canWriteMinutes($meeting, $user, $isAdmin) ? $shareQueue->leftFor($meeting) : null,
         ]);
     }
 
@@ -490,20 +494,18 @@ final class MeetingController extends AbstractController
         if ($meeting->hasCloudMinutes()) {
             $again = $meeting->isMinutesPublished();
             try {
-                $problems = $cloudMinutes->publish($meeting, $user);
+                $sharing = $cloudMinutes->publish($meeting, $user);
             } catch (CloudException $e) {
                 $this->addFlash('error', $e->getMessage());
 
                 return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId(), '_fragment' => 'acta']);
             }
+            // El aviso «ya puedes leer el acta» lo da la cola a cada persona cuando su copia está compartida.
             $entityManager->flush();
-            $notifier->notifyMinutes($meeting, $meeting->people());
             $this->addFlash('success', $again
                 ? 'Corrección publicada: las personas convocadas leen ya la versión nueva y reciben el aviso.'
                 : 'Acta publicada: compartida en la nube, para leer, con las personas convocadas, que reciben el aviso.');
-            if ([] !== $problems) {
-                $this->addFlash('error', 'No se pudo compartir con: '.implode('; ', $problems).'.');
-            }
+            $this->flashSharing($sharing);
 
             return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId(), '_fragment' => 'acta']);
         }
@@ -586,13 +588,11 @@ final class MeetingController extends AbstractController
         $this->denyUnlessStarted($meeting);
         if (!$meeting->hasCloudMinutes()) {
             try {
-                $problems = $cloudMinutes->create($meeting, $user, new \DateTimeImmutable());
+                $sharing = $cloudMinutes->create($meeting, $user, new \DateTimeImmutable());
                 $entityManager->flush();
                 // El aviso lo ve la ficha que se quedó detrás, al recargarse cuando se vuelve a ella.
                 $this->addFlash('success', 'Acta creada en la nube de EducaMadrid.');
-                if ([] !== $problems) {
-                    $this->addFlash('error', 'No se pudo compartir con: '.implode('; ', $problems).'.');
-                }
+                $this->flashSharing($sharing);
             } catch (CloudException $e) {
                 $this->addFlash('error', $e->getMessage());
 
@@ -640,7 +640,7 @@ final class MeetingController extends AbstractController
         \assert($file instanceof UploadedFile);
 
         try {
-            $problems = $cloudMinutes->upload($meeting, $user, new \DateTimeImmutable(), (string) file_get_contents($file->getPathname()), $file->getClientOriginalExtension());
+            $sharing = $cloudMinutes->upload($meeting, $user, new \DateTimeImmutable(), (string) file_get_contents($file->getPathname()), $file->getClientOriginalExtension());
             $entityManager->flush();
         } catch (CloudException $e) {
             $this->addFlash('error', $e->getMessage());
@@ -648,9 +648,7 @@ final class MeetingController extends AbstractController
             return $back;
         }
         $this->addFlash('success', 'Acta subida a la nube de EducaMadrid. Ábrela para revisarla y, cuando esté, publícala.');
-        if ([] !== $problems) {
-            $this->addFlash('error', 'No se pudo compartir con: '.implode('; ', $problems).'.');
-        }
+        $this->flashSharing($sharing);
 
         return $back;
     }
@@ -901,6 +899,26 @@ final class MeetingController extends AbstractController
     {
         if ($meeting->writesMinutesInCloud($cloudAccount->isConnected())) {
             throw $this->createAccessDeniedException('Esta acta se escribe en la nube de EducaMadrid.');
+        }
+    }
+
+    /**
+     * Says on screen what is left of an acta's shares in the cloud: how many the cloud will take a few
+     * minutes to make (it allows only so many at a time), and who was left out and why.
+     *
+     * @param array{pending: int, problems: list<string>} $sharing what {@see CloudMinutes} left
+     */
+    private function flashSharing(array $sharing): void
+    {
+        if ($sharing['pending'] > 0) {
+            $this->addFlash('warning', \sprintf(
+                'Falta compartirla con %d persona%s: la nube de EducaMadrid solo deja compartir unas pocas cada diez minutos, así que se completa sola en los próximos minutos.',
+                $sharing['pending'],
+                1 === $sharing['pending'] ? '' : 's',
+            ));
+        }
+        if ([] !== $sharing['problems']) {
+            $this->addFlash('error', 'No se pudo compartir con: '.implode('; ', $sharing['problems']).'.');
         }
     }
 
