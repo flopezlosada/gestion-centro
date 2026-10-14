@@ -79,7 +79,7 @@
                             <span class="doc-card__open">Descargar</span>
                         </a>
                     {% elseif cover.taskDocumentPurgedAt %}
-                        <p class="detail-prose muted">El documento se borró al pasar la guardia.</p>
+                        <p class="detail-prose muted">El documento se borró el {{ cover.taskDocumentPurgedAt|date('d/m/Y', false) }}.</p>
                     {% endif %}
                 </div>
             {% elseif not cover.hasBankTask %}

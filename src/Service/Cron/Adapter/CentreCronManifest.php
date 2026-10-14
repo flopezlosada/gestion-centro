@@ -59,7 +59,7 @@ final class CentreCronManifest implements CronManifest
 
     public const string CRON_CLOUD_SHARES = 'cron.cloud_shares';
 
-    /** Borrado de los documentos de tarea y de fotocopias cuyo día ya pasó. */
+    /** Borrado de los documentos de fotocopias de días pasados y de tarea de guardia de cursos pasados. */
     public const string CRON_PURGE_PAST_DOCUMENTS = 'cron.purge_past_documents';
 
     /**

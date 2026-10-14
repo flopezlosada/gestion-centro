@@ -14,9 +14,9 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 /**
- * The documents of a guardia and of its copy orders live for that day only: the group works on the task
- * during the guardia and the copy room gets the file by e-mail. After the day, the file and its name go,
- * the record stays marked as purged, and whatever is for today or later is left alone.
+ * A copy order's document lives for its day only (the copy room gets it by e-mail); a guardia's task
+ * document lives for its school year. Then the file and its name go, the record stays marked as purged,
+ * and whatever is still in time is left alone.
  */
 final class PastDocumentPurgerTest extends KernelTestCase
 {
@@ -90,9 +90,9 @@ final class PastDocumentPurgerTest extends KernelTestCase
         return is_file($this->uploader->absolutePath($path));
     }
 
-    public function testBorraElDocumentoDeUnaGuardiaYaPasadaYConservaQueLoHubo(): void
+    public function testBorraElDocumentoDeUnaGuardiaDeUnCursoPasadoYConservaQueLoHubo(): void
     {
-        $cover = $this->coverWithDocument('2026-10-13');
+        $cover = $this->coverWithDocument('2026-06-19');
         $path = (string) $cover->getTaskDocumentPath();
 
         $purged = $this->purger->purge(new \DateTimeImmutable(self::NOW));
@@ -109,22 +109,35 @@ final class PastDocumentPurgerTest extends KernelTestCase
         self::assertTrue($reloaded->hasTask(), 'una guardia pasada que tuvo documento no se lee como «sin tarea»');
     }
 
-    public function testNoTocaLaGuardiaDeHoyNiLaDeMañana(): void
+    /**
+     * The course runs from 1 September: everything from then on, past days included, is kept.
+     */
+    public function testConservaTodasLasGuardiasDelCursoEnMarcha(): void
     {
-        $today = $this->coverWithDocument('2026-10-14', 1);
-        $tomorrow = $this->coverWithDocument('2026-10-15', 2);
+        $firstDay = $this->coverWithDocument('2026-09-01', 1);
+        $yesterday = $this->coverWithDocument('2026-10-13', 2);
+        $tomorrow = $this->coverWithDocument('2026-10-15', 3);
 
         $purged = $this->purger->purge(new \DateTimeImmutable(self::NOW));
 
         self::assertSame(['covers' => 0, 'orders' => 0, 'unremoved' => []], $purged);
-        self::assertTrue($this->isStored((string) $today->getTaskDocumentPath()));
-        self::assertTrue($this->isStored((string) $tomorrow->getTaskDocumentPath()));
-        self::assertNull($today->getTaskDocumentPurgedAt());
+        foreach ([$firstDay, $yesterday, $tomorrow] as $cover) {
+            self::assertTrue($this->isStored((string) $cover->getTaskDocumentPath()));
+            self::assertNull($cover->getTaskDocumentPurgedAt());
+        }
+    }
+
+    public function testElUltimoDiaDelCursoAnteriorYaSeBorra(): void
+    {
+        $lastDay = $this->coverWithDocument('2026-08-31');
+
+        self::assertSame(['covers' => 1, 'orders' => 0, 'unremoved' => []], $this->purger->purge(new \DateTimeImmutable(self::NOW)));
+        self::assertNotNull($lastDay->getTaskDocumentPurgedAt());
     }
 
     /**
      * An order counts by its guardia's day, not by when it was placed: copies asked yesterday for next
-     * week's guardia are still needed.
+     * week's guardia are still needed. The guardias themselves, this course's, keep their documents.
      */
     public function testUnEncargoDeGuardiaCuentaPorElDiaDeLaGuardia(): void
     {
@@ -133,7 +146,7 @@ final class PastDocumentPurgerTest extends KernelTestCase
 
         $purged = $this->purger->purge(new \DateTimeImmutable(self::NOW));
 
-        self::assertSame(['covers' => 1, 'orders' => 1, 'unremoved' => []], $purged);
+        self::assertSame(['covers' => 0, 'orders' => 1, 'unremoved' => []], $purged);
         self::assertNull($pastGuardia->getDocumentPath());
         self::assertNull($pastGuardia->getDocumentName());
         self::assertNotNull($pastGuardia->getDocumentPurgedAt());
@@ -157,7 +170,7 @@ final class PastDocumentPurgerTest extends KernelTestCase
 
     public function testUnaSegundaPasadaNoEncuentraNada(): void
     {
-        $this->order('2026-10-10 10:00', $this->coverWithDocument('2026-10-10'));
+        $this->order('2026-06-10 10:00', $this->coverWithDocument('2026-06-10'));
         $this->purger->purge(new \DateTimeImmutable(self::NOW));
 
         self::assertSame(['covers' => 0, 'orders' => 0, 'unremoved' => []], $this->purger->purge(new \DateTimeImmutable(self::NOW)));
@@ -169,7 +182,7 @@ final class PastDocumentPurgerTest extends KernelTestCase
      */
     public function testSiElFicheroYaNoEstabaMarcaElRegistroIgual(): void
     {
-        $cover = $this->coverWithDocument('2026-10-13');
+        $cover = $this->coverWithDocument('2026-06-19');
         $this->uploader->remove((string) $cover->getTaskDocumentPath());
 
         self::assertSame(['covers' => 1, 'orders' => 0, 'unremoved' => []], $this->purger->purge(new \DateTimeImmutable(self::NOW)));

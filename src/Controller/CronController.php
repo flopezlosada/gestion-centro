@@ -67,7 +67,7 @@ final class CronController extends AbstractController
     /**
      * Una vez al día: avisos de tareas próximas, escalada de las que están fuera de plazo y retirada de
      * los avisos caducados; las reuniones periódicas de la semana que viene; y el borrado de los documentos
-     * de guardia y de fotocopias de días pasados. Y la poda del propio registro de ejecuciones, que también es diaria y que
+     * de fotocopias de días pasados y de tarea de guardia de cursos pasados. Y la poda del propio registro de ejecuciones, que también es diaria y que
      * sin esto quedaría sin disparar en este camino — creciendo sin freno.
      *
      * @param Request $request la petición del crontab

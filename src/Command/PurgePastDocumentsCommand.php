@@ -13,10 +13,10 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * Deletes the task documents of past guardias and the documents of past copy orders
+ * Deletes the documents of past copy orders and the task documents of guardias from past courses
  * ({@see PastDocumentPurger}).
  */
-#[AsCommand(name: 'app:guardias:purge-past-documents', description: 'Borra los documentos de tarea y de fotocopias de días ya pasados')]
+#[AsCommand(name: 'app:guardias:purge-past-documents', description: 'Borra los documentos de fotocopias de días pasados y los de tarea de guardia de cursos pasados')]
 final class PurgePastDocumentsCommand extends AbstractCronCommand
 {
     public function __construct(private readonly PastDocumentPurger $purger)
