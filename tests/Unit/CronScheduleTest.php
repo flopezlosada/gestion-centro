@@ -49,11 +49,25 @@ final class CronScheduleTest extends TestCase
      */
     public function testElIntervaloSeMideDesdeLaUltimaEjecucion(): void
     {
+        $haceTresMinutos = $this->execution('2027-03-04 09:57');
         $haceCuatroMinutos = $this->execution('2027-03-04 09:56');
         $schedule = $this->schedule();
 
-        self::assertFalse($schedule->isDue(self::EVERY_FIVE_MINUTES, $haceCuatroMinutos, $this->moment('2027-03-04 10:00')));
+        self::assertFalse($schedule->isDue(self::EVERY_FIVE_MINUTES, $haceTresMinutos, $this->moment('2027-03-04 10:00')));
+        self::assertFalse($schedule->isDue(self::EVERY_FIVE_MINUTES, $haceCuatroMinutos, $this->moment('2027-03-04 10:00')), 'el margen es un minuto, no más');
         self::assertTrue($schedule->isDue(self::EVERY_FIVE_MINUTES, $haceCuatroMinutos, $this->moment('2027-03-04 10:01')));
+    }
+
+    /**
+     * El reloj llama cada cinco minutos con segundos de juego. Sin margen, el tick de las 19:55:19 se
+     * saltaba la pasada de las 19:50:28 (4 min 51 s) y la tarea corría cada diez minutos: lo visto en
+     * producción el 14-10-2026.
+     */
+    public function testUnTickQueLlegaUnosSegundosAntesNoSeSaltaLaPasada(): void
+    {
+        $ultima = $this->execution('2026-10-14 19:50:28');
+
+        self::assertTrue($this->schedule()->isDue(self::EVERY_FIVE_MINUTES, $ultima, $this->moment('2026-10-14 19:55:19')));
     }
 
     /**

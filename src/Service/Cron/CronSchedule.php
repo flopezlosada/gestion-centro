@@ -46,6 +46,18 @@ use App\Entity\CronRun;
  */
 class CronSchedule
 {
+    /**
+     * Qué parte del intervalo se perdona a un tick que llega antes de tiempo: una quinta parte, un minuto
+     * en las tareas de cinco minutos.
+     *
+     * El reloj llama cada cinco minutos, pero con segundos de juego. Medido sin margen, un tick que llega
+     * a los 4 min 51 s de la última pasada se la salta, y la tarea corre en la práctica cada diez minutos
+     * (visto en producción: un aviso «10 minutos antes» puede llegar casi a la hora). Con el margen, una
+     * pasada de más no hace daño: las tareas son idempotentes por estado y salen con «nada que hacer».
+     * Proporcional y no fijo para no deformar intervalos cortos.
+     */
+    private const int EARLY_TICK_FRACTION = 5;
+
     /** Días de la semana en ISO-8601 (1 = lunes), para describir cadencias. */
     private const WEEKDAYS = [
         1 => 'lunes',
@@ -83,12 +95,12 @@ class CronSchedule
         $startedAt = $this->inZone($lastRun->getStartedAt());
 
         // Las cadencias por intervalo no tienen una hora a la que "tocar": se
-        // miden desde la última ejecución. Es la forma que necesitan las tareas
-        // de otros proyectos ("cada cinco minutos"); aquí no se usa ninguna.
+        // miden desde la última ejecución, con margen para un tick que llega
+        // unos segundos antes ({@see self::EARLY_TICK_FRACTION}).
         if (($schedule['freq'] ?? null) === 'interval') {
-            $minutes = max(1, (int) ($schedule['minutes'] ?? 60));
+            $seconds = max(1, (int) ($schedule['minutes'] ?? 60)) * 60;
 
-            return $now->getTimestamp() - $startedAt->getTimestamp() >= $minutes * 60;
+            return $now->getTimestamp() - $startedAt->getTimestamp() > $seconds - intdiv($seconds, self::EARLY_TICK_FRACTION);
         }
 
         $occurrence = $this->lastOccurrence($schedule, $now);
