@@ -131,5 +131,10 @@ final class CronControllerTest extends WebTestCase
             $runs,
             'La poda del registro es diaria y viaja en este endpoint: si no, en esta vía crecería sin freno.'
         );
+        self::assertArrayHasKey(
+            CentreCronManifest::CRON_PURGE_PAST_DOCUMENTS,
+            $runs,
+            'El borrado de documentos pasados es diario y viaja en este endpoint: si no, en esta vía no se borraría nada.'
+        );
     }
 }

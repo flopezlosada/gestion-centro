@@ -69,7 +69,7 @@
 
         <div class="detail-block">
             <div class="detail-block__label">Tarea para el grupo{% if cover.hasTask %} <span class="task-note-flag">tiene tarea</span>{% endif %}</div>
-            {% if cover.taskDescription or cover.taskDocumentPath %}
+            {% if cover.taskDescription or cover.taskDocumentPath or cover.taskDocumentPurgedAt %}
                 <div class="guardia-tasknote">
                     {% if cover.taskDescription %}<p class="detail-prose">{{ cover.taskDescription|nl2br }}</p>{% endif %}
                     {% if cover.taskDocumentPath %}
@@ -78,6 +78,8 @@
                             <span class="doc-card__body"><span class="doc-card__name">{{ cover.taskDocumentName ?: 'Documento de la tarea' }}</span><span class="doc-card__meta">Documento adjunto</span></span>
                             <span class="doc-card__open">Descargar</span>
                         </a>
+                    {% elseif cover.taskDocumentPurgedAt %}
+                        <p class="detail-prose muted">El documento se borró al pasar la guardia.</p>
                     {% endif %}
                 </div>
             {% elseif not cover.hasBankTask %}

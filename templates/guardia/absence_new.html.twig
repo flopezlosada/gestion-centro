@@ -118,6 +118,7 @@
                                         <label class="classcard__file">
                                             <span class="field-label">Documento de tarea</span>
                                             <input type="file" name="documents[{{ c.slotIndex }}]" data-max-bytes="{{ constant('App\\Support\\DocumentUpload::MAX_BYTES') }}">
+                                            <span class="field-help">Se borra de la aplicación al pasar el día de la guardia. Si no hace falta, que no lleve nombres ni datos del alumnado.</span>
                                         </label>
                                         <textarea name="description[{{ c.slotIndex }}]" rows="2" maxlength="1000"
                                                   placeholder="Descripción para {{ label }} (opcional): lo que no venga en el documento — página, ejercicios, dónde está el examen…"></textarea>

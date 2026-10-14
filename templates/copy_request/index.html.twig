@@ -68,6 +68,8 @@
                             <td>
                                 {% if order.hasDocument %}
                                     <a href="{{ path('copy_request_download', { id: order.id }) }}">{{ order.documentName ?: 'documento' }}</a>
+                                {% elseif order.documentPurgedAt %}
+                                    <span class="help">Borrado al pasar el día</span>
                                 {% else %}—{% endif %}
                             </td>
                             {% if seesAll %}<td>{{ order.requestedBy ? order.requestedBy.fullName : '—' }}</td>{% endif %}
@@ -99,10 +101,13 @@
                                         </form>
                                     {% endif %}
                                 {% endif %}
-                                <form method="post" action="{{ path('copy_request_resend', { id: order.id }) }}"{% if order.isSent %} data-confirm="Este encargo ya se envió. ¿Reenviarlo a conserjería?"{% endif %}>
-                                    <input type="hidden" name="_token" value="{{ csrf_token('copy_request_resend' ~ order.id) }}">
-                                    <button type="submit" class="btn btn-sm{{ order.isSent ? ' secondary' }}">{{ order.isSent ? 'Reenviar' : 'Reintentar envío' }}</button>
-                                </form>
+                                {# Sin su documento, reenviar mandaría a conserjería un correo sin nada que imprimir. #}
+                                {% if not order.documentPurgedAt %}
+                                    <form method="post" action="{{ path('copy_request_resend', { id: order.id }) }}"{% if order.isSent %} data-confirm="Este encargo ya se envió. ¿Reenviarlo a conserjería?"{% endif %}>
+                                        <input type="hidden" name="_token" value="{{ csrf_token('copy_request_resend' ~ order.id) }}">
+                                        <button type="submit" class="btn btn-sm{{ order.isSent ? ' secondary' }}">{{ order.isSent ? 'Reenviar' : 'Reintentar envío' }}</button>
+                                    </form>
+                                {% endif %}
                             </td>
                         </tr>
                     {% endfor %}
