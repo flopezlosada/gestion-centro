@@ -124,7 +124,7 @@ class CopyRequestRepository extends ServiceEntityRepository
             ->addSelect('l')
             ->leftJoin('r.lines', 'l')
             ->leftJoin('r.cover', 'c')
-            ->andWhere('EXISTS (SELECT 1 FROM '.CopyRequestLine::class.' l WHERE l.order = r AND l.path IS NOT NULL)')
+            ->andWhere('EXISTS (SELECT 1 FROM '.CopyRequestLine::class.' kept WHERE kept.order = r AND kept.path IS NOT NULL)')
             ->andWhere('(c.id IS NOT NULL AND c.date < :cutoff) OR (c.id IS NULL AND r.requestedAt < :cutoff)')
             ->setParameter('cutoff', $today)
             ->andWhere('r.sentAt IS NOT NULL OR (c.id IS NOT NULL AND c.date < :unsentCutoff) OR (c.id IS NULL AND r.requestedAt < :unsentCutoff)')
