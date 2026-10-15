@@ -26,6 +26,7 @@ use App\Service\MeetingAccess;
 use App\Service\MeetingNotifier;
 use App\Service\MinutesMailer;
 use App\Service\MinutesPdfRenderer;
+use App\Service\SubmissionOnce;
 use App\Support\DocumentUpload;
 use App\Support\MeetingActivityPresenter;
 use App\Support\MeetingProse;
@@ -139,7 +140,7 @@ final class MeetingController extends AbstractController
      * department — the two meetings a centre holds most.
      */
     #[Route('/nueva', name: 'meeting_new', methods: ['GET', 'POST'])]
-    public function new(Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, MeetingNotifier $notifier, MeetingTypeRepository $meetingTypes, MeetingGroupRepository $meetingGroups): Response
+    public function new(Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, MeetingNotifier $notifier, MeetingTypeRepository $meetingTypes, MeetingGroupRepository $meetingGroups, SubmissionOnce $once): Response
     {
         $isAdmin = $this->isGranted('ROLE_ADMIN');
         if (!$access->canConvene($user, $isAdmin)) {
@@ -201,11 +202,24 @@ final class MeetingController extends AbstractController
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
+            // Convocar avisa a todo el mundo: el segundo envío del mismo formulario no crea otra reunión.
+            if (!$once->claim($request)) {
+                $this->addFlash('success', 'La reunión ya estaba convocada: este segundo envío no se ha repetido.');
+
+                return $this->redirectToRoute('meeting_index');
+            }
             \assert(null !== $data->day && null !== $data->startTime);
             $meeting = new Meeting($user, $data->title, CalendarDate::at($data->day, $data->startTime));
             $this->applyFormData($meeting, $data);
-            $entityManager->persist($meeting);
-            $entityManager->flush();
+            try {
+                $entityManager->persist($meeting);
+                $entityManager->flush();
+            } catch (\Throwable $e) {
+                // No se ha convocado nada: volver a enviar el formulario no es repetir.
+                $once->release($request);
+
+                throw $e;
+            }
 
             // Convocar ES avisar: sin el aviso, la reunión solo existe para quien la creó.
             $notifier->notifyConvened($meeting, array_values($meeting->getAttendees()->toArray()));
@@ -607,7 +621,7 @@ final class MeetingController extends AbstractController
      * second press just opens the one there is.
      */
     #[Route('/{id}/acta/nube', name: 'meeting_minutes_cloud_create', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function createCloudMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, CloudAccount $cloudAccount, CloudMinutes $cloudMinutes): Response
+    public function createCloudMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, CloudAccount $cloudAccount, CloudMinutes $cloudMinutes, TaskLock $lock): Response
     {
         if (!$this->isCsrfTokenValid('meeting_minutes'.$meeting->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
@@ -620,18 +634,27 @@ final class MeetingController extends AbstractController
             throw $this->createAccessDeniedException('Esta acta se escribe en la aplicación.');
         }
         $this->denyUnlessStarted($meeting);
-        if (!$meeting->hasCloudMinutes()) {
-            try {
+        // El «¿ya tiene acta?» pierde la carrera entre dos peticiones a la vez (el segundo clic con la conexión
+        // lenta): las dos subirían el documento y encolarían dos veces la compartición.
+        $key = self::cloudMinutesLockKey($meeting);
+        if (!$lock->acquire($key)) {
+            return $this->cloudMinutesBusy($meeting);
+        }
+        try {
+            $entityManager->refresh($meeting);
+            if (!$meeting->hasCloudMinutes()) {
                 $sharing = $cloudMinutes->create($meeting, $user, new \DateTimeImmutable());
                 $entityManager->flush();
                 // El aviso lo ve la ficha que se quedó detrás, al recargarse cuando se vuelve a ella.
                 $this->addFlash('success', 'Acta creada en la nube de EducaMadrid.');
                 $this->flashSharing($sharing);
-            } catch (CloudException $e) {
-                $this->addFlash('error', $e->getMessage());
-
-                return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId(), '_fragment' => 'acta']);
             }
+        } catch (CloudException $e) {
+            $this->addFlash('error', $e->getMessage());
+
+            return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId(), '_fragment' => 'acta']);
+        } finally {
+            $lock->release($key);
         }
 
         $url = $cloudMinutes->urlFor($meeting);
@@ -645,7 +668,7 @@ final class MeetingController extends AbstractController
      * file is read and sent on, never stored here. Once only, like creating it from the template.
      */
     #[Route('/{id}/acta/nube/subir', name: 'meeting_minutes_cloud_upload', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function uploadCloudMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, CloudAccount $cloudAccount, CloudMinutes $cloudMinutes): Response
+    public function uploadCloudMinutes(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, CloudAccount $cloudAccount, CloudMinutes $cloudMinutes, TaskLock $lock): Response
     {
         if (!$this->isCsrfTokenValid('meeting_minutes'.$meeting->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
@@ -658,11 +681,6 @@ final class MeetingController extends AbstractController
         }
         $this->denyUnlessStarted($meeting);
         $back = $this->redirectToRoute('meeting_show', ['id' => $meeting->getId(), '_fragment' => 'acta']);
-        if ($meeting->hasCloudMinutes()) {
-            $this->addFlash('error', 'Esta reunión ya tiene acta en la nube: ábrela y corrígela allí.');
-
-            return $back;
-        }
 
         $file = $request->files->get('acta');
         $problem = $file instanceof UploadedFile && DocumentUpload::isPresent($file) ? DocumentUpload::minutesProblem($file) : 'Elige el documento del acta.';
@@ -673,18 +691,57 @@ final class MeetingController extends AbstractController
         }
         \assert($file instanceof UploadedFile);
 
+        // El mismo cerrojo que al crearla desde la plantilla: es la misma acta, por dos caminos.
+        $key = self::cloudMinutesLockKey($meeting);
+        if (!$lock->acquire($key)) {
+            return $this->cloudMinutesBusy($meeting);
+        }
         try {
+            $entityManager->refresh($meeting);
+            if ($meeting->hasCloudMinutes()) {
+                $this->addFlash('error', 'Esta reunión ya tiene acta en la nube: ábrela y corrígela allí.');
+
+                return $back;
+            }
             $sharing = $cloudMinutes->upload($meeting, $user, new \DateTimeImmutable(), (string) file_get_contents($file->getPathname()), $file->getClientOriginalExtension());
             $entityManager->flush();
         } catch (CloudException $e) {
             $this->addFlash('error', $e->getMessage());
 
             return $back;
+        } finally {
+            $lock->release($key);
         }
         $this->addFlash('success', 'Acta subida a la nube de EducaMadrid. Ábrela para revisarla y, cuando esté, publícala.');
         $this->flashSharing($sharing);
 
         return $back;
+    }
+
+    /**
+     * The lock that makes the acta in the cloud be created once, whichever of the two ways it is created.
+     *
+     * @param Meeting $meeting the meeting
+     *
+     * @return string the lock key
+     */
+    private static function cloudMinutesLockKey(Meeting $meeting): string
+    {
+        return 'meeting.cloud-minutes.'.$meeting->getId();
+    }
+
+    /**
+     * The answer while another request is creating the acta in the cloud: back to the meeting, to reload.
+     *
+     * @param Meeting $meeting the meeting
+     *
+     * @return Response the redirect to the acta of the meeting
+     */
+    private function cloudMinutesBusy(Meeting $meeting): Response
+    {
+        $this->addFlash('warning', 'El acta se está creando en la nube ahora mismo: espera unos segundos y recarga la página.');
+
+        return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId(), '_fragment' => 'acta']);
     }
 
     /**

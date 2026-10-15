@@ -234,25 +234,68 @@ final class CopyRequestTest extends WebTestCase
     }
 
     /**
-     * Sends a standalone order with a document of the given name.
+     * Opens the standalone order form and sends it with a document of the given name.
      *
      * @param string $fileName the client name of the uploaded document
+     *
+     * @return \Closure(string): void sends the SAME form again — same CSRF and one-use tokens, as a second
+     *                               press does — with a document of the given name
      */
-    private function postStandaloneOrder(string $fileName): void
+    private function postStandaloneOrder(string $fileName): \Closure
     {
         $crawler = $this->client->request('GET', '/fotocopias/nuevo');
         self::assertResponseIsSuccessful();
         $token = (string) $crawler->filter('input[name="copy_request[_token]"]')->attr('value');
+        $once = (string) $crawler->filter('input[name="_once"]')->attr('value');
+        self::assertNotSame('', $once, 'el formulario lleva su token de un solo uso');
 
-        $path = sys_get_temp_dir().'/encargo-'.uniqid().'-'.$fileName;
-        file_put_contents($path, 'contenido');
+        $send = function (string $fileName) use ($token, $once): void {
+            $path = sys_get_temp_dir().'/encargo-'.uniqid().'-'.$fileName;
+            file_put_contents($path, 'contenido');
 
-        $this->client->request(
-            'POST',
-            '/fotocopias/nuevo',
-            ['copy_request' => ['context' => 'Examen de 2º ESO B', 'copies' => '25', '_token' => $token]],
-            ['copy_request' => ['document' => new UploadedFile($path, $fileName, null, null, true)]],
-        );
+            $this->client->request(
+                'POST',
+                '/fotocopias/nuevo',
+                ['copy_request' => ['context' => 'Examen de 2º ESO B', 'copies' => '25', '_token' => $token], '_once' => $once],
+                ['copy_request' => ['document' => new UploadedFile($path, $fileName, null, null, true)]],
+            );
+        };
+        $send($fileName);
+
+        return $send;
+    }
+
+    /**
+     * El segundo clic con la conexión lenta reenvía el mismo formulario: conserjería recibe un encargo, no dos.
+     */
+    public function testSendingTheSameOrderFormTwiceOrdersOnce(): void
+    {
+        $this->login();
+        $sendAgain = $this->postStandaloneOrder('examen.pdf');
+        self::assertEmailCount(1);
+
+        $sendAgain('examen.pdf');
+        self::assertResponseRedirects('/fotocopias');
+        self::assertEmailCount(0, null, 'el segundo envío no manda otro correo');
+        $this->client->followRedirect();
+        self::assertAnySelectorTextContains('.flash.success', 'no se ha repetido');
+
+        $this->onlyOrder();
+    }
+
+    /**
+     * Un formulario devuelto con errores no gasta su token: el envío corregido no se toma por una repetición.
+     */
+    public function testAnOrderSentBackWithErrorsCanStillBeSent(): void
+    {
+        $this->login();
+        $sendAgain = $this->postStandaloneOrder('examen.docx');
+        self::assertResponseStatusCodeSame(422);
+
+        $sendAgain('examen.pdf');
+        self::assertResponseRedirects('/fotocopias');
+        self::assertEmailCount(1);
+        self::assertSame('examen.pdf', $this->onlyOrder()->getDocumentName());
     }
 
     public function testAStandaloneOrderCarriesTheUploadedDocument(): void

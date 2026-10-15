@@ -59,6 +59,8 @@
             {% set formAttr = formAttr|merge({ 'data-confirm': 'Ya hay fotocopias pedidas para esta guardia. ¿Enviar otro encargo a conserjería?' }) %}
         {% endif %}
         {{ form_start(form, { attr: formAttr }) }}
+            {# Cada envío es un correo a conserjería: un segundo envío del mismo formulario no encarga otra vez. #}
+            {{ submission_once_field() }}
             {{ f.submit_error(form) }}
             {{ form_errors(form) }}
             {% if form.context is defined %}{{ f.fields([form.context, form.document]) }}{% endif %}
