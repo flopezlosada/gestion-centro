@@ -52,10 +52,10 @@ final class PastDocumentPurger
             static fn (GuardiaCover $cover): ?string => $cover->purgeTaskDocument($now),
             $this->covers->findWithTaskDocumentBefore(SchoolYear::bounds(SchoolYear::current($now))[0]),
         )));
-        $orderFiles = array_values(array_filter(array_map(
-            static fn (CopyRequest $order): ?string => $order->purgeDocument($now),
+        $orderFiles = array_merge(...array_map(
+            static fn (CopyRequest $order): array => $order->purgeDocuments($now),
             $this->orders->findWithDocumentBefore($now),
-        )));
+        ));
 
         $this->em->flush();
         $unremoved = array_values(array_filter(

@@ -24,16 +24,18 @@
             <div class="detail-block__label">Qué se va a fotocopiar</div>
             <p class="copy-context__line">{{ [cover.groupName, cover.roomName]|filter(v => v)|join(' · ') ?: 'Guardia' }} · {{ cover.date|date('d/m/Y', false) }}</p>
 
-            {% if cover.printableDocumentPath %}
+            {% if cover.taskDocumentPath %}
                 <p>
                     Documento:
-                    {% if cover.taskDocumentPath %}
-                        <a href="{{ path('guardia_task_download', { id: cover.id }) }}">{{ cover.printableDocumentName ?: 'documento' }}</a>
-                        <span class="help">Lo dejó el docente ausente.</span>
-                    {% else %}
-                        <a href="{{ path('guardia_bank_download', { id: cover.bankItem.id }) }}">{{ cover.printableDocumentName ?: 'documento' }}</a>
-                        <span class="help">Del banco de tareas: «{{ cover.bankItem.title }}».</span>
-                    {% endif %}
+                    <a href="{{ path('guardia_task_download', { id: cover.id }) }}">{{ cover.taskDocumentName ?: 'documento' }}</a>
+                    <span class="help">Lo dejó el docente ausente.</span>
+                </p>
+            {% elseif cover.bankItem and cover.bankItem.hasDocument %}
+                {% set docs = cover.bankItem.documents %}
+                <p>
+                    {{ docs|length > 1 ? docs|length ~ ' documentos' : 'Documento' }}:
+                    {% for doc in docs %}<a href="{{ path('guardia_bank_download', { id: doc.id }) }}">{{ doc.name }}</a>{{ not loop.last ? ', ' }}{% endfor %}
+                    <span class="help">Del banco de tareas: «{{ cover.bankItem.title }}».</span>
                 </p>
             {% else %}
                 <div class="callout">
@@ -46,7 +48,7 @@
             {% if previous is defined and previous is not empty %}
                 <div class="callout callout--warning">
                     <p><strong>Ya se han pedido fotocopias para esta guardia:</strong>
-                        {% for p in previous %}{{ p.copies }} copias el {{ p.requestedAt|date('d/m H:i', false) }}{% if not p.isSent %} (sin enviar){% endif %}{{ not loop.last ? '; ' }}{% endfor %}.
+                        {% for p in previous %}{{ p.totalCopies }} copias el {{ p.requestedAt|date('d/m H:i', false) }}{% if not p.isSent %} (sin enviar){% endif %}{{ not loop.last ? '; ' }}{% endfor %}.
                         Envía otro encargo solo si hacen falta más.</p>
                 </div>
             {% endif %}
@@ -64,7 +66,9 @@
             {{ f.submit_error(form) }}
             {{ form_errors(form) }}
             {% if form.context is defined %}{{ f.fields([form.context, form.document]) }}{% endif %}
-            {{ f.fields([form.copies, form.notes]) }}
+            {#- Una casilla por archivo; el contenedor no tiene fila propia. -#}
+            {{ f.fields(form.copies) }}{% do form.copies.setRendered %}
+            {{ f.fields([form.notes]) }}
             {{ f.actions(cover ? path('guardia_cover_show', { id: cover.id }) : path('copy_request_index'), 'Enviar a fotocopias') }}
         {{ form_end(form) }}
     </div>

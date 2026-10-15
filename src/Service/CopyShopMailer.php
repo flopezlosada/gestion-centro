@@ -13,7 +13,7 @@ use Symfony\Component\Mime\Address;
 use Symfony\Component\Mime\Email;
 
 /**
- * Sends a {@see CopyRequest} to the copy room (conserjería) as an e-mail with the document attached.
+ * Sends a {@see CopyRequest} to the copy room (conserjería) as an e-mail with its documents attached.
  *
  * The auxiliares work from the mailbox, not from the application, so the message has to stand on its
  * own: the subject line says it is a guardia task, how many copies and what for, and the body repeats
@@ -82,15 +82,14 @@ final class CopyShopMailer
             $email->replyTo($replyTo);
         }
 
-        // The file is attached when it is still there: an order for a document that vanished must still
-        // reach the copy room (with its description), rather than fail outright.
-        $path = $request->getDocumentPath();
-        if (null !== $path) {
-            $absolute = $this->uploader->absolutePath($path);
+        // Each file is attached when it is still there: an order for a document that vanished must still
+        // reach the copy room (with the rest, and its description), rather than fail outright.
+        foreach ($request->getDocumentLines() as $line) {
+            $absolute = $this->uploader->absolutePath((string) $line->getPath());
             if (is_file($absolute)) {
-                $email->attachFromPath($absolute, $request->getDocumentName() ?? 'documento');
+                $email->attachFromPath($absolute, $line->getName() ?? 'documento');
             } else {
-                $this->logger->warning('Encargo de fotocopias sin adjunto: el documento ya no está en disco', ['path' => $path]);
+                $this->logger->warning('Encargo de fotocopias sin un adjunto: el documento ya no está en disco', ['path' => $line->getPath()]);
             }
         }
 
@@ -113,6 +112,9 @@ final class CopyShopMailer
      * asked for it to be flagged there), who asks, how many copies and what for. A standalone order says
      * only "Fotocopias", because calling it a guardia task would be a lie.
      *
+     * Several files say so instead of a number of copies: each file has its own, which the body lists, and
+     * the subject has to warn that there is more than one attachment to print.
+     *
      * Who asks goes here and not in the sender: the visible sender stays "Equipo directivo" as the centre
      * asked, so without it the inbox showed a list of orders nobody could tell apart by teacher.
      *
@@ -124,11 +126,13 @@ final class CopyShopMailer
     {
         $requester = $request->getRequestedBy();
 
+        $files = \count($request->getDocumentLines());
+
         return sprintf(
-            '%s%s: %d copias · %s',
+            '%s%s: %s · %s',
             null !== $request->getCover() ? 'Tarea de guardia · Fotocopias' : 'Fotocopias',
             null !== $requester ? ' de '.$requester->getFullName() : '',
-            $request->getCopies(),
+            $files > 1 ? sprintf('%d archivos a fotocopiar', $files) : self::copies($request->getTotalCopies()),
             $request->getContext(),
         );
     }
@@ -143,12 +147,18 @@ final class CopyShopMailer
      */
     private function body(CopyRequest $request): string
     {
-        $lines = [
-            'Encargo de fotocopias',
-            '',
-            sprintf('Número de copias: %d', $request->getCopies()),
-            sprintf('Para: %s', $request->getContext()),
-        ];
+        $files = $request->getDocumentLines();
+        $lines = ['Encargo de fotocopias', ''];
+        if (\count($files) > 1) {
+            // Uno por línea, con el número de cada adjunto: cada archivo lleva sus propias copias.
+            $lines[] = sprintf('%d archivos a fotocopiar (van adjuntos):', \count($files));
+            foreach ($files as $i => $file) {
+                $lines[] = sprintf('  %d. %s: %s', $i + 1, $file->getName() ?? 'documento', self::copies($file->getCopies()));
+            }
+        } else {
+            $lines[] = sprintf('Número de copias: %d', $request->getTotalCopies());
+        }
+        $lines[] = sprintf('Para: %s', $request->getContext());
 
         // Cuando la tarea sale del banco, su título (y, si no viaja documento, sus instrucciones) es lo
         // único que dice QUÉ hay que preparar: sin esto el correo obliga a llamar por teléfono.
@@ -160,9 +170,11 @@ final class CopyShopMailer
             }
         }
 
-        $lines[] = $request->hasDocument()
-            ? sprintf('Documento adjunto: %s', $request->getDocumentName() ?? 'documento')
-            : 'Sin documento adjunto (ver indicaciones).';
+        if (1 === \count($files)) {
+            $lines[] = sprintf('Documento adjunto: %s', $files[0]->getName() ?? 'documento');
+        } elseif ([] === $files) {
+            $lines[] = 'Sin documento adjunto (ver indicaciones).';
+        }
 
         if (null !== $request->getNotes()) {
             $lines[] = '';
@@ -180,5 +192,17 @@ final class CopyShopMailer
         $lines[] = sprintf('Enviado el %s desde la aplicación de gestión del centro.', $request->getRequestedAt()->format('d/m/Y H:i'));
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * A number of copies as words, minding the singular («1 copia»).
+     *
+     * @param int $copies the number of copies
+     *
+     * @return string the phrase
+     */
+    private static function copies(int $copies): string
+    {
+        return 1 === $copies ? '1 copia' : sprintf('%d copias', $copies);
     }
 }

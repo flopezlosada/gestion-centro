@@ -45,22 +45,26 @@ final class DocumentPurgeStateTest extends TestCase
         self::assertSame('guardia-tasks/b.pdf', $cover->getTaskDocumentPath());
     }
 
-    public function testPurgarElDocumentoDeUnEncargoDevuelveElFicheroYDejaLaMarca(): void
+    public function testPurgarLosDocumentosDeUnEncargoDevuelveSusFicherosYDejaLaMarca(): void
     {
         $at = new \DateTimeImmutable('2026-10-14 03:00');
-        $order = (new CopyRequest())->setDocumentPath('copy-requests/a.pdf')->setDocumentName('Examen de Lucía.pdf');
+        $order = (new CopyRequest())
+            ->addLine(25, 'copy-requests/a.pdf', 'Examen de Lucía.pdf')
+            ->addLine(1, 'copy-requests/b.pdf', 'Soluciones.pdf');
 
-        self::assertSame('copy-requests/a.pdf', $order->purgeDocument($at));
+        self::assertSame(['copy-requests/a.pdf', 'copy-requests/b.pdf'], $order->purgeDocuments($at));
         self::assertFalse($order->hasDocument());
-        self::assertNull($order->getDocumentName());
+        self::assertSame([null, null], array_map(static fn ($l) => $l->getName(), $order->getLines()));
         self::assertSame($at, $order->getDocumentPurgedAt());
-
-        $order->setDocumentPath('copy-requests/b.pdf');
-        self::assertNull($order->getDocumentPurgedAt());
+        // Las copias no son datos personales: se quedan para el listado.
+        self::assertSame(26, $order->getTotalCopies());
     }
 
     public function testUnEncargoSoloDeTextoNoSeMarca(): void
     {
-        self::assertNull((new CopyRequest())->purgeDocument(new \DateTimeImmutable('2026-10-14 03:00')));
+        $order = (new CopyRequest())->addLine(10);
+
+        self::assertSame([], $order->purgeDocuments(new \DateTimeImmutable('2026-10-14 03:00')));
+        self::assertNull($order->getDocumentPurgedAt());
     }
 }

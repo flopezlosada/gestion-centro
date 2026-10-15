@@ -46,8 +46,10 @@ class GuardiaTaskBankItemRepository extends ServiceEntityRepository
     public function findFiltered(AcademicYear $year, ?EducationLevel $level = null, ?string $subject = null, ?string $groupName = null, ?int $departmentId = null, bool $includeRetired = false, bool $leastUsedFirst = false): array
     {
         $qb = $this->createQueryBuilder('i')
-            ->addSelect('d')
-            ->join('i.department', 'd');
+            ->addSelect('d', 'doc')
+            ->join('i.department', 'd')
+            // Los documentos de cada tarjeta, en la misma consulta: si no, uno por tarea listada.
+            ->leftJoin('i.documents', 'doc');
 
         if ($leastUsedFirst) {
             $qb->addOrderBy('i.timesUsed', 'ASC')->addOrderBy('i.createdAt', 'DESC');

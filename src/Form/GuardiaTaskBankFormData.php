@@ -16,9 +16,9 @@ use Symfony\Component\Validator\Constraints as Assert;
  * department, which the entity refuses to represent (and the database refuses to store). Here a
  * missing choice is simply null, and validation turns it into a message next to the field.
  *
- * The document is part of the form but not of this mapping: storing an upload can fail on its own
+ * The documents are part of the form but not of this mapping: storing an upload can fail on its own
  * terms, so the controller does it against the shared {@see \App\Support\DocumentUpload} policy and
- * writes the path onto the entity only when it succeeded.
+ * attaches them to the entity only when every one of them is acceptable.
  */
 final class GuardiaTaskBankFormData
 {
@@ -49,11 +49,20 @@ final class GuardiaTaskBankFormData
 
     public ?string $description = null;
 
-    /** The uploaded document, handled by the controller (see the class docblock). */
-    public ?UploadedFile $document = null;
+    /**
+     * The documents uploaded in this submit, added after the ones the task already has; handled by the
+     * controller (see the class docblock).
+     *
+     * @var list<UploadedFile>
+     */
+    public array $documents = [];
 
-    /** Ticked to drop the document the task already had. */
-    public bool $removeDocument = false;
+    /**
+     * Ids of the task's current documents ticked to be removed.
+     *
+     * @var list<int>
+     */
+    public array $removeDocuments = [];
 
     #[Assert\Range(min: 1, max: 500, notInRangeMessage: 'El número de copias debe estar entre {{ min }} y {{ max }}.')]
     public ?int $suggestedCopies = null;

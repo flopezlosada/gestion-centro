@@ -23,6 +23,14 @@ final class DocumentUpload
     /** Size ceiling for an uploaded document. */
     public const int MAX_BYTES = 10 * 1024 * 1024;
 
+    /**
+     * Size ceiling for all the files picked in one submit. The hosting's request filter cuts a request
+     * of about 15 MB before it reaches the application, with a raw error page; this leaves room for the
+     * rest of the form. Only the browser warns with it (file-size-guard.js): past it there is no server
+     * code left to answer.
+     */
+    public const int MAX_REQUEST_BYTES = 14 * 1024 * 1024;
+
     /** Accepted extensions: what a teacher realistically hands a group or sends to be printed. */
     public const array ALLOWED_EXTENSIONS = [
         'pdf', 'doc', 'docx', 'odt', 'rtf', 'txt',

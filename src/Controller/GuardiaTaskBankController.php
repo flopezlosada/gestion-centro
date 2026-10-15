@@ -6,6 +6,7 @@ namespace App\Controller;
 
 use App\Entity\AcademicYear;
 use App\Entity\GuardiaCover;
+use App\Entity\GuardiaTaskBankDocument;
 use App\Entity\GuardiaTaskBankItem;
 use App\Entity\User;
 use App\Enum\Area;
@@ -255,37 +256,30 @@ final class GuardiaTaskBankController extends AbstractController
         $this->assertMayCurate($item, $user, $hierarchy);
         $this->assertCsrf($request, 'guardia_bank_delete'.$item->getId());
 
-        $documentPath = $item->getDocumentPath();
+        $paths = array_map(static fn (GuardiaTaskBankDocument $d): string => $d->getPath(), $item->getDocuments());
         $em->remove($item);
         $em->flush();
 
-        // Committed: the file is referenced by nothing now.
-        if (null !== $documentPath) {
-            $uploader->remove($documentPath);
-        }
+        // Committed: the files are referenced by nothing now.
+        array_walk($paths, static fn (string $path) => $uploader->remove($path));
         $this->addFlash('success', 'Tarea eliminada del banco.');
 
         return $this->redirectToRoute('guardia_bank_index');
     }
 
     /**
-     * Serves a bank task's document. Open to any authenticated user: the bank exists to be used, and a
-     * covering teacher must be able to open the sheet they are about to hand out.
+     * Serves one of a bank task's documents. Open to any authenticated user: the bank exists to be used,
+     * and a covering teacher must be able to open the sheet they are about to hand out.
      */
-    #[Route('/{id}/documento', name: 'guardia_bank_download', requirements: ['id' => '\d+'], methods: ['GET'])]
-    public function download(GuardiaTaskBankItem $item, FileUploader $uploader): Response
+    #[Route('/documento/{id}', name: 'guardia_bank_download', requirements: ['id' => '\d+'], methods: ['GET'])]
+    public function download(GuardiaTaskBankDocument $document, FileUploader $uploader): Response
     {
-        $path = $item->getDocumentPath();
-        if (null === $path) {
-            throw $this->createNotFoundException('Esta tarea del banco no tiene documento.');
-        }
-
-        $absolute = $uploader->absolutePath($path);
+        $absolute = $uploader->absolutePath($document->getPath());
         if (!is_file($absolute)) {
             throw $this->createNotFoundException('El documento ya no está disponible.');
         }
 
-        return $this->file($absolute, $item->getDocumentName() ?? 'tarea');
+        return $this->file($absolute, $document->getName());
     }
 
     /**
@@ -393,7 +387,7 @@ final class GuardiaTaskBankController extends AbstractController
     }
 
     /**
-     * Renders and processes the add/edit form, storing the uploaded document only once the rest of the
+     * Renders and processes the add/edit form, storing the uploaded documents only once the rest of the
      * form is valid.
      *
      * @param GuardiaTaskBankItem           $item     the task being created or edited
@@ -415,13 +409,21 @@ final class GuardiaTaskBankController extends AbstractController
             sort($subjects);
         }
 
-        $form = $this->createForm(GuardiaTaskBankItemType::class, $data, ['has_document' => $item->hasDocument(), 'subjects' => $subjects]);
+        $documents = [];
+        foreach ($item->getDocuments() as $document) {
+            $documents[(int) $document->getId()] = $document->getName();
+        }
+
+        $form = $this->createForm(GuardiaTaskBankItemType::class, $data, ['documents' => $documents, 'subjects' => $subjects]);
         $form->handleRequest($request);
 
-        if ($form->isSubmitted() && $form->isValid() && $this->applyDocument($form, $data, $item, $uploader)) {
+        $removed = $form->isSubmitted() && $form->isValid() ? $this->applyDocuments($form, $data, $item, $uploader) : null;
+        if (null !== $removed) {
             $data->applyTo($item);
             $em->persist($item);
             $em->flush();
+            // Guardado: los quitados ya no los referencia nadie (un encargo guarda su propia copia).
+            array_walk($removed, static fn (string $path) => $uploader->remove($path));
             $this->addFlash('success', 'Tarea guardada en el banco.');
 
             return $this->redirectToRoute('guardia_bank_index', ['nivel' => $item->getLevel()->value]);
@@ -434,47 +436,58 @@ final class GuardiaTaskBankController extends AbstractController
     }
 
     /**
-     * Applies the document part of a valid submit: stores a newly uploaded file (replacing any previous
-     * one) or drops the current document when asked. A rejected upload becomes a form error and the
-     * submit is refused, so the row is never saved half-changed.
+     * Applies the document part of a valid submit: stores the newly uploaded files after the rest and
+     * detaches the ones ticked for removal. Every upload is checked before anything is touched, so one
+     * rejected file becomes a form error and refuses the whole submit — the task is never saved
+     * half-changed.
      *
-     * The previous file is deleted right away rather than after the flush: unlike the parte, nothing
-     * else points at it, and a leftover file in private storage is worse than a rare orphan write.
+     * The detached files are NOT deleted here but returned, for the caller to delete once the change is
+     * saved: a failure in between must not leave rows pointing at files already gone. If storing one of
+     * the uploads fails, the ones already stored are removed before the error goes up.
      *
      * @param FormInterface<GuardiaTaskBankFormData> $form     the submitted form
      * @param GuardiaTaskBankFormData                $data     the submitted data
      * @param GuardiaTaskBankItem                    $item     the task being saved
      * @param FileUploader                           $uploader the private-storage uploader
      *
-     * @return bool true when the submit may proceed
+     * @return list<string>|null the storage paths of the detached files, to delete after saving; null when
+     *                           the submit is refused
      */
-    private function applyDocument(FormInterface $form, GuardiaTaskBankFormData $data, GuardiaTaskBankItem $item, FileUploader $uploader): bool
+    private function applyDocuments(FormInterface $form, GuardiaTaskBankFormData $data, GuardiaTaskBankItem $item, FileUploader $uploader): ?array
     {
-        $file = $data->document;
+        $files = array_values(array_filter($data->documents, static fn (?UploadedFile $f): bool => DocumentUpload::isPresent($f)));
 
-        if (!$file instanceof UploadedFile || !DocumentUpload::isPresent($file)) {
-            if ($data->removeDocument && $item->hasDocument()) {
-                $uploader->remove((string) $item->getDocumentPath());
-                $item->setDocumentPath(null)->setDocumentName(null);
+        $problems = array_filter(array_map(static fn (UploadedFile $f): ?string => DocumentUpload::problem($f), $files));
+        foreach ($problems as $problem) {
+            $form->get('documents')->addError(new FormError($problem));
+        }
+        if ([] !== $problems) {
+            return null;
+        }
+
+        $stored = [];
+        try {
+            foreach ($files as $file) {
+                $stored[] = [$uploader->upload($file, self::BANK_DOCUMENT_SUBDIR), DocumentUpload::nameOf($file)];
             }
+        } catch (\Throwable $e) {
+            array_walk($stored, static fn (array $s) => $uploader->remove($s[0]));
 
-            return true;
+            throw $e;
+        }
+        foreach ($stored as [$path, $name]) {
+            $item->addDocument($path, $name);
         }
 
-        $problem = DocumentUpload::problem($file);
-        if (null !== $problem) {
-            $form->get('document')->addError(new FormError($problem));
-
-            return false;
+        $removed = [];
+        foreach ($item->getDocuments() as $document) {
+            if (\in_array($document->getId(), $data->removeDocuments, true)) {
+                $item->removeDocument($document);
+                $removed[] = $document->getPath();
+            }
         }
 
-        $previous = $item->getDocumentPath();
-        $item->setDocumentPath($uploader->upload($file, self::BANK_DOCUMENT_SUBDIR))->setDocumentName(DocumentUpload::nameOf($file));
-        if (null !== $previous) {
-            $uploader->remove($previous);
-        }
-
-        return true;
+        return $removed;
     }
 
     /**

@@ -15,10 +15,12 @@ use App\Entity\User;
 use App\Enum\Area;
 use App\Enum\EducationLevel;
 use App\Enum\PermissionLevel;
+use App\Service\FileUploader;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
+use Symfony\Component\Mime\Email;
 
 /**
  * Ordering copies from conserjería. The order is recorded AND sent: the number of copies is required
@@ -86,7 +88,7 @@ final class CopyRequestTest extends WebTestCase
     private function queuedOrder(string $context): CopyRequest
     {
         $other = (new User())->setFullName('Quien pidió')->setEmail('pidio-'.uniqid().'@centro.test');
-        $order = (new CopyRequest())->setRequestedBy($other)->setCopies(30)->setContext($context)
+        $order = (new CopyRequest())->setRequestedBy($other)->addLine(30)->setContext($context)
             ->setRecipient('fotocopias@centro.test')
             ->markSent(new \DateTimeImmutable('2026-01-15 08:30'));
         $this->em->persist($other);
@@ -169,11 +171,12 @@ final class CopyRequestTest extends WebTestCase
         $crawler = $this->client->request('GET', '/fotocopias/guardia/'.$coverId);
         self::assertResponseIsSuccessful();
         // The bank task's usual number of copies is prefilled, but stays editable.
-        self::assertSame('28', $crawler->filter('input[name="copy_request[copies]"]')->attr('value'));
+        self::assertSame('28', $crawler->filter('input[name="copy_request[copies][0]"]')->attr('value'));
 
         $token = (string) $crawler->filter('input[name="copy_request[_token]"]')->attr('value');
         $this->client->request('POST', '/fotocopias/guardia/'.$coverId, ['copy_request' => [
-            'copies' => '30',
+            'files' => (string) $crawler->filter('input[name="copy_request[files]"]')->attr('value'),
+            'copies' => ['30'],
             'notes' => 'A doble cara',
             '_token' => $token,
         ]]);
@@ -182,7 +185,7 @@ final class CopyRequestTest extends WebTestCase
         self::assertEmailCount(1);
 
         $order = $this->onlyOrder();
-        self::assertSame(30, $order->getCopies());
+        self::assertSame(30, $order->getTotalCopies());
         self::assertTrue($order->isSent());
         // What the copies are for is snapshotted, subject and group included, so the mailbox reads alone.
         self::assertStringContainsString('E4D', $order->getContext());
@@ -211,7 +214,98 @@ final class CopyRequestTest extends WebTestCase
         $crawler = $this->client->request('GET', '/fotocopias/guardia/'.$cover->getId());
 
         self::assertResponseIsSuccessful();
-        self::assertSame('31', $crawler->filter('input[name="copy_request[copies]"]')->attr('value'));
+        self::assertSame('31', $crawler->filter('input[name="copy_request[copies][0]"]')->attr('value'));
+    }
+
+    /**
+     * Una tarea del banco con varios archivos sale en UN encargo, con todos adjuntos y las copias de cada
+     * uno: la ficha va por alumno y el solucionario una vez. Cada uno parte de las copias sugeridas.
+     */
+    public function testATaskWithSeveralFilesOrdersEachWithItsOwnCopies(): void
+    {
+        $user = $this->login('guardia@centro.test');
+        $cover = $this->coverWithBankTask($user, suggestedCopies: 28);
+        $uploader = self::getContainer()->get(FileUploader::class);
+        $cover->getBankItem()?->addDocument($uploader->store('ejercicios', 'guardia-task-bank', 'pdf'), 'ficha.pdf')
+            ->addDocument($uploader->store('soluciones', 'guardia-task-bank', 'pdf'), 'solucionario.pdf');
+        $this->em->flush();
+        $coverId = (int) $cover->getId();
+
+        $crawler = $this->client->request('GET', '/fotocopias/guardia/'.$coverId);
+        self::assertResponseIsSuccessful();
+        self::assertSame('28', $crawler->filter('input[name="copy_request[copies][0]"]')->attr('value'));
+        self::assertSame('28', $crawler->filter('input[name="copy_request[copies][1]"]')->attr('value'));
+        self::assertSelectorTextContains('label[for="copy_request_copies_1"]', 'solucionario.pdf');
+
+        $token = (string) $crawler->filter('input[name="copy_request[_token]"]')->attr('value');
+        $this->client->request('POST', '/fotocopias/guardia/'.$coverId, ['copy_request' => [
+            'files' => (string) $crawler->filter('input[name="copy_request[files]"]')->attr('value'),
+            'copies' => ['28', '1'],
+            '_token' => $token,
+        ]]);
+
+        self::assertResponseRedirects('/fotocopias');
+        self::assertEmailCount(1);
+        $email = self::getMailerMessage();
+        self::assertInstanceOf(Email::class, $email);
+        self::assertStringContainsString('2 archivos a fotocopiar', (string) $email->getSubject());
+        self::assertCount(2, $email->getAttachments());
+
+        $order = $this->onlyOrder();
+        self::assertSame([28, 1], array_map(static fn ($l) => $l->getCopies(), $order->getLines()));
+        self::assertSame(['ficha.pdf', 'solucionario.pdf'], array_map(static fn ($l) => $l->getName(), $order->getLines()));
+        // Copia propia del encargo: no apunta al fichero del banco, que su departamento puede cambiar.
+        $bankPaths = array_map(static fn ($d) => $d->getPath(), $cover->getBankItem()?->getDocuments() ?? []);
+        self::assertSame([], array_intersect($bankPaths, array_map(static fn ($l) => $l->getPath(), $order->getLines())));
+    }
+
+    /**
+     * Las copias van por posición: si la tarea cambia de archivos entre abrir el formulario y enviarlo, el
+     * envío se rechaza en vez de aplicar el número de un archivo a otro.
+     */
+    public function testAnOrderIsRefusedWhenTheTaskFilesChangedMeanwhile(): void
+    {
+        $user = $this->login('guardia@centro.test');
+        $cover = $this->coverWithBankTask($user, suggestedCopies: 28);
+        $uploader = self::getContainer()->get(FileUploader::class);
+        $item = $cover->getBankItem();
+        self::assertNotNull($item);
+        $item->addDocument($uploader->store('ejercicios', 'guardia-task-bank', 'pdf'), 'ficha.pdf')
+            ->addDocument($uploader->store('soluciones', 'guardia-task-bank', 'pdf'), 'solucionario.pdf');
+        $this->em->flush();
+        $coverId = (int) $cover->getId();
+
+        $crawler = $this->client->request('GET', '/fotocopias/guardia/'.$coverId);
+        // El departamento cambia el solucionario por otro archivo: mismo número de archivos.
+        $item->removeDocument($item->getDocuments()[1])->addDocument($uploader->store('otro', 'guardia-task-bank', 'pdf'), 'lectura.pdf');
+        $this->em->flush();
+
+        $this->client->request('POST', '/fotocopias/guardia/'.$coverId, ['copy_request' => [
+            'files' => (string) $crawler->filter('input[name="copy_request[files]"]')->attr('value'),
+            'copies' => ['28', '1'],
+            '_token' => (string) $crawler->filter('input[name="copy_request[_token]"]')->attr('value'),
+        ]]);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertSelectorTextContains('body', 'Los archivos de esta tarea han cambiado');
+        self::assertEmailCount(0);
+    }
+
+    /**
+     * Un archivo de la tarea que ya no está en disco no se encarga a medias: conserjería contaría mal.
+     */
+    public function testAnOrderIsNotOfferedWhenAFileOfTheTaskIsGone(): void
+    {
+        $user = $this->login('guardia@centro.test');
+        $cover = $this->coverWithBankTask($user);
+        $cover->getBankItem()?->addDocument('guardia-task-bank/no-existe.pdf', 'solucionario.pdf');
+        $this->em->flush();
+
+        $this->client->request('GET', '/fotocopias/guardia/'.$cover->getId());
+
+        self::assertResponseRedirects('/guardias/'.$cover->getId().'/ver');
+        $this->client->followRedirect();
+        self::assertAnySelectorTextContains('.flash', '«solucionario.pdf» ya no está disponible');
     }
 
     public function testTheNumberOfCopiesIsRequired(): void
@@ -223,7 +317,8 @@ final class CopyRequestTest extends WebTestCase
         $crawler = $this->client->request('GET', '/fotocopias/guardia/'.$coverId);
         $token = (string) $crawler->filter('input[name="copy_request[_token]"]')->attr('value');
         $this->client->request('POST', '/fotocopias/guardia/'.$coverId, ['copy_request' => [
-            'copies' => '',
+            'files' => (string) $crawler->filter('input[name="copy_request[files]"]')->attr('value'),
+            'copies' => [''],
             '_token' => $token,
         ]]);
 
@@ -256,7 +351,7 @@ final class CopyRequestTest extends WebTestCase
             $this->client->request(
                 'POST',
                 '/fotocopias/nuevo',
-                ['copy_request' => ['context' => 'Examen de 2º ESO B', 'copies' => '25', '_token' => $token], '_once' => $once],
+                ['copy_request' => ['context' => 'Examen de 2º ESO B', 'copies' => ['25'], '_token' => $token], '_once' => $once],
                 ['copy_request' => ['document' => new UploadedFile($path, $fileName, null, null, true)]],
             );
         };
@@ -295,7 +390,7 @@ final class CopyRequestTest extends WebTestCase
         $sendAgain('examen.pdf');
         self::assertResponseRedirects('/fotocopias');
         self::assertEmailCount(1);
-        self::assertSame('examen.pdf', $this->onlyOrder()->getDocumentName());
+        self::assertSame('examen.pdf', $this->onlyOrder()->getLines()[0]->getName());
     }
 
     public function testAStandaloneOrderCarriesTheUploadedDocument(): void
@@ -308,8 +403,8 @@ final class CopyRequestTest extends WebTestCase
 
         $order = $this->onlyOrder();
         self::assertSame('Examen de 2º ESO B', $order->getContext());
-        self::assertSame(25, $order->getCopies());
-        self::assertSame('examen.pdf', $order->getDocumentName());
+        self::assertSame(25, $order->getTotalCopies());
+        self::assertSame('examen.pdf', $order->getLines()[0]->getName());
         self::assertTrue($order->isSent());
     }
 
@@ -336,7 +431,7 @@ final class CopyRequestTest extends WebTestCase
         $token = (string) $crawler->filter('input[name="copy_request[_token]"]')->attr('value');
         $this->client->request('POST', '/fotocopias/nuevo', ['copy_request' => [
             'context' => 'Algo',
-            'copies' => '10',
+            'copies' => ['10'],
             '_token' => $token,
         ]]);
 
@@ -361,8 +456,8 @@ final class CopyRequestTest extends WebTestCase
         $mine = $this->login('mia@centro.test');
         $other = (new User())->setFullName('Otra')->setEmail('otra@centro.test');
         $this->em->persist($other);
-        $this->em->persist((new CopyRequest())->setRequestedBy($mine)->setCopies(10)->setContext('Lo mío')->setRecipient('fotocopias@centro.test'));
-        $this->em->persist((new CopyRequest())->setRequestedBy($other)->setCopies(5)->setContext('Lo de otra')->setRecipient('fotocopias@centro.test'));
+        $this->em->persist((new CopyRequest())->setRequestedBy($mine)->addLine(10)->setContext('Lo mío')->setRecipient('fotocopias@centro.test'));
+        $this->em->persist((new CopyRequest())->setRequestedBy($other)->addLine(5)->setContext('Lo de otra')->setRecipient('fotocopias@centro.test'));
         $this->em->flush();
 
         $text = $this->client->request('GET', '/fotocopias')->filter('table')->text();
@@ -448,7 +543,7 @@ final class CopyRequestTest extends WebTestCase
         // Pedir fotocopias lo hace cualquiera; decir que están hechas, solo quien las hace. Si no fuera
         // así, la cola de conserjería la vaciaría quien tiene prisa.
         $user = $this->login();
-        $order = (new CopyRequest())->setRequestedBy($user)->setCopies(10)->setContext('Lo mío')
+        $order = (new CopyRequest())->setRequestedBy($user)->addLine(10)->setContext('Lo mío')
             ->setRecipient('fotocopias@centro.test')->markSent(new \DateTimeImmutable('2026-01-15 08:30'));
         $this->em->persist($order);
         $this->em->flush();
@@ -471,9 +566,8 @@ final class CopyRequestTest extends WebTestCase
     public function testAnOrderWhoseDocumentWasPurgedSaysSoAndCannotBeResent(): void
     {
         $user = $this->login();
-        $order = (new CopyRequest())->setRequestedBy($user)->setCopies(10)->setContext('Examen adaptado')
+        $order = (new CopyRequest())->setRequestedBy($user)->addLine(10, 'copy-requests/no-existe.pdf', 'Examen de Lucía.pdf')->setContext('Examen adaptado')
             ->setRecipient('fotocopias@centro.test')
-            ->setDocumentPath('copy-requests/no-existe.pdf')->setDocumentName('Examen de Lucía.pdf')
             ->markSent(new \DateTimeImmutable('2026-01-15 08:30'));
         $this->em->persist($order);
         $this->em->flush();
@@ -484,7 +578,7 @@ final class CopyRequestTest extends WebTestCase
         $action = '/fotocopias/'.$id.'/reenviar';
         $token = (string) $crawler->filter('form[action="'.$action.'"] input[name="_token"]')->attr('value');
 
-        $order->purgeDocument(new \DateTimeImmutable('2026-01-16 03:00'));
+        $order->purgeDocuments(new \DateTimeImmutable('2026-01-16 03:00'));
         $this->em->flush();
 
         $crawler = $this->client->request('GET', '/fotocopias');

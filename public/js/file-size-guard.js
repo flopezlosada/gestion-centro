@@ -26,13 +26,21 @@
         // fichero, y su nombre accesible se leería pegado al del campo. Se cuelga fuera del label.
         (input.closest('label') || input).insertAdjacentElement('afterend', message);
 
+        // Con `multiple`, además del límite de cada fichero cuenta la suma: todos viajan en el mismo envío.
+        var maxTotal = parseInt(input.dataset.maxTotalBytes, 10) || 0;
+
         input.addEventListener('change', function () {
-            var file = input.files[0];
+            var files = Array.prototype.slice.call(input.files);
+            var tooBig = files.filter(function (file) { return file.size > maxBytes; })[0];
+            var total = files.reduce(function (sum, file) { return sum + file.size; }, 0);
             message.hidden = true;
-            if (!file || file.size <= maxBytes) {
+            if (tooBig) {
+                message.textContent = '«' + tooBig.name + '» pesa ' + formatMb(tooBig.size) + ' MB, el máximo es ' + formatMb(maxBytes) + ' MB.';
+            } else if (maxTotal && total > maxTotal) {
+                message.textContent = 'Entre todos pesan ' + formatMb(total) + ' MB y de una vez se pueden subir ' + formatMb(maxTotal) + ' MB: sube unos ahora y el resto después.';
+            } else {
                 return;
             }
-            message.textContent = '«' + file.name + '» pesa ' + formatMb(file.size) + ' MB, el máximo es ' + formatMb(maxBytes) + ' MB.';
             message.hidden = false;
             input.value = '';
         });

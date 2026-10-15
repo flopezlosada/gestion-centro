@@ -63,18 +63,18 @@ final class PastDocumentPurgerTest extends KernelTestCase
     }
 
     /**
-     * A copy order with its own stored document, placed at that moment, for that guardia or for none, and
-     * sent at once unless told otherwise.
+     * A copy order with its own stored documents (one unless told otherwise), placed at that moment, for
+     * that guardia or for none, and sent at once unless told otherwise.
      */
-    private function order(string $placedAt, ?GuardiaCover $cover = null, bool $sent = true): CopyRequest
+    private function order(string $placedAt, ?GuardiaCover $cover = null, bool $sent = true, int $files = 1): CopyRequest
     {
         $order = (new CopyRequest())
             ->setCover($cover)
-            ->setCopies(25)
             ->setContext('4º ESO · E4C')
-            ->setRecipient('fotocopias@centro.test')
-            ->setDocumentPath($this->uploader->store('%PDF-1.4 copia', 'copy-requests', 'pdf'))
-            ->setDocumentName('Examen adaptado de Lucía.pdf');
+            ->setRecipient('fotocopias@centro.test');
+        for ($i = 1; $i <= $files; ++$i) {
+            $order->addLine(25, $this->uploader->store('%PDF-1.4 copia', 'copy-requests', 'pdf'), sprintf('Examen adaptado de Lucía %d.pdf', $i));
+        }
         (new \ReflectionProperty(CopyRequest::class, 'requestedAt'))->setValue($order, new \DateTimeImmutable($placedAt));
         if ($sent) {
             $order->markSent(new \DateTimeImmutable($placedAt));
@@ -147,25 +147,39 @@ final class PastDocumentPurgerTest extends KernelTestCase
         $purged = $this->purger->purge(new \DateTimeImmutable(self::NOW));
 
         self::assertSame(['covers' => 0, 'orders' => 1, 'unremoved' => []], $purged);
-        self::assertNull($pastGuardia->getDocumentPath());
-        self::assertNull($pastGuardia->getDocumentName());
+        self::assertNull($pastGuardia->getLines()[0]->getPath());
+        self::assertNull($pastGuardia->getLines()[0]->getName());
         self::assertNotNull($pastGuardia->getDocumentPurgedAt());
-        self::assertNotNull($futureGuardia->getDocumentPath(), 'la guardia aún no ha llegado');
-        self::assertTrue($this->isStored((string) $futureGuardia->getDocumentPath()));
+        self::assertNotNull($futureGuardia->getLines()[0]->getPath(), 'la guardia aún no ha llegado');
+        self::assertTrue($this->isStored((string) $futureGuardia->getLines()[0]->getPath()));
     }
 
     public function testUnEncargoSueltoCuentaPorElDiaEnQueSeHizo(): void
     {
         $yesterday = $this->order('2026-10-13 23:59');
-        $yesterdayPath = (string) $yesterday->getDocumentPath();
+        $yesterdayPath = (string) $yesterday->getLines()[0]->getPath();
         $today = $this->order('2026-10-14 00:01');
 
         $purged = $this->purger->purge(new \DateTimeImmutable(self::NOW));
 
         self::assertSame(['covers' => 0, 'orders' => 1, 'unremoved' => []], $purged);
         self::assertFalse($this->isStored($yesterdayPath));
-        self::assertNotNull($today->getDocumentPath());
-        self::assertTrue($this->isStored((string) $today->getDocumentPath()));
+        self::assertNotNull($today->getLines()[0]->getPath());
+        self::assertTrue($this->isStored((string) $today->getLines()[0]->getPath()));
+    }
+
+    /**
+     * Un encargo con varios archivos los borra todos, y el recuento es de documentos, no de encargos.
+     */
+    public function testUnEncargoConVariosArchivosLosBorraTodos(): void
+    {
+        $order = $this->order('2026-10-13 09:00', files: 3);
+        $paths = array_map(static fn ($l): string => (string) $l->getPath(), $order->getLines());
+
+        self::assertSame(['covers' => 0, 'orders' => 3, 'unremoved' => []], $this->purger->purge(new \DateTimeImmutable(self::NOW)));
+        self::assertSame([false, false, false], array_map(fn (string $p): bool => $this->isStored($p), $paths));
+        self::assertFalse($order->hasDocument());
+        self::assertNotNull($order->getDocumentPurgedAt());
     }
 
     public function testUnaSegundaPasadaNoEncuentraNada(): void
@@ -197,14 +211,14 @@ final class PastDocumentPurgerTest extends KernelTestCase
     {
         $retryable = $this->order('2026-10-13 10:00', sent: false);
         $abandoned = $this->order('2026-10-06 10:00', sent: false);
-        $abandonedPath = (string) $abandoned->getDocumentPath();
+        $abandonedPath = (string) $abandoned->getLines()[0]->getPath();
 
         $purged = $this->purger->purge(new \DateTimeImmutable(self::NOW));
 
         self::assertSame(['covers' => 0, 'orders' => 1, 'unremoved' => []], $purged);
-        self::assertNotNull($retryable->getDocumentPath(), 'aún se puede reintentar el envío');
-        self::assertTrue($this->isStored((string) $retryable->getDocumentPath()));
-        self::assertNull($abandoned->getDocumentPath(), 'pasada la semana se borra aunque nunca saliera');
+        self::assertNotNull($retryable->getLines()[0]->getPath(), 'aún se puede reintentar el envío');
+        self::assertTrue($this->isStored((string) $retryable->getLines()[0]->getPath()));
+        self::assertNull($abandoned->getLines()[0]->getPath(), 'pasada la semana se borra aunque nunca saliera');
         self::assertFalse($this->isStored($abandonedPath));
     }
 }

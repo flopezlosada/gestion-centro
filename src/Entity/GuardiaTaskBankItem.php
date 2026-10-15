@@ -7,6 +7,8 @@ namespace App\Entity;
 use App\Enum\EducationLevel;
 use App\Repository\GuardiaTaskBankItemRepository;
 use App\Util\GroupCode;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
@@ -27,9 +29,11 @@ use Doctrine\ORM\Mapping as ORM;
  * which here means last year's tasks stop being offered while the guardias that used them keep showing
  * what the group was given.
  *
- * The work itself lives in the same two shapes as a {@see GuardiaCover}'s task: an uploaded document
- * and/or a free-text description. {@see $suggestedCopies} travels with it because a task that reaches
- * the copy room without a number of copies is useless.
+ * The work itself lives in the same two shapes as a {@see GuardiaCover}'s task: uploaded documents
+ * ({@see GuardiaTaskBankDocument}, as many as the task needs) and/or a free-text description.
+ * {@see $suggestedCopies} travels with it because a task that reaches the copy room without a number of
+ * copies is useless; it is one number for the whole task, prefilled for every file when the copies are
+ * ordered, where each file's own number is set.
  *
  * Validation lives in {@see \App\Form\GuardiaTaskBankFormData}, the only way in: constraints repeated
  * here would be dead code free to drift from the ones that actually run.
@@ -92,13 +96,16 @@ class GuardiaTaskBankItem
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $description = null;
 
-    /** Storage-relative path of the attached document, as returned by {@see \App\Service\FileUploader}. */
-    #[ORM\Column(name: 'document_path', length: 255, nullable: true)]
-    private ?string $documentPath = null;
-
-    /** Original client filename of the document, so the download is served with a name. */
-    #[ORM\Column(name: 'document_name', length: 255, nullable: true)]
-    private ?string $documentName = null;
+    /**
+     * The files of the task, in upload order. Several on purpose: a task is often the exercises plus
+     * their answer key, and splitting it into two bank entries would let a guardia take one without the
+     * other. Removing one deletes its row ({@code orphanRemoval}); its file is the controller's job.
+     *
+     * @var Collection<int, GuardiaTaskBankDocument>
+     */
+    #[ORM\OneToMany(targetEntity: GuardiaTaskBankDocument::class, mappedBy: 'item', cascade: ['persist'], orphanRemoval: true)]
+    #[ORM\OrderBy(['position' => 'ASC'])]
+    private Collection $documents;
 
     /**
      * How many copies this task usually needs, prefilled into the copy-room order. Null when the
@@ -126,6 +133,7 @@ class GuardiaTaskBankItem
     public function __construct()
     {
         $this->createdAt = new \DateTimeImmutable();
+        $this->documents = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -240,38 +248,50 @@ class GuardiaTaskBankItem
         return $this;
     }
 
-    public function getDocumentPath(): ?string
+    /**
+     * The task's files, in upload order.
+     *
+     * @return list<GuardiaTaskBankDocument> the files
+     */
+    public function getDocuments(): array
     {
-        return $this->documentPath;
+        return array_values($this->documents->toArray());
     }
 
-    public function setDocumentPath(?string $documentPath): static
+    /**
+     * Attaches a stored file after the ones the task already has.
+     *
+     * @param string $path the storage-relative path of the stored file
+     * @param string $name the original filename
+     */
+    public function addDocument(string $path, string $name): static
     {
-        $this->documentPath = $documentPath;
-
-        return $this;
-    }
-
-    public function getDocumentName(): ?string
-    {
-        return $this->documentName;
-    }
-
-    public function setDocumentName(?string $documentName): static
-    {
-        $this->documentName = $documentName;
+        $next = 1 + max([-1, ...$this->documents->map(static fn (GuardiaTaskBankDocument $d): int => $d->getPosition())->getValues()]);
+        $this->documents->add(new GuardiaTaskBankDocument($this, $path, $name, $next));
 
         return $this;
     }
 
     /**
-     * Whether the task carries an attached document (the thing the copy room would print).
+     * Detaches one of the task's files; the row goes with it, the stored file is the caller's to delete.
+     *
+     * @param GuardiaTaskBankDocument $document the file to detach
+     */
+    public function removeDocument(GuardiaTaskBankDocument $document): static
+    {
+        $this->documents->removeElement($document);
+
+        return $this;
+    }
+
+    /**
+     * Whether the task carries at least one file (something the copy room would print).
      *
      * @return bool true when there is a document
      */
     public function hasDocument(): bool
     {
-        return null !== $this->documentPath;
+        return !$this->documents->isEmpty();
     }
 
     public function getSuggestedCopies(): ?int

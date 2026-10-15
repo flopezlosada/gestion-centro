@@ -64,10 +64,14 @@
                                 {{ order.context }}
                                 {% if order.notes %}<div class="help">{{ order.notes|excerpt(100) }}</div>{% endif %}
                             </td>
-                            <td class="mono">{{ order.copies }}</td>
+                            <td class="mono">{{ order.totalCopies }}</td>
                             <td>
                                 {% if order.hasDocument %}
-                                    <a href="{{ path('copy_request_download', { id: order.id }) }}">{{ order.documentName ?: 'documento' }}</a>
+                                    {#- Con varios archivos, cada uno con sus copias: el total de la columna de al lado no dice cuántas son de cada. -#}
+                                    {% set docs = order.documentLines %}
+                                    {% for line in docs %}
+                                        <div><a href="{{ path('copy_request_download', { id: line.id }) }}">{{ line.name ?: 'documento' }}</a>{% if docs|length > 1 %} <span class="help">· {{ line.copies }}</span>{% endif %}</div>
+                                    {% endfor %}
                                 {% elseif order.documentPurgedAt %}
                                     <span class="help">Borrado al pasar el día</span>
                                 {% else %}—{% endif %}

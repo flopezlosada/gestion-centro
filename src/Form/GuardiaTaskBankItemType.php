@@ -24,8 +24,9 @@ use Symfony\Component\OptionsResolver\OptionsResolver;
  * Form to add or edit a task in the guardia task bank, over {@see GuardiaTaskBankFormData}.
  *
  * The subject is a closed list ({@code subjects}) fed from the course's own timetable: a bank task has
- * to be of the subject the class was going to have, and free text would never match it. "Quitar el
- * documento" is only offered when there is one to remove ({@code has_document}).
+ * to be of the subject the class was going to have, and free text would never match it. A task may
+ * carry several documents: new ones are added with one multiple upload, and each existing one
+ * ({@code documents}) can be removed on its own.
  *
  * @extends AbstractType<GuardiaTaskBankFormData>
  */
@@ -74,18 +75,20 @@ final class GuardiaTaskBankItemType extends AbstractType
                 'required' => false,
                 'help' => 'Lo que hay que hacer, si no viene todo en el documento.',
             ])
-            ->add('document', FileType::class, [
-                'label' => 'Documento',
+            ->add('documents', FileType::class, [
+                'label' => [] !== $options['documents'] ? 'Añadir documentos' : 'Documentos',
+                'multiple' => true,
                 'required' => false,
-                'help' => sprintf('PDF, Office, texto o imagen. Máximo %d MB.', intdiv(DocumentUpload::MAX_BYTES, 1024 * 1024)),
-                // Avisa del tamaño antes de enviar (file-size-guard.js), con el mismo límite que aplica el servidor.
-                'attr' => ['data-max-bytes' => DocumentUpload::MAX_BYTES],
+                'help' => sprintf('Puedes elegir varios a la vez: la ficha, el solucionario… PDF, Office, texto o imagen; máximo %d MB cada uno.', intdiv(DocumentUpload::MAX_BYTES, 1024 * 1024)),
+                // Avisa del tamaño antes de enviar (file-size-guard.js), con el mismo límite que aplica el
+                // servidor a cada fichero y el del envío entero.
+                'attr' => ['data-max-bytes' => DocumentUpload::MAX_BYTES, 'data-max-total-bytes' => DocumentUpload::MAX_REQUEST_BYTES],
             ])
             ->add('suggestedCopies', IntegerType::class, [
                 'label' => 'Copias que suele necesitar',
                 'required' => false,
                 'attr' => ['min' => 1, 'max' => 500],
-                'help' => 'Se propone al pedir fotocopias; siempre se puede ajustar. Déjalo vacío si no aplica.',
+                'help' => 'Se propone para cada documento al pedir fotocopias, y ahí se ajusta el de cada uno (el solucionario, 1). Déjalo vacío si no aplica.',
             ])
             ->add('active', CheckboxType::class, [
                 'label' => 'Disponible para las guardias',
@@ -93,10 +96,16 @@ final class GuardiaTaskBankItemType extends AbstractType
                 'help' => 'Al retirarla deja de salir en el reparto, pero se conserva en las guardias que ya la usaron.',
             ]);
 
-        if (true === $options['has_document']) {
-            $builder->add('removeDocument', CheckboxType::class, [
-                'label' => 'Quitar el documento actual',
+        if ([] !== $options['documents']) {
+            $builder->add('removeDocuments', ChoiceType::class, [
+                'label' => 'Documentos de la tarea: marca los que quieras quitar',
+                // Por id y no por nombre: dos documentos pueden llamarse igual («ficha.pdf»).
+                'choices' => array_keys($options['documents']),
+                'choice_label' => static fn (int $id): string => $options['documents'][$id],
+                'multiple' => true,
+                'expanded' => true,
                 'required' => false,
+                'help' => 'Marca los que ya no sirven: se borran al guardar.',
             ]);
         }
     }
@@ -105,10 +114,11 @@ final class GuardiaTaskBankItemType extends AbstractType
     {
         $resolver->setDefaults([
             'data_class' => GuardiaTaskBankFormData::class,
-            'has_document' => false,
+            // Los documentos que ya tiene la tarea, id → nombre, para poder quitar cada uno.
+            'documents' => [],
             'subjects' => [],
         ]);
-        $resolver->setAllowedTypes('has_document', 'bool');
+        $resolver->setAllowedTypes('documents', 'array');
         $resolver->setAllowedTypes('subjects', 'string[]');
     }
 }

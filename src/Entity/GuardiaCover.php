@@ -428,7 +428,7 @@ class GuardiaCover implements Auditable
     /**
      * Whether the work the group gets came from the bank rather than from the absent teacher. Both
      * can coexist (a task was pulled and the teacher later uploaded theirs), and the teacher's own
-     * work always takes precedence — see {@see getPrintableDocumentPath()}.
+     * work always takes precedence — see {@see getPrintableDocuments()}.
      *
      * @return bool true when a bank task is attached
      */
@@ -438,25 +438,22 @@ class GuardiaCover implements Auditable
     }
 
     /**
-     * The document to actually put in front of the group — and to send to the copy room: the one the
-     * absent teacher uploaded if they did, otherwise the bank task's. Null when neither carries a file
-     * (the work may be only a description).
+     * The files to actually put in front of the group — and to send to the copy room: the one the absent
+     * teacher uploaded if they did, otherwise the bank task's (as many as it has). Empty when neither
+     * carries a file (the work may be only a description).
      *
-     * @return string|null the storage-relative path, or null
+     * @return list<array{path: string, name: string}> each file's storage-relative path and original name
      */
-    public function getPrintableDocumentPath(): ?string
+    public function getPrintableDocuments(): array
     {
-        return $this->taskDocumentPath ?? $this->bankItem?->getDocumentPath();
-    }
+        if (null !== $this->taskDocumentPath) {
+            return [['path' => $this->taskDocumentPath, 'name' => $this->taskDocumentName ?? 'documento']];
+        }
 
-    /**
-     * The original filename of {@see getPrintableDocumentPath()}, to serve and to name the attachment.
-     *
-     * @return string|null the filename, or null when there is no document
-     */
-    public function getPrintableDocumentName(): ?string
-    {
-        return null !== $this->taskDocumentPath ? $this->taskDocumentName : $this->bankItem?->getDocumentName();
+        return array_map(
+            static fn (GuardiaTaskBankDocument $d): array => ['path' => $d->getPath(), 'name' => $d->getName()],
+            $this->bankItem?->getDocuments() ?? [],
+        );
     }
 
     public function getAssignedGuardia(): ?User

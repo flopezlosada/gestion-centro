@@ -101,10 +101,19 @@ final class CopyShopMailerTest extends TestCase
             ->setGroupName('E4D');
     }
 
-    private function order(): CopyRequest
+    /**
+     * An order as the controller builds it: by default a single line of 25 copies with no file.
+     *
+     * @param list<array{0: int, 1?: string, 2?: string}> $lines each line's copies, path and name
+     */
+    private function order(array $lines = [[25]]): CopyRequest
     {
-        return (new CopyRequest())
-            ->setCopies(25)
+        $order = new CopyRequest();
+        foreach ($lines as $line) {
+            $order->addLine($line[0], $line[1] ?? null, $line[2] ?? null);
+        }
+
+        return $order
             ->setContext('4º de ESO · grupo E4D · aula A12 · 30/07/2026 10:15')
             ->setNotes('A doble cara')
             ->setRequestedBy((new User())->setFullName('Ana Docente')->setEmail('ana@centro.test'));
@@ -188,20 +197,52 @@ final class CopyShopMailerTest extends TestCase
         $uploader = new FileUploader($this->uploadsDir);
         $path = $uploader->store('contenido de la ficha', 'copy-requests', 'txt');
 
-        $order = $this->order()->setDocumentPath($path)->setDocumentName('ficha-fracciones.pdf');
+        $order = $this->order([[25, $path, 'ficha-fracciones.pdf']]);
         $this->mailerUnder($mailer)->send($order);
 
         $attachments = $sent[0]->getAttachments();
         self::assertCount(1, $attachments);
         self::assertSame('ficha-fracciones.pdf', $attachments[0]->getFilename());
         self::assertStringContainsString('Documento adjunto: ficha-fracciones.pdf', (string) $sent[0]->getTextBody());
+        self::assertStringContainsString(': 25 copias · ', (string) $sent[0]->getSubject());
+    }
+
+    /**
+     * Varios archivos: conserjería tiene que ver en el asunto que hay más de uno que imprimir, y en el
+     * cuerpo cuántas copias de cada uno (la ficha va por alumno, el solucionario una vez).
+     */
+    public function testSeveralFilesAreAllAttachedAndEachStatesItsOwnCopies(): void
+    {
+        [$mailer, $sent] = $this->recordingMailer();
+        $uploader = new FileUploader($this->uploadsDir);
+        $order = $this->order([
+            [25, $uploader->store('ejercicios', 'copy-requests', 'pdf'), 'ficha.pdf'],
+            [25, $uploader->store('lectura', 'copy-requests', 'pdf'), 'lectura.pdf'],
+            [1, $uploader->store('soluciones', 'copy-requests', 'pdf'), 'solucionario.pdf'],
+        ]);
+
+        $this->mailerUnder($mailer)->send($order->setCover($this->cover()));
+
+        self::assertSame('Tarea de guardia · Fotocopias de Ana Docente: 3 archivos a fotocopiar · 4º de ESO · grupo E4D · aula A12 · 30/07/2026 10:15', $sent[0]->getSubject());
+        self::assertSame(['ficha.pdf', 'lectura.pdf', 'solucionario.pdf'], array_map(static fn ($a) => $a->getFilename(), $sent[0]->getAttachments()));
+        $body = (string) $sent[0]->getTextBody();
+        self::assertStringContainsString("3 archivos a fotocopiar (van adjuntos):\n  1. ficha.pdf: 25 copias\n  2. lectura.pdf: 25 copias\n  3. solucionario.pdf: 1 copia\n", $body);
+        self::assertStringNotContainsString('Número de copias', $body, 'no hay un número único que dar');
+    }
+
+    public function testASingleCopyIsSaidInTheSingular(): void
+    {
+        [$mailer, $sent] = $this->recordingMailer();
+        $this->mailerUnder($mailer)->send($this->order([[1]]));
+
+        self::assertStringContainsString(': 1 copia · ', (string) $sent[0]->getSubject());
     }
 
     public function testStillSendsWhenTheDocumentVanishedFromStorage(): void
     {
         // The parte line (and its file) may be gone; the order must still reach the copy room.
         [$mailer, $sent] = $this->recordingMailer();
-        $order = $this->order()->setDocumentPath('copy-requests/desaparecido.pdf')->setDocumentName('desaparecido.pdf');
+        $order = $this->order([[25, 'copy-requests/desaparecido.pdf', 'desaparecido.pdf']]);
 
         self::assertTrue($this->mailerUnder($mailer)->send($order));
         self::assertCount(0, $sent[0]->getAttachments());
