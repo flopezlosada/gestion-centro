@@ -25,6 +25,8 @@
 
     <div class="card form-card">
         {{ form_start(form, { attr: { novalidate: 'novalidate' } }) }}
+            {# Convocar avisa a todo el mundo: un segundo envío del mismo formulario no convoca otra vez. #}
+            {% if not editing %}{{ submission_once_field() }}{% endif %}
             {{ f.submit_error(form) }}
             {{ form_errors(form) }}
             {{ f.section('Qué y cuándo', [form.title, form.day, form.startTime, form.endTime, form.place, form.onlineUrl, form.reminder]) }}

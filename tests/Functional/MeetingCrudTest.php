@@ -154,6 +154,37 @@ final class MeetingCrudTest extends WebTestCase
         self::assertSelectorTextContains('#historial', 'Lucía Coordina');
     }
 
+    /**
+     * El segundo clic con la conexión lenta reenvía el mismo formulario: una reunión y un aviso, no dos.
+     */
+    public function testConveningWithTheSameFormTwiceConvenesOnce(): void
+    {
+        $convener = $this->user('Lucía Coordina', 'lucia.once@centro.test');
+        $member = $this->user('Pedro Miembro', 'pedro.once@centro.test');
+        $project = $this->project($convener, [$member]);
+        $this->em->flush();
+        $this->client->loginUser($convener);
+
+        $crawler = $this->client->request('GET', '/reuniones/nueva?proyecto='.$project->getId());
+        $form = $crawler->selectButton('Convocar')->form();
+        $values = $form->getPhpValues();
+        self::assertNotSame('', $values['_once'] ?? '', 'el formulario lleva su token de un solo uso');
+        $values['meeting_form']['title'] = 'Reunión de un solo envío';
+        $values['meeting_form']['day'] = (new \DateTimeImmutable('+3 days'))->format('Y-m-d');
+        $values['meeting_form']['startTime'] = '14:00';
+
+        $this->client->request('POST', $form->getUri(), $values);
+        self::assertResponseRedirects();
+        $this->client->request('POST', $form->getUri(), $values);
+        self::assertResponseRedirects('/reuniones');
+        $this->client->followRedirect();
+        self::assertAnySelectorTextContains('.flash.success', 'no se ha repetido');
+
+        $this->em->clear();
+        self::assertCount(1, $this->em->getRepository(Meeting::class)->findBy(['title' => 'Reunión de un solo envío']));
+        self::assertSame(1, $this->noticesOf($this->em->getRepository(User::class)->find($member->getId()), 'meeting.convened'), 'un solo aviso, no dos');
+    }
+
     public function testAConvenerWhoUnticksThemselvesConvenesWithoutAttending(): void
     {
         // Jefatura convoca a los tutores de un nivel y no se sienta: se desmarca, y la reunión queda sin ella

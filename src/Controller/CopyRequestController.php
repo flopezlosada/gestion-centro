@@ -17,6 +17,7 @@ use App\Security\Voter\AreaVoter;
 use App\Security\Voter\GuardiaCoverVoter;
 use App\Service\CopyShopMailer;
 use App\Service\FileUploader;
+use App\Service\SubmissionOnce;
 use App\Support\DocumentUpload;
 use App\Util\GroupCode;
 use App\Util\SchoolYear;
@@ -75,7 +76,7 @@ final class CopyRequestController extends AbstractController
      * Orders copies of a document uploaded on the spot, with no guardia behind it.
      */
     #[Route('/nuevo', name: 'copy_request_new', methods: ['GET', 'POST'])]
-    public function new(Request $request, #[CurrentUser] User $user, EntityManagerInterface $em, FileUploader $uploader, CopyShopMailer $mailer): Response
+    public function new(Request $request, #[CurrentUser] User $user, EntityManagerInterface $em, FileUploader $uploader, CopyShopMailer $mailer, SubmissionOnce $once): Response
     {
         $data = new CopyRequestFormData();
         $form = $this->createForm(CopyRequestType::class, $data, ['standalone' => true]);
@@ -88,12 +89,14 @@ final class CopyRequestController extends AbstractController
                 : DocumentUpload::pdfProblem($file);
 
             if (null === $problem && $file instanceof UploadedFile) {
-                $order = (new CopyRequest())->setRequestedBy($user)
-                    ->setDocumentPath($uploader->upload($file, self::COPY_DOCUMENT_SUBDIR))
-                    ->setDocumentName(DocumentUpload::nameOf($file));
-                $data->applyTo($order);
+                return $this->placeOrder($request, $once, function () use ($user, $file, $uploader, $data): CopyRequest {
+                    $order = (new CopyRequest())->setRequestedBy($user)
+                        ->setDocumentPath($uploader->upload($file, self::COPY_DOCUMENT_SUBDIR))
+                        ->setDocumentName(DocumentUpload::nameOf($file));
+                    $data->applyTo($order);
 
-                return $this->placeOrder($order, $em, $mailer);
+                    return $order;
+                }, $em, $mailer);
             }
             $form->get('document')->addError(new FormError((string) $problem));
         }
@@ -111,7 +114,7 @@ final class CopyRequestController extends AbstractController
      * the people that guardia concerns (whoever covers it, the absent teacher, the coordination).
      */
     #[Route('/guardia/{cover}', name: 'copy_request_for_cover', requirements: ['cover' => '\d+'], methods: ['GET', 'POST'])]
-    public function forCover(GuardiaCover $cover, Request $request, #[CurrentUser] User $user, EntityManagerInterface $em, CopyShopMailer $mailer, CopyRequestRepository $requests, ScheduleEntryRepository $schedule, AcademicYearRepository $years, FileUploader $uploader): Response
+    public function forCover(GuardiaCover $cover, Request $request, #[CurrentUser] User $user, EntityManagerInterface $em, CopyShopMailer $mailer, CopyRequestRepository $requests, ScheduleEntryRepository $schedule, AcademicYearRepository $years, FileUploader $uploader, SubmissionOnce $once): Response
     {
         $this->denyAccessUnlessGranted(GuardiaCoverVoter::WORK_ON_TASK, $cover);
 
@@ -135,15 +138,17 @@ final class CopyRequestController extends AbstractController
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
-            $order = (new CopyRequest())
-                ->setRequestedBy($user)
-                ->setCover($cover)
-                ->setBankItem($bankItem)
-                ->setDocumentPath($this->snapshotDocument($cover->getPrintableDocumentPath(), $uploader))
-                ->setDocumentName($cover->getPrintableDocumentName());
-            $data->applyTo($order);
+            return $this->placeOrder($request, $once, function () use ($user, $cover, $bankItem, $uploader, $data): CopyRequest {
+                $order = (new CopyRequest())
+                    ->setRequestedBy($user)
+                    ->setCover($cover)
+                    ->setBankItem($bankItem)
+                    ->setDocumentPath($this->snapshotDocument($cover->getPrintableDocumentPath(), $uploader))
+                    ->setDocumentName($cover->getPrintableDocumentName());
+                $data->applyTo($order);
 
-            return $this->placeOrder($order, $em, $mailer);
+                return $order;
+            }, $em, $mailer);
         }
 
         return $this->render('copy_request/form.html.twig', [
@@ -254,21 +259,41 @@ final class CopyRequestController extends AbstractController
      * Records the order and sends it, telling the user plainly which of the two happened. The row is
      * persisted either way: the order WAS placed, and a failed send must stay visible and resendable.
      *
-     * @param CopyRequest            $order  the order to place
-     * @param EntityManagerInterface $em     the entity manager
-     * @param CopyShopMailer         $mailer the copy-room mailer
+     * The order is built only once the form's one-use token is taken: a second submission of the same form
+     * (the second press with a slow connection) would be a second e-mail to conserjería, and building it
+     * first would leave behind the copy of the document it stores.
+     *
+     * @param Request                 $request the form submission, with its one-use token
+     * @param SubmissionOnce          $once    the one-use token guard
+     * @param \Closure(): CopyRequest $build   builds the order to place
+     * @param EntityManagerInterface  $em      the entity manager
+     * @param CopyShopMailer          $mailer  the copy-room mailer
      *
      * @return Response the redirect to the orders list
      */
-    private function placeOrder(CopyRequest $order, EntityManagerInterface $em, CopyShopMailer $mailer): Response
+    private function placeOrder(Request $request, SubmissionOnce $once, \Closure $build, EntityManagerInterface $em, CopyShopMailer $mailer): Response
     {
-        $sent = $mailer->send($order); // also snapshots the recipient onto the order
-        if ($sent) {
-            $order->markSent(new \DateTimeImmutable());
+        if (!$once->claim($request)) {
+            $this->addFlash('success', 'El encargo ya estaba enviado: este segundo envío no se ha repetido.');
+
+            return $this->redirectToRoute('copy_request_index');
         }
 
-        $em->persist($order);
-        $em->flush();
+        try {
+            $order = $build();
+            $sent = $mailer->send($order); // also snapshots the recipient onto the order
+            if ($sent) {
+                $order->markSent(new \DateTimeImmutable());
+            }
+
+            $em->persist($order);
+            $em->flush();
+        } catch (\Throwable $e) {
+            // No ha quedado encargo: volver a enviar el formulario no es repetir.
+            $once->release($request);
+
+            throw $e;
+        }
 
         if ($sent) {
             $this->addFlash('success', sprintf('Encargo enviado a %s: %d copias.', $order->getRecipient(), $order->getCopies()));
