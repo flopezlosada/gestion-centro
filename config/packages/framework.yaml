@@ -6,7 +6,20 @@ framework:
     default_locale: es
 
     # Note that the session will be started ONLY if you read or write from it.
-    session: true
+    session:
+        # Pinned to PHP's "files" handler instead of whatever the host's php.ini says: it locks the
+        # session for the whole request, so a second simultaneous submit waits and then sees the
+        # single-use token already spent (SubmissionOnce relies on it). Kept outside var/cache so a
+        # deploy's cache:clear doesn't sign everyone out.
+        handler_id: session.handler.native_file
+        save_path: '%kernel.project_dir%/var/sessions/%kernel.environment%'
+        # Hosts often disable PHP's own garbage collection (Debian cleans its default directory
+        # with a system cron that never sees this one), so it's switched on here. The lifetime only
+        # sweeps abandoned files: SessionIdleTimeoutSubscriber is what closes idle sessions, and
+        # PHP's 1440 s default would delete them before its 1800 s timeout.
+        gc_probability: 1
+        gc_divisor: 100
+        gc_maxlifetime: 86400
 
     #esi: true
     #fragments: true
