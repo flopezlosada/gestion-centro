@@ -23,16 +23,11 @@
             {{ f.submit_error(form) }}
             {{ form_errors(form) }}
             {{ f.fields([form.level, form.subject, form.sections, form.department]) }}
-            {{ f.section('La tarea', [form.title, form.description, form.document]) }}
+            {{ f.section('La tarea', [form.title, form.description]) }}
 
-            {% if item.hasDocument %}
-                <p class="help">
-                    Documento actual:
-                    <a href="{{ path('guardia_bank_download', { id: item.id }) }}">{{ item.documentName ?: 'documento' }}</a>.
-                    Sube otro para reemplazarlo.
-                </p>
-                {{ f.toggle(form.removeDocument) }}
-            {% endif %}
+            {#- Los que ya tiene, para quitar el que sobre; los nuevos se suman a ellos. -#}
+            {% if form.removeDocuments is defined %}{{ f.fields([form.removeDocuments]) }}{% endif %}
+            {{ f.fields([form.documents]) }}
 
             {{ f.section('Fotocopias y disponibilidad', [form.suggestedCopies]) }}
             {{ f.toggle(form.active) }}

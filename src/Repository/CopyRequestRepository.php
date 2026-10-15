@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repository;
 
 use App\Entity\CopyRequest;
+use App\Entity\CopyRequestLine;
 use App\Entity\GuardiaCover;
 use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
@@ -52,8 +53,31 @@ class CopyRequestRepository extends ServiceEntityRepository
 
         /** @var list<CopyRequest> $rows */
         $rows = $qb->getQuery()->getResult();
+        $this->loadLines($rows);
 
         return $rows;
+    }
+
+    /**
+     * Loads the lines of the given orders in one query, so a listing does not fetch them order by order.
+     * A second query and not a join in the first one: that one is limited, and a LIMIT over a joined
+     * collection counts lines, not orders.
+     *
+     * @param list<CopyRequest> $orders the orders whose lines to load
+     */
+    private function loadLines(array $orders): void
+    {
+        if ([] === $orders) {
+            return;
+        }
+
+        $this->createQueryBuilder('r')
+            ->addSelect('l')
+            ->leftJoin('r.lines', 'l')
+            ->where('r IN (:orders)')
+            ->setParameter('orders', $orders)
+            ->getQuery()
+            ->getResult();
     }
 
     /**
@@ -68,6 +92,9 @@ class CopyRequestRepository extends ServiceEntityRepository
     {
         /** @var list<CopyRequest> $rows */
         $rows = $this->createQueryBuilder('r')
+            // Las copias de cada encargo se suman de sus líneas: en la misma consulta.
+            ->addSelect('l')
+            ->leftJoin('r.lines', 'l')
             ->where('r.cover = :cover')
             ->setParameter('cover', $cover)
             ->orderBy('r.requestedAt', 'ASC')
@@ -78,7 +105,7 @@ class CopyRequestRepository extends ServiceEntityRepository
     }
 
     /**
-     * The orders still keeping their document after the day they were for: the guardia's day when they
+     * The orders still keeping a document after the day they were for: the guardia's day when they
      * came from one, otherwise the day they were placed. A sent order's file is already in the copy
      * room's mailbox; one whose e-mail never left keeps it {@see self::UNSENT_GRACE_DAYS} more days, so
      * «Reintentar envío» still has something to send.
@@ -93,8 +120,11 @@ class CopyRequestRepository extends ServiceEntityRepository
 
         /** @var list<CopyRequest> $rows */
         $rows = $this->createQueryBuilder('r')
+            // Las líneas, que es lo que se borra, en la misma consulta.
+            ->addSelect('l')
+            ->leftJoin('r.lines', 'l')
             ->leftJoin('r.cover', 'c')
-            ->andWhere('r.documentPath IS NOT NULL')
+            ->andWhere('EXISTS (SELECT 1 FROM '.CopyRequestLine::class.' kept WHERE kept.order = r AND kept.path IS NOT NULL)')
             ->andWhere('(c.id IS NOT NULL AND c.date < :cutoff) OR (c.id IS NULL AND r.requestedAt < :cutoff)')
             ->setParameter('cutoff', $today)
             ->andWhere('r.sentAt IS NOT NULL OR (c.id IS NOT NULL AND c.date < :unsentCutoff) OR (c.id IS NULL AND r.requestedAt < :unsentCutoff)')

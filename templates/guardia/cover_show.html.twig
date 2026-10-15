@@ -109,13 +109,13 @@
                     </div>
                     <p class="bank-task__title">{{ bank.title }}</p>
                     {% if bank.description %}<p class="detail-prose">{{ bank.description|nl2br }}</p>{% endif %}
-                    {% if bank.hasDocument %}
-                        <a class="doc-card doc-card--spaced" href="{{ path('guardia_bank_download', { id: bank.id }) }}">
+                    {% for doc in bank.documents %}
+                        <a class="doc-card doc-card--spaced" href="{{ path('guardia_bank_download', { id: doc.id }) }}">
                             <span class="doc-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span>
-                            <span class="doc-card__body"><span class="doc-card__name">{{ bank.documentName ?: 'Documento de la tarea' }}</span><span class="doc-card__meta">Documento del banco</span></span>
+                            <span class="doc-card__body"><span class="doc-card__name">{{ doc.name }}</span><span class="doc-card__meta">Documento del banco</span></span>
                             <span class="doc-card__open">Descargar</span>
                         </a>
-                    {% endif %}
+                    {% endfor %}
                     {% if canChangeTask %}
                         <div class="bank-task__actions">
                             <a class="btn secondary btn-sm" href="{{ path('guardia_bank_index', { para: cover.id }) }}">Cambiar de tarea</a>
@@ -199,7 +199,7 @@
                 <ul class="copy-orders">
                     {% for order in copyOrders %}
                         <li>
-                            <span class="copy-orders__copies">{{ order.copies }} copias</span>
+                            <span class="copy-orders__copies">{{ order.totalCopies }} copias</span>
                             <span class="copy-orders__when">{{ order.requestedAt|date('d/m · H:i', false) }}</span>
                             {{ copies.status_badge(order) }}
                         </li>

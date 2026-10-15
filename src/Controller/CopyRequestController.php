@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\CopyRequest;
+use App\Entity\CopyRequestLine;
 use App\Entity\GuardiaCover;
 use App\Entity\User;
 use App\Enum\Area;
@@ -90,10 +91,11 @@ final class CopyRequestController extends AbstractController
 
             if (null === $problem && $file instanceof UploadedFile) {
                 return $this->placeOrder($request, $once, function () use ($user, $file, $uploader, $data): CopyRequest {
-                    $order = (new CopyRequest())->setRequestedBy($user)
-                        ->setDocumentPath($uploader->upload($file, self::COPY_DOCUMENT_SUBDIR))
-                        ->setDocumentName(DocumentUpload::nameOf($file));
-                    $data->applyTo($order);
+                    $order = (new CopyRequest())->setRequestedBy($user);
+                    $data->applyTo($order, [[
+                        'path' => $uploader->upload($file, self::COPY_DOCUMENT_SUBDIR),
+                        'name' => DocumentUpload::nameOf($file),
+                    ]]);
 
                     return $order;
                 }, $em, $mailer);
@@ -118,34 +120,54 @@ final class CopyRequestController extends AbstractController
     {
         $this->denyAccessUnlessGranted(GuardiaCoverVoter::WORK_ON_TASK, $cover);
 
+        $documents = $cover->getPrintableDocuments();
         // Sin esto saldría a conserjería un encargo sin nada que imprimir.
-        if (null !== $cover->getTaskDocumentPurgedAt() && null === $cover->getPrintableDocumentPath()) {
+        if (null !== $cover->getTaskDocumentPurgedAt() && [] === $documents) {
             $this->addFlash('error', 'El documento de esta guardia ya se borró: no hay nada que fotocopiar.');
+
+            return $this->redirectToRoute('guardia_cover_show', ['id' => $cover->getId()]);
+        }
+
+        // Un archivo que ya no está en disco dejaría su casilla de copias sin adjunto y el correo contaría
+        // mal: mejor no encargar nada y decirlo.
+        $missing = array_filter($documents, static fn (array $d): bool => !is_file($uploader->absolutePath($d['path'])));
+        if ([] !== $missing) {
+            $this->addFlash('error', sprintf('«%s» ya no está disponible: revisa la tarea antes de pedir fotocopias.', implode('», «', array_column($missing, 'name'))));
 
             return $this->redirectToRoute('guardia_cover_show', ['id' => $cover->getId()]);
         }
 
         $bankItem = $cover->getBankItem();
 
-        $data = new CopyRequestFormData();
+        // Una casilla de copias por archivo, todas con las copias que ya dijo alguien: primero las de esta
+        // clase (las dejó dichas el profesor ausente o la coordinación) y, si no, las que el departamento
+        // sugiere para esa tarea del banco. Quien pide ajusta las que no van igual (el solucionario, 1).
+        $data = CopyRequestFormData::forCount(\count($documents), $cover->getCopiesNeeded() ?? $bankItem?->getSuggestedCopies());
         // What the copies are for is known here, not typed: group, room, day and period of the guardia.
         $data->context = $this->contextFor($cover, $schedule, $years);
-        // Las copias que ya dijo alguien: primero las de esta clase (las dejó dichas el profesor ausente
-        // o la coordinación) y, si no, las que el departamento sugiere para esa tarea del banco.
-        $data->copies = $cover->getCopiesNeeded() ?? $bankItem?->getSuggestedCopies();
 
-        $form = $this->createForm(CopyRequestType::class, $data);
+        $form = $this->createForm(CopyRequestType::class, $data, [
+            'file_names' => array_column($documents, 'name'),
+            'files_signature' => self::filesSignature($documents),
+        ]);
         $form->handleRequest($request);
 
+        // Las copias van por posición: si la tarea cambió de archivos entre abrir el formulario y enviarlo,
+        // el número de una casilla iría a otro archivo (las 25 de la ficha, al solucionario).
+        if ($form->isSubmitted() && $form->get('files')->getData() !== self::filesSignature($documents)) {
+            $form->addError(new FormError('Los archivos de esta tarea han cambiado mientras pedías las fotocopias: revisa las copias de cada uno y vuelve a enviar.'));
+        }
+
         if ($form->isSubmitted() && $form->isValid()) {
-            return $this->placeOrder($request, $once, function () use ($user, $cover, $bankItem, $uploader, $data): CopyRequest {
+            return $this->placeOrder($request, $once, function () use ($user, $cover, $bankItem, $uploader, $data, $documents): CopyRequest {
                 $order = (new CopyRequest())
                     ->setRequestedBy($user)
                     ->setCover($cover)
-                    ->setBankItem($bankItem)
-                    ->setDocumentPath($this->snapshotDocument($cover->getPrintableDocumentPath(), $uploader))
-                    ->setDocumentName($cover->getPrintableDocumentName());
-                $data->applyTo($order);
+                    ->setBankItem($bankItem);
+                $data->applyTo($order, array_map(fn (array $d): array => [
+                    'path' => $this->snapshotDocument($d['path'], $uploader),
+                    'name' => $d['name'],
+                ], $documents));
 
                 return $order;
             }, $em, $mailer);
@@ -204,14 +226,15 @@ final class CopyRequestController extends AbstractController
     }
 
     /**
-     * Serves the document an order carried, to check what was actually sent.
+     * Serves one of the documents an order carried, to check what was actually sent.
      */
-    #[Route('/{id}/documento', name: 'copy_request_download', requirements: ['id' => '\d+'], methods: ['GET'])]
-    public function download(CopyRequest $order, #[CurrentUser] User $user, FileUploader $uploader): Response
+    #[Route('/documento/{id}', name: 'copy_request_download', requirements: ['id' => '\d+'], methods: ['GET'])]
+    public function download(CopyRequestLine $line, #[CurrentUser] User $user, FileUploader $uploader): Response
     {
+        $order = $line->getOrder();
         $this->assertMaySee($order, $user);
 
-        $path = $order->getDocumentPath();
+        $path = $line->getPath();
         if (null === $path) {
             throw $this->createNotFoundException(null !== $order->getDocumentPurgedAt()
                 ? 'El documento de este encargo se borró al pasar su día.'
@@ -223,7 +246,20 @@ final class CopyRequestController extends AbstractController
             throw $this->createNotFoundException('El documento ya no está disponible.');
         }
 
-        return $this->file($absolute, $order->getDocumentName() ?? 'documento');
+        return $this->file($absolute, $line->getName() ?? 'documento');
+    }
+
+    /**
+     * A fingerprint of the files an order form was built for, in order, to notice they changed before it
+     * was sent. The storage paths are random and never reused, so they identify each file.
+     *
+     * @param list<array{path: string, name: string}> $documents the files to print
+     *
+     * @return string the fingerprint
+     */
+    private static function filesSignature(array $documents): string
+    {
+        return sha1(implode("\n", array_column($documents, 'path')));
     }
 
     /**
@@ -232,17 +268,13 @@ final class CopyRequestController extends AbstractController
      * order is the record of what was actually sent: it cannot end up pointing at a file that was
      * replaced last week, nor lose its attachment on a resend.
      *
-     * @param string|null  $source   the storage-relative path to copy, or null when there is nothing to print
+     * @param string       $source   the storage-relative path to copy
      * @param FileUploader $uploader the private-storage uploader
      *
-     * @return string|null the order's own path, or null when there was nothing (or it is already gone)
+     * @return string|null the order's own path, or null when the file is already gone
      */
-    private function snapshotDocument(?string $source, FileUploader $uploader): ?string
+    private function snapshotDocument(string $source, FileUploader $uploader): ?string
     {
-        if (null === $source) {
-            return null;
-        }
-
         $absolute = $uploader->absolutePath($source);
         if (!is_file($absolute)) {
             return null;
@@ -296,7 +328,10 @@ final class CopyRequestController extends AbstractController
         }
 
         if ($sent) {
-            $this->addFlash('success', sprintf('Encargo enviado a %s: %d copias.', $order->getRecipient(), $order->getCopies()));
+            $files = \count($order->getDocumentLines());
+            $this->addFlash('success', $files > 1
+                ? sprintf('Encargo enviado a %s: %d archivos, %d copias en total.', $order->getRecipient(), $files, $order->getTotalCopies())
+                : sprintf('Encargo enviado a %s: %d copias.', $order->getRecipient(), $order->getTotalCopies()));
         } else {
             $this->addFlash('warning', 'El encargo queda registrado, pero no se pudo enviar el correo. Reenvíalo desde la lista o avisa a conserjería.');
         }

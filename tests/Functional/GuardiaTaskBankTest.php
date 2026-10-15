@@ -17,11 +17,13 @@ use App\Enum\EducationLevel;
 use App\Enum\PermissionLevel;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
+use App\Service\FileUploader;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\DomCrawler\Crawler;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 
 /**
  * The guardia task bank: any teacher may browse it and contribute to it (filling it is the
@@ -534,6 +536,113 @@ final class GuardiaTaskBankTest extends WebTestCase
         self::assertSame(30, $saved->getSuggestedCopies());
         self::assertSame(0, $saved->getTimesUsed());
         self::assertSame($this->year->getSchoolYear(), $saved->getAcademicYear()->getSchoolYear());
+    }
+
+    /**
+     * A file as the browser would upload it, with the given client name.
+     */
+    private static function upload(string $name, string $contents = 'contenido'): UploadedFile
+    {
+        $path = sys_get_temp_dir().'/banco-'.uniqid().'-'.$name;
+        file_put_contents($path, $contents);
+
+        return new UploadedFile($path, $name, null, null, true);
+    }
+
+    /**
+     * Sends the bank form of $url with the given documents and fields on top of a valid task.
+     *
+     * @param list<UploadedFile>   $documents the files picked in the multiple upload
+     * @param array<string, mixed> $fields    fields to add or override
+     */
+    private function submitBankForm(string $url, Department $department, array $documents, array $fields = []): void
+    {
+        $crawler = $this->client->request('GET', $url);
+        self::assertResponseIsSuccessful();
+        $token = (string) $crawler->filter('input[name="guardia_task_bank_item[_token]"]')->attr('value');
+
+        $this->client->request('POST', $url, ['guardia_task_bank_item' => $fields + [
+            'level' => EducationLevel::ESO_2->value,
+            'subject' => 'Matemáticas',
+            'department' => (string) $department->getId(),
+            'title' => 'Fracciones',
+            'active' => '1',
+            '_token' => $token,
+        ]], ['guardia_task_bank_item' => ['documents' => $documents]]);
+    }
+
+    /**
+     * Una tarea del banco lleva varios documentos (la ficha y su solucionario), en el orden en que se
+     * subieron; al editarla se quita el que sobra y se añaden otros, sin tocar el resto.
+     */
+    public function testATaskCarriesSeveralDocumentsAndEachCanBeRemovedOnItsOwn(): void
+    {
+        $maths = $this->department();
+        $teacher = $this->login(unit: $maths);
+        $this->taughtSubject('Matemáticas', $teacher);
+        $this->em->flush();
+        $uploader = self::getContainer()->get(FileUploader::class);
+
+        $this->submitBankForm('/guardias/banco/nueva', $maths, [self::upload('ficha.pdf'), self::upload('solucionario.pdf')]);
+        self::assertResponseRedirects();
+
+        $this->em->clear();
+        $item = $this->em->getRepository(GuardiaTaskBankItem::class)->findOneBy(['title' => 'Fracciones']);
+        self::assertInstanceOf(GuardiaTaskBankItem::class, $item);
+        [$sheet, $answers] = $item->getDocuments();
+        self::assertSame(['ficha.pdf', 'solucionario.pdf'], [$sheet->getName(), $answers->getName()]);
+        $sheetPath = $sheet->getPath();
+        self::assertFileExists($uploader->absolutePath($sheetPath));
+
+        $this->client->request('GET', '/guardias/banco/documento/'.$answers->getId());
+        self::assertResponseIsSuccessful();
+        self::assertStringContainsString('solucionario.pdf', (string) $this->client->getResponse()->headers->get('Content-Disposition'));
+
+        $this->submitBankForm('/guardias/banco/'.$item->getId().'/editar', $maths, [self::upload('lectura.pdf')], [
+            'removeDocuments' => [(string) $sheet->getId()],
+        ]);
+        self::assertResponseRedirects();
+
+        $this->em->clear();
+        $item = $this->em->getRepository(GuardiaTaskBankItem::class)->find($item->getId());
+        self::assertInstanceOf(GuardiaTaskBankItem::class, $item);
+        self::assertSame(['solucionario.pdf', 'lectura.pdf'], array_map(static fn ($d) => $d->getName(), $item->getDocuments()));
+        self::assertFileDoesNotExist($uploader->absolutePath($sheetPath), 'el quitado se borra del disco');
+    }
+
+    /**
+     * Un fichero rechazado rechaza el envío entero: no se queda la tarea a medias con solo los que valían.
+     */
+    public function testOneRejectedFileRefusesTheWholeSubmit(): void
+    {
+        $maths = $this->department();
+        $teacher = $this->login(unit: $maths);
+        $this->taughtSubject('Matemáticas', $teacher);
+        $this->em->flush();
+
+        $this->submitBankForm('/guardias/banco/nueva', $maths, [self::upload('ficha.pdf'), self::upload('virus.exe')]);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertCount(0, $this->em->getRepository(GuardiaTaskBankItem::class)->findAll());
+    }
+
+    public function testDeletingATaskDeletesAllItsFiles(): void
+    {
+        $maths = $this->department();
+        $teacher = $this->login(unit: $maths);
+        $uploader = self::getContainer()->get(FileUploader::class);
+        $item = $this->bankItem($maths, EducationLevel::ESO_2, 'Fracciones')->setCreatedBy($teacher)
+            ->addDocument($uploader->store('a', 'guardia-task-bank', 'pdf'), 'ficha.pdf')
+            ->addDocument($uploader->store('b', 'guardia-task-bank', 'pdf'), 'solucionario.pdf');
+        $this->em->flush();
+        $paths = array_map(static fn ($d): string => $uploader->absolutePath($d->getPath()), $item->getDocuments());
+
+        $crawler = $this->client->request('GET', '/guardias/banco?nivel='.EducationLevel::ESO_2->value);
+        $form = $crawler->filter('form[action="/guardias/banco/'.$item->getId().'/borrar"]')->form();
+        $this->client->submit($form);
+
+        self::assertResponseRedirects();
+        self::assertSame([false, false], array_map('is_file', $paths));
     }
 
     public function testATaskCannotBeSavedWithoutSubject(): void

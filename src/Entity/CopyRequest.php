@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Repository\CopyRequestRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
@@ -12,11 +14,13 @@ use Doctrine\ORM\Mapping as ORM;
  * An order sent to the copy room (conserjería) so the auxiliares print something: normally the task a
  * group will be given during a guardia, sometimes just a document someone needs run off.
  *
- * {@see $copies} is mandatory by design — the centre's own question was whether the number of copies
- * was needed, and an order that does not say how many to print is useless to the person at the
- * photocopier. Everything else on the row exists to make the e-mail actionable without a reply:
- * {@see $context} says what it is for (level, group, room, period) and {@see $documentPath} is the file
- * that travels attached.
+ * What to print are its {@see $lines}, each with its own number of copies — mandatory by design: the
+ * centre's own question was whether the number of copies was needed, and an order that does not say how
+ * many to print is useless to the person at the photocopier. One number per line and not per order
+ * because a task is often several files that do not go in the same quantity (the exercises one per
+ * pupil, the answer key once). Everything else on the row exists to make the e-mail actionable without a
+ * reply: {@see $context} says what it is for (level, group, room, period), and the lines' files travel
+ * attached.
  *
  * Three instants, three different facts, and none of them derives the others: the row exists because
  * the order was PLACED ({@see $requestedAt}), {@see $sentAt} says the e-mail actually went out, and
@@ -25,10 +29,13 @@ use Doctrine\ORM\Mapping as ORM;
  * reason conserjería needs a queue instead of an inbox. {@see $recipient} snapshots the address used,
  * so a later change of mailbox does not rewrite history.
  *
- * The document is snapshotted when the order is placed ({@see
+ * The documents are snapshotted when the order is placed ({@see
  * \App\Controller\CopyRequestController::snapshotDocument()}), not referenced: the source is shared and
  * mutable — the absent teacher's file, or a bank task its department will edit or retire — and an order
  * is the record of what was actually sent, so it must not end up pointing at a file replaced last week.
+ *
+ * Every order has at least one line: the controller builds it with them before persisting, the only way
+ * one is created.
  */
 #[ORM\Entity(repositoryClass: CopyRequestRepository::class)]
 #[ORM\Table(name: 'copy_request')]
@@ -57,28 +64,22 @@ class CopyRequest
     private ?GuardiaTaskBankItem $bankItem = null;
 
     /**
-     * How many copies to print. Mandatory by design — the centre's own open question — and validated on
-     * the way in ({@see \App\Form\CopyRequestFormData}), so a stored order always carries a real number.
+     * What to print, each with its number of copies, in the order the copy room receives them.
+     *
+     * @var Collection<int, CopyRequestLine>
      */
-    #[ORM\Column(type: Types::SMALLINT)]
-    private int $copies = 0;
+    #[ORM\OneToMany(targetEntity: CopyRequestLine::class, mappedBy: 'order', cascade: ['persist'])]
+    #[ORM\OrderBy(['position' => 'ASC'])]
+    private Collection $lines;
 
     /** Anything the copy room needs to know ("a doble cara", "para la 3ª hora"). */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $notes = null;
 
-    /** Storage-relative path of the document to print, or null for a text-only order. */
-    #[ORM\Column(name: 'document_path', length: 255, nullable: true)]
-    private ?string $documentPath = null;
-
-    /** Original filename of the document, used both in the e-mail and in the listing. */
-    #[ORM\Column(name: 'document_name', length: 255, nullable: true)]
-    private ?string $documentName = null;
-
     /**
-     * When the document was deleted because the day it was for had passed: the copy room got it by
-     * e-mail, so the app's copy only serves that day, and it may carry pupils' data. Kept so the listing
-     * says there WAS a document. Null while it is kept, or for a text-only order.
+     * When the documents were deleted because the day they were for had passed: the copy room got them by
+     * e-mail, so the app's copies only serve that day, and they may carry pupils' data. Kept so the listing
+     * says there WERE documents. Null while they are kept, or for a text-only order.
      */
     #[ORM\Column(name: 'document_purged_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $documentPurgedAt = null;
@@ -121,6 +122,7 @@ class CopyRequest
     public function __construct()
     {
         $this->requestedAt = new \DateTimeImmutable();
+        $this->lines = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -152,16 +154,49 @@ class CopyRequest
         return $this;
     }
 
-    public function getCopies(): int
+    /**
+     * Adds something to print after the lines already on the order.
+     *
+     * @param int         $copies how many copies
+     * @param string|null $path   the storage-relative path of the order's own copy of the file, or null for
+     *                            a line described only in words
+     * @param string|null $name   the original filename
+     */
+    public function addLine(int $copies, ?string $path = null, ?string $name = null): static
     {
-        return $this->copies;
-    }
-
-    public function setCopies(int $copies): static
-    {
-        $this->copies = $copies;
+        $this->lines->add(new CopyRequestLine($this, $copies, $path, $name, $this->lines->count()));
 
         return $this;
+    }
+
+    /**
+     * What to print, in order.
+     *
+     * @return list<CopyRequestLine> the lines
+     */
+    public function getLines(): array
+    {
+        return array_values($this->lines->toArray());
+    }
+
+    /**
+     * The lines that carry a file, i.e. the attachments of the e-mail.
+     *
+     * @return list<CopyRequestLine> the lines with a file
+     */
+    public function getDocumentLines(): array
+    {
+        return array_values(array_filter($this->getLines(), static fn (CopyRequestLine $l): bool => $l->hasDocument()));
+    }
+
+    /**
+     * The copies of every line added up, for the one-line summaries.
+     *
+     * @return int the total number of copies
+     */
+    public function getTotalCopies(): int
+    {
+        return array_sum(array_map(static fn (CopyRequestLine $l): int => $l->getCopies(), $this->getLines()));
     }
 
     public function getNotes(): ?string
@@ -176,74 +211,40 @@ class CopyRequest
         return $this;
     }
 
-    public function getDocumentPath(): ?string
-    {
-        return $this->documentPath;
-    }
-
     /**
-     * Sets the document; a new one also clears the mark of an earlier one purged, so an order never holds
-     * a document and says it was deleted at once.
-     */
-    public function setDocumentPath(?string $documentPath): static
-    {
-        $this->documentPath = $documentPath;
-        if (null !== $documentPath) {
-            $this->documentPurgedAt = null;
-        }
-
-        return $this;
-    }
-
-    /**
-     * Forgets the document once the day it was for has passed, keeping only when that happened. The
-     * name goes too: a filename can be personal data as well.
+     * Forgets the documents once the day they were for has passed, keeping only when that happened (and
+     * each line's number of copies, which is not personal data).
      *
      * @param \DateTimeImmutable $at when the purge runs
      *
-     * @return string|null the storage-relative path of the file to delete, or null if there was none
+     * @return list<string> the storage-relative paths of the files to delete; empty if there were none
      */
-    public function purgeDocument(\DateTimeImmutable $at): ?string
+    public function purgeDocuments(\DateTimeImmutable $at): array
     {
-        $path = $this->documentPath;
-        if (null === $path) {
-            return null;
+        $paths = array_values(array_filter(array_map(static fn (CopyRequestLine $l): ?string => $l->purge(), $this->getLines())));
+        if ([] !== $paths) {
+            $this->documentPurgedAt = $at;
         }
-        $this->documentPath = null;
-        $this->documentName = null;
-        $this->documentPurgedAt = $at;
 
-        return $path;
+        return $paths;
     }
 
     /**
-     * When the document was deleted for being past its day, or null.
+     * When the documents were deleted for being past their day, or null.
      */
     public function getDocumentPurgedAt(): ?\DateTimeImmutable
     {
         return $this->documentPurgedAt;
     }
 
-    public function getDocumentName(): ?string
-    {
-        return $this->documentName;
-    }
-
-    public function setDocumentName(?string $documentName): static
-    {
-        $this->documentName = $documentName;
-
-        return $this;
-    }
-
     /**
      * Whether there is a file to print (as opposed to an order described only in words).
      *
-     * @return bool true when a document is attached
+     * @return bool true when at least one document is attached
      */
     public function hasDocument(): bool
     {
-        return null !== $this->documentPath;
+        return [] !== $this->getDocumentLines();
     }
 
     public function getContext(): string
