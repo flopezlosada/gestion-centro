@@ -387,8 +387,8 @@ final class GuardiaTaskBankController extends AbstractController
     }
 
     /**
-     * Renders and processes the add/edit form, storing the uploaded documents only once the rest of the
-     * form is valid.
+     * Renders and processes the add/edit form. On creation the documents come with it and are stored only
+     * once the rest of the form is valid; on edit they have their own block and actions.
      *
      * @param GuardiaTaskBankItem           $item     the task being created or edited
      * @param GuardiaTaskBankFormData       $data     the form-backing data, prefilled
@@ -409,21 +409,16 @@ final class GuardiaTaskBankController extends AbstractController
             sort($subjects);
         }
 
-        $documents = [];
-        foreach ($item->getDocuments() as $document) {
-            $documents[(int) $document->getId()] = $document->getName();
-        }
-
-        $form = $this->createForm(GuardiaTaskBankItemType::class, $data, ['documents' => $documents, 'subjects' => $subjects]);
+        // Al crearla los documentos van con el formulario: aún no hay tarea a la que colgarlos. Al editarla
+        // tienen su propio bloque, que sube y quita al momento (addDocuments/removeDocument).
+        $isNew = null === $item->getId();
+        $form = $this->createForm(GuardiaTaskBankItemType::class, $data, ['with_documents' => $isNew, 'subjects' => $subjects]);
         $form->handleRequest($request);
 
-        $removed = $form->isSubmitted() && $form->isValid() ? $this->applyDocuments($form, $data, $item, $uploader) : null;
-        if (null !== $removed) {
+        if ($form->isSubmitted() && $form->isValid() && $this->documentsStored($form, $data, $item, $uploader)) {
             $data->applyTo($item);
             $em->persist($item);
             $em->flush();
-            // Guardado: los quitados ya no los referencia nadie (un encargo guarda su propia copia).
-            array_walk($removed, static fn (string $path) => $uploader->remove($path));
             $this->addFlash('success', 'Tarea guardada en el banco.');
 
             return $this->redirectToRoute('guardia_bank_index', ['nivel' => $item->getLevel()->value]);
@@ -436,33 +431,104 @@ final class GuardiaTaskBankController extends AbstractController
     }
 
     /**
-     * Applies the document part of a valid submit: stores the newly uploaded files after the rest and
-     * detaches the ones ticked for removal. Every upload is checked before anything is touched, so one
-     * rejected file becomes a form error and refuses the whole submit — the task is never saved
-     * half-changed.
+     * Uploads documents to an existing task on their own, without the rest of the form: the documents
+     * block of the edit screen sends here, by AJAX when it can (guardia-bank-documents.js), so what is
+     * being typed in the form above is not lost. Answers with a flash and back to the edit screen, which
+     * is also the whole answer without JavaScript.
+     */
+    #[Route('/{id}/documentos', name: 'guardia_bank_document_add', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function addDocuments(GuardiaTaskBankItem $item, Request $request, #[CurrentUser] User $user, EntityManagerInterface $em, FileUploader $uploader, OrganizationHierarchy $hierarchy): Response
+    {
+        $this->assertMayCurate($item, $user, $hierarchy);
+        $this->assertCsrf($request, self::documentsCsrfId($item));
+
+        $files = array_values(array_filter(
+            $request->files->all('documents'),
+            static fn (mixed $f): bool => $f instanceof UploadedFile && DocumentUpload::isPresent($f),
+        ));
+        $problems = [] === $files ? ['Elige al menos un documento para subir.'] : $this->storeDocuments($files, $item, $uploader);
+
+        if ([] === $problems) {
+            $em->flush();
+            $this->addFlash('success', 1 === \count($files)
+                ? sprintf('«%s» añadido a la tarea.', DocumentUpload::nameOf($files[0]))
+                : sprintf('%d documentos añadidos a la tarea.', \count($files)));
+        }
+        array_walk($problems, fn (string $problem) => $this->addFlash('error', $problem));
+
+        return $this->redirectToRoute('guardia_bank_edit', ['id' => $item->getId()]);
+    }
+
+    /**
+     * Removes one document from a task at once, the file included. Same answer and same AJAX path as
+     * {@see addDocuments()}; the confirmation is asked before sending (confirm-dialog.js).
+     */
+    #[Route('/documento/{id}/quitar', name: 'guardia_bank_document_remove', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function removeDocument(GuardiaTaskBankDocument $document, Request $request, #[CurrentUser] User $user, EntityManagerInterface $em, FileUploader $uploader, OrganizationHierarchy $hierarchy): Response
+    {
+        $item = $document->getItem();
+        $this->assertMayCurate($item, $user, $hierarchy);
+        $this->assertCsrf($request, self::documentsCsrfId($item));
+
+        $path = $document->getPath();
+        $item->removeDocument($document);
+        $em->flush();
+        // Ya no lo referencia nadie: un encargo de fotocopias guarda su propia copia.
+        $uploader->remove($path);
+        $this->addFlash('success', sprintf('«%s» quitado de la tarea.', $document->getName()));
+
+        return $this->redirectToRoute('guardia_bank_edit', ['id' => $item->getId()]);
+    }
+
+    /**
+     * The CSRF token id of a task's documents block, shared by its upload and its removals. The template
+     * builds the same string (`guardia/bank/form.html.twig`).
      *
-     * The detached files are NOT deleted here but returned, for the caller to delete once the change is
-     * saved: a failure in between must not leave rows pointing at files already gone. If storing one of
-     * the uploads fails, the ones already stored are removed before the error goes up.
+     * @param GuardiaTaskBankItem $item the task
      *
-     * @param FormInterface<GuardiaTaskBankFormData> $form     the submitted form
+     * @return string the token id
+     */
+    private static function documentsCsrfId(GuardiaTaskBankItem $item): string
+    {
+        return 'guardia_bank_documents'.$item->getId();
+    }
+
+    /**
+     * The document part of the creation form: stores what was picked, or turns every rejected file into
+     * an error on the field and refuses the submit.
+     *
+     * @param FormInterface<GuardiaTaskBankFormData> $form     the submitted, valid form
      * @param GuardiaTaskBankFormData                $data     the submitted data
      * @param GuardiaTaskBankItem                    $item     the task being saved
      * @param FileUploader                           $uploader the private-storage uploader
      *
-     * @return list<string>|null the storage paths of the detached files, to delete after saving; null when
-     *                           the submit is refused
+     * @return bool true when the submit can go on
      */
-    private function applyDocuments(FormInterface $form, GuardiaTaskBankFormData $data, GuardiaTaskBankItem $item, FileUploader $uploader): ?array
+    private function documentsStored(FormInterface $form, GuardiaTaskBankFormData $data, GuardiaTaskBankItem $item, FileUploader $uploader): bool
     {
         $files = array_values(array_filter($data->documents, static fn (?UploadedFile $f): bool => DocumentUpload::isPresent($f)));
+        $problems = $this->storeDocuments($files, $item, $uploader);
+        array_walk($problems, static fn (string $problem) => $form->get('documents')->addError(new FormError($problem)));
 
-        $problems = array_filter(array_map(static fn (UploadedFile $f): ?string => DocumentUpload::problem($f), $files));
-        foreach ($problems as $problem) {
-            $form->get('documents')->addError(new FormError($problem));
-        }
+        return [] === $problems;
+    }
+
+    /**
+     * Stores uploaded files and attaches them to the task, all or none: every file is checked before
+     * anything is stored, so one rejected file leaves the task as it was. If storing one fails, the ones
+     * already stored are removed before the error goes up.
+     *
+     * @param list<UploadedFile>  $files    the files to store, already known to be present
+     * @param GuardiaTaskBankItem $item     the task they go to
+     * @param FileUploader        $uploader the private-storage uploader
+     *
+     * @return list<string> what is wrong with the rejected files; empty when they were all stored
+     */
+    private function storeDocuments(array $files, GuardiaTaskBankItem $item, FileUploader $uploader): array
+    {
+        $problems = array_values(array_filter(array_map(static fn (UploadedFile $f): ?string => DocumentUpload::problem($f), $files)));
         if ([] !== $problems) {
-            return null;
+            return $problems;
         }
 
         $stored = [];
@@ -479,15 +545,7 @@ final class GuardiaTaskBankController extends AbstractController
             $item->addDocument($path, $name);
         }
 
-        $removed = [];
-        foreach ($item->getDocuments() as $document) {
-            if (\in_array($document->getId(), $data->removeDocuments, true)) {
-                $item->removeDocument($document);
-                $removed[] = $document->getPath();
-            }
-        }
-
-        return $removed;
+        return [];
     }
 
     /**

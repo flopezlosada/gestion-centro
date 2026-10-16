@@ -50,19 +50,11 @@ final class GuardiaTaskBankFormData
     public ?string $description = null;
 
     /**
-     * The documents uploaded in this submit, added after the ones the task already has; handled by the
-     * controller (see the class docblock).
+     * The documents picked when creating the task; handled by the controller (see the class docblock).
      *
      * @var list<UploadedFile>
      */
     public array $documents = [];
-
-    /**
-     * Ids of the task's current documents ticked to be removed.
-     *
-     * @var list<int>
-     */
-    public array $removeDocuments = [];
 
     #[Assert\Range(min: 1, max: 500, notInRangeMessage: 'El número de copias debe estar entre {{ min }} y {{ max }}.')]
     public ?int $suggestedCopies = null;

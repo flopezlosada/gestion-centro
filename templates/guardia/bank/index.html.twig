@@ -251,17 +251,7 @@
 
                     {% if item.hasDocument %}
                         {% for doc in item.documents %}
-                            <a class="bank-doc" href="{{ path('guardia_bank_download', { id: doc.id }) }}">
-                                <span class="bank-doc__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span>
-                                <span class="bank-doc__body">
-                                    <span class="bank-doc__name">{{ doc.name }}</span>
-                                    {#- El tipo se lee del nombre del archivo; páginas y tamaño NO se guardan, así
-                                        que no se inventan. -#}
-                                    {% set ext = doc.name|split('.')|last|upper %}
-                                    {% if ext != doc.name|upper %}<span class="bank-doc__kind">{{ ext }}</span>{% endif %}
-                                </span>
-                                <span class="bank-doc__cta">Ver</span>
-                            </a>
+                            {{ include('_partials/document_link.html.twig', { name: doc.name, href: path('guardia_bank_download', { id: doc.id }) }) }}
                         {% endfor %}
                     {% else %}
                         <p class="bank-nodoc">
