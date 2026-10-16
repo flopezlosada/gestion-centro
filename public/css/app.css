@@ -3190,6 +3190,10 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 .cover-edit .field[hidden] { display: none; }
 .cover-edit .field-help { margin: 0; }
 .cover-edit__doc { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+/* La tarea del banco en el lateral de «Modificar guardia»: el side-card ya separa sus piezas. */
+.cover-edit__bank-title { margin: 0; font-weight: 600; }
+.cover-edit__bank .bank-doc { margin-top: 0; }
+.cover-edit__bank-change { margin-top: 4px; }
 .cover-edit__copies { max-width: 8rem; }
 .cover-edit input[type="number"] {
     padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius);
@@ -4998,6 +5002,25 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 }
 .bank-nodoc svg { flex: none; width: 15px; height: 15px; }
 
+/* Bloque de documentos de la edición: cada uno con su papelera al lado, y la subida debajo. Va en su
+   propia tarjeta porque se guarda al momento, aparte del formulario de arriba. */
+.bank-docs { margin-top: 16px; }
+.bank-docs[aria-busy="true"] [data-bank-docs-list] { opacity: .55; }
+.bank-docs__row { display: flex; align-items: center; gap: 8px; margin-top: 13px; }
+.bank-docs__row .bank-doc { flex: 1; min-width: 0; margin-top: 0; }
+.bank-docs__row form { flex: none; margin: 0; }
+.bank-docs__remove {
+    display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0;
+    background: transparent; border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text-muted); cursor: pointer;
+}
+.bank-docs__remove:hover, .bank-docs__remove:focus-visible { border-color: var(--danger); color: var(--danger); }
+.bank-docs__remove svg { width: 16px; height: 16px; }
+.bank-docs__notices .flash { margin: 12px 0 0; }
+.bank-docs__add { margin-top: 18px; }
+/* Con JS se sube al elegir: el botón se oculta, y .btn (inline-flex) le ganaría a [hidden]. */
+.bank-docs__add .btn[hidden] { display: none; }
+
 /* Menú de la ficha: lo destructivo deja de estar a un clic (estaba junto a "Usar esta", en rojo) y
    pasa al final de un menú, separado. Mismo patrón <details> del "+" del calendario: sin JS. */
 .bank-menu { position: relative; flex: none; margin-right: -6px; }
@@ -5078,6 +5101,14 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 
 .bank-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
 .copy-context__line { margin: 4px 0 10px; font-weight: 600; font-size: 16px; }
+/* Encargo desde una guardia: una fila por archivo, el documento (con su «Ver») y al lado su casilla de
+   copias, pequeña: es un número de tres cifras como mucho. */
+.copy-files { list-style: none; margin: 4px 0 0; padding: 0; }
+.copy-files > li + li { margin-top: 8px; }
+.copy-file { display: flex; align-items: center; gap: 10px; }
+.copy-file .bank-doc { flex: 1; min-width: 0; margin-top: 0; }
+.copy-file__copies { flex: none; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted); }
+.form-row .copy-file__copies input[type="number"] { width: 5.5em; text-align: right; }
 /* Coger tarea del banco desde la propia línea del parte: dos acciones pequeñas en la celda de tarea. */
 .bank-pick { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-left: 8px; }
 /* Copias por clase en el alta de ausencia: mismo apilado que el adjunto de al lado. */

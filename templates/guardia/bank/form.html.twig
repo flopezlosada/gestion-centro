@@ -25,13 +25,54 @@
             {{ f.fields([form.level, form.subject, form.sections, form.department]) }}
             {{ f.section('La tarea', [form.title, form.description]) }}
 
-            {#- Los que ya tiene, para quitar el que sobre; los nuevos se suman a ellos. -#}
-            {% if form.removeDocuments is defined %}{{ f.fields([form.removeDocuments]) }}{% endif %}
-            {{ f.fields([form.documents]) }}
+            {#- Solo al crearla: después los documentos tienen su bloque, debajo. -#}
+            {% if form.documents is defined %}{{ f.fields([form.documents]) }}{% endif %}
 
             {{ f.section('Fotocopias y disponibilidad', [form.suggestedCopies]) }}
             {{ f.toggle(form.active) }}
             {{ f.actions(path('guardia_bank_index')) }}
         {{ form_end(form) }}
     </div>
+
+    {#- Los documentos de una tarea que ya existe se suben y se quitan al momento, sin «Guardar»: van
+        fuera del formulario (un <form> no puede ir dentro de otro) y, con JS, por AJAX
+        (guardia-bank-documents.js), para no perder lo que se esté escribiendo arriba. Sin JS, cada acción
+        recarga la página. -#}
+    {% if item.id %}
+        {% set docsToken = csrf_token('guardia_bank_documents' ~ item.id) %}
+        <section class="card form-card bank-docs" data-bank-docs aria-labelledby="bank-docs-title">
+            <h2 class="form-section-title" id="bank-docs-title">Documentos</h2>
+            <p class="help">Se suben y se quitan al momento: no hace falta darle a «Guardar».</p>
+
+            <div data-bank-docs-list aria-live="polite">
+                {% for doc in item.documents %}
+                    <div class="bank-docs__row">
+                        {{ include('_partials/document_link.html.twig', { name: doc.name, href: path('guardia_bank_download', { id: doc.id }) }) }}
+                        <form method="post" action="{{ path('guardia_bank_document_remove', { id: doc.id }) }}" data-confirm="¿Quitar «{{ doc.name }}» de la tarea? El archivo se borra.">
+                            <input type="hidden" name="_token" value="{{ docsToken }}">
+                            <button type="submit" class="bank-docs__remove" aria-label="Quitar «{{ doc.name }}»" title="Quitar">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4h6v3"/></svg>
+                            </button>
+                        </form>
+                    </div>
+                {% else %}
+                    <p class="bank-nodoc">Sin documentos: la tarea va solo con las instrucciones.</p>
+                {% endfor %}
+            </div>
+
+            <form method="post" action="{{ path('guardia_bank_document_add', { id: item.id }) }}" enctype="multipart/form-data" class="bank-docs__add" data-bank-docs-add>
+                <input type="hidden" name="_token" value="{{ docsToken }}">
+                <div class="form-row">
+                    <label for="bank-docs-file">Añadir documentos</label>
+                    <input type="file" id="bank-docs-file" name="documents[]" multiple data-max-bytes="{{ constant('App\\Support\\DocumentUpload::MAX_BYTES') }}" data-max-total-bytes="{{ constant('App\\Support\\DocumentUpload::MAX_REQUEST_BYTES') }}">
+                    <p class="help">Puedes elegir varios a la vez: la ficha, el solucionario… PDF, Office, texto o imagen; máximo {{ constant('App\\Support\\DocumentUpload::MAX_BYTES') // (1024 * 1024) }} MB cada uno.</p>
+                </div>
+                <button type="submit" class="btn secondary" data-bank-docs-submit>Subir</button>
+            </form>
+        </section>
+    {% endif %}
+{% endblock %}
+
+{% block page_scripts %}
+    <script src="{{ asset_ver('/js/guardia-bank-documents.js') }}"></script>
 {% endblock %}

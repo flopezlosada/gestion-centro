@@ -10,11 +10,20 @@
 {% endblock %}
 
 {% block body %}
+    {#- Los archivos que salen a conserjería, en el orden de sus casillas de copias (el de
+        GuardiaCover::getPrintableDocuments()): el que dejó el docente ausente o, si no, los del banco. -#}
+    {% set files = [] %}
+    {% if cover and cover.taskDocumentPath %}
+        {% set files = [{ name: cover.taskDocumentName ?: 'documento', href: path('guardia_task_download', { id: cover.id }) }] %}
+    {% elseif cover and cover.bankItem %}
+        {% set files = cover.bankItem.documents|map(d => { name: d.name, href: path('guardia_bank_download', { id: d.id }) }) %}
+    {% endif %}
+
     <div class="page-head">
         <div>
             <p class="eyebrow">Conserjería</p>
             <h1>Pedir fotocopias</h1>
-            <p class="lead">El encargo sale por correo a <span class="mono">{{ recipient }}</span> con el documento adjunto. El número de copias es obligatorio: sin él no se puede preparar.</p>
+            <p class="lead">El encargo sale por correo a <span class="mono">{{ recipient }}</span>{% if not cover %} con el documento adjunto{% elseif files|length > 1 %} con los documentos adjuntos{% elseif files is not empty %} con el documento adjunto{% endif %}. El número de copias es obligatorio: sin él no se puede preparar.</p>
         </div>
     </div>
 
@@ -24,29 +33,22 @@
             <div class="detail-block__label">Qué se va a fotocopiar</div>
             <p class="copy-context__line">{{ [cover.groupName, cover.roomName]|filter(v => v)|join(' · ') ?: 'Guardia' }} · {{ cover.date|date('d/m/Y', false) }}</p>
 
+            {#- De dónde salen; los archivos en sí van abajo, cada uno con sus copias. -#}
             {% if cover.taskDocumentPath %}
-                <p>
-                    Documento:
-                    <a href="{{ path('guardia_task_download', { id: cover.id }) }}">{{ cover.taskDocumentName ?: 'documento' }}</a>
-                    <span class="help">Lo dejó el docente ausente.</span>
-                </p>
-            {% elseif cover.bankItem and cover.bankItem.hasDocument %}
-                {% set docs = cover.bankItem.documents %}
-                <p>
-                    {{ docs|length > 1 ? docs|length ~ ' documentos' : 'Documento' }}:
-                    {% for doc in docs %}<a href="{{ path('guardia_bank_download', { id: doc.id }) }}">{{ doc.name }}</a>{{ not loop.last ? ', ' }}{% endfor %}
-                    <span class="help">Del banco de tareas: «{{ cover.bankItem.title }}».</span>
-                </p>
+                <p class="help">El documento lo dejó el docente ausente.</p>
+            {% elseif files is not empty %}
+                <p class="help">{{ files|length > 1 ? 'Los documentos son' : 'El documento es' }} de la tarea del banco «{{ cover.bankItem.title }}».</p>
             {% else %}
                 <div class="callout">
                     <p>Esta guardia no tiene ningún documento que imprimir. Puedes enviar el encargo igualmente describiendo abajo qué hay que fotocopiar, o antes <a href="{{ path('guardia_bank_index', { para: cover.id }) }}">coger una tarea del banco</a>.</p>
                 </div>
             {% endif %}
 
-            {#- Un aviso y no una línea gris: pasaba desapercibida y se pedía lo mismo dos veces. No se bloquea
-                —a veces faltan copias—, pero enviar pide confirmación (data-confirm del formulario). -#}
+            {#- Un aviso y no una línea gris: pasaba desapercibida y se pedía lo mismo dos veces. En ámbar y no
+                en rojo: no es un error, a veces faltan copias. No se bloquea, pero enviar pide confirmación
+                (data-confirm del formulario). -#}
             {% if previous is defined and previous is not empty %}
-                <div class="callout callout--warning">
+                <div class="callout callout--amber">
                     <p><strong>Ya se han pedido fotocopias para esta guardia:</strong>
                         {% for p in previous %}{{ p.totalCopies }} copias el {{ p.requestedAt|date('d/m H:i', false) }}{% if not p.isSent %} (sin enviar){% endif %}{{ not loop.last ? '; ' }}{% endfor %}.
                         Envía otro encargo solo si hacen falta más.</p>
@@ -66,8 +68,36 @@
             {{ f.submit_error(form) }}
             {{ form_errors(form) }}
             {% if form.context is defined %}{{ f.fields([form.context, form.document]) }}{% endif %}
-            {#- Una casilla por archivo; el contenedor no tiene fila propia. -#}
-            {{ f.fields(form.copies) }}{% do form.copies.setRendered %}
+            {% if files is not empty %}
+                {#- Una fila por archivo: lo que es (con su «Ver») y, al lado, cuántas copias. El rótulo de
+                    cada casilla («Copias de «ficha.pdf»») queda para el lector de pantalla: a la vista ya
+                    está el archivo en la misma fila. -#}
+                {% set first = form.copies[0] %}
+                <div class="form-row" role="group" aria-labelledby="copy-files-title">
+                    <label id="copy-files-title">{{ files|length > 1 ? 'Copias de cada archivo' : 'Número de copias' }}</label>
+                    <p class="help" id="{{ first.vars.id }}_help">{{ first.vars.help }}</p>
+                    <ul class="copy-files">
+                        {% for file in files %}
+                            {% set field = form.copies[loop.index0] %}
+                            <li>
+                                <div class="copy-file">
+                                    {{ include('_partials/document_link.html.twig', file) }}
+                                    <label class="copy-file__copies" for="{{ field.vars.id }}">
+                                        <span class="visually-hidden">{{ field.vars.label }}</span>
+                                        {{ form_widget(field) }}
+                                        <span aria-hidden="true">copias</span>
+                                    </label>
+                                </div>
+                                {{ form_errors(field) }}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% else %}
+                {{ f.fields(form.copies) }}
+            {% endif %}
+            {#- El contenedor no tiene fila propia. -#}
+            {% do form.copies.setRendered %}
             {{ f.fields([form.notes]) }}
             {{ f.actions(cover ? path('guardia_cover_show', { id: cover.id }) : path('copy_request_index'), 'Enviar a fotocopias') }}
         {{ form_end(form) }}

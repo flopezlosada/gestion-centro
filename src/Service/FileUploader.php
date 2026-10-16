@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Service;
 
+use App\Support\DocumentUpload;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Uid\Uuid;
@@ -12,9 +13,10 @@ use Symfony\Component\Uid\Uuid;
  * Stores uploaded files in a private directory (outside the public web root), under per-feature
  * subdirectories. Reusable across modules (consumption invoices, signed PDFs, evidence...).
  *
- * Validation of the upload (size, mime type) is left to the form layer; this service only takes
- * care of safe, collision-free storage and retrieval. Stored names are random UUIDs, so the
- * client filename never reaches the filesystem and path traversal is not possible.
+ * Validation of the upload (size, extension) is left to the caller ({@see DocumentUpload}); this service
+ * only takes care of safe, collision-free storage and retrieval, keeping the extension that was
+ * validated. Stored names are random UUIDs, so the client filename never reaches the filesystem and
+ * path traversal is not possible.
  */
 final class FileUploader
 {
@@ -38,8 +40,9 @@ final class FileUploader
      */
     public function upload(UploadedFile $file, string $subdir): string
     {
-        $extension = $file->guessExtension() ?: $file->getClientOriginalExtension();
-        $name = $this->randomName($extension);
+        // La extensión que ya se validó (DocumentUpload), no la que se deduce del contenido: un HTML
+        // renombrado a «.pdf» acabaría en el disco como «.html», una extensión que ninguna lista admite.
+        $name = $this->randomName(strtolower($file->getClientOriginalExtension()));
 
         $relativeDir = trim($subdir, '/');
         $file->move($this->uploadsDir.'/'.$relativeDir, $name);
