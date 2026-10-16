@@ -87,7 +87,7 @@
        sobre el azar — se sortea entre lo que se está viendo. #}
     <div class="bank-filters">
         <div class="bank-filters__chips">
-        <details class="bank-drop" name="banco-filtro">
+        <details class="bank-drop" name="banco-filtro" data-menu>
             <summary class="bank-chip{{ level ? ' is-active' }}">
                 {{ level ? level.label : 'Todos los niveles' }}
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
@@ -113,7 +113,7 @@
                 </span>
             {% endif %}
         {% else %}
-            <details class="bank-drop" name="banco-filtro">
+            <details class="bank-drop" name="banco-filtro" data-menu>
                 <summary class="bank-chip{{ subject ? ' is-active' }}">
                     {{ subject ?: 'Todas las materias' }}
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
@@ -127,7 +127,7 @@
             </details>
         {% endif %}
 
-        <details class="bank-drop" name="banco-filtro">
+        <details class="bank-drop" name="banco-filtro" data-menu>
             <summary class="bank-chip{{ departmentId ? ' is-active' }}">
                 {% set currentDept = departments|filter(d => d.id == departmentId)|first %}
                 {{ currentDept ? currentDept.name : 'Todos los departamentos' }}
@@ -222,7 +222,7 @@
                         {# El ⋯ solo existe para quien puede curar la ficha (autoría, jefatura del
                            departamento o coordinación): así nadie ve una acción que daría 403. #}
                         {% if item.id in curatableIds %}
-                            <details class="bank-menu" name="banco-ficha">
+                            <details class="bank-menu" name="banco-ficha" data-menu>
                                 <summary class="bank-menu__btn" aria-label="Más acciones sobre «{{ item.title }}»">
                                     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
                                 </summary>

@@ -2008,8 +2008,8 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 .row-actions { text-align: right; white-space: nowrap; }
 .row-actions form { display: inline; }
 /* Menú de acciones de una fila (⋮): <details class="row-menu"> con <summary> y un .row-menu__panel con
-   los enlaces y formularios de siempre. Sin JS abre y cierra solo (es un <details>); row-menu.js cierra
-   los demás al abrir uno, al pinchar fuera y con Escape. */
+   los enlaces y formularios de siempre. Sin JS abre y cierra solo (es un <details>); details-menu.js (por
+   `data-menu`) cierra los demás al abrir uno, al pinchar fuera y con Escape. */
 .row-menu { position: relative; display: inline-block; text-align: left; }
 .row-menu > summary {
     list-style: none; cursor: pointer; width: 32px; height: 32px; display: grid; place-items: center;

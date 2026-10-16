@@ -31,7 +31,7 @@
 #}
 {% macro assign_sheet(cover, libres, pool, assignedHere, slotLabel, uncovered) %}
     {% import _self as ico %}
-    <details class="assignsheet">
+    <details class="assignsheet" data-menu>
         {# «profesor» sobra en la tabla de escritorio, donde la columna ya se llama «Cubre»; en la tarjeta de
            móvil el botón va a ancho completo y sin él quedaría un verbo suelto. #}
         <summary class="assignsheet__toggle">Asignar<span class="assignsheet__toggleword"> docente</span></summary>
