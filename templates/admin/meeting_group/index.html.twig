@@ -37,7 +37,7 @@
                             <td>{{ group.convener ? group.convener.fullName : '—' }}</td>
                             <td>{{ g.status(group) }}</td>
                             <td class="row-actions">
-                                <details class="row-menu">
+                                <details class="row-menu" data-menu>
                                     <summary aria-label="Acciones de «{{ group.name }}»" title="Acciones">⋮</summary>
                                     <div class="row-menu__panel">
                                         <a href="{{ path('admin_meeting_group_edit', { id: group.id }) }}">Editar</a>

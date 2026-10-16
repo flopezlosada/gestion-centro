@@ -53,7 +53,7 @@
                             todo el ancho para elegir entre tres opciones. Un <details> nativo con los cursos
                             como enlaces hace lo mismo, cabe en el ancla y funciona sin JavaScript. -#}
                         {% if courses|length > 1 %}
-                            <details class="recreo-years">
+                            <details class="recreo-years" data-menu>
                                 <summary>cambiar de curso</summary>
                                 <div class="recreo-years__list">
                                     {% for c in courses %}
