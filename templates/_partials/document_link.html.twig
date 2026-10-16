@@ -1,0 +1,12 @@
+{#- Un documento con su «Ver»: icono, nombre y tipo. Lo pintan el banco de tareas, el bloque de documentos
+    de su edición y el encargo de fotocopias. Espera `name` (el nombre original) y `href` (su descarga). -#}
+<a class="bank-doc" href="{{ href }}">
+    <span class="bank-doc__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span>
+    <span class="bank-doc__body">
+        <span class="bank-doc__name">{{ name }}</span>
+        {#- El tipo se lee del nombre del archivo; páginas y tamaño NO se guardan, así que no se inventan. -#}
+        {% set ext = name|split('.')|last|upper %}
+        {% if ext != name|upper %}<span class="bank-doc__kind">{{ ext }}</span>{% endif %}
+    </span>
+    <span class="bank-doc__cta">Ver</span>
+</a>

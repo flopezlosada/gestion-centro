@@ -568,12 +568,13 @@ final class GuardiaTaskBankTest extends WebTestCase
             'title' => 'Fracciones',
             'active' => '1',
             '_token' => $token,
-        ]], ['guardia_task_bank_item' => ['documents' => $documents]]);
+        ]], [] === $documents ? [] : ['guardia_task_bank_item' => ['documents' => $documents]]);
     }
 
     /**
      * Una tarea del banco lleva varios documentos (la ficha y su solucionario), en el orden en que se
-     * subieron; al editarla se quita el que sobra y se añaden otros, sin tocar el resto.
+     * subieron; después, desde el bloque de la edición, se quita el que sobra y se añaden otros, sin
+     * tocar el resto.
      */
     public function testATaskCarriesSeveralDocumentsAndEachCanBeRemovedOnItsOwn(): void
     {
@@ -583,7 +584,9 @@ final class GuardiaTaskBankTest extends WebTestCase
         $this->em->flush();
         $uploader = self::getContainer()->get(FileUploader::class);
 
-        $this->submitBankForm('/guardias/banco/nueva', $maths, [self::upload('ficha.pdf'), self::upload('solucionario.pdf')]);
+        // Un «PDF» que por dentro es HTML: solo se mira la extensión, así que entra, pero no puede acabar
+        // en el disco con otra ni el navegador tratarlo como una página.
+        $this->submitBankForm('/guardias/banco/nueva', $maths, [self::upload('ficha.pdf', '<html><script>alert(1)</script></html>'), self::upload('solucionario.pdf')]);
         self::assertResponseRedirects();
 
         $this->em->clear();
@@ -593,21 +596,201 @@ final class GuardiaTaskBankTest extends WebTestCase
         self::assertSame(['ficha.pdf', 'solucionario.pdf'], [$sheet->getName(), $answers->getName()]);
         $sheetPath = $sheet->getPath();
         self::assertFileExists($uploader->absolutePath($sheetPath));
+        self::assertStringEndsWith('.pdf', $sheetPath, 'en el disco, con la extensión validada y no la deducida del contenido');
 
         $this->client->request('GET', '/guardias/banco/documento/'.$answers->getId());
         self::assertResponseIsSuccessful();
         self::assertStringContainsString('solucionario.pdf', (string) $this->client->getResponse()->headers->get('Content-Disposition'));
+        self::assertResponseHeaderSame('X-Content-Type-Options', 'nosniff');
 
-        $this->submitBankForm('/guardias/banco/'.$item->getId().'/editar', $maths, [self::upload('lectura.pdf')], [
-            'removeDocuments' => [(string) $sheet->getId()],
-        ]);
-        self::assertResponseRedirects();
+        $itemId = (int) $item->getId();
+        $token = $this->documentsToken($itemId);
+        $this->client->request('POST', '/guardias/banco/documento/'.$sheet->getId().'/quitar', ['_token' => $token]);
+        self::assertResponseRedirects('/guardias/banco/'.$itemId.'/editar');
+        $this->client->request('POST', '/guardias/banco/'.$itemId.'/documentos', ['_token' => $token], ['documents' => [self::upload('lectura.pdf')]]);
+        self::assertResponseRedirects('/guardias/banco/'.$itemId.'/editar');
 
-        $this->em->clear();
-        $item = $this->em->getRepository(GuardiaTaskBankItem::class)->find($item->getId());
-        self::assertInstanceOf(GuardiaTaskBankItem::class, $item);
-        self::assertSame(['solucionario.pdf', 'lectura.pdf'], array_map(static fn ($d) => $d->getName(), $item->getDocuments()));
+        self::assertSame(['solucionario.pdf', 'lectura.pdf'], $this->documentNames($itemId));
         self::assertFileDoesNotExist($uploader->absolutePath($sheetPath), 'el quitado se borra del disco');
+        // Los dos carteles esperan juntos (nada se pintó entre los dos envíos): quitado y añadido.
+        self::assertSame(
+            ['«ficha.pdf» quitado de la tarea.', '«lectura.pdf» añadido a la tarea.'],
+            $this->client->followRedirect()->filter('.flash.success')->each(static fn (Crawler $f): string => $f->text()),
+        );
+    }
+
+    /**
+     * The CSRF token of the documents block of a task's edit screen, read as the browser would.
+     *
+     * @param int $itemId the task
+     *
+     * @return string the token
+     */
+    private function documentsToken(int $itemId): string
+    {
+        $crawler = $this->client->request('GET', '/guardias/banco/'.$itemId.'/editar');
+        self::assertResponseIsSuccessful();
+
+        return (string) $crawler->filter('[data-bank-docs-add] input[name="_token"]')->attr('value');
+    }
+
+    /**
+     * The names of a task's documents as stored, in their order, read past the identity map.
+     *
+     * @param int $itemId the task
+     *
+     * @return list<string> the document names
+     */
+    private function documentNames(int $itemId): array
+    {
+        $this->em->clear();
+        $item = $this->em->getRepository(GuardiaTaskBankItem::class)->find($itemId);
+        self::assertInstanceOf(GuardiaTaskBankItem::class, $item);
+
+        return array_map(static fn ($d): string => $d->getName(), $item->getDocuments());
+    }
+
+    /**
+     * A task of $department by $author with two documents really stored, as the bank keeps them.
+     *
+     * @param Department $department the task's department
+     * @param User       $author     who contributed it
+     *
+     * @return GuardiaTaskBankItem the task, flushed
+     */
+    private function bankItemWithDocuments(Department $department, User $author): GuardiaTaskBankItem
+    {
+        $uploader = self::getContainer()->get(FileUploader::class);
+        $item = $this->bankItem($department, EducationLevel::ESO_2, 'Fracciones')->setCreatedBy($author)
+            ->addDocument($uploader->store('a', 'guardia-task-bank', 'pdf'), 'ficha.pdf')
+            ->addDocument($uploader->store('b', 'guardia-task-bank', 'pdf'), 'solucionario.pdf');
+        $this->em->flush();
+
+        return $item;
+    }
+
+    /**
+     * Al editar, los documentos tienen su propio bloque y no van en el formulario: guardar el resto de
+     * la tarea no los toca.
+     */
+    public function testEditingATaskLeavesItsDocumentsToTheirOwnBlock(): void
+    {
+        $maths = $this->department();
+        $teacher = $this->login(unit: $maths);
+        $this->taughtSubject('Matemáticas', $teacher);
+        $itemId = (int) $this->bankItemWithDocuments($maths, $teacher)->getId();
+
+        $crawler = $this->client->request('GET', '/guardias/banco/'.$itemId.'/editar');
+        self::assertCount(0, $crawler->filter('input[name^="guardia_task_bank_item[documents]"]'));
+        self::assertCount(2, $crawler->filter('[data-bank-docs-list] .bank-docs__row'));
+
+        $this->submitBankForm('/guardias/banco/'.$itemId.'/editar', $maths, [], ['title' => 'Fracciones equivalentes']);
+        self::assertResponseRedirects();
+        self::assertSame(['ficha.pdf', 'solucionario.pdf'], $this->documentNames($itemId));
+    }
+
+    /**
+     * Subir al bloque es todo o nada, como al crearla: un fichero rechazado deja la tarea como estaba
+     * y lo dice en un cartel, sin guardar los que sí valían.
+     */
+    public function testOneRejectedFileRefusesTheWholeUploadToTheBlock(): void
+    {
+        $maths = $this->department();
+        $teacher = $this->login(unit: $maths);
+        $itemId = (int) $this->bankItemWithDocuments($maths, $teacher)->getId();
+
+        $this->client->request('POST', '/guardias/banco/'.$itemId.'/documentos', ['_token' => $this->documentsToken($itemId)], [
+            'documents' => [self::upload('lectura.pdf'), self::upload('virus.exe')],
+        ]);
+
+        self::assertResponseRedirects('/guardias/banco/'.$itemId.'/editar');
+        self::assertCount(1, $this->client->followRedirect()->filter('.flash.error'));
+        self::assertSame(['ficha.pdf', 'solucionario.pdf'], $this->documentNames($itemId));
+    }
+
+    /**
+     * Darle a subir sin elegir nada (sin JS el botón está a la vista) avisa en vez de no decir nada.
+     */
+    public function testUploadingNothingToTheBlockSaysSo(): void
+    {
+        $maths = $this->department();
+        $teacher = $this->login(unit: $maths);
+        $itemId = (int) $this->bankItemWithDocuments($maths, $teacher)->getId();
+
+        $this->client->request('POST', '/guardias/banco/'.$itemId.'/documentos', ['_token' => $this->documentsToken($itemId)]);
+
+        self::assertResponseRedirects('/guardias/banco/'.$itemId.'/editar');
+        self::assertStringContainsString('Elige al menos un documento', $this->client->followRedirect()->filter('.flash.error')->text());
+        self::assertSame(['ficha.pdf', 'solucionario.pdf'], $this->documentNames($itemId));
+    }
+
+    /**
+     * Subir y quitar documentos piden lo mismo que editar la tarea: quien no puede curarla recibe 403
+     * y el archivo sigue en su sitio.
+     */
+    public function testOnlyWhoMayEditATaskMayChangeItsDocuments(): void
+    {
+        $maths = $this->department();
+        $author = (new User())->setFullName('Autora')->setEmail('autora@centro.test');
+        $this->em->persist($author);
+        $item = $this->bankItemWithDocuments($maths, $author);
+        $itemId = (int) $item->getId();
+        $sheet = $item->getDocuments()[0];
+        $sheetFile = self::getContainer()->get(FileUploader::class)->absolutePath($sheet->getPath());
+
+        // Sin poder abrir la edición no tiene token; se comprueba que el 403 es por el permiso (va antes
+        // que el CSRF), no por el token.
+        $this->login('otro@centro.test');
+        $this->client->request('POST', '/guardias/banco/documento/'.$sheet->getId().'/quitar', ['_token' => 'sin-token']);
+        self::assertResponseStatusCodeSame(403);
+        self::assertStringContainsString('Solo quien la aportó', (string) $this->client->getResponse()->getContent());
+        $this->client->request('POST', '/guardias/banco/'.$itemId.'/documentos', ['_token' => 'sin-token'], ['documents' => [self::upload('lectura.pdf')]]);
+        self::assertResponseStatusCodeSame(403);
+        self::assertStringContainsString('Solo quien la aportó', (string) $this->client->getResponse()->getContent());
+
+        self::assertSame(['ficha.pdf', 'solucionario.pdf'], $this->documentNames($itemId));
+        self::assertFileExists($sheetFile);
+    }
+
+    /**
+     * Al modificar una guardia se ve qué tarea del banco lleva, con sus documentos y el botón para
+     * cambiarla en el banco, en el lateral; y el documento propio de la guardia dice que, si lo hay, a fotocopias va ese.
+     */
+    public function testModifyingAGuardiaShowsItsBankTask(): void
+    {
+        $maths = $this->department();
+        $coordinator = $this->login('coordina@centro.test', coordinator: true);
+        $absent = (new User())->setFullName('Ausente')->setEmail('ausente@centro.test');
+        $this->em->persist($absent);
+        $cover = $this->cover($absent, null)->setBankItem($this->bankItemWithDocuments($maths, $coordinator));
+        $this->em->flush();
+        $coverId = (int) $cover->getId();
+
+        $crawler = $this->client->request('GET', '/guardias/'.$coverId.'/modificar');
+        self::assertResponseIsSuccessful();
+        self::assertSame('«Fracciones»', $crawler->filter('.cover-edit__bank-title')->text());
+        self::assertCount(1, $crawler->filter('.cover-edit__bank a.btn[href="/guardias/banco?para='.$coverId.'"]'));
+        self::assertSame(['ficha.pdf', 'solucionario.pdf'], $crawler->filter('.cover-edit__bank .bank-doc__name')->each(static fn (Crawler $n): string => $n->text()));
+        self::assertSelectorTextContains('label[for="document"]', 'Documento propio de esta guardia');
+        self::assertStringContainsString('a fotocopias va este y no los de la tarea del banco', $crawler->filter('.cover-edit')->text());
+    }
+
+    public function testChangingDocumentsWithABadCsrfTokenIsRejected(): void
+    {
+        $maths = $this->department();
+        $teacher = $this->login(unit: $maths);
+        $item = $this->bankItemWithDocuments($maths, $teacher);
+        $itemId = (int) $item->getId();
+        $sheet = $item->getDocuments()[0];
+        $sheetFile = self::getContainer()->get(FileUploader::class)->absolutePath($sheet->getPath());
+
+        $this->client->request('POST', '/guardias/banco/documento/'.$sheet->getId().'/quitar', ['_token' => 'invalido']);
+        self::assertResponseStatusCodeSame(403);
+        $this->client->request('POST', '/guardias/banco/'.$itemId.'/documentos', ['_token' => 'invalido'], ['documents' => [self::upload('lectura.pdf')]]);
+        self::assertResponseStatusCodeSame(403);
+
+        self::assertSame(['ficha.pdf', 'solucionario.pdf'], $this->documentNames($itemId));
+        self::assertFileExists($sheetFile);
     }
 
     /**

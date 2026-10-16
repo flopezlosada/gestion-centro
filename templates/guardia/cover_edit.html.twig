@@ -85,7 +85,7 @@
                 </div>
 
                 <div class="field">
-                    <label for="document">Documento</label>
+                    <label for="document">{{ cover.bankItem and cover.bankItem.hasDocument ? 'Documento propio de esta guardia' : 'Documento' }}</label>
                     {% if cover.taskDocumentPath %}
                         <div class="cover-edit__doc">
                             <a href="{{ path('guardia_task_download', { id: cover.id }) }}">{{ cover.taskDocumentName ?? 'Documento actual' }}</a>
@@ -93,7 +93,8 @@
                         </div>
                     {% endif %}
                     <input type="file" id="document" name="document" data-max-bytes="{{ constant('App\\Support\\DocumentUpload::MAX_BYTES') }}">
-                    <p class="field-help">{% if cover.taskDocumentPath %}Si subes otro, sustituye al actual. {% endif %}Se borra de la aplicación al acabar el curso. Si no hace falta, que no lleve nombres ni datos del alumnado.</p>
+                    {#- Mismo orden que GuardiaCover::getPrintableDocuments(): manda el del docente ausente. -#}
+                    <p class="field-help">{% if cover.taskDocumentPath %}Si subes otro, sustituye al actual. {% endif %}{% if cover.bankItem and cover.bankItem.hasDocument %}Si hay uno aquí, a fotocopias va este y no los de la tarea del banco. {% endif %}Se borra de la aplicación al acabar el curso. Si no hace falta, que no lleve nombres ni datos del alumnado.</p>
                 </div>
 
                 <div class="field">
@@ -111,6 +112,18 @@
       </div>
 
       <aside class="detail-aside">
+        {#- Solo lectura, como el histórico: la tarea del banco se coge, cambia y quita desde el banco, no en
+            este formulario. Sin esto, quien modificaba la guardia no sabía que ya llevaba una. -#}
+        {% if cover.bankItem %}
+            <div class="side-card cover-edit__bank">
+                <div class="side-card__label">Tarea del banco</div>
+                <p class="cover-edit__bank-title">«{{ cover.bankItem.title }}»</p>
+                {% for doc in cover.bankItem.documents %}
+                    {{ include('_partials/document_link.html.twig', { name: doc.name, href: path('guardia_bank_download', { id: doc.id }) }) }}
+                {% endfor %}
+                <a class="btn secondary cover-edit__bank-change" href="{{ path('guardia_bank_index', { para: cover.id }) }}">Cambiar de tarea</a>
+            </div>
+        {% endif %}
         <div class="side-card">
             <div class="side-card__label">Histórico</div>
             {% if events is empty %}

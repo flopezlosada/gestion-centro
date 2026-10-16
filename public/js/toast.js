@@ -34,137 +34,143 @@
         }
     }
 
-    ready(function () {
-        var toasts = Array.prototype.slice.call(document.querySelectorAll('[data-toast]'));
-        var flashes = Array.prototype.slice.call(document.querySelectorAll('.flash'));
-        if (!toasts.length && !flashes.length) {
+    // Sin animación para quien pide menos movimiento: se quita de golpe.
+    var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    /** Lo que Escape puede cerrar, en orden de aparición: { el, dismiss }. */
+    var open = [];
+
+    /**
+     * Lee un aviso en voz alta a través de una región viva CREADA AHORA.
+     *
+     * Por qué no basta con poner aria-live en el propio aviso: una región viva solo anuncia lo que
+     * CAMBIA una vez está registrada, y el aviso llega ya escrito en el HTML de la página, así que su
+     * texto cuenta como contenido de partida y no se anuncia. Se copia a un nodo oculto que se
+     * inserta después de la carga, con lo que sí es un cambio. No se toca el aviso visible: vaciarlo
+     * y volver a escribirlo lo haría parpadear.
+     *
+     * Sin JS el aviso se sigue viendo y su botón se alcanza con el tabulador; solo se pierde el aviso
+     * hablado, que es una degradación aceptable.
+     */
+    function announce(el) {
+        var text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!text) {
             return;
         }
+        var region = document.createElement('div');
+        region.className = 'visually-hidden';
+        region.setAttribute('aria-live', 'polite');
+        document.body.appendChild(region);
+        // El texto va en un ciclo posterior a la inserción: si se pusiera de una vez, volvería a ser
+        // contenido inicial de la región y tampoco se anunciaría.
+        window.setTimeout(function () {
+            region.textContent = text;
+        }, 120);
+    }
 
-        // Sin animación para quien pide menos movimiento: se quita de golpe.
-        var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        /** Lo que Escape puede cerrar, en orden de aparición: { el, dismiss }. */
-        var open = [];
+    /**
+     * Hace descartable un aviso: le pone la × si se pide y, si se pide, el temporizador que lo retira.
+     *
+     * @param el      {Element}                        el aviso
+     * @param options {{auto: boolean, close: boolean}} auto = se va solo pasado VISIBLE_MS;
+     *                                                 close = añadirle un botón de cerrar
+     */
+    function dismissible(el, options) {
+        var timer = null;
+        // Cuenta de "razones para quedarse" (ratón encima, foco dentro): mientras haya alguna, no
+        // se va. Un contador y no un booleano porque ratón y foco pueden solaparse.
+        var holds = 0;
 
-        /**
-         * Lee un aviso en voz alta a través de una región viva CREADA AHORA.
-         *
-         * Por qué no basta con poner aria-live en el propio aviso: una región viva solo anuncia lo que
-         * CAMBIA una vez está registrada, y el aviso llega ya escrito en el HTML de la página, así que su
-         * texto cuenta como contenido de partida y no se anuncia. Se copia a un nodo oculto que se
-         * inserta después de la carga, con lo que sí es un cambio. No se toca el aviso visible: vaciarlo
-         * y volver a escribirlo lo haría parpadear.
-         *
-         * Sin JS el aviso se sigue viendo y su botón se alcanza con el tabulador; solo se pierde el aviso
-         * hablado, que es una degradación aceptable.
-         */
-        function announce(el) {
-            var text = (el.textContent || '').replace(/\s+/g, ' ').trim();
-            if (!text) {
+        function dismiss() {
+            if (timer !== null) {
+                window.clearTimeout(timer);
+                timer = null;
+            }
+            var i = 0;
+            for (; i < open.length; i += 1) {
+                if (open[i].el === el) {
+                    open.splice(i, 1);
+                    break;
+                }
+            }
+            if (reduced) {
+                el.remove();
                 return;
             }
-            var region = document.createElement('div');
-            region.className = 'visually-hidden';
-            region.setAttribute('aria-live', 'polite');
-            document.body.appendChild(region);
-            // El texto va en un ciclo posterior a la inserción: si se pusiera de una vez, volvería a ser
-            // contenido inicial de la región y tampoco se anunciaría.
+            el.classList.add('is-leaving');
             window.setTimeout(function () {
-                region.textContent = text;
-            }, 120);
+                el.remove();
+            }, FADE_MS);
         }
 
-        /**
-         * Hace descartable un aviso: le pone la × si se pide y, si se pide, el temporizador que lo retira.
-         *
-         * @param el      {Element}                        el aviso
-         * @param options {{auto: boolean, close: boolean}} auto = se va solo pasado VISIBLE_MS;
-         *                                                 close = añadirle un botón de cerrar
-         */
-        function dismissible(el, options) {
-            var timer = null;
-            // Cuenta de "razones para quedarse" (ratón encima, foco dentro): mientras haya alguna, no
-            // se va. Un contador y no un booleano porque ratón y foco pueden solaparse.
-            var holds = 0;
-
-            function dismiss() {
-                if (timer !== null) {
-                    window.clearTimeout(timer);
-                    timer = null;
-                }
-                var i = 0;
-                for (; i < open.length; i += 1) {
-                    if (open[i].el === el) {
-                        open.splice(i, 1);
-                        break;
-                    }
-                }
-                if (reduced) {
-                    el.remove();
-                    return;
-                }
-                el.classList.add('is-leaving');
-                window.setTimeout(function () {
-                    el.remove();
-                }, FADE_MS);
+        function schedule() {
+            if (!options.auto || timer !== null || holds > 0) {
+                return;
             }
+            timer = window.setTimeout(dismiss, VISIBLE_MS);
+        }
 
-            function schedule() {
-                if (!options.auto || timer !== null || holds > 0) {
-                    return;
-                }
-                timer = window.setTimeout(dismiss, VISIBLE_MS);
+        function hold() {
+            holds += 1;
+            if (timer !== null) {
+                window.clearTimeout(timer);
+                timer = null;
             }
+        }
 
-            function hold() {
-                holds += 1;
-                if (timer !== null) {
-                    window.clearTimeout(timer);
-                    timer = null;
-                }
-            }
-
-            function release() {
-                holds = Math.max(0, holds - 1);
-                schedule();
-            }
-
-            el.addEventListener('mouseenter', hold);
-            el.addEventListener('mouseleave', release);
-            el.addEventListener('focusin', hold);
-            el.addEventListener('focusout', release);
-
-            if (options.close) {
-                var close = document.createElement('button');
-                close.type = 'button';
-                close.className = 'flash__close';
-                close.setAttribute('aria-label', 'Cerrar el aviso');
-                close.innerHTML = '<span aria-hidden="true">×</span>';
-                close.addEventListener('click', dismiss);
-                el.classList.add('is-dismissible');
-                el.appendChild(close);
-            }
-
-            open.push({ el: el, dismiss: dismiss });
+        function release() {
+            holds = Math.max(0, holds - 1);
             schedule();
         }
 
-        toasts.forEach(function (toast) {
+        el.addEventListener('mouseenter', hold);
+        el.addEventListener('mouseleave', release);
+        el.addEventListener('focusin', hold);
+        el.addEventListener('focusout', release);
+
+        if (options.close) {
+            var close = document.createElement('button');
+            close.type = 'button';
+            close.className = 'flash__close';
+            close.setAttribute('aria-label', 'Cerrar el aviso');
+            close.innerHTML = '<span aria-hidden="true">×</span>';
+            close.addEventListener('click', dismiss);
+            el.classList.add('is-dismissible');
+            el.appendChild(close);
+        }
+
+        open.push({ el: el, dismiss: dismiss });
+        schedule();
+    }
+
+    function flash(el) {
+        dismissible(el, { auto: el.classList.contains('success'), close: true });
+    }
+
+    /**
+     * Para los carteles flash que una pantalla mete DESPUÉS de cargar (una acción enviada por AJAX):
+     * se leen en voz alta, porque ya no son contenido de partida, y se cierran como los demás.
+     */
+    window.appNotices = {
+        flash: function (el) {
+            announce(el);
+            flash(el);
+        },
+    };
+
+    // Escape cierra el último aviso: son avisos, no diálogos, así que no atrapan el foco ni piden
+    // confirmar. Un solo listener para todos, en vez de uno por aviso.
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && open.length) {
+            open[open.length - 1].dismiss();
+        }
+    });
+
+    ready(function () {
+        document.querySelectorAll('[data-toast]').forEach(function (toast) {
             announce(toast);
             // El toast no lleva ×: su acción es "Deshacer", y una segunda al lado competiría con ella.
             dismissible(toast, { auto: true, close: false });
         });
-
-        flashes.forEach(function (flash) {
-            dismissible(flash, { auto: flash.classList.contains('success'), close: true });
-        });
-
-        // Escape cierra el último aviso: son avisos, no diálogos, así que no atrapan el foco ni piden
-        // confirmar. Un solo listener para todos, en vez de uno por aviso.
-        document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape' && open.length) {
-                open[open.length - 1].dismiss();
-            }
-        });
+        document.querySelectorAll('.flash').forEach(flash);
     });
 })();

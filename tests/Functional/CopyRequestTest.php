@@ -19,6 +19,7 @@ use App\Service\FileUploader;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\DomCrawler\Crawler;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\Mime\Email;
 
@@ -201,7 +202,7 @@ final class CopyRequestTest extends WebTestCase
 
         // Y un segundo encargo avisa y pide confirmación antes de salir.
         $crawler = $this->client->request('GET', '/fotocopias/guardia/'.$coverId);
-        self::assertSelectorTextContains('.callout--warning', 'Ya se han pedido fotocopias para esta guardia');
+        self::assertSelectorTextContains('.callout--amber', 'Ya se han pedido fotocopias para esta guardia');
         self::assertNotNull($crawler->filter('form[data-confirm]')->getNode(0));
     }
 
@@ -236,6 +237,12 @@ final class CopyRequestTest extends WebTestCase
         self::assertSame('28', $crawler->filter('input[name="copy_request[copies][0]"]')->attr('value'));
         self::assertSame('28', $crawler->filter('input[name="copy_request[copies][1]"]')->attr('value'));
         self::assertSelectorTextContains('label[for="copy_request_copies_1"]', 'solucionario.pdf');
+        // Cada archivo sale una vez, en su fila y con sus copias al lado, no también en una lista aparte.
+        $rows = $crawler->filter('.copy-files .copy-file');
+        self::assertSame(['ficha.pdf', 'solucionario.pdf'], $rows->each(static fn (Crawler $row): string => $row->filter('.bank-doc__name')->text()));
+        self::assertCount(1, $rows->eq(1)->filter('input[name="copy_request[copies][1]"]'));
+        self::assertCount(2, $crawler->filter('a.bank-doc'));
+        self::assertStringContainsString('con los documentos adjuntos', $crawler->filter('.lead')->text());
 
         $token = (string) $crawler->filter('input[name="copy_request[_token]"]')->attr('value');
         $this->client->request('POST', '/fotocopias/guardia/'.$coverId, ['copy_request' => [
