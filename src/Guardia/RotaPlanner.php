@@ -57,6 +57,68 @@ final class RotaPlanner
     }
 
     /**
+     * Compares the published rota with the one the engine would publish today.
+     *
+     * Nothing records that the rota went stale — a re-imported timetable or a retyped quota changes what
+     * the engine would propose, and the published cells just stay as they were, with nobody told. But the
+     * engine is deterministic, so the comparison IS the answer: if today's proposal differs from what is
+     * published, something it reads has changed since. That covers every cause at once, and an import that
+     * changed nothing reports nothing, which a "timetable imported after the rota" date never could.
+     *
+     * It also fires after a hand retouch that leaves a period short — which is true too: publishing again
+     * would refill it — so the screen words it as "would change", not as blame on the timetable.
+     *
+     * Only the engine's own cells are compared, because they are the only ones publishing replaces. A
+     * course whose rota the engine never published has nothing to drift from, so it reports no drift.
+     * Accepted blind spot: an import that drops EVERY engine cell looks the same, and is not told apart
+     * because that needs a persisted "published" marker for a case that takes every engine guardia of
+     * the week colliding with a new lesson at once.
+     *
+     * @param AcademicYear $year the course
+     *
+     * @return RotaDrift what publishing today's proposal would change
+     */
+    public function drift(AcademicYear $year): RotaDrift
+    {
+        $published = [];
+        foreach ($this->schedule->dutyPlaces($year) as $cell) {
+            if (ScheduleEntrySource::ENGINE === $cell['source']) {
+                $published[self::placeKey($cell['weekday']->value, $cell['slot'], $cell['teacherId'], $cell['kind']->value)] = true;
+            }
+        }
+        if ([] === $published) {
+            return new RotaDrift(0, 0);
+        }
+
+        $proposed = [];
+        foreach ($this->propose($year)->placements as $place) {
+            if (!$place['fixed']) {
+                $proposed[self::placeKey($place['weekday'], $place['slot'], $place['teacherId'], $place['kind'])] = true;
+            }
+        }
+
+        return new RotaDrift(
+            \count(array_diff_key($proposed, $published)),
+            \count(array_diff_key($published, $proposed)),
+        );
+    }
+
+    /**
+     * One guardia of the week as a comparable key: who, when, and whether on duty or as support.
+     *
+     * @param int    $weekday   the weekday value
+     * @param int    $slot      the period index
+     * @param int    $teacherId the teacher
+     * @param string $kind      the duty kind value
+     *
+     * @return string the key
+     */
+    private static function placeKey(int $weekday, int $slot, int $teacherId, string $kind): string
+    {
+        return $weekday.':'.$slot.':'.$teacherId.':'.$kind;
+    }
+
+    /**
      * Writes an approved proposal into the timetable, replacing whatever the engine had placed before and
      * leaving hand-marked and imported cells alone.
      *
@@ -191,20 +253,18 @@ final class RotaPlanner
      */
     private function fixedPlaces(AcademicYear $year): array
     {
-        $fixed = [];
-        foreach ($this->schedule->findDutyCells($year) as $cell) {
-            if (ScheduleEntrySource::ENGINE === $cell->getSource()) {
-                continue;
-            }
-            $fixed[] = [
-                'weekday' => $cell->getWeekday()->value,
-                'slot' => $cell->getSlotIndex(),
-                'teacherId' => (int) $cell->getTeacher()->getId(),
-                'kind' => $cell->getKind(),
-            ];
-        }
-
-        return $fixed;
+        return array_values(array_map(
+            static fn (array $cell): array => [
+                'weekday' => $cell['weekday']->value,
+                'slot' => $cell['slot'],
+                'teacherId' => $cell['teacherId'],
+                'kind' => $cell['kind'],
+            ],
+            array_filter(
+                $this->schedule->dutyPlaces($year),
+                static fn (array $cell): bool => ScheduleEntrySource::ENGINE !== $cell['source'],
+            ),
+        ));
     }
 
     /**

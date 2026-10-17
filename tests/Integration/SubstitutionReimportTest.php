@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Tests\Integration;
 
 use App\Entity\AcademicYear;
+use App\Entity\GuardiaQuota;
 use App\Entity\ScheduleEntry;
 use App\Entity\Substitution;
 use App\Entity\User;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\ScheduleEntrySource;
 use App\Enum\Weekday;
+use App\Guardia\RotaPlanner;
 use App\Guardia\SubstitutionApplier;
 use App\Guardia\TimetableImporter;
 use App\Repository\ScheduleEntryRepository;
@@ -186,6 +188,33 @@ final class SubstitutionReimportTest extends KernelTestCase
             $survivor->getTeacher()->getId(),
             'y vuelve a manos de quien sustituye, como el resto del horario',
         );
+    }
+
+    public function testAnIdenticalReimportDuringALeaveDoesNotReportTheRotaAsStale(): void
+    {
+        // Al terminar el import, las celdas que acaba de escribir siguen en memoria a nombre de la persona
+        // de baja, aunque en la BD ya sean de quien sustituye: el traspaso de vuelta es un UPDATE masivo.
+        // Comparar el cuadrante contra esas copias lo daría por desfasado sin que nada haya cambiado.
+        $this->em->persist((new GuardiaQuota())->setAcademicYear($this->year)->setTeacher($this->jane)->setLectiveDuties(2));
+        $this->em->flush();
+        $this->substitutionInPlace();
+
+        // El cuadrante se publicó en otra petición, con la memoria limpia.
+        $yearId = $this->year->getId();
+        $this->em->clear();
+        $year = $this->em->find(AcademicYear::class, $yearId);
+        self::assertInstanceOf(AcademicYear::class, $year);
+        $this->year = $year;
+        $planner = self::getContainer()->get(RotaPlanner::class);
+        self::assertGreaterThan(0, $planner->publish($this->year, $planner->propose($this->year)->placements), 'hay un cuadrante publicado con el que comparar');
+        $this->em->clear();
+        $year = $this->em->find(AcademicYear::class, $yearId);
+        self::assertInstanceOf(AcademicYear::class, $year);
+        $this->year = $year;
+
+        $this->import();
+
+        self::assertTrue($planner->drift($this->year)->isEmpty(), 'el mismo horario no puede dejar el cuadrante desfasado');
     }
 
     /** Abre la sustitución de Jane y traspasa su horario. */

@@ -38,6 +38,20 @@ final class RotaProposerTest extends TestCase
         }
     }
 
+    public function testTwoPeopleWithTheSameNameGetTheSameRotaWhateverTheirOrder(): void
+    {
+        // The rota screen warns when today's proposal differs from the published one, so the same input
+        // must give the same rota. With the name as the last tiebreak, two namesakes came out in whatever
+        // order the database returned them, and the warning would flip on and off with nothing changed.
+        $first = new RotaCandidate(1, 'Ana García', 1, []);
+        $second = new RotaCandidate(2, 'Ana García', 1, []);
+
+        $oneWay = $this->proposer->propose([0], [$first, $second])->placements;
+        $otherWay = $this->proposer->propose([0], [$second, $first])->placements;
+
+        self::assertSame($oneWay, $otherWay);
+    }
+
     public function testNobodyIsPlacedTwiceInTheSamePeriod(): void
     {
         $candidates = [new RotaCandidate(1, 'Ana', 10, []), new RotaCandidate(2, 'Luis', 10, [])];

@@ -8,6 +8,7 @@ use App\Entity\AcademicYear;
 use App\Enum\Area;
 use App\Form\TimetableImportType;
 use App\Guardia\PendingTimetableImport;
+use App\Guardia\RotaPlanner;
 use App\Guardia\TimetableImporter;
 use App\Guardia\TimetableImportResult;
 use App\Repository\AcademicYearRepository;
@@ -79,6 +80,7 @@ final class AdminTimetableController extends AbstractController
         TimetableImporter $importer,
         PendingTimetableImport $pending,
         AcademicYearRepository $years,
+        RotaPlanner $rota,
     ): Response {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::ADMINISTRATION);
 
@@ -121,6 +123,17 @@ final class AdminTimetableController extends AbstractController
                 '%d espacio(s) nuevo(s) en el catálogo (%s): les falta el tipo y la capacidad, que el horario no trae.',
                 \count($result->newRooms),
                 implode(', ', $result->newRooms),
+            ));
+        }
+        // The import never touches the engine's rota, except to drop a guardia a new lesson lands on: the
+        // published rota can come out short or unbalanced, and this is the moment somebody is looking.
+        $drift = $rota->drift($year);
+        if (!$drift->isEmpty()) {
+            $this->addFlash('warning', sprintf(
+                'El cuadrante de guardias publicado ya no cuadra con lo que propondría hoy el programa: si se volviera a publicar, entrarían %d %s y saldrían %d. Revísalo en Guardias → Cuadrante.',
+                $drift->added,
+                1 === $drift->added ? 'guardia' : 'guardias',
+                $drift->removed,
             ));
         }
 

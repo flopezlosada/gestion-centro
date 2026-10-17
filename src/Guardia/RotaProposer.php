@@ -276,6 +276,10 @@ final class RotaProposer
                 $done / $candidate->quota,
                 $perDay[$id][$weekday] ?? 0,
                 mb_strtolower($candidate->name),
+                // Last, so two people with the same name still come out in the same order whatever order
+                // the database hands them over in: the rota screen relies on the same input always giving
+                // the same rota ({@see RotaPlanner::drift()}).
+                $id,
             ];
 
             if (null === $bestScore || $score < $bestScore) {
