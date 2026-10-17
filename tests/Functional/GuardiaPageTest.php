@@ -21,6 +21,7 @@ use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 use Symfony\Component\DomCrawler\Crawler;
 
 /**
@@ -33,6 +34,8 @@ use Symfony\Component\DomCrawler\Crawler;
  */
 final class GuardiaPageTest extends WebTestCase
 {
+    use ClockSensitiveTrait;
+
     private KernelBrowser $client;
     private EntityManagerInterface $em;
 
@@ -392,6 +395,8 @@ final class GuardiaPageTest extends WebTestCase
      */
     public function testModifyReassignsAndClearsTheGuardia(): void
     {
+        // La víspera: de una guardia que ya pasó no se avisa a nadie, y aquí lo que se mira es el aviso.
+        self::mockTime('2025-11-09 18:00');
         $this->login();
         $year = $this->academicYear('2025-2026');
         $this->em->persist($year);
@@ -427,6 +432,8 @@ final class GuardiaPageTest extends WebTestCase
      */
     public function testAChangeOfSubstituteIsToldToBothTeachersWithoutTheReason(): void
     {
+        // La víspera: de una guardia que ya pasó no se avisa a nadie, y aquí lo que se mira es el aviso.
+        self::mockTime('2025-11-09 18:00');
         $this->login();
         $year = $this->academicYear('2025-2026');
         $this->em->persist($year);
@@ -495,6 +502,8 @@ final class GuardiaPageTest extends WebTestCase
      */
     public function testAnEditThatKeepsTheSubstituteNotifiesNobody(): void
     {
+        // La víspera: con la guardia ya pasada tampoco se avisaría, y el test pasaría por otro motivo.
+        self::mockTime('2025-11-09 18:00');
         $this->login();
         $year = $this->academicYear('2025-2026');
         $this->em->persist($year);
