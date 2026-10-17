@@ -186,12 +186,13 @@ final class LessonPlanTest extends WebTestCase
 
         // Las flechas abren la MISMA clase con la tira en otro sitio: la siguiente empieza en la última de esta.
         self::assertSame('/mis-clases/'.self::NEXT.'/7?desde=2026-02-09.7', $crawler->filter('.lesson-strip a[rel=next]')->attr('href'));
-        // Y la anterior acaba en la primera de esta: cuatro lunes antes del 12 empieza.
-        self::assertSame('/mis-clases/'.self::NEXT.'/7?desde=2025-12-15.7', $crawler->filter('.lesson-strip a[rel=prev]')->attr('href'));
+        // Y la anterior acaba en la primera de esta: cuatro lunes CON CLASE antes del 12, saltando las vacaciones
+        // de Navidad (los lunes 22-12, 29-12 y 5-01 caen entre trimestres).
+        self::assertSame('/mis-clases/'.self::NEXT.'/7?desde=2025-11-24.7', $crawler->filter('.lesson-strip a[rel=prev]')->attr('href'));
 
-        $crawler = $this->client->request('GET', '/mis-clases/'.self::NEXT.'/7?desde=2025-12-15.7');
+        $crawler = $this->client->request('GET', '/mis-clases/'.self::NEXT.'/7?desde=2025-11-24.7');
         self::assertSelectorTextContains('h1', 'Lunes 19 de enero', 'hojear no cambia de clase');
-        self::assertSame('/mis-clases/'.self::FIRST.'/7?desde=2025-12-15.7', $crawler->filter('.lesson-strip__item')->last()->attr('href'), 'la clase del borde queda como ancla');
+        self::assertSame('/mis-clases/'.self::FIRST.'/7?desde=2025-11-24.7', $crawler->filter('.lesson-strip__item')->last()->attr('href'), 'la clase del borde queda como ancla');
         self::assertCount(0, $crawler->filter('.lesson-strip__item.is-current'), 'la abierta no está en esta tira');
         self::assertSame('/mis-clases/'.self::NEXT.'/7', $crawler->filter('.lesson-strip__today')->attr('href'), '«Hoy» devuelve a la clase de hoy con su tira');
         self::assertSame('Hoy', trim($crawler->filter('.lesson-strip__today')->text()));
