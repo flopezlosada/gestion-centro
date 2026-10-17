@@ -11,6 +11,7 @@ use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Address;
 use Symfony\Component\Mime\Email;
+use Symfony\Component\Mime\Exception\RfcComplianceException;
 
 /**
  * Sends a {@see CopyRequest} to the copy room (conserjería) as an e-mail with its documents attached.
@@ -21,7 +22,7 @@ use Symfony\Component\Mime\Email;
  * be useless to someone who cannot sign in.
  *
  * The centre asked that orders come from the management team, so that is the visible sender (and the
- * reply-to when {@code app.direction_email} is set). The envelope address stays the application's own
+ * reply-to when the centre has given their mailboxes, {@see AppSettings::getDirectionEmails()}). The envelope address stays the application's own
  * ({@code app.mailer_from}): forging another domain's address in the From is what gets a message filed
  * as spam, which for a mailbox that has to be read every morning would be worse than the wrong name.
  *
@@ -30,29 +31,27 @@ use Symfony\Component\Mime\Email;
  */
 final class CopyShopMailer
 {
+    /** The width of {@see CopyRequest::$recipient}, where the mailboxes used are snapshotted. */
+    private const MAX_RECIPIENT_LENGTH = 180;
+
     public function __construct(
         private readonly MailerInterface $mailer,
         private readonly FileUploader $uploader,
         private readonly LoggerInterface $logger,
+        private readonly AppSettings $settings,
         #[Autowire('%app.mailer_from%')]
         private readonly string $mailerFrom,
-        #[Autowire('%app.copy_shop_email%')]
-        private readonly string $copyShopEmail,
-        #[Autowire('%app.direction_email%')]
-        private readonly string $directionEmail,
-        #[Autowire('%app.organization_name%')]
-        private readonly string $organizationName,
     ) {
     }
 
     /**
-     * The mailbox orders are sent to, so screens can name it before anything is sent.
+     * The mailboxes orders are sent to, so screens can name them before anything is sent.
      *
-     * @return string the copy room address
+     * @return string the copy room's addresses, comma-separated
      */
     public function recipient(): string
     {
-        return $this->copyShopEmail;
+        return AppSettings::joinAddresses($this->settings->getCopyShopEmails());
     }
 
     /**
@@ -65,39 +64,49 @@ final class CopyShopMailer
      */
     public function send(CopyRequest $request): bool
     {
-        $request->setRecipient($this->copyShopEmail);
+        $copyShop = $this->settings->getCopyShopEmails();
+        // Recortado a la columna: el formulario ya no deja pasar más, pero el valor de serie del entorno no
+        // pasó por él, y un historial truncado es mejor que un encargo que revienta al guardarse.
+        $request->setRecipient(mb_substr(AppSettings::joinAddresses($copyShop), 0, self::MAX_RECIPIENT_LENGTH));
+        if ([] === $copyShop) {
+            $this->logger->error('Encargo de fotocopias sin enviar: no hay buzón de conserjería configurado');
 
-        $email = (new Email())
-            // Nombre visible: el equipo directivo, como pidió el centro. La dirección sigue siendo la de
-            // la aplicación (SPF/DKIM del dominio), así que el correo no acaba en spam.
-            ->from(new Address($this->mailerFrom, sprintf('Equipo directivo · %s', $this->organizationName)))
-            ->to($this->copyShopEmail)
-            ->subject($this->subject($request))
-            ->text($this->body($request));
-
-        // Para responder: al equipo directivo si hay buzón configurado y, si no, a quien lo pidió, que
-        // es quien puede aclarar el encargo.
-        $replyTo = '' !== $this->directionEmail ? $this->directionEmail : (string) $request->getRequestedBy()?->getEmail();
-        if ('' !== $replyTo) {
-            $email->replyTo($replyTo);
-        }
-
-        // Each file is attached when it is still there: an order for a document that vanished must still
-        // reach the copy room (with the rest, and its description), rather than fail outright.
-        foreach ($request->getDocumentLines() as $line) {
-            $absolute = $this->uploader->absolutePath((string) $line->getPath());
-            if (is_file($absolute)) {
-                $email->attachFromPath($absolute, $line->getName() ?? 'documento');
-            } else {
-                $this->logger->warning('Encargo de fotocopias sin un adjunto: el documento ya no está en disco', ['path' => $line->getPath()]);
-            }
+            return false;
         }
 
         try {
+            $email = (new Email())
+                // Nombre visible: el equipo directivo, como pidió el centro. La dirección sigue siendo la
+                // de la aplicación (SPF/DKIM del dominio), así que el correo no acaba en spam.
+                ->from(new Address($this->mailerFrom, sprintf('Equipo directivo · %s', $this->settings->getOrganizationName())))
+                ->to(...$copyShop)
+                ->subject($this->subject($request))
+                ->text($this->body($request));
+
+            // Para responder: al equipo directivo si hay buzón configurado y, si no, a quien lo pidió, que
+            // es quien puede aclarar el encargo.
+            $replyTo = $this->settings->getDirectionEmails() ?: array_filter([(string) $request->getRequestedBy()?->getEmail()]);
+            if ([] !== $replyTo) {
+                $email->replyTo(...$replyTo);
+            }
+
+            // Each file is attached when it is still there: an order for a document that vanished must
+            // still reach the copy room (with the rest, and its description), rather than fail outright.
+            foreach ($request->getDocumentLines() as $line) {
+                $absolute = $this->uploader->absolutePath((string) $line->getPath());
+                if (is_file($absolute)) {
+                    $email->attachFromPath($absolute, $line->getName() ?? 'documento');
+                } else {
+                    $this->logger->warning('Encargo de fotocopias sin un adjunto: el documento ya no está en disco', ['path' => $line->getPath()]);
+                }
+            }
+
             $this->mailer->send($email);
-        } catch (TransportExceptionInterface $e) {
+        } catch (TransportExceptionInterface|RfcComplianceException $e) {
+            // Un buzón mal escrito (solo puede venir del entorno: el formulario los valida) se trata como
+            // un fallo de envío: el encargo queda pendiente y reenviable, no se pierde en un error 500.
             $this->logger->error('No se pudo enviar el encargo de fotocopias', [
-                'recipient' => $this->copyShopEmail,
+                'recipient' => $request->getRecipient(),
                 'exception' => $e,
             ]);
 

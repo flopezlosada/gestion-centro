@@ -7,6 +7,7 @@ namespace App\Service;
 use App\Entity\AppSetting;
 use App\Repository\AppSettingRepository;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
  * Typed access to the runtime settings stored in {@see AppSetting}. The only class that touches
@@ -31,16 +32,124 @@ final class AppSettings
     /** Where the actas go until somebody chooses: a folder of their own at the root of the account. */
     public const DEFAULT_CLOUD_MINUTES_FOLDER = 'Actas';
 
+    /** The centre's name, shown across the app and in what it sends ("IES La Cabrera"). */
+    public const ORGANIZATION_NAME = 'centre.organization_name';
+
+    /** The copy room's mailboxes, where the copy orders are sent. */
+    public const COPY_SHOP_EMAILS = 'centre.copy_shop_emails';
+
+    /** The management team's mailboxes: copy orders go out on their behalf and replies come back to them. */
+    public const DIRECTION_EMAILS = 'centre.direction_emails';
+
+    /** Where RAICES is opened from the "record the students' absences" notice of each guardia. */
+    public const RAICES_URL = 'centre.raices_url';
+
+    /** How a list of mailboxes is stored, and shown back for editing. */
+    private const ADDRESS_SEPARATOR = ', ';
+
     /** @var array<string, AppSetting> the settings read for this request, keyed by name */
     private array $loaded = [];
 
     /** Whether {@see $loaded} has been filled; the table can legitimately be empty, so a count won't do. */
     private bool $isLoaded = false;
 
+    /**
+     * The centre's details default to the environment while nobody has saved them from the
+     * back-office, so a server configured before they moved here keeps working as it was.
+     *
+     * @param string $defaultOrganizationName APP_ORG_NAME, or a generic name
+     * @param string $defaultCopyShopEmails   COPY_SHOP_EMAIL, or a placeholder that reaches nobody
+     * @param string $defaultDirectionEmails  DIRECTION_EMAIL, or empty
+     * @param string $defaultRaicesUrl        APP_RAICES_URL, or empty
+     */
     public function __construct(
         private readonly AppSettingRepository $settings,
         private readonly EntityManagerInterface $em,
+        #[Autowire('%app.organization_name%')]
+        private readonly string $defaultOrganizationName,
+        #[Autowire('%app.copy_shop_email%')]
+        private readonly string $defaultCopyShopEmails,
+        #[Autowire('%app.direction_email%')]
+        private readonly string $defaultDirectionEmails,
+        #[Autowire('%app.raices_url%')]
+        private readonly string $defaultRaicesUrl,
     ) {
+    }
+
+    /**
+     * Splits a list of mailboxes however it was typed (commas, semicolons, spaces or one per line),
+     * dropping blanks and repeats. Does not validate them: that is the form's job.
+     *
+     * @param string $typed the mailboxes as typed or stored
+     *
+     * @return list<string> one entry per mailbox, in the order given
+     */
+    public static function splitAddresses(string $typed): array
+    {
+        return array_values(array_unique(preg_split('/[\s,;]+/', trim($typed), -1, \PREG_SPLIT_NO_EMPTY) ?: []));
+    }
+
+    /**
+     * Joins mailboxes the way they are stored and shown: "a@x.org, b@y.org".
+     *
+     * @param list<string> $addresses the mailboxes
+     *
+     * @return string the list as one line
+     */
+    public static function joinAddresses(array $addresses): string
+    {
+        return implode(self::ADDRESS_SEPARATOR, $addresses);
+    }
+
+    /**
+     * @return string the centre's name
+     */
+    public function getOrganizationName(): string
+    {
+        return $this->readString(self::ORGANIZATION_NAME, $this->defaultOrganizationName);
+    }
+
+    /**
+     * @return list<string> the copy room's mailboxes
+     */
+    public function getCopyShopEmails(): array
+    {
+        return self::splitAddresses($this->readString(self::COPY_SHOP_EMAILS, $this->defaultCopyShopEmails));
+    }
+
+    /**
+     * @return list<string> the management team's mailboxes; empty when the centre has none for this
+     */
+    public function getDirectionEmails(): array
+    {
+        return self::splitAddresses($this->readString(self::DIRECTION_EMAILS, $this->defaultDirectionEmails));
+    }
+
+    /**
+     * @return string the address RAICES is opened at, or empty when there is none to link to
+     */
+    public function getRaicesUrl(): string
+    {
+        return $this->readString(self::RAICES_URL, $this->defaultRaicesUrl);
+    }
+
+    /**
+     * Saves the centre's details in one go, with a single flush, so they are never left half
+     * changed. An empty list or URL is stored as such: it means "none", not "fall back to the
+     * environment".
+     *
+     * @param string       $organizationName the centre's name
+     * @param list<string> $copyShopEmails   the copy room's mailboxes
+     * @param list<string> $directionEmails  the management team's mailboxes, possibly none
+     * @param string       $raicesUrl        the address of RAICES, or empty
+     */
+    public function saveCentreDetails(string $organizationName, array $copyShopEmails, array $directionEmails, string $raicesUrl): void
+    {
+        $this->stage(self::ORGANIZATION_NAME, trim($organizationName));
+        $this->stage(self::COPY_SHOP_EMAILS, self::joinAddresses($copyShopEmails));
+        $this->stage(self::DIRECTION_EMAILS, self::joinAddresses($directionEmails));
+        $this->stage(self::RAICES_URL, trim($raicesUrl));
+        $this->em->flush();
     }
 
     /**
@@ -136,9 +245,7 @@ final class AppSettings
      */
     public function getCloudMinutesFolder(): string
     {
-        $this->load();
-
-        return isset($this->loaded[self::CLOUD_MINUTES_FOLDER]) ? $this->loaded[self::CLOUD_MINUTES_FOLDER]->getValue() : self::DEFAULT_CLOUD_MINUTES_FOLDER;
+        return $this->readString(self::CLOUD_MINUTES_FOLDER, self::DEFAULT_CLOUD_MINUTES_FOLDER);
     }
 
     /**
@@ -186,12 +293,39 @@ final class AppSettings
     }
 
     /**
+     * Reads a text setting, falling back to the default while the row does not exist.
+     *
+     * @param string $name    the setting name
+     * @param string $default the value to assume when the setting has never been written
+     *
+     * @return string the stored value, or the default
+     */
+    private function readString(string $name, string $default): string
+    {
+        $this->load();
+
+        return isset($this->loaded[$name]) ? $this->loaded[$name]->getValue() : $default;
+    }
+
+    /**
      * Writes a setting as stored, creating the row on first write.
      *
      * @param string $name   the setting name
      * @param string $stored the value to store
      */
     private function write(string $name, string $stored): void
+    {
+        $this->stage($name, $stored);
+        $this->em->flush();
+    }
+
+    /**
+     * Sets a setting in memory, creating the row on first write, without flushing.
+     *
+     * @param string $name   the setting name
+     * @param string $stored the value to store
+     */
+    private function stage(string $name, string $stored): void
     {
         $this->load();
 
@@ -203,8 +337,6 @@ final class AppSettings
         } else {
             $setting->setValue($stored);
         }
-
-        $this->em->flush();
     }
 
     /**

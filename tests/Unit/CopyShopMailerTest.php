@@ -5,13 +5,17 @@ declare(strict_types=1);
 namespace App\Tests\Unit;
 
 use App\Entity\Absence;
+use App\Entity\AppSetting;
 use App\Entity\CopyRequest;
 use App\Entity\GuardiaCover;
 use App\Entity\GuardiaTaskBankItem;
 use App\Entity\User;
 use App\Enum\EducationLevel;
+use App\Repository\AppSettingRepository;
+use App\Service\AppSettings;
 use App\Service\CopyShopMailer;
 use App\Service\FileUploader;
+use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Filesystem\Filesystem;
@@ -72,16 +76,29 @@ final class CopyShopMailerTest extends TestCase
         return [$mailer, $sent];
     }
 
-    private function mailerUnder(MailerInterface $mailer, string $directionEmail = ''): CopyShopMailer
+    /**
+     * The mailer as a server configured through the environment sees it: nothing saved in the
+     * back-office yet, so the settings fall back to those values.
+     *
+     * @param MailerInterface       $mailer         the transport
+     * @param string                $directionEmail the management mailboxes in the environment
+     * @param array<string, string> $saved          settings saved from the back-office, by name
+     */
+    private function mailerUnder(MailerInterface $mailer, string $directionEmail = '', array $saved = []): CopyShopMailer
     {
+        $rows = [];
+        foreach ($saved as $name => $value) {
+            $rows[$name] = new AppSetting($name, $value);
+        }
+        $repository = $this->createStub(AppSettingRepository::class);
+        $repository->method('findAllIndexed')->willReturn($rows);
+
         return new CopyShopMailer(
             $mailer,
             new FileUploader($this->uploadsDir),
             new NullLogger(),
+            new AppSettings($repository, $this->createStub(EntityManagerInterface::class), 'IES de prueba', 'fotocopias@centro.test', $directionEmail, ''),
             'avisos@centro.test',
-            'fotocopias@centro.test',
-            $directionEmail,
-            'IES de prueba',
         );
     }
 
@@ -160,6 +177,62 @@ final class CopyShopMailerTest extends TestCase
         // el correo a spam.
         self::assertSame('avisos@centro.test', $from->getAddress());
         self::assertSame('direccion@centro.test', $sent[0]->getReplyTo()[0]->getAddress());
+    }
+
+    /**
+     * What the back-office saves wins over the environment, and a mailbox field may hold several
+     * addresses: each one is a recipient of its own, not one long invalid address.
+     */
+    public function testSavedMailboxesWinAndSeveralAddressesAreEachARecipient(): void
+    {
+        [$mailer, $sent] = $this->recordingMailer();
+
+        $order = $this->order();
+        $this->mailerUnder($mailer, 'direccion-entorno@centro.test', [
+            AppSettings::COPY_SHOP_EMAILS => 'conserjeria@centro.test, reprografia@centro.test',
+            AppSettings::DIRECTION_EMAILS => 'directora@centro.test, jefatura@centro.test',
+        ])->send($order);
+
+        self::assertSame(['conserjeria@centro.test', 'reprografia@centro.test'], array_map(static fn ($a) => $a->getAddress(), $sent[0]->getTo()));
+        self::assertSame(['directora@centro.test', 'jefatura@centro.test'], array_map(static fn ($a) => $a->getAddress(), $sent[0]->getReplyTo()));
+        self::assertSame('conserjeria@centro.test, reprografia@centro.test', $order->getRecipient());
+    }
+
+    /**
+     * Emptying the management mailboxes in the back-office means "none", not "use the environment":
+     * replies then go to whoever asked for the copies.
+     */
+    public function testAnEmptiedManagementMailboxSendsRepliesToTheRequester(): void
+    {
+        [$mailer, $sent] = $this->recordingMailer();
+
+        $this->mailerUnder($mailer, 'direccion-entorno@centro.test', [AppSettings::DIRECTION_EMAILS => ''])->send($this->order());
+
+        self::assertSame(['ana@centro.test'], array_map(static fn ($a) => $a->getAddress(), $sent[0]->getReplyTo()));
+    }
+
+    /**
+     * With no copy room mailbox at all the order is not sent, and says so, instead of blowing up: it
+     * stays pending and can be resent once the mailbox is set.
+     */
+    public function testWithoutACopyRoomMailboxTheOrderIsReportedUnsent(): void
+    {
+        [$mailer, $sent] = $this->recordingMailer();
+
+        self::assertFalse($this->mailerUnder($mailer, '', [AppSettings::COPY_SHOP_EMAILS => ''])->send($this->order()));
+        self::assertCount(0, $sent);
+    }
+
+    /**
+     * A malformed mailbox can only come from the environment (the back-office validates them), and it
+     * is a failed delivery like a dead transport, not an error page.
+     */
+    public function testAMalformedMailboxIsReportedUnsentInsteadOfThrowing(): void
+    {
+        [$mailer, $sent] = $this->recordingMailer();
+
+        self::assertFalse($this->mailerUnder($mailer, '', [AppSettings::COPY_SHOP_EMAILS => 'conserjeria-sin-arroba'])->send($this->order()));
+        self::assertCount(0, $sent);
     }
 
     public function testBodyStatesTheNumberOfCopiesTheInstructionsAndWhoAsked(): void

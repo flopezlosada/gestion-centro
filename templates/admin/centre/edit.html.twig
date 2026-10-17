@@ -1,0 +1,27 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}Datos del centro{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Datos del centro
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Administración</p>
+            <h1>Datos del centro</h1>
+            <p class="lead">El nombre del centro y adónde se mandan los encargos de fotocopias. Los cambios se aplican en cuanto se guardan.</p>
+        </div>
+    </div>
+
+    <div class="card form-card">
+        {{ form_start(form, { attr: { novalidate: 'novalidate' } }) }}
+            {{ f.submit_error(form) }}
+            {{ form_errors(form) }}
+            {{ f.fields([form.organizationName, form.copyShopEmails, form.directionEmails, form.raicesUrl]) }}
+            {{ f.actions(path('app_homepage')) }}
+        {{ form_end(form) }}
+    </div>
+{% endblock %}
