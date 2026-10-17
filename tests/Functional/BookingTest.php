@@ -485,7 +485,10 @@ final class BookingTest extends WebTestCase
     }
 
     /**
-     * A course with the term dates the entity requires; only its label and its frame matter here.
+     * A course with the term dates the entity requires; only its label and its frame matter here. The
+     * terms run back to back, from September to August: the day under test is today plus thirty, and a
+     * break between terms would turn it into a non-teaching day whenever the suite runs a month before
+     * Christmas or Easter.
      *
      * @param string $schoolYear the course label, e.g. "2025-2026"
      */
@@ -495,12 +498,12 @@ final class BookingTest extends WebTestCase
 
         return (new AcademicYear())
             ->setSchoolYear($schoolYear)
-            ->setTerm1Start(new \DateTimeImmutable($start.'-09-08'))
-            ->setTerm1End(new \DateTimeImmutable($start.'-12-19'))
-            ->setTerm2Start(new \DateTimeImmutable(($start + 1).'-01-08'))
-            ->setTerm2End(new \DateTimeImmutable(($start + 1).'-03-27'))
-            ->setTerm3Start(new \DateTimeImmutable(($start + 1).'-04-07'))
-            ->setTerm3End(new \DateTimeImmutable(($start + 1).'-06-19'));
+            ->setTerm1Start(new \DateTimeImmutable($start.'-09-01'))
+            ->setTerm1End(new \DateTimeImmutable($start.'-12-31'))
+            ->setTerm2Start(new \DateTimeImmutable(($start + 1).'-01-01'))
+            ->setTerm2End(new \DateTimeImmutable(($start + 1).'-03-31'))
+            ->setTerm3Start(new \DateTimeImmutable(($start + 1).'-04-01'))
+            ->setTerm3End(new \DateTimeImmutable(($start + 1).'-08-31'));
     }
 
     public function testOnlyTheOwnerCancelsTheirBooking(): void

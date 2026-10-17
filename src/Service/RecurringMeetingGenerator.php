@@ -348,7 +348,7 @@ final class RecurringMeetingGenerator
 
     /**
      * Whether a day is a teaching day of its course: within its first and last day, and neither a
-     * weekend nor a registered non-teaching day.
+     * weekend, nor a break between terms, nor a registered non-teaching day.
      *
      * @param AcademicYear       $year the course the day belongs to
      * @param \DateTimeImmutable $day  the day

@@ -194,6 +194,27 @@ final class CalendarPageTest extends WebTestCase
     }
 
     /**
+     * Las vacaciones entre trimestres salen de las fechas del curso, sin teclear ningún día: se pintan como
+     * no lectivas con su nombre y no ofrecen crear una tarea; el último día del trimestre, sí.
+     */
+    public function testABreakBetweenTermsIsShownAsNonLectiveWithoutBeingRegistered(): void
+    {
+        $this->em->persist($this->academicYear('2025-2026'));
+        $teacher = $this->teacherWithTask(new \DateTimeImmutable('2025-12-17'), 'Notas de la primera evaluación');
+
+        $this->client->loginUser($teacher);
+        $crawler = $this->client->request('GET', '/calendario?vista=mes&fecha=2025-12-17');
+
+        self::assertResponseIsSuccessful();
+        self::assertStringContainsString('Vacaciones de Navidad', $crawler->filter('.calendar-nonlective')->text());
+        self::assertSelectorNotExists('.day-add__item[href="/tareas/nueva?fecha=2025-12-29"]');
+        self::assertSelectorExists('.day-add__item[href="/tareas/nueva?fecha=2025-12-22"]', 'the last day of the term still takes tasks');
+
+        $this->client->request('GET', '/calendario?vista=dia&fecha=2025-12-29');
+        self::assertSelectorTextContains('.calendar-dayview-flag--nonlective', 'Día no lectivo · Vacaciones de Navidad');
+    }
+
+    /**
      * A valid, well-ordered term structure for the given school year.
      */
     private function academicYear(string $schoolYear): AcademicYear

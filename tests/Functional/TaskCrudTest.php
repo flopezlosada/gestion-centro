@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
+use App\Entity\AcademicYear;
 use App\Entity\Department;
 use App\Entity\NonLectiveDay;
 use App\Entity\Role;
@@ -806,6 +807,35 @@ final class TaskCrudTest extends WebTestCase
         self::assertResponseStatusCodeSame(422);
         self::assertStringContainsString('no puede caer en fin de semana', (string) $this->client->getResponse()->getContent());
         self::assertNull($this->em->getRepository(Task::class)->findOneBy(['title' => 'Tarea en festivo']));
+    }
+
+    /** Las vacaciones entre trimestres no admiten plazos aunque nadie haya tecleado esos días como no lectivos. */
+    public function testCannotCreateTaskDueInTheBreakBetweenTwoTerms(): void
+    {
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $creator = $this->user('jefa@centro.test', $unit);
+        $this->em->persist((new AcademicYear())
+            ->setSchoolYear('2026-2027')
+            ->setTerm1Start(new \DateTimeImmutable('2026-09-08'))
+            ->setTerm1End(new \DateTimeImmutable('2026-12-22'))
+            ->setTerm2Start(new \DateTimeImmutable('2027-01-11'))
+            ->setTerm2End(new \DateTimeImmutable('2027-03-18'))
+            ->setTerm3Start(new \DateTimeImmutable('2027-03-30'))
+            ->setTerm3End(new \DateTimeImmutable('2027-06-18')));
+        $this->em->flush();
+        $this->client->loginUser($creator);
+
+        $crawler = $this->client->request('GET', '/tareas/nueva');
+        $form = $crawler->selectButton('Crear tarea')->form();
+        $form['task_form[title]'] = 'Tarea en Navidad';
+        // Lunes 28 de diciembre, entre el primer y el segundo trimestre.
+        $form['task_form[dueDate]'] = '2026-12-28';
+        $this->client->submit($form);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertStringContainsString('no puede caer en fin de semana', (string) $this->client->getResponse()->getContent());
+        self::assertNull($this->em->getRepository(Task::class)->findOneBy(['title' => 'Tarea en Navidad']));
     }
 
     public function testCanChangeATasksResponsibilityRole(): void

@@ -10,7 +10,7 @@
     {% if day.nonLective %}
         <p class="calendar-dayview-flag calendar-dayview-flag--nonlective">
             <span class="calendar-legend-swatch calendar-legend-swatch--nonlective"></span>
-            Día no lectivo · {{ day.nonLective.description }}
+            Día no lectivo · {{ day.nonLective }}
         </p>
     {% elseif day.isWeekend %}
         <p class="calendar-dayview-flag">Fin de semana</p>

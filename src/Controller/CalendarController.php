@@ -42,7 +42,7 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
  * four zoom levels selected with the "vista" query parameter — day (agenda), week, month and year —
  * all anchored on the "fecha" (YYYY-MM-DD) parameter, with previous/next navigation per level.
  *
- * @phpstan-type DayCell array{date: \DateTimeImmutable, inMonth: bool, isToday: bool, isWeekend: bool, nonLective: ?NonLectiveDay, tasks: Task[], events: PersonalEvent[]}
+ * @phpstan-type DayCell array{date: \DateTimeImmutable, inMonth: bool, isToday: bool, isWeekend: bool, nonLective: ?string, tasks: Task[], events: PersonalEvent[]}
  * @phpstan-type MiniCell array{day: string, date: string, inMonth: bool, isToday: bool, hasTasks: bool, hasEvents: bool, hasGuardias: bool, status: ?string, isNonLective: bool}
  */
 final class CalendarController extends AbstractController
@@ -283,20 +283,18 @@ final class CalendarController extends AbstractController
     }
 
     /**
-     * Indexes the given non-teaching days by day, keyed "YYYY-MM-DD".
+     * Indexes the descriptions of the given non-teaching days by day, keyed "YYYY-MM-DD".
      *
      * @param NonLectiveDay[] $days the non-teaching days to index
      *
-     * @return array<string, NonLectiveDay> the non-teaching days indexed by day
+     * @return array<string, string> each day's description, by day
      */
     private function indexNonLectiveDays(array $days): array
     {
-        $byDay = [];
-        foreach ($days as $day) {
-            $byDay[$day->getDate()->format('Y-m-d')] = $day;
-        }
-
-        return $byDay;
+        return array_combine(
+            array_map(static fn (NonLectiveDay $day): string => $day->getDate()->format('Y-m-d'), $days),
+            array_map(static fn (NonLectiveDay $day): string => $day->getDescription(), $days),
+        );
     }
 
     /**
@@ -310,7 +308,7 @@ final class CalendarController extends AbstractController
      * @param array<string, PersonalEvent[]>                                             $eventsByDay     personal events indexed by start day
      * @param array<string, GuardiaCover[]>                                              $guardiasByDay   the user's guardias indexed by day
      * @param array<string, Meeting[]>                                                   $meetingsByDay   the meetings the user is convened to, indexed by day
-     * @param array<string, NonLectiveDay>                                               $nonLectiveByDay non-teaching days indexed by day
+     * @param array<string, string>                                                      $nonLectiveByDay registered non-teaching days' descriptions by day
      * @param SchoolCalendar                                                             $schoolCalendar  the teaching-day calendar
      * @param array<string, list<ClassSession>>                                          $classesByDay    the teacher's classes indexed by day
      * @param array<string, list<DutySlot>>                                              $dutiesByDay     the teacher's standing duty periods indexed by day
@@ -356,7 +354,7 @@ final class CalendarController extends AbstractController
      * @param array<string, PersonalEvent[]>                                             $eventsByDay     personal events indexed by start day
      * @param array<string, GuardiaCover[]>                                              $guardiasByDay   the user's guardias indexed by day
      * @param array<string, Meeting[]>                                                   $meetingsByDay   the meetings the user is convened to, indexed by day
-     * @param array<string, NonLectiveDay>                                               $nonLectiveByDay non-teaching days indexed by day
+     * @param array<string, string>                                                      $nonLectiveByDay registered non-teaching days' descriptions by day
      * @param SchoolCalendar                                                             $schoolCalendar  the teaching-day calendar
      * @param array<string, list<ClassSession>>                                          $classesByDay    the teacher's classes indexed by day
      * @param array<string, list<DutySlot>>                                              $dutiesByDay     the teacher's standing duty periods indexed by day
@@ -563,7 +561,7 @@ final class CalendarController extends AbstractController
      * @param \DateTimeImmutable                 $today           today, to flag the current day
      * @param array<string, Task[]>              $byDay           tasks indexed by deadline day
      * @param array<string, PersonalEvent[]>     $eventsByDay     personal events indexed by start day
-     * @param array<string, NonLectiveDay>       $nonLectiveByDay non-teaching days indexed by day
+     * @param array<string, string>              $nonLectiveByDay registered non-teaching days' descriptions by day
      * @param SchoolCalendar                     $schoolCalendar  the teaching-day calendar
      *
      * @return array{template: string, label: string, weeks: list<list<DayCell>>} the template and view data
@@ -588,7 +586,7 @@ final class CalendarController extends AbstractController
      * @param array<string, Task[]>              $byDay           tasks indexed by deadline day
      * @param array<string, PersonalEvent[]>     $eventsByDay     personal events indexed by start day
      * @param array<string, GuardiaCover[]>      $guardiasByDay   the user's guardias indexed by day
-     * @param array<string, NonLectiveDay>       $nonLectiveByDay non-teaching days indexed by day
+     * @param array<string, string>              $nonLectiveByDay registered non-teaching days' descriptions by day
      * @param SchoolCalendar                     $schoolCalendar  the teaching-day calendar
      * @param AcademicYearRepository             $academicYears   the school-year structure repository
      *
@@ -655,7 +653,7 @@ final class CalendarController extends AbstractController
      * @param \DateTimeImmutable                 $today           today, to flag the current day
      * @param array<string, Task[]>              $byDay           tasks indexed by deadline day
      * @param array<string, PersonalEvent[]>     $eventsByDay     personal events indexed by start day
-     * @param array<string, NonLectiveDay>       $nonLectiveByDay non-teaching days indexed by day
+     * @param array<string, string>              $nonLectiveByDay registered non-teaching days' descriptions by day
      * @param SchoolCalendar                     $schoolCalendar  the teaching-day calendar
      *
      * @return list<list<DayCell>> the weeks, each a list of seven day cells
@@ -720,7 +718,7 @@ final class CalendarController extends AbstractController
      * @param \DateTimeImmutable                 $today           today, to flag the current day
      * @param array<string, Task[]>              $byDay           tasks indexed by deadline day
      * @param array<string, PersonalEvent[]>     $eventsByDay     personal events indexed by start day
-     * @param array<string, NonLectiveDay>       $nonLectiveByDay non-teaching days indexed by day
+     * @param array<string, string>              $nonLectiveByDay registered non-teaching days' descriptions by day
      * @param SchoolCalendar                     $schoolCalendar  the teaching-day calendar
      *
      * @return DayCell the cell
@@ -735,8 +733,10 @@ final class CalendarController extends AbstractController
             'inMonth' => $inMonth,
             'isToday' => $key === $today->format('Y-m-d'),
             'isWeekend' => $schoolCalendar->isWeekend($date),
-            // Neighbouring-month days that spill into the grid are context only: don't mark them non-teaching.
-            'nonLective' => $inMonth ? ($nonLectiveByDay[$key] ?? null) : null,
+            // Why the day has no classes: a registered holiday, or else a break between terms, which comes
+            // from the course and is not typed in. Neighbouring-month days that spill into the grid are
+            // context only: don't mark them non-teaching.
+            'nonLective' => $inMonth ? ($nonLectiveByDay[$key] ?? $schoolCalendar->breakOn($date)) : null,
             'tasks' => $byDay[$key] ?? [],
             'events' => $eventsByDay[$key] ?? [],
         ];
@@ -769,7 +769,7 @@ final class CalendarController extends AbstractController
             'hasEvents' => $cell['inMonth'] && [] !== $cell['events'],
             'hasGuardias' => $cell['inMonth'] && [] !== ($guardiasByDay[$key] ?? []),
             'status' => $cell['inMonth'] ? $this->topStatus($cell['tasks']) : null,
-            // Non-teaching: a weekend or a registered holiday. Both are shown muted in the year grid.
+            // Non-teaching: a weekend, a registered holiday or a break between terms. All are shown muted in the year grid.
             'isNonLective' => $cell['inMonth'] && ($cell['isWeekend'] || null !== $cell['nonLective']),
         ];
     }

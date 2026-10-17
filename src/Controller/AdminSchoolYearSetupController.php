@@ -256,8 +256,8 @@ final class AdminSchoolYearSetupController extends AbstractController
             'title' => 'Días no lectivos',
             'state' => $holidays > 0 ? 'ok' : 'warn',
             'detail' => $holidays > 0
-                ? sprintf('%d días marcados en el curso.', $holidays)
-                : 'Ninguno marcado: las fechas límite y las propuestas de cambio de aula caerán en días de fiesta.',
+                ? sprintf('%d días marcados en el curso. Navidad y Semana Santa no hace falta marcarlas: son los días entre un trimestre y el siguiente.', $holidays)
+                : 'Ninguno marcado: las fechas límite y las propuestas de cambio de aula caerán en los festivos sueltos (nacionales, autonómicos y locales). Navidad y Semana Santa no hace falta marcarlas: son los días entre un trimestre y el siguiente.',
             'route' => 'admin_non_lective_day_index',
             'action' => 'Marcar días',
         ];

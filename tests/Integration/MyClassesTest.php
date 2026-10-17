@@ -134,7 +134,9 @@ final class MyClassesTest extends KernelTestCase
         $before = $this->classes->preceding($this->teacher, new \DateTimeImmutable(self::MONDAY), 7, $isB1A, 2);
 
         self::assertSame(['2026-01-12 7', '2026-01-19 1'], $this->describe($after));
-        self::assertSame(['2026-01-12 1', '2026-01-05 7'], $this->describe($before));
+        // Hacia atrás se salta las vacaciones de Navidad (del 20-12 al 7-01 en este curso): el lunes anterior
+        // con clase es el 15 de diciembre.
+        self::assertSame(['2026-01-12 1', '2025-12-15 7'], $this->describe($before));
     }
 
     /** Al principio y al final del curso no hay más: se para, sin buscar en el curso de al lado. */
