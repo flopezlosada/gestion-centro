@@ -43,7 +43,8 @@ final class GuardiaRotaController extends AbstractController
 {
     /**
      * The rota of a course as a period × weekday grid, with a proposal shown instead when one has just
-     * been asked for.
+     * been asked for. Over the published rota it also says whether today's proposal would change it
+     * ({@see RotaPlanner::drift()}), which is how a re-imported timetable stops going unnoticed.
      */
     #[Route('', name: 'guardia_rota_index', methods: ['GET'])]
     public function index(
@@ -60,11 +61,14 @@ final class GuardiaRotaController extends AbstractController
         $draft = $request->query->getBoolean('propuesta');
 
         $proposal = null;
+        $drift = null;
         $grid = null;
         $slots = [];
         if ($year instanceof AcademicYear) {
             $slots = $planner->lectiveSlots($year);
             $proposal = $draft ? $planner->propose($year) : null;
+            // Only over the published rota: a draft already IS today's proposal.
+            $drift = $draft ? null : $planner->drift($year);
             $grid = null !== $proposal
                 ? $this->gridFromProposal($proposal, $planner->candidates($year), $this->sourcesByCell($year, $schedule))
                 : $this->gridFromTimetable($year, $schedule);
@@ -82,6 +86,7 @@ final class GuardiaRotaController extends AbstractController
             'summary' => $proposal?->summary(),
             'gaps' => $proposal?->gapsByReason() ?? [],
             'isDraft' => null !== $proposal,
+            'drift' => $drift,
         ]);
     }
 

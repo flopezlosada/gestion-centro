@@ -214,7 +214,91 @@ final class GuardiaRotaPageTest extends WebTestCase
         self::assertSelectorTextContains('body', 'No hay horario importado');
     }
 
+    public function testAPublishedRotaThatStillMatchesSaysNothing(): void
+    {
+        $this->login();
+        $this->course('2025-2026', [new RotaTeacherFixture('Ana Docente', 'ana@centro.test', 3)]);
+        $this->publish('2025-2026');
+
+        $this->client->request('GET', self::URL.'?curso=2025-2026');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextNotContains('body', 'ya no cuadra');
+    }
+
+    public function testARotaTheEngineNeverPublishedIsNotFlagged(): void
+    {
+        // Nothing published means nothing to go stale: the proposal differing from an empty rota is the
+        // normal state of a course that has not been planned yet, not a warning.
+        $this->login();
+        $this->course('2025-2026', [new RotaTeacherFixture('Ana Docente', 'ana@centro.test', 3)]);
+
+        $this->client->request('GET', self::URL.'?curso=2025-2026');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextNotContains('body', 'ya no cuadra');
+    }
+
+    public function testANewLessonOverAPublishedGuardiaFlagsTheRota(): void
+    {
+        // What a re-imported timetable does: the new lesson lands on the period of a published guardia,
+        // the import drops that guardia, and the rota is left one short with nobody told. A quota of two,
+        // so one engine guardia survives: with none left the course reads as never published.
+        $this->login();
+        [$year, $teachers] = $this->course('2025-2026', [new RotaTeacherFixture('Ana Docente', 'ana@centro.test', 2)]);
+        $this->publish('2025-2026');
+
+        $guardia = $this->em->getRepository(ScheduleEntry::class)->findOneBy(['source' => ScheduleEntrySource::ENGINE]);
+        self::assertInstanceOf(ScheduleEntry::class, $guardia);
+        $lesson = (new ScheduleEntry())
+            ->setAcademicYear($this->em->find(AcademicYear::class, $year->getId()))
+            ->setTeacher($this->em->find(User::class, $teachers['ana@centro.test']->getId()))
+            ->setWeekday($guardia->getWeekday())
+            ->setSlotIndex($guardia->getSlotIndex())
+            ->setStartsAt(new \DateTimeImmutable('08:25'))
+            ->setEndsAt(new \DateTimeImmutable('09:20'))
+            ->setKind(ScheduleActivityKind::LECTIVE)
+            ->setGroupName('2ºB');
+        $this->em->remove($guardia);
+        $this->em->persist($lesson);
+        $this->em->flush();
+
+        $this->client->request('GET', self::URL.'?curso=2025-2026');
+
+        self::assertSelectorTextContains('.callout--warning', 'ya no cuadra');
+    }
+
+    public function testLoweringAQuotaFlagsTheRota(): void
+    {
+        $this->login();
+        $this->course('2025-2026', [new RotaTeacherFixture('Ana Docente', 'ana@centro.test', 3)]);
+        $this->publish('2025-2026');
+
+        $this->em->createQueryBuilder()
+            ->update(GuardiaQuota::class, 'q')
+            ->set('q.lectiveDuties', 1)
+            ->getQuery()
+            ->execute();
+        $this->em->clear();
+
+        $this->client->request('GET', self::URL.'?curso=2025-2026');
+
+        self::assertSelectorTextContains('.callout--warning', 'ya no cuadra');
+    }
+
     // ---------------------------------------------------------------- helpers
+
+    /** Proposes and approves the course's rota, as the equipo directivo does from the screen. */
+    private function publish(string $schoolYear): void
+    {
+        $crawler = $this->client->request('GET', self::URL.'?curso='.$schoolYear.'&propuesta=1');
+        $this->client->request('POST', self::URL.'/aprobar', [
+            '_token' => $this->tokenFrom($crawler),
+            'curso' => $schoolYear,
+        ]);
+        self::assertResponseRedirects();
+        $this->em->clear();
+    }
 
     private function login(bool $coordinator = true): User
     {

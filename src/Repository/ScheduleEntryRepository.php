@@ -475,6 +475,40 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
+     * Every duty cell of a course as plain values — who, when, what and who put it there — for code that
+     * reasons about the rota rather than showing it.
+     *
+     * Scalar on purpose, unlike {@see findDutyCells()}: hydrated entities come through the identity map,
+     * and right after an import the cells it just persisted are there under the person on leave, while a
+     * bulk UPDATE ({@see moveTeacherEntries()}) has already handed them back to the substitute in the
+     * database. Comparing the rota against those stale copies would report a change that never happened.
+     *
+     * @param AcademicYear $year the course whose rota to read
+     *
+     * @return list<array{weekday: Weekday, slot: int, teacherId: int, kind: ScheduleActivityKind, source: ScheduleEntrySource}> the duty cells
+     */
+    public function dutyPlaces(AcademicYear $year): array
+    {
+        /** @var list<array{weekday: Weekday, slot: int, teacherId: int, kind: ScheduleActivityKind, source: ScheduleEntrySource}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('s.weekday AS weekday', 's.slotIndex AS slot', 'IDENTITY(s.teacher) AS teacherId', 's.kind AS kind', 's.source AS source')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.kind IN (:kinds)')
+            ->setParameter('year', $year)
+            ->setParameter('kinds', [ScheduleActivityKind::GUARDIA, ScheduleActivityKind::COLLABORATOR])
+            ->getQuery()
+            ->getResult();
+
+        return array_map(static fn (array $row): array => [
+            'weekday' => $row['weekday'],
+            'slot' => (int) $row['slot'],
+            'teacherId' => (int) $row['teacherId'],
+            'kind' => $row['kind'],
+            'source' => $row['source'],
+        ], $rows);
+    }
+
+    /**
      * A teacher's duty cells (guardia and collaborator) in a course, ordered by weekday then period — the
      * standing "cuándo estoy de guardia" of their timetable, recreos included.
      *

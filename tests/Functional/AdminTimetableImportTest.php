@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace App\Tests\Functional;
 
 use App\Entity\AcademicYear;
+use App\Entity\GuardiaQuota;
 use App\Entity\Role;
 use App\Entity\ScheduleEntry;
 use App\Entity\User;
+use App\Enum\ScheduleActivityKind;
+use App\Enum\ScheduleEntrySource;
+use App\Enum\Weekday;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -204,6 +208,38 @@ final class AdminTimetableImportTest extends WebTestCase
 
         // The upload is consumed: the screen is back to step one, so a refresh cannot import twice.
         self::assertSelectorTextContains('.form-card', 'Paso 1 de 2');
+        // No rota was ever published, so there is nothing to have gone stale.
+        self::assertSelectorTextNotContains('body', 'ya no cuadra');
+    }
+
+    public function testAnImportThatBreaksThePublishedRotaSaysSo(): void
+    {
+        // Jane's published guardias are on Monday and Tuesday first thing, and the new timetable gives her
+        // a lesson on Monday first thing: the import drops that guardia and the rota is left one short.
+        $year = $this->academicYear('2026-2027');
+        $this->em->persist($year);
+        $jane = (new User())->setFullName('Jane Doe Smith')->setEmail('jane@centro.test');
+        $this->em->persist($jane);
+        $this->em->persist((new GuardiaQuota())->setAcademicYear($year)->setTeacher($jane)->setLectiveDuties(2));
+        foreach ([Weekday::MONDAY, Weekday::TUESDAY] as $weekday) {
+            $this->em->persist((new ScheduleEntry())
+                ->setAcademicYear($year)
+                ->setTeacher($jane)
+                ->setWeekday($weekday)
+                ->setSlotIndex(0)
+                ->setStartsAt(new \DateTimeImmutable('08:25'))
+                ->setEndsAt(new \DateTimeImmutable('09:20'))
+                ->setKind(ScheduleActivityKind::GUARDIA)
+                ->setSource(ScheduleEntrySource::ENGINE));
+        }
+        $this->em->flush();
+
+        $this->client->loginUser($this->admin());
+        $this->uploadFor($year);
+        $this->client->submitForm('Importar ahora');
+        $this->client->followRedirect();
+
+        self::assertSelectorTextContains('body', 'El cuadrante de guardias publicado ya no cuadra');
     }
 
     public function testDiscardingThePreviewImportsNothing(): void

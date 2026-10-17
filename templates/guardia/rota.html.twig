@@ -125,6 +125,15 @@
                 {% endif %}
             </div>
         {% else %}
+            {# Tras reimportar el horario o cambiar cupos, lo publicado sigue igual y nadie se entera: una clase
+               nueva encima de una guardia la borra sin aviso y deja la hora corta. El programa propone
+               siempre lo mismo con los mismos datos, así que si hoy propondría otra cosa, algo cambió. #}
+            {% if drift is not null and not drift.isEmpty %}
+                <div class="callout callout--warning" role="note">
+                    <strong>El cuadrante publicado ya no cuadra con lo que propondría hoy el programa.</strong>
+                    Si se volviera a publicar, entrarían {{ drift.added }} guardia{{ drift.added == 1 ? '' : 's' }} y saldrían {{ drift.removed }}. Suele pasar al reimportar el horario, al cambiar cupos o al retocarlo a mano. <a href="{{ path('guardia_rota_index', {curso: curso, propuesta: 1}) }}">Ver la propuesta</a> antes de decidir.
+                </div>
+            {% endif %}
             <div class="card">
                 <div class="inline-form">
                     <a class="btn" href="{{ path('guardia_rota_index', {curso: curso, propuesta: 1}) }}">Proponer cuadrante</a>
