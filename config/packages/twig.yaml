@@ -1,15 +1,11 @@
 twig:
     file_name_pattern: '*.twig'
     globals:
-        # Centre name shown across the UI/e-mails; single source of truth is the app.organization_name
-        # parameter (generic by default, real value set per environment via APP_ORG_NAME).
-        app_organization_name: '%app.organization_name%'
+        # The centre's name (app_organization_name) and the RAICES link (app_raices_url) are not here:
+        # they are editable in the back-office, so App\Twig\CentreExtension reads them at runtime.
         # VAPID public key exposed to the browser so it can subscribe to Web Push. Empty = push
         # disabled: the "Activar avisos" button stays hidden (see base.html.twig / public/js/push.js).
         app_vapid_public_key: '%env(VAPID_PUBLIC_KEY)%'
-        # Acceso a RAICES, enlazado desde el recordatorio de ausencias de cada guardia. Vacío = el aviso
-        # se muestra sin enlace (ver templates/_macros/raices.html.twig).
-        app_raices_url: '%app.raices_url%'
 
 when@test:
     twig:

@@ -36,10 +36,9 @@ final class MinutesMailer
         private readonly FileUploader $uploader,
         private readonly AccessGate $accessGate,
         private readonly LoggerInterface $logger,
+        private readonly AppSettings $settings,
         #[Autowire('%app.mailer_from%')]
         private readonly string $mailerFrom,
-        #[Autowire('%app.organization_name%')]
-        private readonly string $organizationName,
     ) {
     }
 
@@ -63,7 +62,7 @@ final class MinutesMailer
             "Adjunto va el acta de «%s», del %s.\n\nTambién la tienes en la aplicación, en tu apartado de actas.\n\n%s",
             $meeting->getTitle(),
             $meeting->getStartAt()->format('d/m/Y'),
-            $this->organizationName,
+            $this->settings->getOrganizationName(),
         );
 
         $sent = 0;
