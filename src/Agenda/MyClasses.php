@@ -25,8 +25,8 @@ use App\Util\SchoolYear;
  * guardia machinery read it, and no teacher could see their own classes anywhere in the application.
  * It is also the base of planning each class, which hangs from these sessions.
  *
- * Only teaching days of an existing course have classes: a weekend, a registered non-teaching day, or a
- * day before the course starts or after it ends has none.
+ * Only teaching days of an existing course have classes: a weekend, a break between terms, a registered non-teaching
+ * day, or a day before the course starts or after it ends has none.
  *
  * The same walk also gives the teacher's standing duty periods ({@see dutiesBetween()}): the other half
  * of what the timetable says they have to turn up to.
@@ -277,7 +277,8 @@ final class MyClasses
 
     /**
      * Whether a day is a teaching day of its course: within its first and last day, and neither a
-     * weekend nor a registered non-teaching day. The calendar alone does not know when a course starts.
+     * weekend, nor a break between terms, nor a registered non-teaching day. The calendar does not bound the
+     * course on its own: its edges are working days for staff, without classes.
      *
      * @param AcademicYear       $year the course the day belongs to
      * @param \DateTimeImmutable $day  the day

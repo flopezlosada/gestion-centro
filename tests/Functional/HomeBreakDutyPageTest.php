@@ -137,12 +137,14 @@ final class HomeBreakDutyPageTest extends WebTestCase
         $start = (int) substr($schoolYear, 0, 4);
         $year = (new AcademicYear())
             ->setSchoolYear($schoolYear)
-            ->setTerm1Start(new \DateTimeImmutable($start.'-09-15'))
-            ->setTerm1End(new \DateTimeImmutable($start.'-12-22'))
-            ->setTerm2Start(new \DateTimeImmutable(($start + 1).'-01-08'))
-            ->setTerm2End(new \DateTimeImmutable(($start + 1).'-03-27'))
-            ->setTerm3Start(new \DateTimeImmutable(($start + 1).'-04-07'))
-            ->setTerm3End(new \DateTimeImmutable(($start + 1).'-06-22'))
+            // Trimestres seguidos, de septiembre a agosto: el escenario es HOY, y un hueco entre trimestres
+            // lo dejaría sin recreo en Navidad o Semana Santa (no son días lectivos).
+            ->setTerm1Start(new \DateTimeImmutable($start.'-09-01'))
+            ->setTerm1End(new \DateTimeImmutable($start.'-12-31'))
+            ->setTerm2Start(new \DateTimeImmutable(($start + 1).'-01-01'))
+            ->setTerm2End(new \DateTimeImmutable(($start + 1).'-03-31'))
+            ->setTerm3Start(new \DateTimeImmutable(($start + 1).'-04-01'))
+            ->setTerm3End(new \DateTimeImmutable(($start + 1).'-08-31'))
             ->setBreakRotaAnnouncedAt($announced ? new \DateTimeImmutable($start.'-09-30 10:00') : null);
         $this->em->persist($year);
 

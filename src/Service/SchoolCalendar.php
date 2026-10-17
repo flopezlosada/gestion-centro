@@ -4,23 +4,58 @@ declare(strict_types=1);
 
 namespace App\Service;
 
+use App\Entity\AcademicYear;
+use App\Repository\AcademicYearRepository;
 use App\Repository\NonLectiveDayRepository;
+use App\Util\SchoolYear;
+use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * Answers whether a given day is a teaching day of the school calendar. A day is teaching (lective)
- * when it is neither a weekend nor a registered non-teaching day ({@see \App\Entity\NonLectiveDay}).
+ * when it is not a weekend, not in a break between two terms of its course ({@see self::breakOn()}) and
+ * not a registered non-teaching day ({@see \App\Entity\NonLectiveDay}).
+ *
+ * The breaks come from the course's own term dates, so Christmas and Easter need not be typed in one day
+ * at a time every year: forgetting them used to put guardias and deadlines on 28 December, silently.
+ * The edges of the course are NOT breaks: from 1 September to the first term and from the last term to
+ * the end of June there are no classes, but staff work and the centre's own deadlines fall there
+ * («Antes del 23 de junio»). Whoever needs actual classes bounds the day by the course as well
+ * ({@see \App\Agenda\MyClasses}, {@see RecurringMeetingGenerator}).
  *
  * This is the single source of truth for "may a task deadline fall here?" and for marking the
  * calendar grid.
  */
-final class SchoolCalendar
+final class SchoolCalendar implements ResetInterface
 {
-    public function __construct(private readonly NonLectiveDayRepository $nonLectiveDays)
-    {
+    /** The break after each term but the last, by the number of the term it follows. */
+    private const array BREAKS = [1 => 'Vacaciones de Navidad', 2 => 'Vacaciones de Semana Santa'];
+
+    /**
+     * The course of each school year, read once per request: callers walk whole weeks and months day by
+     * day. A missing course is kept as null so it is not looked up again.
+     *
+     * @var array<string, ?AcademicYear>
+     */
+    private array $years = [];
+
+    public function __construct(
+        private readonly NonLectiveDayRepository $nonLectiveDays,
+        private readonly AcademicYearRepository $academicYears,
+    ) {
     }
 
     /**
-     * Whether the given day is a teaching day: not a weekend and not a registered non-teaching day.
+     * Forgets the courses between requests, so a long-running process does not keep term dates that
+     * have since been edited.
+     */
+    public function reset(): void
+    {
+        $this->years = [];
+    }
+
+    /**
+     * Whether the given day is a teaching day: not a weekend, not in a break between terms and not a
+     * registered non-teaching day.
      *
      * @param \DateTimeImmutable $date the day to check (time part is ignored)
      *
@@ -28,7 +63,33 @@ final class SchoolCalendar
      */
     public function isLective(\DateTimeImmutable $date): bool
     {
-        return !$this->isWeekend($date) && !$this->nonLectiveDays->existsOn($date);
+        return !$this->isWeekend($date) && null === $this->breakOn($date) && !$this->nonLectiveDays->existsOn($date);
+    }
+
+    /**
+     * The break between two terms the given day falls in, by name, or null if it falls in none. A day
+     * whose course does not exist yet is in no break: without term dates nothing can be said, and the
+     * registered non-teaching days still apply.
+     *
+     * @param \DateTimeImmutable $date the day to check (time part is ignored)
+     *
+     * @return string|null the break's name («Vacaciones de Navidad»), or null
+     */
+    public function breakOn(\DateTimeImmutable $date): ?string
+    {
+        $year = $this->courseOf($date);
+        if (null === $year) {
+            return null;
+        }
+
+        $day = $date->format('Y-m-d');
+        $found = array_filter(
+            self::BREAKS,
+            static fn (int $term): bool => $day > $year->getTermEnd($term)->format('Y-m-d') && $day < $year->getTermStart($term + 1)->format('Y-m-d'),
+            \ARRAY_FILTER_USE_KEY,
+        );
+
+        return [] === $found ? null : reset($found);
     }
 
     /**
@@ -66,5 +127,22 @@ final class SchoolCalendar
         }
 
         return $date;
+    }
+
+    /**
+     * The course the given day belongs to, looked up once per school year.
+     *
+     * @param \DateTimeImmutable $date the day
+     *
+     * @return AcademicYear|null the course, or null if it has not been created
+     */
+    private function courseOf(\DateTimeImmutable $date): ?AcademicYear
+    {
+        $schoolYear = SchoolYear::current($date);
+        if (!\array_key_exists($schoolYear, $this->years)) {
+            $this->years[$schoolYear] = $this->academicYears->findBySchoolYear($schoolYear);
+        }
+
+        return $this->years[$schoolYear];
     }
 }
