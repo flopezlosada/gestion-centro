@@ -40,6 +40,9 @@ final class CentreSettingsFormData
     #[Assert\Length(max: self::MAX_SETTING_LENGTH)]
     public string $raicesUrl = '';
 
+    /** Whether the activities open to families are in use. */
+    public bool $familyActivitiesEnabled = false;
+
     /**
      * Prefills the form with what the application is using now, whether saved here or still coming
      * from the environment.
@@ -55,6 +58,7 @@ final class CentreSettingsFormData
         $data->copyShopEmails = $settings->getCopyShopEmails();
         $data->directionEmails = $settings->getDirectionEmails();
         $data->raicesUrl = $settings->getRaicesUrl();
+        $data->familyActivitiesEnabled = $settings->isFamilyActivitiesEnabled();
 
         return $data;
     }

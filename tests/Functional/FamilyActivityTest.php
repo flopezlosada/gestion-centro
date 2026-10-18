@@ -7,6 +7,7 @@ namespace App\Tests\Functional;
 use App\Entity\FamilyActivity;
 use App\Entity\Role;
 use App\Entity\User;
+use App\Service\AppSettings;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -29,6 +30,9 @@ final class FamilyActivityTest extends WebTestCase
     {
         $this->client = static::createClient();
         $this->em = self::getContainer()->get(EntityManagerInterface::class);
+        // Viene apagado de serie; lo que se prueba aquí es el módulo encendido (el interruptor, en
+        // AdminCentreSettingsTest).
+        self::getContainer()->get(AppSettings::class)->setFamilyActivitiesEnabled(true);
     }
 
     /**

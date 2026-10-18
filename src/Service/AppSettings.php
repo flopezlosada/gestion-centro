@@ -44,6 +44,9 @@ final class AppSettings
     /** Where RAICES is opened from the "record the students' absences" notice of each guardia. */
     public const RAICES_URL = 'centre.raices_url';
 
+    /** Whether teachers see the activities open to families, which is off until the centre turns it on. */
+    public const FAMILY_ACTIVITIES_ENABLED = 'modules.family_activities';
+
     /** How a list of mailboxes is stored, and shown back for editing. */
     private const ADDRESS_SEPARATOR = ', ';
 
@@ -142,9 +145,11 @@ final class AppSettings
      * @param list<string> $copyShopEmails   the copy room's mailboxes
      * @param list<string> $directionEmails  the management team's mailboxes, possibly none
      * @param string       $raicesUrl        the address of RAICES, or empty
+     * @param bool         $familyActivities whether the activities open to families are in use
      */
-    public function saveCentreDetails(string $organizationName, array $copyShopEmails, array $directionEmails, string $raicesUrl): void
+    public function saveCentreDetails(string $organizationName, array $copyShopEmails, array $directionEmails, string $raicesUrl, bool $familyActivities): void
     {
+        $this->stage(self::FAMILY_ACTIVITIES_ENABLED, $familyActivities ? '1' : '0');
         $this->stage(self::ORGANIZATION_NAME, trim($organizationName));
         $this->stage(self::COPY_SHOP_EMAILS, self::joinAddresses($copyShopEmails));
         $this->stage(self::DIRECTION_EMAILS, self::joinAddresses($directionEmails));
@@ -172,6 +177,28 @@ final class AppSettings
     public function setLoginOpen(bool $open): void
     {
         $this->writeBool(self::LOGIN_OPEN, $open);
+    }
+
+    /**
+     * Whether the activities open to families are in use. Off by default: the module is published
+     * before families can sign in, and teachers must not plan activities that nobody can see yet.
+     * Read through {@see \App\Security\Voter\ModuleVoter}, so the menu and every page agree.
+     *
+     * @return bool true once the centre has turned it on
+     */
+    public function isFamilyActivitiesEnabled(): bool
+    {
+        return $this->readBool(self::FAMILY_ACTIVITIES_ENABLED, false);
+    }
+
+    /**
+     * Turns the activities open to families on or off. Flushes, so the change applies on the next request.
+     *
+     * @param bool $enabled true to turn them on
+     */
+    public function setFamilyActivitiesEnabled(bool $enabled): void
+    {
+        $this->writeBool(self::FAMILY_ACTIVITIES_ENABLED, $enabled);
     }
 
     /**

@@ -9,6 +9,7 @@ use App\Entity\User;
 use App\Form\FamilyActivityFormData;
 use App\Form\FamilyActivityFormType;
 use App\Repository\FamilyActivityRepository;
+use App\Security\Voter\ModuleVoter;
 use App\Util\CalendarDate;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Clock\ClockInterface;
@@ -17,6 +18,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\CurrentUser;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 /**
  * The staff side of the activities open to families (interactive groups, workshops…): any teacher can
@@ -27,6 +29,9 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
  * a screen of their own, so nothing here has to filter what a family may read.
  */
 #[Route('/actividades-familias')]
+// Off unless the centre turns it on in Datos del centro. On the class, so every page of the module — and
+// any added later — answers 404 while it is off, not just the menu link.
+#[IsGranted(ModuleVoter::FAMILY_ACTIVITIES, statusCode: 404)]
 final class FamilyActivityController extends AbstractController
 {
     public function __construct(private readonly ClockInterface $clock)
