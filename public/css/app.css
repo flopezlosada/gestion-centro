@@ -1351,7 +1351,21 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 .family-area__bar .brand { display: inline-flex; align-items: center; gap: 10px; }
 .family-area__bar .brand-name { font-family: var(--font-display); font-size: 17px; }
 .family-area__who { display: inline-flex; gap: 14px; align-items: baseline; color: var(--text-muted); font-size: 14px; }
-.family-area__page { width: 100%; max-width: 960px; margin: 0 auto; }
+.family-area__page { width: 100%; max-width: 1120px; margin: 0 auto; }
+
+/* ---- Calendario semanal de actividades con familias -------------------- */
+/* Cinco columnas en escritorio, una debajo de otra en el móvil: cada día con sus sesiones. */
+.family-week { display: grid; gap: 12px; grid-template-columns: 1fr; margin-bottom: 18px; }
+@media (min-width: 900px) { .family-week { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+.family-week__day { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px; min-width: 0; }
+.family-week__date { font-size: 15px; margin: 0 0 8px; }
+.family-week__session { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.family-week__session p { margin: 0; overflow-wrap: anywhere; }
+.family-week__time { font-size: 13px; color: var(--text-muted); }
+.family-week__desc { font-size: 13px; }
+.family-week__places { font-size: 13px; }
+.family-week__actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.family-week__empty { font-size: 13px; }
 @media (max-width: 760px) {
     .family-area__bar { padding: 10px 16px; }
     .family-area__page { padding: 24px 16px; }

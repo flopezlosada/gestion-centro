@@ -8,11 +8,15 @@
         {{ form_widget(form.title, { attr: { class: 'field-title', placeholder: 'Ej. Grupos interactivos de 1ºA' } }) }}
         {{ form_errors(form.title) }}
     </div>
+    {% if form.classKey is defined %}
+        {{ f.field(form.classKey) }}
+    {% else %}
+        {{ f.field(form.day) }}
+        {{ f.field(form.startTime) }}
+        {{ f.field(form.endTime) }}
+    {% endif %}
     {{ f.field(form.description) }}
     {{ f.field(form.place) }}
-    {{ f.field(form.day) }}
-    {{ f.field(form.startTime) }}
-    {{ f.field(form.endTime) }}
     {{ f.field(form.familiesWanted) }}
     <div class="stackform__foot">
         <a class="btn secondary" href="{{ path('family_activity_index') }}">Cancelar</a>

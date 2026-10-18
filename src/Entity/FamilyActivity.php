@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Contract\Auditable;
+use App\Family\FamilySession;
 use App\Repository\FamilyActivityRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
@@ -14,16 +15,23 @@ use Symfony\Component\Validator\Constraints as Assert;
 
 /**
  * An activity of the centre open to families taking part (interactive groups, workshops, complementary
- * activities…), published by the teacher who organises it.
+ * activities…), published by the teacher who organises it. Of one of two kinds, each its own type so
+ * neither can carry the other's "when": a one-off on a day and time of its own
+ * ({@see OneOffFamilyActivity}), or one of the teacher's classes every week ({@see WeeklyFamilyActivity}).
  *
- * Who comes is kept apart, in {@see FamilySignup}, so the activities can be planned and listed before
- * any family has an account; the signups are changed only through {@see signUp()} and {@see withdraw()}.
+ * Families come to SESSIONS ({@see FamilySession}): the one-off has one, the weekly one has one each
+ * week its class is given. Who comes is kept apart, in {@see FamilySignup}, one per family and session,
+ * changed only through {@see signUp()} and {@see withdraw()} — which take the session, so the rules
+ * (not started, not full) are checked against the very date being asked for.
  */
 #[ORM\Entity(repositoryClass: FamilyActivityRepository::class)]
 #[ORM\Table(name: 'family_activity')]
-// Serves the list, which always reads a window of days in order.
+#[ORM\InheritanceType('SINGLE_TABLE')]
+#[ORM\DiscriminatorColumn(name: 'kind', type: 'string', length: 16)]
+#[ORM\DiscriminatorMap(['one_off' => OneOffFamilyActivity::class, 'weekly' => WeeklyFamilyActivity::class])]
+// Serves the calendar, which reads the one-offs of a week in order.
 #[ORM\Index(name: 'idx_family_activity_start', columns: ['start_at'])]
-class FamilyActivity implements Auditable
+abstract class FamilyActivity implements Auditable
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -52,13 +60,6 @@ class FamilyActivity implements Auditable
     #[Assert\Length(max: 120)]
     private ?string $place = null;
 
-    #[ORM\Column(name: 'start_at', type: Types::DATETIME_IMMUTABLE)]
-    private \DateTimeImmutable $startAt;
-
-    /** End instant on the same day, or null when only the start is known. */
-    #[ORM\Column(name: 'end_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
-    private ?\DateTimeImmutable $endAt = null;
-
     /** How many families the organiser would like, or null when any number helps. */
     #[ORM\Column(name: 'families_wanted', type: Types::SMALLINT, nullable: true)]
     #[Assert\Positive(message: 'Pon un número mayor que cero, o déjalo vacío.')]
@@ -69,8 +70,8 @@ class FamilyActivity implements Auditable
     private \DateTimeImmutable $createdAt;
 
     /**
-     * The families coming. Removing one from here deletes it (orphanRemoval); removing the activity
-     * deletes them all in the database (ON DELETE CASCADE).
+     * The families coming, to every session. Removing one from here deletes it (orphanRemoval); removing
+     * the activity deletes them all in the database (ON DELETE CASCADE).
      *
      * @var Collection<int, FamilySignup>
      */
@@ -79,15 +80,13 @@ class FamilyActivity implements Auditable
     private Collection $signups;
 
     /**
-     * @param User               $organizer who publishes it
-     * @param string             $title     what it is
-     * @param \DateTimeImmutable $startAt   when it starts
+     * @param User   $organizer who publishes it
+     * @param string $title     what it is
      */
-    public function __construct(User $organizer, string $title, \DateTimeImmutable $startAt)
+    public function __construct(User $organizer, string $title)
     {
         $this->organizer = $organizer;
         $this->title = $title;
-        $this->startAt = $startAt;
         $this->createdAt = new \DateTimeImmutable();
         $this->signups = new ArrayCollection();
     }
@@ -175,41 +174,6 @@ class FamilyActivity implements Auditable
     }
 
     /**
-     * @return \DateTimeImmutable when it starts
-     */
-    public function getStartAt(): \DateTimeImmutable
-    {
-        return $this->startAt;
-    }
-
-    /**
-     * @return \DateTimeImmutable|null when it ends, or null if only the start is known
-     */
-    public function getEndAt(): ?\DateTimeImmutable
-    {
-        return $this->endAt;
-    }
-
-    /**
-     * Sets both ends at once, so an end before the start can never be stored.
-     *
-     * @param \DateTimeImmutable      $startAt when it starts
-     * @param \DateTimeImmutable|null $endAt   when it ends, or null
-     *
-     * @throws \InvalidArgumentException if the end is not after the start
-     */
-    public function reschedule(\DateTimeImmutable $startAt, ?\DateTimeImmutable $endAt): static
-    {
-        if (null !== $endAt && $endAt <= $startAt) {
-            throw new \InvalidArgumentException('An activity must end after it starts.');
-        }
-        $this->startAt = $startAt;
-        $this->endAt = $endAt;
-
-        return $this;
-    }
-
-    /**
      * @return int|null how many families the organiser would like, or null when any number helps
      */
     public function getFamiliesWanted(): ?int
@@ -236,7 +200,7 @@ class FamilyActivity implements Auditable
     }
 
     /**
-     * @return list<FamilySignup> the families coming, in the order they signed up
+     * @return list<FamilySignup> the families coming, to every session, in the order they signed up
      */
     public function getSignups(): array
     {
@@ -244,101 +208,126 @@ class FamilyActivity implements Auditable
     }
 
     /**
-     * Whether the given family has said it will come.
-     *
-     * @param FamilyVolunteer $family the family to check
-     *
-     * @return bool true if it is signed up
+     * Whether it repeats every week in one of the organiser's classes, rather than happening once.
      */
-    public function isSignedUpBy(FamilyVolunteer $family): bool
+    abstract public function isWeekly(): bool;
+
+    /**
+     * The families coming to one session, in the order they signed up.
+     *
+     * @param \DateTimeImmutable $day the day of the session
+     *
+     * @return list<FamilySignup> its signups
+     */
+    public function signupsOn(\DateTimeImmutable $day): array
     {
-        return null !== $this->signupOf($family);
+        return array_values($this->signups->filter(static fn (FamilySignup $s): bool => $s->isFor($day))->toArray());
     }
 
     /**
-     * How many more families may sign up.
+     * Whether the given family has said it will come to that session.
+     *
+     * @param FamilyVolunteer    $family the family to check
+     * @param \DateTimeImmutable $day    the day of the session
+     *
+     * @return bool true if it is signed up
+     */
+    public function isSignedUpBy(FamilyVolunteer $family, \DateTimeImmutable $day): bool
+    {
+        return null !== $this->signupOf($family, $day);
+    }
+
+    /**
+     * How many more families may come to that session.
+     *
+     * @param \DateTimeImmutable $day the day of the session
      *
      * @return int|null the places left (0 once full, or fuller after the number was lowered), or null when
      *                  any number helps
      */
-    public function placesLeft(): ?int
+    public function placesLeftOn(\DateTimeImmutable $day): ?int
     {
-        return null === $this->familiesWanted ? null : max(0, $this->familiesWanted - $this->signups->count());
+        return null === $this->familiesWanted ? null : max(0, $this->familiesWanted - \count($this->signupsOn($day)));
     }
 
     /**
-     * Whether signing up or withdrawing is still possible: only before it starts, so what happened stays
-     * as it was.
-     *
-     * @param \DateTimeImmutable $now the current instant
-     *
-     * @return bool true if it has not started yet
-     */
-    public function isOpenAt(\DateTimeImmutable $now): bool
-    {
-        return $now < $this->startAt;
-    }
-
-    /**
-     * Whether a family not yet signed up could sign up now: not started and not full.
-     *
-     * @param \DateTimeImmutable $now the current instant
-     *
-     * @return bool true if there is room and time
-     */
-    public function acceptsSignupsAt(\DateTimeImmutable $now): bool
-    {
-        return $this->isOpenAt($now) && 0 !== $this->placesLeft();
-    }
-
-    /**
-     * Signs a family up — the only way a {@see FamilySignup} is created. Signing up twice changes nothing.
+     * Signs a family up for one session — the only way a {@see FamilySignup} is created. Signing up twice
+     * changes nothing.
      *
      * Two families taking the last place at the same instant may both get it: the count is read without a
      * lock. Accepted: a volunteer more is no harm, and the organiser sees who comes.
      *
-     * @param FamilyVolunteer    $family who comes
-     * @param \DateTimeImmutable $now    the current instant
+     * @param FamilySession      $session the session, of this activity
+     * @param FamilyVolunteer    $family  who comes
+     * @param \DateTimeImmutable $now     the current instant
      *
      * @throws \DomainException if it has started or is full
      */
-    public function signUp(FamilyVolunteer $family, \DateTimeImmutable $now): void
+    public function signUp(FamilySession $session, FamilyVolunteer $family, \DateTimeImmutable $now): void
     {
-        if ($this->isSignedUpBy($family)) {
+        $this->assertOwn($session);
+        if ($this->isSignedUpBy($family, $session->day)) {
             return;
         }
-        if (!$this->acceptsSignupsAt($now)) {
-            throw new \DomainException('The activity has started or is full.');
+        if (!$session->acceptsSignupsAt($now)) {
+            throw new \DomainException('The session has started or is full.');
         }
-        $this->signups->add(new FamilySignup($this, $family, $now));
+        $this->signups->add(new FamilySignup($this, $family, $session->day, $now));
     }
 
     /**
-     * Takes a family off the list. Withdrawing when not signed up changes nothing.
+     * Takes a family off one session. Withdrawing when not signed up changes nothing.
      *
-     * @param FamilyVolunteer    $family who no longer comes
-     * @param \DateTimeImmutable $now    the current instant
+     * @param FamilySession      $session the session, of this activity
+     * @param FamilyVolunteer    $family  who no longer comes
+     * @param \DateTimeImmutable $now     the current instant
      *
      * @throws \DomainException if it has started
      */
-    public function withdraw(FamilyVolunteer $family, \DateTimeImmutable $now): void
+    public function withdraw(FamilySession $session, FamilyVolunteer $family, \DateTimeImmutable $now): void
     {
-        if (!$this->isOpenAt($now)) {
-            throw new \DomainException('The activity has started.');
+        $this->assertOwn($session);
+        if (!$session->isOpenAt($now)) {
+            throw new \DomainException('The session has started.');
         }
-        $signup = $this->signupOf($family);
+        $signup = $this->signupOf($family, $session->day);
         if (null !== $signup) {
             $this->signups->removeElement($signup);
         }
     }
 
     /**
-     * @param FamilyVolunteer $family the family
+     * Moves every signup to the session on another day: for a one-off, whose only session is itself.
      *
-     * @return FamilySignup|null its signup, or null if it is not coming
+     * @param \DateTimeImmutable $day the day of the session now
      */
-    private function signupOf(FamilyVolunteer $family): ?FamilySignup
+    protected function moveSignupsTo(\DateTimeImmutable $day): void
     {
-        return $this->signups->findFirst(static fn (int $key, FamilySignup $s): bool => $s->getFamily() === $family);
+        foreach ($this->signups as $signup) {
+            $signup->moveTo($day);
+        }
+    }
+
+    /**
+     * @param FamilySession $session a session
+     *
+     * @throws \LogicException if it is another activity's: a bug, not something a family can cause
+     */
+    private function assertOwn(FamilySession $session): void
+    {
+        if ($session->activity !== $this) {
+            throw new \LogicException('The session belongs to another activity.');
+        }
+    }
+
+    /**
+     * @param FamilyVolunteer    $family the family
+     * @param \DateTimeImmutable $day    the day of the session
+     *
+     * @return FamilySignup|null its signup to that session, or null if it is not coming
+     */
+    private function signupOf(FamilyVolunteer $family, \DateTimeImmutable $day): ?FamilySignup
+    {
+        return $this->signups->findFirst(static fn (int $key, FamilySignup $s): bool => $s->getFamily() === $family && $s->isFor($day));
     }
 }
