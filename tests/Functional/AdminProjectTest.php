@@ -16,7 +16,7 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 /**
  * The projects back-office: the direction team creates a project, names its coordinator and puts teachers
  * in it. Gated like every other /admin screen by write access to the Administration area — NOT by
- * security.yaml, which leaves /admin at ROLE_USER, so a missing gate would let any logged-in teacher in.
+ * security.yaml, which leaves /admin at ROLE_STAFF, so a missing gate would let any logged-in teacher in.
  */
 final class AdminProjectTest extends WebTestCase
 {

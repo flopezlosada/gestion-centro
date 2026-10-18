@@ -1,0 +1,27 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Editar actividad · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('family_activity_index') }}">Actividades con familias</a><span class="sep">/</span>Editar{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Editar actividad</h1>
+            <p class="lead">{{ activity.title }}</p>
+        </div>
+    </div>
+
+    <div class="card">
+        {{ include('family_activity/_form.html.twig', { submitLabel: 'Guardar' }) }}
+    </div>
+
+    <div class="card">
+        <div class="page-head"><div><h2>Borrar</h2><p class="lead">Elimina la actividad. No se puede deshacer.</p></div></div>
+        <div class="form-actions">
+            <form method="post" action="{{ path('family_activity_delete', { id: activity.id }) }}" data-confirm="¿Seguro que quieres borrar «{{ activity.title }}»?">
+                <input type="hidden" name="_token" value="{{ csrf_token('family_activity_delete' ~ activity.id) }}">
+                <button type="submit" class="btn btn-danger">Borrar actividad</button>
+            </form>
+        </div>
+    </div>
+{% endblock %}

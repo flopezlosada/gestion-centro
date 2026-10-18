@@ -20,7 +20,7 @@ use Symfony\Component\Routing\Attribute\Route;
  * Admin management of the centre's {@see Project}s: who coordinates each one and which teachers make it
  * up. Auto-audited via the {@see \App\EventSubscriber\EntityAuditSubscriber}. Gated per action by write
  * permission on {@see Area::ADMINISTRATION} — like every other /admin controller, and NOT by
- * security.yaml, which leaves /admin at ROLE_USER.
+ * security.yaml, which leaves /admin at ROLE_STAFF.
  *
  * Projects live here (next to departments) and not in the meetings module because they are a catalogue
  * the direction team curates, not something a coordinator creates for themselves.

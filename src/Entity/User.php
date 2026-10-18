@@ -294,8 +294,11 @@ class User implements UserInterface, Auditable
     }
 
     /**
-     * Security roles derived from the assigned responsibilities. Every authenticated user has
-     * ROLE_USER; holding any role flagged as admin (see {@see Role::isAdmin()}) adds ROLE_ADMIN,
+     * Security roles derived from the assigned responsibilities. Every member of staff has ROLE_USER
+     * and ROLE_STAFF. The app's screens are gated on ROLE_STAFF and not on ROLE_USER (see
+     * security.yaml) because another kind of account — a volunteering family — will sign in too, and
+     * ROLE_USER is the one role any Symfony user is assumed to carry: only staff are, by type, inside
+     * the staff area. Holding any role flagged as admin (see {@see Role::isAdmin()}) adds ROLE_ADMIN,
      * which gates the sensitive /audit trail and bypasses the per-area matrix in
      * {@see \App\Security\Voter\AreaVoter} (so it also opens the /admin back-office, gated by write
      * access to {@see \App\Enum\Area::ADMINISTRATION}). Admin power is therefore an explicit flag,
@@ -305,7 +308,7 @@ class User implements UserInterface, Auditable
      */
     public function getRoles(): array
     {
-        $roles = ['ROLE_USER'];
+        $roles = ['ROLE_USER', 'ROLE_STAFF'];
         foreach ($this->assignedRoles as $role) {
             if ($role->isAdmin()) {
                 $roles[] = 'ROLE_ADMIN';
