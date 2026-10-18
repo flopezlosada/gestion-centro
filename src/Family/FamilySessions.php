@@ -175,6 +175,39 @@ final class FamilySessions implements ResetInterface
     }
 
     /**
+     * Every session of a weekly activity from a day to the end of its course that has not started yet:
+     * what a family signing up "every week" is signed up for.
+     *
+     * The organiser's timetable is read in one walk over that span ({@see MyClasses::between()}): one or
+     * two queries per day, a few hundred from January to June. Accepted because it is paid once, when a
+     * family presses the button, not on any page; {@see MyClasses::on()} day by day for the activity's
+     * weekdays alone would not be cheaper, as each call reads the course and its frame again.
+     *
+     * @param WeeklyFamilyActivity $activity the activity
+     * @param \DateTimeImmutable   $from     the first day to take
+     * @param \DateTimeImmutable   $now      the current instant
+     *
+     * @return list<FamilySession> its sessions from that day on, earliest first
+     */
+    public function remainingOf(WeeklyFamilyActivity $activity, \DateTimeImmutable $from, \DateTimeImmutable $now): array
+    {
+        $organizer = $activity->getOrganizer();
+        if (null === $organizer) {
+            return [];
+        }
+        $sessions = [];
+        foreach ($this->classes->between($organizer, max($from, $now)->setTime(0, 0), SchoolYear::bounds($activity->getSchoolYear())[1]) as $date => $classes) {
+            $this->classesByDay[$organizer->getId().'|'.$date] = $classes;
+            $session = $this->weeklySessionOn($activity, new \DateTimeImmutable($date, $now->getTimezone()));
+            if (null !== $session && $session->isOpenAt($now)) {
+                $sessions[] = $session;
+            }
+        }
+
+        return $sessions;
+    }
+
+    /**
      * The classes a teacher gives in the coming weeks, each once (by day of the week and period), with a
      * day it is given on: what a teacher picks a weekly activity's class from.
      *

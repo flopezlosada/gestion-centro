@@ -7,6 +7,7 @@ namespace App\Controller;
 use App\Entity\FamilyActivity;
 use App\Entity\FamilyAvailability;
 use App\Entity\FamilyVolunteer;
+use App\Entity\WeeklyFamilyActivity;
 use App\Enum\Weekday;
 use App\Family\FamilySession;
 use App\Family\FamilySessions;
@@ -122,6 +123,72 @@ final class FamilyAreaController extends AbstractController
         } catch (\DomainException) {
             $this->addFlash('error', '«'.$activity->getTitle().'» ya ha empezado: si no puedes venir, avisa al centro.');
         }
+
+        return $this->backToWeekOf($session);
+    }
+
+    /**
+     * Signs the family up for a weekly activity every week, from this session to the end of the course: a
+     * signup per session, so each one keeps the rules of one ({@see FamilyActivity::signUpForEach()}) and
+     * a day the family cannot come is withdrawn from like any other. A full week is skipped, and said.
+     *
+     * Only the sessions there are now: a day the organiser adds later, or a class a new timetable moves
+     * to another day, is not signed up for on its own. Two devices at once: as {@see signUp()}.
+     */
+    #[Route('/actividades/{id}/{fecha}/apuntarme-siempre', name: 'family_signup_every', requirements: ['id' => '\d+', 'fecha' => '\d{4}-\d{2}-\d{2}'], methods: ['POST'])]
+    public function signUpEvery(FamilyActivity $activity, string $fecha, Request $request, #[CurrentUser] FamilyVolunteer $family, EntityManagerInterface $em): Response
+    {
+        $session = $this->sessionOrNotFound($activity, $fecha, 'family_signup_every', $request);
+        try {
+            $result = $activity->signUpForEach($this->remainingFrom($session), $family, $this->clock->now());
+        } catch (\DomainException) {
+            return $this->hasStarted($session);
+        }
+
+        try {
+            if ([] !== $result['added']) {
+                $em->flush();
+                $this->notifier->signedUpEvery($result['added']);
+            }
+        } catch (UniqueConstraintViolationException) {
+            // One flush, one transaction: a session signed up meanwhile from another device rolls back every
+            // week, so this is not "done". The entity manager is closed: nothing but redirect.
+            $this->addFlash('error', 'Te acabas de apuntar desde otro dispositivo: revisa qué semanas tienes y vuelve a pulsar si falta alguna.');
+
+            return $this->backToWeekOf($session);
+        }
+        if ([] === $result['added'] && [] !== $result['full']) {
+            $this->addFlash('error', 'No queda sitio en «'.$activity->getTitle().'» ninguna de las semanas que te faltaban.');
+
+            return $this->backToWeekOf($session);
+        }
+        $this->addFlash('success', 'Hecho: te esperamos en «'.$activity->getTitle().'» todas las semanas desde el '.$session->day->format('d/m').'.');
+        if ([] !== $result['full']) {
+            $this->addFlash('warning', 'Menos '.self::days($result['full']).': ya está completa.');
+        }
+
+        return $this->backToWeekOf($session);
+    }
+
+    /**
+     * Takes the family off every session of a weekly activity from this one on, and tells the organiser
+     * once. Only the sessions there are now, as for signing up: a signup left on a day a new timetable
+     * took the class away from has no session to withdraw from, and stays out of sight until purged.
+     */
+    #[Route('/actividades/{id}/{fecha}/desapuntarme-siempre', name: 'family_withdraw_every', requirements: ['id' => '\d+', 'fecha' => '\d{4}-\d{2}-\d{2}'], methods: ['POST'])]
+    public function withdrawEvery(FamilyActivity $activity, string $fecha, Request $request, #[CurrentUser] FamilyVolunteer $family, EntityManagerInterface $em): Response
+    {
+        $session = $this->sessionOrNotFound($activity, $fecha, 'family_withdraw_every', $request);
+        try {
+            $withdrawn = $activity->withdrawFromEach($this->remainingFrom($session), $family, $this->clock->now());
+        } catch (\DomainException) {
+            return $this->hasStarted($session);
+        }
+        if ([] !== $withdrawn) {
+            $em->flush();
+            $this->notifier->withdrewEvery($withdrawn);
+        }
+        $this->addFlash('success', 'Hecho: ya no contamos contigo en «'.$activity->getTitle().'» desde el '.$session->day->format('d/m').'.');
 
         return $this->backToWeekOf($session);
     }
@@ -272,6 +339,54 @@ final class FamilyAreaController extends AbstractController
         }
 
         return $session;
+    }
+
+    /**
+     * The sessions of a weekly activity from one on; a one-off has no "every week", so it is not found.
+     *
+     * @param FamilySession $session the session pressed on
+     *
+     * @return list<FamilySession> it and the ones after it, not started, to the end of the course
+     *
+     * @throws \DomainException if none is left: it has started and it was the last
+     */
+    private function remainingFrom(FamilySession $session): array
+    {
+        if (!$session->activity instanceof WeeklyFamilyActivity) {
+            throw $this->createNotFoundException('Esa actividad no se repite cada semana.');
+        }
+        $remaining = $this->sessions->remainingOf($session->activity, $session->day, $this->clock->now());
+        if ([] === $remaining) {
+            // Only from a page left open: the buttons are not shown once the session has started.
+            throw new \DomainException('The session has started.');
+        }
+
+        return $remaining;
+    }
+
+    /**
+     * @param FamilySession $session a session that has started, with none of the activity after it left
+     *
+     * @return Response back to its week, saying why nothing was done
+     */
+    private function hasStarted(FamilySession $session): Response
+    {
+        $this->addFlash('error', '«'.$session->activity->getTitle().'» ya ha empezado ese día y no le quedan más sesiones este curso.');
+
+        return $this->backToWeekOf($session);
+    }
+
+    /**
+     * @param list<FamilySession> $sessions some sessions, earliest first
+     *
+     * @return string their days as a family reads them, e.g. "el 20/01 y el 27/01"
+     */
+    private static function days(array $sessions): string
+    {
+        $days = array_map(static fn (FamilySession $s): string => 'el '.$s->day->format('d/m'), $sessions);
+        $last = array_pop($days);
+
+        return [] === $days ? $last : implode(', ', $days).' y '.$last;
     }
 
     /**

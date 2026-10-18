@@ -1,7 +1,7 @@
 {#
    Una semana de sesiones como calendario, de lunes a viernes, con el mismo componente que la semana de
    guardias: lo comparten el espacio de familias y la pantalla del profesorado. `mode` decide lo de cada
-   uno —«family»: plazas y botón de apuntarse, en naranja las sesiones a las que va; «staff»: cuántas
+   uno —«family»: plazas y botones de apuntarse (a esa sesión o, si es semanal, a todas desde ella), en naranja las sesiones a las que va; «staff»: cuántas
    personas vienen, en naranja las que ya tienen a alguien, y cada sesión enlaza al detalle, donde están
    los nombres—. `route` es la ruta de la pantalla, para las flechas; `currentMonday`, la semana de «Esta semana».
 #}
@@ -56,6 +56,12 @@
                                                 <input type="hidden" name="_token" value="{{ csrf_token('family_withdraw' ~ a.id ~ '-' ~ date) }}">
                                                 <button type="submit" class="btn secondary btn-sm">Ya no puedo ir</button>
                                             </form>
+                                            {% if a.weekly %}
+                                                <form method="post" action="{{ path('family_withdraw_every', { id: a.id, fecha: date }) }}" class="family-chip__action">
+                                                    <input type="hidden" name="_token" value="{{ csrf_token('family_withdraw_every' ~ a.id ~ '-' ~ date) }}">
+                                                    <button type="submit" class="btn secondary btn-sm">Ninguna semana más</button>
+                                                </form>
+                                            {% endif %}
                                         {% endif %}
                                     {% else %}
                                         <span class="week-chip__state">{% if past %}Ya ha empezado{% elseif left is null %}Sin límite de plazas{% elseif left == 0 %}Completa{% else %}{{ left == 1 ? 'Queda 1 plaza' : 'Quedan ' ~ left ~ ' plazas' }}{% endif %}</span>
@@ -63,6 +69,13 @@
                                             <form method="post" action="{{ path('family_signup', { id: a.id, fecha: date }) }}" class="family-chip__action">
                                                 <input type="hidden" name="_token" value="{{ csrf_token('family_signup' ~ a.id ~ '-' ~ date) }}">
                                                 <button type="submit" class="btn btn-sm">Puedo ir</button>
+                                            </form>
+                                        {% endif %}
+                                        {# Desde esta sesión hasta fin de curso; las semanas completas se saltan y se le dice cuáles. #}
+                                        {% if a.weekly and not past %}
+                                            <form method="post" action="{{ path('family_signup_every', { id: a.id, fecha: date }) }}" class="family-chip__action">
+                                                <input type="hidden" name="_token" value="{{ csrf_token('family_signup_every' ~ a.id ~ '-' ~ date) }}">
+                                                <button type="submit" class="btn secondary btn-sm">Todas las semanas</button>
                                             </form>
                                         {% endif %}
                                     {% endif %}
