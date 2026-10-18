@@ -42,7 +42,7 @@ security:
                 default_target_path: family_home
             remember_me:
                 secret: '%kernel.secret%'
-                name: REMEMBERME_FAMILY
+                name: '%app.family_remember_me_cookie%'
                 path: /familias
                 lifetime: 2592000
                 signature_properties: ['id']

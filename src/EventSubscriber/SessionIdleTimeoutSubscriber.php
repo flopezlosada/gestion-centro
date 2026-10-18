@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\EventSubscriber;
 
+use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Session\FlashBagAwareSessionInterface;
@@ -25,22 +26,41 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
  * doomed session. The exception is a visitor carrying the "Recordarme" cookie: they asked to stay
  * signed in on this device, so the request goes on and the firewall signs them back in from the
  * cookie (a fresh authentication, user checker included) instead of bouncing them to the login.
+ *
+ * Both firewalls — the staff's and the families' — keep their sign-in in the same PHP session, so
+ * the session expires when it holds either of them: the time since its last use is the same for
+ * both, and checking only the one being browsed would let a visit to the other area keep a stale
+ * sign-in alive. Where to send the visitor, and which "Recordarme" cookie lets them through, is
+ * the firewall serving the request: a family goes back to its own login, never the staff one. When
+ * the stale sign-in is only the OTHER firewall's, it is dropped and the request goes on: whoever is
+ * here is not signed in to this area, and bouncing them would lose what they sent — a family asking
+ * for its link on a computer where a teacher's session went stale.
  */
 class SessionIdleTimeoutSubscriber implements EventSubscriberInterface
 {
     /**
-     * Where the firewall's ContextListener keeps the signed-in token ("_security_" + the "main"
-     * firewall's context). A session without it belongs to someone who has not signed in yet (the
-     * login page, a requested link): there is nothing to protect, and expiring it would bounce the
-     * login form itself back to the login, silently.
+     * Each firewall that signs people in, by name: its login route and its "Recordarme" cookie. The
+     * firewall's ContextListener keeps its signed-in token under "_security_" + its context, which is
+     * the firewall name since neither sets one ({@see sessionKey()}). A session holding none of them
+     * belongs to someone who has not signed in yet (the login page, a requested link): there is
+     * nothing to protect, and expiring it would bounce the login form itself back to the login,
+     * silently.
+     *
+     * @var array<string, array{login: string, cookie: string}>
      */
-    private const SIGNED_IN_SESSION_KEY = '_security_main';
+    private readonly array $firewalls;
 
     public function __construct(
         private readonly UrlGeneratorInterface $urlGenerator,
+        private readonly Security $security,
         private readonly int $sessionIdleTimeout,
-        private readonly string $rememberMeCookie,
+        string $rememberMeCookie,
+        string $familyRememberMeCookie,
     ) {
+        $this->firewalls = [
+            'main' => ['login' => 'login', 'cookie' => $rememberMeCookie],
+            'families' => ['login' => 'family_login', 'cookie' => $familyRememberMeCookie],
+        ];
     }
 
     /**
@@ -57,8 +77,10 @@ class SessionIdleTimeoutSubscriber implements EventSubscriberInterface
      * Invalidates the session and redirects to the login page when the time since its last use
      * exceeds the configured idle timeout. No-op when the timeout is disabled, on sub-requests, or
      * when the request carries no pre-existing session cookie (nothing to expire). Only a signed-in
-     * session expires: an anonymous one (someone on the login page) is left alone. A remembered
-     * visitor gets the session invalidated but no redirect: the firewall signs them back in.
+     * session expires: an anonymous one (someone on the login page) is left alone. A visitor
+     * remembered by the firewall serving the request gets the session invalidated but no redirect:
+     * that firewall signs them back in. A stale sign-in of the other firewall only is removed, with
+     * no redirect. A request outside both firewalls is treated as the staff's.
      */
     public function onKernelRequest(RequestEvent $event): void
     {
@@ -78,7 +100,8 @@ class SessionIdleTimeoutSubscriber implements EventSubscriberInterface
             $session->start();
         }
 
-        if (!$session->has(self::SIGNED_IN_SESSION_KEY)) {
+        $signedIn = array_filter(array_keys($this->firewalls), static fn (string $firewall): bool => $session->has(self::sessionKey($firewall)));
+        if ([] === $signedIn) {
             return;
         }
 
@@ -89,8 +112,18 @@ class SessionIdleTimeoutSubscriber implements EventSubscriberInterface
             return;
         }
 
+        $firewall = $this->security->getFirewallConfig($request)?->getName();
+        $firewall = isset($this->firewalls[$firewall]) ? $firewall : 'main';
+        if (!\in_array($firewall, $signedIn, true)) {
+            // Removing just the token, not invalidating, keeps the rest of the session (the CSRF token
+            // of the form being sent) for the request to go on.
+            array_walk($signedIn, static fn (string $other) => $session->remove(self::sessionKey($other)));
+
+            return;
+        }
+
         $session->invalidate();
-        if ($request->cookies->has($this->rememberMeCookie)) {
+        if ($request->cookies->has($this->firewalls[$firewall]['cookie'])) {
             return;
         }
 
@@ -99,6 +132,16 @@ class SessionIdleTimeoutSubscriber implements EventSubscriberInterface
         if ($session instanceof FlashBagAwareSessionInterface) {
             $session->getFlashBag()->add('warning', 'Tu sesión se ha cerrado por inactividad.');
         }
-        $event->setResponse(new RedirectResponse($this->urlGenerator->generate('login')));
+        $event->setResponse(new RedirectResponse($this->urlGenerator->generate($this->firewalls[$firewall]['login'])));
+    }
+
+    /**
+     * Where a firewall's ContextListener keeps its signed-in token in the session.
+     *
+     * @param string $firewall the firewall name, which is also its context
+     */
+    private static function sessionKey(string $firewall): string
+    {
+        return '_security_'.$firewall;
     }
 }
