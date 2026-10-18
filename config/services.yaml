@@ -57,6 +57,12 @@ services:
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
 
+    # The families' firewall (security.yaml) sends visitors to its own login page, not the staff one.
+    app.security.family_entry_point:
+        class: App\Security\LoginEntryPoint
+        arguments:
+            $loginRoute: family_login
+
 when@prod:
     parameters:
         # 30 minutes of inactivity: protects sessions left open on shared staff-room computers. On a

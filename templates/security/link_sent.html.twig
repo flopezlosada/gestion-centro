@@ -8,8 +8,9 @@
             <div class="brand-mark brand-mark--lg">{{ include('partials/_brand_mark.html.twig', { size: 76, wordmark: true }) }}</div>
 
             <h1>Revisa tu correo</h1>
-            <p class="auth-lead">Si <strong>{{ email }}</strong> corresponde a un usuario registrado, te hemos enviado un enlace para entrar. Es válido durante 10 minutos.</p>
-            <a class="btn secondary" href="{{ path('login') }}">Volver</a>
+            <p class="auth-lead">Si <strong>{{ email }}</strong> corresponde a una cuenta registrada, te hemos enviado un enlace para entrar. Es válido durante 10 minutos.</p>
+            {# Compartida por el acceso del personal y el de familias: cada uno vuelve a su propia página. #}
+            <a class="btn secondary" href="{{ path(back_route ?? 'login') }}">Volver</a>
         </div>
     </div>
 {% endblock %}

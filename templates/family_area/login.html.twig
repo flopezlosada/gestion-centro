@@ -1,0 +1,29 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Espacio de familias · {{ app_organization_name }}{% endblock %}
+
+{% block shell %}
+    <div class="auth">
+        <div class="auth-card">
+            <div class="brand-mark brand-mark--lg">{{ include('partials/_brand_mark.html.twig', { size: 76, wordmark: true }) }}</div>
+
+            <p class="eyebrow">Espacio de familias</p>
+            <h1>Entrar</h1>
+            <p class="auth-lead">Para las familias que colaboran en las actividades del centro. Te enviamos un enlace a tu correo para entrar.</p>
+
+            {% if error is defined and error %}
+                <p class="form-error" role="alert">{{ error }}</p>
+            {% endif %}
+
+            <form method="post" action="{{ path('family_login') }}">
+                <div class="form-row">
+                    <label for="email">Correo electrónico</label>
+                    <input type="email" id="email" name="email" required autofocus inputmode="email" autocomplete="email">
+                </div>
+                <button class="btn" type="submit">Enviar enlace de acceso</button>
+                <label class="choice auth-remember"><input type="checkbox" name="_remember_me" value="1"> Recordarme en este dispositivo</label>
+                <p class="auth-hint">Seguirás dentro 30 días. No lo marques en un ordenador compartido.</p>
+            </form>
+        </div>
+    </div>
+{% endblock %}

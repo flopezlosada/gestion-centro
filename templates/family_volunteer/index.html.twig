@@ -1,0 +1,40 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Cuentas de familias · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('family_activity_index') }}">Actividades con familias</a><span class="sep">/</span>Cuentas de familias{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Actividades con familias</p>
+            <h1>Cuentas de familias</h1>
+            <p class="lead">Quién puede entrar en el espacio de familias ({{ url('family_home') }}). Allí solo ven las actividades: nada del resto de la aplicación.</p>
+        </div>
+        <a class="btn" href="{{ path('family_volunteer_new') }}">+ Nueva cuenta</a>
+    </div>
+
+    <div class="card">
+        {% if families is empty %}
+            <div class="empty-state">
+                <h2>Ninguna familia tiene cuenta</h2>
+                <p>Da de alta a las que colaboran para que puedan entrar con su correo.</p>
+                <a class="btn" href="{{ path('family_volunteer_new') }}">Nueva cuenta</a>
+            </div>
+        {% else %}
+            <table data-list-tools>
+                <thead>
+                    <tr><th>Nombre</th><th>Correo</th><th data-nosort></th></tr>
+                </thead>
+                <tbody>
+                    {% for family in families %}
+                        <tr>
+                            <td>{{ family.fullName }}</td>
+                            <td>{{ family.email }}</td>
+                            <td class="row-actions"><a href="{{ path('family_volunteer_edit', { id: family.id }) }}">Editar</a></td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}

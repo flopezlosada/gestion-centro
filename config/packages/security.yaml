@@ -6,11 +6,53 @@ security:
             entity:
                 class: App\Entity\User
                 property: email
+        family_provider:
+            entity:
+                class: App\Entity\FamilyVolunteer
+                property: email
 
     firewalls:
         dev:
             pattern: ^/(_profiler|_wdt|assets|build)/
             security: false
+        # The families who volunteer in the centre's activities. A firewall of their own, with a provider
+        # that loads only FamilyVolunteer, so a family can never hold a session in `main`: the staff area
+        # is closed to them by type, not by each screen checking. Same passwordless e-mail link as staff.
+        families:
+            pattern: ^/familias
+            lazy: true
+            provider: family_provider
+            entry_point: app.security.family_entry_point
+            login_throttling:
+                max_attempts: 5
+                interval: '15 minutes'
+            login_link:
+                check_route: family_login_check
+                check_post_only: true
+                # Its own key: the signature covers neither the account class nor the firewall, so with
+                # the shared one a staff link would also open this area for an account with the same
+                # e-mail and id.
+                secret: '%kernel.secret%:families'
+                # Without these a spent or expired link would land on the STAFF login (the defaults are /login).
+                login_path: family_login
+                failure_path: family_login
+                signature_properties: ['id']
+                lifetime: 600
+                max_uses: 1
+                default_target_path: family_home
+            remember_me:
+                secret: '%kernel.secret%'
+                name: REMEMBERME_FAMILY
+                path: /familias
+                lifetime: 2592000
+                signature_properties: ['id']
+                secure: auto
+                samesite: lax
+            logout:
+                path: family_logout
+                target: family_login
+                # The session is shared with `main`: a teacher who also volunteers stays signed in there.
+                invalidate_session: false
         main:
             lazy: true
             provider: app_user_provider
@@ -48,6 +90,9 @@ security:
 
     # Only the first matching rule applies.
     access_control:
+        # Before the catch-all ^/: the families' area has its own role, which staff do not hold either.
+        - { path: ^/familias/entrar, roles: PUBLIC_ACCESS }
+        - { path: ^/familias, roles: ROLE_FAMILY }
         - { path: ^/login, roles: PUBLIC_ACCESS }
         - { path: ^/connect, roles: PUBLIC_ACCESS }
         # La información de protección de datos tiene que poder leerse ANTES de entrar (enlace en el

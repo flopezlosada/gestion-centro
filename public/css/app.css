@@ -1341,6 +1341,23 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 .seal--sm .seal-main { font-size: 16px; }
 
 /* =============================================================================
+   Espacio de familias: una columna con una barra fina arriba, sin el menú del personal
+   ============================================================================= */
+.family-area { min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
+.family-area__bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    padding: 12px 24px; border-bottom: 1px solid var(--border); background: var(--canvas);
+}
+.family-area__bar .brand { display: inline-flex; align-items: center; gap: 10px; }
+.family-area__bar .brand-name { font-family: var(--font-display); font-size: 17px; }
+.family-area__who { display: inline-flex; gap: 14px; align-items: baseline; color: var(--text-muted); font-size: 14px; }
+.family-area__page { width: 100%; max-width: 960px; margin: 0 auto; }
+@media (max-width: 760px) {
+    .family-area__bar { padding: 10px 16px; }
+    .family-area__page { padding: 24px 16px; }
+}
+
+/* =============================================================================
    Layout de autenticación (login / enlace enviado): sin shell, centrado
    ============================================================================= */
 .auth {

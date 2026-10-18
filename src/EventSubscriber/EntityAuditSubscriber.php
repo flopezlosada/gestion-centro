@@ -7,6 +7,7 @@ namespace App\EventSubscriber;
 use App\Contract\Auditable;
 use App\Contract\AuditRedacted;
 use App\Entity\AuditLog;
+use App\Support\AuditActor;
 use App\Support\AuditContext;
 use App\Support\ChangeNormalizer;
 use Doctrine\Bundle\DoctrineBundle\Attribute\AsDoctrineListener;
@@ -126,7 +127,7 @@ final class EntityAuditSubscriber
         $records = $this->pending;
         $this->pending = [];
         $em = $args->getObjectManager();
-        $actor = $this->security->getUser()?->getUserIdentifier();
+        $actor = AuditActor::of($this->security->getUser());
         // A deliberate change may carry a human reason set by the controller (e.g. why a guardia was
         // reassigned). Consumed once, so it tags only this flush's entries and never leaks onward.
         $reason = $this->auditContext->consumeReason();
