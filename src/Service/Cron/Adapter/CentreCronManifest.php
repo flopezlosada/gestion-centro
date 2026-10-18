@@ -52,15 +52,18 @@ final class CentreCronManifest implements CronManifest
     /** Aviso a las personas convocadas a una reunión que está a punto de empezar. */
     public const string CRON_MEETING_REMINDERS = 'cron.meeting_reminders';
 
-    /** Poda del propio registro de ejecuciones, que a cadencia de minutos crece rápido. */
     public const string CRON_RECURRING_MEETINGS = 'cron.recurring_meetings';
 
+    /** Poda del propio registro de ejecuciones, que a cadencia de minutos crece rápido. */
     public const string CRON_PURGE_LOG = 'cron.purge_log';
 
     public const string CRON_CLOUD_SHARES = 'cron.cloud_shares';
 
     /** Borrado de los documentos de fotocopias de días pasados y de tarea de guardia de cursos pasados. */
     public const string CRON_PURGE_PAST_DOCUMENTS = 'cron.purge_past_documents';
+
+    /** Borrado de las inscripciones de familias a sesiones pasadas, con el plazo de los datos del centro. */
+    public const string CRON_PURGE_FAMILY_SIGNUPS = 'cron.purge_family_signups';
 
     /**
      * Cuántos minutos entre pasadas de los barridos con antelación en minutos.
@@ -176,6 +179,16 @@ final class CentreCronManifest implements CronManifest
             'needs_recipient' => false,
             'dry' => false,
         ],
+        self::CRON_PURGE_FAMILY_SIGNUPS => [
+            'command' => 'app:families:purge-past-signups',
+            // De madrugada, como la de documentos: las sesiones de ayer ya han terminado.
+            'schedule' => ['freq' => 'daily', 'hour' => 3],
+            'max_delay_hours' => 36,
+            'requires' => [],
+            'depends_on' => [],
+            'needs_recipient' => false,
+            'dry' => false,
+        ],
         self::CRON_PURGE_LOG => [
             'command' => 'app:cron:purge-log',
             // De madrugada, cuando nadie está usando la aplicación y el registro del día ya está
@@ -199,6 +212,7 @@ final class CentreCronManifest implements CronManifest
         self::CRON_CLOUD_SHARES => 'Actas por compartir en la nube',
         self::CRON_RECURRING_MEETINGS => 'Reuniones periódicas',
         self::CRON_PURGE_PAST_DOCUMENTS => 'Borrado de documentos de días pasados',
+        self::CRON_PURGE_FAMILY_SIGNUPS => 'Borrado de inscripciones de familias pasadas',
         self::CRON_PURGE_LOG => 'Poda del registro de ejecuciones',
     ];
 

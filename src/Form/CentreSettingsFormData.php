@@ -43,6 +43,10 @@ final class CentreSettingsFormData
     /** Whether the activities open to families are in use. */
     public bool $familyActivitiesEnabled = false;
 
+    /** Days after its session a family's signup is deleted; null keeps them all. */
+    #[Assert\Range(notInRangeMessage: 'Escribe un número de días entre {{ min }} y {{ max }}, o déjalo vacío.', min: 0, max: AppSettings::MAX_FAMILY_SIGNUP_RETENTION_DAYS)]
+    public ?int $familySignupRetentionDays = null;
+
     /**
      * Prefills the form with what the application is using now, whether saved here or still coming
      * from the environment.
@@ -59,6 +63,7 @@ final class CentreSettingsFormData
         $data->directionEmails = $settings->getDirectionEmails();
         $data->raicesUrl = $settings->getRaicesUrl();
         $data->familyActivitiesEnabled = $settings->isFamilyActivitiesEnabled();
+        $data->familySignupRetentionDays = $settings->getFamilySignupRetentionDays();
 
         return $data;
     }

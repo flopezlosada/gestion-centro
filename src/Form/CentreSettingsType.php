@@ -8,14 +8,15 @@ use App\Service\AppSettings;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\CallbackTransformer;
 use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
+use Symfony\Component\Form\Extension\Core\Type\IntegerType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\Extension\Core\Type\UrlType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 
 /**
- * The centre's details: its name, the copy room and management mailboxes, the RAICES link, and which
- * optional modules are in use.
+ * The centre's details: its name, the copy room and management mailboxes, the RAICES link, which
+ * optional modules are in use and how long the families' signups are kept.
  *
  * A mailbox field is one line of text that accepts several addresses however they are typed (commas,
  * semicolons, spaces), turned into a list here so the rest of the application never parses strings.
@@ -60,6 +61,13 @@ final class CentreSettingsType extends AbstractType
                 'label' => 'Actividades con familias',
                 'required' => false,
                 'help' => 'El profesorado publica actividades abiertas a familias. Apagado, desaparece del menú y sus páginas no se abren; lo publicado se conserva.',
+            ])
+            ->add('familySignupRetentionDays', IntegerType::class, [
+                'label' => 'Borrar quién vino a una actividad a los … días',
+                'required' => false,
+                'help' => 'Días después de cada sesión en que se borra qué familias se apuntaron. Vacío: no se borra nunca. Con 0, se borra al día siguiente. Al guardar un plazo, esa misma noche se borra todo lo que ya lo haya pasado.',
+                'invalid_message' => 'Escribe un número de días, o déjalo vacío.',
+                'attr' => ['min' => 0, 'max' => AppSettings::MAX_FAMILY_SIGNUP_RETENTION_DAYS],
             ]);
 
         foreach (['copyShopEmails', 'directionEmails'] as $field) {

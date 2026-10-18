@@ -47,6 +47,12 @@ final class AppSettings
     /** Whether teachers see the activities open to families, which is off until the centre turns it on. */
     public const FAMILY_ACTIVITIES_ENABLED = 'modules.family_activities';
 
+    /** How many days after its session a family's signup is deleted; empty while the centre has not decided. */
+    public const FAMILY_SIGNUP_RETENTION_DAYS = 'families.signup_retention_days';
+
+    /** The longest that plazo can be: a year, as nothing about a past session needs more. */
+    public const MAX_FAMILY_SIGNUP_RETENTION_DAYS = 365;
+
     /** How a list of mailboxes is stored, and shown back for editing. */
     private const ADDRESS_SEPARATOR = ', ';
 
@@ -146,10 +152,12 @@ final class AppSettings
      * @param list<string> $directionEmails  the management team's mailboxes, possibly none
      * @param string       $raicesUrl        the address of RAICES, or empty
      * @param bool         $familyActivities whether the activities open to families are in use
+     * @param int|null     $signupRetention  days after its session a family's signup is deleted, null to keep them
      */
-    public function saveCentreDetails(string $organizationName, array $copyShopEmails, array $directionEmails, string $raicesUrl, bool $familyActivities): void
+    public function saveCentreDetails(string $organizationName, array $copyShopEmails, array $directionEmails, string $raicesUrl, bool $familyActivities, ?int $signupRetention): void
     {
         $this->stage(self::FAMILY_ACTIVITIES_ENABLED, $familyActivities ? '1' : '0');
+        $this->stage(self::FAMILY_SIGNUP_RETENTION_DAYS, null === $signupRetention ? '' : (string) $signupRetention);
         $this->stage(self::ORGANIZATION_NAME, trim($organizationName));
         $this->stage(self::COPY_SHOP_EMAILS, self::joinAddresses($copyShopEmails));
         $this->stage(self::DIRECTION_EMAILS, self::joinAddresses($directionEmails));
@@ -199,6 +207,22 @@ final class AppSettings
     public function setFamilyActivitiesEnabled(bool $enabled): void
     {
         $this->writeBool(self::FAMILY_ACTIVITIES_ENABLED, $enabled);
+    }
+
+    /**
+     * How many days after its session a family's signup is kept. None by default: how long the centre may
+     * keep who came is the management team's call, and a default here would delete before anyone made it.
+     *
+     * Anything stored that is not a whole number of days up to {@see self::MAX_FAMILY_SIGNUP_RETENTION_DAYS}
+     * reads as none: a mistyped row must keep every signup, not turn into "0" and delete them all tonight.
+     *
+     * @return int|null the days, or null to keep every signup
+     */
+    public function getFamilySignupRetentionDays(): ?int
+    {
+        $stored = $this->readString(self::FAMILY_SIGNUP_RETENTION_DAYS, '');
+
+        return ctype_digit($stored) && (int) $stored <= self::MAX_FAMILY_SIGNUP_RETENTION_DAYS ? (int) $stored : null;
     }
 
     /**

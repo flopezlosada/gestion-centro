@@ -128,6 +128,54 @@ final class AdminCentreSettingsTest extends WebTestCase
     }
 
     /**
+     * El plazo de borrado de las inscripciones de familias viene vacío (no se borra nada hasta que dirección
+     * lo decida), se guarda el que se escriba y, vaciándolo, se vuelve a no borrar.
+     */
+    public function testElPlazoDeBorradoDeInscripcionesSeGuardaYSeVacia(): void
+    {
+        $this->client->loginUser($this->admin());
+        $form = $this->client->request('GET', '/admin/centro')->selectButton('Guardar')->form();
+        self::assertSame('', $form['centre_settings[familySignupRetentionDays]']->getValue(), 'Viene vacío de serie.');
+
+        $this->client->submit($form, ['centre_settings[familySignupRetentionDays]' => '365']);
+        self::assertResponseRedirects('/admin/centro');
+        self::assertSame('365', $this->stored(AppSettings::FAMILY_SIGNUP_RETENTION_DAYS));
+
+        $form = $this->client->request('GET', '/admin/centro')->selectButton('Guardar')->form();
+        self::assertSame('365', $form['centre_settings[familySignupRetentionDays]']->getValue(), 'La pantalla enseña lo guardado.');
+        $this->client->submit($form, ['centre_settings[familySignupRetentionDays]' => '']);
+        self::assertResponseRedirects('/admin/centro');
+        self::assertSame('', $this->stored(AppSettings::FAMILY_SIGNUP_RETENTION_DAYS));
+    }
+
+    /**
+     * Un plazo negativo, de más de un año o que no es un número se rechaza sin guardar nada.
+     */
+    public function testUnPlazoFueraDeRangoSeRechaza(): void
+    {
+        $this->client->loginUser($this->admin());
+
+        foreach (['-1', '366'] as $days) {
+            $crawler = $this->client->request('GET', '/admin/centro');
+            $this->client->submit($crawler->selectButton('Guardar')->form([
+                'centre_settings[familySignupRetentionDays]' => $days,
+            ]));
+
+            self::assertResponseStatusCodeSame(422);
+            self::assertSelectorTextContains('main', 'Escribe un número de días entre 0 y 365, o déjalo vacío.');
+            self::assertNull($this->stored(AppSettings::FAMILY_SIGNUP_RETENTION_DAYS));
+        }
+
+        $crawler = $this->client->request('GET', '/admin/centro');
+        $this->client->submit($crawler->selectButton('Guardar')->form([
+            'centre_settings[familySignupRetentionDays]' => 'treinta',
+        ]));
+        self::assertResponseStatusCodeSame(422);
+        self::assertSelectorTextContains('main', 'Escribe un número de días, o déjalo vacío.');
+        self::assertNull($this->stored(AppSettings::FAMILY_SIGNUP_RETENTION_DAYS));
+    }
+
+    /**
      * Un buzón mal escrito se rechaza diciendo cuál, y no se guarda nada: ni ese campo ni los demás.
      */
     public function testUnBuzonMalEscritoSeRechazaSinGuardarNada(): void
