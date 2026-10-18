@@ -422,6 +422,9 @@ final class FamilyActivityTest extends WebTestCase
         $this->em->persist($activity);
         $this->em->flush();
         $this->em->getConnection()->executeStatement("UPDATE schedule_entry SET group_name = 'E1B'");
+        // The first request shares this entity manager, which still holds the cells read above with
+        // their old group: forget them so the request reads the timetable as it now is.
+        $this->em->clear();
         $this->client->loginUser($teacher);
 
         $this->client->request('GET', '/actividades-familias');
