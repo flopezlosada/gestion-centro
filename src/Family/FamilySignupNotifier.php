@@ -39,20 +39,72 @@ final class FamilySignupNotifier
     }
 
     /**
+     * @param list<FamilySession> $sessions the sessions someone just signed up for at once, every week, already saved
+     */
+    public function signedUpEvery(array $sessions): void
+    {
+        $this->notifyEvery($sessions, 'family.signup', 'Alguien se ha apuntado a «%s» todas las semanas', 'Viene desde el %s (%s).');
+    }
+
+    /**
+     * @param list<FamilySession> $sessions the sessions someone just withdrew from at once, already saved
+     */
+    public function withdrewEvery(array $sessions): void
+    {
+        $this->notifyEvery($sessions, 'family.withdrawal', 'Alguien ya no viene a «%s» ninguna semana', 'Deja de venir desde el %s (%s).');
+    }
+
+    /**
      * @param FamilySession $session the session
      * @param string        $kind    the notice kind
      * @param string        $title   the notice title
      */
     private function notify(FamilySession $session, string $kind, string $title): void
     {
-        $organizer = $session->activity->getOrganizer();
-        if (null === $organizer) {
-            return;
-        }
         $coming = \count($session->signups());
         $wanted = $session->activity->getFamiliesWanted();
 
-        $this->dispatcher->dispatch($organizer, $kind, $title, Weekday::from((int) $session->day->format('N'))->label().' '.$session->day->format('d/m')
+        $this->send($session, $kind, $title, self::dayOf($session)
             .': '.(1 === $coming ? 'viene 1 persona' : 'vienen '.$coming.' personas').(null === $wanted ? '' : ' de '.$wanted).'.');
+    }
+
+    /**
+     * One notice for many sessions, from the first: a family pressing "every week" is one event to the
+     * organiser, not a notice per week.
+     *
+     * @param list<FamilySession> $sessions the sessions, earliest first; none is nothing to tell
+     * @param string              $kind     the notice kind
+     * @param string              $title    the notice title, with %s for the activity
+     * @param string              $body     the body, with %s for the first day and then for how many sessions
+     */
+    private function notifyEvery(array $sessions, string $kind, string $title, string $body): void
+    {
+        if ([] === $sessions) {
+            return;
+        }
+        $count = \count($sessions);
+        $this->send($sessions[0], $kind, \sprintf($title, $sessions[0]->activity->getTitle()), \sprintf($body, mb_strtolower(self::dayOf($sessions[0])), 1 === $count ? '1 sesión' : $count.' sesiones'));
+    }
+
+    /**
+     * @param FamilySession $session the session the notice is about
+     * @param string        $kind    the notice kind
+     * @param string        $title   the notice title
+     * @param string        $body    the notice body
+     */
+    private function send(FamilySession $session, string $kind, string $title, string $body): void
+    {
+        $organizer = $session->activity->getOrganizer();
+        if (null !== $organizer) {
+            $this->dispatcher->dispatch($organizer, $kind, $title, $body);
+        }
+    }
+
+    /**
+     * @return string the day of a session as the organiser reads it, e.g. "Martes 13/01"
+     */
+    private static function dayOf(FamilySession $session): string
+    {
+        return Weekday::from((int) $session->day->format('N'))->label().' '.$session->day->format('d/m');
     }
 }

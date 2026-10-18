@@ -529,6 +529,114 @@ final class FamilyAreaTest extends WebTestCase
     }
 
     /**
+     * "Todas las semanas" signs the family up for every session left in the course, the break between
+     * terms left out; a day it cannot come is withdrawn from alone, and the organiser hears of it once.
+     */
+    public function testAFamilyComesEveryWeekAndMissesOneDay(): void
+    {
+        $family = $this->family('marta@gmail.test');
+        $activity = $this->weeklyActivity()->setFamiliesWanted(2);
+        $this->em->flush();
+        self::mockTime('2026-01-12 08:00');
+        $this->signInAsFamily($family);
+
+        $this->client->request('GET', '/familias');
+        $this->client->submitForm('Todas las semanas');
+        self::assertResponseRedirects('/familias?semana=2026-01-12');
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('.flash.success', 'todas las semanas desde el 13/01');
+        $dates = $this->sessionDates();
+        self::assertSame('2026-01-13', $dates[0]);
+        self::assertContains('2026-06-16', $dates);
+        self::assertNotContains('2026-03-31', $dates, 'en vacaciones entre trimestres no hay clase');
+        self::assertSame(['2'], array_values(array_unique(array_map(static fn (string $d): string => (new \DateTimeImmutable($d))->format('N'), $dates))), 'solo los martes, el día de la clase');
+        $coming = \count($dates);
+
+        $this->client->request('GET', '/familias?semana=2026-01-19');
+        self::assertSelectorTextContains('.family-week', 'Te esperamos');
+        $this->client->submitForm('Ya no puedo ir');
+        $this->client->followRedirect();
+        self::assertNotContains('2026-01-20', $this->sessionDates());
+        self::assertCount($coming - 1, $this->sessionDates());
+
+        self::assertSame([
+            ['family.signup', 'Alguien se ha apuntado a «Grupos interactivos» todas las semanas', 'Viene desde el martes 13/01 ('.$coming.' sesiones).'],
+            ['family.withdrawal', 'Alguien ya no viene a «Grupos interactivos»', 'Martes 20/01: vienen 0 personas de 2.'],
+        ], $this->noticesTo($activity->getOrganizer()));
+    }
+
+    /**
+     * A full week does not stop the others: it is skipped, and the family told which.
+     */
+    public function testEveryWeekSkipsAFullWeekAndSaysSo(): void
+    {
+        $family = $this->family('marta@gmail.test');
+        $other = $this->family('otra@gmail.test');
+        $activity = $this->weeklyActivity()->setFamiliesWanted(1);
+        $this->em->flush();
+        self::mockTime('2026-01-12 08:00');
+        $sessions = self::getContainer()->get(FamilySessions::class);
+        $twentieth = $sessions->sessionOn($activity, new \DateTimeImmutable('2026-01-20'));
+        self::assertNotNull($twentieth);
+        $activity->signUp($twentieth, $other, new \DateTimeImmutable('2026-01-12 08:00'));
+        $this->em->flush();
+        $this->signInAsFamily($family);
+
+        $this->client->request('GET', '/familias');
+        $this->client->submitForm('Todas las semanas');
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('.flash.success', 'todas las semanas');
+        self::assertSelectorTextContains('.flash.warning', 'Menos el 20/01: ya está completa.');
+        self::assertSame(1, (int) $this->em->getConnection()->fetchOne("SELECT COUNT(*) FROM family_signup WHERE session_date = '2026-01-20'"));
+    }
+
+    /**
+     * "Ninguna semana más" takes the family off that session and every one after it, not the ones before.
+     */
+    public function testNoMoreWeeksWithdrawsFromThatSessionOn(): void
+    {
+        $family = $this->family('marta@gmail.test');
+        $activity = $this->weeklyActivity();
+        $this->em->flush();
+        self::mockTime('2026-01-12 08:00');
+        $this->signInAsFamily($family);
+        $this->client->request('GET', '/familias');
+        $this->client->submitForm('Todas las semanas');
+
+        $this->client->request('GET', '/familias?semana=2026-01-26');
+        $this->client->submitForm('Ninguna semana más');
+        self::assertResponseRedirects('/familias?semana=2026-01-26');
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('.flash.success', 'ya no contamos contigo en «Grupos interactivos» desde el 27/01');
+        self::assertSame(['2026-01-13', '2026-01-20'], $this->sessionDates());
+        $notices = $this->noticesTo($activity->getOrganizer());
+        $last = end($notices);
+        self::assertNotFalse($last);
+        self::assertSame(['family.withdrawal', 'Alguien ya no viene a «Grupos interactivos» ninguna semana'], [$last[0], $last[1]]);
+        self::assertStringStartsWith('Deja de venir desde el martes 27/01 (', (string) $last[2]);
+    }
+
+    /**
+     * A one-off has no "every week": no button, and a request sent anyway is not found.
+     */
+    public function testAOneOffHasNoEveryWeek(): void
+    {
+        $family = $this->family('marta@gmail.test');
+        $activity = $this->activity('+10 days', 'Taller de cocina');
+        $this->em->flush();
+        $this->signInAsFamily($family);
+
+        $crawler = $this->client->request('GET', $this->weekOf($activity));
+        self::assertCount(0, $crawler->selectButton('Todas las semanas'));
+
+        $this->client->request('POST', $this->actionPath($activity, 'apuntarme-siempre'), [
+            '_token' => $this->mintCsrfToken($this->client, '/familias', $this->tokenId('family_signup_every', $activity)),
+        ]);
+        self::assertResponseStatusCodeSame(404);
+        self::assertSame(0, $this->signups());
+    }
+
+    /**
      * A day the class is not given has no session: a request for it (a crafted URL, a timetable changed
      * since the page was opened) is not found, and takes no place.
      */
@@ -737,6 +845,14 @@ final class FamilyAreaTest extends WebTestCase
     }
 
     /**
+     * @return list<string> the days of the sessions signed up for, earliest first, read past the identity map
+     */
+    private function sessionDates(): array
+    {
+        return array_map('strval', $this->em->getConnection()->fetchFirstColumn('SELECT session_date FROM family_signup ORDER BY session_date'));
+    }
+
+    /**
      * @return string the whole activity trail (actor, summary, changes), as JSON, to search for leaks
      */
     private function trail(): string
@@ -856,7 +972,7 @@ final class FamilyAreaTest extends WebTestCase
 
     /**
      * @param OneOffFamilyActivity $activity an activity
-     * @param string               $action   "apuntarme" or "desapuntarme"
+     * @param string               $action   "apuntarme", "desapuntarme" or "apuntarme-siempre"
      *
      * @return string where that action on its session is posted
      */
@@ -866,7 +982,7 @@ final class FamilyAreaTest extends WebTestCase
     }
 
     /**
-     * @param string               $action   "family_signup" or "family_withdraw"
+     * @param string               $action   "family_signup", "family_withdraw" or "family_signup_every"
      * @param OneOffFamilyActivity $activity an activity
      *
      * @return string the CSRF token id of that action on its session

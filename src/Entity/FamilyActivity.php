@@ -306,6 +306,51 @@ abstract class FamilyActivity implements Auditable
     }
 
     /**
+     * Signs a family up for several sessions at once — "every week" of a weekly activity —, each by the
+     * rules of {@see signUp()}. A full one is left out rather than refusing the rest: the family still
+     * comes the other weeks, and is told which were full.
+     *
+     * @param list<FamilySession> $sessions the sessions, of this activity, not started
+     * @param FamilyVolunteer     $family   who comes
+     * @param \DateTimeImmutable  $now      the current instant
+     *
+     * @return array{added: list<FamilySession>, full: list<FamilySession>} the sessions it was signed up for
+     *                                                                       now, and those it could not be
+     */
+    public function signUpForEach(array $sessions, FamilyVolunteer $family, \DateTimeImmutable $now): array
+    {
+        $added = [];
+        $full = [];
+        foreach ($sessions as $session) {
+            if ($this->isSignedUpBy($family, $session->day)) {
+                continue;
+            }
+            if ($session->acceptsSignupsAt($now)) {
+                $this->signUp($session, $family, $now);
+                $added[] = $session;
+            } else {
+                $full[] = $session;
+            }
+        }
+
+        return ['added' => $added, 'full' => $full];
+    }
+
+    /**
+     * Takes a family off several sessions at once — "no more weeks" —, each by the rules of {@see withdraw()}.
+     *
+     * @param list<FamilySession> $sessions the sessions, of this activity, not started
+     * @param FamilyVolunteer     $family   who no longer comes
+     * @param \DateTimeImmutable  $now      the current instant
+     *
+     * @return list<FamilySession> the sessions it was signed up for and no longer is
+     */
+    public function withdrawFromEach(array $sessions, FamilyVolunteer $family, \DateTimeImmutable $now): array
+    {
+        return array_values(array_filter($sessions, fn (FamilySession $session): bool => $this->withdraw($session, $family, $now)));
+    }
+
+    /**
      * Moves every signup to the session on another day: for a one-off, whose only session is itself.
      *
      * @param \DateTimeImmutable $day the day of the session now
