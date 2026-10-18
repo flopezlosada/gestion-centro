@@ -77,7 +77,10 @@ class FamilyActivityRepository extends ServiceEntityRepository
 
     /**
      * The base of every list. The organiser and the families coming are printed with every session:
-     * fetch-joined to avoid an N+1.
+     * fetch-joined to avoid an N+1. The signups come whole, every session of the course, never filtered
+     * to the week shown: the rules of {@see FamilyActivity} (places left, signing up twice, moving them
+     * to another day) read the collection, and a filtered fetch-join would hand them half of it. A
+     * handful of families per activity keeps it small.
      *
      * @param class-string<FamilyActivity> $kind which kind of activity
      *

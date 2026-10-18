@@ -13,6 +13,7 @@ use App\Entity\WeeklyFamilyActivity;
 use App\Enum\Weekday;
 use App\Repository\FamilyActivityRepository;
 use App\Util\SchoolYear;
+use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * Works out the sessions of the activities open to families: when each one actually takes place.
@@ -23,16 +24,38 @@ use App\Util\SchoolYear;
  *
  * Every session a family can sign up for comes from here, so a family can never sign up for a day the
  * activity does not take place.
+ *
+ * Sessions are never stored, past ones included: they are the timetable as it is now. If a new import
+ * moves the class (another teacher, another period), its past sessions leave the calendar too; their
+ * signups stay in the database, out of sight.
  */
-final class FamilySessions
+final class FamilySessions implements ResetInterface
 {
     /** How far ahead the staff list looks for a weekly activity's next session: past a Christmas break. */
     private const int NEXT_SESSION_WEEKS = 5;
+
+    /**
+     * An organiser's classes per day, read once per request: showing the current week, the staff list
+     * asks for the same day twice (the calendar and each activity's next session), and two activities of
+     * one organiser on the same day share it. Not a range read: {@see MyClasses::between()} walks every day of it.
+     *
+     * @var array<string, list<ClassSession>> "userId|Y-m-d" → that day's classes
+     */
+    private array $classesByDay = [];
 
     public function __construct(
         private readonly FamilyActivityRepository $activities,
         private readonly MyClasses $classes,
     ) {
+    }
+
+    /**
+     * Forgets the classes read, so a worker serving request after request never shows a timetable that
+     * has since changed.
+     */
+    public function reset(): void
+    {
+        $this->classesByDay = [];
     }
 
     /**
@@ -52,8 +75,8 @@ final class FamilySessions
      * with or without sessions, so a calendar can draw the empty days too.
      *
      * The one-offs come in one query and the weekly activities in another; then each weekly activity
-     * reads its organiser's day (a few queries each, {@see MyClasses::on()}) — a cost per activity, not
-     * per family or session, and there are only ever a handful of activities.
+     * reads its organiser's day (a few queries each, {@see MyClasses::on()}) — a cost per organiser and
+     * day, not per family or session, and there are only ever a handful of activities.
      *
      * @param \DateTimeImmutable $monday the Monday of the week
      *
@@ -167,11 +190,24 @@ final class FamilySessions
         if (null === $organizer) {
             return null;
         }
-        $class = array_values(array_filter($this->classes->on($organizer, $day), static fn (ClassSession $c): bool => $activity->isHeldIn($c, $day)))[0] ?? null;
+        $class = array_values(array_filter($this->classesOn($organizer, $day), static fn (ClassSession $c): bool => $activity->isHeldIn($c, $day)))[0] ?? null;
         if (null === $class || null === $class->startsAt) {
             return null;
         }
 
         return new FamilySession($activity, $class->startsAt, $class->endsAt, $activity->getPlace() ?? ([] !== $class->rooms() ? implode(', ', $class->rooms()) : null));
+    }
+
+    /**
+     * An organiser's classes on a day, from {@see $classesByDay} once read.
+     *
+     * @param User               $organizer the organiser
+     * @param \DateTimeImmutable $day       the day
+     *
+     * @return list<ClassSession> the day's classes, earliest first
+     */
+    private function classesOn(User $organizer, \DateTimeImmutable $day): array
+    {
+        return $this->classesByDay[$organizer->getId().'|'.$day->format('Y-m-d')] ??= $this->classes->on($organizer, $day);
     }
 }
