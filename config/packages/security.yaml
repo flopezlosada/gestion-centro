@@ -69,8 +69,13 @@ security:
         - { path: ^/cron/health$, roles: PUBLIC_ACCESS }
         # The activity trail is sensitive (it shows everyone's actions): admins only.
         - { path: ^/audit, roles: ROLE_ADMIN }
-        # User/role/org administration: only requires an authenticated user here; the fine-grained
+        # User/role/org administration: only requires a member of staff here; the fine-grained
         # gate is the AreaVoter on ADMINISTRATION in each admin controller, so a role granted write
         # access to Administration (e.g. Direction) can manage without being a superuser.
-        - { path: ^/admin, roles: ROLE_USER }
-        - { path: ^/, roles: ROLE_USER }
+        - { path: ^/admin, roles: ROLE_STAFF }
+        # Everything else is the staff area, and asks for ROLE_STAFF — not ROLE_USER, which any signed-in
+        # account is assumed to carry. Families who volunteer will sign in too, and the staff area holds
+        # what they must never see (the guardias report with absence reasons, meetings, minutes). Only
+        # App\Entity\User grants ROLE_STAFF, so any other kind of account is kept out by default and
+        # only reaches the screens a rule above opens to it explicitly.
+        - { path: ^/, roles: ROLE_STAFF }

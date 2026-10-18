@@ -1,0 +1,17 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Nueva actividad con familias · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('family_activity_index') }}">Actividades con familias</a><span class="sep">/</span>Nueva{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Nueva actividad con familias</h1>
+            <p class="lead">Quedará a tu nombre: solo tú podrás cambiarla o borrarla.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        {{ include('family_activity/_form.html.twig', { submitLabel: 'Publicar actividad' }) }}
+    </div>
+{% endblock %}

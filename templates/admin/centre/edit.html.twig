@@ -21,6 +21,8 @@
             {{ f.submit_error(form) }}
             {{ form_errors(form) }}
             {{ f.fields([form.organizationName, form.copyShopEmails, form.directionEmails, form.raicesUrl]) }}
+            <h2>Módulos</h2>
+            {{ f.toggles([form.familyActivitiesEnabled]) }}
             {{ f.actions(path('app_homepage')) }}
         {{ form_end(form) }}
     </div>

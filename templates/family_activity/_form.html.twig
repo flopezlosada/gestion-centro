@@ -1,0 +1,22 @@
+{% import '_macros/form.html.twig' as f %}
+{{ form_start(form, { attr: { novalidate: 'novalidate' } }) }}
+{{ f.submit_error(form) }}
+{{ form_errors(form) }}
+<div class="stackform">
+    <div class="form-row">
+        {{ form_label(form.title) }}
+        {{ form_widget(form.title, { attr: { class: 'field-title', placeholder: 'Ej. Grupos interactivos de 1ºA' } }) }}
+        {{ form_errors(form.title) }}
+    </div>
+    {{ f.field(form.description) }}
+    {{ f.field(form.place) }}
+    {{ f.field(form.day) }}
+    {{ f.field(form.startTime) }}
+    {{ f.field(form.endTime) }}
+    {{ f.field(form.familiesWanted) }}
+    <div class="stackform__foot">
+        <a class="btn secondary" href="{{ path('family_activity_index') }}">Cancelar</a>
+        <button class="btn" type="submit">{{ submitLabel }}</button>
+    </div>
+</div>
+{{ form_end(form) }}

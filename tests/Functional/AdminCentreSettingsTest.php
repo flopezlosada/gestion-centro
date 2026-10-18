@@ -13,6 +13,7 @@ use App\Service\AppSettings;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\DomCrawler\Field\ChoiceFormField;
 
 /**
  * La pantalla de datos del centro: lo que antes eran variables de entorno y exigía entrar por SSH.
@@ -87,6 +88,43 @@ final class AdminCentreSettingsTest extends WebTestCase
 
         $this->client->request('GET', '/');
         self::assertSelectorTextContains('title', 'IES La Prueba');
+    }
+
+    /**
+     * Las actividades con familias vienen apagadas: ni enlace en el menú ni página (404, no solo
+     * escondida). Encenderlas desde aquí las abre en la siguiente página, y apagarlas las vuelve a cerrar.
+     */
+    public function testLasActividadesConFamiliasSeEncienden(): void
+    {
+        $this->client->loginUser($this->admin());
+        $this->client->request('GET', '/actividades-familias');
+        self::assertResponseStatusCodeSame(404);
+        $crawler = $this->client->request('GET', '/admin/centro');
+        self::assertSelectorNotExists('#main-nav a[href="/actividades-familias"]');
+
+        $form = $crawler->selectButton('Guardar')->form();
+        $switch = $form['centre_settings[familyActivitiesEnabled]'];
+        self::assertInstanceOf(ChoiceFormField::class, $switch);
+        self::assertFalse($switch->hasValue(), 'Viene apagado de serie.');
+        $switch->tick();
+        $this->client->submit($form);
+
+        self::assertResponseRedirects('/admin/centro');
+        self::assertSame('1', $this->stored(AppSettings::FAMILY_ACTIVITIES_ENABLED));
+        $this->client->request('GET', '/actividades-familias');
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('#main-nav a[href="/actividades-familias"]');
+
+        $form = $this->client->request('GET', '/admin/centro')->selectButton('Guardar')->form();
+        $switch = $form['centre_settings[familyActivitiesEnabled]'];
+        self::assertInstanceOf(ChoiceFormField::class, $switch);
+        self::assertTrue($switch->hasValue(), 'La pantalla enseña lo guardado.');
+        $switch->untick();
+        $this->client->submit($form);
+
+        self::assertSame('0', $this->stored(AppSettings::FAMILY_ACTIVITIES_ENABLED));
+        $this->client->request('GET', '/actividades-familias');
+        self::assertResponseStatusCodeSame(404);
     }
 
     /**

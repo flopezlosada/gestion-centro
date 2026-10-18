@@ -76,6 +76,12 @@
                 <a href="{{ path('copy_request_index') }}" class="{{ route starts with 'copy_request_' ? 'is-active' }}">Fotocopias</a>
                 <a href="{{ path('guardia_bank_index') }}" class="{{ route starts with 'guardia_bank_' ? 'is-active' }}">Banco de tareas</a>
                 <a href="{{ path('tic_incident_index') }}" class="{{ route starts with 'tic_incident_' ? 'is-active' }}">Incidencias TIC</a>
+                {# Actividades con familias: las publica cualquier docente que organice una, igual que una
+                   incidencia la avisa cualquiera. Cambiarla es solo de quien la organiza (controlador).
+                   Solo con el módulo encendido en Datos del centro; apagado, sus rutas dan 404 (mismo voter). #}
+                {% if is_granted(constant('App\\Security\\Voter\\ModuleVoter::FAMILY_ACTIVITIES')) %}
+                    <a href="{{ path('family_activity_index') }}" class="{{ route starts with 'family_activity_' ? 'is-active' }}">Actividades con familias</a>
+                {% endif %}
                 {# Temas de las clases: gate igual al de AdminTopicController::denyAccessUnlessLeading —
                    jefatura de departamento o de todo el centro, más administradores. Sin este enlace solo
                    se llegaba escribiendo /admin/temas a mano. #}

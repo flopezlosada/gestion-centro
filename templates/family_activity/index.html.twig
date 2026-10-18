@@ -1,0 +1,62 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Actividades con familias · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Actividades con familias{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">El centro</p>
+            <h1>Actividades con familias</h1>
+            <p class="lead">Grupos interactivos, talleres y demás actividades en las que pueden participar familias. Cualquier docente puede publicar una; solo quien la organiza puede cambiarla.</p>
+        </div>
+        <a class="btn" href="{{ path('family_activity_new') }}">+ Nueva actividad</a>
+    </div>
+
+    <nav class="scope-toggle" aria-label="Qué actividades ver">
+        <a href="{{ path('family_activity_index') }}" class="{{ showingPast ? '' : 'is-active' }}"{{ showingPast ? '' : ' aria-current="page"' }}>Próximas</a>
+        <a href="{{ path('family_activity_index', { ver: 'pasadas' }) }}" class="{{ showingPast ? 'is-active' : '' }}"{{ showingPast ? ' aria-current="page"' : '' }}>Pasadas</a>
+    </nav>
+
+    <div class="card">
+        {% if activities is empty %}
+            <div class="empty-state">
+                {% if showingPast %}
+                    <h2>Todavía no se ha celebrado ninguna</h2>
+                {% else %}
+                    <h2>No hay actividades programadas</h2>
+                    <p>Publica la primera para que el resto del claustro sepa qué se prepara.</p>
+                    <a class="btn" href="{{ path('family_activity_new') }}">Nueva actividad</a>
+                {% endif %}
+            </div>
+        {% else %}
+            <table>
+                <thead>
+                    <tr><th>Cuándo</th><th>Actividad</th><th>Lugar</th><th>Familias</th><th>Organiza</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for a in activities %}
+                        <tr>
+                            <td>
+                                <time datetime="{{ a.startAt|date('c', false) }}">{{ a.startAt|date('d/m/Y', false) }}</time><br>
+                                {{ a.startAt|date('H:i', false) }}{% if a.endAt %}–{{ a.endAt|date('H:i', false) }}{% endif %}
+                            </td>
+                            <td>
+                                <strong>{{ a.title }}</strong>
+                                {% if a.description %}<br><span class="muted">{{ a.description|nl2br }}</span>{% endif %}
+                            </td>
+                            <td>{{ a.place ?? '—' }}</td>
+                            <td>{{ a.familiesWanted ?? 'Las que puedan' }}</td>
+                            <td>{{ a.organizer ? a.organizer.fullName : 'Nadie (ya no está en el centro)' }}</td>
+                            <td class="row-actions">
+                                {% if a.isOrganizedBy(app.user) or is_granted('ROLE_ADMIN') %}
+                                    <a href="{{ path('family_activity_edit', { id: a.id }) }}">Editar</a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}
