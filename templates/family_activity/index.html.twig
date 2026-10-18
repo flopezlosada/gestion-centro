@@ -10,7 +10,12 @@
             <h1>Actividades con familias</h1>
             <p class="lead">Grupos interactivos, talleres y demás actividades en las que pueden participar familias. Cualquier docente puede publicar una; solo quien la organiza puede cambiarla.</p>
         </div>
-        <a class="btn" href="{{ path('family_activity_new') }}">+ Nueva actividad</a>
+        <div class="page-head-actions">
+            {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ADMINISTRATION')) %}
+                <a class="btn secondary" href="{{ path('family_volunteer_index') }}">Cuentas de familias</a>
+            {% endif %}
+            <a class="btn" href="{{ path('family_activity_new') }}">+ Nueva actividad</a>
+        </div>
     </div>
 
     <nav class="scope-toggle" aria-label="Qué actividades ver">

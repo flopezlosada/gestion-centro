@@ -1,0 +1,44 @@
+{% extends 'family_area/_layout.html.twig' %}
+
+{% block title %}Actividades · {{ app_organization_name }}{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Espacio de familias</p>
+            <h1>Próximas actividades</h1>
+            <p class="lead">Lo que el centro tiene programado y en lo que podéis colaborar.</p>
+        </div>
+    </div>
+
+    {# Sin columna «Organiza»: el nombre del profesorado no hace falta para venir, y no se enseña fuera. #}
+    <div class="card">
+        {% if activities is empty %}
+            <div class="empty-state">
+                <h2>No hay actividades programadas</h2>
+                <p>Cuando el profesorado publique alguna, aparecerá aquí.</p>
+            </div>
+        {% else %}
+            <table>
+                <thead>
+                    <tr><th>Cuándo</th><th>Actividad</th><th>Lugar</th></tr>
+                </thead>
+                <tbody>
+                    {% for a in activities %}
+                        <tr>
+                            <td>
+                                <time datetime="{{ a.startAt|date('c', false) }}">{{ a.startAt|date('d/m/Y', false) }}</time><br>
+                                {{ a.startAt|date('H:i', false) }}{% if a.endAt %}–{{ a.endAt|date('H:i', false) }}{% endif %}
+                            </td>
+                            <td>
+                                <strong>{{ a.title }}</strong>
+                                {% if a.description %}<br><span class="muted">{{ a.description|nl2br }}</span>{% endif %}
+                            </td>
+                            <td>{{ a.place ?? '—' }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}

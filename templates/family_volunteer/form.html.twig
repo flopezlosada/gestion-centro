@@ -1,0 +1,37 @@
+{% extends 'app_shell.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}{{ family.id ? 'Editar cuenta' : 'Nueva cuenta' }} · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}
+    <a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>
+    <a href="{{ path('family_volunteer_index') }}">Cuentas de familias</a><span class="sep">/</span>
+    {{ family.id ? 'Editar' : 'Nueva' }}
+{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <p class="eyebrow">Cuentas de familias</p>
+        <h1>{{ family.id ? 'Editar cuenta' : 'Nueva cuenta' }}</h1>
+    </div>
+
+    <div class="card form-card">
+        {{ form_start(form, { attr: { novalidate: 'novalidate' } }) }}
+            {{ f.submit_error(form) }}
+            {{ form_errors(form) }}
+            {{ f.fields([form.fullName, form.email]) }}
+            {{ f.actions(path('family_volunteer_index')) }}
+        {{ form_end(form) }}
+    </div>
+
+    {% if family.id %}
+        <div class="card">
+            <div class="page-head"><div><h2>Borrar</h2><p class="lead">Deja de poder entrar en el momento y se borran sus datos. No se puede deshacer.</p></div></div>
+            <div class="form-actions">
+                <form method="post" action="{{ path('family_volunteer_delete', { id: family.id }) }}" data-confirm="¿Seguro que quieres borrar la cuenta de «{{ family.fullName }}»?">
+                    <input type="hidden" name="_token" value="{{ csrf_token('family_volunteer_delete' ~ family.id) }}">
+                    <button type="submit" class="btn btn-danger">Borrar cuenta</button>
+                </form>
+            </div>
+        </div>
+    {% endif %}
+{% endblock %}

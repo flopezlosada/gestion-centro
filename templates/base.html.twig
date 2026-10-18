@@ -13,7 +13,8 @@
         <link rel="manifest" href="/manifest.webmanifest">
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
         <meta name="theme-color" content="#FF9E00">
-        {% if app.user and app_vapid_public_key is not empty %}
+        {# Solo el personal: las rutas de suscripción viven en su firewall, y una familia no recibe avisos. #}
+        {% if is_granted('ROLE_STAFF') and app_vapid_public_key is not empty %}
             <meta name="vapid-public-key" content="{{ app_vapid_public_key }}">
             <meta name="push-csrf" content="{{ csrf_token('push') }}">
             <meta name="push-subscribe-url" content="{{ path('push_subscribe') }}">
@@ -70,7 +71,7 @@
             <script src="{{ asset_ver('/js/file-size-guard.js') }}"></script>
             <script src="{{ asset_ver('/js/absence-form.js') }}"></script>
             <script src="{{ asset_ver('/js/app-badge.js') }}"></script>
-            {% if app.user and app_vapid_public_key is not empty %}
+            {% if is_granted('ROLE_STAFF') and app_vapid_public_key is not empty %}
                 <script src="{{ asset_ver('/js/push.js') }}" defer></script>
             {% endif %}
         {% endblock %}

@@ -27,6 +27,16 @@ class LoginLinkLogSubscriber implements EventSubscriberInterface
     /** Enough characters of the link's hash to group its visits, too few to rebuild the link. */
     private const HASH_PREFIX_LENGTH = 8;
 
+    /**
+     * The families' firewall (security.yaml). Its accounts are not staff, and removing one must take the
+     * address with it, so the address is masked in this log for them; the rest of the line still shows
+     * whether the link arrived mangled.
+     */
+    private const FAMILIES_FIREWALL = 'families';
+
+    /** What stands in for a masked address. */
+    private const MASK = '***';
+
     public function __construct(private readonly LoggerInterface $logger)
     {
     }
@@ -48,7 +58,7 @@ class LoginLinkLogSubscriber implements EventSubscriberInterface
     public function onLoginSuccess(LoginSuccessEvent $event): void
     {
         if ($event->getAuthenticator() instanceof LoginLinkAuthenticator) {
-            $this->logger->info('login link accepted', $this->context($event->getRequest()));
+            $this->logger->info('login link accepted', $this->context($event->getRequest(), $event->getFirewallName()));
         }
     }
 
@@ -64,24 +74,29 @@ class LoginLinkLogSubscriber implements EventSubscriberInterface
     {
         if ($event->getAuthenticator() instanceof LoginLinkAuthenticator) {
             $request = $event->getRequest();
-            $this->logger->warning('login link refused', $this->context($request) + [
-                'raw_uri' => $request->server->get('REQUEST_URI'),
+            $masked = self::FAMILIES_FIREWALL === $event->getFirewallName();
+            $rawUri = (string) $request->server->get('REQUEST_URI');
+            $this->logger->warning('login link refused', $this->context($request, $event->getFirewallName()) + [
+                'raw_uri' => $masked ? (string) preg_replace('/([?&]user=)[^&]*/', '$1'.self::MASK, $rawUri) : $rawUri,
                 'reason' => $this->messageChain($event->getException()),
             ]);
         }
     }
 
     /**
-     * What identifies the visit: who the link was for, which link, and who opened it.
+     * What identifies the visit: who the link was for (masked for families), which link, and who opened it.
+     *
+     * @param Request $request  the visit
+     * @param string  $firewall the firewall the link belongs to
      *
      * @return array<string, string|null>
      */
-    private function context(Request $request): array
+    private function context(Request $request, string $firewall): array
     {
         $hash = $request->query->getString('hash');
 
         return [
-            'user' => $request->query->getString('user'),
+            'user' => self::FAMILIES_FIREWALL === $firewall ? self::MASK : $request->query->getString('user'),
             'hash' => '' === $hash ? null : substr($hash, 0, self::HASH_PREFIX_LENGTH),
             'method' => $request->getMethod(),
             'ip' => $request->getClientIp(),

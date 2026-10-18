@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\EventSubscriber;
 
 use App\Service\AuditLogger;
+use App\Support\AuditActor;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Security\Http\Authenticator\RememberMeAuthenticator;
 use Symfony\Component\Security\Http\Event\LoginSuccessEvent;
@@ -41,12 +42,12 @@ class AuditSecuritySubscriber implements EventSubscriberInterface
         $this->auditLogger->log(
             $remembered ? 'user.login_remembered' : 'user.login',
             summary: $remembered ? 'Sesión recuperada con «Recordarme».' : 'Inicio de sesión correcto.',
-            actor: $event->getUser()->getUserIdentifier(),
+            actor: AuditActor::of($event->getUser()),
         );
     }
 
     public function onLogout(LogoutEvent $event): void
     {
-        $this->auditLogger->log('user.logout', summary: 'Cierre de sesión.', actor: $event->getToken()?->getUserIdentifier());
+        $this->auditLogger->log('user.logout', summary: 'Cierre de sesión.', actor: AuditActor::of($event->getToken()?->getUser()));
     }
 }

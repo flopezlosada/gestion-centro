@@ -5,17 +5,15 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Repository\UserRepository;
+use App\Security\LoginLinkMailer;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
-use Symfony\Component\Mailer\MailerInterface;
-use Symfony\Component\Mime\Email;
 use Symfony\Component\RateLimiter\RateLimiterFactory;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Authentication\AuthenticationUtils;
-use Symfony\Component\Security\Http\LoginLink\LoginLinkHandlerInterface;
 
 /**
  * Passwordless authentication: the user requests a magic link by e-mail and follows it to sign
@@ -36,8 +34,6 @@ class SecurityController extends AbstractController
         string $googleClientId,
         #[Autowire(service: 'limiter.magic_link')]
         private readonly RateLimiterFactory $magicLinkLimiter,
-        #[Autowire('%app.mailer_from%')]
-        private readonly string $mailerFrom,
     ) {
         $this->googleSsoEnabled = '' !== $googleClientId;
     }
@@ -45,13 +41,10 @@ class SecurityController extends AbstractController
     /**
      * Shows the e-mail form and, on submit, sends a magic login link to a known user.
      *
-     * The "Recordarme" checkbox is ticked here but the cookie is set wherever the link is followed,
-     * so the choice travels inside the link as the remember-me parameter. It sits outside the signed
-     * part of the URL, which is fine: it only decides whether the person who legitimately follows
-     * the link stays signed in on that device.
+     * The "Recordarme" checkbox travels inside the link ({@see LoginLinkMailer::send()}).
      */
     #[Route('/login', name: 'login', methods: ['GET', 'POST'])]
-    public function login(Request $request, UserRepository $users, LoginLinkHandlerInterface $loginLinkHandler, MailerInterface $mailer, AuthenticationUtils $authenticationUtils): Response
+    public function login(Request $request, UserRepository $users, LoginLinkMailer $linkMailer, AuthenticationUtils $authenticationUtils): Response
     {
         if (!$request->isMethod('POST')) {
             // Surface a failed sign-in (SSO or expired magic link) ON this page. The error is read
@@ -86,15 +79,7 @@ class SecurityController extends AbstractController
         $user = $users->findActiveByEmail($email);
 
         if (null !== $user) {
-            $url = $loginLinkHandler->createLoginLink($user)->getUrl();
-            if ($request->request->getBoolean('_remember_me')) {
-                $url .= '&_remember_me=1';
-            }
-            $mailer->send((new Email())
-                ->from($this->mailerFrom)
-                ->to($user->getEmail())
-                ->subject('Tu enlace de acceso')
-                ->text("Entra en la aplicación con este enlace (válido 10 minutos):\n\n".$url));
+            $linkMailer->send($user, $request->request->getBoolean('_remember_me'), 'la aplicación');
         }
 
         // Always show the same confirmation, even if the e-mail is unknown, so the page does

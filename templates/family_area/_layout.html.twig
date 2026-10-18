@@ -1,0 +1,24 @@
+{% extends 'base.html.twig' %}
+
+{# El espacio de familias: una sola columna, sin el menú del personal. Nada de app_shell, que enlaza a
+   pantallas del firewall del personal en las que una familia no puede entrar. #}
+
+{% block shell %}
+    <div class="family-area">
+        <header class="family-area__bar">
+            <span class="brand">
+                <span class="brand-mark">{{ include('partials/_brand_mark.html.twig', { size: 30 }) }}</span>
+                <span class="brand-name">{{ app_organization_name }}</span>
+            </span>
+            {% if app.user %}
+                <span class="family-area__who">
+                    {{ app.user.fullName }}
+                    <a href="{{ path('family_logout') }}">Salir</a>
+                </span>
+            {% endif %}
+        </header>
+        <main class="page family-area__page">
+            {% block body %}{% endblock %}
+        </main>
+    </div>
+{% endblock %}

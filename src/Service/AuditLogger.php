@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Service;
 
 use App\Entity\AuditLog;
+use App\Support\AuditActor;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\SecurityBundle\Security;
 
@@ -32,12 +33,11 @@ class AuditLogger
      * @param string|null $subjectType affected entity type, if any
      * @param string|null $subjectId   affected entity id, if any
      * @param string|null $summary     human-readable Spanish description
-     * @param string|null $actor       overrides the current user identifier when provided
+     * @param string|null $actor       overrides the current user when provided, already named by {@see AuditActor}
      */
     public function log(string $action, ?string $subjectType = null, ?string $subjectId = null, ?string $summary = null, ?string $actor = null): void
     {
-        $actor ??= $this->security->getUser()?->getUserIdentifier();
-
+        $actor ??= AuditActor::of($this->security->getUser());
         $this->entityManager->persist(new AuditLog($action, $actor, $subjectType, $subjectId, $summary));
         $this->entityManager->flush();
     }
