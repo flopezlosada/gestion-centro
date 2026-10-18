@@ -11,6 +11,7 @@ use App\Entity\OneOffFamilyActivity;
 use App\Entity\User;
 use App\Entity\WeeklyFamilyActivity;
 use App\Enum\Weekday;
+use App\Family\FamilyActivityMailer;
 use App\Family\FamilySessions;
 use App\Form\FamilyActivityFormData;
 use App\Form\FamilyActivityFormType;
@@ -50,6 +51,7 @@ final class FamilyActivityController extends AbstractController
     public function __construct(
         private readonly ClockInterface $clock,
         private readonly FamilySessions $sessions,
+        private readonly FamilyActivityMailer $familyMailer,
     ) {
     }
 
@@ -191,8 +193,10 @@ final class FamilyActivityController extends AbstractController
         }
         $this->denyUnlessManages($activity, $user);
 
+        $coming = $this->familyMailer->snapshot($activity);
         $entityManager->remove($activity);
         $entityManager->flush();
+        $this->familyMailer->mailCancellation($activity, $coming);
         $this->addFlash('success', 'Actividad borrada.');
 
         return $this->redirectToRoute('family_activity_index');
@@ -277,8 +281,8 @@ final class FamilyActivityController extends AbstractController
     }
 
     /**
-     * What editing either kind shares, once the form is handled: apply it when valid, save and go back to
-     * the list.
+     * What editing either kind shares, once the form is handled: apply it when valid, save, tell the
+     * families whose session changed ({@see FamilyActivityMailer}) and go back to the list.
      *
      * @param FamilyActivity         $activity      the activity
      * @param FormInterface<FamilyActivityFormData> $form its form, already handled
@@ -291,8 +295,10 @@ final class FamilyActivityController extends AbstractController
     private function handleEdit(FamilyActivity $activity, FormInterface $form, EntityManagerInterface $entityManager, callable $apply, array $view = []): Response
     {
         if ($form->isSubmitted() && $form->isValid()) {
+            $coming = $this->familyMailer->snapshot($activity);
             $apply();
             $entityManager->flush();
+            $this->familyMailer->mailChanges($activity, $coming);
             $this->addFlash('success', 'Actividad actualizada.');
 
             return $this->redirectToRoute('family_activity_index');

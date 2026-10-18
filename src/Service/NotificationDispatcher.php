@@ -53,7 +53,11 @@ final class NotificationDispatcher
     // Que te asignan una guardia ya se avisa por correo cuando se asigna ({@see GuardiaAssignmentNotifier}),
     // así que estos dos no traen información nueva: recuerdan. Por correo serían dos mensajes más por
     // guardia —el triple de correo del módulo— para decir lo mismo, y el centro ya se queja del correo.
-    private const array PUSH_ONLY_KINDS = ['event.', 'guardia.raices', 'guardia.reminder', 'meeting.reminder', 'meeting.minutes'];
+    //
+    // `family.` (una familia se apunta o se borra de una sesión) tampoco va por correo: es un aviso de cada
+    // inscripción, que puede haber varias a la semana, y lo que pide es solo saberlo; quién viene está en
+    // la página de la actividad.
+    private const array PUSH_ONLY_KINDS = ['event.', 'guardia.raices', 'guardia.reminder', 'meeting.reminder', 'meeting.minutes', 'family.'];
 
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
