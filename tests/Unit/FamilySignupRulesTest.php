@@ -6,13 +6,16 @@ namespace App\Tests\Unit;
 
 use App\Entity\FamilyActivity;
 use App\Entity\FamilyVolunteer;
+use App\Entity\OneOffFamilyActivity;
 use App\Entity\User;
+use App\Family\FamilySession;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Las reglas de apuntarse a una actividad, que viven en {@see FamilyActivity} para que valgan en cualquier
- * pantalla: solo antes de que empiece, solo con plaza, y una vez por familia. Desapuntarse, solo antes de
- * que empiece, para que lo que pasó quede como pasó.
+ * Las reglas de apuntarse a una sesión, que viven en {@see FamilyActivity} para que valgan en cualquier
+ * pantalla: solo antes de que empiece, solo con plaza, y una vez por familia y sesión. Desapuntarse, solo
+ * antes de que empiece, para que lo que pasó quede como pasó. Las plazas son de cada sesión: apuntarse un
+ * martes no ocupa sitio el siguiente.
  */
 final class FamilySignupRulesTest extends TestCase
 {
@@ -27,55 +30,55 @@ final class FamilySignupRulesTest extends TestCase
 
     public function testWithoutANumberAnyFamilyMaySignUp(): void
     {
-        $activity = $this->activity(null);
+        $session = $this->session(null);
 
         foreach (range(1, 5) as $n) {
-            $activity->signUp($this->family('f'.$n), $this->before);
+            $session->activity->signUp($session, $this->family('f'.$n), $this->before);
         }
 
-        self::assertNull($activity->placesLeft());
-        self::assertCount(5, $activity->getSignups());
-        self::assertTrue($activity->acceptsSignupsAt($this->before));
+        self::assertNull($session->placesLeft());
+        self::assertCount(5, $session->signups());
+        self::assertTrue($session->acceptsSignupsAt($this->before));
     }
 
     public function testTheLastPlaceClosesTheSignups(): void
     {
-        $activity = $this->activity(2);
-        $activity->signUp($this->family('a'), $this->before);
-        self::assertSame(1, $activity->placesLeft());
+        $session = $this->session(2);
+        $session->activity->signUp($session, $this->family('a'), $this->before);
+        self::assertSame(1, $session->placesLeft());
 
-        $activity->signUp($this->family('b'), $this->before);
+        $session->activity->signUp($session, $this->family('b'), $this->before);
 
-        self::assertSame(0, $activity->placesLeft());
-        self::assertFalse($activity->acceptsSignupsAt($this->before));
+        self::assertSame(0, $session->placesLeft());
+        self::assertFalse($session->acceptsSignupsAt($this->before));
         $this->expectException(\DomainException::class);
-        $activity->signUp($this->family('c'), $this->before);
+        $session->activity->signUp($session, $this->family('c'), $this->before);
     }
 
     public function testSigningUpTwiceKeepsOneSignup(): void
     {
-        $activity = $this->activity(3);
+        $session = $this->session(3);
         $family = $this->family('a');
 
-        $activity->signUp($family, $this->before);
-        $activity->signUp($family, $this->before);
+        $session->activity->signUp($session, $family, $this->before);
+        $session->activity->signUp($session, $family, $this->before);
 
-        self::assertCount(1, $activity->getSignups());
-        self::assertTrue($activity->isSignedUpBy($family));
+        self::assertCount(1, $session->activity->getSignups());
+        self::assertTrue($session->isSignedUpBy($family));
     }
 
     /**
-     * A family already in keeps its place when the activity fills up: pressing again is no error.
+     * A family already in keeps its place when the session fills up: pressing again is no error.
      */
     public function testAFamilyAlreadyInMayPressAgainWhenFull(): void
     {
-        $activity = $this->activity(1);
+        $session = $this->session(1);
         $family = $this->family('a');
-        $activity->signUp($family, $this->before);
+        $session->activity->signUp($session, $family, $this->before);
 
-        $activity->signUp($family, $this->before);
+        $session->activity->signUp($session, $family, $this->before);
 
-        self::assertCount(1, $activity->getSignups());
+        self::assertCount(1, $session->activity->getSignups());
     }
 
     /**
@@ -83,73 +86,104 @@ final class FamilySignupRulesTest extends TestCase
      */
     public function testLoweringTheNumberKeepsWhoIsComing(): void
     {
-        $activity = $this->activity(3);
+        $session = $this->session(3);
         foreach (['a', 'b', 'c'] as $name) {
-            $activity->signUp($this->family($name), $this->before);
+            $session->activity->signUp($session, $this->family($name), $this->before);
         }
 
-        $activity->setFamiliesWanted(1);
+        $session->activity->setFamiliesWanted(1);
 
-        self::assertSame(0, $activity->placesLeft());
-        self::assertCount(3, $activity->getSignups());
+        self::assertSame(0, $session->placesLeft());
+        self::assertCount(3, $session->signups());
     }
 
     public function testNoSignupFromTheMomentItStarts(): void
     {
-        $activity = $this->activity(null);
+        $session = $this->session(null);
 
-        self::assertFalse($activity->acceptsSignupsAt($this->start));
+        self::assertFalse($session->acceptsSignupsAt($this->start));
         $this->expectException(\DomainException::class);
-        $activity->signUp($this->family('a'), $this->start);
+        $session->activity->signUp($session, $this->family('a'), $this->start);
     }
 
     public function testWithdrawingFreesThePlace(): void
     {
-        $activity = $this->activity(1);
+        $session = $this->session(1);
         $family = $this->family('a');
-        $activity->signUp($family, $this->before);
+        $session->activity->signUp($session, $family, $this->before);
 
-        $activity->withdraw($family, $this->before);
+        $session->activity->withdraw($session, $family, $this->before);
 
-        self::assertFalse($activity->isSignedUpBy($family));
-        self::assertSame(1, $activity->placesLeft());
+        self::assertFalse($session->isSignedUpBy($family));
+        self::assertSame(1, $session->placesLeft());
     }
 
     public function testWithdrawingWhenNotSignedUpChangesNothing(): void
     {
-        $activity = $this->activity(2);
-        $activity->signUp($this->family('a'), $this->before);
+        $session = $this->session(2);
+        $session->activity->signUp($session, $this->family('a'), $this->before);
 
-        $activity->withdraw($this->family('b'), $this->before);
+        $session->activity->withdraw($session, $this->family('b'), $this->before);
 
-        self::assertCount(1, $activity->getSignups());
+        self::assertCount(1, $session->signups());
     }
 
     public function testNoWithdrawingOnceItHasStarted(): void
     {
-        $activity = $this->activity(null);
+        $session = $this->session(null);
         $family = $this->family('a');
-        $activity->signUp($family, $this->before);
+        $session->activity->signUp($session, $family, $this->before);
 
         try {
-            $activity->withdraw($family, $this->start->modify('+10 minutes'));
+            $session->activity->withdraw($session, $family, $this->start->modify('+10 minutes'));
             self::fail('Withdrawing after the start must be refused.');
         } catch (\DomainException) {
         }
 
-        self::assertTrue($activity->isSignedUpBy($family));
+        self::assertTrue($session->isSignedUpBy($family));
+    }
+
+    /**
+     * Two sessions of one activity (two weeks of the same class) have their places apart: a full Tuesday
+     * leaves the next one open, and coming one week is not coming the next.
+     */
+    public function testEachSessionHasItsOwnPlaces(): void
+    {
+        $thisWeek = $this->session(1);
+        $nextWeek = new FamilySession($thisWeek->activity, $this->start->modify('+7 days'), null, null);
+        $family = $this->family('a');
+
+        $thisWeek->activity->signUp($thisWeek, $family, $this->before);
+
+        self::assertSame(0, $thisWeek->placesLeft());
+        self::assertSame(1, $nextWeek->placesLeft());
+        self::assertFalse($nextWeek->isSignedUpBy($family));
+        $thisWeek->activity->signUp($nextWeek, $family, $this->before);
+        self::assertCount(2, $thisWeek->activity->getSignups());
+        self::assertCount(1, $nextWeek->signups());
+    }
+
+    /**
+     * A signup is always for a session of the activity itself: one of another activity is a bug, refused.
+     */
+    public function testASessionOfAnotherActivityIsRefused(): void
+    {
+        $session = $this->session(null);
+
+        $this->expectException(\LogicException::class);
+        $this->session(null)->activity->signUp($session, $this->family('a'), $this->before);
     }
 
     /**
      * @param int|null $wanted how many families the organiser would like, or null
      *
-     * @return FamilyActivity an activity on 10/11/2026 at 10:30
+     * @return FamilySession the one session of an activity on 10/11/2026 at 10:30
      */
-    private function activity(?int $wanted): FamilyActivity
+    private function session(?int $wanted): FamilySession
     {
         $organizer = (new User())->setFullName('Organiza Test')->setEmail('organiza@centro.test');
 
-        return (new FamilyActivity($organizer, 'Grupos interactivos', $this->start))->setFamiliesWanted($wanted);
+        return (new OneOffFamilyActivity($organizer, 'Grupos interactivos', $this->start))->setFamiliesWanted($wanted)->session();
     }
 
     /**

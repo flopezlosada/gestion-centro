@@ -4,25 +4,39 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
+use App\Agenda\MyClasses;
 use App\Entity\FamilyActivity;
+use App\Entity\FamilyVolunteer;
+use App\Entity\NonLectiveDay;
+use App\Entity\OneOffFamilyActivity;
 use App\Entity\Role;
 use App\Entity\User;
+use App\Entity\WeeklyFamilyActivity;
+use App\Enum\Weekday;
+use App\Family\FamilySessions;
 use App\Service\AppSettings;
+use App\Tests\Support\BuildsTheCentresTimetable;
 use App\Tests\Support\MintsSessionCsrfTokens;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\Clock\Test\ClockSensitiveTrait;
+use Symfony\Component\DomCrawler\Crawler;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Security\Http\AccessMapInterface;
 
 /**
- * Las actividades con familias, por el lado del profesorado: cualquiera publica, solo quien organiza (o un
- * administrador) cambia o borra. Y la puerta que hace posible abrir la app a familias más adelante: el área
+ * Las actividades con familias, por el lado del profesorado: cualquiera publica —en una de sus clases cada
+ * semana, o un día suelto—, solo quien organiza (o un administrador) cambia o borra. Y la puerta que hace posible abrir la app a familias más adelante: el área
  * del personal exige ROLE_STAFF, que solo da {@see User}, y no ROLE_USER, que se le supone a cualquier cuenta.
  */
 final class FamilyActivityTest extends WebTestCase
 {
+    use BuildsTheCentresTimetable;
+    use ClockSensitiveTrait;
     use MintsSessionCsrfTokens;
+
+    private const string TODAY = '2026-01-13';
 
     private KernelBrowser $client;
     private EntityManagerInterface $em;
@@ -34,6 +48,8 @@ final class FamilyActivityTest extends WebTestCase
         // Viene apagado de serie; lo que se prueba aquí es el módulo encendido (el interruptor, en
         // AdminCentreSettingsTest).
         self::getContainer()->get(AppSettings::class)->setFamilyActivitiesEnabled(true);
+        // A Tuesday: the dates below, relative to it, fall Monday to Friday whatever day CI runs on.
+        self::mockTime(self::TODAY.' 08:00');
     }
 
     /**
@@ -78,7 +94,7 @@ final class FamilyActivityTest extends WebTestCase
 
         self::assertResponseRedirects('/actividades-familias');
         $this->em->clear();
-        $activity = $this->em->getRepository(FamilyActivity::class)->findOneBy(['title' => 'Grupos interactivos de 1ºA']);
+        $activity = $this->em->getRepository(OneOffFamilyActivity::class)->findOneBy(['title' => 'Grupos interactivos de 1ºA']);
         self::assertNotNull($activity);
         self::assertSame('2026-11-05 10:30', $activity->getStartAt()->format('Y-m-d H:i'));
         self::assertSame('2026-11-05 11:25', $activity->getEndAt()?->format('Y-m-d H:i'));
@@ -107,7 +123,7 @@ final class FamilyActivityTest extends WebTestCase
 
         self::assertResponseRedirects('/actividades-familias');
         $this->em->clear();
-        $activity = $this->em->getRepository(FamilyActivity::class)->findOneBy(['title' => 'Taller de cuentos']);
+        $activity = $this->em->getRepository(OneOffFamilyActivity::class)->findOneBy(['title' => 'Taller de cuentos']);
         self::assertNotNull($activity);
         self::assertNull($activity->getEndAt());
         self::assertNull($activity->getFamiliesWanted());
@@ -211,7 +227,7 @@ final class FamilyActivityTest extends WebTestCase
 
         self::assertResponseRedirects('/actividades-familias');
         $this->em->clear();
-        $saved = $this->em->getRepository(FamilyActivity::class)->find($activity->getId());
+        $saved = $this->em->getRepository(OneOffFamilyActivity::class)->find($activity->getId());
         self::assertNotNull($saved);
         self::assertSame('Biblioteca', $saved->getPlace());
         // Vaciar la hora de fin la quita; el día y la hora de inicio vuelven tal cual del formulario.
@@ -266,11 +282,61 @@ final class FamilyActivityTest extends WebTestCase
         self::assertNull($this->em->getRepository(FamilyActivity::class)->find($activityId));
     }
 
-    public function testTheListShowsWhatIsComingAndThePastApart(): void
+    /**
+     * The families' calendar is the school week: a one-off on a Saturday would be published and never
+     * shown, so it is refused.
+     */
+    public function testAOneOffOnAWeekendIsRefused(): void
+    {
+        $teacher = $this->user('profe@centro.test');
+        $this->em->flush();
+        $this->client->loginUser($teacher);
+
+        $crawler = $this->client->request('GET', '/actividades-familias/nueva');
+        $form = $crawler->selectButton('Publicar actividad')->form();
+        $form['family_activity_form[title]'] = 'Taller';
+        $form['family_activity_form[day]'] = '2026-01-17';
+        $form['family_activity_form[startTime]'] = '11:00';
+        $this->client->submit($form);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertSelectorTextContains('body', 'Elige un día de lunes a viernes.');
+    }
+
+    /**
+     * The families were coming to the activity, not to a date: moving it to another day takes them along,
+     * still counted and still able to withdraw.
+     */
+    public function testMovingAOneOffTakesItsFamiliesAlong(): void
+    {
+        $organizer = $this->user('organiza@centro.test');
+        $activity = $this->activity($organizer, '+2 days');
+        $family = (new FamilyVolunteer())->setFullName('Familia Marta')->setEmail('marta@gmail.test');
+        $this->em->persist($family);
+        $activity->signUp($activity->session(), $family, new \DateTimeImmutable(self::TODAY.' 08:00'));
+        $this->em->flush();
+        $this->client->loginUser($organizer);
+
+        $crawler = $this->client->request('GET', '/actividades-familias/'.$activity->getId().'/editar');
+        self::assertSelectorTextContains('.flash.warning', 'Hay 1 familia apuntada');
+        $form = $crawler->selectButton('Guardar')->form();
+        $form['family_activity_form[day]'] = '2026-01-21';
+        $this->client->submit($form);
+        self::assertResponseRedirects('/actividades-familias');
+
+        self::assertSame(['2026-01-21'], $this->em->getConnection()->fetchFirstColumn('SELECT session_date FROM family_signup'));
+        $this->client->request('GET', '/actividades-familias?semana=2026-01-19');
+        self::assertSelectorTextContains('.family-week', 'Familia Marta');
+    }
+
+    /**
+     * The list keeps what is still to come; a past one-off is not lost, it is in the calendar of its week.
+     */
+    public function testThePastIsInTheCalendarOfItsWeek(): void
     {
         $organizer = $this->user('organiza@centro.test');
         $this->activity($organizer, '+10 days', 'Taller que viene');
-        $this->activity($organizer, '-10 days', 'Taller que ya pasó');
+        $past = $this->activity($organizer, '-7 days', 'Taller que ya pasó');
         $this->em->flush();
         $this->client->loginUser($organizer);
 
@@ -278,9 +344,127 @@ final class FamilyActivityTest extends WebTestCase
         self::assertSelectorTextContains('table', 'Taller que viene');
         self::assertSelectorTextNotContains('table', 'Taller que ya pasó');
 
-        $this->client->request('GET', '/actividades-familias?ver=pasadas');
-        self::assertSelectorTextContains('table', 'Taller que ya pasó');
-        self::assertSelectorTextNotContains('table', 'Taller que viene');
+        $this->client->request('GET', '/actividades-familias?semana='.$past->getStartAt()->format('Y-m-d'));
+        self::assertSelectorTextContains('.family-week', 'Taller que ya pasó');
+    }
+
+    /**
+     * A teacher picks one of their own classes; the activity then has a session each week that class is
+     * given — on its day, at its times, in its room — and not on a non-teaching day.
+     */
+    public function testATeacherOpensOneOfTheirClassesEveryWeek(): void
+    {
+        $teacher = $this->teacherWithAClass();
+        $this->em->persist((new NonLectiveDay())->setDate(new \DateTimeImmutable('2026-01-20'))->setDescription('Fiesta local'));
+        $this->em->flush();
+        self::mockTime('2026-01-12 08:00');
+        $this->client->loginUser($teacher);
+
+        $crawler = $this->client->request('GET', '/actividades-familias/nueva-en-clase');
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('select', 'Martes · 3ª (10:15–11:10) · E1A · Matemáticas');
+        $form = $crawler->selectButton('Publicar actividad')->form();
+        $form['family_activity_form[title]'] = 'Grupos interactivos';
+        $form['family_activity_form[classKey]'] = '2-2';
+        $form['family_activity_form[familiesWanted]'] = '4';
+        $this->client->submit($form);
+        self::assertResponseRedirects('/actividades-familias');
+
+        $this->em->clear();
+        $activity = $this->em->getRepository(WeeklyFamilyActivity::class)->findOneBy(['title' => 'Grupos interactivos']);
+        self::assertNotNull($activity);
+        self::assertSame(['2025-2026', Weekday::TUESDAY, 2, 'E1A', 'Matemáticas'], [
+            $activity->getSchoolYear(), $activity->getWeekday(), $activity->getSlotIndex(), $activity->getGroupNames(), $activity->getSubject(),
+        ]);
+
+        $this->client->request('GET', '/actividades-familias?semana=2026-01-12');
+        self::assertSame(['Martes 13/01 10:15–11:10 Grupos interactivos Aula 12'], $this->calendarSessions());
+        $this->client->request('GET', '/actividades-familias?semana=2026-01-19');
+        self::assertSame([], $this->calendarSessions(), 'el martes 20 es fiesta: no hay clase, no hay sesión');
+        $this->client->request('GET', '/actividades-familias');
+        self::assertSelectorTextContains('table', 'Próxima: 13/01, 10:15');
+    }
+
+    /**
+     * Someone else's class cannot be picked: the choices are the teacher's own timetable.
+     */
+    public function testATeacherCannotPickAClassThatIsNotTheirs(): void
+    {
+        $this->teacherWithAClass();
+        $other = $this->user('otra@centro.test');
+        $this->em->flush();
+        self::mockTime('2026-01-12 08:00');
+        $this->client->loginUser($other);
+
+        $this->client->request('GET', '/actividades-familias/nueva-en-clase');
+        self::assertSelectorTextContains('main', 'No tienes clases en las próximas semanas');
+
+        $this->client->request('POST', '/actividades-familias/nueva-en-clase', ['family_activity_form' => [
+            'title' => 'Colada',
+            'classKey' => '2-2',
+            '_token' => $this->mintCsrfToken($this->client, '/actividades-familias', 'family_activity_form'),
+        ]]);
+        self::assertResponseStatusCodeSame(422);
+        self::assertSame(0, $this->em->getRepository(FamilyActivity::class)->count([]));
+    }
+
+    /**
+     * When the timetable no longer has the class (a new import, a change of groups), the activity is not
+     * lost and nobody is offered a session that will not happen: it simply has no more, and the list says so.
+     */
+    public function testAWeeklyActivityWhoseClassLeftTheTimetableHasNoSessions(): void
+    {
+        $teacher = $this->teacherWithAClass();
+        $this->em->flush();
+        self::mockTime('2026-01-12 08:00');
+        $class = self::getContainer()->get(MyClasses::class)->on($teacher, new \DateTimeImmutable('2026-01-13'))[0];
+        $activity = new WeeklyFamilyActivity($teacher, 'Grupos interactivos', $class, new \DateTimeImmutable('2026-01-13'));
+        $this->em->persist($activity);
+        $this->em->flush();
+        $this->em->getConnection()->executeStatement("UPDATE schedule_entry SET group_name = 'E1B'");
+        // The first request shares this entity manager, which still holds the cells read above with
+        // their old group: forget them so the request reads the timetable as it now is.
+        $this->em->clear();
+        $this->client->loginUser($teacher);
+
+        $this->client->request('GET', '/actividades-familias');
+
+        self::assertSame([], $this->calendarSessions());
+        self::assertSelectorTextContains('table', 'Sin sesiones en las próximas semanas');
+    }
+
+    /**
+     * Each week's session has its own places and its own list: the organiser sees who comes that day,
+     * the rest of the staff only how many.
+     */
+    public function testEachSessionCountsItsOwnFamilies(): void
+    {
+        $teacher = $this->teacherWithAClass();
+        $colleague = $this->user('otra@centro.test');
+        $family = (new FamilyVolunteer())->setFullName('Familia Marta')->setEmail('marta@gmail.test');
+        $this->em->persist($family);
+        $this->em->flush();
+        self::mockTime('2026-01-12 08:00');
+        $sessions = self::getContainer()->get(FamilySessions::class);
+        $class = self::getContainer()->get(MyClasses::class)->on($teacher, new \DateTimeImmutable('2026-01-13'))[0];
+        $activity = (new WeeklyFamilyActivity($teacher, 'Grupos interactivos', $class, new \DateTimeImmutable('2026-01-13')))->setFamiliesWanted(3);
+        $this->em->persist($activity);
+        $session = $sessions->sessionOn($activity, new \DateTimeImmutable('2026-01-13'));
+        self::assertNotNull($session);
+        $activity->signUp($session, $family, new \DateTimeImmutable('2026-01-12 08:00'));
+        $this->em->flush();
+
+        $this->client->loginUser($teacher);
+        $this->client->request('GET', '/actividades-familias?semana=2026-01-12');
+        self::assertSelectorTextContains('.family-week', '1 de 3 familias');
+        self::assertSelectorTextContains('.family-week', 'Familia Marta');
+        $this->client->request('GET', '/actividades-familias?semana=2026-01-26');
+        self::assertSelectorTextContains('.family-week', '0 de 3 familias');
+
+        $this->client->loginUser($colleague);
+        $this->client->request('GET', '/actividades-familias?semana=2026-01-12');
+        self::assertSelectorTextContains('.family-week', '1 de 3 familias');
+        self::assertSelectorTextNotContains('.family-week', 'Familia Marta');
     }
 
     /**
@@ -298,16 +482,46 @@ final class FamilyActivityTest extends WebTestCase
 
     /**
      * @param User   $organizer who organises it
-     * @param string $when      a relative date from today, e.g. "+10 days"
+     * @param string $when      a date relative to {@see TODAY}, e.g. "+10 days"
      * @param string $title     what it is
      *
-     * @return FamilyActivity a persisted activity at 10:30 on that day
+     * @return OneOffFamilyActivity a persisted activity at 10:30 on that day
      */
-    private function activity(User $organizer, string $when, string $title = 'Taller de cuentos'): FamilyActivity
+    private function activity(User $organizer, string $when, string $title = 'Taller de cuentos'): OneOffFamilyActivity
     {
-        $activity = new FamilyActivity($organizer, $title, (new \DateTimeImmutable($when))->setTime(10, 30));
+        $activity = new OneOffFamilyActivity($organizer, $title, (new \DateTimeImmutable(self::TODAY))->modify($when)->setTime(10, 30));
         $this->em->persist($activity);
 
         return $activity;
+    }
+
+    /**
+     * @return User a persisted teacher who gives E1A Matemáticas on Tuesdays at the third period (10:15),
+     *              in Aula 12, in the 2025-2026 course (not flushed)
+     */
+    private function teacherWithAClass(): User
+    {
+        $year = $this->courseWithTheCentresFrame($this->em);
+        $teacher = $this->user('profe@centro.test');
+        $this->classCell($this->em, $year, $teacher, Weekday::TUESDAY, 2, 'E1A', 'Aula 12', 'Matemáticas');
+
+        return $teacher;
+    }
+
+    /**
+     * @return list<string> each session of the calendar on screen, as "Día dd/mm time title place"
+     */
+    private function calendarSessions(): array
+    {
+        return $this->client->getCrawler()->filter('.family-week__session')->each(static function (Crawler $session): string {
+            $day = $session->closest('.family-week__day');
+            \assert(null !== $day);
+
+            return trim(preg_replace('/\s+/', ' ', $day->filter('.family-week__date')->text().' '.implode(' ', [
+                $session->filter('.family-week__time')->text(),
+                $session->filter('.family-week__title')->text(),
+                $session->filter('p.muted')->first()->text(),
+            ])) ?? '');
+        });
     }
 }

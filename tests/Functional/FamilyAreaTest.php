@@ -6,19 +6,24 @@ namespace App\Tests\Functional;
 
 use App\Contract\AuditRedacted;
 use App\Entity\AuditLog;
-use App\Entity\FamilyActivity;
+use App\Entity\OneOffFamilyActivity;
+use App\Family\FamilySessions;
 use App\Entity\FamilyAvailability;
 use App\Entity\FamilyVolunteer;
 use App\Entity\Role;
 use App\Entity\User;
+use App\Entity\WeeklyFamilyActivity;
+use App\Agenda\MyClasses;
 use App\Enum\Weekday;
 use App\Service\AppSettings;
+use App\Tests\Support\BuildsTheCentresTimetable;
 use App\Tests\Support\MintsSessionCsrfTokens;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Handler\TestHandler;
 use Monolog\LogRecord;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 use Symfony\Component\DomCrawler\Crawler;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Mime\Email;
@@ -31,7 +36,11 @@ use Symfony\Component\Security\Http\AccessMapInterface;
  */
 final class FamilyAreaTest extends WebTestCase
 {
+    use BuildsTheCentresTimetable;
+    use ClockSensitiveTrait;
     use MintsSessionCsrfTokens;
+
+    private const string TODAY = '2026-01-13';
 
     private KernelBrowser $client;
     private EntityManagerInterface $em;
@@ -42,6 +51,8 @@ final class FamilyAreaTest extends WebTestCase
         $this->client = static::createClient();
         $this->em = self::getContainer()->get(EntityManagerInterface::class);
         self::getContainer()->get(AppSettings::class)->setFamilyActivitiesEnabled(true);
+        // A Tuesday: the dates below, relative to it, fall Monday to Friday whatever day CI runs on.
+        self::mockTime(self::TODAY.' 08:00');
     }
 
     public function testWithTheModuleOffNothingOfTheFamiliesAreaAnswers(): void
@@ -68,8 +79,7 @@ final class FamilyAreaTest extends WebTestCase
     public function testAFamilySignsInWithTheLinkAndSeesWhatIsComing(): void
     {
         $this->family('marta@gmail.test');
-        $this->activity('+10 days', 'Grupos interactivos de 1ºA');
-        $this->activity('-10 days', 'Taller ya celebrado');
+        $coming = $this->activity('+10 days', 'Grupos interactivos de 1ºA');
         $this->em->flush();
 
         $this->client->request('POST', '/familias/entrar', ['email' => 'Marta@Gmail.test ']);
@@ -82,8 +92,9 @@ final class FamilyAreaTest extends WebTestCase
         self::assertResponseRedirects('/familias');
         $this->client->followRedirect();
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('main', 'Grupos interactivos de 1ºA');
-        self::assertSelectorTextNotContains('main', 'Taller ya celebrado');
+        self::assertSelectorExists('.family-week');
+        $this->client->request('GET', $this->weekOf($coming));
+        self::assertSelectorTextContains('.family-week', 'Grupos interactivos de 1ºA');
     }
 
     /**
@@ -322,14 +333,14 @@ final class FamilyAreaTest extends WebTestCase
     public function testAFamilySignsUpAndWithdraws(): void
     {
         $family = $this->family('marta@gmail.test');
-        $this->activity('+10 days', 'Taller de cocina')->setFamiliesWanted(2);
+        $activity = $this->activity('+10 days', 'Taller de cocina')->setFamiliesWanted(2);
         $this->em->flush();
         $this->signInAsFamily($family);
 
-        $this->client->request('GET', '/familias');
+        $this->client->request('GET', $this->weekOf($activity));
         self::assertSelectorTextContains('main', 'Quedan 2');
         $this->client->submitForm('Podemos ir');
-        self::assertResponseRedirects('/familias');
+        self::assertResponseRedirects($this->weekOf($activity));
         $this->client->followRedirect();
         self::assertSelectorTextContains('.flash.success', 'os esperamos en «Taller de cocina»');
         self::assertSelectorTextContains('main', 'Os esperamos');
@@ -337,7 +348,7 @@ final class FamilyAreaTest extends WebTestCase
         self::assertSame(1, $this->signups());
 
         $this->client->submitForm('Ya no podemos ir');
-        self::assertResponseRedirects('/familias');
+        self::assertResponseRedirects($this->weekOf($activity));
         $this->client->followRedirect();
         self::assertSelectorTextContains('main', 'Quedan 2');
         self::assertSame(0, $this->signups());
@@ -352,20 +363,20 @@ final class FamilyAreaTest extends WebTestCase
         $family = $this->family('marta@gmail.test');
         $other = $this->family('otra@gmail.test');
         $activity = $this->activity('+10 days', 'Grupos interactivos')->setFamiliesWanted(1);
-        $activity->signUp($other, new \DateTimeImmutable());
+        $activity->signUp($activity->session(), $other, new \DateTimeImmutable(self::TODAY.' 08:00'));
         $this->em->flush();
         $this->signInAsFamily($family);
 
-        $crawler = $this->client->request('GET', '/familias');
+        $crawler = $this->client->request('GET', $this->weekOf($activity));
         self::assertSelectorTextContains('main', 'Completa');
         self::assertCount(0, $crawler->selectButton('Podemos ir'));
         // Nor who the other family is: only the count is shown.
         self::assertSelectorTextNotContains('main', 'Familia otra');
 
-        $this->client->request('POST', '/familias/actividades/'.$activity->getId().'/apuntarme', [
-            '_token' => $this->mintCsrfToken($this->client, '/familias', 'family_signup'.$activity->getId()),
+        $this->client->request('POST', $this->actionPath($activity, 'apuntarme'), [
+            '_token' => $this->mintCsrfToken($this->client, '/familias', $this->tokenId('family_signup', $activity)),
         ]);
-        self::assertResponseRedirects('/familias');
+        self::assertResponseRedirects($this->weekOf($activity));
         $this->client->followRedirect();
         self::assertSelectorTextContains('.flash.error', 'está completa o ya ha empezado');
         self::assertSame(1, $this->signups());
@@ -378,11 +389,11 @@ final class FamilyAreaTest extends WebTestCase
         $this->em->flush();
         $this->signInAsFamily($family);
 
-        $this->client->request('POST', '/familias/actividades/'.$started->getId().'/apuntarme', [
-            '_token' => $this->mintCsrfToken($this->client, '/familias', 'family_signup'.$started->getId()),
+        $this->client->request('POST', $this->actionPath($started, 'apuntarme'), [
+            '_token' => $this->mintCsrfToken($this->client, '/familias', $this->tokenId('family_signup', $started)),
         ]);
 
-        self::assertResponseRedirects('/familias');
+        self::assertResponseRedirects($this->weekOf($started));
         $this->client->followRedirect();
         self::assertSelectorTextContains('.flash.error', 'está completa o ya ha empezado');
         self::assertSame(0, $this->signups());
@@ -392,15 +403,15 @@ final class FamilyAreaTest extends WebTestCase
     {
         $family = $this->family('marta@gmail.test');
         $started = $this->activity('-1 day', 'Taller ya empezado');
-        $started->signUp($family, new \DateTimeImmutable('-2 days'));
+        $started->signUp($started->session(), $family, new \DateTimeImmutable('2026-01-11 08:00'));
         $this->em->flush();
         $this->signInAsFamily($family);
 
-        $this->client->request('POST', '/familias/actividades/'.$started->getId().'/desapuntarme', [
-            '_token' => $this->mintCsrfToken($this->client, '/familias', 'family_withdraw'.$started->getId()),
+        $this->client->request('POST', $this->actionPath($started, 'desapuntarme'), [
+            '_token' => $this->mintCsrfToken($this->client, '/familias', $this->tokenId('family_withdraw', $started)),
         ]);
 
-        self::assertResponseRedirects('/familias');
+        self::assertResponseRedirects($this->weekOf($started));
         $this->client->followRedirect();
         self::assertSelectorTextContains('.flash.error', 'ya ha empezado: si no podéis venir');
         self::assertSame(1, $this->signups());
@@ -415,11 +426,11 @@ final class FamilyAreaTest extends WebTestCase
         $activity = $this->activity('+10 days', 'Taller de cocina')->setFamiliesWanted(1);
         $this->em->flush();
         $this->signInAsFamily($family);
-        $token = $this->mintCsrfToken($this->client, '/familias', 'family_signup'.$activity->getId());
+        $token = $this->mintCsrfToken($this->client, '/familias', $this->tokenId('family_signup', $activity));
 
         foreach ([1, 2] as $press) {
-            $this->client->request('POST', '/familias/actividades/'.$activity->getId().'/apuntarme', ['_token' => $token]);
-            self::assertResponseRedirects('/familias', null, 'press '.$press);
+            $this->client->request('POST', $this->actionPath($activity, 'apuntarme'), ['_token' => $token]);
+            self::assertResponseRedirects($this->weekOf($activity), null, 'press '.$press);
             $this->client->followRedirect();
             self::assertSelectorExists('.flash.success', 'press '.$press);
         }
@@ -438,7 +449,7 @@ final class FamilyAreaTest extends WebTestCase
         $this->signInAsFamily($family);
         $before = $this->em->getRepository(AuditLog::class)->count([]);
 
-        $this->client->request('GET', '/familias');
+        $this->client->request('GET', $this->weekOf($activity));
         $this->client->submitForm('Podemos ir');
 
         self::assertSame(1, $this->signups());
@@ -452,7 +463,7 @@ final class FamilyAreaTest extends WebTestCase
         $this->em->flush();
         $this->signInAsFamily($family);
 
-        $this->client->request('POST', '/familias/actividades/'.$activity->getId().'/apuntarme', ['_token' => 'falso']);
+        $this->client->request('POST', $this->actionPath($activity, 'apuntarme'), ['_token' => 'falso']);
 
         self::assertResponseStatusCodeSame(403);
         self::assertSame(0, $this->signups());
@@ -464,21 +475,69 @@ final class FamilyAreaTest extends WebTestCase
     public function testOnlyTheOrganiserSeesWhichFamiliesAreComing(): void
     {
         $activity = $this->activity('+10 days', 'Taller de cocina')->setFamiliesWanted(3);
-        $activity->signUp($this->family('marta@gmail.test'), new \DateTimeImmutable());
+        $activity->signUp($activity->session(), $this->family('marta@gmail.test'), new \DateTimeImmutable(self::TODAY.' 08:00'));
         $teacher = $this->user('otro.profe@centro.test');
         $this->em->flush();
         $organizer = $activity->getOrganizer();
         self::assertNotNull($organizer);
 
         $this->client->loginUser($organizer);
-        $this->client->request('GET', '/actividades-familias');
-        self::assertSelectorTextContains('table', '1 de 3');
-        self::assertSelectorTextContains('table', 'Familia marta');
+        $this->client->request('GET', '/actividades-familias?semana='.$activity->getStartAt()->format('Y-m-d'));
+        self::assertSelectorTextContains('.family-week', '1 de 3');
+        self::assertSelectorTextContains('.family-week', 'Familia marta');
 
         $this->client->loginUser($teacher);
-        $this->client->request('GET', '/actividades-familias');
-        self::assertSelectorTextContains('table', '1 de 3');
-        self::assertSelectorTextNotContains('table', 'Familia marta');
+        $this->client->request('GET', '/actividades-familias?semana='.$activity->getStartAt()->format('Y-m-d'));
+        self::assertSelectorTextContains('.family-week', '1 de 3');
+        self::assertSelectorTextNotContains('.family-week', 'Familia marta');
+    }
+
+    /**
+     * A weekly activity in a class: the family sees one session a week and signs up for one day, which
+     * leaves the next week's session as it was.
+     */
+    public function testAFamilySignsUpForOneWeekOfAWeeklyActivity(): void
+    {
+        $family = $this->family('marta@gmail.test');
+        $this->weeklyActivity()->setFamiliesWanted(2);
+        $this->em->flush();
+        self::mockTime('2026-01-12 08:00');
+        $this->signInAsFamily($family);
+
+        $this->client->request('GET', '/familias');
+        self::assertSelectorTextContains('.family-week', 'Martes 13/01');
+        self::assertSelectorTextContains('.family-week', '10:15–11:10');
+        $this->client->submitForm('Podemos ir');
+        self::assertResponseRedirects('/familias?semana=2026-01-12');
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('.flash.success', 'el 13/01');
+        self::assertSelectorTextContains('.family-week', 'Os esperamos');
+
+        $this->client->request('GET', '/familias?semana=2026-01-19');
+        self::assertSelectorTextContains('.family-week', 'Quedan 2');
+        self::assertSelectorTextNotContains('.family-week', 'Os esperamos');
+        self::assertSame(['2026-01-13'], $this->em->getConnection()->fetchFirstColumn('SELECT session_date FROM family_signup'));
+    }
+
+    /**
+     * A day the class is not given has no session: a request for it (a crafted URL, a timetable changed
+     * since the page was opened) is not found, and takes no place.
+     */
+    public function testNoSigningUpForADayTheClassIsNotGiven(): void
+    {
+        $family = $this->family('marta@gmail.test');
+        $activity = $this->weeklyActivity();
+        $this->em->flush();
+        self::mockTime('2026-01-12 08:00');
+        $this->signInAsFamily($family);
+        $wednesday = '2026-01-14';
+
+        $this->client->request('POST', '/familias/actividades/'.$activity->getId().'/'.$wednesday.'/apuntarme', [
+            '_token' => $this->mintCsrfToken($this->client, '/familias', 'family_signup'.$activity->getId().'-'.$wednesday),
+        ]);
+
+        self::assertResponseStatusCodeSame(404);
+        self::assertSame(0, $this->signups());
     }
 
     /**
@@ -488,7 +547,7 @@ final class FamilyAreaTest extends WebTestCase
     {
         $family = $this->family('marta@gmail.test');
         $activity = $this->activity('+10 days', 'Taller de cocina');
-        $activity->signUp($family, new \DateTimeImmutable());
+        $activity->signUp($activity->session(), $family, new \DateTimeImmutable(self::TODAY.' 08:00'));
         $this->em->flush();
         $this->client->loginUser($this->admin());
 
@@ -747,15 +806,64 @@ final class FamilyAreaTest extends WebTestCase
     }
 
     /**
-     * @param string $when  a relative date from today, e.g. "+10 days"
+     * @param string $when  a date relative to {@see TODAY}, e.g. "+10 days"
      * @param string $title what it is
      *
-     * @return FamilyActivity a persisted activity at 10:30 on that day
+     * @return OneOffFamilyActivity a persisted activity at 10:30 on that day
      */
-    private function activity(string $when, string $title): FamilyActivity
+    private function activity(string $when, string $title): OneOffFamilyActivity
     {
         $organizer = $this->user('organiza'.++$this->organizers.'@centro.test');
-        $activity = new FamilyActivity($organizer, $title, new \DateTimeImmutable($when.' 10:30'));
+        $activity = new OneOffFamilyActivity($organizer, $title, (new \DateTimeImmutable(self::TODAY))->modify($when)->setTime(10, 30));
+        $this->em->persist($activity);
+
+        return $activity;
+    }
+
+    /**
+     * @param OneOffFamilyActivity $activity an activity
+     *
+     * @return string the families' calendar on the week of its session
+     */
+    private function weekOf(OneOffFamilyActivity $activity): string
+    {
+        return '/familias?semana='.FamilySessions::mondayOf($activity->getStartAt())->format('Y-m-d');
+    }
+
+    /**
+     * @param OneOffFamilyActivity $activity an activity
+     * @param string               $action   "apuntarme" or "desapuntarme"
+     *
+     * @return string where that action on its session is posted
+     */
+    private function actionPath(OneOffFamilyActivity $activity, string $action): string
+    {
+        return '/familias/actividades/'.$activity->getId().'/'.$activity->getStartAt()->format('Y-m-d').'/'.$action;
+    }
+
+    /**
+     * @param string               $action   "family_signup" or "family_withdraw"
+     * @param OneOffFamilyActivity $activity an activity
+     *
+     * @return string the CSRF token id of that action on its session
+     */
+    private function tokenId(string $action, OneOffFamilyActivity $activity): string
+    {
+        return $action.$activity->getId().'-'.$activity->getStartAt()->format('Y-m-d');
+    }
+
+    /**
+     * @return WeeklyFamilyActivity a persisted weekly activity in a class given on Tuesdays at 10:15, in
+     *                              the 2025-2026 course (flushed, the timetable with it)
+     */
+    private function weeklyActivity(): WeeklyFamilyActivity
+    {
+        $year = $this->courseWithTheCentresFrame($this->em);
+        $teacher = $this->user('profe.clase@centro.test');
+        $this->classCell($this->em, $year, $teacher, Weekday::TUESDAY, 2, 'E1A', 'Aula 12', 'Matemáticas');
+        $this->em->flush();
+        $tuesday = new \DateTimeImmutable('2026-01-13');
+        $activity = new WeeklyFamilyActivity($teacher, 'Grupos interactivos', self::getContainer()->get(MyClasses::class)->on($teacher, $tuesday)[0], $tuesday);
         $this->em->persist($activity);
 
         return $activity;

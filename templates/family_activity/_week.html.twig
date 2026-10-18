@@ -1,0 +1,70 @@
+{#
+   Una semana de sesiones como calendario, de lunes a viernes: lo comparten el espacio de familias y la
+   pantalla del profesorado. `mode` decide lo de cada uno —«family»: plazas y botón de apuntarse; «staff»:
+   cuántas vienen y, a quien organiza, quiénes—. `route` es la ruta de la pantalla, para las flechas.
+#}
+{% set days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'] %}
+{% set thisMonday = now|date_modify('-' ~ (now|date('N', false) - 1) ~ ' days')|date('Y-m-d', false) %}
+<div class="toolbar">
+    <nav class="scope-toggle" aria-label="Semana">
+        <a href="{{ path(route, { semana: monday|date_modify('-7 days')|date('Y-m-d', false) }) }}">← Semana anterior</a>
+        <a href="{{ path(route, { semana: thisMonday }) }}" class="{{ monday|date('Y-m-d', false) == thisMonday ? 'is-active' }}">Esta semana</a>
+        <a href="{{ path(route, { semana: monday|date_modify('+7 days')|date('Y-m-d', false) }) }}">Semana siguiente →</a>
+    </nav>
+</div>
+
+<h2 class="home-section__title">Del {{ monday|date('d/m', false) }} al {{ monday|date_modify('+4 days')|date('d/m/Y', false) }}</h2>
+
+<div class="family-week">
+    {% for date, sessions in week %}
+        <section class="family-week__day" aria-label="{{ days[loop.index0] }} {{ date|date('d/m', false) }}">
+            <h3 class="family-week__date">{{ days[loop.index0] }} <span class="muted">{{ date|date('d/m', false) }}</span></h3>
+            {% for s in sessions %}
+                {% set a = s.activity %}
+                <article class="family-week__session">
+                    <p class="family-week__time mono">{{ s.startsAt|date('H:i', false) }}{% if s.endsAt %}–{{ s.endsAt|date('H:i', false) }}{% endif %}</p>
+                    <p class="family-week__title"><strong>{{ a.title }}</strong></p>
+                    {% if s.place %}<p class="muted">{{ s.place }}</p>{% endif %}
+                    {% if a.description %}<p class="muted family-week__desc">{{ a.description|nl2br }}</p>{% endif %}
+
+                    {% if mode == 'family' %}
+                        {# Sin «Organiza» ni quién más viene: de las otras familias solo se cuentan las plazas. #}
+                        {% set left = s.placesLeft %}
+                        <p class="family-week__places">{% if left is null %}Sin límite{% elseif left == 0 %}Completa{% else %}{{ left == 1 ? 'Queda 1' : 'Quedan ' ~ left }}{% endif %}</p>
+                        <div class="family-week__actions">
+                            {% if s.isSignedUpBy(app.user) %}
+                                <span class="badge badge--success">Os esperamos</span>
+                                {% if s.isOpenAt(now) %}
+                                    <form method="post" action="{{ path('family_withdraw', { id: a.id, fecha: date }) }}">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('family_withdraw' ~ a.id ~ '-' ~ date) }}">
+                                        <button type="submit" class="btn secondary btn-sm">Ya no podemos ir</button>
+                                    </form>
+                                {% endif %}
+                            {% elseif s.acceptsSignupsAt(now) %}
+                                <form method="post" action="{{ path('family_signup', { id: a.id, fecha: date }) }}">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('family_signup' ~ a.id ~ '-' ~ date) }}">
+                                    <button type="submit" class="btn btn-sm">Podemos ir</button>
+                                </form>
+                            {% elseif not s.isOpenAt(now) %}
+                                <span class="muted">Ya ha empezado</span>
+                            {% endif %}
+                        </div>
+                    {% else %}
+                        {% set coming = s.signups|length %}
+                        {% set manages = a.isOrganizedBy(app.user) or is_granted('ROLE_ADMIN') %}
+                        <p class="family-week__places">
+                            {% if a.familiesWanted %}{{ coming }} de {{ a.familiesWanted }} familias{% else %}{{ coming }} {{ coming == 1 ? 'familia' : 'familias' }} (las que puedan){% endif %}
+                        </p>
+                        {# Los nombres, solo a quien los necesita para organizarse: el resto del claustro ve la cuenta. #}
+                        {% if coming > 0 and manages %}
+                            <p class="muted">{{ s.signups|map(su => su.family.fullName)|join(', ') }}</p>
+                        {% endif %}
+                        <p class="muted">{{ a.organizer ? a.organizer.fullName : 'Sin organizador' }}{% if manages %} · <a href="{{ path('family_activity_edit', { id: a.id }) }}">Editar</a>{% endif %}</p>
+                    {% endif %}
+                </article>
+            {% else %}
+                <p class="muted family-week__empty">Nada</p>
+            {% endfor %}
+        </section>
+    {% endfor %}
+</div>

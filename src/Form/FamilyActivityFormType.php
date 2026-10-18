@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Form;
 
 use Symfony\Component\Form\AbstractType;
+use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
 use Symfony\Component\Form\Extension\Core\Type\IntegerType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
@@ -14,8 +15,10 @@ use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 
 /**
- * Create/edit form for an activity open to families. Native time inputs, for the reasons given in
- * {@see PersonalEventFormType}, including why `input` is 'datetime_immutable' and not 'string'.
+ * Create/edit form for an activity open to families, of either kind. With `class_choices` it is a weekly
+ * one, held in the class picked from those choices; without, a one-off with a day and times of its own.
+ * Native time inputs, for the reasons given in {@see PersonalEventFormType}, including why `input` is
+ * 'datetime_immutable' and not 'string'.
  *
  * @extends AbstractType<FamilyActivityFormData>
  */
@@ -37,7 +40,29 @@ final class FamilyActivityFormType extends AbstractType
                 'required' => false,
                 'help' => 'Qué se hace y qué tienen que saber las familias que vengan.',
             ])
-            ->add('place', TextType::class, ['label' => 'Lugar', 'required' => false])
+            ->add('place', TextType::class, [
+                'label' => 'Lugar',
+                'required' => false,
+                'help' => null !== $options['class_choices'] ? 'Déjalo vacío para que salga el aula de la clase.' : null,
+            ])
+            ->add('familiesWanted', IntegerType::class, [
+                'label' => 'Familias que hacen falta',
+                'required' => false,
+                'attr' => ['min' => 1, 'max' => 100],
+                'help' => null !== $options['class_choices'] ? 'En cada sesión. Déjalo vacío si cualquier número ayuda.' : 'Déjalo vacío si cualquier número ayuda.',
+            ]);
+
+        if (null !== $options['class_choices']) {
+            $builder->add('classKey', ChoiceType::class, [
+                'label' => 'En cuál de tus clases',
+                'choices' => $options['class_choices'],
+                'placeholder' => 'Elige una clase',
+                'help' => 'Habrá sesión cada semana que tengas esa clase: los festivos y las vacaciones no cuentan.',
+            ]);
+
+            return;
+        }
+        $builder
             ->add('day', DateType::class, [
                 'label' => 'Día',
                 'widget' => 'single_text',
@@ -49,17 +74,16 @@ final class FamilyActivityFormType extends AbstractType
                 ...self::TIME_FIELD,
                 'required' => false,
                 'help' => 'Opcional, si tiene una hora de fin.',
-            ])
-            ->add('familiesWanted', IntegerType::class, [
-                'label' => 'Familias que hacen falta',
-                'required' => false,
-                'attr' => ['min' => 1, 'max' => 100],
-                'help' => 'Déjalo vacío si cualquier número ayuda.',
             ]);
     }
 
     public function configureOptions(OptionsResolver $resolver): void
     {
-        $resolver->setDefaults(['data_class' => FamilyActivityFormData::class]);
+        $resolver->setDefaults([
+            'data_class' => FamilyActivityFormData::class,
+            // Label => "weekday-period" key of the teacher's classes, for a weekly activity; null for a one-off.
+            'class_choices' => null,
+        ]);
+        $resolver->setAllowedTypes('class_choices', ['null', 'array']);
     }
 }

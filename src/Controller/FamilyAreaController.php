@@ -8,13 +8,15 @@ use App\Entity\FamilyActivity;
 use App\Entity\FamilyAvailability;
 use App\Entity\FamilyVolunteer;
 use App\Enum\Weekday;
+use App\Family\FamilySession;
+use App\Family\FamilySessions;
 use App\Form\FamilyAvailabilityDay;
 use App\Form\FamilyAvailabilityFormType;
-use App\Repository\FamilyActivityRepository;
 use App\Repository\FamilyAvailabilityRepository;
 use App\Repository\FamilyVolunteerRepository;
 use App\Security\LoginLinkMailer;
 use App\Security\Voter\ModuleVoter;
+use App\Util\CalendarDate;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Clock\ClockInterface;
@@ -44,27 +46,32 @@ final class FamilyAreaController extends AbstractController
 {
     public function __construct(
         private readonly ClockInterface $clock,
+        private readonly FamilySessions $sessions,
         #[Autowire(service: 'limiter.magic_link')]
         private readonly RateLimiterFactory $magicLinkLimiter,
     ) {
     }
 
     /**
-     * The activities still to come, each with a button to sign up for it or to withdraw.
+     * A week of sessions as a calendar, each with a button to sign up for it or to withdraw. Over the
+     * weekend it opens on the coming week: the one just gone has nothing left to sign up for.
      */
     #[Route('', name: 'family_home', methods: ['GET'])]
-    public function home(FamilyActivityRepository $activities): Response
+    public function home(Request $request): Response
     {
         $now = $this->clock->now();
+        $asked = CalendarDate::parse($request->query->getString('semana'), $now->getTimezone());
+        $monday = FamilySessions::mondayOf($asked ?? ((int) $now->format('N') > 5 ? $now->modify('+2 days') : $now));
 
         return $this->render('family_area/home.html.twig', [
-            'activities' => $activities->findUpcoming($now),
+            'monday' => $monday,
+            'week' => $this->sessions->week($monday),
             'now' => $now,
         ]);
     }
 
     /**
-     * Signs the family up for an activity. Only before it starts and while there is room; a second press
+     * Signs the family up for one session. Only before it starts and while there is room; a second press
      * changes nothing.
      *
      * The same family pressing at once from two devices (two sessions, so not serialised by the session
@@ -72,43 +79,43 @@ final class FamilyAreaController extends AbstractController
      * is what was asked, so it is answered as done. The failed flush closes the entity manager, so nothing
      * else is done with it but redirect.
      */
-    #[Route('/actividades/{id}/apuntarme', name: 'family_signup', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function signUp(FamilyActivity $activity, Request $request, #[CurrentUser] FamilyVolunteer $family, EntityManagerInterface $em): Response
+    #[Route('/actividades/{id}/{fecha}/apuntarme', name: 'family_signup', requirements: ['id' => '\d+', 'fecha' => '\d{4}-\d{2}-\d{2}'], methods: ['POST'])]
+    public function signUp(FamilyActivity $activity, string $fecha, Request $request, #[CurrentUser] FamilyVolunteer $family, EntityManagerInterface $em): Response
     {
-        $this->denyUnlessValidToken('family_signup', $activity, $request);
+        $session = $this->sessionOrNotFound($activity, $fecha, 'family_signup', $request);
 
         try {
-            $activity->signUp($family, $this->clock->now());
+            $activity->signUp($session, $family, $this->clock->now());
             $em->flush();
         } catch (UniqueConstraintViolationException) {
             // Signed up from another device meanwhile: done all the same.
         } catch (\DomainException) {
-            $this->addFlash('error', 'Ya no se puede apuntar nadie más a «'.$activity->getTitle().'»: está completa o ya ha empezado.');
+            $this->addFlash('error', 'Ya no se puede apuntar nadie más a «'.$activity->getTitle().'» ese día: está completa o ya ha empezado.');
 
-            return $this->redirectToRoute('family_home');
+            return $this->backToWeekOf($session);
         }
-        $this->addFlash('success', 'Hecho: os esperamos en «'.$activity->getTitle().'».');
+        $this->addFlash('success', 'Hecho: os esperamos en «'.$activity->getTitle().'» el '.$session->day->format('d/m').'.');
 
-        return $this->redirectToRoute('family_home');
+        return $this->backToWeekOf($session);
     }
 
     /**
-     * Takes the family off an activity it can no longer come to. Only before it starts.
+     * Takes the family off a session it can no longer come to. Only before it starts.
      */
-    #[Route('/actividades/{id}/desapuntarme', name: 'family_withdraw', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function withdraw(FamilyActivity $activity, Request $request, #[CurrentUser] FamilyVolunteer $family, EntityManagerInterface $em): Response
+    #[Route('/actividades/{id}/{fecha}/desapuntarme', name: 'family_withdraw', requirements: ['id' => '\d+', 'fecha' => '\d{4}-\d{2}-\d{2}'], methods: ['POST'])]
+    public function withdraw(FamilyActivity $activity, string $fecha, Request $request, #[CurrentUser] FamilyVolunteer $family, EntityManagerInterface $em): Response
     {
-        $this->denyUnlessValidToken('family_withdraw', $activity, $request);
+        $session = $this->sessionOrNotFound($activity, $fecha, 'family_withdraw', $request);
 
         try {
-            $activity->withdraw($family, $this->clock->now());
+            $activity->withdraw($session, $family, $this->clock->now());
             $em->flush();
-            $this->addFlash('success', 'Hecho: ya no contamos con vosotros en «'.$activity->getTitle().'».');
+            $this->addFlash('success', 'Hecho: ya no contamos con vosotros en «'.$activity->getTitle().'» el '.$session->day->format('d/m').'.');
         } catch (\DomainException) {
             $this->addFlash('error', '«'.$activity->getTitle().'» ya ha empezado: si no podéis venir, avisad al centro.');
         }
 
-        return $this->redirectToRoute('family_home');
+        return $this->backToWeekOf($session);
     }
 
     /**
@@ -235,16 +242,37 @@ final class FamilyAreaController extends AbstractController
     }
 
     /**
-     * Denies the request unless it carries the token of that action on that activity.
+     * The session acted on, after checking the request carries the token of that action on that session.
+     * A day the activity does not take place is not found: a family can only come to a real session.
      *
+     * @param FamilyActivity $activity the activity
+     * @param string         $fecha    the day of the session, "Y-m-d"
      * @param string         $action   the CSRF token id prefix, the route name
-     * @param FamilyActivity $activity the activity acted on
      * @param Request        $request  the current request
+     *
+     * @return FamilySession the session
      */
-    private function denyUnlessValidToken(string $action, FamilyActivity $activity, Request $request): void
+    private function sessionOrNotFound(FamilyActivity $activity, string $fecha, string $action, Request $request): FamilySession
     {
-        if (!$this->isCsrfTokenValid($action.$activity->getId(), (string) $request->request->get('_token'))) {
+        if (!$this->isCsrfTokenValid($action.$activity->getId().'-'.$fecha, (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
+        $day = CalendarDate::parse($fecha, $this->clock->now()->getTimezone());
+        $session = null !== $day ? $this->sessions->sessionOn($activity, $day) : null;
+        if (null === $session) {
+            throw $this->createNotFoundException('Esa actividad no tiene sesión ese día.');
+        }
+
+        return $session;
+    }
+
+    /**
+     * @param FamilySession $session the session just acted on
+     *
+     * @return Response a redirect to the calendar on the week of that session
+     */
+    private function backToWeekOf(FamilySession $session): Response
+    {
+        return $this->redirectToRoute('family_home', ['semana' => FamilySessions::mondayOf($session->day)->format('Y-m-d')]);
     }
 }
