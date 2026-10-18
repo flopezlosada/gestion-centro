@@ -1,0 +1,13 @@
+{# Los avisos de una acción recién hecha; los comparten el área del personal y el espacio de familias. #}
+{% for message in app.flashes('success') %}
+    <div class="flash success">{{ message }}</div>
+{% endfor %}
+{# 'warning' = la acción se hizo, pero con una salvedad. Se pintaba en ninguna parte hasta
+   ahora, así que avisos ya existentes (un documento de tarea que no se pudo subir, un
+   import con profesores sin emparejar) se perdían en silencio. #}
+{% for message in app.flashes('warning') %}
+    <div class="flash warning" role="alert">{{ message }}</div>
+{% endfor %}
+{% for message in app.flashes('error') %}
+    <div class="flash error">{{ message }}</div>
+{% endfor %}

@@ -8,12 +8,11 @@ use App\Entity\FamilyActivity;
 use App\Entity\Role;
 use App\Entity\User;
 use App\Service\AppSettings;
+use App\Tests\Support\MintsSessionCsrfTokens;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\RequestStack;
-use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Symfony\Component\Security\Http\AccessMapInterface;
 
 /**
@@ -23,6 +22,8 @@ use Symfony\Component\Security\Http\AccessMapInterface;
  */
 final class FamilyActivityTest extends WebTestCase
 {
+    use MintsSessionCsrfTokens;
+
     private KernelBrowser $client;
     private EntityManagerInterface $em;
 
@@ -171,7 +172,7 @@ final class FamilyActivityTest extends WebTestCase
 
         // Ni borrarla, aunque el envío lleve un token válido.
         $this->client->request('POST', '/actividades-familias/'.$activity->getId().'/borrar', [
-            '_token' => $this->csrfToken('family_activity_delete'.$activity->getId()),
+            '_token' => $this->mintCsrfToken($this->client, '/actividades-familias', 'family_activity_delete'.$activity->getId()),
         ]);
         self::assertResponseStatusCodeSame(403);
         $this->em->clear();
@@ -280,31 +281,6 @@ final class FamilyActivityTest extends WebTestCase
         $this->client->request('GET', '/actividades-familias?ver=pasadas');
         self::assertSelectorTextContains('table', 'Taller que ya pasó');
         self::assertSelectorTextNotContains('table', 'Taller que viene');
-    }
-
-    /**
-     * A CSRF token valid in the logged-in person's own session, for an action whose form that person is
-     * never shown. Without it a refused request would be refused for the token, not for who sends it,
-     * and the test would pass whatever the authorisation check did. Tokens live in the session, so it
-     * is minted against that session and saved back for the next request to find.
-     *
-     * @param string $id the token id
-     *
-     * @return string the token value
-     */
-    private function csrfToken(string $id): string
-    {
-        $this->client->request('GET', '/actividades-familias');
-        $session = $this->client->getRequest()->getSession();
-        $request = new Request();
-        $request->setSession($session);
-        $requestStack = self::getContainer()->get(RequestStack::class);
-        $requestStack->push($request);
-        $token = self::getContainer()->get(CsrfTokenManagerInterface::class)->getToken($id)->getValue();
-        $requestStack->pop();
-        $session->save();
-
-        return $token;
     }
 
     /**
