@@ -124,7 +124,7 @@ final class FamilyActivityController extends AbstractController
             return $this->redirectToRoute('family_activity_index');
         }
 
-        return $this->render('family_activity/new.html.twig', ['form' => $form, 'weekly' => true, 'hasClasses' => [] !== $classes]);
+        return $this->render('family_activity/new.html.twig', ['form' => $form, 'weekly' => true, 'hasClasses' => [] !== $classes, 'classGrid' => $this->classGrid($classes)]);
     }
 
     /**
@@ -194,7 +194,7 @@ final class FamilyActivityController extends AbstractController
             if ($data->classKey !== $current && isset($classes[$data->classKey])) {
                 $activity->moveTo($classes[$data->classKey]['class'], $classes[$data->classKey]['day']);
             }
-        });
+        }, ['classGrid' => $this->classGrid($classes)]);
     }
 
     /**
@@ -205,10 +205,11 @@ final class FamilyActivityController extends AbstractController
      * @param Request                $request       the current request
      * @param EntityManagerInterface $entityManager the entity manager
      * @param callable(): void       $apply         copies the validated data onto the activity
+     * @param array<string, mixed>   $view          what else the form needs to be drawn
      *
      * @return Response the form, or a redirect once saved
      */
-    private function handleEdit(FamilyActivity $activity, FormInterface $form, Request $request, EntityManagerInterface $entityManager, callable $apply): Response
+    private function handleEdit(FamilyActivity $activity, FormInterface $form, Request $request, EntityManagerInterface $entityManager, callable $apply, array $view = []): Response
     {
         $form->handleRequest($request);
         if ($form->isSubmitted() && $form->isValid()) {
@@ -225,7 +226,39 @@ final class FamilyActivityController extends AbstractController
             'form' => $form,
             'activity' => $activity,
             'comingFromToday' => \count(array_filter($activity->getSignups(), static fn (FamilySignup $s): bool => $s->getSessionDate() >= $today)),
+            ...$view,
         ]);
+    }
+
+    /**
+     * The teacher's classes laid out as their timetable, for picking one: a row per period, a column per
+     * school day, each class under its "weekday-period" key.
+     *
+     * @param array<string, array{day: \DateTimeImmutable, class: ClassSession}> $classes from {@see FamilySessions::classesOf()}
+     *
+     * @return array{days: array<int, string>, rows: list<array{period: string, times: string, cells: array<int, array{key: string, groups: string, subject: string}>}>}
+     *               the day names by ISO weekday, and the periods earliest first
+     */
+    private function classGrid(array $classes): array
+    {
+        $rows = [];
+        foreach ($classes as $key => ['day' => $day, 'class' => $class]) {
+            $rows[$class->slotIndex] ??= [
+                'period' => $class->ordinal.'ª',
+                'times' => null !== $class->startsAt && null !== $class->endsAt ? $class->startsAt->format('H:i').'–'.$class->endsAt->format('H:i') : '',
+                'cells' => [],
+            ];
+            $rows[$class->slotIndex]['cells'][(int) $day->format('N')] = ['key' => (string) $key, 'groups' => $class->groupNames(), 'subject' => $class->subject()];
+        }
+        ksort($rows);
+
+        return [
+            'days' => array_combine(
+                array_map(static fn (Weekday $w): int => $w->value, Weekday::schoolWeek()),
+                array_map(static fn (Weekday $w): string => $w->label(), Weekday::schoolWeek()),
+            ),
+            'rows' => array_values($rows),
+        ];
     }
 
     /**

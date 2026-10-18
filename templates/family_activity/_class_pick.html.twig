@@ -1,0 +1,50 @@
+{#
+   Las clases del profesor dibujadas como su horario (horas en filas, días en columnas) para elegir una
+   tocándola: un desplegable de veinte «Martes · 3ª (10:15–11:10) · 1ºA · Matemáticas» no se lee como
+   uno piensa su semana. Cada clase es un radio de verdad, sin JS; la casilla elegida la marca el CSS.
+   La etiqueta completa va oculta para el lector de pantalla, que no ve la cabecera de la columna.
+   Al editar, la clase de la actividad que ya no está en el horario no tiene casilla: sale debajo.
+#}
+{% set radios = {} %}
+{% for radio in field %}{% set radios = radios|merge({ (radio.vars.value): radio }) %}{% endfor %}
+<fieldset class="form-row class-pick">
+    <legend class="class-pick__legend">{{ field.vars.label }}</legend>
+    {% if field.vars.help %}<p class="help">{{ field.vars.help }}</p>{% endif %}
+    {{ form_errors(field) }}
+    <div class="class-pick__scroll">
+        <table class="class-pick__grid">
+            <thead>
+                <tr>
+                    <th scope="col"><span class="visually-hidden">Hora</span></th>
+                    {% for name in grid.days %}<th scope="col">{{ name }}</th>{% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in grid.rows %}
+                    <tr>
+                        <th scope="row">{{ row.period }}{% if row.times %}<span class="class-pick__times">{{ row.times }}</span>{% endif %}</th>
+                        {% for weekday, name in grid.days %}
+                            {% set cell = row.cells[weekday] ?? null %}
+                            <td>
+                                {% if cell and radios[cell.key] is defined %}
+                                    {% set radio = radios[cell.key] %}
+                                    <label class="class-pick__cell">
+                                        {{ form_widget(radio, { attr: { class: 'class-pick__radio' } }) }}
+                                        <span class="visually-hidden">{{ radio.vars.label }}</span>
+                                        <span class="class-pick__groups" aria-hidden="true">{{ cell.groups }}</span>
+                                        <span class="class-pick__subject" aria-hidden="true">{{ cell.subject }}</span>
+                                    </label>
+                                {% endif %}
+                            </td>
+                        {% endfor %}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% for radio in field %}
+        {% if not radio.rendered %}
+            <label class="class-pick__gone">{{ form_widget(radio) }} {{ radio.vars.label }}</label>
+        {% endif %}
+    {% endfor %}
+</fieldset>

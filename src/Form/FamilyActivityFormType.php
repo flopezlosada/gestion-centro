@@ -40,11 +40,6 @@ final class FamilyActivityFormType extends AbstractType
                 'required' => false,
                 'help' => 'Qué se hace y qué tienen que saber las familias que vengan.',
             ])
-            ->add('place', TextType::class, [
-                'label' => 'Lugar',
-                'required' => false,
-                'help' => null !== $options['class_choices'] ? 'Déjalo vacío para que salga el aula de la clase.' : null,
-            ])
             ->add('familiesWanted', IntegerType::class, [
                 'label' => 'Familias que hacen falta',
                 'required' => false,
@@ -53,16 +48,18 @@ final class FamilyActivityFormType extends AbstractType
             ]);
 
         if (null !== $options['class_choices']) {
+            // Radios, laid out by the template as the teacher's timetable; the class's own room is the place.
             $builder->add('classKey', ChoiceType::class, [
                 'label' => 'En cuál de tus clases',
                 'choices' => $options['class_choices'],
-                'placeholder' => 'Elige una clase',
-                'help' => 'Habrá sesión cada semana que tengas esa clase: los festivos y las vacaciones no cuentan.',
+                'expanded' => true,
+                'help' => 'Toca la clase. Habrá sesión cada semana que la tengas: los festivos y las vacaciones no cuentan.',
             ]);
 
             return;
         }
         $builder
+            ->add('place', TextType::class, ['label' => 'Lugar', 'required' => false])
             ->add('day', DateType::class, [
                 'label' => 'Día',
                 'widget' => 'single_text',
