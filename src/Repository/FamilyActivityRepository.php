@@ -54,13 +54,16 @@ class FamilyActivityRepository extends ServiceEntityRepository
     }
 
     /**
-     * The base of both lists. The organiser is printed on every row: fetch-joined to avoid an N+1.
+     * The base of both lists. The organiser and the families coming are printed on every row:
+     * fetch-joined to avoid an N+1.
      *
      * @return QueryBuilder the query, without filter or order
      */
     private function listQuery(): QueryBuilder
     {
         return $this->createQueryBuilder('a')
-            ->leftJoin('a.organizer', 'organizer')->addSelect('organizer');
+            ->leftJoin('a.organizer', 'organizer')->addSelect('organizer')
+            ->leftJoin('a.signups', 'signup')->addSelect('signup')
+            ->leftJoin('signup.family', 'family')->addSelect('family');
     }
 }

@@ -41,6 +41,7 @@
                 </thead>
                 <tbody>
                     {% for a in activities %}
+                        {% set manages = a.isOrganizedBy(app.user) or is_granted('ROLE_ADMIN') %}
                         <tr>
                             <td>
                                 <time datetime="{{ a.startAt|date('c', false) }}">{{ a.startAt|date('d/m/Y', false) }}</time><br>
@@ -51,10 +52,17 @@
                                 {% if a.description %}<br><span class="muted">{{ a.description|nl2br }}</span>{% endif %}
                             </td>
                             <td>{{ a.place ?? '—' }}</td>
-                            <td>{{ a.familiesWanted ?? 'Las que puedan' }}</td>
+                            <td>
+                                {% set coming = a.signups|length %}
+                                {{ coming }}{% if a.familiesWanted %} de {{ a.familiesWanted }}{% else %} (las que puedan){% endif %}
+                                {# Los nombres, solo a quien los necesita para organizarse: el resto del claustro ve la cuenta. #}
+                                {% if coming > 0 and manages %}
+                                    <br><span class="muted">{{ a.signups|map(s => s.family.fullName)|join(', ') }}</span>
+                                {% endif %}
+                            </td>
                             <td>{{ a.organizer ? a.organizer.fullName : 'Nadie (ya no está en el centro)' }}</td>
                             <td class="row-actions">
-                                {% if a.isOrganizedBy(app.user) or is_granted('ROLE_ADMIN') %}
+                                {% if manages %}
                                     <a href="{{ path('family_activity_edit', { id: a.id }) }}">Editar</a>
                                 {% endif %}
                             </td>

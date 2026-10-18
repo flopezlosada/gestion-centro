@@ -6,6 +6,8 @@ namespace App\Entity;
 
 use App\Contract\Auditable;
 use App\Repository\FamilyActivityRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -14,8 +16,8 @@ use Symfony\Component\Validator\Constraints as Assert;
  * An activity of the centre open to families taking part (interactive groups, workshops, complementary
  * activities…), published by the teacher who organises it.
  *
- * It holds no family data on purpose: who comes is a separate concern, so the activities can be planned
- * and listed before any family has an account.
+ * Who comes is kept apart, in {@see FamilySignup}, so the activities can be planned and listed before
+ * any family has an account; the signups are changed only through {@see signUp()} and {@see withdraw()}.
  */
 #[ORM\Entity(repositoryClass: FamilyActivityRepository::class)]
 #[ORM\Table(name: 'family_activity')]
@@ -67,6 +69,16 @@ class FamilyActivity implements Auditable
     private \DateTimeImmutable $createdAt;
 
     /**
+     * The families coming. Removing one from here deletes it (orphanRemoval); removing the activity
+     * deletes them all in the database (ON DELETE CASCADE).
+     *
+     * @var Collection<int, FamilySignup>
+     */
+    #[ORM\OneToMany(targetEntity: FamilySignup::class, mappedBy: 'activity', cascade: ['persist'], orphanRemoval: true)]
+    #[ORM\OrderBy(['createdAt' => 'ASC', 'id' => 'ASC'])]
+    private Collection $signups;
+
+    /**
      * @param User               $organizer who publishes it
      * @param string             $title     what it is
      * @param \DateTimeImmutable $startAt   when it starts
@@ -77,6 +89,7 @@ class FamilyActivity implements Auditable
         $this->title = $title;
         $this->startAt = $startAt;
         $this->createdAt = new \DateTimeImmutable();
+        $this->signups = new ArrayCollection();
     }
 
     /**
@@ -220,5 +233,112 @@ class FamilyActivity implements Auditable
     public function getCreatedAt(): \DateTimeImmutable
     {
         return $this->createdAt;
+    }
+
+    /**
+     * @return list<FamilySignup> the families coming, in the order they signed up
+     */
+    public function getSignups(): array
+    {
+        return array_values($this->signups->toArray());
+    }
+
+    /**
+     * Whether the given family has said it will come.
+     *
+     * @param FamilyVolunteer $family the family to check
+     *
+     * @return bool true if it is signed up
+     */
+    public function isSignedUpBy(FamilyVolunteer $family): bool
+    {
+        return null !== $this->signupOf($family);
+    }
+
+    /**
+     * How many more families may sign up.
+     *
+     * @return int|null the places left (0 once full, or fuller after the number was lowered), or null when
+     *                  any number helps
+     */
+    public function placesLeft(): ?int
+    {
+        return null === $this->familiesWanted ? null : max(0, $this->familiesWanted - $this->signups->count());
+    }
+
+    /**
+     * Whether signing up or withdrawing is still possible: only before it starts, so what happened stays
+     * as it was.
+     *
+     * @param \DateTimeImmutable $now the current instant
+     *
+     * @return bool true if it has not started yet
+     */
+    public function isOpenAt(\DateTimeImmutable $now): bool
+    {
+        return $now < $this->startAt;
+    }
+
+    /**
+     * Whether a family not yet signed up could sign up now: not started and not full.
+     *
+     * @param \DateTimeImmutable $now the current instant
+     *
+     * @return bool true if there is room and time
+     */
+    public function acceptsSignupsAt(\DateTimeImmutable $now): bool
+    {
+        return $this->isOpenAt($now) && 0 !== $this->placesLeft();
+    }
+
+    /**
+     * Signs a family up — the only way a {@see FamilySignup} is created. Signing up twice changes nothing.
+     *
+     * Two families taking the last place at the same instant may both get it: the count is read without a
+     * lock. Accepted: a volunteer more is no harm, and the organiser sees who comes.
+     *
+     * @param FamilyVolunteer    $family who comes
+     * @param \DateTimeImmutable $now    the current instant
+     *
+     * @throws \DomainException if it has started or is full
+     */
+    public function signUp(FamilyVolunteer $family, \DateTimeImmutable $now): void
+    {
+        if ($this->isSignedUpBy($family)) {
+            return;
+        }
+        if (!$this->acceptsSignupsAt($now)) {
+            throw new \DomainException('The activity has started or is full.');
+        }
+        $this->signups->add(new FamilySignup($this, $family, $now));
+    }
+
+    /**
+     * Takes a family off the list. Withdrawing when not signed up changes nothing.
+     *
+     * @param FamilyVolunteer    $family who no longer comes
+     * @param \DateTimeImmutable $now    the current instant
+     *
+     * @throws \DomainException if it has started
+     */
+    public function withdraw(FamilyVolunteer $family, \DateTimeImmutable $now): void
+    {
+        if (!$this->isOpenAt($now)) {
+            throw new \DomainException('The activity has started.');
+        }
+        $signup = $this->signupOf($family);
+        if (null !== $signup) {
+            $this->signups->removeElement($signup);
+        }
+    }
+
+    /**
+     * @param FamilyVolunteer $family the family
+     *
+     * @return FamilySignup|null its signup, or null if it is not coming
+     */
+    private function signupOf(FamilyVolunteer $family): ?FamilySignup
+    {
+        return $this->signups->findFirst(static fn (int $key, FamilySignup $s): bool => $s->getFamily() === $family);
     }
 }

@@ -11,6 +11,7 @@ use App\Entity\FamilyVolunteer;
 use App\Entity\Role;
 use App\Entity\User;
 use App\Service\AppSettings;
+use App\Tests\Support\MintsSessionCsrfTokens;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Handler\TestHandler;
 use Monolog\LogRecord;
@@ -27,6 +28,8 @@ use Symfony\Component\Security\Http\AccessMapInterface;
  */
 final class FamilyAreaTest extends WebTestCase
 {
+    use MintsSessionCsrfTokens;
+
     private KernelBrowser $client;
     private EntityManagerInterface $em;
     private int $organizers = 0;
@@ -313,6 +316,187 @@ final class FamilyAreaTest extends WebTestCase
         self::assertContains('familia #'.$family->getId(), array_map(static fn (AuditLog $e): ?string => $e->getActor(), $entries));
     }
 
+    public function testAFamilySignsUpAndWithdraws(): void
+    {
+        $family = $this->family('marta@gmail.test');
+        $this->activity('+10 days', 'Taller de cocina')->setFamiliesWanted(2);
+        $this->em->flush();
+        $this->signInAsFamily($family);
+
+        $this->client->request('GET', '/familias');
+        self::assertSelectorTextContains('main', 'Quedan 2');
+        $this->client->submitForm('Podemos ir');
+        self::assertResponseRedirects('/familias');
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('.flash.success', 'os esperamos en «Taller de cocina»');
+        self::assertSelectorTextContains('main', 'Os esperamos');
+        self::assertSelectorTextContains('main', 'Queda 1');
+        self::assertSame(1, $this->signups());
+
+        $this->client->submitForm('Ya no podemos ir');
+        self::assertResponseRedirects('/familias');
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('main', 'Quedan 2');
+        self::assertSame(0, $this->signups());
+    }
+
+    /**
+     * A full activity offers no button, and a request sent anyway (an old page, a second tab) is refused
+     * with the reason instead of taking a place that is not there.
+     */
+    public function testAFullActivityTakesNoMoreFamilies(): void
+    {
+        $family = $this->family('marta@gmail.test');
+        $other = $this->family('otra@gmail.test');
+        $activity = $this->activity('+10 days', 'Grupos interactivos')->setFamiliesWanted(1);
+        $activity->signUp($other, new \DateTimeImmutable());
+        $this->em->flush();
+        $this->signInAsFamily($family);
+
+        $crawler = $this->client->request('GET', '/familias');
+        self::assertSelectorTextContains('main', 'Completa');
+        self::assertCount(0, $crawler->selectButton('Podemos ir'));
+        // Nor who the other family is: only the count is shown.
+        self::assertSelectorTextNotContains('main', 'Familia otra');
+
+        $this->client->request('POST', '/familias/actividades/'.$activity->getId().'/apuntarme', [
+            '_token' => $this->mintCsrfToken($this->client, '/familias', 'family_signup'.$activity->getId()),
+        ]);
+        self::assertResponseRedirects('/familias');
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('.flash.error', 'está completa o ya ha empezado');
+        self::assertSame(1, $this->signups());
+    }
+
+    public function testNoSigningUpOnceItHasStarted(): void
+    {
+        $family = $this->family('marta@gmail.test');
+        $started = $this->activity('-1 day', 'Taller ya empezado');
+        $this->em->flush();
+        $this->signInAsFamily($family);
+
+        $this->client->request('POST', '/familias/actividades/'.$started->getId().'/apuntarme', [
+            '_token' => $this->mintCsrfToken($this->client, '/familias', 'family_signup'.$started->getId()),
+        ]);
+
+        self::assertResponseRedirects('/familias');
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('.flash.error', 'está completa o ya ha empezado');
+        self::assertSame(0, $this->signups());
+    }
+
+    public function testNoWithdrawingOnceItHasStarted(): void
+    {
+        $family = $this->family('marta@gmail.test');
+        $started = $this->activity('-1 day', 'Taller ya empezado');
+        $started->signUp($family, new \DateTimeImmutable('-2 days'));
+        $this->em->flush();
+        $this->signInAsFamily($family);
+
+        $this->client->request('POST', '/familias/actividades/'.$started->getId().'/desapuntarme', [
+            '_token' => $this->mintCsrfToken($this->client, '/familias', 'family_withdraw'.$started->getId()),
+        ]);
+
+        self::assertResponseRedirects('/familias');
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('.flash.error', 'ya ha empezado: si no podéis venir');
+        self::assertSame(1, $this->signups());
+    }
+
+    /**
+     * A second press (a page reloaded, a slow connection) is answered as done and keeps one signup.
+     */
+    public function testSigningUpTwiceKeepsOnePlace(): void
+    {
+        $family = $this->family('marta@gmail.test');
+        $activity = $this->activity('+10 days', 'Taller de cocina')->setFamiliesWanted(1);
+        $this->em->flush();
+        $this->signInAsFamily($family);
+        $token = $this->mintCsrfToken($this->client, '/familias', 'family_signup'.$activity->getId());
+
+        foreach ([1, 2] as $press) {
+            $this->client->request('POST', '/familias/actividades/'.$activity->getId().'/apuntarme', ['_token' => $token]);
+            self::assertResponseRedirects('/familias', null, 'press '.$press);
+            $this->client->followRedirect();
+            self::assertSelectorExists('.flash.success', 'press '.$press);
+        }
+
+        self::assertSame(1, $this->signups());
+    }
+
+    /**
+     * The trail outlives the account: where a family went must not be written to it.
+     */
+    public function testSigningUpLeavesNothingInTheTrail(): void
+    {
+        $family = $this->family('marta@gmail.test');
+        $activity = $this->activity('+10 days', 'Taller de cocina');
+        $this->em->flush();
+        $this->signInAsFamily($family);
+        $before = $this->em->getRepository(AuditLog::class)->count([]);
+
+        $this->client->request('GET', '/familias');
+        $this->client->submitForm('Podemos ir');
+
+        self::assertSame(1, $this->signups());
+        self::assertSame($before, $this->em->getRepository(AuditLog::class)->count([]));
+    }
+
+    public function testSigningUpNeedsAValidToken(): void
+    {
+        $family = $this->family('marta@gmail.test');
+        $activity = $this->activity('+10 days', 'Taller de cocina');
+        $this->em->flush();
+        $this->signInAsFamily($family);
+
+        $this->client->request('POST', '/familias/actividades/'.$activity->getId().'/apuntarme', ['_token' => 'falso']);
+
+        self::assertResponseStatusCodeSame(403);
+        self::assertSame(0, $this->signups());
+    }
+
+    /**
+     * Whoever organises it needs to know who comes; the rest of the staff, only how many.
+     */
+    public function testOnlyTheOrganiserSeesWhichFamiliesAreComing(): void
+    {
+        $activity = $this->activity('+10 days', 'Taller de cocina')->setFamiliesWanted(3);
+        $activity->signUp($this->family('marta@gmail.test'), new \DateTimeImmutable());
+        $teacher = $this->user('otro.profe@centro.test');
+        $this->em->flush();
+        $organizer = $activity->getOrganizer();
+        self::assertNotNull($organizer);
+
+        $this->client->loginUser($organizer);
+        $this->client->request('GET', '/actividades-familias');
+        self::assertSelectorTextContains('table', '1 de 3');
+        self::assertSelectorTextContains('table', 'Familia marta');
+
+        $this->client->loginUser($teacher);
+        $this->client->request('GET', '/actividades-familias');
+        self::assertSelectorTextContains('table', '1 de 3');
+        self::assertSelectorTextNotContains('table', 'Familia marta');
+    }
+
+    /**
+     * Removing the account takes with it the record of which activities that person was coming to.
+     */
+    public function testRemovingAFamilyRemovesItsSignups(): void
+    {
+        $family = $this->family('marta@gmail.test');
+        $activity = $this->activity('+10 days', 'Taller de cocina');
+        $activity->signUp($family, new \DateTimeImmutable());
+        $this->em->flush();
+        $this->client->loginUser($this->admin());
+
+        $this->client->request('POST', '/actividades-familias/cuentas/'.$family->getId().'/borrar', [
+            '_token' => $this->mintCsrfToken($this->client, '/actividades-familias/cuentas', 'family_volunteer_delete'.$family->getId()),
+        ]);
+
+        self::assertResponseRedirects('/actividades-familias/cuentas');
+        self::assertSame(0, $this->signups());
+    }
+
     /**
      * @param string $message what the last request should have logged, alone
      * @param string $address part of the address that must not appear in it
@@ -324,6 +508,14 @@ final class FamilyAreaTest extends WebTestCase
         $records = $handler->getRecords();
         self::assertSame([$message], array_map(static fn (LogRecord $r): string => $r->message, $records));
         self::assertStringNotContainsString($address, json_encode($records[0]->context, \JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * @return int how many signups the database holds, read past the identity map
+     */
+    private function signups(): int
+    {
+        return (int) $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM family_signup');
     }
 
     /**

@@ -11,6 +11,14 @@
         </div>
     </div>
 
+    {% set coming = activity.signups|length %}
+    {% if coming > 0 %}
+        {# La app todavía no avisa a las familias de un cambio: que quien organiza lo sepa antes de tocar nada. #}
+        <div class="flash warning" role="alert">
+            {{ coming == 1 ? 'Hay 1 familia apuntada' : 'Hay ' ~ coming ~ ' familias apuntadas' }}. Si cambias el día o la hora, o la borras, avísales tú: la app todavía no lo hace.
+        </div>
+    {% endif %}
+
     <div class="card">
         {{ include('family_activity/_form.html.twig', { submitLabel: 'Guardar' }) }}
     </div>

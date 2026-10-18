@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Entity\FamilyActivity;
+use App\Entity\FamilyVolunteer;
 use App\Repository\FamilyActivityRepository;
 use App\Repository\FamilyVolunteerRepository;
 use App\Security\LoginLinkMailer;
 use App\Security\Voter\ModuleVoter;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Doctrine\ORM\EntityManagerInterface;
 use Psr\Clock\ClockInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -16,6 +20,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
 use Symfony\Component\RateLimiter\RateLimiterFactory;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\CurrentUser;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Component\Security\Http\Authentication\AuthenticationUtils;
 
@@ -40,14 +45,65 @@ final class FamilyAreaController extends AbstractController
     }
 
     /**
-     * The activities still to come, read-only.
+     * The activities still to come, each with a button to sign up for it or to withdraw.
      */
     #[Route('', name: 'family_home', methods: ['GET'])]
     public function home(FamilyActivityRepository $activities): Response
     {
+        $now = $this->clock->now();
+
         return $this->render('family_area/home.html.twig', [
-            'activities' => $activities->findUpcoming($this->clock->now()),
+            'activities' => $activities->findUpcoming($now),
+            'now' => $now,
         ]);
+    }
+
+    /**
+     * Signs the family up for an activity. Only before it starts and while there is room; a second press
+     * changes nothing.
+     *
+     * The same family pressing at once from two devices (two sessions, so not serialised by the session
+     * lock) both find no signup and the second flush hits the unique index: it is already signed up, which
+     * is what was asked, so it is answered as done. The failed flush closes the entity manager, so nothing
+     * else is done with it but redirect.
+     */
+    #[Route('/actividades/{id}/apuntarme', name: 'family_signup', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function signUp(FamilyActivity $activity, Request $request, #[CurrentUser] FamilyVolunteer $family, EntityManagerInterface $em): Response
+    {
+        $this->denyUnlessValidToken('family_signup', $activity, $request);
+
+        try {
+            $activity->signUp($family, $this->clock->now());
+            $em->flush();
+        } catch (UniqueConstraintViolationException) {
+            // Signed up from another device meanwhile: done all the same.
+        } catch (\DomainException) {
+            $this->addFlash('error', 'Ya no se puede apuntar nadie más a «'.$activity->getTitle().'»: está completa o ya ha empezado.');
+
+            return $this->redirectToRoute('family_home');
+        }
+        $this->addFlash('success', 'Hecho: os esperamos en «'.$activity->getTitle().'».');
+
+        return $this->redirectToRoute('family_home');
+    }
+
+    /**
+     * Takes the family off an activity it can no longer come to. Only before it starts.
+     */
+    #[Route('/actividades/{id}/desapuntarme', name: 'family_withdraw', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function withdraw(FamilyActivity $activity, Request $request, #[CurrentUser] FamilyVolunteer $family, EntityManagerInterface $em): Response
+    {
+        $this->denyUnlessValidToken('family_withdraw', $activity, $request);
+
+        try {
+            $activity->withdraw($family, $this->clock->now());
+            $em->flush();
+            $this->addFlash('success', 'Hecho: ya no contamos con vosotros en «'.$activity->getTitle().'».');
+        } catch (\DomainException) {
+            $this->addFlash('error', '«'.$activity->getTitle().'» ya ha empezado: si no podéis venir, avisad al centro.');
+        }
+
+        return $this->redirectToRoute('family_home');
     }
 
     /**
@@ -104,5 +160,19 @@ final class FamilyAreaController extends AbstractController
     public function logout(): never
     {
         throw new \LogicException('This route is handled by the logout of the families firewall.');
+    }
+
+    /**
+     * Denies the request unless it carries the token of that action on that activity.
+     *
+     * @param string         $action   the CSRF token id prefix, the route name
+     * @param FamilyActivity $activity the activity acted on
+     * @param Request        $request  the current request
+     */
+    private function denyUnlessValidToken(string $action, FamilyActivity $activity, Request $request): void
+    {
+        if (!$this->isCsrfTokenValid($action.$activity->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
     }
 }

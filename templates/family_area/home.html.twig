@@ -11,7 +11,8 @@
         </div>
     </div>
 
-    {# Sin columna «Organiza»: el nombre del profesorado no hace falta para venir, y no se enseña fuera. #}
+    {# Sin columna «Organiza»: el nombre del profesorado no hace falta para venir, y no se enseña fuera.
+       Tampoco quién más viene: de las otras familias solo se cuentan las plazas que quedan. #}
     <div class="card">
         {% if activities is empty %}
             <div class="empty-state">
@@ -21,7 +22,7 @@
         {% else %}
             <table>
                 <thead>
-                    <tr><th>Cuándo</th><th>Actividad</th><th>Lugar</th></tr>
+                    <tr><th>Cuándo</th><th>Actividad</th><th>Lugar</th><th>Plazas</th><th></th></tr>
                 </thead>
                 <tbody>
                     {% for a in activities %}
@@ -35,6 +36,28 @@
                                 {% if a.description %}<br><span class="muted">{{ a.description|nl2br }}</span>{% endif %}
                             </td>
                             <td>{{ a.place ?? '—' }}</td>
+                            <td>
+                                {% set left = a.placesLeft %}
+                                {% if left is null %}Sin límite{% elseif left == 0 %}Completa{% else %}{{ left == 1 ? 'Queda 1' : 'Quedan ' ~ left }}{% endif %}
+                            </td>
+                            <td class="row-actions">
+                                {% if a.isSignedUpBy(app.user) %}
+                                    <span class="badge badge--success">Os esperamos</span>
+                                    {% if a.isOpenAt(now) %}
+                                        <form method="post" action="{{ path('family_withdraw', { id: a.id }) }}">
+                                            <input type="hidden" name="_token" value="{{ csrf_token('family_withdraw' ~ a.id) }}">
+                                            <button type="submit" class="btn secondary btn-sm">Ya no podemos ir</button>
+                                        </form>
+                                    {% endif %}
+                                {% elseif a.acceptsSignupsAt(now) %}
+                                    <form method="post" action="{{ path('family_signup', { id: a.id }) }}">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('family_signup' ~ a.id) }}">
+                                        <button type="submit" class="btn btn-sm">Podemos ir</button>
+                                    </form>
+                                {% elseif not a.isOpenAt(now) %}
+                                    <span class="muted">Ya ha empezado</span>
+                                {% endif %}
+                            </td>
                         </tr>
                     {% endfor %}
                 </tbody>

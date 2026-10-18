@@ -18,6 +18,7 @@
             {% endif %}
         </header>
         <main class="page family-area__page">
+            {{ include('partials/_flashes.html.twig') }}
             {% block body %}{% endblock %}
         </main>
     </div>
