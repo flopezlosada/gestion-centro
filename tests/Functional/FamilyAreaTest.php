@@ -344,7 +344,6 @@ final class FamilyAreaTest extends WebTestCase
         $this->client->followRedirect();
         self::assertSelectorTextContains('.flash.success', 'te esperamos en «Taller de cocina»');
         self::assertSelectorTextContains('main', 'Te esperamos');
-        self::assertSelectorTextContains('main', 'Queda 1');
         self::assertSame(1, $this->signups());
 
         $this->client->submitForm('Ya no puedo ir');

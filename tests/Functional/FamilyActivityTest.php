@@ -523,8 +523,8 @@ final class FamilyActivityTest extends WebTestCase
      */
     public function testEditingAnActivityWhoseClassLeftTheTimetableKeepsIt(): void
     {
-        $teacher = $this->teacherWithAClass();
-        $this->em->flush();
+        // Another class (Tuesday at 5ª) to change to: the one gone is still picked, so that is refused.
+        $teacher = $this->teacherWithClassesOfTwoGroups();
         self::mockTime('2026-01-12 08:00');
         $class = self::getContainer()->get(MyClasses::class)->on($teacher, new \DateTimeImmutable('2026-01-13'))[0];
         $activity = new WeeklyFamilyActivity($teacher, 'Grupos interactivos', [['day' => new \DateTimeImmutable('2026-01-13'), 'class' => $class]]);
