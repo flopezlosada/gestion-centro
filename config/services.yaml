@@ -36,6 +36,8 @@ parameters:
     # Name of the "Recordarme" cookie, shared by the firewall (security.yaml) and the idle-timeout
     # subscriber, which must let a remembered visitor through instead of sending them to the login.
     app.remember_me_cookie: REMEMBERME
+    # The same for the families' firewall, whose cookie lives under /familias only.
+    app.family_remember_me_cookie: REMEMBERME_FAMILY
 
 services:
     # default configuration for services in *this* file
@@ -48,6 +50,7 @@ services:
             string $pendingImportsDir: '%kernel.project_dir%/var/timetable-imports'
             int $sessionIdleTimeout: '%app.session_idle_timeout%'
             string $rememberMeCookie: '%app.remember_me_cookie%'
+            string $familyRememberMeCookie: '%app.family_remember_me_cookie%'
 
     # makes classes in src/ available to be used as services
     # this creates a service per class whose id is the fully-qualified class name
