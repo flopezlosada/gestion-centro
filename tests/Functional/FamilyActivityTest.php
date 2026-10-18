@@ -362,7 +362,9 @@ final class FamilyActivityTest extends WebTestCase
 
         $crawler = $this->client->request('GET', '/actividades-familias/nueva-en-clase');
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('select', 'Martes · 3ª (10:15–11:10) · E1A · Matemáticas');
+        self::assertSelectorTextContains('.class-pick__grid tbody tr:first-child th', '3ª10:15–11:10');
+        self::assertSelectorTextContains('.class-pick__grid tbody tr:first-child td:nth-of-type(2) .class-pick__cell', 'Martes · 3ª (10:15–11:10) · E1A · Matemáticas');
+        self::assertSelectorExists('.class-pick__grid tbody tr:first-child td:nth-of-type(2) input[type="radio"][value="2-2"]');
         $form = $crawler->selectButton('Publicar actividad')->form();
         $form['family_activity_form[title]'] = 'Grupos interactivos';
         $form['family_activity_form[classKey]'] = '2-2';
@@ -431,6 +433,40 @@ final class FamilyActivityTest extends WebTestCase
 
         self::assertSame([], $this->calendarSessions());
         self::assertSelectorTextContains('table', 'Sin sesiones en las próximas semanas');
+    }
+
+    /**
+     * Editing an activity whose class left the timetable: the class has no cell in the grid any more,
+     * but it is still offered, picked, below it, so saving the rest does not force a move.
+     */
+    public function testEditingAnActivityWhoseClassLeftTheTimetableKeepsIt(): void
+    {
+        $teacher = $this->teacherWithAClass();
+        $this->em->flush();
+        self::mockTime('2026-01-12 08:00');
+        $class = self::getContainer()->get(MyClasses::class)->on($teacher, new \DateTimeImmutable('2026-01-13'))[0];
+        $activity = new WeeklyFamilyActivity($teacher, 'Grupos interactivos', $class, new \DateTimeImmutable('2026-01-13'));
+        $this->em->persist($activity);
+        $this->em->flush();
+        $this->em->getConnection()->executeStatement("UPDATE schedule_entry SET group_name = 'E1B'");
+        // The first request shares this entity manager: forget the cells read above with their old group.
+        $this->em->clear();
+        $this->client->loginUser($teacher);
+
+        $crawler = $this->client->request('GET', '/actividades-familias/'.$activity->getId().'/editar');
+        self::assertResponseIsSuccessful();
+        self::assertSelectorNotExists('.class-pick__grid input[value="2-2"]:checked');
+        self::assertSelectorTextContains('.class-pick__gone', 'Martes · E1A · Matemáticas (ya no está en el horario)');
+        self::assertSelectorExists('.class-pick__gone input[value="2-2"][checked]');
+        $form = $crawler->selectButton('Guardar')->form();
+        $form['family_activity_form[title]'] = 'Grupos interactivos de E1A';
+        $this->client->submit($form);
+        self::assertResponseRedirects('/actividades-familias');
+
+        $this->em->clear();
+        $saved = $this->em->getRepository(WeeklyFamilyActivity::class)->find($activity->getId());
+        self::assertNotNull($saved);
+        self::assertSame(['Grupos interactivos de E1A', 'E1A'], [$saved->getTitle(), $saved->getGroupNames()]);
     }
 
     /**

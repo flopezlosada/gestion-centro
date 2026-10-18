@@ -9,14 +9,14 @@
         {{ form_errors(form.title) }}
     </div>
     {% if form.classKey is defined %}
-        {{ f.field(form.classKey) }}
+        {{ include('family_activity/_class_pick.html.twig', { field: form.classKey, grid: classGrid }) }}
     {% else %}
         {{ f.field(form.day) }}
         {{ f.field(form.startTime) }}
         {{ f.field(form.endTime) }}
     {% endif %}
     {{ f.field(form.description) }}
-    {{ f.field(form.place) }}
+    {% if form.place is defined %}{{ f.field(form.place) }}{% endif %}
     {{ f.field(form.familiesWanted) }}
     <div class="stackform__foot">
         <a class="btn secondary" href="{{ path('family_activity_index') }}">Cancelar</a>

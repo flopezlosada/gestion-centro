@@ -195,7 +195,8 @@ final class FamilySessions implements ResetInterface
             return null;
         }
 
-        return new FamilySession($activity, $class->startsAt, $class->endsAt, $activity->getPlace() ?? ([] !== $class->rooms() ? implode(', ', $class->rooms()) : null));
+        // Always the class's own room: a weekly activity has no place of its own to set.
+        return new FamilySession($activity, $class->startsAt, $class->endsAt, [] !== $class->rooms() ? implode(', ', $class->rooms()) : null);
     }
 
     /**
