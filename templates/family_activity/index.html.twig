@@ -72,4 +72,30 @@
             </table>
         {% endif %}
     </div>
+
+    {% if not showingPast %}
+        {# Sin nombres: para elegir el día basta saber cuántas familias pueden y a qué horas. #}
+        <section class="card" aria-labelledby="family-availability-title">
+            <h2 id="family-availability-title">Cuándo pueden venir las familias</h2>
+            {% if availability is empty %}
+                <p class="muted">Ninguna familia ha dicho todavía qué días puede venir.</p>
+            {% else %}
+                <table>
+                    <thead>
+                        <tr><th>Día</th><th>Familias</th><th>Horas</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for day in weekdays %}
+                            {% set spans = availability[day.value] ?? [] %}
+                            <tr>
+                                <th scope="row">{{ day.label }}</th>
+                                <td>{{ spans|length }}</td>
+                                <td>{{ spans is empty ? '—' : spans|map(s => s.from|date('H:i', false) ~ '–' ~ s.until|date('H:i', false))|join(', ') }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% endif %}
+        </section>
+    {% endif %}
 {% endblock %}

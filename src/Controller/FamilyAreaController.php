@@ -5,8 +5,13 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\FamilyActivity;
+use App\Entity\FamilyAvailability;
 use App\Entity\FamilyVolunteer;
+use App\Enum\Weekday;
+use App\Form\FamilyAvailabilityDay;
+use App\Form\FamilyAvailabilityFormType;
 use App\Repository\FamilyActivityRepository;
+use App\Repository\FamilyAvailabilityRepository;
 use App\Repository\FamilyVolunteerRepository;
 use App\Security\LoginLinkMailer;
 use App\Security\Voter\ModuleVoter;
@@ -107,6 +112,47 @@ final class FamilyAreaController extends AbstractController
     }
 
     /**
+     * The days and hours the family can usually come, one span per day of the school week. Saved day by
+     * day against what was stored — the span of a day kept is moved, not removed and added again, which
+     * the unique (family, day) index would refuse within one flush, since Doctrine inserts before it
+     * deletes.
+     *
+     * The same family saving at once from two devices can both add the same day: the second flush hits
+     * the unique index, the entity manager closes, and the family is told to look at what was kept.
+     */
+    #[Route('/disponibilidad', name: 'family_availability', methods: ['GET', 'POST'])]
+    public function availability(Request $request, #[CurrentUser] FamilyVolunteer $family, FamilyAvailabilityRepository $availability, EntityManagerInterface $em): Response
+    {
+        $saved = $availability->findOfFamilyByWeekday($family);
+        $data = ['days' => array_map(
+            static fn (Weekday $day): FamilyAvailabilityDay => FamilyAvailabilityDay::of($day, $saved[$day->value] ?? null),
+            Weekday::schoolWeek(),
+        )];
+        $form = $this->createForm(FamilyAvailabilityFormType::class, $data);
+        $form->handleRequest($request);
+
+        if ($form->isSubmitted() && $form->isValid()) {
+            /** @var list<FamilyAvailabilityDay> $days */
+            $days = $form->get('days')->getData();
+            foreach ($days as $day) {
+                $this->saveDay($family, $day, $saved[$day->weekday->value] ?? null, $em);
+            }
+            try {
+                $em->flush();
+            } catch (UniqueConstraintViolationException) {
+                $this->addFlash('error', 'Se acaba de guardar desde otro dispositivo: revisad que esté como queréis.');
+
+                return $this->redirectToRoute('family_availability');
+            }
+            $this->addFlash('success', 'Guardado: el profesorado ya sabe cuándo podéis venir.');
+
+            return $this->redirectToRoute('family_home');
+        }
+
+        return $this->render('family_area/availability.html.twig', ['form' => $form]);
+    }
+
+    /**
      * Shows the e-mail form and, on submit, sends a sign-in link to a known family. Same shape as the
      * staff sign-in ({@see SecurityController::login()}): rate-limited per IP, and the same confirmation
      * whether the address is known or not, so the page does not reveal who is registered.
@@ -160,6 +206,32 @@ final class FamilyAreaController extends AbstractController
     public function logout(): never
     {
         throw new \LogicException('This route is handled by the logout of the families firewall.');
+    }
+
+    /**
+     * Brings one day's stored span in line with the form: adds it, moves it, or removes it.
+     *
+     * @param FamilyVolunteer         $family the family
+     * @param FamilyAvailabilityDay   $day    the validated row of the form
+     * @param FamilyAvailability|null $saved  what was stored for that day, or null
+     * @param EntityManagerInterface  $em     the entity manager
+     */
+    private function saveDay(FamilyVolunteer $family, FamilyAvailabilityDay $day, ?FamilyAvailability $saved, EntityManagerInterface $em): void
+    {
+        if (!$day->isAvailable()) {
+            if (null !== $saved) {
+                $em->remove($saved);
+            }
+
+            return;
+        }
+        \assert(null !== $day->from && null !== $day->until);
+        if (null !== $saved) {
+            $saved->changeHours($day->from, $day->until);
+
+            return;
+        }
+        $em->persist(new FamilyAvailability($family, $day->weekday, $day->from, $day->until));
     }
 
     /**
