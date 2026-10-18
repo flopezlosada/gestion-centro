@@ -9,12 +9,14 @@ use Symfony\Component\Validator\Constraints as Assert;
 
 /**
  * Form-backing object for a {@see WeeklyFamilyActivity}: the details, and which of the teacher's classes
- * it is held in, as the "weekday-period" key of {@see \App\Family\FamilySessions::classesOf()}.
+ * it is held in, as "weekday-period" keys of {@see \App\Family\FamilySessions::classesOf()}. Whether they
+ * can go together is the activity's own rule, {@see WeeklyFamilyActivity::problemWith()}.
  */
 final class WeeklyFamilyActivityFormData extends FamilyActivityFormData
 {
-    #[Assert\NotBlank(message: 'Elige en cuál de tus clases.')]
-    public ?string $classKey = null;
+    /** @var list<string> */
+    #[Assert\Count(min: 1, minMessage: 'Elige al menos una clase.')]
+    public array $classKeys = [];
 
     /**
      * Prefills the form data from an existing activity (for editing).
@@ -27,7 +29,7 @@ final class WeeklyFamilyActivityFormData extends FamilyActivityFormData
     {
         $data = new self();
         $data->fillDetailsFrom($activity);
-        $data->classKey = self::keyOf($activity);
+        $data->classKeys = self::keysOf($activity);
 
         return $data;
     }
@@ -35,10 +37,10 @@ final class WeeklyFamilyActivityFormData extends FamilyActivityFormData
     /**
      * @param WeeklyFamilyActivity $activity a weekly activity
      *
-     * @return string the "weekday-period" key of its class
+     * @return list<string> the "weekday-period" keys of its classes
      */
-    public static function keyOf(WeeklyFamilyActivity $activity): string
+    public static function keysOf(WeeklyFamilyActivity $activity): array
     {
-        return $activity->getWeekday()->value.'-'.$activity->getSlotIndex();
+        return array_map(static fn (array $t): string => $t['weekday']->value.'-'.$t['slot'], $activity->classTimes());
     }
 }

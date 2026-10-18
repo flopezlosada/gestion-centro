@@ -58,7 +58,7 @@ class FamilyActivityRepository extends ServiceEntityRepository
     }
 
     /**
-     * The weekly activities of some courses, by day of the week and period.
+     * The weekly activities of some courses, by group then title.
      *
      * @param list<string> $schoolYears the courses, as "2026-2027"
      *
@@ -68,8 +68,8 @@ class FamilyActivityRepository extends ServiceEntityRepository
     {
         return $this->query(WeeklyFamilyActivity::class)
             ->andWhere('a.schoolYear IN (:years)')->setParameter('years', $schoolYears)
-            ->orderBy('a.weekday', 'ASC')
-            ->addOrderBy('a.slotIndex', 'ASC')
+            ->orderBy('a.groupNames', 'ASC')
+            ->addOrderBy('a.title', 'ASC')
             ->addOrderBy('a.id', 'ASC')
             ->getQuery()
             ->getResult();

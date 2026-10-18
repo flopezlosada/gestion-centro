@@ -1368,7 +1368,7 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 .family-week__empty { font-size: 13px; }
 
 /* ---- Elegir la clase de una actividad semanal: el horario del profesor --- */
-/* Una tabla de horas × días con un radio por clase; la elegida, en el tono de acento. En el móvil la
+/* Una tabla de horas × días con una casilla por clase; las elegidas, en el tono de acento. En el móvil la
    tabla se desliza de lado dentro de su caja en vez de estrujar las cinco columnas. */
 .class-pick { border: 0; padding: 0; margin: 0; min-width: 0; }
 .class-pick__legend {
@@ -1389,10 +1389,12 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 }
 .class-pick__cell:hover { background: var(--accent-weak); }
 .class-pick__cell:has(:checked) { background: var(--accent-weak); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-/* Y una marca, para que la elegida no se distinga solo por el color. */
+/* Y una marca, para que las elegidas no se distingan solo por el color. */
 .class-pick__cell:has(:checked)::after { content: "✓"; position: absolute; top: 4px; right: 7px; font-weight: 700; color: var(--accent-ink); }
 .class-pick__cell:has(:focus-visible) { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
-.class-pick__radio { position: absolute; opacity: 0; pointer-events: none; }
+.class-pick__box { position: absolute; opacity: 0; pointer-events: none; }
+/* Las de otro grupo, apagadas por class-pick.js cuando ya hay una elegida. */
+.class-pick__cell:has(:disabled) { opacity: .4; cursor: not-allowed; background: var(--surface-sunken); }
 .class-pick__groups { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .class-pick__subject { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .class-pick__gone { display: flex; gap: 8px; align-items: center; margin-top: 10px; color: var(--text-muted); }

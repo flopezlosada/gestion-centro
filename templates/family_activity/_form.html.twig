@@ -8,8 +8,8 @@
         {{ form_widget(form.title, { attr: { class: 'field-title', placeholder: 'Ej. Grupos interactivos de 1ºA' } }) }}
         {{ form_errors(form.title) }}
     </div>
-    {% if form.classKey is defined %}
-        {{ include('family_activity/_class_pick.html.twig', { field: form.classKey, grid: classGrid }) }}
+    {% if form.classKeys is defined %}
+        {{ include('family_activity/_class_pick.html.twig', { field: form.classKeys, grid: classGrid }) }}
     {% else %}
         {{ f.field(form.day) }}
         {{ f.field(form.startTime) }}

@@ -24,3 +24,7 @@
         {% endif %}
     </div>
 {% endblock %}
+
+{% block page_scripts %}
+    {% if weekly %}<script src="{{ asset_ver('/js/class-pick.js') }}"></script>{% endif %}
+{% endblock %}

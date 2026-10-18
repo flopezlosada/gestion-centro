@@ -33,3 +33,7 @@
         </div>
     </div>
 {% endblock %}
+
+{% block page_scripts %}
+    {% if activity.weekly %}<script src="{{ asset_ver('/js/class-pick.js') }}"></script>{% endif %}
+{% endblock %}
