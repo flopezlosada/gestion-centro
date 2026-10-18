@@ -180,11 +180,10 @@ final class FamilyActivityTest extends WebTestCase
         $this->client->request('GET', '/actividades-familias/'.$activity->getId().'/editar');
         self::assertResponseStatusCodeSame(403);
 
-        // El enlace de editar tampoco se le ofrece en la lista.
+        // Ni siquiera la ve: cada docente ve solo las que organiza.
         $this->client->request('GET', '/actividades-familias');
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('table', 'Taller de cuentos');
-        self::assertSelectorNotExists('a[href$="/editar"]');
+        self::assertSelectorTextNotContains('main', 'Taller de cuentos');
 
         // Ni borrarla, aunque el envío lleve un token válido.
         $this->client->request('POST', '/actividades-familias/'.$activity->getId().'/borrar', [
@@ -265,6 +264,9 @@ final class FamilyActivityTest extends WebTestCase
         $this->client->loginUser($admin);
         $this->client->request('GET', '/actividades-familias');
         self::assertSelectorTextContains('table', 'Nadie (ya no está en el centro)');
+        $this->client->request('GET', '/actividades-familias/'.$activityId);
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('main', 'Nadie (ya no está en el centro)');
 
         $crawler = $this->client->request('GET', '/actividades-familias/'.$activityId.'/editar');
         self::assertResponseIsSuccessful();
@@ -318,15 +320,16 @@ final class FamilyActivityTest extends WebTestCase
         $this->client->loginUser($organizer);
 
         $crawler = $this->client->request('GET', '/actividades-familias/'.$activity->getId().'/editar');
-        self::assertSelectorTextContains('.flash.warning', 'Hay 1 familia apuntada');
+        self::assertSelectorTextContains('.flash.warning', 'Hay 1 persona apuntada');
         $form = $crawler->selectButton('Guardar')->form();
         $form['family_activity_form[day]'] = '2026-01-21';
         $this->client->submit($form);
         self::assertResponseRedirects('/actividades-familias');
 
         self::assertSame(['2026-01-21'], $this->em->getConnection()->fetchFirstColumn('SELECT session_date FROM family_signup'));
-        $this->client->request('GET', '/actividades-familias?semana=2026-01-19');
-        self::assertSelectorTextContains('.family-week', 'Familia Marta');
+        $this->client->request('GET', '/actividades-familias/'.$activity->getId());
+        self::assertSelectorTextContains('.who-comes', 'Mié 21/01');
+        self::assertSelectorTextContains('.who-comes', 'Familia Marta');
     }
 
     /**
@@ -557,8 +560,8 @@ final class FamilyActivityTest extends WebTestCase
     }
 
     /**
-     * Each week's session has its own places and its own list: the organiser sees who comes that day,
-     * the rest of the staff only how many.
+     * Each week's session has its own places and its own list: the calendar counts, and the detail —
+     * which only the organiser opens, and without e-mails — says who comes each day.
      */
     public function testEachSessionCountsItsOwnFamilies(): void
     {
@@ -579,15 +582,19 @@ final class FamilyActivityTest extends WebTestCase
 
         $this->client->loginUser($teacher);
         $this->client->request('GET', '/actividades-familias?semana=2026-01-12');
-        self::assertSelectorTextContains('.family-week', '1 de 3 familias');
-        self::assertSelectorTextContains('.family-week', 'Familia Marta');
+        self::assertSelectorTextContains('.family-week', '1 de 3 personas');
+        self::assertSelectorTextNotContains('.family-week', 'Familia Marta');
         $this->client->request('GET', '/actividades-familias?semana=2026-01-26');
-        self::assertSelectorTextContains('.family-week', '0 de 3 familias');
+        self::assertSelectorTextContains('.family-week', '0 de 3 personas');
+
+        $this->client->request('GET', '/actividades-familias/'.$activity->getId());
+        self::assertSelectorTextContains('.who-comes', 'Mar 13/01');
+        self::assertSelectorTextContains('.who-comes', 'Familia Marta');
+        self::assertSelectorTextNotContains('main', 'marta@gmail.test');
 
         $this->client->loginUser($colleague);
-        $this->client->request('GET', '/actividades-familias?semana=2026-01-12');
-        self::assertSelectorTextContains('.family-week', '1 de 3 familias');
-        self::assertSelectorTextNotContains('.family-week', 'Familia Marta');
+        $this->client->request('GET', '/actividades-familias/'.$activity->getId());
+        self::assertResponseStatusCodeSame(403);
     }
 
     /**
@@ -668,14 +675,14 @@ final class FamilyActivityTest extends WebTestCase
      */
     private function calendarSessions(): array
     {
-        return $this->client->getCrawler()->filter('.family-week__session')->each(static function (Crawler $session): string {
-            $day = $session->closest('.family-week__day');
+        return $this->client->getCrawler()->filter('.family-week .family-chip')->each(static function (Crawler $session): string {
+            $day = $session->closest('.week-day');
             \assert(null !== $day);
 
-            return trim(preg_replace('/\s+/', ' ', $day->filter('.family-week__date')->text().' '.implode(' ', [
-                $session->filter('.family-week__time')->text(),
-                $session->filter('.family-week__title')->text(),
-                $session->filter('p.muted')->first()->text(),
+            return trim(preg_replace('/\s+/', ' ', $day->attr('aria-label').' '.implode(' ', [
+                $session->filter('.week-chip__time')->text(),
+                $session->filter('.week-chip__where')->text(),
+                $session->filter('.week-chip__who')->text(),
             ])) ?? '');
         });
     }

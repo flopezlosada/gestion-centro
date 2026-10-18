@@ -18,7 +18,7 @@ final class Version20261019110000 extends AbstractMigration
     {
         // Each weekly activity so far is held in its one class: that class becomes the only one of its list.
         $this->addSql('ALTER TABLE family_activity ADD class_times JSON DEFAULT NULL');
-        $this->addSql("UPDATE family_activity SET class_times = JSON_ARRAY(JSON_OBJECT('weekday', weekday, 'slot', slot_index, 'subject', subject)) WHERE kind = 'weekly'");
+        $this->addSql("UPDATE family_activity SET class_times = JSON_ARRAY(JSON_OBJECT('weekday', weekday, 'slot', slot_index, 'subject', COALESCE(subject, ''))) WHERE kind = 'weekly'");
         $this->addSql('ALTER TABLE family_activity DROP weekday, DROP slot_index, DROP subject');
     }
 

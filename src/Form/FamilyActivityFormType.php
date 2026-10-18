@@ -38,10 +38,10 @@ final class FamilyActivityFormType extends AbstractType
             ->add('description', TextareaType::class, [
                 'label' => 'Descripción',
                 'required' => false,
-                'help' => 'Qué se hace y qué tienen que saber las familias que vengan.',
+                'help' => 'Qué se hace y qué tiene que saber quien venga.',
             ])
             ->add('familiesWanted', IntegerType::class, [
-                'label' => 'Familias que hacen falta',
+                'label' => 'Personas que hacen falta',
                 'required' => false,
                 'attr' => ['min' => 1, 'max' => 100],
                 'help' => null !== $options['class_choices'] ? 'En cada sesión. Déjalo vacío si cualquier número ayuda.' : 'Déjalo vacío si cualquier número ayuda.',

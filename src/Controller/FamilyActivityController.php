@@ -38,7 +38,8 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
  * or an admin, who takes over the ones left without organiser, can change or remove it.
  *
  * Staff only, like the rest of the app (security.yaml): what families see of these activities is a
- * screen of their own, so nothing here has to filter what a family may read.
+ * screen of their own. Here a teacher sees only what they organise, and the names of the people coming
+ * only on the detail of their own activities.
  */
 #[Route('/actividades-familias')]
 // Off unless the centre turns it on in Datos del centro. On the class, so every page of the module — and
@@ -55,27 +56,59 @@ final class FamilyActivityController extends AbstractController
     /**
      * A week of sessions as a calendar, the activities to manage, and when families can usually come —
      * to choose the class or the day of the next one: how many each day and their hours, never who.
+     * A teacher sees only the activities they organise; an admin, every one in the centre.
      *
      * Each weekly activity in the list shows its next session, which reads its organiser's timetable: a
      * few queries per weekly activity, of which a centre has a handful.
      */
     #[Route('', name: 'family_activity_index', methods: ['GET'])]
-    public function index(Request $request, FamilyActivityRepository $activities, FamilyAvailabilityRepository $availability): Response
+    public function index(Request $request, FamilyActivityRepository $activities, FamilyAvailabilityRepository $availability, #[CurrentUser] User $user): Response
     {
         $today = $this->clock->now();
-        $monday = FamilySessions::mondayOf(CalendarDate::parse($request->query->getString('semana'), $today->getTimezone()) ?? $today);
+        $all = $this->isGranted('ROLE_ADMIN');
+        $visible = static fn (FamilyActivity $a): bool => $all || $a->isOrganizedBy($user);
+        $asked = CalendarDate::parse($request->query->getString('semana'), $today->getTimezone());
+        $monday = null === $asked ? FamilySessions::currentMonday($today) : FamilySessions::mondayOf($asked);
 
         return $this->render('family_activity/index.html.twig', [
             'monday' => $monday,
-            'week' => $this->sessions->week($monday),
+            'currentMonday' => FamilySessions::currentMonday($today),
+            'week' => $this->sessions->week($monday, $all ? null : $user),
             'now' => $today,
             'weekly' => array_map(
                 fn (WeeklyFamilyActivity $a): array => ['activity' => $a, 'next' => $this->sessions->nextOf($a, $today)],
-                $activities->findWeeklyIn([SchoolYear::current($today)]),
+                array_values(array_filter($activities->findWeeklyIn([SchoolYear::current($today)]), $visible)),
             ),
-            'oneOffs' => $activities->findUpcomingOneOffs($today),
+            'oneOffs' => array_values(array_filter($activities->findUpcomingOneOffs($today), $visible)),
             'availability' => $availability->findAllByWeekday(),
             'weekdays' => Weekday::schoolWeek(),
+        ]);
+    }
+
+    /**
+     * One activity in detail, with who comes to each session: upcoming ones first, past ones apart. Only its
+     * organiser, or an admin, may open it — the names are for whoever has to organise the session.
+     *
+     * The e-mail of each person is left out: to know who comes, the name is enough.
+     */
+    #[Route('/{id}', name: 'family_activity_show', requirements: ['id' => '\d+'], methods: ['GET'])]
+    public function show(int $id, FamilyActivityRepository $activities, #[CurrentUser] User $user): Response
+    {
+        $activity = $activities->findWithSignups($id) ?? throw $this->createNotFoundException();
+        $this->denyUnlessManages($activity, $user);
+        $now = $this->clock->now();
+        $today = $now->format('Y-m-d');
+        $byDate = [];
+        foreach ($activity->getSignups() as $signup) {
+            $byDate[$signup->getSessionDate()->format('Y-m-d')][] = $signup->getFamily()->getFullName();
+        }
+        ksort($byDate);
+
+        return $this->render('family_activity/show.html.twig', [
+            'activity' => $activity,
+            'next' => $activity instanceof WeeklyFamilyActivity ? $this->sessions->nextOf($activity, $now) : null,
+            'upcoming' => array_filter($byDate, static fn (string $date): bool => $date >= $today, \ARRAY_FILTER_USE_KEY),
+            'past' => array_reverse(array_filter($byDate, static fn (string $date): bool => $date < $today, \ARRAY_FILTER_USE_KEY), true),
         ]);
     }
 

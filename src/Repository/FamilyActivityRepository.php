@@ -76,6 +76,21 @@ class FamilyActivityRepository extends ServiceEntityRepository
     }
 
     /**
+     * One activity with who comes to each of its sessions, in one query.
+     *
+     * @param int $id the activity
+     *
+     * @return FamilyActivity|null the activity, or null if there is none with that id
+     */
+    public function findWithSignups(int $id): ?FamilyActivity
+    {
+        return $this->query(FamilyActivity::class)
+            ->andWhere('a.id = :id')->setParameter('id', $id)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    /**
      * The base of every list. The organiser and the families coming are printed with every session:
      * fetch-joined to avoid an N+1. The signups come whole, every session of the course, never filtered
      * to the week shown: the rules of {@see FamilyActivity} (places left, signing up twice, moving them
