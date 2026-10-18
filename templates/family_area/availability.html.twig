@@ -1,14 +1,14 @@
 {% extends 'family_area/_layout.html.twig' %}
 {% import '_macros/form.html.twig' as f %}
 
-{% block title %}Cuándo podéis venir · {{ app_organization_name }}{% endblock %}
+{% block title %}Cuándo puedes venir · {{ app_organization_name }}{% endblock %}
 
 {% block body %}
     <div class="page-head">
         <div>
             <p class="eyebrow">Espacio de familias</p>
-            <h1>Cuándo podéis venir</h1>
-            <p class="lead">Los días y horas en que soléis poder venir al centro. El profesorado lo mira para elegir el día de las actividades; no ve vuestro nombre, solo cuántas familias pueden cada día y a qué horas.</p>
+            <h1>Cuándo puedes venir</h1>
+            <p class="lead">Los días y horas en que sueles poder venir al centro. El profesorado lo mira para elegir el día de las actividades; no ve tu nombre, solo cuántas familias pueden cada día y a qué horas.</p>
         </div>
     </div>
 
@@ -36,7 +36,7 @@
                 {% endfor %}
             </tbody>
         </table>
-        <p class="help">Dejad las dos horas vacías los días que no podáis venir.</p>
+        <p class="help">Deja las dos horas vacías los días que no puedas venir.</p>
         <div class="stackform__foot">
             <a class="btn secondary" href="{{ path('family_home') }}">Cancelar</a>
             <button class="btn" type="submit">Guardar</button>

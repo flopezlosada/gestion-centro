@@ -58,7 +58,7 @@ class FamilyActivityRepository extends ServiceEntityRepository
     }
 
     /**
-     * The weekly activities of some courses, by day of the week and period.
+     * The weekly activities of some courses, by group then title.
      *
      * @param list<string> $schoolYears the courses, as "2026-2027"
      *
@@ -68,11 +68,26 @@ class FamilyActivityRepository extends ServiceEntityRepository
     {
         return $this->query(WeeklyFamilyActivity::class)
             ->andWhere('a.schoolYear IN (:years)')->setParameter('years', $schoolYears)
-            ->orderBy('a.weekday', 'ASC')
-            ->addOrderBy('a.slotIndex', 'ASC')
+            ->orderBy('a.groupNames', 'ASC')
+            ->addOrderBy('a.title', 'ASC')
             ->addOrderBy('a.id', 'ASC')
             ->getQuery()
             ->getResult();
+    }
+
+    /**
+     * One activity with who comes to each of its sessions, in one query.
+     *
+     * @param int $id the activity
+     *
+     * @return FamilyActivity|null the activity, or null if there is none with that id
+     */
+    public function findWithSignups(int $id): ?FamilyActivity
+    {
+        return $this->query(FamilyActivity::class)
+            ->andWhere('a.id = :id')->setParameter('id', $id)
+            ->getQuery()
+            ->getOneOrNullResult();
     }
 
     /**

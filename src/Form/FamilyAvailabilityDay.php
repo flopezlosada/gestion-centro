@@ -66,7 +66,7 @@ final class FamilyAvailabilityDay
             return;
         }
         if (null === $this->from || null === $this->until) {
-            $context->buildViolation('Pon las dos horas, o deja las dos vacías si ese día no podéis.')
+            $context->buildViolation('Pon las dos horas, o deja las dos vacías si ese día no puedes.')
                 ->atPath(null === $this->from ? 'from' : 'until')
                 ->addViolation();
 

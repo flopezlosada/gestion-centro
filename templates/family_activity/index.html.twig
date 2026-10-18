@@ -8,7 +8,7 @@
         <div>
             <p class="eyebrow">El centro</p>
             <h1>Actividades con familias</h1>
-            <p class="lead">Grupos interactivos, talleres y demás actividades en las que pueden participar familias: en una de tus clases cada semana, o un día suelto. Cualquier docente puede publicar una; solo quien la organiza puede cambiarla.</p>
+            <p class="lead">Grupos interactivos, talleres y demás actividades en las que pueden participar familias: en una de tus clases cada semana, o un día suelto. Aquí ves las que organizas tú; cada docente, las suyas{% if is_granted('ROLE_ADMIN') %} (tú, como administración, las de todo el centro){% endif %}.</p>
         </div>
         <div class="page-head-actions">
             {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ADMINISTRATION')) %}
@@ -26,7 +26,7 @@
         {% if weekly is empty and oneOffs is empty %}
             <div class="empty-state">
                 <h2>No hay actividades programadas</h2>
-                <p>Publica la primera para que el resto del claustro sepa qué se prepara.</p>
+                <p>Publica la primera: en una de tus clases cada semana, o un día suelto.</p>
                 <a class="btn" href="{{ path('family_activity_new_weekly') }}">En una de mis clases</a>
             </div>
         {% else %}
@@ -38,9 +38,9 @@
                     {% for row in weekly %}
                         {% set a = row.activity %}
                         <tr>
-                            <td><strong>{{ a.title }}</strong><br><span class="muted">{{ a.groupNames }} · {{ a.subject }}</span></td>
+                            <td><a href="{{ path('family_activity_show', { id: a.id }) }}"><strong>{{ a.title }}</strong></a><br><span class="muted">{{ a.groupNames }} · {{ a.subjects|join(', ') }}</span></td>
                             <td>
-                                Cada {{ a.weekday.label|lower }}
+                                Cada {{ a.weekdays|map(w => w.label|lower)|join(', ', ' y ') }}
                                 {% if row.next %}
                                     <br><span class="muted">Próxima: {{ row.next.day|date('d/m', false) }}, {{ row.next.startsAt|date('H:i', false) }}</span>
                                 {% else %}
@@ -54,7 +54,7 @@
                     {% endfor %}
                     {% for a in oneOffs %}
                         <tr>
-                            <td><strong>{{ a.title }}</strong></td>
+                            <td><a href="{{ path('family_activity_show', { id: a.id }) }}"><strong>{{ a.title }}</strong></a></td>
                             <td><time datetime="{{ a.startAt|date('c', false) }}">{{ a.startAt|date('d/m/Y', false) }}</time>, {{ a.startAt|date('H:i', false) }}{% if a.endAt %}–{{ a.endAt|date('H:i', false) }}{% endif %}</td>
                             <td>{{ a.organizer ? a.organizer.fullName : 'Nadie (ya no está en el centro)' }}</td>
                             <td class="row-actions">{% if a.isOrganizedBy(app.user) or is_granted('ROLE_ADMIN') %}<a href="{{ path('family_activity_edit', { id: a.id }) }}">Editar</a>{% endif %}</td>
@@ -65,15 +65,15 @@
         {% endif %}
     </section>
 
-    {# Sin nombres: para elegir el día basta saber cuántas familias pueden y a qué horas. #}
+    {# Sin nombres: para elegir el día basta saber cuántas personas pueden y a qué horas. #}
     <section class="card" aria-labelledby="family-availability-title">
-        <h2 id="family-availability-title">Cuándo pueden venir las familias</h2>
+        <h2 id="family-availability-title">Cuándo pueden venir</h2>
         {% if availability is empty %}
-            <p class="muted">Ninguna familia ha dicho todavía qué días puede venir.</p>
+            <p class="muted">Nadie ha dicho todavía qué días puede venir.</p>
         {% else %}
             <table>
                 <thead>
-                    <tr><th>Día</th><th>Familias</th><th>Horas</th></tr>
+                    <tr><th>Día</th><th>Personas</th><th>Horas</th></tr>
                 </thead>
                 <tbody>
                     {% for day in weekdays %}

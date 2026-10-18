@@ -1354,18 +1354,55 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 .family-area__page { width: 100%; max-width: 1120px; margin: 0 auto; }
 
 /* ---- Calendario semanal de actividades con familias -------------------- */
-/* Cinco columnas en escritorio, una debajo de otra en el móvil: cada día con sus sesiones. */
-.family-week { display: grid; gap: 12px; grid-template-columns: 1fr; margin-bottom: 18px; }
-@media (min-width: 900px) { .family-week { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
-.family-week__day { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px; min-width: 0; }
-.family-week__date { font-size: 15px; margin: 0 0 8px; }
-.family-week__session { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
-.family-week__session p { margin: 0; overflow-wrap: anywhere; }
-.family-week__time { font-size: 13px; color: var(--text-muted); }
-.family-week__desc { font-size: 13px; }
-.family-week__places { font-size: 13px; }
-.family-week__actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.family-week__empty { font-size: 13px; }
+/* La semana de guardias (.week-days, .week-chip) con lo propio de una sesión: el título manda aunque la
+   casilla no esté en naranja, la descripción se corta a tres líneas y el botón va debajo. */
+.family-week { margin-bottom: 18px; }
+.week-head__nav { margin-left: auto; }
+.family-chip:not(.week-chip--accent) .week-chip__where { color: var(--text); }
+a.family-chip:not(.week-chip--accent) { text-decoration: none; transition: background .12s ease; }
+a.family-chip:not(.week-chip--accent):hover, a.family-chip:not(.week-chip--accent):focus-visible { background: var(--surface-alt); }
+.family-chip__desc { margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.family-chip__action { margin-top: 8px; }
+.week-chip--accent .family-chip__action .btn.secondary { background: transparent; color: var(--on-accent); border-color: currentColor; }
+/* Detalle de una actividad: quién viene, una fila por sesión con la fecha a la izquierda. */
+.who-comes { display: grid; gap: 8px; margin: 0; }
+.who-comes > div { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 12px; }
+.who-comes dt { color: var(--text-muted); }
+.who-comes dd { margin: 0; overflow-wrap: anywhere; }
+.who-comes__past { margin-top: 16px; }
+.who-comes__past summary { cursor: pointer; color: var(--text-muted); margin-bottom: 8px; }
+
+/* ---- Elegir la clase de una actividad semanal: el horario del profesor --- */
+/* Una tabla de horas × días con una casilla por clase; las elegidas, en el tono de acento. En el móvil la
+   tabla se desliza de lado dentro de su caja en vez de estrujar las cinco columnas. */
+.class-pick { border: 0; padding: 0; margin: 0; min-width: 0; }
+.class-pick__legend {
+    padding: 0; margin-bottom: 8px;
+    font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint);
+}
+.class-pick__scroll { overflow-x: auto; margin-top: 8px; }
+.class-pick__grid { border-collapse: separate; border-spacing: 4px; width: 100%; min-width: 520px; table-layout: fixed; }
+.class-pick__grid th { font-size: 12px; font-weight: 600; color: var(--text-muted); text-align: left; padding: 2px 4px; }
+.class-pick__grid tbody th { width: 84px; vertical-align: middle; white-space: nowrap; }
+.class-pick__times { display: block; font-weight: 400; font-size: 11px; color: var(--text-faint); }
+.class-pick__grid td { padding: 0; height: 52px; }
+.class-pick__cell {
+    position: relative; display: flex; flex-direction: column; justify-content: center; gap: 2px; height: 100%;
+    padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+    background: var(--surface-alt); cursor: pointer; overflow: hidden;
+}
+.class-pick__cell:hover { background: var(--accent-weak); }
+.class-pick__cell:has(:checked) { background: var(--accent-weak); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+/* Y una marca, para que las elegidas no se distingan solo por el color. */
+.class-pick__cell:has(:checked)::after { content: "✓"; position: absolute; top: 4px; right: 7px; font-weight: 700; color: var(--accent-ink); }
+.class-pick__cell:has(:focus-visible) { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+.class-pick__box { position: absolute; opacity: 0; pointer-events: none; }
+/* Las de otro grupo, apagadas por class-pick.js cuando ya hay una elegida. */
+.class-pick__cell:has(:disabled) { opacity: .4; cursor: not-allowed; background: var(--surface-sunken); }
+.class-pick__groups { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.class-pick__subject { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.class-pick__gone { display: flex; gap: 8px; align-items: center; margin-top: 10px; color: var(--text-muted); }
 @media (max-width: 760px) {
     .family-area__bar { padding: 10px 16px; }
     .family-area__page { padding: 24px 16px; }
@@ -2779,46 +2816,46 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
    callada sobre el papel hundido; con alguien a quien cubrir, rellena del naranja de «tu próxima
    guardia». El contraste es el mensaje: lo naranja es lo que tienes que hacer. */
 .duty-week { margin-bottom: 18px; }
-.duty-week__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-top: 0; }
-.duty-week__range { font-size: 12.5px; color: var(--text-faint); }
+.week-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-top: 0; }
+.week-head__range { font-size: 12.5px; color: var(--text-faint); }
 .duty-week__none { margin: 0; color: var(--text-muted); }
-.duty-week__days { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 0; padding: 0; list-style: none; overflow: hidden; border-radius: 18px; }
-.duty-day { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding: 18px 14px 20px; }
-.duty-day + .duty-day { border-left: 1px solid var(--separator); }
-.duty-day.is-today { background: var(--surface-alt); box-shadow: inset 0 3px 0 var(--accent); }
-.duty-day__head { display: flex; align-items: baseline; gap: 8px; }
-.duty-day__name { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint); }
-.duty-day__num { font-family: var(--font-display); font-size: 26px; line-height: 1; color: var(--text); }
-.duty-day.is-today .duty-day__name { color: var(--accent-ink); font-weight: 600; }
-.duty-day.is-today .duty-day__num { color: var(--accent-ink); }
-.duty-day__slots { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.duty-day__none { font-size: 12.5px; color: var(--text-tenue); }
+.week-days { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 0; padding: 0; list-style: none; overflow: hidden; border-radius: 18px; }
+.week-day { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding: 18px 14px 20px; }
+.week-day + .week-day { border-left: 1px solid var(--separator); }
+.week-day.is-today { background: var(--surface-alt); box-shadow: inset 0 3px 0 var(--accent); }
+.week-day__head { display: flex; align-items: baseline; gap: 8px; }
+.week-day__name { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint); }
+.week-day__num { font-family: var(--font-display); font-size: 26px; line-height: 1; color: var(--text); }
+.week-day.is-today .week-day__name { color: var(--accent-ink); font-weight: 600; }
+.week-day.is-today .week-day__num { color: var(--accent-ink); }
+.week-day__slots { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.week-day__none { font-size: 12.5px; color: var(--text-tenue); }
 
-.duty-chip { display: flex; flex-direction: column; gap: 1px; min-width: 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-sunken); color: var(--text-muted); font-size: 12.5px; line-height: 1.35; }
-.duty-chip__time { font-size: 11.5px; color: var(--text-faint); }
-.duty-chip__label { font-weight: 600; color: var(--text); }
-.duty-chip__state { color: var(--text-faint); }
-.duty-chip--cover { background: var(--accent); color: var(--on-accent); text-decoration: none; box-shadow: var(--shadow-card); transition: transform .12s ease, box-shadow .12s ease; }
-.duty-chip--cover:hover, .duty-chip--cover:focus-visible { transform: translateY(-1px); box-shadow: 0 16px 28px -18px rgba(60, 40, 0, .55); }
-.duty-chip--cover .duty-chip__time { color: var(--on-accent); opacity: .75; }
-.duty-chip__where { font-weight: 700; font-size: 14px; overflow-wrap: anywhere; }
-.duty-chip__who { overflow-wrap: anywhere; }
-.duty-chip__tag { align-self: flex-start; margin-top: 6px; padding: 1px 8px; border-radius: 999px; background: var(--accent-hover); background: color-mix(in srgb, var(--on-accent) 14%, transparent); font-size: 11px; font-weight: 600; }
+.week-chip { display: flex; flex-direction: column; gap: 1px; min-width: 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-sunken); color: var(--text-muted); font-size: 12.5px; line-height: 1.35; }
+.week-chip__time { font-size: 11.5px; color: var(--text-faint); }
+.week-chip__label { font-weight: 600; color: var(--text); }
+.week-chip__state { color: var(--text-faint); }
+.week-chip--accent { background: var(--accent); color: var(--on-accent); text-decoration: none; box-shadow: var(--shadow-card); transition: transform .12s ease, box-shadow .12s ease; }
+.week-chip--accent:hover, .week-chip--accent:focus-visible { transform: translateY(-1px); box-shadow: 0 16px 28px -18px rgba(60, 40, 0, .55); }
+.week-chip--accent .week-chip__time { color: var(--on-accent); opacity: .75; }
+.week-chip__where { font-weight: 700; font-size: 14px; overflow-wrap: anywhere; }
+.week-chip__who { overflow-wrap: anywhere; }
+.week-chip__tag { align-self: flex-start; margin-top: 6px; padding: 1px 8px; border-radius: 999px; background: var(--accent-hover); background: color-mix(in srgb, var(--on-accent) 14%, transparent); font-size: 11px; font-weight: 600; }
 /* Incidencia: la guardia no se cubrió. El rojo de esta paleta significa justo eso, «sin cubrir». */
-.duty-chip--cover.is-incident { background: var(--danger-weak); color: var(--danger-text); box-shadow: inset 4px 0 0 var(--danger); }
-.duty-chip--cover.is-incident .duty-chip__time { color: var(--danger-text); }
-.duty-chip.is-past { opacity: .5; box-shadow: none; }
-.duty-chip--cover.is-incident.is-past { box-shadow: inset 4px 0 0 var(--danger); }
+.week-chip--accent.is-incident { background: var(--danger-weak); color: var(--danger-text); box-shadow: inset 4px 0 0 var(--danger); }
+.week-chip--accent.is-incident .week-chip__time { color: var(--danger-text); }
+.week-chip.is-past { opacity: .5; box-shadow: none; }
+.week-chip--accent.is-incident.is-past { box-shadow: inset 4px 0 0 var(--danger); }
 .duty-week__help { margin-top: 10px; }
 
 @media (max-width: 760px) {
     /* Móvil: un día por fila, la fecha a la izquierda y sus casillas a la derecha. */
-    .duty-week__days { grid-template-columns: minmax(0, 1fr); }
-    .duty-day { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px; padding: 14px; }
-    .duty-day + .duty-day { border-left: 0; border-top: 1px solid var(--separator); }
-    .duty-day.is-today { box-shadow: inset 3px 0 0 var(--accent); }
-    .duty-day__head { flex-direction: column; align-items: flex-start; gap: 2px; padding-top: 2px; }
-    .duty-day__none { padding-top: 6px; }
+    .week-days { grid-template-columns: minmax(0, 1fr); }
+    .week-day { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px; padding: 14px; }
+    .week-day + .week-day { border-left: 0; border-top: 1px solid var(--separator); }
+    .week-day.is-today { box-shadow: inset 3px 0 0 var(--accent); }
+    .week-day__head { flex-direction: column; align-items: flex-start; gap: 2px; padding-top: 2px; }
+    .week-day__none { padding-top: 6px; }
 }
 
 @media (max-width: 900px) {

@@ -11,20 +11,24 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
- * An activity held in one of the organiser's classes every week ("los martes a 3ª, en 1ºA, grupos
- * interactivos"): it has a session each week that class is given, and only then — not on a holiday, not
- * in a break between terms, not once the course is over.
+ * An activity held in some of the organiser's classes with one group every week ("1ºA, los martes a 3ª
+ * y los jueves a 5ª, grupos interactivos"): it has a session each day of the week one of those classes is
+ * given, and only then — not on a holiday, not in a break between terms, not once the course is over.
  *
- * The class is remembered by day, period, groups and subject, as a {@see LessonPlan} remembers it, and
- * NOT by a foreign key to the timetable cell: every Peñalara import deletes and recreates the cells, and
- * would take the activity with them. If the timetable changes and that class is no longer given, the
- * activity simply has no more sessions, and the staff list says so. It belongs to one course: the same
- * groups next year are other pupils and another timetable.
+ * All its classes are with one group, and the ones on the same day follow one another: a family comes
+ * once that day, so a double period is one session, from the start of the first class to the end of the
+ * last. {@see problemWith()} is the rule; nothing builds or changes the activity without passing it.
+ *
+ * The classes are remembered by day, period and subject, with the group once, as a {@see LessonPlan}
+ * remembers a class, and NOT by a foreign key to the timetable cells: every Peñalara import deletes and
+ * recreates them, and would take the activity with them. If the timetable changes and a class is no
+ * longer given, it simply has no more sessions, and the staff list says so. It belongs to one course: the
+ * same group next year is other pupils and another timetable.
  */
 #[ORM\Entity]
 class WeeklyFamilyActivity extends FamilyActivity
 {
-    /** Column widths of the class's groups and subject: what a stored class is cut to and compared at. */
+    /** Column widths of the group and of a subject: what a stored class is cut to and compared at. */
     private const int MAX_GROUPS = 160;
     private const int MAX_SUBJECT = 120;
 
@@ -32,36 +36,34 @@ class WeeklyFamilyActivity extends FamilyActivity
     #[ORM\Column(name: 'school_year', length: 9)]
     private string $schoolYear;
 
-    /** The day of the week of the class. */
-    #[ORM\Column(name: 'weekday', type: Types::SMALLINT, enumType: Weekday::class)]
-    private Weekday $weekday;
-
-    /** The period of the class (0-based, the Peñalara index), the key {@see ClassSession::$slotIndex} uses. */
-    #[ORM\Column(name: 'slot_index', type: Types::SMALLINT)]
-    private int $slotIndex;
-
-    /** The class's groups as shown ("B1A, B1B"), as {@see ClassSession::groupNames()} gives them. */
+    /** The group of its classes as shown ("B1A, B1B"), as {@see ClassSession::groupNames()} gives it. */
     #[ORM\Column(name: 'group_names', length: self::MAX_GROUPS)]
     private string $groupNames;
 
-    /** The class's subject, as {@see ClassSession::subject()} gives it. */
-    #[ORM\Column(name: 'subject', length: self::MAX_SUBJECT)]
-    private string $subject;
+    /**
+     * Its classes, by day of the week then period: the ISO weekday, the period (0-based, the Peñalara index
+     * {@see ClassSession::$slotIndex} uses) and the subject as {@see ClassSession::subject()} gives it.
+     *
+     * @var list<array{weekday: int, slot: int, subject: string}>
+     */
+    #[ORM\Column(name: 'class_times', type: Types::JSON)]
+    private array $classTimes;
 
     /**
-     * @param User               $organizer who publishes it, the teacher of the class
-     * @param string             $title     what it is
-     * @param ClassSession       $class     the class, as given on one day
-     * @param \DateTimeImmutable $day       that day: it fixes the day of the week and the course
+     * @param User                                                         $organizer who publishes it, the teacher of the classes
+     * @param string                                                       $title     what it is
+     * @param list<array{day: \DateTimeImmutable, class: ClassSession}> $classes   its classes, each as given on one day
+     *
+     * @throws \InvalidArgumentException if the classes break {@see problemWith()}
      */
-    public function __construct(User $organizer, string $title, ClassSession $class, \DateTimeImmutable $day)
+    public function __construct(User $organizer, string $title, array $classes)
     {
         parent::__construct($organizer, $title);
-        $this->moveTo($class, $day);
+        $this->holdIn($classes);
     }
 
     /**
-     * Weekly: one session each week its class is given.
+     * Weekly: one session each week its classes are given.
      */
     public function isWeekly(): bool
     {
@@ -69,35 +71,78 @@ class WeeklyFamilyActivity extends FamilyActivity
     }
 
     /**
-     * Ties the activity to another of the organiser's classes.
+     * What is wrong with a choice of classes for one activity, if anything: none, two groups, two courses,
+     * or two classes on one day with another in between (the family would come twice, or wait).
      *
-     * @param ClassSession       $class the class, as given on one day
-     * @param \DateTimeImmutable $day   that day: it fixes the day of the week and the course
+     * @param list<array{day: \DateTimeImmutable, class: ClassSession}> $classes the classes, each as given on one day
+     *
+     * @return string|null why they cannot be one activity, said to the teacher, or null if they can
      */
-    public function moveTo(ClassSession $class, \DateTimeImmutable $day): void
+    public static function problemWith(array $classes): ?string
     {
-        $this->schoolYear = SchoolYear::current($day);
-        $this->weekday = Weekday::from((int) $day->format('N'));
-        $this->slotIndex = $class->slotIndex;
-        $this->groupNames = mb_substr($class->groupNames(), 0, self::MAX_GROUPS);
-        $this->subject = mb_substr($class->subject(), 0, self::MAX_SUBJECT);
+        if ([] === $classes) {
+            return 'Elige al menos una clase.';
+        }
+        if (\count(array_unique(array_map(static fn (array $c): string => $c['class']->groupNames(), $classes))) > 1) {
+            return 'Todas las clases tienen que ser del mismo grupo.';
+        }
+        if (\count(array_unique(array_map(static fn (array $c): string => SchoolYear::current($c['day']), $classes))) > 1) {
+            return 'Todas las clases tienen que ser del mismo curso.';
+        }
+        $ordinalsByDay = [];
+        foreach ($classes as ['day' => $day, 'class' => $class]) {
+            $ordinalsByDay[$day->format('N')][] = $class->ordinal;
+        }
+        foreach ($ordinalsByDay as $ordinals) {
+            if (max($ordinals) - min($ordinals) !== \count(array_unique($ordinals)) - 1) {
+                return 'Las clases de un mismo día tienen que ir seguidas: ese día la familia viene una vez.';
+            }
+        }
+
+        return null;
     }
 
     /**
-     * Whether a class given on a day is this activity's class — the test every session passes.
+     * Holds the activity in another choice of the organiser's classes.
+     *
+     * @param list<array{day: \DateTimeImmutable, class: ClassSession}> $classes the classes, each as given on one day
+     *
+     * @throws \InvalidArgumentException if the classes break {@see problemWith()}
+     */
+    public function holdIn(array $classes): void
+    {
+        $problem = self::problemWith($classes);
+        if (null !== $problem) {
+            throw new \InvalidArgumentException($problem);
+        }
+        $this->schoolYear = SchoolYear::current($classes[0]['day']);
+        $this->groupNames = mb_substr($classes[0]['class']->groupNames(), 0, self::MAX_GROUPS);
+        $times = array_map(static fn (array $c): array => [
+            'weekday' => (int) $c['day']->format('N'),
+            'slot' => $c['class']->slotIndex,
+            'subject' => mb_substr($c['class']->subject(), 0, self::MAX_SUBJECT),
+        ], $classes);
+        usort($times, static fn (array $a, array $b): int => [$a['weekday'], $a['slot']] <=> [$b['weekday'], $b['slot']]);
+        $this->classTimes = $times;
+    }
+
+    /**
+     * Whether a class given on a day is one of this activity's classes — the test every session passes.
      *
      * @param ClassSession       $class a class of the organiser
      * @param \DateTimeImmutable $day   the day it is given
      *
-     * @return bool true if it is the same class, on this activity's day of the week, in its course
+     * @return bool true if it is one of its classes: its day of the week, period, group and subject, in its course
      */
     public function isHeldIn(ClassSession $class, \DateTimeImmutable $day): bool
     {
-        return SchoolYear::current($day) === $this->schoolYear
-            && (int) $day->format('N') === $this->weekday->value
-            && $class->slotIndex === $this->slotIndex
-            && mb_substr($class->groupNames(), 0, self::MAX_GROUPS) === $this->groupNames
-            && mb_substr($class->subject(), 0, self::MAX_SUBJECT) === $this->subject;
+        if (SchoolYear::current($day) !== $this->schoolYear || mb_substr($class->groupNames(), 0, self::MAX_GROUPS) !== $this->groupNames) {
+            return false;
+        }
+        $weekday = (int) $day->format('N');
+        $subject = mb_substr($class->subject(), 0, self::MAX_SUBJECT);
+
+        return [] !== array_filter($this->classTimes, static fn (array $t): bool => $t['weekday'] === $weekday && $t['slot'] === $class->slotIndex && $t['subject'] === $subject);
     }
 
     /**
@@ -109,23 +154,7 @@ class WeeklyFamilyActivity extends FamilyActivity
     }
 
     /**
-     * @return Weekday the day of the week of the class
-     */
-    public function getWeekday(): Weekday
-    {
-        return $this->weekday;
-    }
-
-    /**
-     * @return int the period of the class
-     */
-    public function getSlotIndex(): int
-    {
-        return $this->slotIndex;
-    }
-
-    /**
-     * @return string the class's groups, as shown
+     * @return string the group of its classes, as shown
      */
     public function getGroupNames(): string
     {
@@ -133,10 +162,26 @@ class WeeklyFamilyActivity extends FamilyActivity
     }
 
     /**
-     * @return string the class's subject
+     * @return list<array{weekday: Weekday, slot: int, subject: string}> its classes, by day of the week then period
      */
-    public function getSubject(): string
+    public function classTimes(): array
     {
-        return $this->subject;
+        return array_map(static fn (array $t): array => ['weekday' => Weekday::from($t['weekday']), 'slot' => $t['slot'], 'subject' => $t['subject']], $this->classTimes);
+    }
+
+    /**
+     * @return list<Weekday> the days of the week it has a session, Monday first
+     */
+    public function weekdays(): array
+    {
+        return array_map(static fn (int $w): Weekday => Weekday::from($w), array_values(array_unique(array_column($this->classTimes, 'weekday'))));
+    }
+
+    /**
+     * @return list<string> the subjects of its classes, each once
+     */
+    public function subjects(): array
+    {
+        return array_values(array_unique(array_column($this->classTimes, 'subject')));
     }
 }

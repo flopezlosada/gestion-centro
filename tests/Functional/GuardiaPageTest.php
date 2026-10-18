@@ -981,7 +981,7 @@ final class GuardiaPageTest extends WebTestCase
         $crawler = $this->client->request('GET', '/guardias/mias');
 
         self::assertResponseIsSuccessful();
-        $chip = $crawler->filter('.duty-week .duty-chip--cover');
+        $chip = $crawler->filter('.duty-week .week-chip--accent');
         self::assertCount(1, $chip);
         self::assertStringContainsString('2ºB', $chip->text());
         self::assertStringContainsString('Cubres a Ausente Semana', $chip->text());
@@ -998,7 +998,7 @@ final class GuardiaPageTest extends WebTestCase
         $crawler = $this->client->request('GET', '/guardias/mias');
 
         self::assertResponseIsSuccessful();
-        self::assertCount(0, $crawler->filter('.duty-week__days'));
+        self::assertCount(0, $crawler->filter('.week-days'));
         self::assertSelectorTextContains('.duty-week', 'Tu horario no tiene horas de guardia esta semana.');
     }
 

@@ -339,15 +339,14 @@ final class FamilyAreaTest extends WebTestCase
 
         $this->client->request('GET', $this->weekOf($activity));
         self::assertSelectorTextContains('main', 'Quedan 2');
-        $this->client->submitForm('Podemos ir');
+        $this->client->submitForm('Puedo ir');
         self::assertResponseRedirects($this->weekOf($activity));
         $this->client->followRedirect();
-        self::assertSelectorTextContains('.flash.success', 'os esperamos en «Taller de cocina»');
-        self::assertSelectorTextContains('main', 'Os esperamos');
-        self::assertSelectorTextContains('main', 'Queda 1');
+        self::assertSelectorTextContains('.flash.success', 'te esperamos en «Taller de cocina»');
+        self::assertSelectorTextContains('main', 'Te esperamos');
         self::assertSame(1, $this->signups());
 
-        $this->client->submitForm('Ya no podemos ir');
+        $this->client->submitForm('Ya no puedo ir');
         self::assertResponseRedirects($this->weekOf($activity));
         $this->client->followRedirect();
         self::assertSelectorTextContains('main', 'Quedan 2');
@@ -369,7 +368,7 @@ final class FamilyAreaTest extends WebTestCase
 
         $crawler = $this->client->request('GET', $this->weekOf($activity));
         self::assertSelectorTextContains('main', 'Completa');
-        self::assertCount(0, $crawler->selectButton('Podemos ir'));
+        self::assertCount(0, $crawler->selectButton('Puedo ir'));
         // Nor who the other family is: only the count is shown.
         self::assertSelectorTextNotContains('main', 'Familia otra');
 
@@ -413,7 +412,7 @@ final class FamilyAreaTest extends WebTestCase
 
         self::assertResponseRedirects($this->weekOf($started));
         $this->client->followRedirect();
-        self::assertSelectorTextContains('.flash.error', 'ya ha empezado: si no podéis venir');
+        self::assertSelectorTextContains('.flash.error', 'ya ha empezado: si no puedes venir');
         self::assertSame(1, $this->signups());
     }
 
@@ -450,7 +449,7 @@ final class FamilyAreaTest extends WebTestCase
         $before = $this->em->getRepository(AuditLog::class)->count([]);
 
         $this->client->request('GET', $this->weekOf($activity));
-        $this->client->submitForm('Podemos ir');
+        $this->client->submitForm('Puedo ir');
 
         self::assertSame(1, $this->signups());
         self::assertSame($before, $this->em->getRepository(AuditLog::class)->count([]));
@@ -472,7 +471,7 @@ final class FamilyAreaTest extends WebTestCase
     /**
      * Whoever organises it needs to know who comes; the rest of the staff, only how many.
      */
-    public function testOnlyTheOrganiserSeesWhichFamiliesAreComing(): void
+    public function testATeacherSeesOnlyTheActivitiesTheyOrganise(): void
     {
         $activity = $this->activity('+10 days', 'Taller de cocina')->setFamiliesWanted(3);
         $activity->signUp($activity->session(), $this->family('marta@gmail.test'), new \DateTimeImmutable(self::TODAY.' 08:00'));
@@ -484,12 +483,14 @@ final class FamilyAreaTest extends WebTestCase
         $this->client->loginUser($organizer);
         $this->client->request('GET', '/actividades-familias?semana='.$activity->getStartAt()->format('Y-m-d'));
         self::assertSelectorTextContains('.family-week', '1 de 3');
-        self::assertSelectorTextContains('.family-week', 'Familia marta');
+        self::assertSelectorTextNotContains('.family-week', 'Familia marta');
+        $this->client->request('GET', '/actividades-familias/'.$activity->getId());
+        self::assertSelectorTextContains('.who-comes', 'Familia marta');
 
         $this->client->loginUser($teacher);
         $this->client->request('GET', '/actividades-familias?semana='.$activity->getStartAt()->format('Y-m-d'));
-        self::assertSelectorTextContains('.family-week', '1 de 3');
-        self::assertSelectorTextNotContains('.family-week', 'Familia marta');
+        self::assertSelectorTextNotContains('main', 'Taller de cocina');
+        self::assertSelectorTextNotContains('main', 'Familia marta');
     }
 
     /**
@@ -505,17 +506,16 @@ final class FamilyAreaTest extends WebTestCase
         $this->signInAsFamily($family);
 
         $this->client->request('GET', '/familias');
-        self::assertSelectorTextContains('.family-week', 'Martes 13/01');
-        self::assertSelectorTextContains('.family-week', '10:15–11:10');
-        $this->client->submitForm('Podemos ir');
+        self::assertSelectorTextContains('.family-week .week-day[aria-label="Martes 13/01"]', '10:15–11:10');
+        $this->client->submitForm('Puedo ir');
         self::assertResponseRedirects('/familias?semana=2026-01-12');
         $this->client->followRedirect();
         self::assertSelectorTextContains('.flash.success', 'el 13/01');
-        self::assertSelectorTextContains('.family-week', 'Os esperamos');
+        self::assertSelectorTextContains('.family-week', 'Te esperamos');
 
         $this->client->request('GET', '/familias?semana=2026-01-19');
         self::assertSelectorTextContains('.family-week', 'Quedan 2');
-        self::assertSelectorTextNotContains('.family-week', 'Os esperamos');
+        self::assertSelectorTextNotContains('.family-week', 'Te esperamos');
         self::assertSame(['2026-01-13'], $this->em->getConnection()->fetchFirstColumn('SELECT session_date FROM family_signup'));
     }
 
@@ -570,11 +570,11 @@ final class FamilyAreaTest extends WebTestCase
         $this->signInAsFamily($family);
 
         $this->client->request('GET', '/familias');
-        $this->client->clickLink('Cuándo podemos venir');
+        $this->client->clickLink('Cuándo puedo venir');
         $this->client->submitForm('Guardar', $this->availabilityForm([0 => ['09:00', '12:00'], 2 => ['10:00', '13:00']]));
         self::assertResponseRedirects('/familias');
         $this->client->followRedirect();
-        self::assertSelectorTextContains('.flash.success', 'ya sabe cuándo podéis venir');
+        self::assertSelectorTextContains('.flash.success', 'ya sabe cuándo puedes venir');
         $monday = $this->availabilityOf($family)[Weekday::MONDAY->value]['id'];
 
         $this->client->request('GET', '/familias/disponibilidad');
@@ -863,7 +863,7 @@ final class FamilyAreaTest extends WebTestCase
         $this->classCell($this->em, $year, $teacher, Weekday::TUESDAY, 2, 'E1A', 'Aula 12', 'Matemáticas');
         $this->em->flush();
         $tuesday = new \DateTimeImmutable('2026-01-13');
-        $activity = new WeeklyFamilyActivity($teacher, 'Grupos interactivos', self::getContainer()->get(MyClasses::class)->on($teacher, $tuesday)[0], $tuesday);
+        $activity = new WeeklyFamilyActivity($teacher, 'Grupos interactivos', [['day' => $tuesday, 'class' => self::getContainer()->get(MyClasses::class)->on($teacher, $tuesday)[0]]]);
         $this->em->persist($activity);
 
         return $activity;

@@ -53,18 +53,19 @@ final class FamilyAreaController extends AbstractController
     }
 
     /**
-     * A week of sessions as a calendar, each with a button to sign up for it or to withdraw. Over the
-     * weekend it opens on the coming week: the one just gone has nothing left to sign up for.
+     * A week of sessions as a calendar, each with a button to sign up for it or to withdraw. Opens on
+     * {@see FamilySessions::currentMonday()}.
      */
     #[Route('', name: 'family_home', methods: ['GET'])]
     public function home(Request $request): Response
     {
         $now = $this->clock->now();
         $asked = CalendarDate::parse($request->query->getString('semana'), $now->getTimezone());
-        $monday = FamilySessions::mondayOf($asked ?? ((int) $now->format('N') > 5 ? $now->modify('+2 days') : $now));
+        $monday = null === $asked ? FamilySessions::currentMonday($now) : FamilySessions::mondayOf($asked);
 
         return $this->render('family_area/home.html.twig', [
             'monday' => $monday,
+            'currentMonday' => FamilySessions::currentMonday($now),
             'week' => $this->sessions->week($monday),
             'now' => $now,
         ]);
@@ -94,7 +95,7 @@ final class FamilyAreaController extends AbstractController
 
             return $this->backToWeekOf($session);
         }
-        $this->addFlash('success', 'Hecho: os esperamos en «'.$activity->getTitle().'» el '.$session->day->format('d/m').'.');
+        $this->addFlash('success', 'Hecho: te esperamos en «'.$activity->getTitle().'» el '.$session->day->format('d/m').'.');
 
         return $this->backToWeekOf($session);
     }
@@ -110,9 +111,9 @@ final class FamilyAreaController extends AbstractController
         try {
             $activity->withdraw($session, $family, $this->clock->now());
             $em->flush();
-            $this->addFlash('success', 'Hecho: ya no contamos con vosotros en «'.$activity->getTitle().'» el '.$session->day->format('d/m').'.');
+            $this->addFlash('success', 'Hecho: ya no contamos contigo en «'.$activity->getTitle().'» el '.$session->day->format('d/m').'.');
         } catch (\DomainException) {
-            $this->addFlash('error', '«'.$activity->getTitle().'» ya ha empezado: si no podéis venir, avisad al centro.');
+            $this->addFlash('error', '«'.$activity->getTitle().'» ya ha empezado: si no puedes venir, avisa al centro.');
         }
 
         return $this->backToWeekOf($session);
@@ -147,11 +148,11 @@ final class FamilyAreaController extends AbstractController
             try {
                 $em->flush();
             } catch (UniqueConstraintViolationException) {
-                $this->addFlash('error', 'Se acaba de guardar desde otro dispositivo: revisad que esté como queréis.');
+                $this->addFlash('error', 'Se acaba de guardar desde otro dispositivo: revisa que esté como quieres.');
 
                 return $this->redirectToRoute('family_availability');
             }
-            $this->addFlash('success', 'Guardado: el profesorado ya sabe cuándo podéis venir.');
+            $this->addFlash('success', 'Guardado: el profesorado ya sabe cuándo puedes venir.');
 
             return $this->redirectToRoute('family_home');
         }

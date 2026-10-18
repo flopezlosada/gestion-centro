@@ -1,0 +1,76 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}{{ activity.title }} · Actividades con familias{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('family_activity_index') }}">Actividades con familias</a><span class="sep">/</span>{{ activity.title }}{% endblock %}
+
+{% block body %}
+    {% set names = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">{{ activity.weekly ? 'Cada semana, en tu clase' : 'Actividad puntual' }}</p>
+            <h1>{{ activity.title }}</h1>
+        </div>
+        <div class="page-head-actions">
+            <a class="btn secondary" href="{{ path('family_activity_edit', { id: activity.id }) }}">Editar</a>
+        </div>
+    </div>
+
+    <div class="card">
+        <dl class="cover-summary">
+            {% if activity.weekly %}
+                <div>
+                    <dt>Cuándo</dt>
+                    <dd>
+                        Cada {{ activity.weekdays|map(w => w.label|lower)|join(', ', ' y ') }}
+                        {% if next %}<br><span class="muted">Próxima: {{ next.day|date('d/m', false) }}, {{ next.startsAt|date('H:i', false) }}{% if next.endsAt %}–{{ next.endsAt|date('H:i', false) }}{% endif %}</span>{% endif %}
+                    </dd>
+                </div>
+                <div><dt>Dónde</dt><dd>{{ next and next.place ? next.place : '—' }}</dd></div>
+                <div><dt>Grupo</dt><dd>{{ activity.groupNames }} · {{ activity.subjects|join(', ') }}</dd></div>
+            {% else %}
+                <div><dt>Cuándo</dt><dd class="mono">{{ activity.startAt|date('d/m/Y H:i', false) }}{% if activity.endAt %}–{{ activity.endAt|date('H:i', false) }}{% endif %}</dd></div>
+                <div><dt>Dónde</dt><dd>{{ activity.place ?: '—' }}</dd></div>
+            {% endif %}
+            <div><dt>Personas</dt><dd>{{ activity.familiesWanted ? activity.familiesWanted ~ ' por sesión' : 'Las que puedan' }}</dd></div>
+            <div><dt>Organiza</dt><dd>{{ activity.organizer ? activity.organizer.fullName : 'Nadie (ya no está en el centro)' }}</dd></div>
+        </dl>
+
+        {% if activity.description %}
+            <div class="detail-block">
+                <div class="detail-block__label">Qué se hace</div>
+                <p class="detail-prose">{{ activity.description|nl2br }}</p>
+            </div>
+        {% endif %}
+    </div>
+
+    {# Solo el nombre: para saber quién viene no hace falta su correo. #}
+    <section class="card" aria-labelledby="who-comes-title">
+        <h2 id="who-comes-title">Quién viene</h2>
+        {% if upcoming is empty %}
+            <p class="muted">Nadie se ha apuntado todavía a las próximas sesiones.</p>
+        {% else %}
+            <dl class="who-comes">
+                {% for date, people in upcoming %}
+                    <div>
+                        <dt class="mono">{{ names[date|date('N', false) - 1] }} {{ date|date('d/m', false) }}</dt>
+                        <dd>{{ people|join(', ') }} <span class="muted">({{ people|length }}{{ activity.familiesWanted ? ' de ' ~ activity.familiesWanted }})</span></dd>
+                    </div>
+                {% endfor %}
+            </dl>
+        {% endif %}
+
+        {% if past is not empty %}
+            <details class="who-comes__past">
+                <summary>Sesiones pasadas ({{ past|length }})</summary>
+                <dl class="who-comes">
+                    {% for date, people in past %}
+                        <div>
+                            <dt class="mono">{{ names[date|date('N', false) - 1] }} {{ date|date('d/m', false) }}</dt>
+                            <dd>{{ people|join(', ') }}</dd>
+                        </div>
+                    {% endfor %}
+                </dl>
+            </details>
+        {% endif %}
+    </section>
+{% endblock %}

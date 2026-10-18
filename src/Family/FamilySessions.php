@@ -71,33 +71,53 @@ final class FamilySessions implements ResetInterface
     }
 
     /**
+     * The Monday of the week a calendar opens on by default. Over the weekend that is the coming week: the
+     * one just gone has nothing left to sign up for or to prepare. Every screen of the module uses it, so a
+     * family and a teacher looking on the same day see the same week.
+     *
+     * @param \DateTimeImmutable $now the current instant
+     *
+     * @return \DateTimeImmutable the Monday of the current school week
+     */
+    public static function currentMonday(\DateTimeImmutable $now): \DateTimeImmutable
+    {
+        return self::mondayOf((int) $now->format('N') > 5 ? $now->modify('+2 days') : $now);
+    }
+
+    /**
      * The sessions of one school week, Monday to Friday, each day earliest first. Every weekday is a key,
      * with or without sessions, so a calendar can draw the empty days too.
      *
      * The one-offs come in one query and the weekly activities in another; then each weekly activity
      * reads its organiser's day (a few queries each, {@see MyClasses::on()}) — a cost per organiser and
-     * day, not per family or session, and there are only ever a handful of activities.
+     * day, not per family or session, and there are only ever a handful of activities. Narrowed to one
+     * organiser, the others' timetables are not read at all.
      *
-     * @param \DateTimeImmutable $monday the Monday of the week
+     * @param \DateTimeImmutable $monday    the Monday of the week
+     * @param User|null          $organizer only the activities this person organises; null for every one
      *
      * @return array<string, list<FamilySession>> "Y-m-d" → that day's sessions
      */
-    public function week(\DateTimeImmutable $monday): array
+    public function week(\DateTimeImmutable $monday, ?User $organizer = null): array
     {
         $days = array_map(
             static fn (Weekday $w): \DateTimeImmutable => $monday->modify('+'.($w->value - 1).' days'),
             Weekday::schoolWeek(),
         );
         $friday = end($days);
+        $mine = static fn (FamilyActivity $a): bool => null === $organizer || $a->isOrganizedBy($organizer);
         $sessions = [
             ...array_map(
                 static fn (OneOffFamilyActivity $a): FamilySession => $a->session(),
-                $this->activities->findOneOffsBetween($monday, $friday->modify('+1 day')),
+                array_filter($this->activities->findOneOffsBetween($monday, $friday->modify('+1 day')), $mine),
             ),
-            ...array_filter(array_map(
-                fn (WeeklyFamilyActivity $a): ?FamilySession => $this->weeklySessionOn($a, $monday->modify('+'.($a->getWeekday()->value - 1).' days')),
-                $this->activities->findWeeklyIn(array_unique([SchoolYear::current($monday), SchoolYear::current($friday)])),
-            )),
+            ...array_filter(array_merge(...array_map(
+                fn (WeeklyFamilyActivity $a): array => array_map(
+                    fn (Weekday $w): ?FamilySession => $this->weeklySessionOn($a, $monday->modify('+'.($w->value - 1).' days')),
+                    $a->weekdays(),
+                ),
+                array_filter($this->activities->findWeeklyIn(array_unique([SchoolYear::current($monday), SchoolYear::current($friday)])), $mine),
+            ))),
         ];
         usort($sessions, static fn (FamilySession $a, FamilySession $b): int => [$a->startsAt, $a->activity->getTitle()] <=> [$b->startsAt, $b->activity->getTitle()]);
 
@@ -140,12 +160,14 @@ final class FamilySessions implements ResetInterface
      */
     public function nextOf(WeeklyFamilyActivity $activity, \DateTimeImmutable $now): ?FamilySession
     {
-        $first = self::mondayOf($now)->modify('+'.($activity->getWeekday()->value - 1).' days');
+        $monday = self::mondayOf($now);
         foreach (range(0, self::NEXT_SESSION_WEEKS - 1) as $week) {
-            $day = $first->modify('+'.$week.' weeks');
-            $session = $day >= $now->setTime(0, 0) ? $this->weeklySessionOn($activity, $day) : null;
-            if (null !== $session && $session->isOpenAt($now)) {
-                return $session;
+            foreach ($activity->weekdays() as $weekday) {
+                $day = $monday->modify('+'.$week.' weeks +'.($weekday->value - 1).' days');
+                $session = $day >= $now->setTime(0, 0) ? $this->weeklySessionOn($activity, $day) : null;
+                if (null !== $session && $session->isOpenAt($now)) {
+                    return $session;
+                }
             }
         }
 
@@ -176,8 +198,9 @@ final class FamilySessions implements ResetInterface
     }
 
     /**
-     * The session of a weekly activity on a day, if its organiser gives its class that day and its times
-     * are known (a session without a time cannot tell a family when to come).
+     * The session of a weekly activity on a day, if its organiser gives any of its classes that day: from
+     * the start of the first to the end of the last (they follow one another, a double period being one
+     * visit), in their rooms. Classes without times are left out: they cannot tell a family when to come.
      *
      * @param WeeklyFamilyActivity $activity the activity
      * @param \DateTimeImmutable   $day      the day
@@ -190,12 +213,37 @@ final class FamilySessions implements ResetInterface
         if (null === $organizer) {
             return null;
         }
-        $class = array_values(array_filter($this->classesOn($organizer, $day), static fn (ClassSession $c): bool => $activity->isHeldIn($c, $day)))[0] ?? null;
-        if (null === $class || null === $class->startsAt) {
+        $classes = $this->firstRun(array_values(array_filter($this->classesOn($organizer, $day), static fn (ClassSession $c): bool => $activity->isHeldIn($c, $day))));
+        $starts = array_filter(array_map(static fn (ClassSession $c): ?\DateTimeImmutable => $c->startsAt, $classes));
+        $ends = array_filter(array_map(static fn (ClassSession $c): ?\DateTimeImmutable => $c->endsAt, $classes));
+        if ([] === $starts || [] === $ends) {
             return null;
         }
+        $rooms = array_values(array_unique(array_merge(...array_map(static fn (ClassSession $c): array => $c->rooms(), $classes))));
 
-        return new FamilySession($activity, $class->startsAt, $class->endsAt, $activity->getPlace() ?? ([] !== $class->rooms() ? implode(', ', $class->rooms()) : null));
+        // Always the classes' own rooms: a weekly activity has no place of its own to set.
+        return new FamilySession($activity, min($starts), max($ends), [] !== $rooms ? implode(', ', $rooms) : null);
+    }
+
+    /**
+     * The first of a day's classes and those right after it. They were picked one after another, but a new
+     * timetable may give a period in between to another group: the session must not take that one in.
+     *
+     * @param list<ClassSession> $classes classes of one day, earliest first
+     *
+     * @return list<ClassSession> the first run of them, one after another
+     */
+    private function firstRun(array $classes): array
+    {
+        $run = [];
+        foreach ($classes as $class) {
+            if ([] !== $run && $class->ordinal !== end($run)->ordinal + 1) {
+                break;
+            }
+            $run[] = $class;
+        }
+
+        return $run;
     }
 
     /**

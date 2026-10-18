@@ -16,7 +16,7 @@ use Symfony\Component\OptionsResolver\OptionsResolver;
 
 /**
  * Create/edit form for an activity open to families, of either kind. With `class_choices` it is a weekly
- * one, held in the class picked from those choices; without, a one-off with a day and times of its own.
+ * one, held in the classes picked from those choices; without, a one-off with a day and times of its own.
  * Native time inputs, for the reasons given in {@see PersonalEventFormType}, including why `input` is
  * 'datetime_immutable' and not 'string'.
  *
@@ -38,31 +38,29 @@ final class FamilyActivityFormType extends AbstractType
             ->add('description', TextareaType::class, [
                 'label' => 'Descripción',
                 'required' => false,
-                'help' => 'Qué se hace y qué tienen que saber las familias que vengan.',
-            ])
-            ->add('place', TextType::class, [
-                'label' => 'Lugar',
-                'required' => false,
-                'help' => null !== $options['class_choices'] ? 'Déjalo vacío para que salga el aula de la clase.' : null,
+                'help' => 'Qué se hace y qué tiene que saber quien venga.',
             ])
             ->add('familiesWanted', IntegerType::class, [
-                'label' => 'Familias que hacen falta',
+                'label' => 'Personas que hacen falta',
                 'required' => false,
                 'attr' => ['min' => 1, 'max' => 100],
                 'help' => null !== $options['class_choices'] ? 'En cada sesión. Déjalo vacío si cualquier número ayuda.' : 'Déjalo vacío si cualquier número ayuda.',
             ]);
 
         if (null !== $options['class_choices']) {
-            $builder->add('classKey', ChoiceType::class, [
-                'label' => 'En cuál de tus clases',
+            // Checkboxes, laid out by the template as the teacher's timetable; the classes' rooms are the place.
+            $builder->add('classKeys', ChoiceType::class, [
+                'label' => 'En cuáles de tus clases',
                 'choices' => $options['class_choices'],
-                'placeholder' => 'Elige una clase',
-                'help' => 'Habrá sesión cada semana que tengas esa clase: los festivos y las vacaciones no cuentan.',
+                'expanded' => true,
+                'multiple' => true,
+                'help' => 'Toca una o varias clases del mismo grupo. Habrá sesión cada semana que las tengas: los festivos y las vacaciones no cuentan. Dos horas seguidas el mismo día son una sola sesión.',
             ]);
 
             return;
         }
         $builder
+            ->add('place', TextType::class, ['label' => 'Lugar', 'required' => false])
             ->add('day', DateType::class, [
                 'label' => 'Día',
                 'widget' => 'single_text',

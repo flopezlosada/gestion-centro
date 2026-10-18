@@ -25,7 +25,7 @@ abstract class FamilyActivityFormData
     public ?string $place = null;
 
     #[Assert\Positive(message: 'Pon un número mayor que cero, o déjalo vacío.')]
-    #[Assert\LessThanOrEqual(100, message: 'Como mucho {{ compared_value }} familias.')]
+    #[Assert\LessThanOrEqual(100, message: 'Como mucho {{ compared_value }} personas.')]
     public ?int $familiesWanted = null;
 
     /**
