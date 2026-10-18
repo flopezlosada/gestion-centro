@@ -16,7 +16,7 @@ use Symfony\Component\OptionsResolver\OptionsResolver;
 
 /**
  * Create/edit form for an activity open to families, of either kind. With `class_choices` it is a weekly
- * one, held in the class picked from those choices; without, a one-off with a day and times of its own.
+ * one, held in the classes picked from those choices; without, a one-off with a day and times of its own.
  * Native time inputs, for the reasons given in {@see PersonalEventFormType}, including why `input` is
  * 'datetime_immutable' and not 'string'.
  *
@@ -48,12 +48,13 @@ final class FamilyActivityFormType extends AbstractType
             ]);
 
         if (null !== $options['class_choices']) {
-            // Radios, laid out by the template as the teacher's timetable; the class's own room is the place.
-            $builder->add('classKey', ChoiceType::class, [
-                'label' => 'En cuál de tus clases',
+            // Checkboxes, laid out by the template as the teacher's timetable; the classes' rooms are the place.
+            $builder->add('classKeys', ChoiceType::class, [
+                'label' => 'En cuáles de tus clases',
                 'choices' => $options['class_choices'],
                 'expanded' => true,
-                'help' => 'Toca la clase. Habrá sesión cada semana que la tengas: los festivos y las vacaciones no cuentan.',
+                'multiple' => true,
+                'help' => 'Toca una o varias clases del mismo grupo. Habrá sesión cada semana que las tengas: los festivos y las vacaciones no cuentan. Dos horas seguidas el mismo día son una sola sesión.',
             ]);
 
             return;

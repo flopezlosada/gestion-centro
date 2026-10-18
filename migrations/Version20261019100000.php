@@ -11,13 +11,13 @@ final class Version20261019100000 extends AbstractMigration
 {
     public function getDescription(): string
     {
-        return 'Actividades con familias semanales en una clase, e inscripciones por sesión (con fecha)';
+        return 'Actividades con familias semanales en clases de un grupo, e inscripciones por sesión (con fecha)';
     }
 
     public function up(Schema $schema): void
     {
         // Every activity so far is a one-off: the kind is added filled in, then left without a default, as mapped.
-        $this->addSql("ALTER TABLE family_activity ADD kind VARCHAR(16) NOT NULL DEFAULT 'one_off', ADD school_year VARCHAR(9) DEFAULT NULL, ADD weekday SMALLINT DEFAULT NULL, ADD slot_index SMALLINT DEFAULT NULL, ADD group_names VARCHAR(160) DEFAULT NULL, ADD subject VARCHAR(120) DEFAULT NULL, CHANGE start_at start_at DATETIME DEFAULT NULL");
+        $this->addSql("ALTER TABLE family_activity ADD kind VARCHAR(16) NOT NULL DEFAULT 'one_off', ADD school_year VARCHAR(9) DEFAULT NULL, ADD group_names VARCHAR(160) DEFAULT NULL, ADD class_times JSON DEFAULT NULL, CHANGE start_at start_at DATETIME DEFAULT NULL");
         $this->addSql('ALTER TABLE family_activity ALTER kind DROP DEFAULT');
 
         // A signup so far is for the one session of its one-off activity: its day.
@@ -37,6 +37,6 @@ final class Version20261019100000 extends AbstractMigration
         $this->addSql('DROP INDEX uniq_family_signup_session ON family_signup');
         $this->addSql('CREATE UNIQUE INDEX uniq_family_signup ON family_signup (activity_id, family_id)');
         $this->addSql('ALTER TABLE family_signup DROP session_date');
-        $this->addSql('ALTER TABLE family_activity DROP kind, DROP school_year, DROP weekday, DROP slot_index, DROP group_names, DROP subject, CHANGE start_at start_at DATETIME NOT NULL');
+        $this->addSql('ALTER TABLE family_activity DROP kind, DROP school_year, DROP group_names, DROP class_times, CHANGE start_at start_at DATETIME NOT NULL');
     }
 }

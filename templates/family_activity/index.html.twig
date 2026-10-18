@@ -38,9 +38,9 @@
                     {% for row in weekly %}
                         {% set a = row.activity %}
                         <tr>
-                            <td><strong>{{ a.title }}</strong><br><span class="muted">{{ a.groupNames }} · {{ a.subject }}</span></td>
+                            <td><strong>{{ a.title }}</strong><br><span class="muted">{{ a.groupNames }} · {{ a.subjects|join(', ') }}</span></td>
                             <td>
-                                Cada {{ a.weekday.label|lower }}
+                                Cada {{ a.weekdays|map(w => w.label|lower)|join(', ', ' y ') }}
                                 {% if row.next %}
                                     <br><span class="muted">Próxima: {{ row.next.day|date('d/m', false) }}, {{ row.next.startsAt|date('H:i', false) }}</span>
                                 {% else %}

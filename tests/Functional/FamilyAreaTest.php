@@ -863,7 +863,7 @@ final class FamilyAreaTest extends WebTestCase
         $this->classCell($this->em, $year, $teacher, Weekday::TUESDAY, 2, 'E1A', 'Aula 12', 'Matemáticas');
         $this->em->flush();
         $tuesday = new \DateTimeImmutable('2026-01-13');
-        $activity = new WeeklyFamilyActivity($teacher, 'Grupos interactivos', self::getContainer()->get(MyClasses::class)->on($teacher, $tuesday)[0], $tuesday);
+        $activity = new WeeklyFamilyActivity($teacher, 'Grupos interactivos', [['day' => $tuesday, 'class' => self::getContainer()->get(MyClasses::class)->on($teacher, $tuesday)[0]]]);
         $this->em->persist($activity);
 
         return $activity;

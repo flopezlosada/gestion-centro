@@ -24,6 +24,7 @@ use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Clock\ClockInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\Form\FormError;
 use Symfony\Component\Form\FormInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -103,7 +104,7 @@ final class FamilyActivityController extends AbstractController
     }
 
     /**
-     * Publishes a weekly activity in one of the teacher's own classes, picked from their timetable.
+     * Publishes a weekly activity in some of the teacher's own classes with one group, picked from their timetable.
      */
     #[Route('/nueva-en-clase', name: 'family_activity_new_weekly', methods: ['GET', 'POST'])]
     public function newWeekly(Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager): Response
@@ -112,14 +113,14 @@ final class FamilyActivityController extends AbstractController
         $data = new WeeklyFamilyActivityFormData();
         $form = $this->createForm(FamilyActivityFormType::class, $data, ['class_choices' => $this->classChoices($classes)]);
         $form->handleRequest($request);
+        $picked = $this->pickedClasses($form, $classes, $data->classKeys);
 
         if ($form->isSubmitted() && $form->isValid()) {
-            ['class' => $class, 'day' => $day] = $classes[$data->classKey];
-            $activity = new WeeklyFamilyActivity($user, $data->title, $class, $day);
+            $activity = new WeeklyFamilyActivity($user, $data->title, $picked);
             $data->applyDetailsTo($activity);
             $entityManager->persist($activity);
             $entityManager->flush();
-            $this->addFlash('success', 'Actividad publicada: tendrá sesión cada semana que des esa clase.');
+            $this->addFlash('success', 'Actividad publicada: tendrá sesión cada semana que des esas clases.');
 
             return $this->redirectToRoute('family_activity_index');
         }
@@ -140,8 +141,10 @@ final class FamilyActivityController extends AbstractController
         }
         \assert($activity instanceof OneOffFamilyActivity);
         $data = OneOffFamilyActivityFormData::fromActivity($activity);
+        $form = $this->createForm(FamilyActivityFormType::class, $data);
+        $form->handleRequest($request);
 
-        return $this->handleEdit($activity, $this->createForm(FamilyActivityFormType::class, $data), $request, $entityManager, fn () => $this->applyOneOff($activity, $data));
+        return $this->handleEdit($activity, $form, $entityManager, fn () => $this->applyOneOff($activity, $data));
     }
 
     /**
@@ -163,8 +166,9 @@ final class FamilyActivityController extends AbstractController
     }
 
     /**
-     * Edits a weekly activity. It offers its organiser's classes; its own class stays on offer even when
-     * the timetable no longer has it, so saving the rest does not force a move.
+     * Edits a weekly activity. It offers its organiser's classes; its own classes stay on offer even when
+     * the timetable no longer has them, so saving the rest does not force a change. Changing the classes
+     * takes only ones still in the timetable.
      *
      * @param WeeklyFamilyActivity   $activity      the activity
      * @param Request                $request       the current request
@@ -176,42 +180,83 @@ final class FamilyActivityController extends AbstractController
     {
         $organizer = $activity->getOrganizer();
         $classes = null !== $organizer ? $this->sessions->classesOf($organizer, $this->clock->now()) : [];
-        $current = WeeklyFamilyActivityFormData::keyOf($activity);
-        // At its day and period the timetable may now hold another class (other groups, after an import):
-        // that one is not offered under the activity's key, which stays the activity's own, marked gone.
-        if (isset($classes[$current]) && !$activity->isHeldIn($classes[$current]['class'], $classes[$current]['day'])) {
-            unset($classes[$current]);
-        }
+        $current = WeeklyFamilyActivityFormData::keysOf($activity);
+        // At one of its days and periods the timetable may now hold another class (other groups, after an
+        // import): that one is not offered under the activity's key, which stays the activity's own, gone.
+        $classes = array_filter($classes, static fn (array $c, string $key): bool => !\in_array($key, $current, true) || $activity->isHeldIn($c['class'], $c['day']), \ARRAY_FILTER_USE_BOTH);
         $choices = $this->classChoices($classes);
-        if (!isset($classes[$current])) {
-            $choices[$activity->getWeekday()->label().' · '.$activity->getGroupNames().' · '.$activity->getSubject().' (ya no está en el horario)'] = $current;
+        $gone = [];
+        foreach ($activity->classTimes() as $time) {
+            $key = $time['weekday']->value.'-'.$time['slot'];
+            if (!isset($classes[$key])) {
+                $gone[] = $key;
+                $choices[$time['weekday']->label().' · '.$activity->getGroupNames().' · '.$time['subject'].' (ya no está en el horario)'] = $key;
+            }
         }
         $data = WeeklyFamilyActivityFormData::fromActivity($activity);
         $form = $this->createForm(FamilyActivityFormType::class, $data, ['class_choices' => $choices]);
+        $form->handleRequest($request);
+        $changed = self::sorted($data->classKeys) !== self::sorted($current);
+        if ($changed && $form->isSubmitted() && [] !== array_intersect($data->classKeys, $gone)) {
+            $form->get('classKeys')->addError(new FormError('Para cambiar las clases, desmarca las que ya no están en el horario.'));
+        }
+        $picked = $changed ? $this->pickedClasses($form, $classes, $data->classKeys) : [];
 
-        return $this->handleEdit($activity, $form, $request, $entityManager, static function () use ($activity, $data, $classes, $current): void {
+        return $this->handleEdit($activity, $form, $entityManager, static function () use ($activity, $data, $changed, $picked): void {
             $data->applyDetailsTo($activity);
-            if ($data->classKey !== $current && isset($classes[$data->classKey])) {
-                $activity->moveTo($classes[$data->classKey]['class'], $classes[$data->classKey]['day']);
+            if ($changed) {
+                $activity->holdIn($picked);
             }
         }, ['classGrid' => $this->classGrid($classes)]);
     }
 
     /**
-     * What editing either kind shares: handle the form, apply it when valid, save and go back to the list.
+     * The classes ticked in a weekly activity's form, checked against the activity's own rule
+     * ({@see WeeklyFamilyActivity::problemWith()}): what breaks it comes back as an error on the field.
+     *
+     * @param FormInterface<FamilyActivityFormData>                         $form    the form, already handled
+     * @param array<string, array{day: \DateTimeImmutable, class: ClassSession}> $classes the classes on offer, by key
+     * @param list<string>                                                  $keys    the keys ticked
+     *
+     * @return list<array{day: \DateTimeImmutable, class: ClassSession}> the classes ticked that are on offer
+     */
+    private function pickedClasses(FormInterface $form, array $classes, array $keys): array
+    {
+        $picked = array_values(array_intersect_key($classes, array_flip($keys)));
+        $problem = WeeklyFamilyActivity::problemWith($picked);
+        if (null !== $problem && $form->isSubmitted() && $form->isValid()) {
+            $form->get('classKeys')->addError(new FormError($problem));
+        }
+
+        return $picked;
+    }
+
+    /**
+     * @param list<string> $keys some keys
+     *
+     * @return list<string> the same, in order, to compare two choices regardless of the order ticked
+     */
+    private static function sorted(array $keys): array
+    {
+        sort($keys);
+
+        return $keys;
+    }
+
+    /**
+     * What editing either kind shares, once the form is handled: apply it when valid, save and go back to
+     * the list.
      *
      * @param FamilyActivity         $activity      the activity
-     * @param FormInterface<FamilyActivityFormData> $form its form, already built with its data
-     * @param Request                $request       the current request
+     * @param FormInterface<FamilyActivityFormData> $form its form, already handled
      * @param EntityManagerInterface $entityManager the entity manager
      * @param callable(): void       $apply         copies the validated data onto the activity
      * @param array<string, mixed>   $view          what else the form needs to be drawn
      *
      * @return Response the form, or a redirect once saved
      */
-    private function handleEdit(FamilyActivity $activity, FormInterface $form, Request $request, EntityManagerInterface $entityManager, callable $apply, array $view = []): Response
+    private function handleEdit(FamilyActivity $activity, FormInterface $form, EntityManagerInterface $entityManager, callable $apply, array $view = []): Response
     {
-        $form->handleRequest($request);
         if ($form->isSubmitted() && $form->isValid()) {
             $apply();
             $entityManager->flush();
