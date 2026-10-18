@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Repository\FamilySignupRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
@@ -18,7 +19,7 @@ use Doctrine\ORM\Mapping as ORM;
  * Deliberately NOT {@see \App\Contract\Auditable}: the activity trail outlives the account, and a row
  * per signup ("familia #12 came to this activity") would keep exactly that trace after it is removed.
  */
-#[ORM\Entity]
+#[ORM\Entity(repositoryClass: FamilySignupRepository::class)]
 #[ORM\Table(name: 'family_signup')]
 #[ORM\UniqueConstraint(name: 'uniq_family_signup_session', columns: ['activity_id', 'family_id', 'session_date'])]
 class FamilySignup
