@@ -12,10 +12,10 @@
     </div>
 
     {% if comingFromToday > 0 %}
-        {# La app todavía no avisa a las familias de un cambio: que quien organiza lo sepa antes de tocar nada.
+        {# Que quien organiza sepa, antes de tocar nada, que el cambio les llega a esas personas por correo.
            Solo cuentan las sesiones de hoy en adelante: las pasadas ya no se pueden cambiar. #}
-        <div class="flash warning" role="alert">
-            {{ comingFromToday == 1 ? 'Hay 1 persona apuntada' : 'Hay ' ~ comingFromToday ~ ' personas apuntadas' }} a sesiones de hoy en adelante. Si cambias el día, la hora o la clase, o la borras, avísales tú: la app todavía no lo hace.
+        <div class="flash warning" role="status">
+            {{ comingFromToday == 1 ? 'Hay 1 persona apuntada' : 'Hay ' ~ comingFromToday ~ ' personas apuntadas' }} a sesiones de hoy en adelante. Si cambias el día, la hora o la clase, o la borras, les llegará un correo con el cambio.
         </div>
     {% endif %}
 

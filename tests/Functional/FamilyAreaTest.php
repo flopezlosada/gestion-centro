@@ -10,6 +10,7 @@ use App\Entity\OneOffFamilyActivity;
 use App\Family\FamilySessions;
 use App\Entity\FamilyAvailability;
 use App\Entity\FamilyVolunteer;
+use App\Entity\Notification;
 use App\Entity\Role;
 use App\Entity\User;
 use App\Entity\WeeklyFamilyActivity;
@@ -341,6 +342,7 @@ final class FamilyAreaTest extends WebTestCase
         self::assertSelectorTextContains('main', 'Quedan 2');
         $this->client->submitForm('Puedo ir');
         self::assertResponseRedirects($this->weekOf($activity));
+        self::assertEmailCount(0, null, 'a quien organiza se le avisa en la app y en el móvil, no por correo');
         $this->client->followRedirect();
         self::assertSelectorTextContains('.flash.success', 'te esperamos en «Taller de cocina»');
         self::assertSelectorTextContains('main', 'Te esperamos');
@@ -351,6 +353,12 @@ final class FamilyAreaTest extends WebTestCase
         $this->client->followRedirect();
         self::assertSelectorTextContains('main', 'Quedan 2');
         self::assertSame(0, $this->signups());
+
+        // Quien organiza se entera de las dos cosas, sin el nombre de la familia.
+        self::assertSame([
+            ['family.signup', 'Alguien se ha apuntado a «Taller de cocina»', 'Viernes 23/01: viene 1 persona de 2.'],
+            ['family.withdrawal', 'Alguien ya no viene a «Taller de cocina»', 'Viernes 23/01: vienen 0 personas de 2.'],
+        ], $this->noticesTo($activity->getOrganizer()));
     }
 
     /**
@@ -435,6 +443,7 @@ final class FamilyAreaTest extends WebTestCase
         }
 
         self::assertSame(1, $this->signups());
+        self::assertCount(1, $this->noticesTo($activity->getOrganizer()), 'la segunda vez no cambia nada: no se avisa otra vez');
     }
 
     /**
@@ -702,6 +711,21 @@ final class FamilyAreaTest extends WebTestCase
         $records = $handler->getRecords();
         self::assertSame([$message], array_map(static fn (LogRecord $r): string => $r->message, $records));
         self::assertStringNotContainsString($address, json_encode($records[0]->context, \JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * @param User|null $recipient who the notices are for
+     *
+     * @return list<array{0: string, 1: string, 2: string|null}> their notices, oldest first, as kind, title and body
+     */
+    private function noticesTo(?User $recipient): array
+    {
+        self::assertNotNull($recipient);
+
+        return array_map(
+            static fn (Notification $n): array => [$n->getKind(), $n->getTitle(), $n->getBody()],
+            $this->em->getRepository(Notification::class)->findBy(['recipient' => $recipient], ['id' => 'ASC']),
+        );
     }
 
     /**

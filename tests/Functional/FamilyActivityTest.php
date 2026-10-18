@@ -23,6 +23,7 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 use Symfony\Component\DomCrawler\Crawler;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\Mime\Email;
 use Symfony\Component\Security\Http\AccessMapInterface;
 
 /**
@@ -321,15 +322,150 @@ final class FamilyActivityTest extends WebTestCase
 
         $crawler = $this->client->request('GET', '/actividades-familias/'.$activity->getId().'/editar');
         self::assertSelectorTextContains('.flash.warning', 'Hay 1 persona apuntada');
+        self::assertSelectorTextContains('.flash.warning', 'les llegará un correo');
         $form = $crawler->selectButton('Guardar')->form();
         $form['family_activity_form[day]'] = '2026-01-21';
         $this->client->submit($form);
         self::assertResponseRedirects('/actividades-familias');
+        self::assertEmailCount(1, null, 'la familia apuntada se entera del cambio');
+        $email = self::getMailerMessage();
+        self::assertNotNull($email);
+        self::assertEmailAddressContains($email, 'To', 'marta@gmail.test');
+        self::assertEmailHeaderSame($email, 'Subject', 'Cambio en «Taller de cuentos»');
+        self::assertEmailTextBodyContains($email, 'jueves 15/01, a las 10:30 → ahora miércoles 21/01, a las 10:30.');
 
         self::assertSame(['2026-01-21'], $this->em->getConnection()->fetchFirstColumn('SELECT session_date FROM family_signup'));
         $this->client->request('GET', '/actividades-familias/'.$activity->getId());
         self::assertSelectorTextContains('.who-comes', 'Mié 21/01');
         self::assertSelectorTextContains('.who-comes', 'Familia Marta');
+    }
+
+    /**
+     * Each family coming gets a message of its own, addressed to it alone: families never learn of one
+     * another. A one-off keeping its day but changing hours and place is a change too.
+     */
+    public function testEachFamilyIsToldAloneOfANewTimeAndPlace(): void
+    {
+        $organizer = $this->user('organiza@centro.test');
+        $activity = $this->activity($organizer, '+2 days');
+        foreach (['Familia Marta' => 'marta@gmail.test', 'Familia Luis' => 'luis@gmail.test'] as $name => $address) {
+            $family = (new FamilyVolunteer())->setFullName($name)->setEmail($address);
+            $this->em->persist($family);
+            $activity->signUp($activity->session(), $family, new \DateTimeImmutable(self::TODAY.' 08:00'));
+        }
+        $this->em->flush();
+        $this->client->loginUser($organizer);
+
+        $form = $this->client->request('GET', '/actividades-familias/'.$activity->getId().'/editar')->selectButton('Guardar')->form();
+        $form['family_activity_form[startTime]'] = '12:00';
+        $form['family_activity_form[place]'] = 'Biblioteca';
+        $this->client->submit($form);
+
+        self::assertResponseRedirects('/actividades-familias');
+        self::assertEmailCount(2, null, 'un correo por familia');
+        $to = [];
+        foreach (self::getMailerMessages() as $email) {
+            self::assertInstanceOf(Email::class, $email);
+            self::assertCount(1, $email->getTo(), 'a esa familia sola');
+            self::assertSame([], $email->getCc());
+            self::assertSame([], $email->getBcc());
+            self::assertEmailTextBodyNotContains($email, 'Familia Marta');
+            self::assertEmailTextBodyNotContains($email, 'Familia Luis');
+            self::assertEmailTextBodyContains($email, 'jueves 15/01, a las 10:30 → ahora jueves 15/01, a las 12:00, en Biblioteca.');
+            $to[] = $email->getTo()[0]->getAddress();
+        }
+        sort($to);
+        self::assertSame(['luis@gmail.test', 'marta@gmail.test'], $to);
+    }
+
+    /**
+     * Only what a family has to act on is mailed: a new title or description, with the day, hours and
+     * place as they were, reaches nobody.
+     */
+    public function testEditingWhatDoesNotMoveASessionMailsNobody(): void
+    {
+        $organizer = $this->user('organiza@centro.test');
+        $activity = $this->activity($organizer, '+2 days');
+        $family = (new FamilyVolunteer())->setFullName('Familia Marta')->setEmail('marta@gmail.test');
+        $this->em->persist($family);
+        $activity->signUp($activity->session(), $family, new \DateTimeImmutable(self::TODAY.' 08:00'));
+        $this->em->flush();
+        $this->client->loginUser($organizer);
+
+        $form = $this->client->request('GET', '/actividades-familias/'.$activity->getId().'/editar')->selectButton('Guardar')->form();
+        $form['family_activity_form[title]'] = 'Taller de cuentos del mundo';
+        $this->client->submit($form);
+
+        self::assertResponseRedirects('/actividades-familias');
+        self::assertEmailCount(0, null, 'ni el día, ni la hora, ni el lugar han cambiado');
+    }
+
+    /**
+     * Removing an activity tells each family coming, in a message of its own; a family that only came to
+     * a session already past is not told.
+     */
+    public function testDeletingAnActivityTellsTheFamiliesComing(): void
+    {
+        $teacher = $this->teacherWithAClass();
+        $this->em->flush();
+        self::mockTime('2026-01-14 08:00');
+        $sessions = self::getContainer()->get(FamilySessions::class);
+        $class = self::getContainer()->get(MyClasses::class)->on($teacher, new \DateTimeImmutable('2026-01-13'))[0];
+        $activity = new WeeklyFamilyActivity($teacher, 'Grupos interactivos', [['day' => new \DateTimeImmutable('2026-01-13'), 'class' => $class]]);
+        $this->em->persist($activity);
+        $comes = (new FamilyVolunteer())->setFullName('Familia Marta')->setEmail('marta@gmail.test');
+        $came = (new FamilyVolunteer())->setFullName('Familia Luis')->setEmail('luis@gmail.test');
+        $this->em->persist($comes);
+        $this->em->persist($came);
+        foreach ([[$came, '2026-01-13'], [$comes, '2026-01-20'], [$comes, '2026-01-27']] as [$family, $day]) {
+            $session = $sessions->sessionOn($activity, new \DateTimeImmutable($day));
+            self::assertNotNull($session);
+            $activity->signUp($session, $family, new \DateTimeImmutable('2026-01-12 08:00'));
+        }
+        $this->em->flush();
+        $this->client->loginUser($teacher);
+
+        $this->client->submit($this->client->request('GET', '/actividades-familias/'.$activity->getId().'/editar')->selectButton('Borrar actividad')->form());
+
+        self::assertResponseRedirects('/actividades-familias');
+        self::assertEmailCount(1, null, 'un correo a la familia que iba a venir, con sus dos sesiones');
+        $email = self::getMailerMessage();
+        self::assertNotNull($email);
+        self::assertEmailAddressContains($email, 'To', 'marta@gmail.test');
+        self::assertEmailHeaderSame($email, 'Subject', 'Se cancela «Grupos interactivos»');
+        self::assertEmailTextBodyContains($email, "- martes 20/01, de 10:15 a 11:10, en Aula 12\n- martes 27/01, de 10:15 a 11:10, en Aula 12");
+        self::assertEmailTextBodyNotContains($email, 'Familia Luis');
+    }
+
+    /**
+     * A weekly activity moved to another class: the family coming on a day it no longer takes place is
+     * told so, since its signup has no session left.
+     */
+    public function testChangingTheClassesTellsAFamilyItsDayIsGone(): void
+    {
+        $teacher = $this->teacherWithClassesOfTwoGroups();
+        self::mockTime('2026-01-12 08:00');
+        $this->client->loginUser($teacher);
+        $this->publishWeekly(['2-2']);
+        $activity = $this->em->getRepository(WeeklyFamilyActivity::class)->findOneBy([]);
+        self::assertNotNull($activity);
+        $family = (new FamilyVolunteer())->setFullName('Familia Marta')->setEmail('marta@gmail.test');
+        $this->em->persist($family);
+        $session = self::getContainer()->get(FamilySessions::class)->sessionOn($activity, new \DateTimeImmutable('2026-01-20'));
+        self::assertNotNull($session);
+        $activity->signUp($session, $family, new \DateTimeImmutable('2026-01-12 08:00'));
+        $this->em->flush();
+
+        $form = $this->client->request('GET', '/actividades-familias/'.$activity->getId().'/editar')->selectButton('Guardar')->form();
+        $values = $form->getPhpValues();
+        $values['family_activity_form']['classKeys'] = ['4-7'];
+        $this->client->request('POST', $form->getUri(), $values);
+
+        self::assertResponseRedirects('/actividades-familias');
+        self::assertEmailCount(1);
+        $email = self::getMailerMessage();
+        self::assertNotNull($email);
+        self::assertEmailTextBodyContains($email, 'martes 20/01, de 10:15 a 11:10, en Aula 12 → ya no hay sesión ese día.');
     }
 
     /**

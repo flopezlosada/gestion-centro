@@ -99,7 +99,8 @@ enum NotificationTopic: string
      * porque llegan cuando la cosa está pasando, y el resto van también por correo.
      *
      * ⚠️ Espejo de `NotificationDispatcher::PUSH_ONLY_KINDS` (hoy `event.`, `guardia.raices`,
-     * `guardia.reminder`, `meeting.reminder` y `meeting.minutes`): si esa lista cambia, este texto miente.
+     * `guardia.reminder`, `meeting.reminder` y `meeting.minutes`; también `family.`, que no es de ninguna
+     * sección y no sale aquí): si esa lista cambia, este texto miente.
      * Antes había UNA frase copiada en las cinco secciones que hablaba de "recordatorios de última hora", y
      * era falsa en Tareas y en Cambios de aula, donde no hay ninguno.
      *

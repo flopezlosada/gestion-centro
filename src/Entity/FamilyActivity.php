@@ -261,18 +261,22 @@ abstract class FamilyActivity implements Auditable
      * @param FamilyVolunteer    $family  who comes
      * @param \DateTimeImmutable $now     the current instant
      *
+     * @return bool whether it was not signed up yet, so something changed
+     *
      * @throws \DomainException if it has started or is full
      */
-    public function signUp(FamilySession $session, FamilyVolunteer $family, \DateTimeImmutable $now): void
+    public function signUp(FamilySession $session, FamilyVolunteer $family, \DateTimeImmutable $now): bool
     {
         $this->assertOwn($session);
         if ($this->isSignedUpBy($family, $session->day)) {
-            return;
+            return false;
         }
         if (!$session->acceptsSignupsAt($now)) {
             throw new \DomainException('The session has started or is full.');
         }
         $this->signups->add(new FamilySignup($this, $family, $session->day, $now));
+
+        return true;
     }
 
     /**
@@ -282,18 +286,23 @@ abstract class FamilyActivity implements Auditable
      * @param FamilyVolunteer    $family  who no longer comes
      * @param \DateTimeImmutable $now     the current instant
      *
+     * @return bool whether it was signed up, so something changed
+     *
      * @throws \DomainException if it has started
      */
-    public function withdraw(FamilySession $session, FamilyVolunteer $family, \DateTimeImmutable $now): void
+    public function withdraw(FamilySession $session, FamilyVolunteer $family, \DateTimeImmutable $now): bool
     {
         $this->assertOwn($session);
         if (!$session->isOpenAt($now)) {
             throw new \DomainException('The session has started.');
         }
         $signup = $this->signupOf($family, $session->day);
-        if (null !== $signup) {
-            $this->signups->removeElement($signup);
+        if (null === $signup) {
+            return false;
         }
+        $this->signups->removeElement($signup);
+
+        return true;
     }
 
     /**

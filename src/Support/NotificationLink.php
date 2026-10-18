@@ -58,6 +58,9 @@ final class NotificationLink
             // itself: a Notification only knows how to point at a Task, and widening that schema for
             // every module would mean a column per feature.
             str_starts_with($notification->getKind(), 'meeting.') => $this->urlGenerator->generate('meeting_index'),
+            // A family signing up or withdrawing opens the organiser's activities with families, whose
+            // calendar shows how many come to each session.
+            str_starts_with($notification->getKind(), 'family.') => $this->urlGenerator->generate('family_activity_index'),
             // Anything else has nowhere better to go than the inbox itself.
             default => $this->urlGenerator->generate('notification_index'),
         };

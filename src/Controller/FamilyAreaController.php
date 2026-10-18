@@ -10,6 +10,7 @@ use App\Entity\FamilyVolunteer;
 use App\Enum\Weekday;
 use App\Family\FamilySession;
 use App\Family\FamilySessions;
+use App\Family\FamilySignupNotifier;
 use App\Form\FamilyAvailabilityDay;
 use App\Form\FamilyAvailabilityFormType;
 use App\Repository\FamilyAvailabilityRepository;
@@ -47,6 +48,7 @@ final class FamilyAreaController extends AbstractController
     public function __construct(
         private readonly ClockInterface $clock,
         private readonly FamilySessions $sessions,
+        private readonly FamilySignupNotifier $notifier,
         #[Autowire(service: 'limiter.magic_link')]
         private readonly RateLimiterFactory $magicLinkLimiter,
     ) {
@@ -73,7 +75,7 @@ final class FamilyAreaController extends AbstractController
 
     /**
      * Signs the family up for one session. Only before it starts and while there is room; a second press
-     * changes nothing.
+     * changes nothing, and tells the organiser nothing either.
      *
      * The same family pressing at once from two devices (two sessions, so not serialised by the session
      * lock) both find no signup and the second flush hits the unique index: it is already signed up, which
@@ -86,8 +88,10 @@ final class FamilyAreaController extends AbstractController
         $session = $this->sessionOrNotFound($activity, $fecha, 'family_signup', $request);
 
         try {
-            $activity->signUp($session, $family, $this->clock->now());
-            $em->flush();
+            if ($activity->signUp($session, $family, $this->clock->now())) {
+                $em->flush();
+                $this->notifier->signedUp($session);
+            }
         } catch (UniqueConstraintViolationException) {
             // Signed up from another device meanwhile: done all the same.
         } catch (\DomainException) {
@@ -101,7 +105,8 @@ final class FamilyAreaController extends AbstractController
     }
 
     /**
-     * Takes the family off a session it can no longer come to. Only before it starts.
+     * Takes the family off a session it can no longer come to, and tells the organiser. Only before it
+     * starts.
      */
     #[Route('/actividades/{id}/{fecha}/desapuntarme', name: 'family_withdraw', requirements: ['id' => '\d+', 'fecha' => '\d{4}-\d{2}-\d{2}'], methods: ['POST'])]
     public function withdraw(FamilyActivity $activity, string $fecha, Request $request, #[CurrentUser] FamilyVolunteer $family, EntityManagerInterface $em): Response
@@ -109,8 +114,10 @@ final class FamilyAreaController extends AbstractController
         $session = $this->sessionOrNotFound($activity, $fecha, 'family_withdraw', $request);
 
         try {
-            $activity->withdraw($session, $family, $this->clock->now());
-            $em->flush();
+            if ($activity->withdraw($session, $family, $this->clock->now())) {
+                $em->flush();
+                $this->notifier->withdrew($session);
+            }
             $this->addFlash('success', 'Hecho: ya no contamos contigo en «'.$activity->getTitle().'» el '.$session->day->format('d/m').'.');
         } catch (\DomainException) {
             $this->addFlash('error', '«'.$activity->getTitle().'» ya ha empezado: si no puedes venir, avisa al centro.');
