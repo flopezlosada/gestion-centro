@@ -91,17 +91,13 @@ final class FamilyAreaTest extends WebTestCase
         $this->client->request('POST', '/familias/entrar', ['email' => 'marta.log@gmail.test']);
         $link = $this->sentLink();
 
+        // The kernel reboots between requests, and the log handler with it: read it after each one.
         $this->follow($link);
+        $this->assertLoggedWithoutTheAddress('login link accepted', 'marta.log');
         $this->follow($link);
-
-        $handler = self::getContainer()->get('monolog.handler.login_link');
-        self::assertInstanceOf(TestHandler::class, $handler);
-        $records = $handler->getRecords();
-        self::assertSame(['login link accepted', 'login link refused'], array_map(static fn (LogRecord $r): string => $r->message, $records));
-        foreach ($records as $record) {
-            self::assertStringNotContainsString('marta.log', json_encode($record->context, \JSON_THROW_ON_ERROR));
-        }
+        $this->assertLoggedWithoutTheAddress('login link refused', 'marta.log');
     }
+
 
     public function testAnUnknownAddressGetsTheSameAnswerAndNoEmail(): void
     {
@@ -242,8 +238,9 @@ final class FamilyAreaTest extends WebTestCase
     public function testATeacherWithoutAdministrationCannotManageTheAccounts(): void
     {
         $family = $this->family('marta@gmail.test');
-        $this->client->loginUser($this->user('profe@centro.test'));
+        $teacher = $this->user('profe@centro.test');
         $this->em->flush();
+        $this->client->loginUser($teacher);
 
         $this->client->request('GET', '/actividades-familias/cuentas');
         self::assertResponseStatusCodeSame(403);
@@ -314,6 +311,19 @@ final class FamilyAreaTest extends WebTestCase
         self::assertStringNotContainsString('marta.rastro@gmail.test', $trail);
         self::assertStringContainsString(json_encode(AuditRedacted::MARK, \JSON_UNESCAPED_UNICODE | \JSON_THROW_ON_ERROR), $trail);
         self::assertContains('familia #'.$family->getId(), array_map(static fn (AuditLog $e): ?string => $e->getActor(), $entries));
+    }
+
+    /**
+     * @param string $message what the last request should have logged, alone
+     * @param string $address part of the address that must not appear in it
+     */
+    private function assertLoggedWithoutTheAddress(string $message, string $address): void
+    {
+        $handler = self::getContainer()->get('monolog.handler.login_link');
+        self::assertInstanceOf(TestHandler::class, $handler);
+        $records = $handler->getRecords();
+        self::assertSame([$message], array_map(static fn (LogRecord $r): string => $r->message, $records));
+        self::assertStringNotContainsString($address, json_encode($records[0]->context, \JSON_THROW_ON_ERROR));
     }
 
     /**
