@@ -6,9 +6,11 @@ namespace App\Controller;
 
 use App\Entity\FamilyActivity;
 use App\Entity\User;
+use App\Enum\Weekday;
 use App\Form\FamilyActivityFormData;
 use App\Form\FamilyActivityFormType;
 use App\Repository\FamilyActivityRepository;
+use App\Repository\FamilyAvailabilityRepository;
 use App\Security\Voter\ModuleVoter;
 use App\Util\CalendarDate;
 use Doctrine\ORM\EntityManagerInterface;
@@ -40,10 +42,11 @@ final class FamilyActivityController extends AbstractController
 
     /**
      * The activities still to come by default — what is being planned — with the past ones one click
-     * away.
+     * away. Next to the upcoming ones, when families can usually come, to choose the day of the next:
+     * how many each day and their hours, never who.
      */
     #[Route('', name: 'family_activity_index', methods: ['GET'])]
-    public function index(Request $request, FamilyActivityRepository $activities): Response
+    public function index(Request $request, FamilyActivityRepository $activities, FamilyAvailabilityRepository $availability): Response
     {
         $past = 'pasadas' === $request->query->getString('ver');
         $today = $this->clock->now();
@@ -51,6 +54,8 @@ final class FamilyActivityController extends AbstractController
         return $this->render('family_activity/index.html.twig', [
             'activities' => $past ? $activities->findPast($today) : $activities->findUpcoming($today),
             'showingPast' => $past,
+            'availability' => $past ? [] : $availability->findAllByWeekday(),
+            'weekdays' => Weekday::schoolWeek(),
         ]);
     }
 

@@ -1,0 +1,46 @@
+{% extends 'family_area/_layout.html.twig' %}
+{% import '_macros/form.html.twig' as f %}
+
+{% block title %}Cuándo podéis venir · {{ app_organization_name }}{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Espacio de familias</p>
+            <h1>Cuándo podéis venir</h1>
+            <p class="lead">Los días y horas en que soléis poder venir al centro. El profesorado lo mira para elegir el día de las actividades; no ve vuestro nombre, solo cuántas familias pueden cada día y a qué horas.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        {{ form_start(form, { attr: { novalidate: 'novalidate' } }) }}
+        {{ f.submit_error(form) }}
+        {{ form_errors(form) }}
+        <table>
+            <thead>
+                <tr><th>Día</th><th>Desde</th><th>Hasta</th></tr>
+            </thead>
+            <tbody>
+                {% for row in form.days %}
+                    <tr>
+                        <th scope="row">{{ row.vars.data.weekday.label }}</th>
+                        <td>
+                            {{ form_widget(row.from, { attr: { 'aria-label': row.vars.data.weekday.label ~ ', desde' } }) }}
+                            {{ form_errors(row.from) }}
+                        </td>
+                        <td>
+                            {{ form_widget(row.until, { attr: { 'aria-label': row.vars.data.weekday.label ~ ', hasta' } }) }}
+                            {{ form_errors(row.until) }}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <p class="help">Dejad las dos horas vacías los días que no podáis venir.</p>
+        <div class="stackform__foot">
+            <a class="btn secondary" href="{{ path('family_home') }}">Cancelar</a>
+            <button class="btn" type="submit">Guardar</button>
+        </div>
+        {{ form_end(form) }}
+    </div>
+{% endblock %}

@@ -7,9 +7,11 @@ namespace App\Tests\Functional;
 use App\Contract\AuditRedacted;
 use App\Entity\AuditLog;
 use App\Entity\FamilyActivity;
+use App\Entity\FamilyAvailability;
 use App\Entity\FamilyVolunteer;
 use App\Entity\Role;
 use App\Entity\User;
+use App\Enum\Weekday;
 use App\Service\AppSettings;
 use App\Tests\Support\MintsSessionCsrfTokens;
 use Doctrine\ORM\EntityManagerInterface;
@@ -17,6 +19,7 @@ use Monolog\Handler\TestHandler;
 use Monolog\LogRecord;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\DomCrawler\Crawler;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Mime\Email;
 use Symfony\Component\Security\Http\AccessMapInterface;
@@ -495,6 +498,138 @@ final class FamilyAreaTest extends WebTestCase
 
         self::assertResponseRedirects('/actividades-familias/cuentas');
         self::assertSame(0, $this->signups());
+    }
+
+    /**
+     * Saving again moves a day kept, drops a day emptied and adds a new one — the day kept is the same
+     * row, which is what keeps the unique (family, day) index from refusing the save.
+     */
+    public function testAFamilySaysWhenItCanComeAndChangesIt(): void
+    {
+        $family = $this->family('marta@gmail.test');
+        $this->em->flush();
+        $this->signInAsFamily($family);
+
+        $this->client->request('GET', '/familias');
+        $this->client->clickLink('Cuándo podemos venir');
+        $this->client->submitForm('Guardar', $this->availabilityForm([0 => ['09:00', '12:00'], 2 => ['10:00', '13:00']]));
+        self::assertResponseRedirects('/familias');
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('.flash.success', 'ya sabe cuándo podéis venir');
+        $monday = $this->availabilityOf($family)[Weekday::MONDAY->value]['id'];
+
+        $this->client->request('GET', '/familias/disponibilidad');
+        self::assertInputValueSame('family_availability_form[days][0][from]', '09:00');
+        $this->client->submitForm('Guardar', $this->availabilityForm([0 => ['09:30', '11:00'], 2 => ['', ''], 4 => ['16:00', '18:00']]));
+        self::assertResponseRedirects('/familias');
+
+        $after = $this->availabilityOf($family);
+        self::assertSame([Weekday::MONDAY->value, Weekday::FRIDAY->value], array_keys($after));
+        self::assertSame(['id' => $monday, 'span' => '09:30:00–11:00:00'], $after[Weekday::MONDAY->value]);
+        self::assertSame('16:00:00–18:00:00', $after[Weekday::FRIDAY->value]['span']);
+    }
+
+    /**
+     * A day with one time only, or with "until" before "from", is sent back with the reason and nothing
+     * of the form is saved, not even the days that were right: what was stored stays as it was.
+     */
+    public function testAHalfGivenOrBackwardsDayIsRefused(): void
+    {
+        $family = $this->family('marta@gmail.test');
+        $this->em->persist(new FamilyAvailability($family, Weekday::FRIDAY, new \DateTimeImmutable('16:00'), new \DateTimeImmutable('18:00')));
+        $this->em->flush();
+        $stored = $this->availabilityOf($family);
+        $this->signInAsFamily($family);
+        $this->client->request('GET', '/familias/disponibilidad');
+
+        $this->client->submitForm('Guardar', $this->availabilityForm([0 => ['09:00', '12:00'], 1 => ['09:00', ''], 3 => ['12:00', '10:00']]));
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertSelectorTextContains('main', 'Pon las dos horas');
+        self::assertSelectorTextContains('main', 'tiene que ser posterior');
+        self::assertSame($stored, $this->availabilityOf($family));
+    }
+
+    /**
+     * The staff see, per day, how many families can come and at what hours — never who.
+     */
+    public function testTheStaffSeeHowManyFamiliesCanComeEachDayButNotWho(): void
+    {
+        $marta = $this->family('marta@gmail.test');
+        $luis = $this->family('luis@gmail.test');
+        $this->em->persist(new FamilyAvailability($marta, Weekday::TUESDAY, new \DateTimeImmutable('09:00'), new \DateTimeImmutable('12:00')));
+        $this->em->persist(new FamilyAvailability($luis, Weekday::TUESDAY, new \DateTimeImmutable('08:30'), new \DateTimeImmutable('10:00')));
+        $this->em->persist(new FamilyAvailability($luis, Weekday::THURSDAY, new \DateTimeImmutable('16:00'), new \DateTimeImmutable('18:00')));
+        $teacher = $this->user('profe@centro.test');
+        $this->em->flush();
+        $this->client->loginUser($teacher);
+
+        $this->client->request('GET', '/actividades-familias');
+
+        $rows = $this->client->getCrawler()->filter('#family-availability-title + table tbody tr')
+            ->each(static fn (Crawler $row): string => preg_replace('/\s+/', ' ', trim($row->text())));
+        self::assertSame([
+            'Lunes 0 —',
+            'Martes 2 08:30–10:00, 09:00–12:00',
+            'Miércoles 0 —',
+            'Jueves 1 16:00–18:00',
+            'Viernes 0 —',
+        ], $rows);
+        self::assertSelectorTextNotContains('main', 'Familia marta');
+        self::assertSelectorTextNotContains('main', 'Familia luis');
+    }
+
+    /**
+     * Removing the account takes with it the days and hours that person could come.
+     */
+    public function testRemovingAFamilyRemovesItsAvailability(): void
+    {
+        $family = $this->family('marta@gmail.test');
+        $this->em->persist(new FamilyAvailability($family, Weekday::MONDAY, new \DateTimeImmutable('09:00'), new \DateTimeImmutable('12:00')));
+        $this->em->flush();
+        $this->client->loginUser($this->admin());
+
+        $this->client->request('POST', '/actividades-familias/cuentas/'.$family->getId().'/borrar', [
+            '_token' => $this->mintCsrfToken($this->client, '/actividades-familias/cuentas', 'family_volunteer_delete'.$family->getId()),
+        ]);
+
+        self::assertResponseRedirects('/actividades-familias/cuentas');
+        self::assertSame(0, (int) $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM family_availability'));
+    }
+
+    /**
+     * @param array<int, array{string, string}> $days "from" and "until" by row (0 = Monday), the rest left empty
+     *
+     * @return array<string, string> the fields of the availability form
+     */
+    private function availabilityForm(array $days): array
+    {
+        $fields = [];
+        foreach (array_keys(Weekday::schoolWeek()) as $row) {
+            [$from, $until] = $days[$row] ?? ['', ''];
+            $fields['family_availability_form[days]['.$row.'][from]'] = $from;
+            $fields['family_availability_form[days]['.$row.'][until]'] = $until;
+        }
+
+        return $fields;
+    }
+
+    /**
+     * @param FamilyVolunteer $family the family
+     *
+     * @return array<int, array{id: int, span: string}> its stored spans by weekday, read past the identity map
+     */
+    private function availabilityOf(FamilyVolunteer $family): array
+    {
+        $rows = $this->em->getConnection()->fetchAllAssociative(
+            'SELECT id, weekday, available_from, available_until FROM family_availability WHERE family_id = ? ORDER BY weekday',
+            [$family->getId()],
+        );
+
+        return array_combine(
+            array_map(static fn (array $r): int => (int) $r['weekday'], $rows),
+            array_map(static fn (array $r): array => ['id' => (int) $r['id'], 'span' => $r['available_from'].'–'.$r['available_until']], $rows),
+        );
     }
 
     /**
