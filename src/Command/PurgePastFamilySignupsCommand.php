@@ -41,15 +41,19 @@ final class PurgePastFamilySignupsCommand extends AbstractCronCommand
      */
     protected function doExecute(InputInterface $input, OutputInterface $output): int
     {
+        $io = new SymfonyStyle($input, $output);
         $days = $this->settings->getFamilySignupRetentionDays();
         if (null === $days) {
-            return $this->nothingToDo('Sin plazo en los datos del centro: no se borra ninguna inscripción.');
+            $detail = 'Sin plazo en los datos del centro: no se borra ninguna inscripción.';
+            $io->writeln($detail);
+
+            return $this->nothingToDo($detail);
         }
 
         $keptFrom = new \DateTimeImmutable(\sprintf('today -%d days', $days));
         $deleted = $this->signups->deleteHeldBefore($keptFrom);
         $detail = \sprintf('%d inscripciones de familias borradas (sesiones anteriores al %s).', $deleted, $keptFrom->format('d/m/Y'));
-        (new SymfonyStyle($input, $output))->writeln($detail);
+        $io->writeln($detail);
 
         return $deleted > 0 ? $this->didWork($detail) : $this->nothingToDo($detail);
     }
