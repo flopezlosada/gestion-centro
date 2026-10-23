@@ -913,8 +913,10 @@ final class GuardiaPageTest extends WebTestCase
     {
         $this->login();
         $absent = $this->user('Ausente Vieja', 'avieja@centro.test');
-        $this->em->flush();
         $keptFrom = AbsenceRetention::ONE_WEEK->keptFrom(new \DateTimeImmutable('today'));
+        // Sin horario importado del curso la pantalla no ofrece ni el selector de fecha.
+        $this->em->persist($this->academicYear(SchoolYear::current($keptFrom)));
+        $this->em->flush();
         $refusal = sprintf('no se puede apuntar una anterior al %s', $keptFrom->format('d/m/Y'));
 
         $crawler = $this->client->request('GET', '/guardias/ausencia/nueva?date='.$keptFrom->format('Y-m-d'));
@@ -941,10 +943,10 @@ final class GuardiaPageTest extends WebTestCase
         self::assertSelectorTextContains('main', $refusal);
         self::assertCount(0, $this->em->getRepository(Absence::class)->findAll());
 
-        // El primer día del plazo pasa el corte (sin horario importado se para después, por otra razón).
         $post($keptFrom);
         $this->client->followRedirect();
         self::assertSelectorTextNotContains('main', $refusal);
+        self::assertCount(1, $this->em->getRepository(Absence::class)->findAll(), 'el primer día del plazo se apunta');
     }
 
     /**
