@@ -15,8 +15,10 @@ use Doctrine\Persistence\ManagerRegistry;
  */
 class BreakDutyGapRepository extends ServiceEntityRepository
 {
-    public function __construct(ManagerRegistry $registry)
-    {
+    public function __construct(
+        ManagerRegistry $registry,
+        private readonly ArchivedBreakDutyGapRepository $archive,
+    ) {
         parent::__construct($registry, BreakDutyGap::class);
     }
 
@@ -115,7 +117,8 @@ class BreakDutyGapRepository extends ServiceEntityRepository
 
     /**
      * How many gaps a course accumulated and how many of those a volunteer ended up covering — the two
-     * numbers that say whether "no se cubre" is working out in practice.
+     * numbers that say whether "no se cubre" is working out in practice. Those already archived for being
+     * past the plazo count too: a recreo does not stop having gone unwatched because time passed.
      *
      * @param AcademicYear            $year the course whose rota the gaps belong to
      * @param \DateTimeImmutable|null $from window start, inclusive, or null for no lower bound
@@ -141,7 +144,9 @@ class BreakDutyGapRepository extends ServiceEntityRepository
         /** @var array{total: int|string, covered: int|string|null} $row */
         $row = $qb->getQuery()->getSingleResult();
 
-        return ['total' => (int) $row['total'], 'covered' => (int) ($row['covered'] ?? 0)];
+        $archived = $this->archive->summary($year, $from, $to);
+
+        return ['total' => (int) $row['total'] + $archived['total'], 'covered' => (int) ($row['covered'] ?? 0) + $archived['covered']];
     }
 
     /**

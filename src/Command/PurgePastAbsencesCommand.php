@@ -48,9 +48,10 @@ final class PurgePastAbsencesCommand extends AbstractCronCommand
         $today = new \DateTimeImmutable('today');
         $purged = $this->purger->purge($retention, $today);
         $detail = \sprintf(
-            '%d ausencias borradas y %d guardias archivadas (anteriores al %s, plazo de %s).',
+            '%d ausencias borradas, y %d guardias y %d recreos sin vigilar archivados (anteriores al %s, plazo de %s).',
             $purged['absences'],
             $purged['covers'],
+            $purged['breakGaps'],
             $retention->keptFrom($today)->format('d/m/Y'),
             $retention->label(),
         );
@@ -65,6 +66,6 @@ final class PurgePastAbsencesCommand extends AbstractCronCommand
         }
         $io->writeln($detail);
 
-        return 0 === $purged['absences'] + $purged['covers'] ? $this->nothingToDo($detail) : $this->didWork($detail);
+        return 0 === $purged['absences'] + $purged['covers'] + $purged['breakGaps'] ? $this->nothingToDo($detail) : $this->didWork($detail);
     }
 }

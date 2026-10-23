@@ -24,6 +24,9 @@ use Psr\Log\LoggerInterface;
  */
 final class BreakDutyGapNotifier
 {
+    /** The kind of the notice, by which the absence purge finds it once its day is past the plazo. */
+    public const string KIND = 'break_duty.uncovered';
+
     public function __construct(
         private readonly NotificationDispatcher $dispatcher,
         private readonly UserRepository $users,
@@ -66,7 +69,7 @@ final class BreakDutyGapNotifier
 
         $notices = [];
         foreach ($leadership as $recipient) {
-            $notices[] = $this->dispatcher->record($recipient, 'break_duty.uncovered', $title, $body);
+            $notices[] = $this->dispatcher->record($recipient, self::KIND, $title, $body);
         }
         // One flush for the whole leadership team rather than one per person.
         $this->dispatcher->flushAndSend($notices);
