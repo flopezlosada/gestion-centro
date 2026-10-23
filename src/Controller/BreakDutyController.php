@@ -19,6 +19,7 @@ use App\Guardia\BreakRotaPlanner;
 use App\Guardia\BreakRotaProposal;
 use App\Guardia\BreakRotaProposer;
 use App\Repository\AcademicYearRepository;
+use App\Repository\ArchivedBreakDutyGapRepository;
 use App\Repository\BreakDutyAssignmentRepository;
 use App\Repository\BreakDutyGapRepository;
 use App\Repository\BreakZoneDemandRepository;
@@ -26,6 +27,7 @@ use App\Repository\BreakZoneRepository;
 use App\Repository\TimeSlotRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
+use App\Service\AppSettings;
 use App\Service\BreakRotaAnnouncer;
 use App\Util\SchoolYear;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
@@ -449,7 +451,7 @@ final class BreakDutyController extends AbstractController
      * is where an alert about an unwatched zone lands, and where whoever volunteers is written down.
      */
     #[Route('/huecos', name: 'break_duty_gap_index', methods: ['GET'])]
-    public function gaps(Request $request, AcademicYearRepository $years, BreakDutyGapRepository $gaps, UserRepository $users): Response
+    public function gaps(Request $request, AcademicYearRepository $years, BreakDutyGapRepository $gaps, ArchivedBreakDutyGapRepository $archive, UserRepository $users, AppSettings $settings): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
@@ -469,6 +471,9 @@ final class BreakDutyController extends AbstractController
             'year' => $year,
             'pending' => array_reverse($pending), // soonest first: what to solve today comes first
             'past' => $past,
+            // Todos son anteriores a los vivos, así que van detrás y el orden se mantiene.
+            'archived' => $year instanceof AcademicYear ? $archive->findByYear($year) : [],
+            'retention' => $settings->getAbsenceRetention(),
             'summary' => $year instanceof AcademicYear ? $gaps->summary($year) : ['total' => 0, 'covered' => 0],
             'teachers' => $users->findBy(['active' => true], ['fullName' => 'ASC']),
             'canManage' => $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS),
@@ -478,7 +483,8 @@ final class BreakDutyController extends AbstractController
     /**
      * Records who volunteered to watch a zone whose duty holder was away — or clears it again — plus an
      * optional note. The gap itself is never deleted: that a recreo went uncovered is what the centre
-     * wants to be able to look back on.
+     * wants to be able to look back on. Past the plazo of the absences it is archived without its zone, its
+     * teacher or its note ({@see \App\Guardia\AbsencePurger}), and from then on nobody changes it.
      */
     #[Route('/huecos/{id}', name: 'break_duty_gap_update', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function updateGap(BreakDutyGap $gap, Request $request, UserRepository $users, EntityManagerInterface $em): Response

@@ -12,11 +12,13 @@ use App\Entity\GuardiaQuota;
 use App\Entity\Role;
 use App\Entity\ScheduleEntry;
 use App\Entity\User;
+use App\Enum\AbsenceRetention;
 use App\Enum\Area;
 use App\Enum\BreakPeriod;
 use App\Enum\PermissionLevel;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
+use App\Guardia\AbsencePurger;
 use App\Util\SchoolYear;
 use App\Tests\Support\OwnsTheBreakZoneCatalogue;
 use Doctrine\ORM\EntityManagerInterface;
@@ -436,6 +438,37 @@ final class BreakDutyPageTest extends WebTestCase
         self::assertGreaterThan(0, $token->count(), sprintf('no form posting to %s was rendered on %s', $uri, $page));
 
         $this->client->request('POST', $uri, ['_token' => (string) $token->first()->attr('value')] + $payload);
+    }
+
+    /**
+     * Pasado el plazo de las ausencias, un recreo sin vigilar sigue en la lista y en los totales, con el día
+     * y quién lo cubrió, y sin la zona ni quién faltó: con el cuadrante fijo, cualquiera de las dos lo dice.
+     */
+    public function testAnArchivedGapStaysCountedWithoutItsZoneNorWhoWasAway(): void
+    {
+        $this->login(PermissionLevel::READ);
+        $year = $this->currentYear();
+        $old = $this->duty($year, $this->user('Lucía Ausente Mora', 'lucia.ausente@centro.test'), $this->zone('Huerto'));
+        $volunteer = $this->user('Voluntaria Solidaria Paz', 'voluntaria@centro.test');
+        $this->em->persist((new BreakDutyGap())->setAssignment($old)->setDate(new \DateTimeImmutable('-10 days'))->setVolunteer($volunteer)->setNote('Lucía tenía médico'));
+        $this->em->persist((new BreakDutyGap())->setAssignment($this->duty($year, $this->user('Ana Patio Ruiz', 'ana.patio@centro.test'), $this->zone('Patio')))->setDate(new \DateTimeImmutable('today')));
+        $this->em->flush();
+        $this->em->clear();
+        self::getContainer()->get(AbsencePurger::class)->purge(AbsenceRetention::ONE_WEEK, new \DateTimeImmutable('today'));
+
+        $crawler = $this->client->request('GET', '/guardias/recreo/huecos');
+
+        self::assertResponseIsSuccessful();
+        $row = $crawler->filter('tbody tr.is-archived');
+        self::assertCount(1, $row);
+        self::assertStringContainsString((new \DateTimeImmutable('-10 days'))->format('d/m/Y'), $row->text());
+        self::assertStringContainsString('Voluntaria Solidaria Paz', $row->text());
+        // En la lista y no en toda la página: con permiso de gestión el desplegable de voluntarios nombra a todo el claustro.
+        foreach (['Lucía Ausente Mora', 'Huerto', 'médico'] as $forgotten) {
+            self::assertStringNotContainsString($forgotten, $crawler->filter('main table')->last()->html());
+        }
+        self::assertStringStartsWith('2 en', $crawler->filter('.cover-summary dd')->first()->text(), 'el archivado sigue contando');
+        self::assertSelectorTextContains('main', 'de antes del plazo de borrado de las ausencias (4 semanas)');
     }
 
     /**

@@ -50,7 +50,7 @@ final class CentreSettingsFormData
 
     /** How long the teachers' absences are kept; null only when a forged or stale form sends none. */
     #[Assert\NotNull(message: 'Elige un plazo.')]
-    public ?AbsenceRetention $absenceRetention = AbsenceRetention::ONE_WEEK;
+    public ?AbsenceRetention $absenceRetention = AbsenceRetention::DEFAULT;
 
     /**
      * Prefills the form with what the application is using now, whether saved here or still coming

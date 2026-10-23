@@ -1,0 +1,54 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Ausencias del profesorado{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Ausencias del profesorado{% endblock %}
+
+{% block body %}
+    <div class="page-head">
+        <div>
+            <h1>Ausencias del profesorado</h1>
+            <p class="lead">Quién falta cada día y en qué horas, para pedir el justificante y apuntar la ausencia en RAÍCES. La aplicación no guarda justificantes.</p>
+        </div>
+    </div>
+
+    {# El plazo va en la propia pantalla y no en un correo: quien la usa tiene que saber que lo que no
+       pase a tiempo a RAÍCES deja de estar aquí, y un correo con nombres sería una copia fuera del plazo. #}
+    <p class="help">Cada ausencia se borra de aquí pasado el plazo de {{ retention.label }}: apúntala en RAÍCES antes.</p>
+
+    <div class="card">
+        {% if rows is empty %}
+            <div class="empty-state">
+                <h2>No hay ausencias registradas</h2>
+                <p>Ninguna en el plazo que se guardan ({{ retention.label }}), o aún no se ha apuntado.</p>
+            </div>
+        {% else %}
+            <table data-list-tools>
+                <thead>
+                    <tr>
+                        <th data-filter-range="Fecha">Fecha</th>
+                        <th data-filter="Docente">Docente</th>
+                        <th>Horas</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                        {% set absence = row.absence %}
+                        <tr>
+                            <td>{{ absence.date|date('d/m/Y', false) }}</td>
+                            <td>{{ absence.absentTeacher.fullName }}</td>
+                            <td>
+                                {% for slot in absence.slotIndexes %}
+                                    {% set times = row.slotTimes[slot] ?? null %}
+                                    {% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}{{ slot + 1 }}ª{% endif %}{{ not loop.last ? ', ' }}
+                                {% else %}
+                                    <span class="muted">Sin horas en su horario</span>
+                                {% endfor %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% endblock %}

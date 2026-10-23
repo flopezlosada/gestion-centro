@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Guardia;
 
 use App\Enum\AbsenceRetention;
+use App\Service\BreakDutyGapNotifier;
 use App\Service\FileUploader;
 use App\Util\GroupCode;
 use Doctrine\DBAL\Connection;
@@ -20,13 +21,16 @@ use Symfony\Component\Filesystem\Exception\IOExceptionInterface;
  *    each guardia still counts for the fair split and the statistics, whom it covered is gone, and so are
  *    the group, the room, the subject, the task left and what happened;
  *  - its groupings, which say where those groups were;
+ *  - its unwatched recreos, which become {@see \App\Entity\ArchivedBreakDutyGap}: the course, the day and
+ *    who stepped in stay, the rota line goes, as the rota is fixed and its zone or recreo with the day
+ *    says who was away; and so does the note;
  *  - the task documents of its covers, from disk: they are a group's work for a teacher's absence;
  *  - what the copy orders for those covers say: the summary (group, room, day, period), the notes, who
  *    placed it (often the absent teacher leaving the task) and their documents, from disk and by name. The
  *    order stays, counted, with its copies. {@see PastDocumentPurger} would get to the documents on its
  *    own, but by when the order was placed once it no longer points at its guardia, so an unsent one
  *    would keep them some days past the plazo;
- *  - the guardia notices, which name the absent teacher or the group ("Cubres a …");
+ *  - the guardia and unwatched recreo notices, which name the absent teacher or the group ("Cubres a …");
  *  - the activity trail of all the above, including that of what was deleted by hand.
  *
  * What survives is copied first and on purpose coarser: the periods each group spent without its teacher,
@@ -54,6 +58,7 @@ final class AbsencePurger
         'GuardiaCover' => ['guardia_cover', 'cover_date'],
         'Absence' => ['guardia_absence', 'absence_date'],
         'GuardiaGrouping' => ['guardia_grouping', 'grouping_date'],
+        'BreakDutyGap' => ['break_duty_gap', 'gap_date'],
     ];
 
     public function __construct(
@@ -68,16 +73,20 @@ final class AbsencePurger
      * @param AbsenceRetention   $retention the plazo the centre keeps absences for
      * @param \DateTimeImmutable $today     the day the plazo counts back from
      *
-     * @return array{absences: int, covers: int, unremoved: list<string>} how many absences were deleted, how
-     *                                                                   many covers archived, and the task and
-     *                                                                   copy order documents that could not be
-     *                                                                   deleted from disk
+     * @return array{absences: int, covers: int, breakGaps: int, unremoved: list<string>} how many absences
+     *                                                                                  were deleted, how many
+     *                                                                                  covers and recreos
+     *                                                                                  archived, and the task
+     *                                                                                  and copy order
+     *                                                                                  documents that could
+     *                                                                                  not be deleted from
+     *                                                                                  disk
      */
     public function purge(AbsenceRetention $retention, \DateTimeImmutable $today): array
     {
         $before = $retention->keptFrom($today)->format('Y-m-d');
 
-        [$absences, $covers, $files] = $this->connection->transactional(function (Connection $db) use ($before, $today): array {
+        [$absences, $covers, $breakGaps, $files] = $this->connection->transactional(function (Connection $db) use ($before, $today): array {
             /** @var list<string> $files */
             $files = $db->fetchFirstColumn('SELECT task_document_path FROM guardia_cover WHERE cover_date < ? AND task_document_path IS NOT NULL', [$before]);
             /** @var list<string> $orderFiles */
@@ -97,6 +106,12 @@ final class AbsencePurger
             $db->executeStatement(
                 'INSERT INTO guardia_cover_archive (cover_date, slot_index, assigned_guardia_id, not_covered, grouping_key)
                  SELECT cover_date, slot_index, assigned_guardia_id, not_covered, grouping_id FROM guardia_cover WHERE cover_date < ?',
+                [$before],
+            );
+            $db->executeStatement(
+                'INSERT INTO break_duty_gap_archive (academic_year_id, gap_date, volunteer_id)
+                 SELECT a.academic_year_id, g.gap_date, g.volunteer_id
+                 FROM break_duty_gap g JOIN break_duty_assignment a ON a.id = g.assignment_id WHERE g.gap_date < ?',
                 [$before],
             );
 
@@ -134,17 +149,22 @@ final class AbsencePurger
 
             $covers = $db->executeStatement('DELETE FROM guardia_cover WHERE cover_date < ?', [$before]);
             $db->executeStatement('DELETE FROM guardia_grouping WHERE grouping_date < ?', [$before]);
+            $breakGaps = $db->executeStatement('DELETE FROM break_duty_gap WHERE gap_date < ?', [$before]);
             $absences = $db->executeStatement('DELETE FROM guardia_absence WHERE absence_date < ?', [$before]);
             // By when they were sent, as notices carry no link to their guardia: one sent more than the plazo
             // ahead of a guardia still to come goes too. Rare, as absences are registered days ahead at most.
-            $db->executeStatement("DELETE FROM notification WHERE kind LIKE 'guardia.%' AND created_at < ?", [$before]);
+            $db->executeStatement(
+                "DELETE FROM notification WHERE (kind LIKE 'guardia.%' OR kind = ?) AND created_at < ?",
+                [BreakDutyGapNotifier::KIND, $before],
+            );
 
-            return [(int) $absences, (int) $covers, [...$files, ...$orderFiles]];
+            return [(int) $absences, (int) $covers, (int) $breakGaps, [...$files, ...$orderFiles]];
         });
 
         return [
             'absences' => $absences,
             'covers' => $covers,
+            'breakGaps' => $breakGaps,
             'unremoved' => array_values(array_filter($files, fn (string $path): bool => !$this->removed($path))),
         ];
     }

@@ -17,7 +17,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * Forgets the teachers' absences older than the plazo of the centre's settings
  * ({@see AppSettings::getAbsenceRetention()}, {@see AbsencePurger}).
  *
- * Unlike the families' signups there is always a plazo, a week by default, so the first tick after a
+ * Unlike the families' signups there is always a plazo, four weeks by default, so the first tick after a
  * deploy — which runs at once and not at its hour — archives everything older at once. Take a backup
  * first, or deploy with the task paused.
  */
@@ -48,9 +48,10 @@ final class PurgePastAbsencesCommand extends AbstractCronCommand
         $today = new \DateTimeImmutable('today');
         $purged = $this->purger->purge($retention, $today);
         $detail = \sprintf(
-            '%d ausencias borradas y %d guardias archivadas (anteriores al %s, plazo de %s).',
+            '%d ausencias borradas, y %d guardias y %d recreos sin vigilar archivados (anteriores al %s, plazo de %s).',
             $purged['absences'],
             $purged['covers'],
+            $purged['breakGaps'],
             $retention->keptFrom($today)->format('d/m/Y'),
             $retention->label(),
         );
@@ -65,6 +66,6 @@ final class PurgePastAbsencesCommand extends AbstractCronCommand
         }
         $io->writeln($detail);
 
-        return 0 === $purged['absences'] + $purged['covers'] ? $this->nothingToDo($detail) : $this->didWork($detail);
+        return 0 === $purged['absences'] + $purged['covers'] + $purged['breakGaps'] ? $this->nothingToDo($detail) : $this->didWork($detail);
     }
 }

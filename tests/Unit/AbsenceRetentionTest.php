@@ -14,7 +14,8 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * The plazo the teachers' absences are kept for: whole weeks back from a day, and never longer than the
- * privacy notice says because of a badly stored setting.
+ * privacy notice says because of a badly stored setting: four weeks until the centre picks, the shortest
+ * plazo when what is stored is not one.
  */
 final class AbsenceRetentionTest extends TestCase
 {
@@ -38,18 +39,18 @@ final class AbsenceRetentionTest extends TestCase
      */
     public static function storedValues(): iterable
     {
-        yield 'nunca guardado' => [null, AbsenceRetention::ONE_WEEK];
+        yield 'nunca guardado' => [null, AbsenceRetention::FOUR_WEEKS];
         yield 'dos semanas' => ['2', AbsenceRetention::TWO_WEEKS];
         yield 'cuatro semanas' => ['4', AbsenceRetention::FOUR_WEEKS];
         yield 'cero' => ['0', AbsenceRetention::ONE_WEEK];
         yield 'más de las que hay' => ['5', AbsenceRetention::ONE_WEEK];
         yield 'no es un número' => ['x', AbsenceRetention::ONE_WEEK];
-        yield 'vacío' => ['', AbsenceRetention::ONE_WEEK];
+        yield 'vacío' => ['', AbsenceRetention::FOUR_WEEKS];
         yield 'negativo' => ['-2', AbsenceRetention::ONE_WEEK];
     }
 
     #[DataProvider('storedValues')]
-    public function testABadlyStoredPlazoReadsAsOneWeek(?string $stored, AbsenceRetention $expected): void
+    public function testAnUnsetPlazoReadsAsFourWeeksAndABadOneAsOne(?string $stored, AbsenceRetention $expected): void
     {
         $rows = null === $stored ? [] : [AppSettings::ABSENCE_RETENTION_WEEKS => new AppSetting(AppSettings::ABSENCE_RETENTION_WEEKS, $stored)];
         $repository = $this->createStub(AppSettingRepository::class);

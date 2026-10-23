@@ -6,8 +6,12 @@ namespace App\Tests\Integration;
 
 use App\Entity\Absence;
 use App\Entity\AcademicYear;
+use App\Entity\ArchivedBreakDutyGap;
 use App\Entity\ArchivedGuardiaCover;
 use App\Entity\AuditLog;
+use App\Entity\BreakDutyAssignment;
+use App\Entity\BreakDutyGap;
+use App\Entity\BreakZone;
 use App\Entity\CopyRequest;
 use App\Entity\CopyRequestLine;
 use App\Entity\Department;
@@ -17,10 +21,16 @@ use App\Entity\GuardiaTaskBankItem;
 use App\Entity\Notification;
 use App\Entity\User;
 use App\Enum\AbsenceRetention;
+use App\Enum\BreakPeriod;
 use App\Enum\EducationLevel;
+use App\Enum\Weekday;
 use App\Guardia\AbsencePurger;
+use App\Repository\BreakDutyGapRepository;
 use App\Repository\GuardiaCoverRepository;
+use App\Service\BreakDutyGapNotifier;
+use App\Service\BreakRotaAnnouncer;
 use App\Service\FileUploader;
+use App\Tests\Support\OwnsTheBreakZoneCatalogue;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
@@ -32,6 +42,8 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  */
 final class AbsencePurgerTest extends KernelTestCase
 {
+    use OwnsTheBreakZoneCatalogue;
+
     /** With a week of plazo, the 15th is the first day kept and the 14th the last one forgotten. */
     private const string TODAY = '2026-10-22';
 
@@ -84,7 +96,7 @@ final class AbsencePurgerTest extends KernelTestCase
         return $cover;
     }
 
-    private function bankItem(): GuardiaTaskBankItem
+    private function academicYear(): AcademicYear
     {
         $year = (new AcademicYear())
             ->setSchoolYear('2026-2027')
@@ -94,6 +106,14 @@ final class AbsencePurgerTest extends KernelTestCase
             ->setTerm2End(new \DateTimeImmutable('2027-03-27'))
             ->setTerm3Start(new \DateTimeImmutable('2027-04-07'))
             ->setTerm3End(new \DateTimeImmutable('2027-06-22'));
+        $this->em->persist($year);
+
+        return $year;
+    }
+
+    private function bankItem(): GuardiaTaskBankItem
+    {
+        $year = $this->academicYear();
         $department = (new Department())->setCode('mates-'.uniqid())->setName('Matemáticas');
         $item = (new GuardiaTaskBankItem())
             ->setAcademicYear($year)
@@ -101,7 +121,6 @@ final class AbsencePurgerTest extends KernelTestCase
             ->setLevel(EducationLevel::ESO_4)
             ->setTitle('Ecuaciones')
             ->setSubject('Matemáticas');
-        $this->em->persist($year);
         $this->em->persist($department);
         $this->em->persist($item);
 
@@ -165,7 +184,7 @@ final class AbsencePurgerTest extends KernelTestCase
 
         $purged = $this->purger->purge(AbsenceRetention::ONE_WEEK, new \DateTimeImmutable(self::TODAY));
 
-        self::assertSame(['absences' => 3, 'covers' => 4, 'unremoved' => []], $purged, 'Lucía el 8 y el 14 y Mario el 8; cuatro horas');
+        self::assertSame(['absences' => 3, 'covers' => 4, 'breakGaps' => 0, 'unremoved' => []], $purged, 'Lucía el 8 y el 14 y Mario el 8; cuatro horas');
         self::assertSame($loadBefore, $this->covers->totalLoad(), 'el reparto no cambia porque un día pase del plazo');
         self::assertSame($summaryBefore, $this->covers->coverageSummary());
         self::assertSame($byGroupBefore, $this->covers->periodsByGroup(), 'las horas por grupo siguen sumando lo archivado');
@@ -248,7 +267,7 @@ final class AbsencePurgerTest extends KernelTestCase
         $this->cover($this->user('Lucía'), '2026-10-15', 1, $ana);
         $this->em->clear();
 
-        self::assertSame(['absences' => 0, 'covers' => 0, 'unremoved' => []], $this->purger->purge(AbsenceRetention::ONE_WEEK, new \DateTimeImmutable(self::TODAY)));
+        self::assertSame(['absences' => 0, 'covers' => 0, 'breakGaps' => 0, 'unremoved' => []], $this->purger->purge(AbsenceRetention::ONE_WEEK, new \DateTimeImmutable(self::TODAY)));
         self::assertCount(1, $this->em->getRepository(GuardiaCover::class)->findAll());
     }
 
@@ -272,5 +291,77 @@ final class AbsencePurgerTest extends KernelTestCase
         $this->purger->purge(AbsenceRetention::ONE_WEEK, new \DateTimeImmutable(self::TODAY));
 
         self::assertSame([['name' => 'E4D', 'total' => 2]], $this->covers->periodsByGroup());
+    }
+
+    /**
+     * A recreo left unwatched says who was away twice over: the teacher on the rota line, and the zone and
+     * recreo of a fixed rota with the day. Past the plazo only the course, the day and who stepped in stay,
+     * and the course goes on counting it.
+     */
+    public function testAnUnwatchedRecreoKeepsTheDayAndWhoSteppedInButNotTheRotaLine(): void
+    {
+        // Las zonas del centro se siembran por migración, y una se llama «Patio».
+        $this->emptyTheBreakZoneCatalogue($this->em);
+        $year = $this->academicYear();
+        $patio = (new BreakZone())->setName('Patio')->setWeight(3);
+        $this->em->persist($patio);
+        $ana = $this->user('Ana');
+        $duty = (new BreakDutyAssignment())
+            ->setAcademicYear($year)
+            ->setTeacher($this->user('Lucía'))
+            ->setWeekday(Weekday::MONDAY)
+            ->setZone($patio)
+            ->setPeriod(BreakPeriod::FIRST);
+        $this->em->persist($duty);
+        $gap = fn (string $day, ?User $volunteer, ?string $note): BreakDutyGap => (new BreakDutyGap())
+            ->setAssignment($duty)
+            ->setDate(new \DateTimeImmutable($day))
+            ->setVolunteer($volunteer)
+            ->setNote($note);
+        $this->em->persist($gap('2026-10-05', null, null));
+        $this->em->persist($gap('2026-10-12', $ana, 'Lucía tenía médico'));
+        $kept = $gap('2026-10-19', null, 'Sin patio, llueve');
+        $this->em->persist($kept);
+        $oldNotice = new Notification($ana, BreakDutyGapNotifier::KIND, 'Patio sin vigilar: falta Lucía');
+        $recentNotice = new Notification($ana, BreakDutyGapNotifier::KIND, 'Patio sin vigilar: falta Lucía');
+        $this->dated($oldNotice, 'createdAt', '2026-10-12 08:00');
+        $this->dated($recentNotice, 'createdAt', '2026-10-19 08:00');
+        // El reparto del cuadrante no habla de nadie que faltara: no es cosa de este plazo.
+        $announced = new Notification($ana, BreakRotaAnnouncer::KIND, 'Ya está el cuadrante de recreo');
+        $this->dated($announced, 'createdAt', '2026-10-01 08:00');
+        $orphanTrail = new AuditLog('break_duty_gap.deleted', 'coordinacion@centro.test', 'BreakDutyGap', '999999', null, ['note' => 'Lucía tenía médico']);
+        $this->dated($orphanTrail, 'occurredAt', '2026-10-01 10:00');
+        foreach ([$oldNotice, $recentNotice, $announced, $orphanTrail] as $row) {
+            $this->em->persist($row);
+        }
+        $this->em->flush();
+        $gaps = self::getContainer()->get(BreakDutyGapRepository::class);
+        $summaryBefore = $gaps->summary($year);
+        $keptId = (int) $kept->getId();
+        $this->em->clear();
+
+        $purged = $this->purger->purge(AbsenceRetention::ONE_WEEK, new \DateTimeImmutable(self::TODAY));
+
+        self::assertSame(2, $purged['breakGaps']);
+        $year = $this->em->getRepository(AcademicYear::class)->find($year->getId());
+        self::assertInstanceOf(AcademicYear::class, $year);
+        self::assertSame(['total' => 3, 'covered' => 1], $summaryBefore);
+        self::assertSame($summaryBefore, $gaps->summary($year), 'el curso sigue contando los recreos que se quedaron sin vigilar');
+        self::assertSame([$keptId], array_map(static fn (BreakDutyGap $g): ?int => $g->getId(), $this->em->getRepository(BreakDutyGap::class)->findAll()), 'el 19 se queda tal cual');
+        self::assertSame('Sin patio, llueve', $this->em->getRepository(BreakDutyGap::class)->find($keptId)?->getNote());
+
+        $archived = $this->em->getRepository(ArchivedBreakDutyGap::class)->findBy([], ['date' => 'ASC']);
+        self::assertSame(
+            [['2026-10-05', null], ['2026-10-12', 'Ana']],
+            array_map(static fn (ArchivedBreakDutyGap $a): array => [$a->getDate()->format('Y-m-d'), $a->getVolunteer()?->getFullName()], $archived),
+        );
+
+        $notices = array_map(static fn (Notification $n): string => $n->getKind().' '.$n->getCreatedAt()->format('d'), $this->em->getRepository(Notification::class)->findBy(['recipient' => $ana]));
+        sort($notices);
+        self::assertSame([BreakRotaAnnouncer::KIND.' 01', BreakDutyGapNotifier::KIND.' 19'], $notices, 'el aviso del 12 nombraba a quien faltó');
+
+        $trail = $this->em->getRepository(AuditLog::class)->findBy(['subjectType' => 'BreakDutyGap']);
+        self::assertNotEmpty($trail, 'guardar los huecos deja rastro, o el test no prueba nada');
+        self::assertSame([(string) $keptId], array_values(array_unique(array_map(static fn (AuditLog $l): string => (string) $l->getSubjectId(), $trail))), 'del rastro solo queda el del 19, ni siquiera el de uno borrado a mano');
     }
 }

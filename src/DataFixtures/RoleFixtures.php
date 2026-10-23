@@ -107,9 +107,10 @@ final class RoleFixtures extends AbstractGoldenFixture
             // ESCRITURA) y abriría el área entera a cualquier lectura que el módulo añada mañana.
             (new Role())->setCode('auxiliar_control')->setName('Auxiliar de control')
                 ->setLevel(Area::FOTOCOPIAS, PermissionLevel::WRITE),
-            // Personal administrativo. LECTURA en Guardias: el parte del día, el histórico y las
-            // estadísticas, que es "ver los partes de ausencias". Sin escritura no apuntan ausencias ni
-            // reparten guardias — eso sigue siendo del equipo directivo.
+            // Personal administrativo. LECTURA en Ausencias: quién falta cada día y en qué horas, que es
+            // lo que necesita para pedir el justificante y apuntarlo en RAÍCES. Antes era lectura en
+            // Guardias, que además le abría el parte, el histórico y las estadísticas: a qué grupo dejó sin
+            // clase cada ausencia y quién lo cubrió, nada de lo cual hace falta para su trabajo.
             //
             // Lo que el centro pidió y NO está aquí: completar los horarios. Las dos pantallas que lo hacen
             // están detrás de permisos que dan mucho más (`/admin/horario` exige escritura en
@@ -118,7 +119,7 @@ final class RoleFixtures extends AbstractGoldenFixture
             // teclear un horario es una escalada de privilegios, no un matiz. Queda pendiente partir la
             // puerta de {@see \App\Controller\AdminTimetableController}.
             (new Role())->setCode('personal_administrativo')->setName('Personal administrativo')
-                ->setLevel(Area::GUARDIAS, PermissionLevel::READ),
+                ->setLevel(Area::AUSENCIAS, PermissionLevel::READ),
             // Integración social. Ni un permiso: lo que pidió el centro es que EXISTAN en el organigrama,
             // dentro del departamento de Orientación — de ahí perDepartment, igual que el resto de roles
             // que se ostentan "de un departamento".

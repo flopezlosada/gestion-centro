@@ -81,16 +81,33 @@
         {% endif %}
     </div>
 
-    {% if past is not empty %}
+    {% if past is not empty or archived is not empty %}
         <div class="card">
             <h2>Ya pasados</h2>
             <table class="worklist">
                 <thead>
                     <tr><th scope="col">Día</th><th scope="col">Zona</th><th scope="col">Faltó</th><th scope="col">{{ canManage ? 'Quién lo cubrió' : 'Estado' }}</th></tr>
                 </thead>
-                <tbody>{{ _self.gap_rows(past, teachers, canManage) }}</tbody>
+                <tbody>
+                    {{ _self.gap_rows(past, teachers, canManage) }}
+                    {# Pasado el plazo ya no se sabe la zona ni quién faltó, ni se puede cambiar quién lo cubrió. #}
+                    {% for gap in archived %}
+                        <tr class="is-archived">
+                            <td>{{ gap.date|date('d/m/Y', false) }}</td>
+                            <td>—</td>
+                            <td>—</td>
+                            <td>
+                                {% if gap.covered %}
+                                    <span class="badge badge--ok">{{ gap.volunteer.fullName }}</span>
+                                {% else %}
+                                    <span class="badge badge--warning">Sin cubrir</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
             </table>
-            <p class="help">No se borran: que un recreo se quedara sin vigilar es justo lo que el centro quiere poder consultar después.</p>
+            <p class="help">Siguen contando: que un recreo se quedara sin vigilar es justo lo que el centro quiere poder consultar después.{% if archived is not empty %} Los que llevan «—» son de antes del plazo de borrado de las ausencias ({{ retention.label }}): de ellos queda el día y quién lo cubrió, no la zona ni quién faltó.{% endif %}</p>
         </div>
     {% endif %}
 {% endblock %}
