@@ -22,11 +22,18 @@ namespace App\Enum;
  * Before it existed that side was keyed to write access on {@see self::GUARDIAS}, which is the wrong
  * question: it would have handed the auxiliares de control the whole daily parte just to let them see
  * what they have to photocopy.
+ *
+ * {@see self::AUSENCIAS} exists for the same reason, the other way round: the administrative staff need
+ * who is away each day, to ask for the justificante and record it in RAICES, and READ on
+ * {@see self::GUARDIAS} — what they had for it — also opened the parte, the history and the statistics:
+ * which group was left without whom, and who covered it. Its single screen shows the absences and
+ * nothing else, and only as long as the centre keeps them.
  */
 enum Area: string
 {
     case ADMINISTRATION = 'administration';
     case GUARDIAS = 'guardias';
+    case AUSENCIAS = 'ausencias';
     case ESPACIOS = 'espacios';
     case FOTOCOPIAS = 'fotocopias';
     case TIC = 'tic';
@@ -41,6 +48,7 @@ enum Area: string
         return match ($this) {
             self::ADMINISTRATION => 'Administración',
             self::GUARDIAS => 'Guardias',
+            self::AUSENCIAS => 'Ausencias del profesorado',
             self::ESPACIOS => 'Espacios',
             self::FOTOCOPIAS => 'Fotocopias',
             self::TIC => 'Incidencias TIC',
@@ -64,6 +72,7 @@ enum Area: string
         return match ($this) {
             self::ADMINISTRATION => 'admin_user_index',
             self::GUARDIAS => 'guardia_index',
+            self::AUSENCIAS => 'absence_index',
             self::ESPACIOS => 'space_index',
             self::FOTOCOPIAS => 'copy_request_index',
             self::TIC => 'tic_incident_index',
@@ -77,6 +86,6 @@ enum Area: string
      */
     public static function inDisplayOrder(): array
     {
-        return [self::ADMINISTRATION, self::GUARDIAS, self::ESPACIOS, self::FOTOCOPIAS, self::TIC];
+        return [self::ADMINISTRATION, self::GUARDIAS, self::AUSENCIAS, self::ESPACIOS, self::FOTOCOPIAS, self::TIC];
     }
 }

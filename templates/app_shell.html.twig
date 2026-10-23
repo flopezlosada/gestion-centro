@@ -82,6 +82,12 @@
                 {% if is_granted(constant('App\\Security\\Voter\\ModuleVoter::FAMILY_ACTIVITIES')) %}
                     <a href="{{ path('family_activity_index') }}" class="{{ route starts with 'family_activity_' ? 'is-active' }}">Actividades con familias</a>
                 {% endif %}
+                {# Ausencias del profesorado: del personal administrativo, que pide el justificante y lo apunta
+                   en RAÍCES. Aquí y no dentro de «Coordinar guardias» porque quien la usa no coordina nada:
+                   tiene un área propia precisamente para no ver el parte. Mismo gate en AbsenceController. #}
+                {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::READ'), constant('App\\Enum\\Area::AUSENCIAS')) %}
+                    <a href="{{ path('absence_index') }}" class="{{ route == 'absence_index' ? 'is-active' }}">Ausencias del profesorado</a>
+                {% endif %}
                 {# Temas de las clases: gate igual al de AdminTopicController::denyAccessUnlessLeading —
                    jefatura de departamento o de todo el centro, más administradores. Sin este enlace solo
                    se llegaba escribiendo /admin/temas a mano. #}
