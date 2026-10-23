@@ -19,6 +19,9 @@ enum AbsenceRetention: int
     case THREE_WEEKS = 3;
     case FOUR_WEEKS = 4;
 
+    /** The plazo until the centre picks one: the longest, so nothing is forgotten before the staff has had its say. */
+    public const DEFAULT = self::FOUR_WEEKS;
+
     /**
      * Human-facing name (Spanish).
      *
