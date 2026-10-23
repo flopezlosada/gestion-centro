@@ -30,6 +30,7 @@ use App\Repository\GuardiaCoverRepository;
 use App\Service\BreakDutyGapNotifier;
 use App\Service\BreakRotaAnnouncer;
 use App\Service\FileUploader;
+use App\Tests\Support\OwnsTheBreakZoneCatalogue;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
@@ -41,6 +42,8 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  */
 final class AbsencePurgerTest extends KernelTestCase
 {
+    use OwnsTheBreakZoneCatalogue;
+
     /** With a week of plazo, the 15th is the first day kept and the 14th the last one forgotten. */
     private const string TODAY = '2026-10-22';
 
@@ -297,6 +300,8 @@ final class AbsencePurgerTest extends KernelTestCase
      */
     public function testAnUnwatchedRecreoKeepsTheDayAndWhoSteppedInButNotTheRotaLine(): void
     {
+        // Las zonas del centro se siembran por migración, y una se llama «Patio».
+        $this->emptyTheBreakZoneCatalogue($this->em);
         $year = $this->academicYear();
         $patio = (new BreakZone())->setName('Patio')->setWeight(3);
         $this->em->persist($patio);
