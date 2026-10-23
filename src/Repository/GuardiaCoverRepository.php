@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Repository;
 
+use App\Entity\GuardiaBankGroupUse;
 use App\Entity\GuardiaCover;
 use App\Entity\User;
 use App\Enum\GuardiaReminderTrigger;
+use App\Util\GroupCode;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\LockMode;
 use Doctrine\Persistence\ManagerRegistry;
@@ -20,10 +22,15 @@ class GuardiaCoverRepository extends ServiceEntityRepository
      * @param SubstitutionRepository $substitutions las sustituciones en vigor, para que quien cubre una
      *                                             baja larga arranque con el contador de la persona a la
      *                                             que sustituye ({@see self::withInheritedLoad()})
+     * @param ArchivedGuardiaCoverRepository $archive las guardias pasadas del plazo de las ausencias, que
+     *                                               siguen contando en el reparto y en las estadísticas
+     * @param GuardiaGroupMonthRepository    $groupMonths lo que queda de ellas por grupo y mes
      */
     public function __construct(
         ManagerRegistry $registry,
         private readonly SubstitutionRepository $substitutions,
+        private readonly ArchivedGuardiaCoverRepository $archive,
+        private readonly GuardiaGroupMonthRepository $groupMonths,
     ) {
         parent::__construct($registry, GuardiaCover::class);
     }
@@ -121,10 +128,14 @@ class GuardiaCoverRepository extends ServiceEntityRepository
      * can skip it. A guardia marked as an incident does not count: it did not take place, so neither did
      * its task. The bank is per course and so are its ids, so no course filter is needed.
      *
+     * A task done in a guardia that has since been archived comes without a day: that the group did it is
+     * kept ({@see GuardiaBankGroupUse}), when is not.
+     *
      * @param string $groupName      the group, as the parte line names it
      * @param int    $excludeCoverId the parte line being picked for, which is not "another" guardia
      *
-     * @return array<int, \DateTimeImmutable> bank task id → the last day the group had it
+     * @return array<int, \DateTimeImmutable|null> bank task id → the last day the group had it, or null when
+     *                                             only that it had it is known
      */
     public function bankTasksDoneByGroup(string $groupName, int $excludeCoverId): array
     {
@@ -141,7 +152,16 @@ class GuardiaCoverRepository extends ServiceEntityRepository
             ->getQuery()
             ->getArrayResult();
 
-        $done = [];
+        /** @var list<array{item: int|string}> $archived */
+        $archived = $this->getEntityManager()->createQueryBuilder()
+            ->select('IDENTITY(u.bankItem) AS item')
+            ->from(GuardiaBankGroupUse::class, 'u')
+            ->andWhere('u.groupName = :group')
+            ->setParameter('group', $groupName)
+            ->getQuery()
+            ->getArrayResult();
+
+        $done = array_fill_keys(array_map(static fn (array $r): int => (int) $r['item'], $archived), null);
         foreach ($rows as $row) {
             $done[(int) $row['item']] = new \DateTimeImmutable($row['lastDate']);
         }
@@ -228,11 +248,14 @@ class GuardiaCoverRepository extends ServiceEntityRepository
      */
     public function loadBySlot(int $slotIndex): array
     {
-        return $this->countsKeyedByGuardia(
-            $this->createQueryBuilder('c')
-                ->andWhere('c.slotIndex = :slot')
-                ->setParameter('slot', $slotIndex),
-        );
+        return $this->withInheritedLoad(self::added(
+            $this->countsKeyedByGuardia(
+                $this->createQueryBuilder('c')
+                    ->andWhere('c.slotIndex = :slot')
+                    ->setParameter('slot', $slotIndex),
+            ),
+            $this->archive->loadByTeacher($slotIndex),
+        ));
     }
 
     /**
@@ -244,7 +267,10 @@ class GuardiaCoverRepository extends ServiceEntityRepository
      */
     public function totalLoad(): array
     {
-        return $this->countsKeyedByGuardia($this->createQueryBuilder('c'));
+        return $this->withInheritedLoad(self::added(
+            $this->countsKeyedByGuardia($this->createQueryBuilder('c')),
+            $this->archive->loadByTeacher(),
+        ));
     }
 
     /**
@@ -531,10 +557,10 @@ class GuardiaCoverRepository extends ServiceEntityRepository
         /** @var list<array{0: User, total: int}> $rows */
         $rows = $qb->getQuery()->getResult();
 
-        return $this->withInheritedTotals(array_map(
-            static fn (array $r): array => ['teacher' => $r[0], 'total' => (int) $r['total']],
-            $rows,
-        ));
+        return $this->withInheritedTotals([
+            ...array_map(static fn (array $r): array => ['teacher' => $r[0], 'total' => (int) $r['total']], $rows),
+            ...$this->archive->totalsByTeacher($from, $to),
+        ]);
     }
 
     /**
@@ -577,7 +603,7 @@ class GuardiaCoverRepository extends ServiceEntityRepository
      *
      * @param User $teacher the guardia teacher
      *
-     * @return int su propio recuento
+     * @return int su propio recuento, archivadas incluidas
      */
     private function rawCountFor(User $teacher): int
     {
@@ -587,11 +613,15 @@ class GuardiaCoverRepository extends ServiceEntityRepository
             ->andWhere('c.notCovered = false')
             ->setParameter('teacher', $teacher)
             ->getQuery()
-            ->getSingleScalarResult();
+            ->getSingleScalarResult()
+            + $this->archive->countFor($teacher);
     }
 
     /**
      * El ranking con la herencia de las sustituciones aplicada, reordenado y completo.
+     *
+     * Las filas pueden llegar repetidas por docente —una de las guardias vivas y otra de las archivadas—
+     * y aquí se suman.
      *
      * Dos cosas que la consulta no puede hacer sola. Reordenar, porque el ORDER BY del SQL ya se ejecutó
      * sobre las cifras sin heredar. Y AÑADIR: la consulta sale de los covers, así que quien sustituye no
@@ -609,7 +639,7 @@ class GuardiaCoverRepository extends ServiceEntityRepository
         foreach ($rows as $row) {
             $id = (int) $row['teacher']->getId();
             $teachers[$id] = $row['teacher'];
-            $totals[$id] = $row['total'];
+            $totals[$id] = ($totals[$id] ?? 0) + $row['total'];
         }
         foreach ($this->substitutions->findAllOpen() as $substitution) {
             $teachers[(int) $substitution->getSubstitute()->getId()] ??= $substitution->getSubstitute();
@@ -656,37 +686,14 @@ class GuardiaCoverRepository extends ServiceEntityRepository
 
         /** @var array{absences: int|string, covered: int|string, incidents: int|string, unassigned: int|string} $row */
         $row = $qb->getQuery()->getSingleResult();
+        $archived = $this->archive->coverageSummary($from, $to);
 
         return [
-            'absences' => (int) $row['absences'],
-            'covered' => (int) $row['covered'],
-            'incidents' => (int) $row['incidents'],
-            'unassigned' => (int) $row['unassigned'],
+            'absences' => (int) $row['absences'] + $archived['absences'],
+            'covered' => (int) $row['covered'] + $archived['covered'],
+            'incidents' => (int) $row['incidents'] + $archived['incidents'],
+            'unassigned' => (int) $row['unassigned'] + $archived['unassigned'],
         ];
-    }
-
-    /**
-     * How many absences fell on each period this course, keyed by slot index — shows where cover is
-     * needed most across the day.
-     *
-     * @return array<int, int> map of slot index → absence count
-     */
-    public function absencesBySlot(): array
-    {
-        /** @var list<array{slot: int, total: int}> $rows */
-        $rows = $this->createQueryBuilder('c')
-            ->select('c.slotIndex AS slot', 'COUNT(c.id) AS total')
-            ->groupBy('c.slotIndex')
-            ->orderBy('c.slotIndex', 'ASC')
-            ->getQuery()
-            ->getResult();
-
-        $bySlot = [];
-        foreach ($rows as $row) {
-            $bySlot[(int) $row['slot']] = (int) $row['total'];
-        }
-
-        return $bySlot;
     }
 
     /**
@@ -732,8 +739,8 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
-     * Lightweight rows for the analytics dashboard — one per cover, with just the fields the time and
-     * heatmap aggregations need. Aggregating in PHP (small volume: hundreds of covers per course) keeps
+     * Lightweight rows for the analytics dashboard — one per cover, archived ones included, with just the
+     * fields the time and heatmap aggregations need. Aggregating in PHP (small volume: hundreds of covers per course) keeps
      * the queries portable and avoids per-driver date functions.
      *
      * @param \DateTimeImmutable|null $from lower date bound (inclusive), or null for the whole history
@@ -750,44 +757,51 @@ class GuardiaCoverRepository extends ServiceEntityRepository
         /** @var list<array{date: \DateTimeImmutable, slot: int, assigned: int|null, incident: bool}> $rows */
         $rows = $qb->getQuery()->getResult();
 
-        return array_map(
-            static fn (array $r): array => [
-                'date' => $r['date'],
-                'slot' => (int) $r['slot'],
-                'assigned' => null !== $r['assigned'],
-                'incident' => (bool) $r['incident'],
-            ],
-            $rows,
-        );
+        return [
+            ...array_map(
+                static fn (array $r): array => [
+                    'date' => $r['date'],
+                    'slot' => (int) $r['slot'],
+                    'assigned' => null !== $r['assigned'],
+                    'incident' => (bool) $r['incident'],
+                ],
+                $rows,
+            ),
+            ...$this->archive->analyticsRows($from, $to),
+        ];
     }
 
     /**
-     * How many absences each department generated this course (by the absent teacher's department),
-     * busiest first. Teachers with no department fall under "Sin departamento".
+     * How many periods each group spent without its teacher within a window, covered or not, most first.
+     * A cover naming several groups counts for each. What the coordination reads to see which groups are
+     * losing the most classes; it says nothing about which teacher, and the archived part
+     * ({@see GuardiaGroupMonthRepository}) cannot.
      *
      * @param \DateTimeImmutable|null $from lower date bound (inclusive), or null for the whole history
      * @param \DateTimeImmutable|null $to   upper date bound (inclusive), or null
      *
-     * @return list<array{name: string, total: int}> the ranking, most absences first
+     * @return list<array{name: string, total: int}> the groups, most periods first
      */
-    public function absencesByDepartment(?\DateTimeImmutable $from = null, ?\DateTimeImmutable $to = null): array
+    public function periodsByGroup(?\DateTimeImmutable $from = null, ?\DateTimeImmutable $to = null): array
     {
         $qb = $this->createQueryBuilder('c')
-            ->select('d.name AS name', 'COUNT(c.id) AS total')
-            ->join('c.absentTeacher', 't')
-            ->leftJoin('t.unit', 'd')
-            ->groupBy('d.id')
-            ->orderBy('total', 'DESC')
-            ->addOrderBy('d.name', 'ASC');
+            ->select('c.groupName AS name', 'COUNT(c.id) AS total')
+            ->andWhere('c.groupName IS NOT NULL')
+            ->groupBy('c.groupName');
         $this->applyWindow($qb, $from, $to);
 
-        /** @var list<array{name: string|null, total: int}> $rows */
+        /** @var list<array{name: string, total: int|string}> $rows */
         $rows = $qb->getQuery()->getResult();
 
-        return array_map(
-            static fn (array $r): array => ['name' => $r['name'] ?? 'Sin departamento', 'total' => (int) $r['total']],
-            $rows,
-        );
+        $totals = $this->groupMonths->periodsByGroup($from, $to);
+        foreach ($rows as $row) {
+            foreach (GroupCode::names($row['name']) as $group) {
+                $totals[$group] = ($totals[$group] ?? 0) + (int) $row['total'];
+            }
+        }
+        uksort($totals, static fn (string $a, string $b): int => $totals[$b] <=> $totals[$a] ?: strnatcasecmp($a, $b));
+
+        return array_map(static fn (string $name, int $total): array => ['name' => $name, 'total' => $total], array_keys($totals), $totals);
     }
 
     /**
@@ -810,7 +824,8 @@ class GuardiaCoverRepository extends ServiceEntityRepository
 
     /**
      * Runs an incident-free count of guardia work per teacher and returns it keyed by teacher id, with a
-     * grouping counting as one (see {@see self::WORK_UNIT}).
+     * grouping counting as one (see {@see self::WORK_UNIT}). Live covers only and without inheritance:
+     * the callers add the archived ones first and inherit on the sum.
      *
      * @param \Doctrine\ORM\QueryBuilder $qb a builder already scoped (e.g. by slot), alias {@code c}
      *
@@ -832,7 +847,24 @@ class GuardiaCoverRepository extends ServiceEntityRepository
             $load[(int) $row['id']] = (int) $row['total'];
         }
 
-        return $this->withInheritedLoad($load);
+        return $load;
+    }
+
+    /**
+     * Two per-teacher counts added together, live and archived.
+     *
+     * @param array<int, int> $live     teacher id → live guardias done
+     * @param array<int, int> $archived teacher id → archived guardias done
+     *
+     * @return array<int, int> teacher id → all of them
+     */
+    private static function added(array $live, array $archived): array
+    {
+        foreach ($archived as $id => $count) {
+            $live[$id] = ($live[$id] ?? 0) + $count;
+        }
+
+        return $live;
     }
 
     /**

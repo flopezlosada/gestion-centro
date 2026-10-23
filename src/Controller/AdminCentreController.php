@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Enum\AbsenceRetention;
 use App\Form\CentreSettingsFormData;
 use App\Form\CentreSettingsType;
 use App\Service\AppSettings;
@@ -41,7 +42,7 @@ final class AdminCentreController extends AbstractController
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
-            $settings->saveCentreDetails($data->organizationName, $data->copyShopEmails, $data->directionEmails, $data->raicesUrl, $data->familyActivitiesEnabled, $data->familySignupRetentionDays);
+            $settings->saveCentreDetails($data->organizationName, $data->copyShopEmails, $data->directionEmails, $data->raicesUrl, $data->familyActivitiesEnabled, $data->familySignupRetentionDays, $data->absenceRetention ?? AbsenceRetention::ONE_WEEK);
             $this->addFlash('success', 'Datos del centro guardados.');
 
             return $this->redirectToRoute('admin_centre_edit');

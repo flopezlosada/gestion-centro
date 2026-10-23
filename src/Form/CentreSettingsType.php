@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Form;
 
+use App\Enum\AbsenceRetention;
 use App\Service\AppSettings;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\CallbackTransformer;
 use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
+use Symfony\Component\Form\Extension\Core\Type\EnumType;
 use Symfony\Component\Form\Extension\Core\Type\IntegerType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\Extension\Core\Type\UrlType;
@@ -16,7 +18,7 @@ use Symfony\Component\OptionsResolver\OptionsResolver;
 
 /**
  * The centre's details: its name, the copy room and management mailboxes, the RAICES link, which
- * optional modules are in use and how long the families' signups are kept.
+ * optional modules are in use, and how long the families' signups and the teachers' absences are kept.
  *
  * A mailbox field is one line of text that accepts several addresses however they are typed (commas,
  * semicolons, spaces), turned into a list here so the rest of the application never parses strings.
@@ -68,6 +70,12 @@ final class CentreSettingsType extends AbstractType
                 'help' => 'Días después de cada sesión en que se borra qué familias se apuntaron. Vacío: no se borra nunca. Con 0, se borra al día siguiente. Al guardar un plazo, esa misma noche se borra todo lo que ya lo haya pasado.',
                 'invalid_message' => 'Escribe un número de días, o déjalo vacío.',
                 'attr' => ['min' => 0, 'max' => AppSettings::MAX_FAMILY_SIGNUP_RETENTION_DAYS],
+            ])
+            ->add('absenceRetention', EnumType::class, [
+                'class' => AbsenceRetention::class,
+                'choice_label' => static fn (AbsenceRetention $plazo): string => $plazo->label(),
+                'label' => 'Borrar las ausencias del profesorado pasadas',
+                'help' => 'Pasado este plazo se borra quién faltó cada día; de las guardias queda quién las hizo, no a quién cubrió. Deja tiempo a secretaría para pedir los justificantes. Al acortarlo, esa misma noche se borra todo lo que ya lo haya pasado.',
             ]);
 
         foreach (['copyShopEmails', 'directionEmails'] as $field) {

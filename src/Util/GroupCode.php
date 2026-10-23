@@ -72,6 +72,23 @@ final class GroupCode
     }
 
     /**
+     * The groups a snapshot names, as written: {@code "2DIVA, 2DIVB"} → ["2DIVA", "2DIVB"]. Unlike the
+     * readers above it does not normalise, because what it returns is shown and counted per group, and
+     * has to read as the timetable spells it.
+     *
+     * @param string|null $groupName the raw snapshot, or null
+     *
+     * @return list<string> the group names, without repeats
+     */
+    public static function names(?string $groupName): array
+    {
+        return array_values(array_unique(array_filter(
+            array_map('trim', explode(',', (string) $groupName)),
+            static fn (string $name): bool => '' !== $name,
+        )));
+    }
+
+    /**
      * Splits a snapshot of one or several group names into normalised, comparable chunks (upper case,
      * no spaces or punctuation).
      *

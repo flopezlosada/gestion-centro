@@ -14,7 +14,7 @@
     </div>
 
     <div class="card">
-        {% if covers is empty %}
+        {% if covers is empty and archived is empty %}
             <div class="empty-state">
                 <h2>Todavía sin guardias</h2>
                 <p>Aquí verás el historial de guardias que hayas cubierto.</p>
@@ -45,8 +45,24 @@
                             <td><a class="link-action" href="{{ path('guardia_cover_show', { id: cover.id }) }}">Ver</a></td>
                         </tr>
                     {% endfor %}
+                    {# Pasadas del plazo de las ausencias: queda que la hiciste, no a quién cubriste. #}
+                    {% for cover in archived %}
+                        {% set times = slotTimes[cover.slotIndex] ?? null %}
+                        <tr class="is-archived{{ cover.notCovered ? ' is-not-covered' }}">
+                            <td>{{ cover.date|date('d/m/Y', false) }}</td>
+                            <td class="mono" data-sort="{{ cover.slotIndex }}">{% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}{{ cover.slotIndex + 1 }}ª{% endif %}</td>
+                            <td>—</td>
+                            <td class="mono">—</td>
+                            <td>—</td>
+                            <td>{% if cover.notCovered %}<span class="badge badge--danger" data-tone="danger">Incidencia</span>{% else %}<span class="badge badge--ok" data-tone="success">Cubierta</span>{% endif %}</td>
+                            <td></td>
+                        </tr>
+                    {% endfor %}
                 </tbody>
             </table>
+            {% if archived is not empty %}
+                <p class="muted">Las guardias con «—» son de antes del plazo de borrado de las ausencias ({{ retention.label }}): de ellas queda que las hiciste, no a quién cubriste.</p>
+            {% endif %}
         {% endif %}
     </div>
 {% endblock %}

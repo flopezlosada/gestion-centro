@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Service;
 
 use App\Entity\AppSetting;
+use App\Enum\AbsenceRetention;
 use App\Repository\AppSettingRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -52,6 +53,9 @@ final class AppSettings
 
     /** The longest that plazo can be: a year, as nothing about a past session needs more. */
     public const MAX_FAMILY_SIGNUP_RETENTION_DAYS = 365;
+
+    /** How many weeks the teachers' absences are kept ({@see AbsenceRetention}). */
+    public const ABSENCE_RETENTION_WEEKS = 'guardias.absence_retention_weeks';
 
     /** How a list of mailboxes is stored, and shown back for editing. */
     private const ADDRESS_SEPARATOR = ', ';
@@ -152,10 +156,12 @@ final class AppSettings
      * @param list<string> $directionEmails  the management team's mailboxes, possibly none
      * @param string       $raicesUrl        the address of RAICES, or empty
      * @param bool         $familyActivities whether the activities open to families are in use
-     * @param int|null     $signupRetention  days after its session a family's signup is deleted, null to keep them
+     * @param int|null         $signupRetention  days after its session a family's signup is deleted, null to keep them
+     * @param AbsenceRetention $absenceRetention how long the teachers' absences are kept
      */
-    public function saveCentreDetails(string $organizationName, array $copyShopEmails, array $directionEmails, string $raicesUrl, bool $familyActivities, ?int $signupRetention): void
+    public function saveCentreDetails(string $organizationName, array $copyShopEmails, array $directionEmails, string $raicesUrl, bool $familyActivities, ?int $signupRetention, AbsenceRetention $absenceRetention): void
     {
+        $this->stage(self::ABSENCE_RETENTION_WEEKS, (string) $absenceRetention->value);
         $this->stage(self::FAMILY_ACTIVITIES_ENABLED, $familyActivities ? '1' : '0');
         $this->stage(self::FAMILY_SIGNUP_RETENTION_DAYS, null === $signupRetention ? '' : (string) $signupRetention);
         $this->stage(self::ORGANIZATION_NAME, trim($organizationName));
@@ -223,6 +229,23 @@ final class AppSettings
         $stored = $this->readString(self::FAMILY_SIGNUP_RETENTION_DAYS, '');
 
         return ctype_digit($stored) && (int) $stored <= self::MAX_FAMILY_SIGNUP_RETENTION_DAYS ? (int) $stored : null;
+    }
+
+    /**
+     * How long the teachers' absences are kept. A week by default: the privacy notice promises they are
+     * deleted, so there is no "keep them" to fall back to, and a week is the shortest plazo the
+     * administrative staff can work with ({@see AbsenceRetention}).
+     *
+     * Anything stored that is not one of the plazos reads as the default rather than as a longer one: a
+     * mistyped row must not keep absences past what the notice says.
+     *
+     * @return AbsenceRetention the plazo
+     */
+    public function getAbsenceRetention(): AbsenceRetention
+    {
+        $stored = $this->readString(self::ABSENCE_RETENTION_WEEKS, '');
+
+        return (ctype_digit($stored) ? AbsenceRetention::tryFrom((int) $stored) : null) ?? AbsenceRetention::ONE_WEEK;
     }
 
     /**

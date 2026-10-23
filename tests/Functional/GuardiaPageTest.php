@@ -6,17 +6,21 @@ namespace App\Tests\Functional;
 
 use App\Entity\Absence;
 use App\Entity\AcademicYear;
+use App\Entity\Department;
 use App\Entity\GuardiaCover;
 use App\Entity\Notification;
 use App\Entity\Role;
 use App\Entity\ScheduleEntry;
 use App\Entity\User;
+use App\Enum\AbsenceRetention;
 use App\Enum\Area;
 use App\Enum\PermissionLevel;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
+use App\Guardia\AbsencePurger;
 use App\Guardia\TeacherGuardiaWeek;
 use App\Service\FileUploader;
+use App\Tests\Support\MintsSessionCsrfTokens;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -35,6 +39,7 @@ use Symfony\Component\DomCrawler\Crawler;
 final class GuardiaPageTest extends WebTestCase
 {
     use ClockSensitiveTrait;
+    use MintsSessionCsrfTokens;
 
     private KernelBrowser $client;
     private EntityManagerInterface $em;
@@ -803,7 +808,7 @@ final class GuardiaPageTest extends WebTestCase
     }
 
     /**
-     * The stats screen breaks absences down by department only: a ranking of who is away most would be
+     * The stats screen breaks the guardias down by group only: a ranking of who is away most would be
      * monitoring attendance. Seeded with an absence inside the course looked at (the screen would say
      * "sin ausencias" otherwise), and the absent teacher covers nothing, so their name has no legitimate
      * reason to appear anywhere on the page.
@@ -842,6 +847,106 @@ final class GuardiaPageTest extends WebTestCase
         self::assertSame("\u{FEFF}Docente;Guardias cubiertas", $lines[0]);
         self::assertStringContainsString('"Guardia Csv";1', $csv);
         self::assertStringNotContainsString('Ausente Csv', $csv, 'whoever was only away does not appear at all');
+    }
+
+    /**
+     * Las horas de guardia se desglosan por grupo, y ni por docente ni por departamento: un departamento
+     * de una o dos personas dice quién faltó. Las de un día ya archivado siguen contando en su grupo.
+     */
+    public function testTheStatsBreakTheGuardiasDownByGroupAndNotByDepartment(): void
+    {
+        $this->login();
+        $department = (new Department())->setCode('latin')->setName('Latín');
+        $this->em->persist($department);
+        $absent = $this->user('Ausente Latín', 'alatin@centro.test')->setUnit($department);
+        $this->cover(new \DateTimeImmutable('2025-11-10'), 0, $absent, group: 'B1A, B1B');
+        $this->cover(new \DateTimeImmutable('2025-11-10'), 1, $absent, group: 'B1A');
+        $this->em->flush();
+        $this->em->clear();
+        self::getContainer()->get(AbsencePurger::class)->purge(AbsenceRetention::ONE_WEEK, new \DateTimeImmutable('2025-11-20'));
+        $this->cover(new \DateTimeImmutable('2025-11-24'), 0, $this->user('Otra Ausente', 'otra@centro.test'), group: 'B1A');
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/estadisticas?p[]=2025-2026');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('#tab-desglose', 'Por grupo');
+        $rows = $crawler->filter('#panel-desglose tbody tr')->each(static fn (Crawler $row): string => preg_replace('/\s+/', ' ', trim($row->text())) ?? '');
+        self::assertSame(['B1A 3', 'B1B 1'], $rows, 'dos horas archivadas y una viva de B1A');
+        self::assertStringNotContainsString('Latín', $crawler->html());
+        self::assertStringNotContainsString('departamento', mb_strtolower($crawler->filter('#panel-desglose')->text()));
+    }
+
+    /**
+     * Pasado el plazo de las ausencias, el histórico sigue diciendo quién hizo cada guardia, y ya no a
+     * quién cubrió, ni qué grupo ni en qué aula.
+     */
+    public function testAnArchivedGuardiaStaysInBothHistoriesWithoutWhomItCovered(): void
+    {
+        $me = $this->login();
+        $absent = $this->user('Ausente Archivada', 'aarchivada@centro.test');
+        $this->cover(new \DateTimeImmutable('2025-11-10'), 0, $absent, $me, group: 'E3C');
+        $this->em->flush();
+        $this->em->clear();
+        self::getContainer()->get(AbsencePurger::class)->purge(AbsenceRetention::ONE_WEEK, new \DateTimeImmutable('2025-11-20'));
+
+        foreach (['/guardias/historico?curso=2025-2026', '/guardias/mias/historico'] as $path) {
+            $crawler = $this->client->request('GET', $path);
+
+            self::assertResponseIsSuccessful();
+            $row = $crawler->filter('tbody tr.is-archived');
+            self::assertCount(1, $row, $path);
+            self::assertStringContainsString('10/11/2025', $row->text());
+            self::assertStringContainsString('Cubierta', $row->text());
+            self::assertStringNotContainsString('Ausente Archivada', $crawler->html(), $path);
+            self::assertStringNotContainsString('E3C', $crawler->html(), $path);
+            self::assertSelectorTextContains('main', 'de antes del plazo de borrado de las ausencias (1 semana)');
+        }
+    }
+
+    /**
+     * Un día que el plazo ya ha dejado atrás no se puede apuntar: la purga ya lo olvidó y no volvería a
+     * pasar por él, así que sus guardias se quedarían con el nombre de quien faltó y contarían dos veces.
+     * El selector de fecha ya no deja elegirlo, y el envío a mano se rechaza sin escribir nada.
+     */
+    public function testAnAbsenceBeforeThePlazoIsRefused(): void
+    {
+        $this->login();
+        $absent = $this->user('Ausente Vieja', 'avieja@centro.test');
+        $keptFrom = AbsenceRetention::ONE_WEEK->keptFrom(new \DateTimeImmutable('today'));
+        // Sin horario importado del curso la pantalla no ofrece ni el selector de fecha.
+        $this->em->persist($this->academicYear(SchoolYear::current($keptFrom)));
+        $this->em->flush();
+        $refusal = sprintf('no se puede apuntar una anterior al %s', $keptFrom->format('d/m/Y'));
+
+        $crawler = $this->client->request('GET', '/guardias/ausencia/nueva?date='.$keptFrom->format('Y-m-d'));
+        self::assertResponseIsSuccessful('el primer día del plazo aún se puede apuntar');
+        self::assertSame($keptFrom->format('Y-m-d'), $crawler->filter('#absence_date')->attr('min'));
+
+        // El parte de un día viejo enlaza aquí con su fecha: se corta antes de rellenar nada.
+        $this->client->request('GET', '/guardias/ausencia/nueva?date='.$keptFrom->modify('-1 day')->format('Y-m-d'));
+        self::assertResponseRedirects('/guardias/ausencia/nueva');
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('main', $refusal);
+
+        $token = $this->mintCsrfToken($this->client, '/guardias/ausencia/nueva', 'guardia_absence_create');
+        $post = fn (\DateTimeImmutable $day) => $this->client->request('POST', '/guardias/ausencia', [
+            '_token' => $token,
+            'date' => $day->format('Y-m-d'),
+            'absent_teacher' => (string) $absent->getId(),
+            'slots' => ['0'],
+        ]);
+
+        $post($keptFrom->modify('-1 day'));
+        self::assertResponseRedirects('/guardias/ausencia/nueva');
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('main', $refusal);
+        self::assertCount(0, $this->em->getRepository(Absence::class)->findAll());
+
+        $post($keptFrom);
+        $this->client->followRedirect();
+        self::assertSelectorTextNotContains('main', $refusal);
+        self::assertCount(1, $this->em->getRepository(Absence::class)->findAll(), 'el primer día del plazo se apunta');
     }
 
     /**

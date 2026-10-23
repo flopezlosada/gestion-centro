@@ -23,7 +23,7 @@
     </div>
 
     <div class="card">
-        {% if covers is empty %}
+        {% if covers is empty and archived is empty %}
             <div class="empty-state">
                 <h2>Sin guardias registradas en {{ curso }}</h2>
                 <p>Cuando se registren ausencias y se repartan guardias en este curso, aparecerán aquí.</p>
@@ -60,8 +60,29 @@
                             {% if canEdit %}<td><a href="{{ path('guardia_cover_edit', { id: cover.id }) }}">Ver / editar</a></td>{% endif %}
                         </tr>
                     {% endfor %}
+                    {# Pasadas del plazo de las ausencias: queda quién hizo la guardia, no a quién cubrió. #}
+                    {% for cover in archived %}
+                        {% set times = slotTimes[cover.slotIndex] ?? null %}
+                        <tr class="is-archived{{ cover.notCovered ? ' is-not-covered' }}">
+                            <td>{{ cover.date|date('d/m/Y', false) }}</td>
+                            <td data-sort="{{ cover.slotIndex }}">{% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}{{ cover.slotIndex + 1 }}ª{% endif %}</td>
+                            <td>—</td>
+                            <td class="mono">—</td>
+                            <td>—</td>
+                            <td>{{ cover.assignedGuardia ? cover.assignedGuardia.fullName : '—' }}</td>
+                            <td>
+                                {% if cover.notCovered %}<span class="badge badge--danger" data-tone="danger">Incidencia</span>
+                                {% elseif cover.assignedGuardia %}<span class="badge badge--ok" data-tone="success">Cubierta</span>
+                                {% else %}<span class="badge badge--muted" data-tone="muted">Sin asignar</span>{% endif %}
+                            </td>
+                            {% if canEdit %}<td></td>{% endif %}
+                        </tr>
+                    {% endfor %}
                 </tbody>
             </table>
+            {% if archived is not empty %}
+                <p class="muted">Las guardias con «—» son de antes del plazo de borrado de las ausencias ({{ retention.label }}): de ellas queda quién las hizo, no a quién cubrió.</p>
+            {% endif %}
         {% endif %}
     </div>
 {% endblock %}

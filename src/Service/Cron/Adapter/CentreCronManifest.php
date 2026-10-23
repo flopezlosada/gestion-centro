@@ -65,6 +65,9 @@ final class CentreCronManifest implements CronManifest
     /** Borrado de las inscripciones de familias a sesiones pasadas, con el plazo de los datos del centro. */
     public const string CRON_PURGE_FAMILY_SIGNUPS = 'cron.purge_family_signups';
 
+    /** Borrado de las ausencias del profesorado pasadas del plazo, y archivo de sus guardias. */
+    public const string CRON_PURGE_ABSENCES = 'cron.purge_absences';
+
     /**
      * Cuántos minutos entre pasadas de los barridos con antelación en minutos.
      *
@@ -189,6 +192,16 @@ final class CentreCronManifest implements CronManifest
             'needs_recipient' => false,
             'dry' => false,
         ],
+        self::CRON_PURGE_ABSENCES => [
+            'command' => 'app:guardias:purge-past-absences',
+            // De madrugada, como las otras purgas: el día que sale del plazo ya no lo está mirando nadie.
+            'schedule' => ['freq' => 'daily', 'hour' => 3],
+            'max_delay_hours' => 36,
+            'requires' => [],
+            'depends_on' => [],
+            'needs_recipient' => false,
+            'dry' => false,
+        ],
         self::CRON_PURGE_LOG => [
             'command' => 'app:cron:purge-log',
             // De madrugada, cuando nadie está usando la aplicación y el registro del día ya está
@@ -213,6 +226,7 @@ final class CentreCronManifest implements CronManifest
         self::CRON_RECURRING_MEETINGS => 'Reuniones periódicas',
         self::CRON_PURGE_PAST_DOCUMENTS => 'Borrado de documentos de días pasados',
         self::CRON_PURGE_FAMILY_SIGNUPS => 'Borrado de inscripciones de familias pasadas',
+        self::CRON_PURGE_ABSENCES => 'Borrado de ausencias pasadas del plazo',
         self::CRON_PURGE_LOG => 'Poda del registro de ejecuciones',
     ];
 

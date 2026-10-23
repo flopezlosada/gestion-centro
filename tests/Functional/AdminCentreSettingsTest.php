@@ -176,6 +176,42 @@ final class AdminCentreSettingsTest extends WebTestCase
     }
 
     /**
+     * El plazo de borrado de las ausencias viene en una semana y solo ofrece de una a cuatro: el texto de
+     * protección de datos promete que se borran, así que no hay «nunca» que elegir.
+     */
+    public function testElPlazoDeLasAusenciasVaDeUnaACuatroSemanasYSeGuarda(): void
+    {
+        $this->client->loginUser($this->admin());
+        $form = $this->client->request('GET', '/admin/centro')->selectButton('Guardar')->form();
+        $field = $form['centre_settings[absenceRetention]'];
+        self::assertInstanceOf(ChoiceFormField::class, $field);
+        self::assertSame('1', $field->getValue(), 'Una semana de serie.');
+        self::assertSame(['1', '2', '3', '4'], $field->availableOptionValues(), 'Sin opción vacía ni «nunca».');
+
+        $this->client->submit($form, ['centre_settings[absenceRetention]' => '3']);
+        self::assertResponseRedirects('/admin/centro');
+        self::assertSame('3', $this->stored(AppSettings::ABSENCE_RETENTION_WEEKS));
+
+        $form = $this->client->request('GET', '/admin/centro')->selectButton('Guardar')->form();
+        self::assertSame('3', $form['centre_settings[absenceRetention]']->getValue(), 'La pantalla enseña lo guardado.');
+    }
+
+    /**
+     * Un plazo amañado en el envío no se guarda.
+     */
+    public function testUnPlazoDeAusenciasQueNoSeOfreceSeRechaza(): void
+    {
+        $this->client->loginUser($this->admin());
+        $form = $this->client->request('GET', '/admin/centro')->selectButton('Guardar')->form();
+        $form->disableValidation();
+
+        $this->client->submit($form, ['centre_settings[absenceRetention]' => '52']);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertNull($this->stored(AppSettings::ABSENCE_RETENTION_WEEKS));
+    }
+
+    /**
      * Un buzón mal escrito se rechaza diciendo cuál, y no se guarda nada: ni ese campo ni los demás.
      */
     public function testUnBuzonMalEscritoSeRechazaSinGuardarNada(): void

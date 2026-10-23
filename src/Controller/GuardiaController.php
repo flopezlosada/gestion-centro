@@ -25,6 +25,7 @@ use App\Guardia\GuardiaStatistics;
 use App\Guardia\TeacherGuardiaDay;
 use App\Guardia\TeacherGuardiaWeek;
 use App\Repository\AbsenceRepository;
+use App\Repository\ArchivedGuardiaCoverRepository;
 use App\Repository\AcademicYearRepository;
 use App\Repository\AuditLogRepository;
 use App\Repository\CopyRequestRepository;
@@ -37,6 +38,7 @@ use App\Repository\SubstitutionRepository;
 use App\Repository\TimeSlotRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\AreaVoter;
+use App\Service\AppSettings;
 use App\Service\FileUploader;
 use App\Service\GuardiaAssignmentNotifier;
 use App\Service\GuardiaIncidentNotifier;
@@ -318,13 +320,16 @@ final class GuardiaController extends AbstractController
      * first — a plain table to look back at what they covered. Self-service, scoped to themselves.
      */
     #[Route('/mias/historico', name: 'guardia_mine_history', methods: ['GET'])]
-    public function mineHistory(#[CurrentUser] User $user, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
+    public function mineHistory(#[CurrentUser] User $user, GuardiaCoverRepository $covers, ArchivedGuardiaCoverRepository $archive, ScheduleEntryRepository $schedule, AcademicYearRepository $years, AppSettings $settings): Response
     {
         $today = new \DateTimeImmutable('today');
         $year = $years->findBySchoolYear(SchoolYear::current($today));
 
         return $this->render('guardia/mine_history.html.twig', [
             'covers' => $covers->findPastAssignedTo($user, $today),
+            // Todas son anteriores a las vivas, así que van detrás y el orden se mantiene.
+            'archived' => $archive->findAssignedTo($user),
+            'retention' => $settings->getAbsenceRetention(),
             'slotTimes' => $this->slotTimes($schedule, $year),
         ]);
     }
@@ -358,7 +363,7 @@ final class GuardiaController extends AbstractController
      * trace of "who covered which group when". Read access to the guardia area is enough to view it.
      */
     #[Route('/historico', name: 'guardia_history', methods: ['GET'])]
-    public function history(Request $request, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years): Response
+    public function history(Request $request, GuardiaCoverRepository $covers, ArchivedGuardiaCoverRepository $archive, ScheduleEntryRepository $schedule, AcademicYearRepository $years, AppSettings $settings): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
@@ -371,6 +376,9 @@ final class GuardiaController extends AbstractController
 
         return $this->render('guardia/history.html.twig', [
             'covers' => $covers->history($from, $to, null, null, null),
+            // Todas son anteriores a las vivas, así que van detrás y el orden se mantiene.
+            'archived' => $archive->findBetween($from, $to),
+            'retention' => $settings->getAbsenceRetention(),
             'slotTimes' => $this->slotTimes($schedule, $year),
             'curso' => $curso,
             'years' => array_map(static fn (AcademicYear $ay): string => $ay->getSchoolYear(), $years->findAllOrdered()),
@@ -381,7 +389,8 @@ final class GuardiaController extends AbstractController
      * The coordinator's analytics dashboard. Several lenses over the course's covers: coverage health
      * (registered vs covered vs incident vs unassigned), fairness of the split (descriptive measures +
      * a Gini-based balance reading), monthly evolution, a weekday × period heatmap of where cover is
-     * needed, absences by department and the guardias each teacher covered. Read access is enough.
+     * needed, the periods each group spent without its teacher and the guardias each teacher covered.
+     * Read access is enough.
      *
      * There is no per-teacher count of ABSENCES, on purpose: ranking who is away most is monitoring
      * staff attendance, which is not what this application is for nor where it may be done.
@@ -412,11 +421,12 @@ final class GuardiaController extends AbstractController
             $periods,
         );
 
-        // Absences by department as a matrix: a row per department, a cell per period, sorted by the
-        // total across the selected periods (busiest first).
-        $byDepartment = $this->comparisonMatrix($periods, static fn (array $p): array => array_map(
+        // The periods each group spent without its teacher, as a matrix: a row per group, a cell per period,
+        // sorted by the total across the selected periods. By group and never by teacher or department:
+        // counting who is away is monitoring staff attendance, and a department of one or two is a teacher.
+        $byGroup = $this->comparisonMatrix($periods, static fn (array $p): array => array_map(
             static fn (array $r): array => ['key' => $r['name'], 'name' => $r['name'], 'total' => $r['total']],
-            $covers->absencesByDepartment($p['from'], $p['to']),
+            $covers->periodsByGroup($p['from'], $p['to']),
         ));
 
         // For one period the analytics rows feed BOTH the monthly evolution and the heatmap, so fetch
@@ -462,7 +472,7 @@ final class GuardiaController extends AbstractController
             'single' => $single,
             'kpis' => $kpis,
             'evolution' => $evolution,
-            'byDepartment' => $byDepartment,
+            'byGroup' => $byGroup,
         ] + $singleExtras);
     }
 
@@ -706,10 +716,18 @@ final class GuardiaController extends AbstractController
      * picker is limited to themselves. Reachable prefilled with {@code ?teacher=<id>} for a coordinator.
      */
     #[Route('/ausencia/nueva', name: 'guardia_absence_new', methods: ['GET'])]
-    public function newAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, ScheduleEntryRepository $schedule, AcademicYearRepository $years, BreakDutyGapRegistrar $breakGaps, TimeSlotRepository $timeSlots, GuardiaCoverRepository $covers): Response
+    public function newAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, ScheduleEntryRepository $schedule, AcademicYearRepository $years, BreakDutyGapRegistrar $breakGaps, TimeSlotRepository $timeSlots, GuardiaCoverRepository $covers, AppSettings $settings): Response
     {
         $canManage = $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $date = $this->dateFromRequest($request);
+        // Turned away here and not only on sending: the parte of an old day links to this screen with its
+        // date, and filling in the teacher and the periods only to be refused at the end wastes the effort.
+        $keptFrom = $settings->getAbsenceRetention()->keptFrom(new \DateTimeImmutable('today'));
+        if ($date < $keptFrom) {
+            $this->refuseBeforePlazo($settings, $keptFrom);
+
+            return $this->redirectToRoute('guardia_absence_new');
+        }
         $schoolYear = SchoolYear::current($date);
         $year = $years->findBySchoolYear($schoolYear);
         $weekday = Weekday::from((int) $date->format('N'));
@@ -753,7 +771,19 @@ final class GuardiaController extends AbstractController
             'breakDuties' => $breakDuties,
             'ownGuardias' => $ownGuardias,
             'breakSlots' => $timeSlots->findBreaksByYear($year instanceof AcademicYear ? $year : null),
+            'keptFrom' => $keptFrom,
         ]);
+    }
+
+    /**
+     * Tells why an absence before the plazo cannot be registered: its day is already forgotten.
+     *
+     * @param AppSettings        $settings where the plazo is kept
+     * @param \DateTimeImmutable $keptFrom the first day still kept
+     */
+    private function refuseBeforePlazo(AppSettings $settings, \DateTimeImmutable $keptFrom): void
+    {
+        $this->addFlash('error', sprintf('Las ausencias se borran al pasar %s, así que no se puede apuntar una anterior al %s.', $settings->getAbsenceRetention()->label(), $keptFrom->format('d/m/Y')));
     }
 
     /**
@@ -807,13 +837,23 @@ final class GuardiaController extends AbstractController
      * Two people registering the same absence at the same instant lose to the table's UNIQUE rather than
      * to a 500: nothing is written, the uploaded documents are cleaned up, and the screen asks for the
      * send to be repeated (see the {@code catch} below).
+     *
+     * A day the plazo has already left behind is refused: the purge has forgotten it and would not again
+     * ({@see \App\Guardia\AbsencePurger}), so its covers would stay with the absent teacher's name and
+     * count twice for whoever did them, once archived and once live.
      */
     #[Route('/ausencia', name: 'guardia_absence_create', methods: ['POST'])]
-    public function createAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, AcademicYearRepository $years, AbsenceRegistrar $registrar, FileUploader $uploader): Response
+    public function createAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, AcademicYearRepository $years, AbsenceRegistrar $registrar, FileUploader $uploader, AppSettings $settings): Response
     {
         $this->assertCsrf($request, 'guardia_absence_create');
 
         $date = $this->dateFromRequest($request);
+        $keptFrom = $settings->getAbsenceRetention()->keptFrom(new \DateTimeImmutable('today'));
+        if ($date < $keptFrom) {
+            $this->refuseBeforePlazo($settings, $keptFrom);
+
+            return $this->redirectToRoute('guardia_absence_new');
+        }
         $year = $years->findBySchoolYear(SchoolYear::current($date));
         if (!$year instanceof AcademicYear) {
             $this->addFlash('error', sprintf('No hay horario importado para el curso %s. Impórtalo antes de registrar ausencias.', SchoolYear::current($date)));

@@ -185,7 +185,7 @@ final class GuardiaTaskBankController extends AbstractController
      * @param GuardiaCover|null      $cover  the parte line being picked for, if any
      * @param GuardiaCoverRepository $covers the parte lines
      *
-     * @return array<int, \DateTimeImmutable> bank task id → the last day the group had it
+     * @return array<int, \DateTimeImmutable|null> bank task id → the last day the group had it, null when the day is no longer kept
      */
     private function doneByGroup(?GuardiaCover $cover, GuardiaCoverRepository $covers): array
     {

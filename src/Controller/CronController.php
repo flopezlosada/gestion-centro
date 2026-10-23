@@ -67,8 +67,8 @@ final class CronController extends AbstractController
     /**
      * Una vez al día: avisos de tareas próximas, escalada de las que están fuera de plazo y retirada de
      * los avisos caducados; las reuniones periódicas de la semana que viene; y el borrado de los documentos
-     * de fotocopias de días pasados y de tarea de guardia de cursos pasados, y el de las inscripciones de
-     * familias a sesiones pasadas. Y la poda del propio registro de ejecuciones, que también es diaria y que
+     * de fotocopias de días pasados, el de las inscripciones de familias a sesiones pasadas y el de las
+     * ausencias del profesorado pasadas del plazo, con el archivo de sus guardias. Y la poda del propio registro de ejecuciones, que también es diaria y que
      * sin esto quedaría sin disparar en este camino — creciendo sin freno.
      *
      * @param Request $request la petición del crontab
@@ -85,6 +85,7 @@ final class CronController extends AbstractController
             CentreCronManifest::CRON_RECURRING_MEETINGS,
             CentreCronManifest::CRON_PURGE_PAST_DOCUMENTS,
             CentreCronManifest::CRON_PURGE_FAMILY_SIGNUPS,
+            CentreCronManifest::CRON_PURGE_ABSENCES,
             CentreCronManifest::CRON_PURGE_LOG,
         ]);
     }
