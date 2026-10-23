@@ -232,18 +232,20 @@ final class AppSettings
     }
 
     /**
-     * How long the teachers' absences are kept. A week by default: the privacy notice promises they are
-     * deleted, so there is no "keep them" to fall back to, and a week is the shortest plazo the
-     * administrative staff can work with ({@see AbsenceRetention}).
+     * How long the teachers' absences are kept. {@see AbsenceRetention::DEFAULT} until the centre saves
+     * one; the privacy notice promises they are deleted, so there is no "keep them" to fall back to.
      *
-     * Anything stored that is not one of the plazos reads as the default rather than as a longer one: a
-     * mistyped row must not keep absences past what the notice says.
+     * Anything stored that is not one of the plazos reads as the shortest one rather than as the default:
+     * a mistyped row must not keep absences past what the notice says.
      *
      * @return AbsenceRetention the plazo
      */
     public function getAbsenceRetention(): AbsenceRetention
     {
         $stored = $this->readString(self::ABSENCE_RETENTION_WEEKS, '');
+        if ('' === $stored) {
+            return AbsenceRetention::DEFAULT;
+        }
 
         return (ctype_digit($stored) ? AbsenceRetention::tryFrom((int) $stored) : null) ?? AbsenceRetention::ONE_WEEK;
     }

@@ -42,7 +42,7 @@ final class AdminCentreController extends AbstractController
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
-            $settings->saveCentreDetails($data->organizationName, $data->copyShopEmails, $data->directionEmails, $data->raicesUrl, $data->familyActivitiesEnabled, $data->familySignupRetentionDays, $data->absenceRetention ?? AbsenceRetention::ONE_WEEK);
+            $settings->saveCentreDetails($data->organizationName, $data->copyShopEmails, $data->directionEmails, $data->raicesUrl, $data->familyActivitiesEnabled, $data->familySignupRetentionDays, $data->absenceRetention ?? AbsenceRetention::DEFAULT);
             $this->addFlash('success', 'Datos del centro guardados.');
 
             return $this->redirectToRoute('admin_centre_edit');

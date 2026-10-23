@@ -900,7 +900,7 @@ final class GuardiaPageTest extends WebTestCase
             self::assertStringContainsString('Cubierta', $row->text());
             self::assertStringNotContainsString('Ausente Archivada', $crawler->html(), $path);
             self::assertStringNotContainsString('E3C', $crawler->html(), $path);
-            self::assertSelectorTextContains('main', 'de antes del plazo de borrado de las ausencias (1 semana)');
+            self::assertSelectorTextContains('main', 'de antes del plazo de borrado de las ausencias (4 semanas)');
         }
     }
 
@@ -913,7 +913,7 @@ final class GuardiaPageTest extends WebTestCase
     {
         $this->login();
         $absent = $this->user('Ausente Vieja', 'avieja@centro.test');
-        $keptFrom = AbsenceRetention::ONE_WEEK->keptFrom(new \DateTimeImmutable('today'));
+        $keptFrom = AbsenceRetention::DEFAULT->keptFrom(new \DateTimeImmutable('today'));
         // Sin horario importado del curso la pantalla no ofrece ni el selector de fecha.
         $this->em->persist($this->academicYear(SchoolYear::current($keptFrom)));
         $this->em->flush();

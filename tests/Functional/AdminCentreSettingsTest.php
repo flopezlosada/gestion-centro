@@ -185,7 +185,7 @@ final class AdminCentreSettingsTest extends WebTestCase
         $form = $this->client->request('GET', '/admin/centro')->selectButton('Guardar')->form();
         $field = $form['centre_settings[absenceRetention]'];
         self::assertInstanceOf(ChoiceFormField::class, $field);
-        self::assertSame('1', $field->getValue(), 'Una semana de serie.');
+        self::assertSame('4', $field->getValue(), 'Cuatro semanas de serie.');
         self::assertSame(['1', '2', '3', '4'], $field->availableOptionValues(), 'Sin opción vacía ni «nunca».');
 
         $this->client->submit($form, ['centre_settings[absenceRetention]' => '3']);
