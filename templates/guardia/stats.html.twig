@@ -38,14 +38,14 @@
     </table>
 {% endmacro %}
 
-{# Desglose por departamento (matriz), común a un periodo y a la comparativa. Sin ranking de docentes
-   ausentes: contar quién falta más es controlar la asistencia, y eso no se hace en esta aplicación. #}
-{% macro breakdown(byDepartment, periods) %}
+{# Desglose por grupo (matriz), común a un periodo y a la comparativa. Ni por docente ni por departamento:
+   contar quién falta más es controlar la asistencia, y un departamento de una o dos personas es una persona. #}
+{% macro breakdown(byGroup, periods) %}
     {% import _self as s %}
-    {% if byDepartment is not empty %}
+    {% if byGroup is not empty %}
         <div class="card">
-            <div class="page-head"><div><h2>Ausencias por departamento</h2><p class="lead">Según el departamento del docente ausente.</p></div></div>
-            {{ s.matrix(byDepartment, periods, 'Departamento') }}
+            <div class="page-head"><div><h2>Horas de guardia por grupo</h2><p class="lead">Cada hora en que el grupo se quedó sin su docente, cubierta o no. Lo anterior al plazo de borrado de las ausencias cuenta por meses enteros.</p></div></div>
+            {{ s.matrix(byGroup, periods, 'Grupo') }}
         </div>
     {% endif %}
 {% endmacro %}
@@ -87,7 +87,7 @@
     </div>
 
     {% set headline = kpis|first %}
-    {% set hasBreakdown = byDepartment is not empty %}
+    {% set hasBreakdown = byGroup is not empty %}
     {% set hasEvolution = evolution.categories|length > 1 %}
 
     {% if single and headline.absences == 0 %}
@@ -105,7 +105,7 @@
                 <button type="button" class="tab" role="tab" id="tab-evolucion" aria-controls="panel-evolucion" aria-selected="false">Evolución</button>
                 <button type="button" class="tab" role="tab" id="tab-equidad" aria-controls="panel-equidad" aria-selected="false">Equidad</button>
                 <button type="button" class="tab" role="tab" id="tab-heatmap" aria-controls="panel-heatmap" aria-selected="false">Días y tramos</button>
-                {% if hasBreakdown %}<button type="button" class="tab" role="tab" id="tab-desglose" aria-controls="panel-desglose" aria-selected="false">Por departamento</button>{% endif %}
+                {% if hasBreakdown %}<button type="button" class="tab" role="tab" id="tab-desglose" aria-controls="panel-desglose" aria-selected="false">Por grupo</button>{% endif %}
             </nav>
 
             <div class="tabpanel" role="tabpanel" id="panel-cobertura" aria-labelledby="tab-cobertura">
@@ -215,7 +215,7 @@
 
             {% if hasBreakdown %}
                 <div class="tabpanel" role="tabpanel" id="panel-desglose" aria-labelledby="tab-desglose">
-                    {{ s.breakdown(byDepartment, periods) }}
+                    {{ s.breakdown(byGroup, periods) }}
                 </div>
             {% endif %}
         </div>
@@ -226,7 +226,7 @@
             <nav class="tabs" role="tablist" aria-label="Apartados de estadísticas">
                 <button type="button" class="tab is-active" role="tab" id="tab-comparativa" aria-controls="panel-comparativa" aria-selected="true">Comparativa</button>
                 <button type="button" class="tab" role="tab" id="tab-evolucion" aria-controls="panel-evolucion" aria-selected="false">Evolución</button>
-                {% if hasBreakdown %}<button type="button" class="tab" role="tab" id="tab-desglose" aria-controls="panel-desglose" aria-selected="false">Por departamento</button>{% endif %}
+                {% if hasBreakdown %}<button type="button" class="tab" role="tab" id="tab-desglose" aria-controls="panel-desglose" aria-selected="false">Por grupo</button>{% endif %}
             </nav>
 
             <div class="tabpanel" role="tabpanel" id="panel-comparativa" aria-labelledby="tab-comparativa">
@@ -284,7 +284,7 @@
 
             {% if hasBreakdown %}
                 <div class="tabpanel" role="tabpanel" id="panel-desglose" aria-labelledby="tab-desglose">
-                    {{ s.breakdown(byDepartment, periods) }}
+                    {{ s.breakdown(byGroup, periods) }}
                 </div>
             {% endif %}
         </div>

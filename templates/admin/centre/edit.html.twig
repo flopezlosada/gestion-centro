@@ -24,6 +24,8 @@
             <h2>Módulos</h2>
             {{ f.toggles([form.familyActivitiesEnabled]) }}
             {{ f.fields([form.familySignupRetentionDays]) }}
+            <h2>Guardias</h2>
+            {{ f.fields([form.absenceRetention]) }}
             {{ f.actions(path('app_homepage')) }}
         {{ form_end(form) }}
     </div>

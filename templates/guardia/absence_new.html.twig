@@ -52,7 +52,7 @@
                     <label class="eyebrow" for="absence_date">Día</label>
                     <div class="pickrow pickrow--select">
                         <svg class="pickrow__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 11h18"/></svg>
-                        <input type="date" id="absence_date" name="date" value="{{ date|date('Y-m-d', false) }}" onchange="this.form.submit()">
+                        <input type="date" id="absence_date" name="date" value="{{ date|date('Y-m-d', false) }}" min="{{ keptFrom|date('Y-m-d', false) }}" onchange="this.form.submit()">
                     </div>
                 </div>
                 <noscript><button type="submit" class="btn secondary">Ver clases</button></noscript>

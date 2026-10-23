@@ -18,9 +18,11 @@ use Symfony\Component\Filesystem\Exception\IOExceptionInterface;
  * school year.
  *
  * A copy order's file exists for that day only: the copy room gets it by e-mail and prints from there.
- * A guardia's task document is kept for the whole course, so the centre can look back at the work left
- * for a group; once the course is over it is just pupils' data waiting around (an adapted exam carries a
- * name). The bank of tasks is not touched: its documents are the departments' material, meant to be reused.
+ * A guardia's task document is meant to last the course at most: once it is over it is just pupils' data
+ * waiting around (an adapted exam carries a name). In practice it goes much earlier, with its cover, when
+ * the absence passes the plazo the centre keeps them for ({@see AbsencePurger}), so this pass hardly ever
+ * finds one left. The bank of tasks is not touched: its documents are the departments' material, meant to
+ * be reused.
  *
  * The records stay, marked as purged, so a past guardia still says it had a document. The files go only
  * after the change is committed: a failed flush must not leave a row pointing at a file already gone. Each

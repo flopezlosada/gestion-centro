@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Form;
 
+use App\Enum\AbsenceRetention;
 use App\Service\AppSettings;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
@@ -47,6 +48,10 @@ final class CentreSettingsFormData
     #[Assert\Range(notInRangeMessage: 'Escribe un número de días entre {{ min }} y {{ max }}, o déjalo vacío.', min: 0, max: AppSettings::MAX_FAMILY_SIGNUP_RETENTION_DAYS)]
     public ?int $familySignupRetentionDays = null;
 
+    /** How long the teachers' absences are kept; null only when a forged or stale form sends none. */
+    #[Assert\NotNull(message: 'Elige un plazo.')]
+    public ?AbsenceRetention $absenceRetention = AbsenceRetention::ONE_WEEK;
+
     /**
      * Prefills the form with what the application is using now, whether saved here or still coming
      * from the environment.
@@ -64,6 +69,7 @@ final class CentreSettingsFormData
         $data->raicesUrl = $settings->getRaicesUrl();
         $data->familyActivitiesEnabled = $settings->isFamilyActivitiesEnabled();
         $data->familySignupRetentionDays = $settings->getFamilySignupRetentionDays();
+        $data->absenceRetention = $settings->getAbsenceRetention();
 
         return $data;
     }
