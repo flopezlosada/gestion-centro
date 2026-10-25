@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit;
 
 use App\Entity\AcademicYear;
+use App\Entity\NonLectiveDay;
 use App\Repository\AcademicYearRepository;
 use App\Repository\NonLectiveDayRepository;
 use App\Service\SchoolCalendar;
@@ -145,6 +146,29 @@ final class SchoolCalendarTest extends TestCase
         $calendar = new SchoolCalendar($this->withoutHolidays(), $this->withCourse());
 
         self::assertSame('2026-12-22', $calendar->onOrBeforeLectiveDay(new \DateTimeImmutable('2027-01-04'))->format('Y-m-d'));
+    }
+
+    /**
+     * The teaching days of a stretch: weekends, the Christmas break and a registered day are left out, and
+     * the registered days are read ONCE for the whole stretch — a fixed booking walks a whole course, and a
+     * query per day would be one per day of it.
+     */
+    public function testTheTeachingDaysOfAStretchLeaveOutWeekendsBreaksAndRegisteredDays(): void
+    {
+        $holidays = $this->createMock(NonLectiveDayRepository::class);
+        $holidays->expects(self::never())->method('existsOn');
+        $holidays->expects(self::once())->method('findBetween')
+            ->willReturn([(new NonLectiveDay())->setDate(new \DateTimeImmutable('2026-12-21'))->setDescription('Día del centro')]);
+        $calendar = new SchoolCalendar($holidays, $this->withCourse());
+
+        // Del viernes 18/12 al lunes 11/01: el finde, el 21 registrado, el 22 último día del trimestre, y
+        // Navidad hasta el 10 de enero.
+        $days = array_map(
+            static fn (\DateTimeImmutable $d): string => $d->format('Y-m-d'),
+            $calendar->lectiveDaysBetween(new \DateTimeImmutable('2026-12-18 13:00'), new \DateTimeImmutable('2027-01-11')),
+        );
+
+        self::assertSame(['2026-12-18', '2026-12-22', '2027-01-11'], $days);
     }
 
     /**

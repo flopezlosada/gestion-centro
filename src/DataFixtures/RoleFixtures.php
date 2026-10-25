@@ -51,6 +51,10 @@ final class RoleFixtures extends AbstractGoldenFixture
             // Espacios: the equipo directivo is who decides where a group goes and who completes the
             // room catalogue (size, type), so it is the one role that writes here by default.
             ->setLevel(Area::ESPACIOS, PermissionLevel::WRITE)
+            // Reservas fijas: Dirección reparte los carros y las aulas del curso. Si lo lleva otra persona
+            // (en el centro, quien coordina los carros de Tecnología), se le da con un rol propio en
+            // /admin/roles, sin abrirle el resto de Espacios.
+            ->setLevel(Area::RESERVAS_FIJAS, PermissionLevel::WRITE)
             // Incidencias TIC: bus factor. El rol TIC ya llega por ser superusuario, así que esto es para
             // que cerrar una avería no dependa de que esté esa única persona. Tiene que estar aquí Y en
             // `Version20260803180000`: la migración arregla las bases ya poblada (producción), y esta

@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Repository;
 
 use App\Entity\Booking;
+use App\Entity\Material;
+use App\Entity\RecurringBooking;
+use App\Entity\Room;
 use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
@@ -34,6 +37,9 @@ class BookingRepository extends ServiceEntityRepository
             ->leftJoin('b.room', 'room')->addSelect('room')
             ->leftJoin('b.material', 'material')->addSelect('material')
             ->leftJoin('b.bookedBy', 'person')->addSelect('person')
+            ->leftJoin('b.series', 'series')->addSelect('series')
+            ->leftJoin('series.holderUser', 'holder')->addSelect('holder')
+            ->leftJoin('series.holderDepartment', 'dept')->addSelect('dept')
             ->andWhere('b.date = :date')->setParameter('date', $date->setTime(0, 0))
             ->orderBy('b.slotIndex', 'ASC')
             ->getQuery()
@@ -58,6 +64,9 @@ class BookingRepository extends ServiceEntityRepository
             ->leftJoin('b.room', 'room')->addSelect('room')
             ->leftJoin('b.material', 'material')->addSelect('material')
             ->leftJoin('b.bookedBy', 'person')->addSelect('person')
+            ->leftJoin('b.series', 'series')->addSelect('series')
+            ->leftJoin('series.holderUser', 'holder')->addSelect('holder')
+            ->leftJoin('series.holderDepartment', 'dept')->addSelect('dept')
             ->andWhere('b.date >= :from')->setParameter('from', $from->setTime(0, 0))
             ->andWhere('b.date <= :to')->setParameter('to', $to->setTime(0, 0))
             ->orderBy('b.date', 'ASC')->addOrderBy('b.slotIndex', 'ASC')
@@ -66,7 +75,53 @@ class BookingRepository extends ServiceEntityRepository
     }
 
     /**
+     * Everything already booked of one thing between two days, inclusive: what a new fixed booking would
+     * clash with. One query for the whole stretch, however long — the alternative is asking day by day for
+     * a course.
+     *
+     * @param Room|Material      $resource the room or material
+     * @param \DateTimeImmutable $from     the first day to include
+     * @param \DateTimeImmutable $to       the last day to include
+     *
+     * @return Booking[] its bookings in the range, earliest first
+     */
+    public function findForResourceBetween(Room|Material $resource, \DateTimeImmutable $from, \DateTimeImmutable $to): array
+    {
+        return $this->createQueryBuilder('b')
+            ->leftJoin('b.bookedBy', 'person')->addSelect('person')
+            ->leftJoin('b.series', 'series')->addSelect('series')
+            ->andWhere($resource instanceof Room ? 'b.room = :resource' : 'b.material = :resource')->setParameter('resource', $resource)
+            ->andWhere('b.date >= :from')->setParameter('from', $from->setTime(0, 0))
+            ->andWhere('b.date <= :to')->setParameter('to', $to->setTime(0, 0))
+            ->orderBy('b.date', 'ASC')->addOrderBy('b.slotIndex', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Removes the days of a fixed booking from a day onwards: what ending it early leaves behind. The days
+     * already past stay, as the record of who had it.
+     *
+     * @param RecurringBooking   $series the fixed booking
+     * @param \DateTimeImmutable $from   the first day to remove
+     *
+     * @return int how many bookings were removed
+     */
+    public function deleteSeriesFrom(RecurringBooking $series, \DateTimeImmutable $from): int
+    {
+        return (int) $this->createQueryBuilder('b')
+            ->delete()
+            ->andWhere('b.series = :series')->setParameter('series', $series)
+            ->andWhere('b.date >= :from')->setParameter('from', $from->setTime(0, 0))
+            ->getQuery()
+            ->execute();
+    }
+
+    /**
      * A person's own bookings from a day onwards, so they can see (and undo) what they have asked for.
+     *
+     * Only the one-off ones: the days of a fixed booking are a whole course of rows, and they have their own
+     * screen, where they read as one line.
      *
      * @param User               $user the person
      * @param \DateTimeImmutable $from the first day to include
@@ -79,6 +134,7 @@ class BookingRepository extends ServiceEntityRepository
             ->leftJoin('b.room', 'room')->addSelect('room')
             ->leftJoin('b.material', 'material')->addSelect('material')
             ->andWhere('b.bookedBy = :user')->setParameter('user', $user)
+            ->andWhere('b.series IS NULL')
             ->andWhere('b.date >= :from')->setParameter('from', $from->setTime(0, 0))
             ->orderBy('b.date', 'ASC')->addOrderBy('b.slotIndex', 'ASC')
             ->getQuery()

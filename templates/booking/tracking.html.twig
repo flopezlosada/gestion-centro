@@ -63,9 +63,12 @@
                             <td>{{ b.room ? 'Espacio' : 'Material' }}</td>
                             <td>{{ b.groupName ?? '—' }}</td>
                             {# Quien reservó puede haber sido dado de baja: la reserva sobrevive (booked_by es
-                               SET NULL) y entonces esta pantalla no puede decir a quién preguntar. Se dice. #}
-                            <td>{{ b.bookedBy ? b.bookedBy.fullName : 'Persona dada de baja' }}</td>
-                            <td class="muted">{{ b.purpose }}</td>
+                               SET NULL) y entonces esta pantalla no puede decir a quién preguntar. Se dice. En una
+                               reserva fija es su titular (persona o departamento). «Fija» va en «Para qué» y no
+                               aquí: esta columna filtra por el texto entero de la celda, y «Tecnología (fija)»
+                               saldría como otra persona distinta de «Tecnología». #}
+                            <td>{{ b.holderName }}</td>
+                            <td class="muted">{{ b.purpose }}{% if b.series %} · reserva fija{% endif %}</td>
                         </tr>
                     {% endfor %}
                 </tbody>

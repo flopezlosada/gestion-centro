@@ -18,6 +18,9 @@ use App\Repository\ScheduleEntryRepository;
 use App\Repository\TimeSlotRepository;
 use App\Security\Voter\AreaVoter;
 use App\Service\SchoolCalendar;
+use App\Space\RoomAvailability;
+use App\Space\RoomOccupancy;
+use App\Space\RoomOccupation;
 use App\Util\CalendarDate;
 use App\Util\SchoolYear;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
@@ -47,6 +50,11 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
  * centro no reserva laboratorios, talleres, gimnasio ni pistas — los organiza su departamento —, y ofrecerlos
  * en la misma lista que el salón de actos era invitar a un choque que la aplicación no puede arbitrar.
  *
+ * Y un espacio reservable NO está libre a una hora en la que el horario mete una clase en él: las aulas de
+ * informática se reservan, pero «las del horario» son de quien da clase allí. Se responde con
+ * {@see RoomOccupancy}, el horario EFECTIVO (planes de espacios aprobados incluidos), el mismo que «Aulas
+ * libres»: si las dos pantallas leyeran cosas distintas, un aula saldría libre en una y ocupada en la otra.
+ *
  * Dos pantallas y no una: el DÍA, abierta a todo el mundo, que es donde se reserva; y el SEGUIMIENTO de la
  * semana ({@see tracking()}), para el equipo directivo, que es donde se mira atrás cuando aparece un
  * desperfecto.
@@ -67,8 +75,9 @@ final class BookingController extends AbstractController
         TimeSlotRepository $timeSlots,
         AcademicYearRepository $years,
         ScheduleEntryRepository $schedule,
+        RoomOccupancy $occupancy,
     ): Response {
-        $availability = $this->resolveAvailability($request, $bookings, $rooms, $materials, $timeSlots, $years);
+        $availability = $this->resolveAvailability($request, $bookings, $rooms, $materials, $timeSlots, $years, $occupancy);
         $day = $availability['day'];
 
         return $this->render('booking/index.html.twig', [
@@ -111,8 +120,9 @@ final class BookingController extends AbstractController
         TimeSlotRepository $timeSlots,
         AcademicYearRepository $years,
         ScheduleEntryRepository $schedule,
+        RoomOccupancy $occupancy,
     ): Response {
-        $availability = $this->resolveAvailability($request, $bookings, $rooms, $materials, $timeSlots, $years);
+        $availability = $this->resolveAvailability($request, $bookings, $rooms, $materials, $timeSlots, $years, $occupancy);
 
         return $this->render('booking/_availability.html.twig', [
             'day' => $availability['day'],
@@ -128,7 +138,7 @@ final class BookingController extends AbstractController
      * curso, lo ya reservado, el catálogo entero, y el catálogo filtrado a lo libre en TODAS las horas
      * pedidas. Compartido por {@see index()} (la página entera) y {@see availability()} (el fragmento que
      * pide el fetch de las horas), para que las dos vean exactamente el mismo "libre" sin mantener la
-     * regla en dos sitios.
+     * regla en dos sitios. "Libre" es sin reserva Y, para un espacio, sin clase en el horario.
      *
      * @return array{day: \DateTimeImmutable, year: ?AcademicYear, periods: array{slots: array<int, array{startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}>, borrowedFrom: string|null}, dayBookings: list<Booking>, allRooms: list<Room>, allMaterials: list<Material>, selectedSlots: list<int>, freeRooms: list<Room>, freeMaterials: list<Material>}
      */
@@ -139,6 +149,7 @@ final class BookingController extends AbstractController
         MaterialRepository $materials,
         TimeSlotRepository $timeSlots,
         AcademicYearRepository $years,
+        RoomOccupancy $occupancy,
     ): array {
         $day = CalendarDate::parse($request->query->getString('fecha'), new \DateTimeZone(date_default_timezone_get()))
             ?? new \DateTimeImmutable('today');
@@ -179,6 +190,9 @@ final class BookingController extends AbstractController
                 if (null !== $booking->getMaterial()) {
                     $bookedMaterialIds[$booking->getMaterial()->getId()] = true;
                 }
+            }
+            foreach (self::roomsInClass($occupancy, $year, $day, $selectedSlots) as $inClass) {
+                $bookedRoomIds += $inClass;
             }
             $freeRooms = array_values(array_filter($allRooms, static fn (Room $r): bool => !isset($bookedRoomIds[$r->getId()])));
             $freeMaterials = array_values(array_filter($allMaterials, static fn (Material $m): bool => !isset($bookedMaterialIds[$m->getId()])));
@@ -267,13 +281,15 @@ final class BookingController extends AbstractController
         TimeSlotRepository $timeSlots,
         AcademicYearRepository $years,
         SchoolCalendar $calendar,
+        RoomOccupancy $occupancy,
     ): Response {
         $anchor = CalendarDate::parse($request->query->getString('fecha'), new \DateTimeZone(date_default_timezone_get()))
             ?? new \DateTimeImmutable('today');
         // Mismo retroceso por número de día que el seguimiento (ver allí por qué no 'monday this week').
         $monday = $anchor->modify('-'.((int) $anchor->format('N') - 1).' days');
         $days = array_map(static fn (int $i): \DateTimeImmutable => $monday->modify("+{$i} days"), range(0, 4));
-        $periods = $timeSlots->lectiveTimesWithFallback($years->findBySchoolYear(SchoolYear::current($monday)));
+        $year = $years->findBySchoolYear(SchoolYear::current($monday));
+        $periods = $timeSlots->lectiveTimesWithFallback($year);
 
         $allRooms = $rooms->findReservable();
         $allMaterials = $materials->findActive();
@@ -300,6 +316,17 @@ final class BookingController extends AbstractController
         $taken = [];
         foreach ($bookings->findForRange($days[0], $days[4]) as $booking) {
             $taken[$booking->getDate()->format('Y-m-d')][$booking->getSlotIndex()][self::keyOf($booking->getRoom() ?? $booking->getMaterial())] = true;
+        }
+        // Y lo que tiene clase en el horario, que tampoco está libre. Solo si se miran espacios: el material
+        // no está en el horario, y así la vista de un carro no lee la semana del horario para nada.
+        if ('material' !== $view && !($single instanceof Material)) {
+            foreach (array_filter($days, $calendar->isLective(...)) as $day) {
+                foreach (self::roomsInClass($occupancy, $year, $day, array_keys($periods['slots'])) as $slot => $roomIds) {
+                    foreach (array_keys($roomIds) as $roomId) {
+                        $taken[$day->format('Y-m-d')][$slot]['room:'.$roomId] = true;
+                    }
+                }
+            }
         }
 
         $grid = [];
@@ -340,7 +367,7 @@ final class BookingController extends AbstractController
      * mismo idioma y no hay una tercera forma de nombrar las cosas.
      */
     #[Route('/nueva', name: 'booking_new', methods: ['POST'])]
-    public function create(Request $request, #[CurrentUser] User $user, RoomRepository $rooms, MaterialRepository $materials, BookingRepository $bookings, TimeSlotRepository $timeSlots, AcademicYearRepository $years, ScheduleEntryRepository $schedule, EntityManagerInterface $entityManager): Response
+    public function create(Request $request, #[CurrentUser] User $user, RoomRepository $rooms, MaterialRepository $materials, BookingRepository $bookings, TimeSlotRepository $timeSlots, AcademicYearRepository $years, ScheduleEntryRepository $schedule, EntityManagerInterface $entityManager, RoomOccupancy $occupancy): Response
     {
         if (!$this->isCsrfTokenValid('booking_new', (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
@@ -408,6 +435,20 @@ final class BookingController extends AbstractController
             return $this->back($day);
         }
 
+        // Un aula con clase a esa hora no se ofrece, y aquí se comprueba de nuevo: se llega igual con un enlace
+        // guardado o un POST a mano, y la clase la tiene quien da clase allí, no quien reserva primero.
+        if ($room instanceof Room) {
+            $inClass = array_keys(array_filter(
+                self::roomsInClass($occupancy, $years->findBySchoolYear(SchoolYear::current($day)), $day, $slots),
+                static fn (array $roomIds): bool => isset($roomIds[$room->getId()]),
+            ));
+            if ([] !== $inClass) {
+                $this->addFlash('error', sprintf('No se ha reservado nada: el horario tiene clase en %s a %s.', $room->getName(), 1 === \count($inClass) ? 'esa hora' : 'alguna de esas horas'));
+
+                return $this->back($day);
+            }
+        }
+
         // Varias horas se reservan TODAS o NINGUNA: media reserva (el carro a 2ª pero no a 3ª) es peor que
         // ninguna, porque quien la hizo cree tenerlo todo. Se mira antes para poder decir QUÉ hora está
         // cogida; el índice único sigue siendo quien lo garantiza si otra persona se adelanta entre medias.
@@ -418,7 +459,9 @@ final class BookingController extends AbstractController
         ));
         if ([] !== $taken) {
             $this->addFlash('error', match (true) {
-                $taken[0]->isOwnedBy($user) => 'Eso ya lo tienes reservado a esa hora. No se ha reservado nada más.',
+                // Una fila de reserva fija lleva como bookedBy a quien la creó, no a quien la tiene: por eso
+                // se descarta aquí, o Dirección leería «ya lo tienes» sobre el carro de otra persona.
+                null === $taken[0]->getSeries() && $taken[0]->isOwnedBy($user) => 'Eso ya lo tienes reservado a esa hora. No se ha reservado nada más.',
                 1 === \count($slots) => 'Justo antes lo ha reservado otra persona. Mira el día y elige otra hora.',
                 default => sprintf('No se ha reservado nada: %s lo ha reservado otra persona a alguna de esas horas. Quita esa hora o elige otra cosa.', $taken[0]->resourceName()),
             });
@@ -456,6 +499,10 @@ final class BookingController extends AbstractController
     /**
      * Anula una reserva. Solo la suya — o cualquiera, si es admin: quitarle a alguien la radio sin que se
      * entere es exactamente lo que hace que un sistema de reservas deje de usarse.
+     *
+     * Un día de una reserva FIJA se libera igual, y lo pueden hacer quien la tiene, la jefatura del
+     * departamento que la tiene o quien la creó ({@see \App\Entity\RecurringBooking::mayBeReleasedBy()}). Se
+     * libera ese día y nada más: la serie sigue.
      */
     #[Route('/{id}/anular', name: 'booking_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function delete(Booking $booking, Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager): Response
@@ -463,14 +510,15 @@ final class BookingController extends AbstractController
         if (!$this->isCsrfTokenValid('booking_delete'.$booking->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
-        if (!$booking->isOwnedBy($user) && !$this->isGranted('ROLE_ADMIN')) {
+        if (!$booking->mayBeReleasedBy($user) && !$this->isGranted('ROLE_ADMIN')) {
             throw $this->createAccessDeniedException('Esta reserva no es tuya.');
         }
 
         $day = $booking->getDate();
+        $fixed = null !== $booking->getSeries();
         $entityManager->remove($booking);
         $entityManager->flush();
-        $this->addFlash('success', 'Reserva anulada.');
+        $this->addFlash('success', $fixed ? 'Día liberado: la reserva fija sigue el resto de días.' : 'Reserva anulada.');
 
         return $this->back($day);
     }
@@ -488,6 +536,32 @@ final class BookingController extends AbstractController
     private static function knownGroups(ScheduleEntryRepository $schedule, ?AcademicYear $year): array
     {
         return null !== $year ? $schedule->distinctGroupNames($year) : [];
+    }
+
+    /**
+     * Los espacios en los que el horario efectivo mete una clase un día, por hora: lo que no está libre
+     * aunque nadie lo haya reservado. Sin curso no hay horario, y no hay ninguno.
+     *
+     * @param RoomOccupancy      $occupancy the effective timetable
+     * @param AcademicYear|null  $year      the course of the day
+     * @param \DateTimeImmutable $day       the day
+     * @param list<int>          $slots     the periods to look at
+     *
+     * @return array<int, array<int, true>> period index → ids of the rooms with a class then
+     */
+    private static function roomsInClass(RoomOccupancy $occupancy, ?AcademicYear $year, \DateTimeImmutable $day, array $slots): array
+    {
+        if (null === $year || [] === $slots) {
+            return [];
+        }
+
+        return array_map(
+            static fn (RoomAvailability $availability): array => array_fill_keys(
+                array_map(static fn (RoomOccupation $o): int => (int) $o->room->getId(), $availability->occupied),
+                true,
+            ),
+            $occupancy->forDay($year, $day, $slots),
+        );
     }
 
     /**
@@ -543,13 +617,14 @@ final class BookingController extends AbstractController
 
     /**
      * The periods a booking may take: the course's teaching periods, or six generic ones when no course
-     * has a timetable at all (the same fallback the screen shows and says it is using).
+     * has a timetable at all (the same fallback the screen shows and says it is using). Public because the
+     * fixed bookings ({@see RecurringBookingController}) take the same periods.
      *
      * @param array<int, mixed> $slots the teaching periods by index
      *
      * @return list<int> the period indexes
      */
-    private static function validSlots(array $slots): array
+    public static function validSlots(array $slots): array
     {
         return [] !== $slots ? array_keys($slots) : range(0, 5);
     }

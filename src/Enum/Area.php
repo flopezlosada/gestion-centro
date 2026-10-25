@@ -28,6 +28,12 @@ namespace App\Enum;
  * {@see self::GUARDIAS} — what they had for it — also opened the parte, the history and the statistics:
  * which group was left without whom, and who covered it. Its single screen shows the absences and
  * nothing else, and only as long as the centre keeps them.
+ *
+ * {@see self::RESERVAS_FIJAS} is the same cut once more: whoever lays out the laptop trolleys for the course
+ * (Dirección, or the teacher the centre asks to) needs to hold a trolley or a room every week, and WRITE on
+ * {@see self::ESPACIOS} would also hand them the room catalogue, the space plans and the tracking sheet of
+ * who had what. Only WRITE means anything here; the list of fixed bookings is open to everybody, like the
+ * bookings themselves.
  */
 enum Area: string
 {
@@ -35,6 +41,7 @@ enum Area: string
     case GUARDIAS = 'guardias';
     case AUSENCIAS = 'ausencias';
     case ESPACIOS = 'espacios';
+    case RESERVAS_FIJAS = 'reservas_fijas';
     case FOTOCOPIAS = 'fotocopias';
     case TIC = 'tic';
 
@@ -50,6 +57,7 @@ enum Area: string
             self::GUARDIAS => 'Guardias',
             self::AUSENCIAS => 'Ausencias del profesorado',
             self::ESPACIOS => 'Espacios',
+            self::RESERVAS_FIJAS => 'Reservas fijas',
             self::FOTOCOPIAS => 'Fotocopias',
             self::TIC => 'Incidencias TIC',
         };
@@ -74,6 +82,7 @@ enum Area: string
             self::GUARDIAS => 'guardia_index',
             self::AUSENCIAS => 'absence_index',
             self::ESPACIOS => 'space_index',
+            self::RESERVAS_FIJAS => 'booking_series_index',
             self::FOTOCOPIAS => 'copy_request_index',
             self::TIC => 'tic_incident_index',
         };
@@ -86,6 +95,6 @@ enum Area: string
      */
     public static function inDisplayOrder(): array
     {
-        return [self::ADMINISTRATION, self::GUARDIAS, self::AUSENCIAS, self::ESPACIOS, self::FOTOCOPIAS, self::TIC];
+        return [self::ADMINISTRATION, self::GUARDIAS, self::AUSENCIAS, self::ESPACIOS, self::RESERVAS_FIJAS, self::FOTOCOPIAS, self::TIC];
     }
 }
