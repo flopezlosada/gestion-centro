@@ -5970,3 +5970,8 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 .pick-chips legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
 .pick-chip { position: relative; }
 .pick-chip input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+
+/* ¿Para quién? de una reserva fija: solo la lista del tipo elegido (y ninguna hasta elegirlo). Sin :has la
+   regla entera se descarta y se ven las dos: el servidor lee solo la del tipo marcado. */
+.holder-picker:not(:has(input[name="titular_tipo"][value="user"]:checked)) [data-holder-kind="user"],
+.holder-picker:not(:has(input[name="titular_tipo"][value="dept"]:checked)) [data-holder-kind="dept"] { display: none; }

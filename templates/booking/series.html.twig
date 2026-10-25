@@ -93,20 +93,38 @@
                     </select>
                 </div>
 
-                <div class="field">
-                    <label for="titular">¿Para quién?</label>
-                    {#- Persona O departamento: un carro de Tecnología no es de quien dé la clase ese año. -#}
-                    <select id="titular" name="titular" required>
-                        <option value="">— Elige —</option>
-                        <optgroup label="Departamentos">
-                            {% for d in departments %}<option value="dept:{{ d.id }}"{{ (sent.titular ?? '') == 'dept:' ~ d.id ? ' selected' }}>{{ d.name }}</option>{% endfor %}
-                        </optgroup>
-                        <optgroup label="Personas">
-                            {% for u in users %}<option value="user:{{ u.id }}"{{ (sent.titular ?? '') == 'user:' ~ u.id ? ' selected' }}>{{ u.fullName }}</option>{% endfor %}
-                        </optgroup>
-                    </select>
-                    <p class="help">Si es de un departamento, puede liberar un día su jefatura de departamento.</p>
-                </div>
+                {#- Persona O departamento: un carro de Tecnología no es de quien dé la clase ese año. Primero el tipo
+                    y luego solo esa lista: las ochenta personas en un desplegable detrás de los departamentos no
+                    se veían. La otra lista la esconde el CSS (:has); sin él se ven las dos y manda el tipo. -#}
+                {% set holderKind = sent.titular_tipo ?? '' %}
+                <fieldset class="field holder-picker">
+                    <legend>¿Para quién?</legend>
+                    <div class="pick-chips">
+                        <label class="pick-chip"><input type="radio" name="titular_tipo" value="user" required{{ holderKind == 'user' ? ' checked' }}> Una persona</label>
+                        <label class="pick-chip"><input type="radio" name="titular_tipo" value="dept"{{ holderKind == 'dept' ? ' checked' }}> Un departamento</label>
+                    </div>
+                    <div class="holder-picker__kind" data-holder-kind="user">
+                        <div class="pick-list" data-pick-search="Busca a la persona por nombre o departamento…">
+                            {% for u in users %}
+                                <label class="pick-option">
+                                    <input type="radio" class="pick-option__input" name="titular_persona" value="{{ u.id }}"{{ (sent.titular_persona ?? '') == u.id ~ '' ? ' checked' }}>
+                                    <span class="pick-option__body">
+                                        <span class="pick-option__name">{{ u.fullName }}</span>
+                                        <span class="pick-option__desc">{{ u.unit ? u.unit.name : 'Sin departamento' }}</span>
+                                    </span>
+                                </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="holder-picker__kind" data-holder-kind="dept">
+                        <label for="titular_departamento" class="visually-hidden">Departamento</label>
+                        <select id="titular_departamento" name="titular_departamento">
+                            <option value="">— Elige el departamento —</option>
+                            {% for d in departments %}<option value="{{ d.id }}"{{ (sent.titular_departamento ?? '') == d.id ~ '' ? ' selected' }}>{{ d.name }}</option>{% endfor %}
+                        </select>
+                        <p class="help">Puede liberar un día su jefatura de departamento.</p>
+                    </div>
+                </fieldset>
 
                 <div class="field">
                     <label for="desde">Desde</label>

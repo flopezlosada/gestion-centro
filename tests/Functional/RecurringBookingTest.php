@@ -21,6 +21,7 @@ use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
@@ -58,7 +59,8 @@ final class RecurringBookingTest extends WebTestCase
         $this->client->loginUser($manager);
         $this->postSeries([
             'recurso' => 'material:'.$cart->getId(),
-            'titular' => 'dept:'.$technology->getId(),
+            'titular_tipo' => 'dept',
+            'titular_departamento' => (string) $technology->getId(),
             'desde' => $monday->format('Y-m-d'),
             'hasta' => $friday->format('Y-m-d'),
             'franjas' => ['1:1', '3:2'],
@@ -83,6 +85,116 @@ final class RecurringBookingTest extends WebTestCase
         self::assertSelectorTextContains('[data-booking-day-list]', 'Fija');
     }
 
+    /**
+     * Cada persona sale con su departamento debajo, y quien no tiene ninguno lo dice. Al enviar manda el TIPO
+     * marcado: sin el CSS que esconde la otra lista, una persona elegida antes de cambiar a «Un departamento»
+     * sigue marcada y no puede quedarse con la reserva.
+     */
+    public function testTheKindChosenDecidesTheHolderAndPeopleShowTheirDepartment(): void
+    {
+        [$monday, $friday] = self::stretch();
+        $manager = $this->manager();
+        $technology = $this->department('Tecnología');
+        $mar = $this->user('mar@centro.test')->setUnit($technology);
+        $cart = $this->material('Ada Lovelace');
+        $this->course($monday);
+        $this->em->flush();
+
+        $this->client->loginUser($manager);
+        $crawler = $this->client->request('GET', '/reservas/fijas');
+        $option = $crawler->filter('input[name="titular_persona"][value="'.$mar->getId().'"]')->closest('.pick-option');
+        self::assertNotNull($option);
+        self::assertSame('Tecnología', trim($option->filter('.pick-option__desc')->text()));
+        $carol = $crawler->filter('input[name="titular_persona"][value="'.$manager->getId().'"]')->closest('.pick-option');
+        self::assertNotNull($carol);
+        self::assertSame('Sin departamento', trim($carol->filter('.pick-option__desc')->text()));
+
+        $this->postSeries([
+            'recurso' => 'material:'.$cart->getId(),
+            'titular_tipo' => 'dept',
+            'titular_departamento' => (string) $technology->getId(),
+            'titular_persona' => (string) $mar->getId(),
+            'desde' => $monday->format('Y-m-d'),
+            'hasta' => $friday->format('Y-m-d'),
+            'franjas' => ['2:3'],
+            'motivo' => 'Clases de Tecnología',
+        ]);
+
+        self::assertResponseRedirects('/reservas/fijas');
+        $this->em->clear();
+        $series = $this->em->getRepository(RecurringBooking::class)->findAll();
+        self::assertCount(1, $series);
+        self::assertSame('Tecnología', $series[0]->getHolderDepartment()?->getName());
+        self::assertNull($series[0]->getHolderUser());
+    }
+
+    /**
+     * Sin titular válido no se crea nada y se pide: el tipo marcado sin nada elegido en su lista, ningún
+     * tipo (un envío a mano: el formulario lo exige) o una persona dada de baja (la lista no la ofrece).
+     *
+     * @param array<string, string> $holder los campos del titular; «{baja}» es el id de la persona de baja
+     */
+    #[DataProvider('holdersThatAreNone')]
+    public function testWithoutAValidHolderNothingIsCreated(array $holder): void
+    {
+        [$monday, $friday] = self::stretch();
+        $manager = $this->manager();
+        $gone = $this->user('baja@centro.test')->setActive(false);
+        $cart = $this->material('Ada Lovelace');
+        $this->course($monday);
+        $this->em->flush();
+
+        $this->client->loginUser($manager);
+        $this->postSeries(array_map(static fn (string $v): string => str_replace('{baja}', (string) $gone->getId(), $v), $holder) + [
+            'recurso' => 'material:'.$cart->getId(),
+            'desde' => $monday->format('Y-m-d'),
+            'hasta' => $friday->format('Y-m-d'),
+            'franjas' => ['2:3'],
+            'motivo' => 'Clases de Tecnología',
+        ]);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertSelectorTextContains('.flash.error', 'Elige para quién es');
+        $this->em->clear();
+        self::assertCount(0, $this->em->getRepository(RecurringBooking::class)->findAll());
+    }
+
+    /** @return iterable<string, array{array<string, string>}> */
+    public static function holdersThatAreNone(): iterable
+    {
+        yield 'departamento sin elegir' => [['titular_tipo' => 'dept', 'titular_departamento' => '']];
+        yield 'persona sin elegir' => [['titular_tipo' => 'user']];
+        yield 'sin tipo, con persona' => [['titular_persona' => '{baja}']];
+        yield 'persona de baja' => [['titular_tipo' => 'user', 'titular_persona' => '{baja}']];
+    }
+
+    /** Un error en otro campo devuelve el formulario con el tipo y la persona elegidos, sin volver a buscarla. */
+    public function testAnErrorKeepsTheHolderPicked(): void
+    {
+        [$monday, $friday] = self::stretch();
+        $manager = $this->manager();
+        $mar = $this->user('mar@centro.test');
+        $cart = $this->material('Ada Lovelace');
+        $this->course($monday);
+        $this->em->flush();
+
+        $this->client->loginUser($manager);
+        $this->postSeries([
+            'recurso' => 'material:'.$cart->getId(),
+            'titular_tipo' => 'user',
+            'titular_persona' => (string) $mar->getId(),
+            'desde' => $monday->format('Y-m-d'),
+            'hasta' => $friday->format('Y-m-d'),
+            'franjas' => ['2:3'],
+            'motivo' => '',
+        ]);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertSelectorTextContains('.flash.error', 'Di para qué es');
+        self::assertSelectorExists('input[name="titular_tipo"][value="user"][checked]');
+        self::assertSelectorExists('input[name="titular_persona"][value="'.$mar->getId().'"][checked]');
+    }
+
     /** Un solo día cogido por otra persona para la serie entera, y se dice cuál y de quién. */
     public function testADayAlreadyBookedStopsTheWholeSeriesAndIsNamed(): void
     {
@@ -97,7 +209,8 @@ final class RecurringBookingTest extends WebTestCase
         $this->client->loginUser($manager);
         $this->postSeries([
             'recurso' => 'material:'.$cart->getId(),
-            'titular' => 'user:'.$teacher->getId(),
+            'titular_tipo' => 'user',
+            'titular_persona' => (string) $teacher->getId(),
             'desde' => $monday->format('Y-m-d'),
             'hasta' => $friday->format('Y-m-d'),
             'franjas' => ['1:1'],
@@ -136,7 +249,8 @@ final class RecurringBookingTest extends WebTestCase
         $this->client->loginUser($manager);
         $this->postSeries([
             'recurso' => 'room:'.$room->getId(),
-            'titular' => 'user:'.$manager->getId(),
+            'titular_tipo' => 'user',
+            'titular_persona' => (string) $manager->getId(),
             'desde' => $monday->format('Y-m-d'),
             'hasta' => $friday->format('Y-m-d'),
             'franjas' => ['1:1'],
@@ -180,7 +294,8 @@ final class RecurringBookingTest extends WebTestCase
         $this->client->loginUser($manager);
         $this->postSeries([
             'recurso' => 'room:'.$room->getId(),
-            'titular' => 'user:'.$manager->getId(),
+            'titular_tipo' => 'user',
+            'titular_persona' => (string) $manager->getId(),
             'desde' => $tuesday,
             'hasta' => $tuesday,
             'franjas' => ['1:1', '2:1'],
@@ -203,7 +318,8 @@ final class RecurringBookingTest extends WebTestCase
         $this->client->loginUser($manager);
         $this->postSeries([
             'recurso' => 'material:'.$cart->getId(),
-            'titular' => 'user:'.$manager->getId(),
+            'titular_tipo' => 'user',
+            'titular_persona' => (string) $manager->getId(),
             'desde' => $monday->format('Y-m-d'),
             'hasta' => $friday->format('Y-m-d'),
             'franjas' => ['1:1'],
@@ -244,7 +360,8 @@ final class RecurringBookingTest extends WebTestCase
         $this->client->loginUser($manager);
         $this->postSeries([
             'recurso' => 'material:'.$cart->getId(),
-            'titular' => 'user:'.$mar->getId(),
+            'titular_tipo' => 'user',
+            'titular_persona' => (string) $mar->getId(),
             'desde' => $monday->format('Y-m-d'),
             'hasta' => $friday->format('Y-m-d'),
             'franjas' => ['1:1'],

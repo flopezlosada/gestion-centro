@@ -27,6 +27,7 @@ use App\Util\SchoolYear;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\InputBag;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
@@ -98,7 +99,7 @@ final class RecurringBookingController extends AbstractController
         $purpose = trim($input->getString('motivo'));
         $pattern = self::pattern($input->all('franjas'), BookingController::validSlots($timeSlots->lectiveTimesWithFallback($year)['slots']));
         $resource = self::resource($input->getString('recurso'), $rooms, $materials);
-        $holder = self::holder($input->getString('titular'), $users, $departments);
+        $holder = self::holder($input, $users, $departments);
 
         // Todo lo que falta se dice a la vez: el formulario es largo y devolverlo con un solo error cada vez
         // es hacer que se envíe cinco veces.
@@ -279,20 +280,23 @@ final class RecurringBookingController extends AbstractController
     }
 
     /**
-     * Who holds it, from "user:7" / "dept:3". Only active people and departments: the list offers no other.
+     * Who holds it: {@code titular_tipo} says whether it is a person or a department, and only that kind's
+     * field is read. A browser that cannot hide the other list shows both, and either may carry a stale
+     * pick, so the kind — not whichever field happens to be filled — decides. Only active people and
+     * departments: the lists offer no other.
      *
-     * @param string               $key         the posted key
+     * @param InputBag<string>     $input       the posted form
      * @param UserRepository       $users       the people
      * @param DepartmentRepository $departments the departments
      *
      * @return User|Department|null the holder, or null when there is no such active one
      */
-    private static function holder(string $key, UserRepository $users, DepartmentRepository $departments): User|Department|null
+    private static function holder(InputBag $input, UserRepository $users, DepartmentRepository $departments): User|Department|null
     {
-        [$kind, $id] = array_pad(explode(':', $key, 2), 2, '');
-        $holder = match ($kind) {
-            'user' => $users->find((int) $id),
-            'dept' => $departments->find((int) $id),
+        $holder = match ($input->getString('titular_tipo')) {
+            // getString y no getInt: el desplegable sin elegir envía "", y getInt lanza con eso en vez de dar 0.
+            'user' => $users->find((int) $input->getString('titular_persona')),
+            'dept' => $departments->find((int) $input->getString('titular_departamento')),
             default => null,
         };
 
