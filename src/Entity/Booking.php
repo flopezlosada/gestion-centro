@@ -31,6 +31,10 @@ use Symfony\Component\Validator\Constraints as Assert;
  * There is NO approval step. The centre called it "solicitud de reserva", but what they do today in the
  * Aula Virtual is book, and adding somebody who has to say yes to each request would only add a queue:
  * whoever asks first has it, and it is visible to everybody.
+ *
+ * A booking may belong to a {@see RecurringBooking} — one row of a fixed weekly booking. It is then a booking
+ * like any other for every screen and for the clash, and only says who HOLDS it and who may free it
+ * differently: the series' holder, not the person who typed it in.
  */
 #[ORM\Entity(repositoryClass: BookingRepository::class)]
 #[ORM\Table(name: 'booking')]
@@ -91,6 +95,14 @@ class Booking implements Auditable
     #[ORM\Column(name: 'created_at', type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
 
+    /**
+     * The fixed booking this row is one day of, or null for a one-off booking. Deleting a series takes its
+     * rows with it; that only happens before any of its days has passed ({@see RecurringBooking}).
+     */
+    #[ORM\ManyToOne(targetEntity: RecurringBooking::class)]
+    #[ORM\JoinColumn(name: 'series_id', referencedColumnName: 'id', nullable: true, onDelete: 'CASCADE')]
+    private ?RecurringBooking $series = null;
+
     private function __construct(User $bookedBy, string $resourceKey, \DateTimeImmutable $date, int $slotIndex, string $purpose)
     {
         $this->bookedBy = $bookedBy;
@@ -121,6 +133,27 @@ class Booking implements Auditable
     {
         $booking = new self($bookedBy, 'material:'.$material->getId(), $date, $slotIndex, $purpose);
         $booking->material = $material;
+
+        return $booking;
+    }
+
+    /**
+     * One day and period of a fixed booking: the same thing and purpose as the series, made by whoever made
+     * the series.
+     *
+     * @param RecurringBooking   $series    the fixed booking
+     * @param User               $createdBy who is creating it (the series' creator)
+     * @param \DateTimeImmutable $date      the teaching day
+     * @param int                $slotIndex the period
+     */
+    public static function forSeries(RecurringBooking $series, User $createdBy, \DateTimeImmutable $date, int $slotIndex): self
+    {
+        $room = $series->getRoom();
+        $material = $series->getMaterial();
+        $booking = null !== $room
+            ? self::forRoom($createdBy, $room, $date, $slotIndex, $series->getPurpose())
+            : self::forMaterial($createdBy, $material ?? throw new \LogicException('A series holds a room or a material.'), $date, $slotIndex, $series->getPurpose());
+        $booking->series = $series;
 
         return $booking;
     }
@@ -189,6 +222,35 @@ class Booking implements Auditable
     public function getCreatedAt(): \DateTimeImmutable
     {
         return $this->createdAt;
+    }
+
+    public function getSeries(): ?RecurringBooking
+    {
+        return $this->series;
+    }
+
+    /**
+     * Who has it, by name: the holder of the series for a fixed booking (a person or a department), the
+     * person who booked it otherwise.
+     *
+     * @return string the name to show
+     */
+    public function holderName(): string
+    {
+        return $this->series?->holderName() ?? $this->bookedBy?->getFullName() ?? 'Persona dada de baja';
+    }
+
+    /**
+     * Whether the given person may undo (or, for a fixed booking, free) this booking. Admins are checked by
+     * the caller.
+     *
+     * @param User $user the person asking
+     *
+     * @return bool true when they may
+     */
+    public function mayBeReleasedBy(User $user): bool
+    {
+        return null !== $this->series ? $this->series->mayBeReleasedBy($user) : $this->isOwnedBy($user);
     }
 
     /**

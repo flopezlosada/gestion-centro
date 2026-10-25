@@ -45,6 +45,7 @@
             <a href="{{ path('booking_index') }}" class="{{ diaStr == 'now'|date('Y-m-d', false) ? 'is-active' }}">Hoy</a>
             <a href="{{ path('booking_index', { fecha: day|date_modify('+1 day')|date('Y-m-d', false) }) }}">Día siguiente →</a>
             <a href="{{ path('booking_week', { fecha: diaStr }) }}">Semana</a>
+            <a href="{{ path('booking_series_index') }}">Reservas fijas</a>
         </nav>
         <form method="get" action="{{ path('booking_index') }}">
             {#- <label for> y no aria-label: date-field.js pasa el input real a hidden y le TRASPASA el id al
@@ -78,14 +79,16 @@
                                 <div class="mini-card-head">
                                     <span class="badge {{ b.room ? 'badge--accent' : 'badge--muted' }}">{{ b.room ? 'Espacio' : 'Material' }}</span>
                                     <strong>{{ b.resourceName }}</strong>
+                                    {% if b.series %}<span class="badge badge--muted" title="Reserva fija: se repite cada semana">Fija</span>{% endif %}
                                 </div>
                                 <p class="mini-card-note">{{ b.purpose }}{% if b.groupName %} · {{ b.groupName }}{% endif %}</p>
                                 <div class="mini-card-status">
-                                    <span class="muted">{{ b.bookedBy ? b.bookedBy.fullName : '—' }}</span>
-                                    {% if b.isOwnedBy(app.user) or is_granted('ROLE_ADMIN') %}
-                                        <form method="post" action="{{ path('booking_delete', { id: b.id }) }}" data-confirm="¿Anular esta reserva?">
+                                    <span class="muted">{{ b.holderName }}</span>
+                                    {#- Un día de una reserva fija se LIBERA (la serie sigue los demás días); una suelta se anula. -#}
+                                    {% if b.mayBeReleasedBy(app.user) or is_granted('ROLE_ADMIN') %}
+                                        <form method="post" action="{{ path('booking_delete', { id: b.id }) }}" data-confirm="{{ b.series ? '¿Liberar este día? La reserva fija sigue el resto de semanas.' : '¿Anular esta reserva?' }}">
                                             <input type="hidden" name="_token" value="{{ csrf_token('booking_delete' ~ b.id) }}">
-                                            <button type="submit" class="link-danger">Anular</button>
+                                            <button type="submit" class="link-danger">{{ b.series ? 'Liberar este día' : 'Anular' }}</button>
                                         </form>
                                     {% endif %}
                                 </div>

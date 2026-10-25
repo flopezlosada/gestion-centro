@@ -1,0 +1,163 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Reservas fijas · {{ app_organization_name }}{% endblock %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('booking_index') }}">Reservas</a><span class="sep">/</span>Reservas fijas{% endblock %}
+
+{# La hora por su ORDINAL en el día (posición en la lista de tramos, no índice: los recreos también ocupan
+   índice) y, si se conoce el marco, la de reloj al lado. #}
+{% macro hora(ordinals, slotTimes, index) %}
+    {%- set times = slotTimes[index] ?? null -%}
+    {{ ordinals[index] ?? (index + 1) }}ª{% if times %} <span class="mono muted">{{ times.startsAt|date('H:i', false) }}</span>{% endif %}
+{%- endmacro %}
+
+{% block body %}
+    {% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'] %}
+    {% set diasCortos = ['', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie'] %}
+    {% set puedeCrear = is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::RESERVAS_FIJAS')) %}
+
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Espacios y material</p>
+            <h1>Reservas fijas</h1>
+            <p class="lead">Carros y aulas cogidos las mismas horas cada semana. Se saltan los días no lectivos, y quien la tiene puede liberar un día suelto desde la pantalla del día.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        {% if series is empty %}
+            <p class="muted">No hay ninguna reserva fija en curso.</p>
+        {% else %}
+            <ul class="incident-list">
+                {% for s in series %}
+                    <li class="incident">
+                        <div class="incident__main">
+                            <span class="incident__head">
+                                <span class="incident__what">{{ s.resourceName }}</span>
+                                <span class="muted">· {{ s.holderName }}</span>
+                            </span>
+                            <span class="incident__where">
+                                {% for weekday, slots in s.pattern %}{{ diasCortos[weekday] }} {{ slots|map(i => (ordinals[i] ?? (i + 1)) ~ 'ª')|join(', ') }}{{ not loop.last ? ' · ' }}{% endfor %}
+                            </span>
+                            <span class="incident__where">Del {{ s.startsOn|date('d/m/Y', false) }} al {{ s.endsOn|date('d/m/Y', false) }} · {{ s.purpose }}{% if s.createdBy %} · la creó {{ s.createdBy.fullName }}{% endif %}</span>
+                        </div>
+                        {% if puedeCrear %}
+                            <form method="post" action="{{ path('booking_series_end', { id: s.id }) }}" data-confirm="¿Terminar esta reserva fija? Desde hoy {{ s.resourceName }} queda libre esas horas; lo pasado se conserva.">
+                                <input type="hidden" name="_token" value="{{ csrf_token('booking_series_end' ~ s.id) }}">
+                                <button type="submit" class="link-danger">Terminar</button>
+                            </form>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    </div>
+
+    {% if puedeCrear %}
+        <div class="card">
+            <div class="page-head"><div><h2>Nueva reserva fija</h2></div></div>
+
+            {% if errors is not empty %}
+                <div class="flash error" role="alert">
+                    {% for e in errors %}<p>{{ e }}</p>{% endfor %}
+                    {% if clashes is not empty %}
+                        <ul>
+                            {#- Los primeros doce: una serie de todo el curso contra otra choca ochenta veces, y con ver
+                                cuáles y cuántas basta para saber qué quitar. -#}
+                            {% for c in clashes|slice(0, 12) %}
+                                <li>{% if c.date %}{{ dias[c.weekday.value] }} {{ c.date|date('d/m/Y', false) }}{% else %}Todos los {{ dias[c.weekday.value]|lower }}{% endif %} a {{ _self.hora(ordinals, slotTimes, c.slotIndex) }}: {{ c.what }}</li>
+                            {% endfor %}
+                            {% if clashes|length > 12 %}<li>… y {{ clashes|length - 12 }} más.</li>{% endif %}
+                        </ul>
+                    {% endif %}
+                </div>
+            {% endif %}
+
+            {% set franjas = sent.franjas ?? [] %}
+            <form method="post" action="{{ path('booking_series_new') }}" class="stack-form">
+                <input type="hidden" name="_token" value="{{ csrf_token('booking_series_new') }}">
+
+                <div class="field">
+                    <label for="recurso">¿Qué se reserva?</label>
+                    <select id="recurso" name="recurso" required>
+                        <option value="">— Elige —</option>
+                        {% if materials is not empty %}
+                            <optgroup label="Material">
+                                {% for m in materials %}<option value="material:{{ m.id }}"{{ (sent.recurso ?? '') == 'material:' ~ m.id ? ' selected' }}>{{ m.name }}</option>{% endfor %}
+                            </optgroup>
+                        {% endif %}
+                        {% if rooms is not empty %}
+                            <optgroup label="Espacios">
+                                {% for r in rooms %}<option value="room:{{ r.id }}"{{ (sent.recurso ?? '') == 'room:' ~ r.id ? ' selected' }}>{{ r.name }}</option>{% endfor %}
+                            </optgroup>
+                        {% endif %}
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="titular">¿Para quién?</label>
+                    {#- Persona O departamento: un carro de Tecnología no es de quien dé la clase ese año. -#}
+                    <select id="titular" name="titular" required>
+                        <option value="">— Elige —</option>
+                        <optgroup label="Departamentos">
+                            {% for d in departments %}<option value="dept:{{ d.id }}"{{ (sent.titular ?? '') == 'dept:' ~ d.id ? ' selected' }}>{{ d.name }}</option>{% endfor %}
+                        </optgroup>
+                        <optgroup label="Personas">
+                            {% for u in users %}<option value="user:{{ u.id }}"{{ (sent.titular ?? '') == 'user:' ~ u.id ? ' selected' }}>{{ u.fullName }}</option>{% endfor %}
+                        </optgroup>
+                    </select>
+                    <p class="help">Si es de un departamento, puede liberar un día su jefatura de departamento.</p>
+                </div>
+
+                <div class="field">
+                    <label for="desde">Desde</label>
+                    <input type="date" id="desde" name="desde" required value="{{ sent.desde ?? today|date('Y-m-d', false) }}">
+                </div>
+                <div class="field">
+                    <label for="hasta">Hasta</label>
+                    <input type="date" id="hasta" name="hasta" required value="{{ sent.hasta ?? (defaultTo ? defaultTo|date('Y-m-d', false) : '') }}">
+                    <p class="help">Por defecto, hasta el final del curso.</p>
+                </div>
+
+                <fieldset class="field">
+                    <legend>¿Qué horas, cada semana?</legend>
+                    <div class="table-scroll">
+                        <table class="booking-week">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Hora</th>
+                                    {% for w in weekdays %}<th scope="col">{{ dias[w.value] }}</th>{% endfor %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for index in slotIndexes %}
+                                    <tr>
+                                        <th scope="row">{{ _self.hora(ordinals, slotTimes, index) }}</th>
+                                        {% for w in weekdays %}
+                                            {% set value = w.value ~ ':' ~ index %}
+                                            <td>
+                                                <label class="booking-hour">
+                                                    <input type="checkbox" name="franjas[]" value="{{ value }}"{{ value in franjas ? ' checked' }}>
+                                                    <span class="visually-hidden">{{ dias[w.value] }} a {{ ordinals[index] ?? (index + 1) }}ª</span>
+                                                </label>
+                                            </td>
+                                        {% endfor %}
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </fieldset>
+
+                <div class="field">
+                    <label for="motivo">¿Para qué?</label>
+                    <input type="text" id="motivo" name="motivo" maxlength="200" required value="{{ sent.motivo ?? '' }}" placeholder="Clases de Tecnología, programación de 4º…">
+                </div>
+
+                <p class="help">Si algún día ya lo tiene otra persona, o el horario tiene clase en esa aula a esa hora, no se reserva nada y se te dice qué choca.</p>
+                <div class="form-actions">
+                    <button type="submit" class="btn">Crear reserva fija</button>
+                </div>
+            </form>
+        </div>
+    {% endif %}
+{% endblock %}

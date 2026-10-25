@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Service;
 
 use App\Entity\AcademicYear;
+use App\Entity\NonLectiveDay;
 use App\Repository\AcademicYearRepository;
 use App\Repository\NonLectiveDayRepository;
 use App\Util\SchoolYear;
@@ -63,7 +64,36 @@ final class SchoolCalendar implements ResetInterface
      */
     public function isLective(\DateTimeImmutable $date): bool
     {
-        return !$this->isWeekend($date) && null === $this->breakOn($date) && !$this->nonLectiveDays->existsOn($date);
+        return $this->isOpen($date, fn (): bool => $this->nonLectiveDays->existsOn($date));
+    }
+
+    /**
+     * Every teaching day between two dates, inclusive — the same answer as {@see isLective()} day by day,
+     * with the registered non-teaching days read in ONE query: a fixed booking walks a whole course, and
+     * asking day by day would be one query per day.
+     *
+     * @param \DateTimeImmutable $from the first day (time part is ignored)
+     * @param \DateTimeImmutable $to   the last day (time part is ignored)
+     *
+     * @return list<\DateTimeImmutable> the teaching days, at midnight, in order
+     */
+    public function lectiveDaysBetween(\DateTimeImmutable $from, \DateTimeImmutable $to): array
+    {
+        $from = $from->setTime(0, 0);
+        $to = $to->setTime(0, 0);
+        $closed = array_flip(array_map(
+            static fn (NonLectiveDay $day): string => $day->getDate()->format('Y-m-d'),
+            $this->nonLectiveDays->findBetween($from, $to),
+        ));
+
+        $days = [];
+        for ($day = $from; $day <= $to; $day = $day->modify('+1 day')) {
+            if ($this->isOpen($day, static fn (): bool => isset($closed[$day->format('Y-m-d')]))) {
+                $days[] = $day;
+            }
+        }
+
+        return $days;
     }
 
     /**
@@ -127,6 +157,21 @@ final class SchoolCalendar implements ResetInterface
         }
 
         return $date;
+    }
+
+    /**
+     * The rule of a teaching day, in one place for {@see isLective()} and {@see lectiveDaysBetween()}: not a
+     * weekend, not in a break, and not registered as closed. The last check is a closure because the two
+     * callers answer it differently (one query, or a set read beforehand) and it is the only one that costs.
+     *
+     * @param \DateTimeImmutable $date       the day
+     * @param \Closure(): bool   $registered whether the day is a registered non-teaching day
+     *
+     * @return bool true for a teaching day
+     */
+    private function isOpen(\DateTimeImmutable $date, \Closure $registered): bool
+    {
+        return !$this->isWeekend($date) && null === $this->breakOn($date) && !$registered();
     }
 
     /**
