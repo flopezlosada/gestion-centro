@@ -279,6 +279,93 @@ final class ImportTimetableCommandTest extends KernelTestCase
         self::assertCount(1, $this->em->getRepository(ScheduleEntry::class)->findBy(['teacher' => $gone]), 'their cells are left alone');
     }
 
+    public function testACodeThatChangedHandsGoesToThePersonTheExportNames(): void
+    {
+        // Peñalara gives the code of someone on leave to their substitute: 777 was Ana's post last
+        // course and is Jane's now. Trusting the code would hand Jane's timetable to Ana in silence.
+        $ana = (new User())->setFullName('Ana Titular Previa')->setEmail('ana@educa.madrid.org')->setPenalaraCode('777');
+        $this->em->persist($ana);
+        $this->cell($ana, Weekday::WEDNESDAY, 2, ScheduleActivityKind::LECTIVE, ScheduleEntrySource::PENALARA);
+        $this->cell($ana, Weekday::THURSDAY, 3, ScheduleActivityKind::GUARDIA, ScheduleEntrySource::MANUAL);
+
+        $tester = $this->runImport();
+        $this->em->clear();
+
+        $jane = $this->teacher('jane@educa.madrid.org');
+        $ana = $this->teacher('ana@educa.madrid.org');
+        self::assertSame('777', $jane->getPenalaraCode(), 'the code follows the person the export names');
+        self::assertNull($ana->getPenalaraCode(), 'the old holder gives it up, or the unique index would refuse');
+        self::assertCount(2, $this->em->getRepository(ScheduleEntry::class)->findBy(['teacher' => $jane]));
+
+        $anaCells = $this->em->getRepository(ScheduleEntry::class)->findBy(['teacher' => $ana]);
+        self::assertCount(1, $anaCells, 'the imported cell of the post goes with it');
+        self::assertSame(ScheduleEntrySource::MANUAL, $anaCells[0]->getSource(), 'a hand-marked guardia is a person\'s decision and stays');
+
+        self::assertStringContainsString('cambian de persona', $this->display($tester));
+        self::assertStringContainsString('La plaza de Ana Titular Previa pasa a Jane Doe Smith: se le quita 1 celda importada.', $this->display($tester));
+    }
+
+    public function testAReassignedCodeIsStableOnReRun(): void
+    {
+        $ana = (new User())->setFullName('Ana Titular Previa')->setEmail('ana@educa.madrid.org')->setPenalaraCode('777');
+        $this->em->persist($ana);
+        $this->em->flush();
+
+        $this->runImport();
+        $tester = $this->runImport();
+
+        self::assertStringNotContainsString('cambian de persona', $this->display($tester), 'the second run finds the code already where it belongs');
+        self::assertCount(2, $this->em->getRepository(ScheduleEntry::class)->findAll());
+    }
+
+    public function testAHolderWhoseNameDiffersKeepsTheirPostWhileNobodyHasTheExportName(): void
+    {
+        // 888 is "Ghost Person, No" in the export and nobody in the app has that name. The holder's
+        // name does not fit either, but taking their timetable away because someone not registered
+        // yet exists would be deleting on a guess: the teacher is reported unmatched, the holder kept.
+        $bob = (new User())->setFullName('Bob Titular Previo')->setEmail('bob@educa.madrid.org')->setPenalaraCode('888');
+        $this->em->persist($bob);
+        $this->cell($bob, Weekday::FRIDAY, 1, ScheduleActivityKind::LECTIVE, ScheduleEntrySource::PENALARA);
+
+        $tester = $this->runImport();
+        $this->em->clear();
+
+        $bob = $this->teacher('bob@educa.madrid.org');
+        self::assertSame('888', $bob->getPenalaraCode());
+        self::assertCount(1, $this->em->getRepository(ScheduleEntry::class)->findBy(['teacher' => $bob]));
+        self::assertStringContainsString('Ghost Person', $this->display($tester), 'reported as unmatched');
+        self::assertStringNotContainsString('cambian de persona', $this->display($tester));
+    }
+
+    public function testAStoredCodeStillMatchesWhenTheAppSpellsTheNameShorter(): void
+    {
+        // The app says "Jane Smith"; Peñalara says "Doe Smith, Jane". Every word of the shorter name is
+        // in the longer one, so it is the same person and the stored code keeps deciding.
+        $jane = $this->teacher('jane@educa.madrid.org');
+        $jane->setFullName('Jane Smith')->setPenalaraCode('777');
+        $this->em->flush();
+
+        $tester = $this->runImport();
+        $this->em->clear();
+
+        self::assertSame('777', $this->teacher('jane@educa.madrid.org')->getPenalaraCode());
+        self::assertCount(2, $this->em->getRepository(ScheduleEntry::class)->findBy(['teacher' => $this->teacher('jane@educa.madrid.org')]));
+        self::assertStringNotContainsString('cambian de persona', $this->display($tester));
+    }
+
+    /**
+     * The command's output on one line: SymfonyStyle wraps warning blocks at the terminal width, so a
+     * phrase can otherwise be split by a line break and indentation.
+     *
+     * @param CommandTester $tester the tester that ran the command
+     *
+     * @return string the output with every run of whitespace collapsed to one space
+     */
+    private function display(CommandTester $tester): string
+    {
+        return (string) preg_replace('/\s+/', ' ', $tester->getDisplay());
+    }
+
     /**
      * Loads a teacher by e-mail, failing the test when they are missing.
      *
@@ -304,6 +391,20 @@ final class ImportTimetableCommandTest extends KernelTestCase
      */
     private function handMarkedGuardia(User $teacher, Weekday $weekday, int $slotIndex): void
     {
+        $this->cell($teacher, $weekday, $slotIndex, ScheduleActivityKind::GUARDIA, ScheduleEntrySource::MANUAL);
+    }
+
+    /**
+     * Writes one timetable cell of the test course for a teacher, flushing whatever is pending.
+     *
+     * @param User                  $teacher   the teacher
+     * @param Weekday               $weekday   the weekday
+     * @param int                   $slotIndex the period index
+     * @param ScheduleActivityKind  $kind      lesson or guardia
+     * @param ScheduleEntrySource   $source    who wrote it: the export or a person
+     */
+    private function cell(User $teacher, Weekday $weekday, int $slotIndex, ScheduleActivityKind $kind, ScheduleEntrySource $source): void
+    {
         $year = $this->em->getRepository(AcademicYear::class)->findOneBy(['schoolYear' => '2026-2027']);
         self::assertInstanceOf(AcademicYear::class, $year);
 
@@ -314,8 +415,8 @@ final class ImportTimetableCommandTest extends KernelTestCase
             ->setSlotIndex($slotIndex)
             ->setStartsAt(new \DateTimeImmutable('08:25:00'))
             ->setEndsAt(new \DateTimeImmutable('09:20:00'))
-            ->setKind(ScheduleActivityKind::GUARDIA)
-            ->setSource(ScheduleEntrySource::MANUAL));
+            ->setKind($kind)
+            ->setSource($source));
         $this->em->flush();
     }
 }

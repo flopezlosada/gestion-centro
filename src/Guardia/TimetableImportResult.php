@@ -35,6 +35,8 @@ final class TimetableImportResult
      * @param list<string>          $newRooms      space cards the import had to create for rooms the timetable names
      * @param list<string>          $substitutions descripción de las sustituciones en vigor del curso, que el import
      *                                            deshace y vuelve a aplicar sobre el horario nuevo
+     * @param list<string>          $reassigned    una línea por plaza que el export da a otra persona,
+     *                                            con las celdas importadas que pierde quien la tenía
      */
     public function __construct(
         public readonly int $entryCount,
@@ -51,18 +53,20 @@ final class TimetableImportResult
         public readonly array $frameConflicts = [],
         public readonly array $newRooms = [],
         public readonly array $substitutions = [],
+        public readonly array $reassigned = [],
     ) {
     }
 
     /**
      * Whether anything at all needs the reader's attention: someone unmatched, a hand-marked guardia
-     * touched, or a teacher left behind. Drives whether the preview shows warnings or just a green tick.
+     * touched, a teacher left behind, or a post that changes hands. Drives whether the preview shows warnings or just a green tick.
      *
      * @return bool true when the report carries something to decide on
      */
     public function needsAttention(): bool
     {
         return [] !== $this->unmatched || [] !== $this->stale || $this->keptManual > 0 || $this->droppedManual > 0
-            || [] !== $this->frameConflicts || 0 === $this->breakCount || [] !== $this->substitutions;
+            || [] !== $this->frameConflicts || 0 === $this->breakCount || [] !== $this->substitutions
+            || [] !== $this->reassigned;
     }
 }

@@ -180,5 +180,44 @@ class UserRepository extends ServiceEntityRepository
             ->getQuery()
             ->getResult();
     }
-}
 
+    /**
+     * Gives each Peñalara code to the person who holds that post now, taking it from whoever had it.
+     *
+     * Peñalara hands the code of someone on leave to their substitute, so an import can move a code from
+     * one person to another. The column is unique, and a single flush that both sets the newcomer's code
+     * and clears the old holder's may run the two UPDATEs in either order, so the codes are first freed
+     * in one statement and only then written. The bulk UPDATE skips the identity map, so the old holders
+     * still loaded in memory are cleared too: otherwise a later flush would see no change on them and
+     * the in-memory value would lie about the row.
+     *
+     * @param array<string|int, User> $codes Peñalara code → the person who must hold it
+     */
+    public function reassignPenalaraCodes(array $codes): void
+    {
+        if ([] === $codes) {
+            return;
+        }
+
+        // PHP turns numeric string keys into ints; the column is a string.
+        $values = array_map('strval', array_keys($codes));
+        $em = $this->getEntityManager();
+        $em->wrapInTransaction(function () use ($em, $codes, $values): void {
+            foreach ($this->findBy(['penalaraCode' => $values]) as $holder) {
+                $holder->setPenalaraCode(null);
+            }
+            $this->createQueryBuilder('u')
+                ->update()
+                ->set('u.penalaraCode', 'NULL')
+                ->where('u.penalaraCode IN (:codes)')
+                ->setParameter('codes', $values)
+                ->getQuery()
+                ->execute();
+
+            foreach ($codes as $code => $user) {
+                $user->setPenalaraCode((string) $code);
+            }
+            $em->flush();
+        });
+    }
+}

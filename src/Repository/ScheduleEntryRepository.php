@@ -621,6 +621,41 @@ class ScheduleEntryRepository extends ServiceEntityRepository
     }
 
     /**
+     * How many imported cells each of the given teachers holds in a course, in one query. The import
+     * preview names every person who loses a post to someone else with what they lose, and asking once
+     * per person would be a query each.
+     *
+     * @param AcademicYear $year     the course whose timetable to count
+     * @param list<User>   $teachers the teachers to count for
+     *
+     * @return array<int, int> teacher id → export-sourced cells in that course; absent when none
+     */
+    public function countImportedByTeacher(AcademicYear $year, array $teachers): array
+    {
+        if ([] === $teachers) {
+            return [];
+        }
+
+        /** @var list<array{teacherId: int|string, cells: int|string}> $rows */
+        $rows = $this->createQueryBuilder('s')
+            ->select('IDENTITY(s.teacher) AS teacherId', 'COUNT(s.id) AS cells')
+            ->andWhere('s.academicYear = :year')
+            ->andWhere('s.teacher IN (:teachers)')
+            ->andWhere('s.source = :penalara')
+            ->groupBy('s.teacher')
+            ->setParameter('year', $year)
+            ->setParameter('teachers', $teachers)
+            ->setParameter('penalara', ScheduleEntrySource::PENALARA)
+            ->getQuery()
+            ->getArrayResult();
+
+        return array_combine(
+            array_map(static fn (array $r): int => (int) $r['teacherId'], $rows),
+            array_map(static fn (array $r): int => (int) $r['cells'], $rows),
+        );
+    }
+
+    /**
      * The teachers who already have any timetable cell in a course, name ascending. The importer
      * compares this with the teachers the export resolved to, so it can report the ones who kept a
      * timetable nobody re-imported — someone who left the centre mid-course would otherwise stay in the
