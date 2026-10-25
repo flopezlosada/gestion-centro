@@ -124,6 +124,13 @@
                 </div>
             {% endif %}
 
+            {% if preview.reassigned is not empty %}
+                <div class="callout callout--warning" role="note">
+                    <p><strong>{{ preview.reassigned|length }} plaza(s) de Peñalara cambian de persona.</strong> El fichero trae el código de esa plaza con otro nombre (por ejemplo, quien sustituye a una baja): el horario va a quien nombra el fichero, y a quien la tenía se le quita el que se importó.</p>
+                    <ul>{% for line in preview.reassigned %}<li>{{ line }}</li>{% endfor %}</ul>
+                </div>
+            {% endif %}
+
             {% if preview.stale is not empty %}
                 <div class="callout callout--warning" role="note">
                     <p><strong>{{ preview.stale|length }} profesor(es) con horario en {{ year.schoolYear }} que este fichero no trae.</strong> No se tocan: conservan el horario y las guardias que ya tenían. Si han dejado el centro, quítales el horario a mano o seguirán entrando en el reparto de guardias.</p>

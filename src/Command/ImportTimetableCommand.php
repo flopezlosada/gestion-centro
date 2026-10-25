@@ -133,6 +133,11 @@ final class ImportTimetableCommand extends Command
             $io->note(sprintf('%d guardias marcadas a mano se han quitado: el horario nuevo pone clase a esa hora.', $result->droppedManual));
         }
 
+        if ([] !== $result->reassigned) {
+            $io->warning(sprintf('%d plaza(s) de Peñalara cambian de persona: el horario va a quien nombra el fichero y a quien la tenía se le quita el importado.', \count($result->reassigned)));
+            $io->listing($result->reassigned);
+        }
+
         if ([] !== $result->stale) {
             $io->warning(sprintf('%d profesores conservan horario en %s que este fichero no trae (no se tocan). Si han dejado el centro, quítales el horario o seguirán entrando en el reparto de guardias:', \count($result->stale), $year->getSchoolYear()));
             $io->listing($result->stale);

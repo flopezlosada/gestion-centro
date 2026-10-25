@@ -116,6 +116,13 @@ final class AdminTimetableController extends AbstractController
         if ([] !== $result->unmatched) {
             $this->addFlash('warning', sprintf('%d profesor(es) del horario siguen sin emparejar: su horario no se ha importado.', \count($result->unmatched)));
         }
+        if ([] !== $result->reassigned) {
+            $this->addFlash('warning', sprintf(
+                '%d plaza(s) de Peñalara han cambiado de persona: %s',
+                \count($result->reassigned),
+                implode(' ', $result->reassigned),
+            ));
+        }
         // Rooms the timetable names that the catalogue lacked: they now exist, but only as a code. Say
         // so here, because a card without capacity or type cannot inform a single decision.
         if ([] !== $result->newRooms) {
