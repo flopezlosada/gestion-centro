@@ -447,6 +447,22 @@ final class BookingTest extends WebTestCase
         self::assertStringContainsString('material:'.$camera->getId(), $offered);
     }
 
+    /** Quien reserva un carro ve cuántos equipos lleva; lo que no es un juego de equipos no dice nada. */
+    public function testATrolleySaysHowManyDevicesItCarries(): void
+    {
+        $teacher = $this->user('carro@centro.test');
+        $trolley = $this->material('Dora Maar')->setDeviceCount(24);
+        $radio = $this->material('Radio');
+        $this->em->flush();
+
+        $this->client->loginUser($teacher);
+        $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay().'&tramos[]=2');
+
+        $option = static fn (Material $m): string => trim($crawler->filter('#recurso option[value="material:'.$m->getId().'"]')->text());
+        self::assertSame('Dora Maar · 24 equipos (Conserjería)', $option($trolley));
+        self::assertSame('Radio (Conserjería)', $option($radio));
+    }
+
     /**
      * La semana: a cada hora, lo libre. Con casi todo libre dice «Todo salvo…» en vez de listar
      * cuarenta aulas; y mirando una cosa concreta, «Cogido» o «Libre».

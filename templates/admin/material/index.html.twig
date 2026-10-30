@@ -24,13 +24,14 @@
         {% else %}
             <table data-list-tools>
                 <thead>
-                    <tr><th>Nombre</th><th>Dónde se guarda</th><th data-filter>Estado</th><th data-nosort></th></tr>
+                    <tr><th>Nombre</th><th>Dónde se guarda</th><th>Equipos</th><th data-filter>Estado</th><th data-nosort></th></tr>
                 </thead>
                 <tbody>
                     {% for material in materials %}
                         <tr>
                             <td>{{ material.name }}</td>
                             <td>{{ material.keptAt ?? '—' }}</td>
+                            <td>{{ material.deviceCount ?? '—' }}</td>
                             <td>{{ material.active ? 'En uso' : 'Retirado' }}</td>
                             <td class="row-actions"><a href="{{ path('admin_material_edit', { id: material.id }) }}">Editar</a></td>
                         </tr>

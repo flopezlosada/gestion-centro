@@ -19,7 +19,7 @@
         {{ form_start(form, { attr: { novalidate: 'novalidate' } }) }}
             {{ f.submit_error(form) }}
             {{ form_errors(form) }}
-            {{ f.fields([form.name, form.keptAt, form.notes]) }}
+            {{ f.fields([form.name, form.keptAt, form.deviceCount, form.notes]) }}
             {{ f.toggle(form.active) }}
             {{ f.actions(path('admin_material_index')) }}
         {{ form_end(form) }}

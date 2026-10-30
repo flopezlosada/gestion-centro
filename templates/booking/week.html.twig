@@ -37,7 +37,7 @@
                 {% endif %}
                 {% if materials is not empty %}
                     <optgroup label="Un material">
-                        {% for m in materials %}<option value="material:{{ m.id }}"{{ view == 'material:' ~ m.id ? ' selected' }}>{{ m.name }}</option>{% endfor %}
+                        {% for m in materials %}<option value="material:{{ m.id }}"{{ view == 'material:' ~ m.id ? ' selected' }}>{{ include('booking/_material_label.html.twig') }}</option>{% endfor %}
                     </optgroup>
                 {% endif %}
             </select>
