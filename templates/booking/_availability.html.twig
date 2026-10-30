@@ -22,7 +22,7 @@
                 <option value="">— Elige —</option>
                 {% if materials is not empty %}
                     <optgroup label="Material">
-                        {% for m in materials %}<option value="material:{{ m.id }}">{{ m.name }}{% if m.keptAt %} ({{ m.keptAt }}){% endif %}</option>{% endfor %}
+                        {% for m in materials %}<option value="material:{{ m.id }}">{{ include('booking/_material_label.html.twig') }}{% if m.keptAt %} ({{ m.keptAt }}){% endif %}</option>{% endfor %}
                     </optgroup>
                 {% endif %}
                 {% if rooms is not empty %}

@@ -82,7 +82,7 @@
                         <option value="">— Elige —</option>
                         {% if materials is not empty %}
                             <optgroup label="Material">
-                                {% for m in materials %}<option value="material:{{ m.id }}"{{ (sent.recurso ?? '') == 'material:' ~ m.id ? ' selected' }}>{{ m.name }}</option>{% endfor %}
+                                {% for m in materials %}<option value="material:{{ m.id }}"{{ (sent.recurso ?? '') == 'material:' ~ m.id ? ' selected' }}>{{ include('booking/_material_label.html.twig') }}</option>{% endfor %}
                             </optgroup>
                         {% endif %}
                         {% if rooms is not empty %}

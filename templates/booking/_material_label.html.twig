@@ -1,0 +1,2 @@
+{#- El nombre del material como sale en los desplegables: con los equipos que lleva, si es un carro contado. -#}
+{{- m.name }}{% if m.deviceCount %} · {{ m.deviceCount }} {{ m.deviceCount == 1 ? 'equipo' : 'equipos' }}{% endif -%}

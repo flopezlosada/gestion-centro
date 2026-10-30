@@ -7,6 +7,7 @@ namespace App\Form;
 use App\Entity\Material;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
+use Symfony\Component\Form\Extension\Core\Type\IntegerType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
@@ -30,6 +31,12 @@ final class MaterialFormType extends AbstractType
                 'label' => 'Dónde se guarda',
                 'required' => false,
                 'help' => 'Para que quien lo reserve sepa adónde ir: «conserjería», «armario del aula 12».',
+            ])
+            ->add('deviceCount', IntegerType::class, [
+                'label' => 'Equipos que lleva (opcional)',
+                'required' => false,
+                'help' => 'Solo para carros: cuántos portátiles o tablets tiene, para que quien lo reserve sepa si le llega para el grupo.',
+                'attr' => ['min' => 1, 'max' => 200],
             ])
             ->add('notes', TextareaType::class, [
                 'label' => 'Qué hay que saber',
