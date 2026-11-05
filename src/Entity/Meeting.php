@@ -256,6 +256,16 @@ class Meeting implements Auditable
     private ?string $minutesCloudPublishedFileId = null;
 
     /**
+     * The SHA-256 of the template the app put in the cloud as this acta's draft, until it is published — the
+     * proof that rewriting it (an agenda written after the acta was created) loses nothing:
+     * the bytes there are compared with this before touching them. Null when the document is not the app's
+     * template (an acta written outside and uploaded, one moved from here, one found already there), which
+     * is therefore never rewritten.
+     */
+    #[ORM\Column(name: 'minutes_cloud_template_hash', length: 64, nullable: true)]
+    private ?string $minutesCloudTemplateHash = null;
+
+    /**
      * When the acta was PUBLISHED, or null while it is still a draft.
      *
      * The centre asked for the two steps by name ("hay que dar opción de guardar y de publicar"), and the
@@ -1106,6 +1116,32 @@ class Meeting implements Auditable
     }
 
     /**
+     * The fingerprint of the untouched template in the cloud, or null when the draft may not be rewritten
+     * ({@see $minutesCloudTemplateHash}).
+     */
+    public function getMinutesCloudTemplateHash(): ?string
+    {
+        return $this->minutesCloudTemplateHash;
+    }
+
+    /**
+     * Records that the app wrote its template again over the untouched draft (with the agenda written
+     * since), so the next rewrite compares against THESE bytes.
+     *
+     * @param string $templateHash the SHA-256 of the template just written
+     *
+     * @throws \LogicException when the draft is not the app's template (or no longer is: published)
+     */
+    public function rewriteCloudMinutesTemplate(string $templateHash): void
+    {
+        if (null === $this->minutesCloudTemplateHash) {
+            throw new \LogicException('Solo se reescribe una plantilla del acta en la nube que nadie ha tocado ni publicado.');
+        }
+
+        $this->minutesCloudTemplateHash = $templateHash;
+    }
+
+    /**
      * Publishes the cloud acta with the frozen copy just made of it ({@see $minutesCloudPublishedFileId}):
      * the copy and the publication go together, so a published cloud acta always has what to read.
      *
@@ -1121,6 +1157,8 @@ class Meeting implements Auditable
         }
 
         $this->minutesCloudPublishedFileId = $publishedFileId;
+        // Lo publicado ya lo ha leído el claustro: desde aquí el borrador no se reescribe nunca.
+        $this->minutesCloudTemplateHash = null;
         $this->publishMinutes($by);
     }
 
@@ -1161,17 +1199,20 @@ class Meeting implements Auditable
      * Records the acta's document in the cloud. Leaves it a draft, like {@see attachMinutes()}: creating
      * the document is the start of writing it, not sending it.
      *
-     * @param string             $fileId the document's id in the cloud
-     * @param User               $by     who created it
-     * @param \DateTimeImmutable $at     when
+     * @param string             $fileId       the document's id in the cloud
+     * @param User               $by           who created it
+     * @param \DateTimeImmutable $at           when
+     * @param string|null        $templateHash the SHA-256 of the app's template when that is what was put
+     *                                         there, or null for any other document (never rewritten)
      *
      * @throws \LogicException when the meeting has not started yet at $at
      */
-    public function attachCloudMinutes(string $fileId, User $by, \DateTimeImmutable $at): void
+    public function attachCloudMinutes(string $fileId, User $by, \DateTimeImmutable $at, ?string $templateHash = null): void
     {
         $this->assertHeldAt($at);
 
         $this->minutesCloudFileId = $fileId;
+        $this->minutesCloudTemplateHash = $templateHash;
         $this->minutesCloudPublishedFileId = null;
         $this->minutesUploadedBy = $by;
         $this->minutesUploadedAt = $at;

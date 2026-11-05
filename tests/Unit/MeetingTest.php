@@ -575,4 +575,28 @@ final class MeetingTest extends TestCase
 
         $meeting->moveMinutesToCloud('776650601', null);
     }
+
+    public function testTheTemplatesFingerprintFollowsEachRewriteAndIsDroppedOnPublishing(): void
+    {
+        $convener = $this->user('Coordina');
+        $meeting = $this->meeting($convener);
+        $meeting->attachCloudMinutes('776060721', $convener, new \DateTimeImmutable('2026-09-15 15:00'), str_repeat('a', 64));
+
+        $meeting->rewriteCloudMinutesTemplate(str_repeat('b', 64));
+        self::assertSame(str_repeat('b', 64), $meeting->getMinutesCloudTemplateHash());
+
+        $meeting->publishCloudMinutes('900', $convener);
+        self::assertNull($meeting->getMinutesCloudTemplateHash(), 'lo publicado ya lo ha leído el claustro: el borrador no se rehace más');
+    }
+
+    public function testADocumentThatIsNotTheAppsTemplateCannotBeRecordedAsRewritten(): void
+    {
+        $convener = $this->user('Coordina');
+        $meeting = $this->meeting($convener);
+        $meeting->attachCloudMinutes('776060721', $convener, new \DateTimeImmutable('2026-09-15 15:00'));
+
+        $this->expectException(\LogicException::class);
+
+        $meeting->rewriteCloudMinutesTemplate(str_repeat('b', 64));
+    }
 }

@@ -266,4 +266,85 @@ final class MeetingCloudMinutesTest extends WebTestCase
         self::assertSelectorTextContains('.flash.error', 'ya tiene acta en la nube');
         self::assertSame('776060721', $this->reload($meeting)->getMinutesCloudFileId());
     }
+
+    /**
+     * Escribir el orden del día con el acta ya creada en la nube no puede quedarse en silencio: si el
+     * documento no es la plantilla intacta de la app (aquí, uno sin huella), no se toca y se dice que hay
+     * que añadirlo allí. La reunión se guarda igual.
+     */
+    public function testAnAgendaWrittenAfterTheCloudActaThatCannotBeRewrittenSaysToAddItThere(): void
+    {
+        $secretary = $this->user('Natalia', 'natalia.x@educa.madrid.org');
+        $meeting = $this->heldMeeting($secretary);
+        $meeting->attachCloudMinutes('776060721', $secretary, new \DateTimeImmutable());
+        $this->connectCloud();
+        $this->em->flush();
+
+        $crawler = $this->editAgenda($meeting, $secretary, '<ol><li>Horarios de guardia</li></ol>');
+
+        self::assertStringContainsString('Añade el orden del día en el acta de la nube', $crawler->filter('.flash.warning')->text());
+        self::assertStringContainsString('Horarios de guardia', (string) $this->reload($meeting)->getAgenda());
+    }
+
+    public function testEditingAnythingButTheAgendaLeavesTheCloudActaAlone(): void
+    {
+        $secretary = $this->user('Natalia', 'natalia.x@educa.madrid.org');
+        $meeting = $this->heldMeeting($secretary);
+        $meeting->attachCloudMinutes('776060721', $secretary, new \DateTimeImmutable());
+        $this->connectCloud();
+        $this->em->flush();
+        $this->client->loginUser($secretary);
+
+        $crawler = $this->client->request('GET', '/reuniones/'.$meeting->getId().'/editar');
+        $values = $crawler->selectButton('Guardar')->form()->getPhpValues();
+        $values['meeting_form']['place'] = 'Sala de profesores';
+        $this->client->request('POST', '/reuniones/'.$meeting->getId().'/editar', $values);
+        $crawler = $this->client->followRedirect();
+
+        self::assertCount(0, $crawler->filter('.flash.warning'), 'ni aviso ni llamada a la nube si el orden del día no cambia');
+    }
+
+    public function testAnAgendaChangedOnAPublishedCloudActaSaysToCorrectAndPublishAgain(): void
+    {
+        $secretary = $this->user('Natalia', 'natalia.x@educa.madrid.org');
+        $meeting = $this->heldMeeting($secretary);
+        $meeting->attachCloudMinutes('776060721', $secretary, new \DateTimeImmutable(), str_repeat('a', 64));
+        $meeting->publishCloudMinutes('900', $secretary);
+        $this->connectCloud();
+        $this->em->flush();
+
+        $crawler = $this->editAgenda($meeting, $secretary, '<ol><li>Horarios de guardia</li></ol>');
+
+        self::assertStringContainsString('vuelve a publicarla', $crawler->filter('.flash.warning')->text());
+    }
+
+    public function testACloudThatCannotBeReachedStillSavesTheMeetingAndSaysToAddTheAgendaThere(): void
+    {
+        $secretary = $this->user('Natalia', 'natalia.x@educa.madrid.org');
+        $meeting = $this->heldMeeting($secretary);
+        // Con huella, así que sí se intenta; la cuenta de prueba no se puede abrir: la nube «no está conectada».
+        $meeting->attachCloudMinutes('776060721', $secretary, new \DateTimeImmutable(), str_repeat('a', 64));
+        $this->connectCloud();
+        $this->em->flush();
+
+        $crawler = $this->editAgenda($meeting, $secretary, '<ol><li>Horarios de guardia</li></ol>');
+
+        $warning = $crawler->filter('.flash.warning')->text();
+        self::assertStringContainsString('no está conectada', $warning);
+        self::assertStringContainsString('Añade el orden del día en el acta de la nube', $warning);
+        self::assertStringContainsString('Horarios de guardia', (string) $this->reload($meeting)->getAgenda(), 'la reunión se guarda igual');
+    }
+
+    /** Sends the edit form with a new agenda and follows to the meeting's page. */
+    private function editAgenda(Meeting $meeting, User $by, string $agenda): Crawler
+    {
+        $this->client->loginUser($by);
+        $crawler = $this->client->request('GET', '/reuniones/'.$meeting->getId().'/editar');
+        $values = $crawler->selectButton('Guardar')->form()->getPhpValues();
+        $values['meeting_form']['agenda'] = $agenda;
+        $this->client->request('POST', '/reuniones/'.$meeting->getId().'/editar', $values);
+        self::assertResponseRedirects();
+
+        return $this->client->followRedirect();
+    }
 }

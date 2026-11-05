@@ -20,6 +20,7 @@ use App\Service\Cloud\CloudAccount;
 use App\Service\Cloud\CloudException;
 use App\Service\Cloud\CloudMinutes;
 use App\Service\Cloud\CloudShareQueue;
+use App\Service\Cloud\MinutesOdtRenderer;
 use App\Service\Cron\TaskLock;
 use App\Service\FileUploader;
 use App\Service\MeetingAccess;
@@ -300,7 +301,7 @@ final class MeetingController extends AbstractController
      * anyone newly added gets the convocatoria.
      */
     #[Route('/{id}/editar', name: 'meeting_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
-    public function edit(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, MeetingNotifier $notifier, MeetingTypeRepository $meetingTypes): Response
+    public function edit(Meeting $meeting, Request $request, #[CurrentUser] User $user, MeetingAccess $access, EntityManagerInterface $entityManager, MeetingNotifier $notifier, MeetingTypeRepository $meetingTypes, CloudMinutes $cloudMinutes): Response
     {
         $isAdmin = $this->isGranted('ROLE_ADMIN');
         if (!$access->canManage($meeting, $user, $isAdmin)) {
@@ -332,7 +333,7 @@ final class MeetingController extends AbstractController
 
         if ($form->isSubmitted() && $form->isValid()) {
             \assert(null !== $data->day && null !== $data->startTime);
-            $before = ['at' => $meeting->getStartAt(), 'place' => $meeting->getPlace()];
+            $before = ['at' => $meeting->getStartAt(), 'place' => $meeting->getPlace(), 'agenda' => $meeting->getAgenda()];
             $alreadyConvened = array_values($meeting->getAttendees()->toArray());
 
             $meeting->setStartAt(CalendarDate::at($data->day, $data->startTime));
@@ -356,6 +357,11 @@ final class MeetingController extends AbstractController
             }
 
             $this->addFlash('success', 'Reunión actualizada.');
+            // Se comparan los PUNTOS que van al acta, no el HTML: un reenvío del mismo texto puede volver con
+            // otros saltos de línea, y eso no cambia nada del acta.
+            if ($meeting->hasCloudMinutes() && MinutesOdtRenderer::agendaItems($meeting->getAgenda()) !== MinutesOdtRenderer::agendaItems($before['agenda'])) {
+                $this->carryAgendaToCloudMinutes($meeting, $cloudMinutes, $entityManager);
+            }
 
             return $this->redirectToRoute('meeting_show', ['id' => $meeting->getId()]);
         }
@@ -907,6 +913,35 @@ final class MeetingController extends AbstractController
         $this->addFlash('success', 'Reunión cancelada.');
 
         return $this->redirectToRoute('meeting_index');
+    }
+
+    /**
+     * Takes an agenda written or changed after the acta was created in the cloud into the document there:
+     * the template is written again while nobody has written in it ({@see CloudMinutes::rewriteTemplate()}).
+     * Once somebody has, it is left as it is and the flash says to add the agenda there — silence here is
+     * what left an acta without its agenda and nobody knowing why. The meeting is already saved: a cloud
+     * that fails only costs the warning.
+     */
+    private function carryAgendaToCloudMinutes(Meeting $meeting, CloudMinutes $cloudMinutes, EntityManagerInterface $entityManager): void
+    {
+        // Lo publicado no se rehace nunca: el claustro ya lo ha leído, y corregirlo es volver a publicarlo.
+        if ($meeting->isMinutesPublished()) {
+            $this->addFlash('warning', 'El acta ya está publicada: corrige el orden del día en la nube y vuelve a publicarla.');
+
+            return;
+        }
+        $byHand = 'Añade el orden del día en el acta de la nube; lo tienes en la ficha de la reunión.';
+        try {
+            if ($cloudMinutes->rewriteTemplate($meeting)) {
+                $entityManager->flush();
+                $this->addFlash('success', 'El acta de la nube ya lleva el orden del día.');
+
+                return;
+            }
+            $this->addFlash('warning', 'El acta de la nube ya tiene contenido y no se rehace para no borrarlo. '.$byHand);
+        } catch (CloudException $e) {
+            $this->addFlash('warning', $e->getMessage().' '.$byHand);
+        }
     }
 
     /**

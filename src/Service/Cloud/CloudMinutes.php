@@ -45,7 +45,9 @@ final class CloudMinutes
      */
     public function create(Meeting $meeting, User $by, \DateTimeImmutable $now): array
     {
-        return $this->createFrom($meeting, $by, $now, $this->renderer->render($meeting), 'odt');
+        $template = $this->renderer->render($meeting);
+
+        return $this->createFrom($meeting, $by, $now, $template, 'odt', hash('sha256', $template));
     }
 
     /**
@@ -67,15 +69,57 @@ final class CloudMinutes
      */
     public function upload(Meeting $meeting, User $by, \DateTimeImmutable $now, string $content, string $extension): array
     {
-        return $this->createFrom($meeting, $by, $now, $content, strtolower($extension));
+        // Sin huella: un documento de fuera se subió a propósito y la plantilla no lo sustituye nunca.
+        return $this->createFrom($meeting, $by, $now, $content, strtolower($extension), null);
     }
 
     /**
+     * Writes the template again over the draft, with what the meeting says NOW — above all an agenda written
+     * after the acta was created, which the document did not have. Only while the draft is still, byte for
+     * byte, the template the app put there: once somebody has written in it, rewriting would wipe their
+     * text, so it is left alone and the caller says to add the agenda there by hand.
+     *
+     * @param Meeting $meeting a meeting whose acta is in the cloud
+     *
+     * @return bool true when rewritten; false when the draft is not (or no longer) the untouched template,
+     *              is gone, or somebody saved it or has it open while this was being done
+     *
+     * @throws CloudException when no account is connected or the cloud fails
+     */
+    public function rewriteTemplate(Meeting $meeting): bool
+    {
+        $expected = $meeting->getMinutesCloudTemplateHash();
+        if (null === $expected) {
+            return false;
+        }
+        $credentials = $this->requireCredentials();
+        $path = $this->cloud->pathOf($credentials, (string) $meeting->getMinutesCloudFileId());
+        if (null === $path) {
+            return false;
+        }
+
+        $current = $this->cloud->read($credentials, $path);
+        if (null === $current['etag'] || !hash_equals($expected, hash('sha256', $current['content']))) {
+            return false;
+        }
+        $template = $this->renderer->render($meeting);
+        if (!$this->cloud->replace($credentials, $path, $template, $current['etag'])) {
+            return false;
+        }
+        $meeting->rewriteCloudMinutesTemplate(hash('sha256', $template));
+
+        return true;
+    }
+
+    /**
+     * @param string|null $templateHash the SHA-256 of the content when it is the app's template, so it may
+     *                                  be rewritten while untouched ({@see rewriteTemplate()}); null otherwise
+     *
      * @return array{pending: int, problems: list<string>} the shares still to be made, and who was left out and why
      *
      * @throws CloudException when no account is connected or the cloud fails
      */
-    private function createFrom(Meeting $meeting, User $by, \DateTimeImmutable $now, string $content, string $extension): array
+    private function createFrom(Meeting $meeting, User $by, \DateTimeImmutable $now, string $content, string $extension, ?string $templateHash): array
     {
         $credentials = $this->requireCredentials();
         $folder = $this->folderFor($meeting);
@@ -83,7 +127,9 @@ final class CloudMinutes
 
         $this->cloud->ensureFolder($credentials, $folder);
         $fileId = $this->uploadOrAdopt($credentials, $path, $content, $meeting);
-        $meeting->attachCloudMinutes($fileId, $by, $now);
+        // Si el documento ya estaba (un intento anterior a medias), la huella no da permiso a nada por sí
+        // sola: rewriteTemplate() compara los bytes de allí con ella antes de tocarlos.
+        $meeting->attachCloudMinutes($fileId, $by, $now, $templateHash);
 
         $keeper = $meeting->minutesKeeper();
         $this->queue->enqueue($meeting, $fileId, null === $keeper ? [] : [$keeper], EducamadridCloud::PERMISSION_EDIT, notify: false);
