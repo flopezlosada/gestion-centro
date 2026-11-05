@@ -162,6 +162,56 @@ final class EducamadridCloud
     }
 
     /**
+     * Reads a file's bytes and the version they are (its ETag), so whoever reads it can later write it back
+     * only if nobody saved in between ({@see replace()}).
+     *
+     * @param CloudCredentials $credentials the account
+     * @param string           $path        the file, relative to the account root
+     *
+     * @return array{content: string, etag: string|null} the bytes, and the version the cloud says they are
+     *
+     * @throws CloudException when the file cannot be read
+     */
+    public function read(CloudCredentials $credentials, string $path): array
+    {
+        $response = $this->send('GET', $this->davUrl($credentials, explode('/', $path)), [
+            'auth_basic' => [$credentials->login, $credentials->appPassword],
+        ]);
+        $this->expect($response->getStatusCode(), [200], 'leer el documento');
+
+        return ['content' => $this->body($response), 'etag' => $response->getHeaders(false)['etag'][0] ?? null];
+    }
+
+    /**
+     * Writes a file again, but ONLY if it is still the version read ({@see read()}): If-Match makes the
+     * cloud refuse the write when somebody saved in between, so a document being written in the editor is
+     * never overwritten with what the app had.
+     *
+     * @param CloudCredentials $credentials the account
+     * @param string           $path        the file, relative to the account root
+     * @param string           $content     the new bytes
+     * @param string           $etag        the version it must still be
+     *
+     * @return bool true when written; false when the file changed since (412) or is open and locked (423)
+     *
+     * @throws CloudException when the cloud fails otherwise
+     */
+    public function replace(CloudCredentials $credentials, string $path, string $content, string $etag): bool
+    {
+        $response = $this->send('PUT', $this->davUrl($credentials, explode('/', $path)), [
+            'auth_basic' => [$credentials->login, $credentials->appPassword],
+            'body' => $content,
+            'headers' => ['If-Match' => $etag],
+        ]);
+        if (\in_array($response->getStatusCode(), [412, 423], true)) {
+            return false;
+        }
+        $this->expect($response->getStatusCode(), [200, 201, 204], 'reescribir el documento');
+
+        return true;
+    }
+
+    /**
      * Copies a file inside the cloud, replacing whatever is at the destination, and returns the copy's id.
      * The bytes never leave EducaMadrid: the cloud copies them itself. Replacing gives the copy a NEW id
      * (checked against the real cloud), so whatever was shared on the old one has to be shared again.

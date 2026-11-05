@@ -21,6 +21,7 @@ use App\Service\Cloud\MinutesOdtRenderer;
 use App\Service\Cron\TaskLock;
 use App\Service\MeetingNotifier;
 use Doctrine\ORM\EntityManagerInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -65,6 +66,15 @@ final class CloudMinutesTest extends KernelTestCase
     /** Whether the fake cloud drops the connection on any share. */
     private bool $sharingUnreachable = false;
 
+    /** @var array<string, string> the bytes of each file the app PUT, by its WebDAV URL, as the fake cloud keeps them */
+    private array $files = [];
+
+    /** The version the fake cloud says its files are; it moves on every write. */
+    private int $version = 1;
+
+    /** What the fake cloud answers a PUT with If-Match instead of writing, or null to write (412 saved, 423 open). */
+    private ?int $conditionalPutRefusedWith = null;
+
     /** Where the fake cloud says the draft is now, or null for a draft that was deleted. */
     private ?string $draftNowAt = 'Actas/2026-2027/Otras reuniones/2026-09-15 14.00 Reunión de seguimiento.odt';
 
@@ -102,7 +112,21 @@ final class CloudMinutesTest extends KernelTestCase
         $this->sent[] = ['method' => $method, 'url' => $url, 'body' => $body];
 
         if ('PUT' === $method) {
+            $ifMatch = $options['normalized_headers']['if-match'][0] ?? null;
+            if (null !== $ifMatch && null !== $this->conditionalPutRefusedWith) {
+                return new MockResponse('', ['http_code' => $this->conditionalPutRefusedWith]);
+            }
+            if (null !== $ifMatch && 'If-Match: '.$this->etag() !== $ifMatch) {
+                return new MockResponse('', ['http_code' => 412]);
+            }
             $this->remember($url);
+            $this->files[$url] = $body;
+            ++$this->version;
+        }
+        if ('GET' === $method && str_contains($url, '/remote.php/dav/files/')) {
+            return isset($this->files[$url])
+                ? new MockResponse($this->files[$url], ['http_code' => 200, 'response_headers' => ['ETag' => $this->etag()]])
+                : new MockResponse('', ['http_code' => 404]);
         }
         if ('COPY' === $method) {
             $this->remember((string) preg_replace('#^Destination: #i', '', (string) ($options['normalized_headers']['destination'][0] ?? '')));
@@ -118,6 +142,36 @@ final class CloudMinutesTest extends KernelTestCase
             'DELETE' => new MockResponse('', ['http_code' => 200]),
             default => throw new \LogicException('La nube falsa no sabe responder a '.$method),
         };
+    }
+
+    /** The version of the fake cloud's files, quoted as Nextcloud sends it. */
+    private function etag(): string
+    {
+        return '"v'.$this->version.'"';
+    }
+
+    /**
+     * The PUT requests sent, in order.
+     *
+     * @return list<array{method: string, url: string, body: string}>
+     */
+    private function puts(): array
+    {
+        return array_values(array_filter($this->sent, static fn (array $r): bool => 'PUT' === $r['method']));
+    }
+
+    /** The content.xml of an .odt's bytes: where the agenda is written. */
+    private static function contentOf(string $odt): string
+    {
+        $path = (string) tempnam(sys_get_temp_dir(), 'odt');
+        file_put_contents($path, $odt);
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($path));
+        $content = (string) $zip->getFromName('content.xml');
+        $zip->close();
+        unlink($path);
+
+        return $content;
     }
 
     /** The id the fake cloud gives a file: the published copy one, the draft (and anything else) another. */
@@ -541,5 +595,113 @@ final class CloudMinutesTest extends KernelTestCase
 
         self::assertFalse($run->throttled);
         self::assertStringContainsString('no está conectada', (string) $run->stoppedBy);
+    }
+
+    public function testAnActaCreatedFromTheTemplateKeepsTheFingerprintOfWhatWasPut(): void
+    {
+        $secretary = $this->user('Natalia', 'natalia.x@educa.madrid.org');
+        $meeting = $this->heldMeeting($secretary, $secretary);
+
+        $this->minutes('all')->create($meeting, $secretary, self::at());
+
+        self::assertSame(hash('sha256', $this->puts()[0]['body']), $meeting->getMinutesCloudTemplateHash());
+    }
+
+    public function testAnActaUploadedFromOutsideHasNoFingerprintSoTheTemplateNeverReplacesIt(): void
+    {
+        $secretary = $this->user('Natalia', 'natalia.x@educa.madrid.org');
+        $meeting = $this->heldMeeting($secretary, $secretary);
+
+        $this->minutes('all')->upload($meeting, $secretary, self::at(), 'bytes del docx', 'docx');
+
+        self::assertNull($meeting->getMinutesCloudTemplateHash());
+    }
+
+    public function testAnAgendaWrittenAfterTheActaWasCreatedIsWrittenIntoTheUntouchedTemplate(): void
+    {
+        $secretary = $this->user('Natalia', 'natalia.x@educa.madrid.org');
+        $meeting = $this->heldMeeting($secretary, $secretary);
+        $minutes = $this->minutes('all');
+        $minutes->create($meeting, $secretary, self::at());
+        self::assertStringNotContainsString('Horarios de guardia', self::contentOf($this->puts()[0]['body']));
+
+        $meeting->setAgenda('<ol><li>Aprobación del acta anterior</li><li>Horarios de guardia</li></ol>');
+        $etagRead = $this->etag();
+
+        self::assertTrue($minutes->rewriteTemplate($meeting));
+        $puts = $this->puts();
+        self::assertCount(2, $puts);
+        self::assertSame($puts[0]['url'], $puts[1]['url'], 'el mismo documento, el que ya está compartido: no uno nuevo');
+        $content = self::contentOf($puts[1]['body']);
+        self::assertStringContainsString('Aprobación del acta anterior', $content);
+        self::assertStringContainsString('Horarios de guardia', $content);
+        self::assertSame(hash('sha256', $puts[1]['body']), $meeting->getMinutesCloudTemplateHash(), 'la próxima vez se compara con lo recién escrito');
+        self::assertNotSame($etagRead, $this->etag());
+    }
+
+    public function testATemplateSomebodyHasWrittenInIsNeverRewritten(): void
+    {
+        $secretary = $this->user('Natalia', 'natalia.x@educa.madrid.org');
+        $meeting = $this->heldMeeting($secretary, $secretary);
+        $minutes = $this->minutes('all');
+        $minutes->create($meeting, $secretary, self::at());
+        $hash = $meeting->getMinutesCloudTemplateHash();
+        // Natalia ya escribió el desarrollo en el editor de EducaMadrid.
+        $url = $this->puts()[0]['url'];
+        $this->files[$url] = 'el acta con lo que escribió Natalia';
+
+        $meeting->setAgenda('<p>Horarios de guardia</p>');
+
+        self::assertFalse($minutes->rewriteTemplate($meeting));
+        self::assertCount(1, $this->puts(), 'ni se intenta escribir');
+        self::assertSame('el acta con lo que escribió Natalia', $this->files[$url]);
+        self::assertSame($hash, $meeting->getMinutesCloudTemplateHash());
+    }
+
+    /**
+     * @return iterable<string, array{int}>
+     */
+    public static function writesThatLoseTheRace(): iterable
+    {
+        yield 'alguien guardó entre la lectura y la escritura' => [412];
+        yield 'el documento está abierto y bloqueado en el editor' => [423];
+    }
+
+    #[DataProvider('writesThatLoseTheRace')]
+    public function testWhenTheCloudRefusesTheConditionalWriteTheDraftIsLeftAsItWas(int $status): void
+    {
+        $secretary = $this->user('Natalia', 'natalia.x@educa.madrid.org');
+        $meeting = $this->heldMeeting($secretary, $secretary);
+        $minutes = $this->minutes('all');
+        $minutes->create($meeting, $secretary, self::at());
+        $hash = $meeting->getMinutesCloudTemplateHash();
+        $this->conditionalPutRefusedWith = $status;
+
+        $meeting->setAgenda('<p>Horarios de guardia</p>');
+
+        self::assertFalse($minutes->rewriteTemplate($meeting));
+        self::assertSame($hash, $meeting->getMinutesCloudTemplateHash(), 'no se ha escrito nada: la huella sigue siendo la de lo que hay allí');
+    }
+
+    public function testAnActaWithoutFingerprintIsNotEvenReadFromTheCloud(): void
+    {
+        $secretary = $this->user('Natalia', 'natalia.x@educa.madrid.org');
+        $meeting = $this->heldMeeting($secretary, $secretary);
+        $meeting->attachCloudMinutes('776060721', $secretary, self::at());
+        $meeting->setAgenda('<p>Horarios de guardia</p>');
+
+        self::assertFalse($this->minutes('all')->rewriteTemplate($meeting));
+        self::assertSame([], array_filter($this->sent, static fn (array $r): bool => \in_array($r['method'], ['SEARCH', 'GET', 'PUT'], true)), 'sin huella no hay nada que comparar: ni se pregunta a la nube');
+    }
+
+    public function testADraftThatIsGoneFromTheCloudIsNotRewritten(): void
+    {
+        $secretary = $this->user('Natalia', 'natalia.x@educa.madrid.org');
+        $meeting = $this->heldMeeting($secretary, $secretary);
+        $meeting->attachCloudMinutes('776060721', $secretary, self::at(), hash('sha256', 'plantilla'));
+        $this->draftNowAt = null;
+
+        self::assertFalse($this->minutes('all')->rewriteTemplate($meeting));
+        self::assertSame([], $this->puts());
     }
 }

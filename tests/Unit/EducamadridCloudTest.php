@@ -8,6 +8,7 @@ use App\Service\Cloud\CloudCredentials;
 use App\Service\Cloud\CloudException;
 use App\Service\Cloud\CloudRateLimitedException;
 use App\Service\Cloud\EducamadridCloud;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -85,6 +86,44 @@ final class EducamadridCloudTest extends TestCase
             self::assertStringContainsString('Ya hay un documento', $e->getMessage());
         }
         self::assertCount(1, $this->sent, 'ni siquiera se pregunta el id de lo que no se ha subido');
+    }
+
+    public function testReadingAFileReturnsItsBytesAndTheVersionTheyAre(): void
+    {
+        $cloud = $this->cloud([new MockResponse('bytes del acta', ['http_code' => 200, 'response_headers' => ['ETag' => '"5f2c"']])]);
+
+        $file = $cloud->read($this->credentials(), 'Actas/2026-2027/acta.odt');
+
+        self::assertSame(['content' => 'bytes del acta', 'etag' => '"5f2c"'], $file);
+        self::assertSame('GET', $this->sent[0]['method']);
+        self::assertSame(self::DAV.'Actas/2026-2027/acta.odt', $this->sent[0]['url']);
+    }
+
+    public function testReplacingWritesOnlyIfTheFileIsStillTheVersionRead(): void
+    {
+        $cloud = $this->cloud([new MockResponse('', ['http_code' => 204])]);
+
+        self::assertTrue($cloud->replace($this->credentials(), 'Actas/acta.odt', 'plantilla nueva', '"5f2c"'));
+        self::assertSame('PUT', $this->sent[0]['method']);
+        self::assertSame('If-Match: "5f2c"', self::header($this->sent[0]['options'], 'If-Match'));
+        self::assertNull(self::header($this->sent[0]['options'], 'If-None-Match'));
+    }
+
+    /**
+     * @return iterable<string, array{int}>
+     */
+    public static function refusedReplacements(): iterable
+    {
+        yield 'alguien guardó desde que se leyó' => [412];
+        yield 'abierto y bloqueado en el editor' => [423];
+    }
+
+    #[DataProvider('refusedReplacements')]
+    public function testAReplacementTheCloudRefusesIsAPlainNoAndNotAnError(int $status): void
+    {
+        $cloud = $this->cloud([new MockResponse('', ['http_code' => $status])]);
+
+        self::assertFalse($cloud->replace($this->credentials(), 'Actas/acta.odt', 'plantilla nueva', '"5f2c"'));
     }
 
     public function testCopyReplacesTheDestinationInsideTheCloudAndReturnsTheCopysId(): void
