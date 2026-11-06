@@ -190,7 +190,7 @@ final class PersonalEventController extends AbstractController
 
         // No time chosen → a reminder: it sits on the day, marked internally as all-day (never shown
         // as "todo el día"). Setting all-day drops any push reminder, which has nothing to count back
-        // from. A time → an appointment, with an optional end and an optional reminder.
+        // from. A time → an appointment, with an optional end and optional reminders.
         if (null === $data->startTime) {
             $event->setStartAt($day)->setEndAt(null)->setAllDay(true);
 
@@ -200,7 +200,7 @@ final class PersonalEventController extends AbstractController
         $event->setStartAt(CalendarDate::at($day, $data->startTime))
             ->setEndAt(null !== $data->endTime ? CalendarDate::at($day, $data->endTime) : null)
             ->setAllDay(false)
-            ->setReminder($data->reminder);
+            ->setReminders($data->reminders);
     }
 
     /**

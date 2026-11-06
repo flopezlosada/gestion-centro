@@ -42,12 +42,14 @@ final class PersonalEventFormData
     public ?\DateTimeImmutable $endTime = null;
 
     /**
-     * How long before the start to get a push reminder, or null for none. Only applies to a timed
-     * entry; on a no-time reminder the entity drops it ({@see PersonalEvent::setAllDay()}), which is
+     * How long before the start to get each push reminder; empty for none. Only applies to a timed
+     * entry; on a no-time reminder the entity drops them ({@see PersonalEvent::setAllDay()}), which is
      * why this is not a validation error: the field is hidden once the hour is cleared, so refusing
      * the submit would point at a control the user cannot even see.
+     *
+     * @var list<EventReminderOffset>
      */
-    public ?EventReminderOffset $reminder = null;
+    public array $reminders = [];
 
     /** Recurrence frequency. */
     public RecurrenceFrequency $repeat = RecurrenceFrequency::NONE;
@@ -136,7 +138,7 @@ final class PersonalEventFormData
         if (!$event->isAllDay()) {
             $data->startTime = $event->getStartAt();
             $data->endTime = $event->getEndAt();
-            $data->reminder = $event->getReminder();
+            $data->reminders = $event->getReminders();
         }
 
         return $data;

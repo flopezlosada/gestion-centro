@@ -81,13 +81,14 @@ final class PersonalEventFormType extends AbstractType
                 ...self::TIME_FIELD,
                 'help' => 'Opcional, si tiene una hora de fin.',
             ])
-            ->add('reminder', EnumType::class, [
+            ->add('reminders', EnumType::class, [
                 'label' => 'Avisarme',
                 'class' => EventReminderOffset::class,
                 'choice_label' => static fn (EventReminderOffset $offset): string => $offset->label(),
+                'multiple' => true,
+                'expanded' => true,
                 'required' => false,
-                'placeholder' => '— Sin aviso —',
-                'help' => 'Te llega una notificación al móvil. Requiere tener los avisos activados en este dispositivo (se activan en «Avisos»).',
+                'help' => 'Marca todos los que quieras, o ninguno. Te llega una notificación al móvil por cada uno. Requiere tener los avisos activados en este dispositivo (se activan en «Avisos»).',
             ]);
 
         // Recurrence is a create-time decision: once materialised into occurrences, each is edited on

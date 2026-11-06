@@ -12,6 +12,7 @@ use App\Enum\EventReminderOffset;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\DomCrawler\Form;
 
 /**
  * The teacher's personal agenda: entries are created owned by their author, timed entries compose the
@@ -385,7 +386,22 @@ final class PersonalEventCrudTest extends WebTestCase
         self::assertSame($tutoringId, $reloaded->getCategory()?->getId());
     }
 
-    public function testCreateTimedEventWithAReminderStoresWhenItMustFire(): void
+    /**
+     * Submits the agenda form posting exactly the given reminders, as a browser would: expanded
+     * checkboxes share one name, so DomCrawler can only reach them by position; the raw values do not
+     * depend on how many offsets there are or in what order.
+     *
+     * @param Form                      $form      the agenda form, already filled in
+     * @param list<EventReminderOffset> $reminders the boxes to tick; empty for none
+     */
+    private function submitWithReminders(Form $form, array $reminders): void
+    {
+        $values = $form->getPhpValues();
+        $values['personal_event_form']['reminders'] = array_map(static fn (EventReminderOffset $r): string => (string) $r->value, $reminders);
+        $this->client->request('POST', $form->getUri(), $values);
+    }
+
+    public function testCreateTimedEventWithSeveralRemindersStoresTheFirstToFire(): void
     {
         $owner = $this->user('profe@centro.test');
         $this->em->flush();
@@ -396,15 +412,14 @@ final class PersonalEventCrudTest extends WebTestCase
         $form['personal_event_form[title]'] = 'Reunión con inspección';
         $form['personal_event_form[day]'] = '2026-09-15';
         $form['personal_event_form[startTime]'] = '10:00';
-        $form['personal_event_form[reminder]'] = (string) EventReminderOffset::TEN_MINUTES->value;
-        $this->client->submit($form);
+        $this->submitWithReminders($form, [EventReminderOffset::TEN_MINUTES, EventReminderOffset::ONE_DAY]);
 
         self::assertResponseRedirects();
         $this->em->clear();
         $event = $this->em->getRepository(PersonalEvent::class)->findOneBy(['title' => 'Reunión con inspección']);
         self::assertNotNull($event);
-        self::assertSame(EventReminderOffset::TEN_MINUTES, $event->getReminder());
-        self::assertSame('2026-09-15 09:50', $event->getRemindAt()?->format('Y-m-d H:i'));
+        self::assertSame([EventReminderOffset::ONE_DAY, EventReminderOffset::TEN_MINUTES], $event->getReminders());
+        self::assertSame('2026-09-14 10:00', $event->getRemindAt()?->format('Y-m-d H:i'));
         self::assertNull($event->getReminderSentAt());
     }
 
@@ -421,22 +436,21 @@ final class PersonalEventCrudTest extends WebTestCase
         $form = $crawler->selectButton('Crear evento')->form();
         $form['personal_event_form[title]'] = 'Llamar a la familia';
         $form['personal_event_form[day]'] = '2026-09-15';
-        $form['personal_event_form[reminder]'] = (string) EventReminderOffset::TEN_MINUTES->value;
-        $this->client->submit($form);
+        $this->submitWithReminders($form, [EventReminderOffset::TEN_MINUTES]);
 
         self::assertResponseRedirects();
         $this->em->clear();
         $event = $this->em->getRepository(PersonalEvent::class)->findOneBy(['title' => 'Llamar a la familia']);
         self::assertNotNull($event);
-        self::assertNull($event->getReminder());
+        self::assertSame([], $event->getReminders());
         self::assertNull($event->getRemindAt());
     }
 
-    public function testEditingPreloadsAndClearsTheReminder(): void
+    public function testEditingPreloadsAndClearsTheReminders(): void
     {
         $owner = $this->user('profe@centro.test');
         $event = (new PersonalEvent($owner, 'Claustro', new \DateTimeImmutable('2026-09-15 10:00')))
-            ->setReminder(EventReminderOffset::ONE_HOUR);
+            ->setReminders([EventReminderOffset::ONE_HOUR, EventReminderOffset::FIVE_MINUTES]);
         $this->em->persist($event);
         $this->em->flush();
         $id = (int) $event->getId();
@@ -444,17 +458,45 @@ final class PersonalEventCrudTest extends WebTestCase
         $this->client->loginUser($owner);
         $crawler = $this->client->request('GET', '/agenda/'.$id.'/editar');
         self::assertResponseIsSuccessful();
-        self::assertSelectorExists('[name="personal_event_form[reminder]"] option[value="60"][selected]');
+        self::assertSelectorExists('[name="personal_event_form[reminders][]"][value="60"][checked]');
+        self::assertSelectorExists('[name="personal_event_form[reminders][]"][value="5"][checked]');
+        self::assertSelectorNotExists('[name="personal_event_form[reminders][]"][value="10"][checked]');
 
         $form = $crawler->selectButton('Guardar')->form();
-        $form['personal_event_form[reminder]'] = '';
+        $this->submitWithReminders($form, []);
+
+        self::assertResponseRedirects();
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(PersonalEvent::class)->find($id);
+        self::assertNotNull($reloaded);
+        self::assertSame([], $reloaded->getReminders());
+        self::assertNull($reloaded->getRemindAt());
+    }
+
+    public function testEditingOnlyTheTitleDoesNotPushAnAlreadySentReminderAgain(): void
+    {
+        // The edit form rewrites start, end and reminders on every save, even when only the title
+        // changed: that must not hand the sweep the same reminder a second time.
+        $owner = $this->user('profe@centro.test');
+        $event = (new PersonalEvent($owner, 'Claustro', new \DateTimeImmutable('2026-09-15 10:00')))
+            ->setReminders([EventReminderOffset::ONE_DAY, EventReminderOffset::TEN_MINUTES]);
+        $event->markReminderSent(new \DateTimeImmutable('2026-09-15 09:50'));
+        $this->em->persist($event);
+        $this->em->flush();
+        $id = (int) $event->getId();
+
+        $this->client->loginUser($owner);
+        $crawler = $this->client->request('GET', '/agenda/'.$id.'/editar');
+        $form = $crawler->selectButton('Guardar')->form();
+        $form['personal_event_form[title]'] = 'Claustro ordinario';
         $this->client->submit($form);
 
         self::assertResponseRedirects();
         $this->em->clear();
         $reloaded = $this->em->getRepository(PersonalEvent::class)->find($id);
         self::assertNotNull($reloaded);
-        self::assertNull($reloaded->getReminder());
+        self::assertSame('Claustro ordinario', $reloaded->getTitle());
+        self::assertSame([EventReminderOffset::ONE_DAY, EventReminderOffset::TEN_MINUTES], $reloaded->getReminders());
         self::assertNull($reloaded->getRemindAt());
     }
 }
