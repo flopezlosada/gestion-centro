@@ -2,7 +2,9 @@
 
 {% block title %}Apuntar ausencia{% endblock %}
 
-{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_index') }}">Guardias</a><span class="sep">/</span>Apuntar ausencia{% endblock %}
+{# Quien no ve el parte (cualquier docente que apunta su propia falta) vuelve a «Mis guardias», de donde vino. #}
+{% set canReadParte = is_granted(constant('App\\Security\\Voter\\AreaVoter::READ'), constant('App\\Enum\\Area::GUARDIAS')) %}
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ canReadParte ? path('guardia_index') : path('guardia_mine') }}">{{ canReadParte ? 'Guardias' : 'Mis guardias' }}</a><span class="sep">/</span>Apuntar ausencia{% endblock %}
 
 {# Pantalla empujada: fuera la barra inferior, la salida es "Cancelar" (handoff 10a). #}
 {% block bottomnav %}{% endblock %}
@@ -11,7 +13,7 @@
     {% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
 
     <div class="formtop">
-        <a class="formtop__cancel" href="{{ path('guardia_index', { date: date|date('Y-m-d', false) }) }}">Cancelar</a>
+        <a class="formtop__cancel" href="{{ canReadParte ? path('guardia_index', { date: date|date('Y-m-d', false) }) : path('guardia_mine') }}">Cancelar</a>
         <span class="formtop__title">Apuntar ausencia</span>
         <span class="formtop__spacer"></span>
     </div>

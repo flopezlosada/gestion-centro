@@ -858,7 +858,7 @@ final class GuardiaController extends AbstractController
         if (!$year instanceof AcademicYear) {
             $this->addFlash('error', sprintf('No hay horario importado para el curso %s. Impórtalo antes de registrar ausencias.', SchoolYear::current($date)));
 
-            return $this->redirectToRoute('guardia_index', ['date' => $date->format('Y-m-d')]);
+            return $this->redirectWithinReach('guardia_index', ['date' => $date->format('Y-m-d')]);
         }
 
         // A coordinator registers any teacher; anyone else may only report their own absence.
@@ -940,10 +940,30 @@ final class GuardiaController extends AbstractController
         // When the only consequence was an unwatched recreo, the parte has nothing new to show: land on
         // the gaps screen, which is where somebody has to go looking for a volunteer.
         if ([] === $result->createdSlots && [] !== $result->breakGaps) {
-            return $this->redirectToRoute('break_duty_gap_index');
+            return $this->redirectWithinReach('break_duty_gap_index');
         }
 
-        return $this->backToParte($date, $result->createdSlots[0] ?? ($slotIndexes[0] ?? 0));
+        return $this->redirectWithinReach('guardia_index', ['date' => $date->format('Y-m-d'), 'slot' => $result->createdSlots[0] ?? ($slotIndexes[0] ?? 0)]);
+    }
+
+    /**
+     * Redirects to a screen of the guardias area, or to «Mis guardias» for whoever cannot read the area.
+     *
+     * Reporting one's own absence is open to every teacher, but the parte and the recreo gaps are not: a
+     * plain docente has no level in Guardias. Sending them there after the absence was already saved
+     * answered a successful registration with a 403, so it read as a failure and invited a second try.
+     * «Mis guardias» is where their "Voy a faltar…" button lives, and it shows the flash just the same.
+     *
+     * @param string               $route  the guardias screen a reader of the area should land on
+     * @param array<string, mixed> $params its route parameters
+     *
+     * @return Response the redirect
+     */
+    private function redirectWithinReach(string $route, array $params = []): Response
+    {
+        return $this->isGranted(AreaVoter::READ, Area::GUARDIAS)
+            ? $this->redirectToRoute($route, $params)
+            : $this->redirectToRoute('guardia_mine');
     }
 
     /**

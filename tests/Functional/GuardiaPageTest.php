@@ -950,6 +950,51 @@ final class GuardiaPageTest extends WebTestCase
     }
 
     /**
+     * Cualquier docente apunta su propia falta, pero el parte y los huecos de recreo son del área de
+     * Guardias, en la que un docente sin cargo no tiene nivel. Mandarle allí DESPUÉS de guardar la falta
+     * contestaba un registro bueno con un 403, que se lee como "no se ha guardado" e invita a repetir.
+     * Vuelve a «Mis guardias», de donde salió, con el resumen, y el formulario tampoco le ofrece salir
+     * hacia el parte.
+     */
+    public function testAPlainTeacherReportingTheirOwnAbsenceLandsOnTheirGuardias(): void
+    {
+        $teacher = $this->login(coordinator: false);
+        $date = new \DateTimeImmutable('monday next week');
+        $year = $this->academicYear(SchoolYear::current($date));
+        $this->em->persist($year);
+        $this->em->persist(
+            (new ScheduleEntry())
+                ->setAcademicYear($year)
+                ->setTeacher($teacher)
+                ->setWeekday(Weekday::MONDAY)
+                ->setSlotIndex(0)
+                ->setStartsAt(new \DateTimeImmutable('08:25'))
+                ->setEndsAt(new \DateTimeImmutable('09:20'))
+                ->setKind(ScheduleActivityKind::LECTIVE)
+                ->setSubjectName('Matemáticas')
+                ->setGroupName('2ºB')
+        );
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/ausencia/nueva?date='.$date->format('Y-m-d'));
+        self::assertResponseIsSuccessful();
+        self::assertSame('/guardias/mias', $crawler->selectLink('Cancelar')->attr('href'));
+        self::assertCount(0, $crawler->filter('a[href^="/guardias?"], a[href="/guardias"]'), 'ningún enlace al parte');
+
+        $this->client->request('POST', '/guardias/ausencia', [
+            '_token' => $this->tokenFrom($crawler, '/guardias/ausencia'),
+            'date' => $date->format('Y-m-d'),
+            'slots' => ['0'],
+        ]);
+
+        self::assertResponseRedirects('/guardias/mias');
+        $this->client->followRedirect();
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('main', '1 guardia(s) generada(s) para Docente Test.');
+        self::assertCount(1, $this->em->getRepository(Absence::class)->findAll());
+    }
+
+    /**
      * El recordatorio operativo que pidió el centro: quien cubre una guardia tiene que ver SIEMPRE, en la
      * pantalla de la guardia, el aviso de entrar en RAICES a apuntar las ausencias del alumnado.
      */
