@@ -1,0 +1,26 @@
+{# «Mis avisos» de una tarea: cuándo quiere que se le recuerde QUIEN la tiene que hacer. Lo elige cada
+   cual para sí (no quien la crea), y sin tocar nada siguen los de siempre. Espera `task`, `mySchedule`,
+   `reminderStarts`, `reminderRepeats` y `defaultReminders` del contexto
+   ({@see App\Controller\TaskController::setMyReminders}). #}
+<form method="post" action="{{ path('task_my_reminders', { id: task.id }) }}" class="my-reminders-form">
+    <input type="hidden" name="_token" value="{{ csrf_token('task_my_reminders' ~ task.id) }}">
+    <div class="form-row">
+        <label for="my-reminders-start">Empezar a avisarme</label>
+        <select name="start" id="my-reminders-start">
+            <option value="">Lo de siempre: {{ defaultReminders }}</option>
+            {% for start in reminderStarts %}
+                <option value="{{ start.value }}"{{ mySchedule and mySchedule.start == start ? ' selected' }}>{{ start.label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-row">
+        <label for="my-reminders-repeat">Y luego</label>
+        <select name="repeat" id="my-reminders-repeat">
+            {% for repeat in reminderRepeats %}
+                <option value="{{ repeat.value }}"{{ mySchedule and mySchedule.repeat == repeat ? ' selected' }}>{{ repeat.label }}</option>
+            {% endfor %}
+        </select>
+        <p class="help">Se repite hasta el día antes del plazo. Con «Lo de siempre» esto no cuenta.</p>
+    </div>
+    <button class="btn secondary" type="submit">Guardar</button>
+</form>

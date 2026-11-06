@@ -7,9 +7,12 @@ namespace App\Tests\Integration;
 use App\Entity\Notification;
 use App\Entity\Role;
 use App\Entity\Task;
+use App\Entity\TaskReminderSchedule;
 use App\Entity\TaskResponsibility;
 use App\Entity\Department;
 use App\Entity\User;
+use App\Enum\TaskReminderRepeat;
+use App\Enum\TaskReminderStart;
 use App\Enum\TaskType;
 use App\Repository\NotificationRepository;
 use App\Service\TaskReminderNotifier;
@@ -306,5 +309,123 @@ final class TaskReminderNotifierTest extends KernelTestCase
         self::assertSame(1, $this->notifier->sendDue($today), 'un solo aviso, no uno por jefatura del centro');
         self::assertCount(1, $this->notifications->findRecentFor($mathsHead));
         self::assertCount(0, $this->notifications->findRecentFor($artsHead), 'la memoria de Mates no se le avisa a Plástica');
+    }
+
+    /**
+     * Runs the sweep ONCE on each day of the window before a deadline — as the cron does — and says on
+     * which ones each person was reminded, as days left ("a 5, 3 y 1 días"). One pass for everybody:
+     * the sweep is idempotent per day only because it runs once a day, so running it twice over the
+     * same days would count reminders that never happen in real life.
+     *
+     * @param list<User> $people whose reminders to collect
+     *
+     * @return array<string, list<int>> per e-mail, the days before the deadline they got a reminder
+     */
+    private function daysRemindedBefore(\DateTimeImmutable $due, array $people): array
+    {
+        $count = fn (User $person): int => \count($this->notifications->findRecentFor($person, 200));
+        $days = array_fill_keys(array_map(static fn (User $p): string => (string) $p->getEmail(), $people), []);
+        for ($left = 31; $left >= 0; --$left) {
+            $before = array_map($count, $people);
+            $this->notifier->sendDue($due->modify(sprintf('-%d days', $left)));
+            foreach ($people as $i => $person) {
+                if ($count($person) > $before[$i]) {
+                    $days[(string) $person->getEmail()][] = $left;
+                }
+            }
+        }
+
+        return $days;
+    }
+
+    public function testWithoutAScheduleOfTheirOwnThePersonGetsTheUsualTwo(): void
+    {
+        $teacher = $this->user('profe@centro.test');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $due = new \DateTimeImmutable('2026-03-20');
+        $this->task($due, $unit)->setAssignedUser($teacher);
+        $this->em->flush();
+
+        self::assertSame(['profe@centro.test' => [15, 7]], $this->daysRemindedBefore($due, [$teacher]));
+    }
+
+    public function testThePersonsOwnScheduleReplacesTheUsualOne(): void
+    {
+        $teacher = $this->user('profe@centro.test');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $due = new \DateTimeImmutable('2026-03-20');
+        $task = $this->task($due, $unit)->setAssignedUser($teacher);
+        $this->em->persist(new TaskReminderSchedule($task, $teacher, TaskReminderStart::FIVE_DAYS, TaskReminderRepeat::EVERY_TWO_DAYS));
+        $this->em->flush();
+
+        self::assertSame(['profe@centro.test' => [5, 3, 1]], $this->daysRemindedBefore($due, [$teacher]));
+    }
+
+    public function testOnePersonsScheduleDoesNotChangeAnybodyElsesReminders(): void
+    {
+        // The same task sent to two people is two tasks; tuning one must leave the other on the default.
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $tuned = $this->user('ana@centro.test');
+        $untouched = $this->user('luis@centro.test');
+        $due = new \DateTimeImmutable('2026-03-20');
+        $hers = $this->task($due, $unit)->setAssignedUser($tuned);
+        $this->task($due, $unit)->setAssignedUser($untouched);
+        $this->em->persist(new TaskReminderSchedule($hers, $tuned, TaskReminderStart::ONE_DAY, TaskReminderRepeat::ONCE));
+        $this->em->flush();
+
+        self::assertSame(
+            ['ana@centro.test' => [1], 'luis@centro.test' => [15, 7]],
+            $this->daysRemindedBefore($due, [$tuned, $untouched]),
+        );
+    }
+
+    public function testADelegatedTaskFollowsTheDelegateesScheduleNotTheTitulars(): void
+    {
+        // Whoever does it now is who gets reminded, with THEIR choice; what the titular picked before
+        // handing it down stays theirs and does not leak onto the delegatee.
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $head = $this->user('jefa@centro.test');
+        $member = $this->user('profe@centro.test');
+        $due = new \DateTimeImmutable('2026-03-20');
+        $task = $this->task($due, $unit)->setAssignedUser($head)->setDelegatedTo($member);
+        $this->em->persist(new TaskReminderSchedule($task, $head, TaskReminderStart::ONE_MONTH, TaskReminderRepeat::DAILY));
+        $this->em->persist(new TaskReminderSchedule($task, $member, TaskReminderStart::THREE_DAYS, TaskReminderRepeat::ONCE));
+        $this->em->flush();
+
+        self::assertSame(
+            ['jefa@centro.test' => [], 'profe@centro.test' => [3]],
+            $this->daysRemindedBefore($due, [$head, $member]),
+        );
+    }
+
+    public function testTheDayBeforeTheReminderSaysTomorrow(): void
+    {
+        $teacher = $this->user('profe@centro.test');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $task = $this->task(new \DateTimeImmutable('2026-03-20'), $unit)->setAssignedUser($teacher);
+        $this->em->persist(new TaskReminderSchedule($task, $teacher, TaskReminderStart::ONE_DAY, TaskReminderRepeat::ONCE));
+        $this->em->flush();
+
+        self::assertSame(1, $this->notifier->sendDue(new \DateTimeImmutable('2026-03-19')));
+        self::assertSame('Vence el 20/03/2026 (mañana).', ($this->notifications->findRecentFor($teacher)[0] ?? null)?->getBody());
+    }
+
+    public function testADeliveredTaskIsNotRemindedEvenWithASchedule(): void
+    {
+        // Once delivered it waits for the superior, not for the person: their own reminders stop too.
+        $teacher = $this->user('profe@centro.test');
+        $unit = (new Department())->setCode('maths')->setName('Matemáticas');
+        $this->em->persist($unit);
+        $task = $this->task(new \DateTimeImmutable('2026-03-20'), $unit)->setAssignedUser($teacher);
+        $task->setStatus(TaskStatus::SUBMITTED);
+        $this->em->persist(new TaskReminderSchedule($task, $teacher, TaskReminderStart::ONE_DAY, TaskReminderRepeat::ONCE));
+        $this->em->flush();
+
+        self::assertSame(0, $this->notifier->sendDue(new \DateTimeImmutable('2026-03-19')));
     }
 }

@@ -8,15 +8,19 @@ use App\Entity\Department;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskComment;
+use App\Entity\TaskReminderSchedule;
 use App\Entity\TaskResponsibility;
 use App\Entity\User;
 use App\Enum\DeliverableRequirement;
+use App\Enum\TaskReminderRepeat;
+use App\Enum\TaskReminderStart;
 use App\Enum\TaskType;
 use App\Form\TaskFormData;
 use App\Form\TaskFormType;
 use App\Repository\AuditLogRepository;
 use App\Repository\RoleRepository;
 use App\Repository\TaskCommentRepository;
+use App\Repository\TaskReminderScheduleRepository;
 use App\Repository\TaskRepository;
 use App\Repository\UserRepository;
 use App\Service\FileUploader;
@@ -33,6 +37,7 @@ use App\Support\TaskStatus;
 use App\Support\TickOutcome;
 use App\Util\CalendarDate;
 use App\Util\SchoolYear;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\Form\FormError;
@@ -40,6 +45,7 @@ use Symfony\Component\Form\FormInterface;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\CurrentUser;
 
@@ -505,6 +511,7 @@ final class TaskController extends AbstractController
         TaskActivityPresenter $activity,
         TaskReminderNotifier $reminders,
         TaskCommentRepository $comments,
+        TaskReminderScheduleRepository $schedules,
     ): Response {
         // Same organisation-chart scope as the plan and the calendar, enforced here so the detail
         // cannot be reached by guessing an id: only the task's own people, a superior of its unit, or
@@ -540,6 +547,7 @@ final class TaskController extends AbstractController
         // quien audita) y la línea del ciclo de vida (los hitos, arriba). Una sola lectura del rastro.
         $trail = $auditLog->findForSubject('Task', (string) $task->getId());
         $thread = $comments->findThreadFor($task);
+        $canTuneReminders = $this->canTuneReminders($task, $user);
 
         return $this->render('task/show.html.twig', [
             'task' => $task,
@@ -576,6 +584,12 @@ final class TaskController extends AbstractController
             // ficha lo dice en vez de ofrecer un botón que el servidor va a frenar (mismo tope).
             'canRemind' => $canRemind,
             'remindedAt' => $canRemind ? $reminders->nudgedTodayAt($task) : null,
+            // «Mis avisos»: cada cual elige los suyos, solo quien recibe el aviso de la tarea.
+            'canTuneReminders' => $canTuneReminders,
+            'mySchedule' => $canTuneReminders ? $schedules->findOneFor($task, $user) : null,
+            'reminderStarts' => TaskReminderStart::cases(),
+            'reminderRepeats' => TaskReminderRepeat::cases(),
+            'defaultReminders' => TaskReminderSchedule::defaultLabel(),
             // The trail humanised for non-technical readers; the raw diff rides along for admins only.
             'activityRows' => $activity->present($trail),
             // Comentar suelto lo puede hacer cualquiera que tenga algo que ver con la tarea ("siempre
@@ -804,6 +818,78 @@ final class TaskController extends AbstractController
         $this->addFlash('success', sprintf('Recordatorio enviado a %s.', $notified->getFullName()));
 
         return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
+    }
+
+    /**
+     * Saves when the current person wants to be reminded about this task: how many days ahead and how
+     * often. Each person chooses their own and nobody else's; an empty antelación means "lo de siempre"
+     * and deletes the row, so the default has one single representation
+     * ({@see TaskReminderSchedule::DEFAULT_DAYS_BEFORE}).
+     */
+    #[Route('/tareas/{id}/mis-avisos', name: 'task_my_reminders', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function setMyReminders(Task $task, Request $request, #[CurrentUser] User $user, TaskReminderScheduleRepository $schedules, EntityManagerInterface $entityManager): Response
+    {
+        if (!$this->isCsrfTokenValid('task_my_reminders'.$task->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Token CSRF inválido.');
+        }
+        if (!$this->canTuneReminders($task, $user)) {
+            throw $this->createAccessDeniedException('Solo quien tiene que hacer la tarea elige sus avisos, y mientras está pendiente.');
+        }
+
+        $current = $schedules->findOneFor($task, $user);
+        $rawStart = (string) $request->request->get('start');
+        if ('' === $rawStart) {
+            if (null !== $current) {
+                $entityManager->remove($current);
+                $entityManager->flush();
+            }
+            $this->addFlash('success', sprintf('Tendrás los avisos de siempre: %s.', TaskReminderSchedule::defaultLabel()));
+
+            return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
+        }
+
+        // Strictly an integer: a cast would turn a missing or garbled "repeat" into 0, which IS a valid
+        // choice ("Solo una vez"), and store something nobody picked.
+        $start = TaskReminderStart::tryFrom(filter_var($rawStart, \FILTER_VALIDATE_INT, ['options' => ['default' => -1]]));
+        $repeat = TaskReminderRepeat::tryFrom(filter_var($request->request->get('repeat'), \FILTER_VALIDATE_INT, ['options' => ['default' => -1]]));
+        if (null === $start || null === $repeat) {
+            throw new BadRequestHttpException('Aviso no válido.');
+        }
+
+        if (null === $current) {
+            $entityManager->persist(new TaskReminderSchedule($task, $user, $start, $repeat));
+        } else {
+            $current->change($start, $repeat);
+        }
+        try {
+            $entityManager->flush();
+        } catch (UniqueConstraintViolationException) {
+            // A double click on a slow connection: the other request already saved this person's row.
+            // The failed flush closed the entity manager, so no retry here — just land back on the task.
+            $this->addFlash('error', 'Ya se estaban guardando tus avisos. Revisa que hayan quedado como querías.');
+
+            return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
+        }
+        $this->addFlash('success', TaskReminderRepeat::ONCE === $repeat
+            ? sprintf('Te avisaremos %s.', $start->label())
+            : sprintf('Te avisaremos desde %s, %s.', $start->label(), mb_strtolower($repeat->label())));
+
+        return $this->redirectToRoute('task_show', ['id' => $task->getId()]);
+    }
+
+    /**
+     * Whether the person may choose their own reminders for the task: exactly whoever receives them —
+     * the one who has to do it ({@see Task::isOwnedBy()}, the same rule as the nightly sweep) — and
+     * only while it is pending, which is also the only time those reminders go out.
+     *
+     * @param Task $task the task
+     * @param User $user the current person
+     *
+     * @return bool true if they may tune their reminders
+     */
+    private function canTuneReminders(Task $task, User $user): bool
+    {
+        return $task->isPending() && $task->isOwnedBy($user);
     }
 
     /**

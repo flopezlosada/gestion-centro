@@ -176,14 +176,29 @@ class TaskRepository extends ServiceEntityRepository
 
     /**
      * Open (not yet validated) tasks whose deadline falls on a given day. Used by the reminder
-     * engine to find what is due in N days.
+     * engine to find what went overdue N days ago.
      *
-     * @param \DateTimeImmutable $day       the deadline day to match
+     * @param \DateTimeImmutable $day        the deadline day to match
      * @param list<string>       $openPlaces the statuses considered still open
      *
      * @return Task[] the matching open tasks
      */
     public function findOpenDueOn(\DateTimeImmutable $day, array $openPlaces): array
+    {
+        return $this->findOpenDueBetween($day, $day, $openPlaces);
+    }
+
+    /**
+     * Open tasks whose deadline falls within a range of days, both ends included. Used by the reminder
+     * engine to find every task someone may want reminding about today, whatever antelación they chose.
+     *
+     * @param \DateTimeImmutable $from       the first deadline day to match
+     * @param \DateTimeImmutable $to         the last deadline day to match
+     * @param list<string>       $openPlaces the statuses considered still open
+     *
+     * @return Task[] the matching open tasks, earliest deadline first
+     */
+    public function findOpenDueBetween(\DateTimeImmutable $from, \DateTimeImmutable $to, array $openPlaces): array
     {
         // Fetch-join the associations the reminder engine reads per task, to avoid an N+1 — including
         // the responsibility and its role, which is where an unassigned task's recipients now come from
@@ -192,16 +207,18 @@ class TaskRepository extends ServiceEntityRepository
         //
         // The role's HOLDERS are deliberately left lazy. Selecting them would need a join across a
         // many-to-many that multiplies rows by holder, and the identity map already bounds the cost to
-        // one query per DISTINCT role among the day's unassigned tasks — a handful, not one per task.
+        // one query per DISTINCT role among the unassigned tasks — a handful, not one per task.
         return $this->createQueryBuilder('t')
             ->leftJoin('t.assignedUser', 'assignedUser')->addSelect('assignedUser')
+            ->leftJoin('t.delegatedTo', 'delegatedTo')->addSelect('delegatedTo')
             ->leftJoin('t.unit', 'unit')->addSelect('unit')
             ->leftJoin('t.responsibility', 'resp')->addSelect('resp')
             ->leftJoin('resp.role', 'respRole')->addSelect('respRole')
             ->leftJoin('resp.unit', 'respUnit')->addSelect('respUnit')
-            ->andWhere('t.dueDate = :day')
+            ->andWhere('t.dueDate BETWEEN :from AND :to')
             ->andWhere('t.status IN (:open)')
-            ->setParameter('day', $day->format('Y-m-d'))
+            ->setParameter('from', $from->format('Y-m-d'))
+            ->setParameter('to', $to->format('Y-m-d'))
             ->setParameter('open', $openPlaces)
             ->orderBy('t.dueDate', 'ASC')
             ->getQuery()
