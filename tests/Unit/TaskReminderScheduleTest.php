@@ -82,4 +82,22 @@ final class TaskReminderScheduleTest extends TestCase
 
         self::assertSame([10, 7, 4, 1], $schedule->daysBefore());
     }
+
+    public function testDatesAreTheSameDaysTurnedIntoTheCalendarEarliestFirst(): void
+    {
+        $dates = TaskReminderSchedule::datesFor(
+            $this->schedule(TaskReminderStart::FIVE_DAYS, TaskReminderRepeat::EVERY_TWO_DAYS),
+            new \DateTimeImmutable('2026-12-02'),
+        );
+
+        // Crossing a month boundary on purpose: 2 December minus 5 days is 27 November.
+        self::assertSame(['2026-11-27', '2026-11-29', '2026-12-01'], array_map(static fn (\DateTimeImmutable $d): string => $d->format('Y-m-d'), $dates));
+    }
+
+    public function testDatesWithoutAScheduleAreTheDefaultOnes(): void
+    {
+        $dates = TaskReminderSchedule::datesFor(null, new \DateTimeImmutable('2026-11-27'));
+
+        self::assertSame(['2026-11-12', '2026-11-20'], array_map(static fn (\DateTimeImmutable $d): string => $d->format('Y-m-d'), $dates));
+    }
 }

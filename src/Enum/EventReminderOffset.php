@@ -21,6 +21,15 @@ enum EventReminderOffset: int
     case ONE_HOUR = 60;
     case TWO_HOURS = 120;
     case ONE_DAY = 1440;
+    case TWO_DAYS = 2880;
+    case ONE_WEEK = 10080;
+
+    /**
+     * The furthest ahead any reminder may go, in minutes: a reminder opens Inicio, whose "Próximos 7
+     * días" never reaches further ({@see \App\Support\NotificationLink}). Within the week the event is
+     * usually there, though not always: that block shows only the first few entries.
+     */
+    public const int MAX_MINUTES_AHEAD = 7 * 24 * 60;
 
     /**
      * Human-facing label (Spanish).
@@ -37,6 +46,8 @@ enum EventReminderOffset: int
             self::ONE_HOUR => '1 hora antes',
             self::TWO_HOURS => '2 horas antes',
             self::ONE_DAY => '1 día antes',
+            self::TWO_DAYS => '2 días antes',
+            self::ONE_WEEK => '1 semana antes',
         };
     }
 }

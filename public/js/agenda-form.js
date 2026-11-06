@@ -3,6 +3,9 @@
  *   - "Hasta" y "Avisarme" (data-qa-when="hasstart") solo cuando ya hay una hora de inicio: sin hora
  *     es un recordatorio suelto, y ni una hora de fin ni un aviso "10 minutos antes" significan nada.
  *   - "Repetir hasta" (data-qa-when="repeating") solo cuando hay una repetición elegida.
+ *   - "Avisarme" (data-qa-wait="hasstart") NO se esconde: sin hora se queda a la vista con las opciones
+ *     desactivadas y una línea que dice qué falta. Escondido no lo encontraba nadie. Desactivadas, además,
+ *     no se envían: si se borra la hora, los avisos marcados no viajan.
  *
  * Mejora progresiva: sin JS se muestran todos los campos y el formulario funciona igual; el servidor
  * es quien valida. Escucha el 'change' de los controles nativos (que siguen en el DOM aunque los
@@ -26,8 +29,18 @@
             });
         }
 
+        function wait(when, ready) {
+            form.querySelectorAll('[data-qa-wait="' + when + '"]').forEach(function (el) {
+                el.querySelectorAll('input').forEach(function (input) { input.disabled = !ready; });
+                el.querySelectorAll('[data-qa-wait-hint]').forEach(function (hint) { hint.hidden = ready; });
+            });
+        }
+
         if (startTime) {
-            var syncHasStart = function () { show('hasstart', startTime.value !== ''); };
+            var syncHasStart = function () {
+                show('hasstart', startTime.value !== '');
+                wait('hasstart', startTime.value !== '');
+            };
             startTime.addEventListener('change', syncHasStart);
             startTime.addEventListener('input', syncHasStart);
             syncHasStart();

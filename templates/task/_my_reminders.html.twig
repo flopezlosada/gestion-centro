@@ -1,26 +1,64 @@
-{# «Mis avisos» de una tarea: cuándo quiere que se le recuerde QUIEN la tiene que hacer. Lo elige cada
-   cual para sí (no quien la crea), y sin tocar nada siguen los de siempre. Espera `task`, `mySchedule`,
+{# «Tus avisos» de una tarea: cuándo se le recuerda a QUIEN la tiene que hacer. Lo elige cada cual para sí
+   (no quien la crea), y sin tocar nada siguen los de siempre. Se enseñan las FECHAS, no solo «N días
+   antes»: es lo que la persona necesita saber. Espera `task`, `mySchedule`, `myReminderDates`,
    `reminderStarts`, `reminderRepeats` y `defaultReminders` del contexto
-   ({@see App\Controller\TaskController::setMyReminders}). #}
-<form method="post" action="{{ path('task_my_reminders', { id: task.id }) }}" class="my-reminders-form">
-    <input type="hidden" name="_token" value="{{ csrf_token('task_my_reminders' ~ task.id) }}">
-    <div class="form-row">
-        <label for="my-reminders-start">Empezar a avisarme</label>
-        <select name="start" id="my-reminders-start">
-            <option value="">Lo de siempre: {{ defaultReminders }}</option>
-            {% for start in reminderStarts %}
-                <option value="{{ start.value }}"{{ mySchedule and mySchedule.start == start ? ' selected' }}>{{ start.label }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <div class="form-row">
-        <label for="my-reminders-repeat">Y luego</label>
-        <select name="repeat" id="my-reminders-repeat">
-            {% for repeat in reminderRepeats %}
-                <option value="{{ repeat.value }}"{{ mySchedule and mySchedule.repeat == repeat ? ' selected' }}>{{ repeat.label }}</option>
-            {% endfor %}
-        </select>
-        <p class="help">Se repite hasta el día antes del plazo. Con «Lo de siempre» esto no cuenta.</p>
-    </div>
-    <button class="btn secondary" type="submit">Guardar</button>
-</form>
+   ({@see App\Controller\TaskController::show}). #}
+{% set today = 'today'|date('Y-m-d') %}
+<section class="side-card reminders-card" aria-labelledby="reminders-card-title">
+    <div class="side-card__label" id="reminders-card-title">Tus avisos</div>
+    <p class="reminders-card__summary">
+        {%- if not mySchedule -%}
+            Te avisaremos {{ defaultReminders }}. <span class="reminders-card__hint">Es lo de siempre; puedes cambiarlo.</span>
+        {%- elseif myReminderDates|length == 1 -%}
+            Te avisaremos {{ mySchedule.start.label }}.
+        {%- else -%}
+            Te avisaremos desde {{ mySchedule.start.label }}, {{ mySchedule.repeat.label|lower }}.
+        {%- endif -%}
+    </p>
+
+    <ol class="reminders-card__timeline">
+        {% for date in myReminderDates %}
+            {% set past = date|date('Y-m-d') < today %}
+            <li class="reminders-card__step{{ past ? ' is-past' }}{{ date|date('Y-m-d') == today ? ' is-today' }}">
+                <span class="reminders-card__bell" aria-hidden="true"><svg viewBox="0 0 20 20" width="14" height="14"><path d="M10 2.5a4.5 4.5 0 0 0-4.5 4.5v3l-1.2 2.2a.6.6 0 0 0 .53.9h10.34a.6.6 0 0 0 .53-.9L14.5 10V7A4.5 4.5 0 0 0 10 2.5Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8.2 15.4a1.9 1.9 0 0 0 3.6 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
+                <span class="reminders-card__date">{{ date|date('d/m/Y') }}</span>
+                <span class="reminders-card__meta">
+                    {%- if date|date('Y-m-d') == today %}hoy{% elseif past %}ya pasó{% else %}{{ task.dueDate.diff(date).days }} {{ task.dueDate.diff(date).days == 1 ? 'día' : 'días' }} antes{% endif -%}
+                </span>
+            </li>
+        {% endfor %}
+        <li class="reminders-card__step reminders-card__step--due">
+            <span class="reminders-card__flag" aria-hidden="true"></span>
+            <span class="reminders-card__date">{{ task.dueDate|date('d/m/Y') }}</span>
+            <span class="reminders-card__meta">vence</span>
+        </li>
+    </ol>
+
+    <details class="reminders-card__edit">
+        <summary class="btn secondary btn-sm">Cambiar mis avisos</summary>
+        <form method="post" action="{{ path('task_my_reminders', { id: task.id }) }}" class="reminders-card__form">
+            <input type="hidden" name="_token" value="{{ csrf_token('task_my_reminders' ~ task.id) }}">
+            <div class="reminders-card__fields">
+                <label>
+                    <span>Empezar</span>
+                    <select name="start">
+                        <option value="">Lo de siempre ({{ defaultReminders }})</option>
+                        {% for start in reminderStarts %}
+                            <option value="{{ start.value }}"{{ mySchedule and mySchedule.start == start ? ' selected' }}>{{ start.label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>
+                    <span>Y luego</span>
+                    <select name="repeat">
+                        {% for repeat in reminderRepeats %}
+                            <option value="{{ repeat.value }}"{{ mySchedule and mySchedule.repeat == repeat ? ' selected' }}>{{ repeat.label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
+            <p class="reminders-card__hint">Se repite hasta el día antes del plazo. Con «Lo de siempre», la repetición no cuenta.</p>
+            <button class="btn primary btn-sm" type="submit">Guardar mis avisos</button>
+        </form>
+    </details>
+</section>

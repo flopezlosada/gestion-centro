@@ -135,6 +135,23 @@ class TaskReminderSchedule
     }
 
     /**
+     * The calendar days a person gets reminded of a task, earliest first: the same days the nightly
+     * sweep uses ({@see daysBeforeFor()}), turned into dates so the screen can show them as such.
+     *
+     * @param self|null          $schedule what they chose, or null if they never did
+     * @param \DateTimeImmutable $dueDate  the task's deadline
+     *
+     * @return list<\DateTimeImmutable> the reminder dates, earliest first
+     */
+    public static function datesFor(?self $schedule, \DateTimeImmutable $dueDate): array
+    {
+        return array_map(
+            static fn (int $days): \DateTimeImmutable => $dueDate->setTime(0, 0)->modify(sprintf('-%d days', $days)),
+            self::daysBeforeFor($schedule),
+        );
+    }
+
+    /**
      * The default in words, for whoever chooses: built from {@see DEFAULT_DAYS_BEFORE} so the screen
      * can never promise something else than what the sweep does.
      *

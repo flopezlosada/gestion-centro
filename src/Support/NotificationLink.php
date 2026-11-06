@@ -47,8 +47,9 @@ final class NotificationLink
             str_starts_with($notification->getKind(), 'break_duty.') => $this->urlGenerator->generate('break_duty_gap_index'),
             // An agenda reminder opens Inicio, which carries every event it can be about: it only fires
             // for a TIMED event (an all-day entry drops its reminder, see PersonalEvent::setAllDay) and
-            // at most a day ahead (see EventReminderOffset), so the event is either in today's "Con
-            // hora" block or in "Próximos 7 días".
+            // at most a week ahead (EventReminderOffset::MAX_MINUTES_AHEAD), so the event is in today's
+            // "Con hora" block or within reach of "Próximos 7 días" — which lists only its first few
+            // entries, so on a crowded week it may not be there.
             str_starts_with($notification->getKind(), 'event.') => $this->urlGenerator->generate('app_homepage'),
             // A space notice (a room change that affects you) opens the teacher's own list of changes,
             // which shows every one in force — not just the plan that happened to trigger this notice.
