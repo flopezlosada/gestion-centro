@@ -6,19 +6,24 @@ namespace App\Service;
 
 use App\Entity\Notification;
 use App\Entity\Task;
+use App\Entity\TaskReminderSchedule;
 use App\Entity\User;
+use App\Enum\TaskReminderStart;
 use App\Repository\NotificationRepository;
+use App\Repository\TaskReminderScheduleRepository;
 use App\Repository\TaskRepository;
 
 /**
  * The reminder engine. Run daily (see {@see \App\Command\SendTaskRemindersCommand}), it:
  *
- *  - reminds the assignee of tasks due in 15 and 7 days (in-app notice + e-mail + push);
+ *  - reminds whoever has to do a task on the days before its deadline they chose
+ *    ({@see TaskReminderSchedule}), or 15 and 7 days before if they never chose (in-app notice +
+ *    e-mail + push);
  *  - escalates tasks that are overdue and still open up the chain of command (the immediate
  *    superior after 1 day, the whole chain after 7).
  *
- * Idempotent by design without any "already notified" flag: every offset matches an EXACT day
- * ({@see TaskRepository::findOpenDueOn()}), so a given (task, offset) fires on one single run.
+ * Idempotent by design without any "already notified" flag: every reminder matches an EXACT number of
+ * days left, so a given (task, person, day) fires on one single run.
  */
 final class TaskReminderNotifier
 {
@@ -29,9 +34,6 @@ final class TaskReminderNotifier
     /** Places that are not closed yet (Pendiente o Entregada), for escalation. Finalizada y Cancelada
      * son cierres. */
     private const array NOT_CLOSED = ['pending', 'submitted'];
-
-    /** Days before the deadline to remind the assignee. */
-    private const array REMIND_BEFORE_DAYS = [15, 7];
 
     /** Days after the deadline to escalate up the chain. */
     private const array ESCALATE_AFTER_DAYS = [1, 7];
@@ -44,6 +46,7 @@ final class TaskReminderNotifier
         private readonly OrganizationHierarchy $hierarchy,
         private readonly NotificationDispatcher $dispatcher,
         private readonly NotificationRepository $notifications,
+        private readonly TaskReminderScheduleRepository $schedules,
     ) {
     }
 
@@ -157,18 +160,24 @@ final class TaskReminderNotifier
         /** @var list<Notification> $notifications */
         $notifications = [];
 
-        foreach (self::REMIND_BEFORE_DAYS as $days) {
-            $due = $today->modify(sprintf('+%d days', $days));
-            foreach ($this->tasks->findOpenDueOn($due, self::ASSIGNEE_OPEN) as $task) {
-                foreach ($this->assigneeRecipients($task) as $recipient) {
-                    $notifications[] = $this->dispatcher->record(
-                        $recipient,
-                        self::REMINDER_KIND,
-                        sprintf('Tarea próxima: %s', $task->getTitle()),
-                        sprintf('Vence el %s (en %d días).', $task->getDueDate()->format('d/m/Y'), $days),
-                        $task,
-                    );
+        // Every task someone MAY want reminding about today, and every schedule chosen for them: two
+        // queries, whatever the number of tasks. Each person's own days are then matched in memory.
+        $upcoming = array_values($this->tasks->findOpenDueBetween($today->modify('+1 day'), $today->modify(sprintf('+%d days', self::furthestDaysBefore())), self::ASSIGNEE_OPEN));
+        $chosen = $this->schedules->findForTasks($upcoming);
+        foreach ($upcoming as $task) {
+            $daysLeft = (int) $today->diff($task->getDueDate()->setTime(0, 0))->days;
+            foreach ($this->assigneeRecipients($task) as $recipient) {
+                $schedule = $chosen[TaskReminderScheduleRepository::key($task, $recipient)] ?? null;
+                if (!\in_array($daysLeft, TaskReminderSchedule::daysBeforeFor($schedule), true)) {
+                    continue;
                 }
+                $notifications[] = $this->dispatcher->record(
+                    $recipient,
+                    self::REMINDER_KIND,
+                    sprintf('Tarea próxima: %s', $task->getTitle()),
+                    sprintf('Vence el %s (%s).', $task->getDueDate()->format('d/m/Y'), 1 === $daysLeft ? 'mañana' : sprintf('en %d días', $daysLeft)),
+                    $task,
+                );
             }
         }
 
@@ -191,6 +200,17 @@ final class TaskReminderNotifier
         $this->dispatcher->flushAndSend($notifications);
 
         return \count($notifications);
+    }
+
+    /**
+     * The furthest ahead anybody can be reminded, so the sweep looks no further. Derived from the
+     * choices themselves: adding a longer antelación to {@see TaskReminderStart} cannot leave it out.
+     *
+     * @return int the number of days
+     */
+    private static function furthestDaysBefore(): int
+    {
+        return max(...TaskReminderSchedule::DEFAULT_DAYS_BEFORE, ...array_map(static fn (TaskReminderStart $start): int => $start->value, TaskReminderStart::cases()));
     }
 
     /**

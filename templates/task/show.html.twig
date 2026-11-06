@@ -379,6 +379,12 @@
                             {{ include('task/_delegate.html.twig') }}
                         </details>
                     {% endif %}
+                    {% if canTuneReminders %}
+                        <details class="decision__delegate">
+                            <summary class="btn secondary btn-sm">Mis avisos{% if mySchedule %}: {{ mySchedule.start.label }}{% endif %}</summary>
+                            {{ include('task/_my_reminders.html.twig') }}
+                        </details>
+                    {% endif %}
                     {% if canManage %}<a class="btn secondary btn-sm" href="{{ path('task_edit', { id: task.id }) }}">Editar</a>{% endif %}
                 </div>
                 {% if 'cancel' in actions %}{{ ui.action(task, 'cancel', 'Cancelar tarea', 'quiet', '¿Cancelar esta tarea? Quedará anulada.') }}{% endif %}

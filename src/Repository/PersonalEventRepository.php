@@ -64,7 +64,7 @@ class PersonalEventRepository extends ServiceEntityRepository
     }
 
     /**
-     * The entries whose push reminder is due: the instant has arrived, nothing was sent yet and the
+     * The entries with a push reminder due: the instant of the next pending one has arrived and the
      * event has NOT started. Deliberately NOT scoped by owner — this is the only query in the class
      * that crosses the privacy boundary, and it exists to notify each owner about their own entry
      * ({@see \App\Service\EventReminderNotifier}), never to show one to anybody else.
@@ -82,7 +82,6 @@ class PersonalEventRepository extends ServiceEntityRepository
         return $this->createQueryBuilder('e')
             ->andWhere('e.remindAt IS NOT NULL')
             ->andWhere('e.remindAt <= :now')
-            ->andWhere('e.reminderSentAt IS NULL')
             ->andWhere('e.startAt >= :now')
             ->setParameter('now', $now)
             ->orderBy('e.startAt', 'ASC')

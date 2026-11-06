@@ -80,7 +80,7 @@ final class CronControllerTest extends WebTestCase
         $this->em->persist($owner);
         // Due in five minutes with a ten-minute reminder: the sweep must pick it up right now.
         $event = new PersonalEvent($owner, 'Claustro', new \DateTimeImmutable('+5 minutes'));
-        $event->setReminder(EventReminderOffset::TEN_MINUTES);
+        $event->setReminders([EventReminderOffset::TEN_MINUTES]);
         $this->em->persist($event);
         $this->em->flush();
         $id = (int) $event->getId();

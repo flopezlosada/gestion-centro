@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration;
 
+use App\Entity\Notification;
 use App\Entity\PersonalEvent;
 use App\Entity\User;
 use App\Enum\EventReminderOffset;
@@ -43,10 +44,13 @@ final class EventReminderNotifierTest extends KernelTestCase
         return $user;
     }
 
-    private function event(User $owner, string $start, ?EventReminderOffset $reminder): PersonalEvent
+    /**
+     * @param list<EventReminderOffset> $reminders
+     */
+    private function event(User $owner, string $start, array $reminders): PersonalEvent
     {
         $event = new PersonalEvent($owner, 'Claustro', new \DateTimeImmutable($start));
-        $event->setReminder($reminder);
+        $event->setReminders($reminders);
         $this->em->persist($event);
 
         return $event;
@@ -55,7 +59,7 @@ final class EventReminderNotifierTest extends KernelTestCase
     public function testTheOwnerIsNotifiedWhenTheReminderComesDue(): void
     {
         $owner = $this->user('profe@centro.test');
-        $event = $this->event($owner, '2026-09-15 10:00', EventReminderOffset::TEN_MINUTES);
+        $event = $this->event($owner, '2026-09-15 10:00', [EventReminderOffset::TEN_MINUTES]);
         $this->em->flush();
 
         $sent = $this->notifier->sendDue(new \DateTimeImmutable('2026-09-15 09:52'));
@@ -72,7 +76,7 @@ final class EventReminderNotifierTest extends KernelTestCase
     public function testAReminderIsNeverPushedTwice(): void
     {
         $owner = $this->user('profe@centro.test');
-        $this->event($owner, '2026-09-15 10:00', EventReminderOffset::TEN_MINUTES);
+        $this->event($owner, '2026-09-15 10:00', [EventReminderOffset::TEN_MINUTES]);
         $this->em->flush();
 
         $this->notifier->sendDue(new \DateTimeImmutable('2026-09-15 09:52'));
@@ -83,10 +87,39 @@ final class EventReminderNotifierTest extends KernelTestCase
         self::assertCount(1, $this->notifications->findRecentFor($owner));
     }
 
+    public function testEachOfSeveralRemindersGoesOutAtItsOwnMoment(): void
+    {
+        $owner = $this->user('profe@centro.test');
+        $this->event($owner, '2026-09-15 10:00', [EventReminderOffset::ONE_DAY, EventReminderOffset::TEN_MINUTES]);
+        $this->em->flush();
+
+        self::assertSame(1, $this->notifier->sendDue(new \DateTimeImmutable('2026-09-14 10:02')));
+        self::assertSame(0, $this->notifier->sendDue(new \DateTimeImmutable('2026-09-15 09:30')));
+        self::assertSame(1, $this->notifier->sendDue(new \DateTimeImmutable('2026-09-15 09:52')));
+        self::assertSame(0, $this->notifier->sendDue(new \DateTimeImmutable('2026-09-15 09:57')));
+
+        $bodies = array_map(static fn (Notification $notice): string => (string) $notice->getBody(), $this->notifications->findRecentFor($owner));
+        sort($bodies);
+        self::assertSame(['Hoy a las 10:00.', 'Mañana a las 10:00.'], $bodies);
+    }
+
+    public function testALateRunSendsTwoDueRemindersAsOnePush(): void
+    {
+        // The cron was down between 09:00 and 09:52: both the hour-ahead and the ten-minute reminder
+        // are due. One push says it; two in a row would say the same thing twice.
+        $owner = $this->user('profe@centro.test');
+        $this->event($owner, '2026-09-15 10:00', [EventReminderOffset::ONE_HOUR, EventReminderOffset::TEN_MINUTES]);
+        $this->em->flush();
+
+        self::assertSame(1, $this->notifier->sendDue(new \DateTimeImmutable('2026-09-15 09:52')));
+        self::assertSame(0, $this->notifier->sendDue(new \DateTimeImmutable('2026-09-15 09:57')));
+        self::assertCount(1, $this->notifications->findRecentFor($owner));
+    }
+
     public function testNothingIsSentBeforeTheReminderIsDue(): void
     {
         $owner = $this->user('profe@centro.test');
-        $this->event($owner, '2026-09-15 10:00', EventReminderOffset::TEN_MINUTES);
+        $this->event($owner, '2026-09-15 10:00', [EventReminderOffset::TEN_MINUTES]);
         $this->em->flush();
 
         self::assertSame(0, $this->notifier->sendDue(new \DateTimeImmutable('2026-09-15 09:30')));
@@ -97,7 +130,7 @@ final class EventReminderNotifierTest extends KernelTestCase
         // After an outage the sweep catches up; announcing "empieza en 10 minutos" about a meeting that
         // started half an hour ago would be worse than staying quiet.
         $owner = $this->user('profe@centro.test');
-        $this->event($owner, '2026-09-15 10:00', EventReminderOffset::TEN_MINUTES);
+        $this->event($owner, '2026-09-15 10:00', [EventReminderOffset::TEN_MINUTES]);
         $this->em->flush();
 
         self::assertSame(0, $this->notifier->sendDue(new \DateTimeImmutable('2026-09-15 10:30')));
@@ -106,7 +139,7 @@ final class EventReminderNotifierTest extends KernelTestCase
     public function testAnEventWithoutAReminderIsNeverAnnounced(): void
     {
         $owner = $this->user('profe@centro.test');
-        $this->event($owner, '2026-09-15 10:00', null);
+        $this->event($owner, '2026-09-15 10:00', []);
         $this->em->flush();
 
         self::assertSame(0, $this->notifier->sendDue(new \DateTimeImmutable('2026-09-15 09:59')));
@@ -116,8 +149,8 @@ final class EventReminderNotifierTest extends KernelTestCase
     {
         $mine = $this->user('yo@centro.test');
         $theirs = $this->user('otra@centro.test');
-        $this->event($mine, '2026-09-15 10:00', EventReminderOffset::TEN_MINUTES);
-        $this->event($theirs, '2026-09-15 12:00', EventReminderOffset::TEN_MINUTES);
+        $this->event($mine, '2026-09-15 10:00', [EventReminderOffset::TEN_MINUTES]);
+        $this->event($theirs, '2026-09-15 12:00', [EventReminderOffset::TEN_MINUTES]);
         $this->em->flush();
 
         $sent = $this->notifier->sendDue(new \DateTimeImmutable('2026-09-15 09:52'));
@@ -130,7 +163,7 @@ final class EventReminderNotifierTest extends KernelTestCase
     public function testADayAheadReminderReadsAsTomorrow(): void
     {
         $owner = $this->user('profe@centro.test');
-        $this->event($owner, '2026-09-16 08:30', EventReminderOffset::ONE_DAY);
+        $this->event($owner, '2026-09-16 08:30', [EventReminderOffset::ONE_DAY]);
         $this->em->flush();
 
         $this->notifier->sendDue(new \DateTimeImmutable('2026-09-15 08:31'));
@@ -143,7 +176,7 @@ final class EventReminderNotifierTest extends KernelTestCase
     public function testAgendaRemindersDoNotGoOutByEmail(): void
     {
         $owner = $this->user('profe@centro.test');
-        $this->event($owner, '2026-09-15 10:00', EventReminderOffset::TEN_MINUTES);
+        $this->event($owner, '2026-09-15 10:00', [EventReminderOffset::TEN_MINUTES]);
         $this->em->flush();
 
         $this->notifier->sendDue(new \DateTimeImmutable('2026-09-15 09:52'));

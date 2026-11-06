@@ -26,7 +26,9 @@ use Symfony\Component\Validator\Constraints as Assert;
 // Serves deleting a whole recurring series (owner + series) in one query.
 #[ORM\Index(name: 'idx_personal_event_owner_series', columns: ['owner_id', 'series_id'])]
 // Serves the reminder sweep, which runs every few minutes across ALL owners: the due ones are the
-// narrow slice with a remind_at already past and nothing sent yet.
+// narrow slice with a remind_at already past (remind_at is always the NEXT pending one). The second
+// column no longer filters anything (the sweep stopped asking for "not sent"); kept, since the range on
+// the first is what matters.
 #[ORM\Index(name: 'idx_personal_event_remind', columns: ['remind_at', 'reminder_sent_at'])]
 class PersonalEvent
 {
@@ -78,22 +80,33 @@ class PersonalEvent
     private ?string $seriesId = null;
 
     /**
-     * How long before the start the owner wants a push reminder, or null for no reminder. Only
-     * meaningful on a timed entry: an all-day one starts at midnight, so "10 minutos antes" would fire
-     * at 23:50 the night before, which nobody means — {@see setAllDay()} clears it.
+     * How long before the start the owner wants each push reminder, in minutes (the
+     * {@see EventReminderOffset} values), largest first and without repeats; empty for none. Plain
+     * ints because Doctrine cannot map an enum inside a JSON column — only {@see setReminders()}
+     * writes it, so a value outside the enum is unrepresentable from outside.
+     *
+     * Only meaningful on a timed entry: an all-day one starts at midnight, so "10 minutos antes" would
+     * fire at 23:50 the night before, which nobody means — {@see setAllDay()} clears it.
+     *
+     * @var list<int>
      */
-    #[ORM\Column(name: 'reminder_minutes', type: Types::INTEGER, nullable: true, enumType: EventReminderOffset::class)]
-    private ?EventReminderOffset $reminder = null;
+    #[ORM\Column(name: 'reminder_offsets', type: Types::JSON)]
+    private array $reminderOffsets = [];
 
     /**
-     * The instant the reminder is due, DERIVED from the start and the offset — never set from outside.
-     * Materialising it (instead of computing "start - offset" in the query) keeps the sweep a plain
-     * indexed range scan, with no date arithmetic over a column.
+     * The instant the NEXT pending reminder is due, or null when none is left. DERIVED from the start,
+     * the offsets and {@see $reminderSentAt} — never set from outside. Materialising it (instead of
+     * computing "start - offset" in the query) keeps the sweep a plain indexed range scan, with no
+     * date arithmetic over a column and no child table to join.
      */
     #[ORM\Column(name: 'remind_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $remindAt = null;
 
-    /** When the reminder was actually pushed, or null if still pending. Makes the sweep idempotent. */
+    /**
+     * When the last reminder was pushed, or null if none was. A watermark: every reminder whose instant
+     * is at or before it counts as handled, so the sweep never pushes the same one twice, and several
+     * that came due together (a late run, a reminder added at the last minute) go out as ONE push.
+     */
     #[ORM\Column(name: 'reminder_sent_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $reminderSentAt = null;
 
@@ -188,10 +201,10 @@ class PersonalEvent
     public function setAllDay(bool $allDay): static
     {
         $this->allDay = $allDay;
-        // An entry with no time cannot carry a reminder (see $reminder): drop it rather than keep a
-        // setting that would never fire, so what the edit form shows back is what actually happens.
+        // An entry with no time cannot carry a reminder (see $reminderOffsets): drop them rather than
+        // keep a setting that would never fire, so what the edit form shows back is what happens.
         if ($allDay) {
-            $this->reminder = null;
+            $this->reminderOffsets = [];
         }
         $this->recomputeRemindAt();
 
@@ -244,21 +257,30 @@ class PersonalEvent
         return null !== $this->seriesId;
     }
 
-    public function getReminder(): ?EventReminderOffset
+    /**
+     * The push reminders the owner asked for, earliest first ("1 día antes" before "10 minutos antes").
+     *
+     * @return list<EventReminderOffset> the chosen offsets; empty for none
+     */
+    public function getReminders(): array
     {
-        return $this->reminder;
+        return array_map(EventReminderOffset::from(...), $this->reminderOffsets);
     }
 
     /**
-     * Sets (or clears) the push reminder. Silently ignored on an all-day entry, which by definition has
-     * no time to count back from — so the pair (all-day, reminder) can never be stored, whichever order
-     * the caller sets them in.
+     * Sets the push reminders, replacing the previous ones; repeats collapse into one. Silently ignored
+     * on an all-day entry, which by definition has no time to count back from — so the pair (all-day,
+     * reminder) can never be stored, whichever order the caller sets them in.
      *
-     * @param EventReminderOffset|null $reminder how long before the start to notify, or null for none
+     * @param iterable<EventReminderOffset> $reminders how long before the start to notify; empty for none
      */
-    public function setReminder(?EventReminderOffset $reminder): static
+    public function setReminders(iterable $reminders): static
     {
-        $this->reminder = $this->allDay ? null : $reminder;
+        $minutes = $this->allDay
+            ? []
+            : array_values(array_unique(array_map(static fn (EventReminderOffset $offset): int => $offset->value, [...$reminders])));
+        rsort($minutes);
+        $this->reminderOffsets = $minutes;
         $this->recomputeRemindAt();
 
         return $this;
@@ -275,34 +297,38 @@ class PersonalEvent
     }
 
     /**
-     * Marks the reminder as delivered, so the sweep never pushes it twice.
+     * Marks every reminder due up to now as delivered and moves on to the next one, if any, so the
+     * sweep never pushes the same reminder twice.
      *
      * @param \DateTimeImmutable $at when it was sent
      */
     public function markReminderSent(\DateTimeImmutable $at): static
     {
         $this->reminderSentAt = $at;
+        $this->recomputeRemindAt();
 
         return $this;
     }
 
     /**
-     * Recomputes the derived reminder instant after anything it depends on changed (the start or the
-     * offset). Re-arms an already-sent reminder ONLY when the instant actually moved, so re-saving an
-     * event without touching its schedule does not push the same reminder again.
+     * Recomputes the next pending reminder after anything it depends on changed (the start, the
+     * offsets or the watermark): the earliest instant strictly after the last push.
+     *
+     * Because the watermark is an absolute instant, re-saving an event with the same schedule never
+     * re-arms a reminder already sent, while moving the event later re-arms them on its own — their
+     * instants land after the watermark again. A reminder added after one already went out only fires
+     * if it is still ahead: one that should have gone before the last push would just repeat it.
      */
     private function recomputeRemindAt(): void
     {
-        $remindAt = null === $this->reminder
-            ? null
-            : $this->startAt->modify(\sprintf('-%d minutes', $this->reminder->value));
+        $pending = array_filter(
+            array_map(fn (int $minutes): \DateTimeImmutable => $this->startAt->modify(\sprintf('-%d minutes', $minutes)), $this->reminderOffsets),
+            fn (\DateTimeImmutable $instant): bool => null === $this->reminderSentAt || $instant > $this->reminderSentAt,
+        );
 
-        // Loose compare: two DateTimeImmutable are equal when they point at the same instant, and it
-        // also handles the null/instant transitions.
-        if ($remindAt != $this->remindAt) {
-            $this->remindAt = $remindAt;
-            $this->reminderSentAt = null;
-        }
+        // The earliest by value, not by position: the stored order is only a display convention, and a
+        // row hydrated out of order must not skip a reminder.
+        $this->remindAt = [] === $pending ? null : min($pending);
     }
 
     public function getCreatedAt(): \DateTimeImmutable
