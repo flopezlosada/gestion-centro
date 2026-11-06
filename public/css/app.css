@@ -4364,6 +4364,31 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 .side-card__label { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 3px; }
 .side-card .btn { width: 100%; padding: 12px; }
 .side-card .btn svg { width: 16px; height: 16px; }
+/* «Tus avisos» de una tarea: frase + fechas reales en una línea como la del ciclo de vida, que acaba en
+   el vencimiento. Las campanas son los avisos; la bandera, el plazo. Lo que ya pasó se apaga. */
+.reminders-card__summary { margin: 0; font-size: 14px; line-height: 1.45; color: var(--text); }
+.reminders-card__hint { display: block; margin-top: 2px; font-size: 12.5px; color: var(--text-muted); }
+.reminders-card__timeline { list-style: none; margin: 6px 0 4px; padding: 0 0 0 26px; position: relative; }
+.reminders-card__timeline::before { content: ""; position: absolute; left: 8px; top: 10px; bottom: 10px; width: 2px; background: var(--border-strong); opacity: .55; }
+.reminders-card__step { position: relative; display: flex; align-items: baseline; gap: 10px; }
+.reminders-card__step + .reminders-card__step { margin-top: 10px; }
+.reminders-card__bell { position: absolute; left: -26px; top: -1px; width: 18px; height: 18px; display: grid; place-items: center; border-radius: 999px; background: var(--accent-weak); color: var(--accent-ink); box-shadow: 0 0 0 2px var(--surface); }
+.reminders-card__flag { position: absolute; left: -23px; top: 3px; width: 12px; height: 12px; border-radius: 3px; background: var(--text); box-shadow: 0 0 0 2px var(--surface); }
+.reminders-card__date { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--text); }
+.reminders-card__meta { font-size: 12px; color: var(--text-faint); }
+.reminders-card__step.is-today .reminders-card__bell { background: var(--accent); color: var(--on-accent); }
+.reminders-card__step.is-today .reminders-card__meta { color: var(--accent-ink); font-weight: 600; }
+.reminders-card__step.is-past .reminders-card__date, .reminders-card__step.is-past .reminders-card__meta { color: var(--text-faint); font-weight: 400; }
+.reminders-card__step.is-past .reminders-card__bell { background: var(--surface-sunken); color: var(--text-faint); }
+.reminders-card__step--due .reminders-card__meta { color: var(--text-muted); font-weight: 600; }
+.reminders-card__edit > summary { list-style: none; cursor: pointer; }
+.reminders-card__edit > summary::-webkit-details-marker { display: none; }
+.reminders-card__form { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.reminders-card__fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.reminders-card__fields label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.reminders-card__fields label > span { font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); }
+.reminders-card__fields select { width: 100%; min-width: 0; }
+.reminders-card__form .reminders-card__hint { margin: 0; }
 /* Las fotocopias ya pedidas para una guardia, encima del botón de pedir más. */
 .copy-orders { list-style: none; margin: 0; padding: 0; font-size: 13px; }
 .copy-orders li { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 10px; padding: 8px 0; }
@@ -5970,6 +5995,11 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 .pick-chips legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
 .pick-chip { position: relative; }
 .pick-chip input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+/* Dentro de una fila de formulario el hueco lo pone la fila, no el grupo de chips. */
+.form-row > .pick-chips { margin-bottom: 0; }
+/* Opciones que esperan a otro campo (los avisos, a la hora): a la vista pero apagadas. */
+.pick-chip:has(input:disabled) { opacity: .5; cursor: not-allowed; }
+.help--wait { color: var(--accent-ink); font-weight: 500; }
 
 /* ¿Para quién? de una reserva fija: solo la lista del tipo elegido (y ninguna hasta elegirlo). Sin :has la
    regla entera se descarta y se ven las dos: el servidor lee solo la del tipo marcado. */

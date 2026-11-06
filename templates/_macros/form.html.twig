@@ -68,6 +68,27 @@
 {% endmacro %}
 
 {#
+   Una elección múltiple (casillas expandidas) pintada como chips: cada opción es una píldora que se
+   enciende al marcarla. Con las casillas sueltas en fila no se sabía de qué texto era cada cuadro
+   (el de una opción caía pegado al rótulo de la anterior). `when` como en `field`; con `waitHint`, en vez
+   de esconderse mientras no se cumple la condición se queda a la vista APAGADO y con ese texto debajo:
+   un campo que no existe hasta que haces otra cosa no lo descubre nadie.
+#}
+{% macro chips(field, when = null, waitHint = null) %}
+    <div class="form-row" role="group" aria-labelledby="{{ field.vars.id }}_label"{% if waitHint %} aria-describedby="{{ field.vars.id }}_wait"{% endif %}{% if when %} data-qa-{{ waitHint ? 'wait' : 'when' }}="{{ when }}"{% endif %}{% for name, value in field.vars.row_attr %} {{ name }}="{{ value }}"{% endfor %}>
+        {{ form_label(field, null, { label_attr: { id: field.vars.id ~ '_label' } }) }}
+        <div class="pick-chips">
+            {% for choice in field %}
+                <label class="pick-chip">{{ form_widget(choice) }}{{ choice.vars.label }}</label>
+            {% endfor %}
+        </div>
+        {% if waitHint %}<p class="help help--wait" id="{{ field.vars.id }}_wait" data-qa-wait-hint hidden>{{ waitHint }}</p>{% endif %}
+        {% if field.vars.help %}<p class="help">{{ field.vars.help }}</p>{% endif %}
+        {{ form_errors(field) }}
+    </div>
+{% endmacro %}
+
+{#
    Agrupa un bloque de campos bajo un título, para partir los formularios largos en secciones
    y que no sean un muro de campos. Usa <fieldset>/<legend> (semántica de agrupación accesible).
 #}

@@ -379,12 +379,6 @@
                             {{ include('task/_delegate.html.twig') }}
                         </details>
                     {% endif %}
-                    {% if canTuneReminders %}
-                        <details class="decision__delegate">
-                            <summary class="btn secondary btn-sm">Mis avisos{% if mySchedule %}: {{ mySchedule.start.label }}{% endif %}</summary>
-                            {{ include('task/_my_reminders.html.twig') }}
-                        </details>
-                    {% endif %}
                     {% if canManage %}<a class="btn secondary btn-sm" href="{{ path('task_edit', { id: task.id }) }}">Editar</a>{% endif %}
                 </div>
                 {% if 'cancel' in actions %}{{ ui.action(task, 'cancel', 'Cancelar tarea', 'quiet', '¿Cancelar esta tarea? Quedará anulada.') }}{% endif %}
@@ -449,6 +443,10 @@
                 {% if view.closingNote %}<div class="quote-card quote-card--quoted">{{ view.closingNote.body|nl2br }}</div>{% endif %}
             </div>
         {% endif %}
+
+        {# Sus avisos, en tarjeta propia y siempre a la vista: metidos como un botón más entre «Pasarla a
+           alguien» y «Editar» nadie sabía que existían. #}
+        {% if canTuneReminders %}{{ include('task/_my_reminders.html.twig') }}{% endif %}
 
         {# Y si el recordatorio no ha caído en ninguna tarjeta (p. ej. quien creó la tarea sin ser superior
            de rango: no valida, no la hace, pero responde de ella), va en la suya. Es la misma razón por la

@@ -548,6 +548,7 @@ final class TaskController extends AbstractController
         $trail = $auditLog->findForSubject('Task', (string) $task->getId());
         $thread = $comments->findThreadFor($task);
         $canTuneReminders = $this->canTuneReminders($task, $user);
+        $mySchedule = $canTuneReminders ? $schedules->findOneFor($task, $user) : null;
 
         return $this->render('task/show.html.twig', [
             'task' => $task,
@@ -586,7 +587,9 @@ final class TaskController extends AbstractController
             'remindedAt' => $canRemind ? $reminders->nudgedTodayAt($task) : null,
             // «Mis avisos»: cada cual elige los suyos, solo quien recibe el aviso de la tarea.
             'canTuneReminders' => $canTuneReminders,
-            'mySchedule' => $canTuneReminders ? $schedules->findOneFor($task, $user) : null,
+            'mySchedule' => $mySchedule,
+            // Las fechas de verdad, no solo «N días antes»: así se ve de un vistazo cuándo llegará cada uno.
+            'myReminderDates' => $canTuneReminders ? TaskReminderSchedule::datesFor($mySchedule, $task->getDueDate()) : [],
             'reminderStarts' => TaskReminderStart::cases(),
             'reminderRepeats' => TaskReminderRepeat::cases(),
             'defaultReminders' => TaskReminderSchedule::defaultLabel(),
