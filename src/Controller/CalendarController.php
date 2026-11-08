@@ -17,6 +17,7 @@ use App\Entity\Meeting;
 use App\Entity\PersonalEvent;
 use App\Entity\Task;
 use App\Entity\User;
+use App\Enum\Area;
 use App\Enum\CategoryColor;
 use App\Repository\AcademicYearRepository;
 use App\Repository\GuardiaCoverRepository;
@@ -26,6 +27,9 @@ use App\Repository\NonLectiveDayRepository;
 use App\Repository\PersonalEventRepository;
 use App\Repository\TaskRepository;
 use App\Repository\TimeSlotRepository;
+use App\Repository\UserRepository;
+use App\Security\Voter\AreaVoter;
+use App\Service\MeetingAccess;
 use App\Service\SchoolCalendar;
 use App\Service\TaskVisibility;
 use App\Util\AppTime;
@@ -50,6 +54,12 @@ final class CalendarController extends AbstractController
     /** The day, week, month and year views, and the one used when "vista" is missing or unknown. */
     private const array VIEWS = ['dia', 'semana', 'mes', 'anio'];
     private const string DEFAULT_VIEW = 'semana';
+
+    /**
+     * The views that show a timetable. Someone else's calendar is only their timetable, so it only has
+     * these: month and year carry tasks and personal events, which are never shown for another person.
+     */
+    private const array TIMETABLE_VIEWS = ['dia', 'semana'];
 
     /** Spanish month names, indexed 1–12, for the calendar labels. */
     private const array MONTH_NAMES = [
@@ -87,38 +97,50 @@ final class CalendarController extends AbstractController
      * @param TaskVisibility          $visibility     the task visibility scope built from the organisation chart
      * @param NonLectiveDayRepository $nonLectiveDays the non-teaching day repository
      * @param SchoolCalendar          $schoolCalendar the teaching-day calendar, to flag weekends
+     * @param UserRepository          $users          the users, for the leadership's teacher picker
+     * @param MeetingAccess           $access         who counts as equipo directivo
+     *
+     * With "docente" the equipo directivo (and admin) sees ANOTHER teacher's calendar: only what makes
+     * their timetable — classes, standing duties, assigned guardias and the meetings they are convened
+     * to. Their tasks, personal events and lesson plans stay private to them.
      *
      * @return Response the rendered calendar page
      */
     #[Route('/calendario', name: 'calendar_index', methods: ['GET'])]
-    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility, NonLectiveDayRepository $nonLectiveDays, SchoolCalendar $schoolCalendar, AcademicYearRepository $academicYears, PersonalEventRepository $personalEvents, GuardiaCoverRepository $covers, MeetingRepository $meetings, MyClasses $myClasses, LessonPlanRepository $lessonPlans, TimeSlotRepository $timeSlots, DayTimeline $timeline): Response
+    public function index(Request $request, #[CurrentUser] User $user, TaskRepository $tasks, TaskVisibility $visibility, NonLectiveDayRepository $nonLectiveDays, SchoolCalendar $schoolCalendar, AcademicYearRepository $academicYears, PersonalEventRepository $personalEvents, GuardiaCoverRepository $covers, MeetingRepository $meetings, MyClasses $myClasses, LessonPlanRepository $lessonPlans, TimeSlotRepository $timeSlots, DayTimeline $timeline, UserRepository $users, MeetingAccess $access): Response
     {
+        $canBrowse = $access->isLeadership($user, $this->isGranted('ROLE_ADMIN'));
+        $teacher = $this->viewedTeacher($request, $user, $canBrowse, $users);
+        $own = $teacher === $user;
         // Explicit zone because the grid parses a "YYYY-MM-DD" from the query string into a midnight;
         // it is the SAME zone PHP now defaults to ({@see \App\Kernel}), so this no longer decides
         // anything the rest of the app might decide differently — it only says it out loud.
         $timeZone = AppTime::zone();
         $today = new \DateTimeImmutable('today', $timeZone);
         $view = $this->resolveView($request->query->getString('vista'));
+        if (!$own && !\in_array($view, self::TIMETABLE_VIEWS, true)) {
+            $view = self::DEFAULT_VIEW;
+        }
         $anchor = $this->resolveDate($request->query->getString('fecha'), $today, $timeZone);
 
         [$rangeStart, $rangeEnd] = $this->rangeFor($view, $anchor);
-        $visible = $visibility->visibleTo($tasks->findDueBetween($rangeStart, $rangeEnd), $user, $this->isGranted('ROLE_ADMIN'));
+        $visible = $own ? $visibility->visibleTo($tasks->findDueBetween($rangeStart, $rangeEnd), $user, $this->isGranted('ROLE_ADMIN')) : [];
         $byDay = $this->groupByDay($visible, static fn (Task $task): string => $task->getDueDate()->format('Y-m-d'));
         // The user's own private events in the same window (scoped by owner in the repository). The
         // range end is a day at midnight, so widen it to the end of that day to catch events with a time.
         $eventsByDay = $this->groupByDay(
-            $personalEvents->findForOwnerBetween($user, $rangeStart, $rangeEnd->setTime(23, 59, 59)),
+            $own ? $personalEvents->findForOwnerBetween($user, $rangeStart, $rangeEnd->setTime(23, 59, 59)) : [],
             static fn (PersonalEvent $event): string => $event->getStartAt()->format('Y-m-d'),
         );
         // The user's own guardias in the same window, laid out by day next to tasks and events.
         $guardiasByDay = $this->groupByDay(
-            $covers->findAssignedToBetween($user, $rangeStart, $rangeEnd),
+            $covers->findAssignedToBetween($teacher, $rangeStart, $rangeEnd),
             static fn (GuardiaCover $g): string => $g->getDate()->format('Y-m-d'),
         );
         // Las reuniones a las que el usuario está convocado, en la misma ventana. El rango acaba en un día
         // a medianoche, así que se ensancha al final de ese día para no perder las de la tarde.
         $meetingsByDay = $this->groupByDay(
-            $meetings->findForUserBetween($user, $rangeStart, $rangeEnd->setTime(23, 59, 59)),
+            $meetings->findForUserBetween($teacher, $rangeStart, $rangeEnd->setTime(23, 59, 59)),
             static fn (Meeting $m): string => $m->getStartAt()->format('Y-m-d'),
         );
         $nonLectiveByDay = $this->indexNonLectiveDays($nonLectiveDays->findBetween($rangeStart, $rangeEnd));
@@ -127,20 +149,20 @@ final class CalendarController extends AbstractController
         // treinta por celda y taparían lo demás, y en el año no caben. Quien no da clase no tiene ninguna.
         // Calculadas ya aquí (no dentro del render, como antes) porque la rejilla horaria las necesita
         // para colocar sus bloques.
-        $classesByDay = \in_array($view, ['dia', 'semana'], true) ? $myClasses->between($user, $rangeStart, $rangeEnd) : [];
+        $classesByDay = \in_array($view, self::TIMETABLE_VIEWS, true) ? $myClasses->between($teacher, $rangeStart, $rangeEnd) : [];
         // Y sus horas de guardia fijas del horario, haya o no a quien cubrir: sin ellas, un día de guardia
         // sin ausencias parecía un día sin guardia.
-        $dutiesByDay = \in_array($view, ['dia', 'semana'], true) ? $myClasses->dutiesBetween($user, $rangeStart, $rangeEnd) : [];
-        $plansByClass = \in_array($view, ['dia', 'semana'], true) ? $lessonPlans->findForTeacherBetween($user, $rangeStart, $rangeEnd) : [];
+        $dutiesByDay = \in_array($view, self::TIMETABLE_VIEWS, true) ? $myClasses->dutiesBetween($teacher, $rangeStart, $rangeEnd) : [];
+        $plansByClass = $own && \in_array($view, self::TIMETABLE_VIEWS, true) ? $lessonPlans->findForTeacherBetween($user, $rangeStart, $rangeEnd) : [];
         // El marco horario del curso de ese rango, para dar hora real a las guardias (que solo guardan su
         // tramo): mismo origen que MyClasses usa para las clases, así los bloques de una y otra cuadran.
-        $frame = \in_array($view, ['dia', 'semana'], true)
+        $frame = \in_array($view, self::TIMETABLE_VIEWS, true)
             ? $timeSlots->lectiveTimesWithFallback($academicYears->findBySchoolYear(SchoolYear::current($anchor)))['slots']
             : [];
 
         $model = match ($view) {
-            'dia' => $this->dayModel($anchor, $today, $byDay, $eventsByDay, $guardiasByDay, $meetingsByDay, $nonLectiveByDay, $schoolCalendar, $classesByDay, $dutiesByDay, $plansByClass, $frame, $timeline),
-            'semana' => $this->weekModel($anchor, $today, $byDay, $eventsByDay, $guardiasByDay, $meetingsByDay, $nonLectiveByDay, $schoolCalendar, $classesByDay, $dutiesByDay, $plansByClass, $frame, $timeline),
+            'dia' => $this->dayModel($anchor, $today, $byDay, $eventsByDay, $guardiasByDay, $meetingsByDay, $nonLectiveByDay, $schoolCalendar, $classesByDay, $dutiesByDay, $plansByClass, $frame, $timeline, $own),
+            'semana' => $this->weekModel($anchor, $today, $byDay, $eventsByDay, $guardiasByDay, $meetingsByDay, $nonLectiveByDay, $schoolCalendar, $classesByDay, $dutiesByDay, $plansByClass, $frame, $timeline, $own),
             'anio' => $this->yearModel($anchor, $today, $byDay, $eventsByDay, $guardiasByDay, $nonLectiveByDay, $schoolCalendar, $academicYears),
             default => $this->monthModel($anchor, $today, $byDay, $eventsByDay, $nonLectiveByDay, $schoolCalendar),
         };
@@ -148,7 +170,11 @@ final class CalendarController extends AbstractController
         return $this->render('calendar/index.html.twig', [
             'view' => $view,
             'anchor' => $anchor,
-            'views' => self::VIEWS,
+            'views' => $own ? self::VIEWS : self::TIMETABLE_VIEWS,
+            // Whose calendar this is when it is not the viewer's own (null = their own), and the people
+            // the equipo directivo can pick from (empty for everyone else: no picker).
+            'viewedTeacher' => $own ? null : $teacher,
+            'teachers' => $canBrowse ? $users->findActive() : [],
             'prevDate' => $this->step($view, $anchor, -1),
             'nextDate' => $this->step($view, $anchor, 1),
             'todayDate' => $today->format('Y-m-d'),
@@ -159,6 +185,37 @@ final class CalendarController extends AbstractController
             'plansByClass' => $plansByClass,
             ...$model,
         ]);
+    }
+
+    /**
+     * Whose calendar to show: the viewer's own, or — for the equipo directivo — the teacher named by
+     * the "docente" parameter. Anyone else asking for somebody else's is refused, not silently shown
+     * their own, so a shared link never reads as the wrong person's timetable.
+     *
+     * @param Request        $request   the HTTP request, with the optional "docente" id
+     * @param User           $user      the viewer
+     * @param bool           $canBrowse whether the viewer may see other teachers' calendars
+     * @param UserRepository $users     the users
+     *
+     * @return User the teacher whose calendar is shown
+     */
+    private function viewedTeacher(Request $request, User $user, bool $canBrowse, UserRepository $users): User
+    {
+        $id = $request->query->getInt('docente');
+        if ($id <= 0 || $id === $user->getId()) {
+            return $user;
+        }
+        if (!$canBrowse) {
+            throw $this->createAccessDeniedException();
+        }
+
+        // Only active people, the same ones the picker lists: a former colleague's id is a 404.
+        $teacher = $users->find($id);
+        if (null === $teacher || !$teacher->isActive()) {
+            throw $this->createNotFoundException();
+        }
+
+        return $teacher;
     }
 
     /**
@@ -315,10 +372,11 @@ final class CalendarController extends AbstractController
      * @param array<string, LessonPlan>                                      $plansByClass    "Y-m-d|tramo" → plan
      * @param array<int, array{startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}> $frame           the course's periods, index → clock times
      * @param DayTimeline                                                                $timeline        the grid layout engine
+     * @param bool                                                                       $own             whether the calendar is the viewer's own
      *
      * @return array{template: string, label: string, day: array<string, mixed>} the template and view data
      */
-    private function dayModel(\DateTimeImmutable $anchor, \DateTimeImmutable $today, array $byDay, array $eventsByDay, array $guardiasByDay, array $meetingsByDay, array $nonLectiveByDay, SchoolCalendar $schoolCalendar, array $classesByDay, array $dutiesByDay, array $plansByClass, array $frame, DayTimeline $timeline): array
+    private function dayModel(\DateTimeImmutable $anchor, \DateTimeImmutable $today, array $byDay, array $eventsByDay, array $guardiasByDay, array $meetingsByDay, array $nonLectiveByDay, SchoolCalendar $schoolCalendar, array $classesByDay, array $dutiesByDay, array $plansByClass, array $frame, DayTimeline $timeline, bool $own): array
     {
         $cell = $this->cell($anchor, null, $today, $byDay, $eventsByDay, $nonLectiveByDay, $schoolCalendar);
         $key = $anchor->format('Y-m-d');
@@ -330,7 +388,7 @@ final class CalendarController extends AbstractController
         // Los eventos personales se quedan en la lista, no en la rejilla: es donde vive su toque de
         // "hecho" (agenda-check en taskUi.event_item), y un bloque de la rejilla no tiene sitio para un
         // <form> dentro de un enlace.
-        $blocks = $this->timedBlocks($anchor, $classes, $dutiesByDay[$key] ?? [], $cell['guardias'], $cell['meetings'], $frame, $plansByClass);
+        $blocks = $this->timedBlocks($anchor, $classes, $dutiesByDay[$key] ?? [], $cell['guardias'], $cell['meetings'], $frame, $plansByClass, $own);
         [$windowStart, $windowEnd] = $timeline->windowFor($blocks, $anchor);
         $cell['hourMarks'] = $timeline->hourMarks($windowStart, $windowEnd);
         $cell['timeline'] = $timeline->layout($blocks, $windowStart, $windowEnd);
@@ -361,10 +419,11 @@ final class CalendarController extends AbstractController
      * @param array<string, LessonPlan>                                      $plansByClass    "Y-m-d|tramo" → plan
      * @param array<int, array{startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}> $frame           the course's periods, index → clock times
      * @param DayTimeline                                                                $timeline        the grid layout engine
+     * @param bool                                                                       $own             whether the calendar is the viewer's own
      *
      * @return array{template: string, label: string, week: list<array<string, mixed>>, hourMarks: list<array{label: string, top: float}>} the template and view data
      */
-    private function weekModel(\DateTimeImmutable $anchor, \DateTimeImmutable $today, array $byDay, array $eventsByDay, array $guardiasByDay, array $meetingsByDay, array $nonLectiveByDay, SchoolCalendar $schoolCalendar, array $classesByDay, array $dutiesByDay, array $plansByClass, array $frame, DayTimeline $timeline): array
+    private function weekModel(\DateTimeImmutable $anchor, \DateTimeImmutable $today, array $byDay, array $eventsByDay, array $guardiasByDay, array $meetingsByDay, array $nonLectiveByDay, SchoolCalendar $schoolCalendar, array $classesByDay, array $dutiesByDay, array $plansByClass, array $frame, DayTimeline $timeline, bool $own): array
     {
         $start = $this->weekStart($anchor);
         $end = $start->modify('+6 days');
@@ -380,7 +439,7 @@ final class CalendarController extends AbstractController
             $cell['meetings'] = $meetingsByDay[$key] ?? [];
             $cell['unscheduledClasses'] = array_values(array_filter($classes, static fn (ClassSession $c): bool => null === $c->startsAt));
 
-            $blocksByDay[$key] = $this->timedBlocks($date, $classes, $dutiesByDay[$key] ?? [], $cell['guardias'], $cell['meetings'], $frame, $plansByClass);
+            $blocksByDay[$key] = $this->timedBlocks($date, $classes, $dutiesByDay[$key] ?? [], $cell['guardias'], $cell['meetings'], $frame, $plansByClass, $own);
             $week[] = $cell;
         }
 
@@ -421,16 +480,20 @@ final class CalendarController extends AbstractController
      * @param list<Meeting>                                                              $meetings     the day's meetings
      * @param array<int, array{startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}> $frame        the course's periods, index → clock times
      * @param array<string, LessonPlan>                                      $plansByClass "Y-m-d|tramo" → plan
+     * @param bool                                                                       $own          whether the calendar is the viewer's own (else no private links nor plans)
      *
      * @return list<TimelineBlock> the blocks
      */
-    private function timedBlocks(\DateTimeImmutable $day, array $classes, array $duties, array $guardias, array $meetings, array $frame, array $plansByClass): array
+    private function timedBlocks(\DateTimeImmutable $day, array $classes, array $duties, array $guardias, array $meetings, array $frame, array $plansByClass, bool $own): array
     {
         $dayKey = $day->format('Y-m-d');
         $blocks = [];
 
         // Una hora de guardia con alguien ya a quien cubrir la cuenta su cobertura (abajo), que dice más:
         // a quién y dónde. Pintar las dos sería el mismo rato dos veces.
+        // Someone else's cover sheet only opens for whoever can read the Guardias area: being on the
+        // leadership team does not grant that by itself, and a link that answers 403 is worse than none.
+        $coverLinks = $own || $this->isGranted(AreaVoter::READ, Area::GUARDIAS);
         $covered = array_flip(array_map(static fn (GuardiaCover $g): int => $g->getSlotIndex(), $guardias));
         foreach ($duties as $duty) {
             if (isset($covered[$duty->slotIndex])) {
@@ -442,7 +505,7 @@ final class CalendarController extends AbstractController
                 $duty->endsAt,
                 $duty->label(),
                 null,
-                $this->generateUrl('guardia_mine'),
+                $own ? $this->generateUrl('guardia_mine') : null,
                 self::GUARDIA_COLOR,
             );
         }
@@ -457,8 +520,8 @@ final class CalendarController extends AbstractController
                 $class->startsAt,
                 $class->endsAt,
                 [] !== $groups ? implode(', ', $groups) : $class->ordinal.'ª hora',
-                $this->classSubtitle($class, $plansByClass[$dayKey.'|'.$class->slotIndex] ?? null),
-                $this->generateUrl('lesson_plan', ['fecha' => $dayKey, 'tramo' => $class->slotIndex]),
+                $this->classSubtitle($class, $plansByClass[$dayKey.'|'.$class->slotIndex] ?? null, $own),
+                $own ? $this->generateUrl('lesson_plan', ['fecha' => $dayKey, 'tramo' => $class->slotIndex]) : null,
                 $this->colorClassFor(implode(',', $groups)),
                 $class->isRelocated(),
             );
@@ -474,8 +537,8 @@ final class CalendarController extends AbstractController
                 CalendarDate::at($day, $times['startsAt']),
                 CalendarDate::at($day, $times['endsAt']),
                 'Guardia'.(null !== $guardia->effectiveRoomName() ? ' · '.$guardia->effectiveRoomName() : ''),
-                'Cubres a '.$guardia->getAbsentTeacher()->getFullName().(null !== $guardia->getGroupName() ? ' · '.$guardia->getGroupName() : ''),
-                $this->generateUrl('guardia_cover_show', ['id' => $guardia->getId()]),
+                ($own ? 'Cubres a ' : 'Cubre a ').$guardia->getAbsentTeacher()->getFullName().(null !== $guardia->getGroupName() ? ' · '.$guardia->getGroupName() : ''),
+                $coverLinks ? $this->generateUrl('guardia_cover_show', ['id' => $guardia->getId()]) : null,
                 self::GUARDIA_COLOR,
                 $guardia->isNotCovered(),
             );
@@ -513,8 +576,15 @@ final class CalendarController extends AbstractController
     /**
      * A class block's subtitle: its subject and real room, and what its plan says (or "sin programar"
      * when there is none) — the same chain a plan's topics read as in {@see \App\Controller\LessonPlanController}.
+     * On someone else's calendar only the subject and room: their lesson plans are not shown.
+     *
+     * @param ClassSession    $class the class
+     * @param LessonPlan|null $plan  its lesson plan, if any
+     * @param bool            $own   whether the calendar is the viewer's own
+     *
+     * @return string the subtitle
      */
-    private function classSubtitle(ClassSession $class, ?LessonPlan $plan): string
+    private function classSubtitle(ClassSession $class, ?LessonPlan $plan, bool $own): string
     {
         $parts = [];
         if ([] !== $class->subjects()) {
@@ -524,6 +594,9 @@ final class CalendarController extends AbstractController
             $parts[] = implode(', ', $class->rooms());
         }
 
+        if (!$own) {
+            return implode(' · ', $parts); // Their lesson plans are theirs: not even whether there is one.
+        }
         if (null === $plan) {
             $parts[] = 'sin programar';
 

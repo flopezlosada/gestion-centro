@@ -9,6 +9,9 @@ namespace App\Agenda;
  * drawn as a block sized to its real duration instead of a line of text. Personal events are not blocks
  * on purpose — their one-tap "done" toggle is a form, which cannot nest inside a block's link — and
  * neither is anything without a clock time (a task); both stay in the day's plain list.
+ *
+ * {@see $href} is null when the block opens nothing for this viewer — a class or duty on someone
+ * else's calendar, whose lesson plan and guardia sheet are theirs.
  */
 final readonly class TimelineBlock
 {
@@ -18,7 +21,7 @@ final readonly class TimelineBlock
         public \DateTimeImmutable $endsAt,
         public string $title,
         public ?string $subtitle,
-        public string $href,
+        public ?string $href,
         public string $colorClass,
         public bool $flagged = false,
     ) {
