@@ -9,9 +9,9 @@ namespace App\Enum;
  *
  * A slot is either real teaching ({@see LECTIVE}, tied to a group/room/subject) or a non-teaching
  * duty: a {@see GUARDIA} (the teacher is on call to cover an absent colleague) or a
- * {@see COLLABORATOR} slot (support duty, e.g. the "aula de convivencia", used to cover only when
- * the ordinary guardias are not enough). The distinction is what lets the assignment engine know
- * who is available to cover each hour.
+ * {@see COLLABORATOR} slot (the guardia de apoyo — "Apoyo a los profesores de guardia" in
+ * Peñalara — used to cover only when the ordinary guardias are not enough). The distinction is
+ * what lets the assignment engine know who is available to cover each hour.
  */
 enum ScheduleActivityKind: string
 {
@@ -29,7 +29,7 @@ enum ScheduleActivityKind: string
         return match ($this) {
             self::LECTIVE => 'Lectiva',
             self::GUARDIA => 'Guardia',
-            self::COLLABORATOR => 'Colaborador',
+            self::COLLABORATOR => 'Guardia de apoyo',
         };
     }
 }
