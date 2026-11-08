@@ -15,10 +15,11 @@ use App\Enum\TimeSlotKind;
  *
  * How a guardia is recognised: in the resolved timetable a guardia row has no group, subject or room
  * and carries an {@code X_ACTIVIDAD} equal to the planificador export-code of a "materia" whose name
- * marks it as a guardia (or, for collaborator/support duty, "apoyo"/"convivencia"). The codes are
- * resolved by name here — never hard-coded — because the numeric value (65 in the sample) is a
- * per-centre, per-year local key. Everything with a group is teaching; any other duty (meetings,
- * irregular activities) is ignored, being neither coverable nor a covering duty.
+ * marks it as a guardia (or, for the guardia de apoyo, a guardia task that also says "apoyo" or
+ * "convivencia"). The codes are resolved by name here — never hard-coded — because the numeric
+ * value (65 in the sample) is a per-centre, per-year local key. Everything with a group is
+ * teaching; any other duty (meetings, irregular activities) is ignored, being neither coverable nor
+ * a covering duty.
  *
  * Pure and framework-free so it can be unit-tested on a small synthetic fixture.
  */
@@ -141,18 +142,24 @@ final class PenalaraTimetableParser
             $subjects[(string) $m->claveDeExportacion] = trim((string) $m->abreviatura);
         }
 
-        // Guardia and collaborator duties are non-teaching activities, modelled in the planificador as
+        // Guardia and guardia de apoyo duties are non-teaching activities, modelled in the planificador as
         // <tarea> elements (not <materia>); the resolved timetable's X_ACTIVIDAD references their code.
         $guardiaCodes = [];
         $collaboratorCodes = [];
         foreach ($plan->xpath('//tarea[claveDeExportacion]') ?: [] as $t) {
             $code = (string) $t->claveDeExportacion;
             $name = mb_strtolower(trim((string) $t->nombreCompleto).' '.trim((string) $t->nombre));
-            // Order matters: "Apoyo a los profesores de guardia" contains "guardia" too, so collaborator
-            // (apoyo/convivencia) must be tested before the plain guardia case.
+            // Only a guardia task can be a covering duty. "Apoyo"/"convivencia" alone are not enough: the
+            // planificador is full of teaching support ("Medidas de apoyo ordinario", "Apoyo en módulos
+            // profesionales") and tutoring ("planes de convivencia escolar") that must never be offered
+            // to cover a class. Within guardia tasks, "Apoyo a los profesores de guardia" is the support
+            // duty that only steps in when the ordinary guardias run out.
+            if (!str_contains($name, 'guardia')) {
+                continue;
+            }
             if (str_contains($name, 'apoyo') || str_contains($name, 'convivencia')) {
                 $collaboratorCodes[$code] = true;
-            } elseif (str_contains($name, 'guardia')) {
+            } else {
                 $guardiaCodes[$code] = true;
             }
         }

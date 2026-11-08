@@ -13,7 +13,7 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * The parser turns a Peñalara planificador (the name dictionary) plus a resolved timetable (SÉNECA)
- * into schedule DTOs: teaching cells named from the dictionary, guardia/collaborator duties detected
+ * into schedule DTOs: teaching cells named from the dictionary, guardia and guardia de apoyo duties detected
  * by their <tarea> code, other complementary activities dropped, and exact duplicates removed.
  *
  * It also reads the marco horario — the shape of the school day — which is the only place the recreos
@@ -64,6 +64,16 @@ final class PenalaraTimetableParserTest extends TestCase
                 <nombre>Apoyo</nombre>
                 <nombreCompleto>SEC - Apoyo a los profesores de guardia</nombreCompleto>
                 <claveDeExportacion>76</claveDeExportacion>
+            </tarea>
+            <tarea>
+                <nombre>Apoyo ordinario</nombre>
+                <nombreCompleto>SEC - Medidas de apoyo ordinario: Agrupamiento flexible en materias instrumentales</nombreCompleto>
+                <claveDeExportacion>50</claveDeExportacion>
+            </tarea>
+            <tarea>
+                <nombre>Tutoría convivencia</nombre>
+                <nombreCompleto>SEC-FP - Actividades de tutoría: planes convivencia escolar en colaboración con JE y Dep. Orient.</nombreCompleto>
+                <claveDeExportacion>61</claveDeExportacion>
             </tarea>
             <tarea>
                 <nombre>Reunión</nombre>
@@ -135,6 +145,48 @@ final class PenalaraTimetableParserTest extends TestCase
         $kinds = array_map(static fn (ScheduleEntryDto $e): string => $e->kind->value, $entries);
         sort($kinds);
         self::assertSame(['collaborator', 'guardia', 'lective'], $kinds);
+    }
+
+    /**
+     * Only a guardia task can be a covering duty: real planificadores are full of tasks that say
+     * "apoyo" or "convivencia" — teaching support, tutoring — and those must never land in the
+     * guardia de apoyo band. A support class with a group stays teaching; a tutoring hour is dropped.
+     */
+    public function testApoyoOrConvivenciaOutsideAGuardiaTaskIsNeverACoveringDuty(): void
+    {
+        $horario = <<<'XML'
+            <?xml version="1.0" encoding="UTF-8"?>
+            <SERVICIO modulo="HORARIOS">
+                <BLOQUE_DATOS>
+                    <grupo_datos seq="HORARIOS_REGULARES" registros="1">
+                        <grupo_datos seq="HORARIO_REGULAR_PROFESOR_1" registros="2">
+                            <dato nombre_dato="X_EMPLEADO">777</dato>
+                            <grupo_datos seq="ACTIVIDAD_1">
+                                <dato nombre_dato="N_DIASEMANA">2</dato>
+                                <dato nombre_dato="X_TRAMO">1000</dato>
+                                <dato nombre_dato="X_DEPENDENCIA">60</dato>
+                                <dato nombre_dato="X_UNIDAD">900</dato>
+                                <dato nombre_dato="X_OFERTAMATRIG">500</dato>
+                                <dato nombre_dato="X_MATERIAOMG">2000</dato>
+                                <dato nombre_dato="X_ACTIVIDAD">50</dato>
+                            </grupo_datos>
+                            <grupo_datos seq="ACTIVIDAD_2">
+                                <dato nombre_dato="N_DIASEMANA">3</dato>
+                                <dato nombre_dato="X_TRAMO">1001</dato>
+                                <dato nombre_dato="X_UNIDAD"></dato>
+                                <dato nombre_dato="X_ACTIVIDAD">61</dato>
+                            </grupo_datos>
+                        </grupo_datos>
+                    </grupo_datos>
+                </BLOQUE_DATOS>
+            </SERVICIO>
+            XML;
+
+        $entries = (new PenalaraTimetableParser())->parse(self::PLANIFICADOR, $horario)->entries;
+
+        self::assertCount(1, $entries);
+        self::assertSame(ScheduleActivityKind::LECTIVE, $entries[0]->kind);
+        self::assertSame('1ºA', $entries[0]->groupName);
     }
 
     public function testLectiveEntryResolvesNamesFromDictionary(): void

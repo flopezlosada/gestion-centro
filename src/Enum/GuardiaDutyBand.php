@@ -10,8 +10,8 @@ namespace App\Enum;
  * people gathered so far:
  *
  * - {@see self::GUARDIA}: the ordinary rota, straight from the timetable. Always used first.
- * - {@see self::COLLABORATOR}: support duty (the "aula de convivencia"), also in the timetable but
- *   meant as a fallback, not as part of the ordinary rota.
+ * - {@see self::COLLABORATOR}: the guardia de apoyo ("Apoyo a los profesores de guardia" in
+ *   Peñalara), also in the timetable but meant as a fallback, not as part of the ordinary rota.
  * - {@see self::SUPPORT}: a colleague the equipo directivo signed up BY HAND for one day and period
  *   because they happen to be free (their Bachillerato or CFGB group has finished lessons). Comes
  *   last of the three: it is a favour, not a duty.
@@ -58,7 +58,7 @@ enum GuardiaDutyBand: string
     {
         return match ($this) {
             self::GUARDIA => null,
-            self::COLLABORATOR => 'Colaborador',
+            self::COLLABORATOR => 'Guardia de apoyo',
             self::SUPPORT => 'Apoyo puntual',
         };
     }
@@ -72,7 +72,7 @@ enum GuardiaDutyBand: string
     {
         return match ($this) {
             self::GUARDIA => null,
-            self::COLLABORATOR => 'Colaborador: solo entra si no llega el profesorado de guardia',
+            self::COLLABORATOR => 'Guardia de apoyo: solo entra si no llega el profesorado de guardia',
             self::SUPPORT => 'Apoyo puntual dado de alta a mano para este día',
         };
     }
