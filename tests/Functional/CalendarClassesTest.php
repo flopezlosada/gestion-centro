@@ -7,7 +7,11 @@ namespace App\Tests\Functional;
 use App\Entity\Absence;
 use App\Entity\AcademicYear;
 use App\Entity\GuardiaCover;
+use App\Entity\PersonalEvent;
+use App\Entity\Role;
 use App\Entity\User;
+use App\Enum\Area;
+use App\Enum\PermissionLevel;
 use App\Enum\Weekday;
 use App\Tests\Support\BuildsTheCentresTimetable;
 use Doctrine\ORM\EntityManagerInterface;
@@ -126,5 +130,120 @@ final class CalendarClassesTest extends WebTestCase
         $crawler = $this->client->request('GET', '/calendario?vista=dia&fecha=2026-01-12');
 
         self::assertCount(0, $crawler->filter('.cal-block--class'));
+    }
+
+    /**
+     * Dirección ve el horario de un docente: sus clases, con materia y aula, pero sin enlace a su
+     * programación ni rastro de si la tiene — eso es de quien da la clase.
+     */
+    public function testTheLeadershipSeesATeachersClassesWithoutTheirLessonPlans(): void
+    {
+        $this->client->loginUser($this->director());
+        $crawler = $this->client->request('GET', '/calendario?vista=dia&fecha=2026-01-12&docente='.$this->teacher->getId());
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('h1', 'Horario de Carolina Calendario');
+        $block = $crawler->filter('.cal-block--class');
+        self::assertCount(1, $block);
+        self::assertSame('div', $block->nodeName(), 'sin enlace a la programación de otra persona');
+        self::assertStringContainsString('S ACTOS', $block->filter('.cal-block__subtitle')->text());
+        self::assertStringNotContainsString('programar', $block->filter('.cal-block__subtitle')->text());
+    }
+
+    /**
+     * Su agenda personal no sale, y el mes (que solo tendría tareas y eventos) cae a la semana. Los
+     * enlaces de navegación conservan a quién se mira.
+     */
+    public function testTheLeadershipNeverSeesTheTeachersPersonalAgenda(): void
+    {
+        $this->em->persist(new PersonalEvent($this->teacher, 'Médico privado', new \DateTimeImmutable('2026-01-12 17:00')));
+        $this->em->flush();
+
+        $this->client->loginUser($this->director());
+        $crawler = $this->client->request('GET', '/calendario?vista=mes&fecha=2026-01-12&docente='.$this->teacher->getId());
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(1, $crawler->filter('.calendar--week'), 'el mes cae a la semana');
+        self::assertStringNotContainsString('Médico privado', $crawler->text());
+        self::assertCount(0, $crawler->filter('a[href^="/agenda"]'), 'ni crear ni editar eventos de otra persona');
+        self::assertStringContainsString('docente='.$this->teacher->getId(), (string) $crawler->filter('a[rel="next"]')->attr('href'));
+    }
+
+    /** Solo dirección (y admin) tiene el selector; los demás ni lo ven ni pueden pedir el de otro. */
+    public function testOnlyTheLeadershipGetsThePickerAndAnyoneElseIsRefused(): void
+    {
+        $other = (new User())->setFullName('Otra Persona')->setEmail('otra2.cal@educa.madrid.org');
+        $this->em->persist($other);
+        $this->em->flush();
+
+        $this->client->loginUser($other);
+        $crawler = $this->client->request('GET', '/calendario?vista=semana&fecha=2026-01-12');
+        self::assertCount(0, $crawler->filter('select#docente'));
+
+        $this->client->request('GET', '/calendario?vista=semana&fecha=2026-01-12&docente='.$this->teacher->getId());
+        self::assertResponseStatusCodeSame(403);
+
+        $this->client->loginUser($this->director());
+        $crawler = $this->client->request('GET', '/calendario?vista=semana&fecha=2026-01-12');
+        self::assertStringContainsString('Carolina Calendario', $crawler->filter('select#docente')->text());
+    }
+
+    /**
+     * Las guardias que se ven son las del docente mirado, no las de quien mira; y sin acceso al área de
+     * Guardias, el bloque no enlaza a una ficha que le daría 403.
+     */
+    public function testTheLeadershipSeesTheTeachersCoversNotTheirOwn(): void
+    {
+        $director = $this->director();
+        $absent = (new User())->setFullName('Ausente Calendario')->setEmail('ausente2.cal@educa.madrid.org');
+        $this->em->persist($absent);
+        $date = new \DateTimeImmutable('2026-01-12');
+        $absence = (new Absence())->setAbsentTeacher($absent)->setDate($date)->addSlotIndexes([2, 4]);
+        $this->em->persist($absence);
+        $this->em->persist((new GuardiaCover())->setAbsence($absence)->setDate($date)->setSlotIndex(2)
+            ->setAbsentTeacher($absent)->setAssignedGuardia($this->teacher)->setGroupName('1ºA'));
+        $this->em->persist((new GuardiaCover())->setAbsence($absence)->setDate($date)->setSlotIndex(4)
+            ->setAbsentTeacher($absent)->setAssignedGuardia($director)->setGroupName('2ºB'));
+        $this->em->flush();
+
+        $this->client->loginUser($director);
+        $crawler = $this->client->request('GET', '/calendario?vista=dia&fecha=2026-01-12&docente='.$this->teacher->getId());
+
+        $covers = $crawler->filter('.cal-block--guardia');
+        self::assertCount(1, $covers, 'solo la del docente, no la de dirección');
+        self::assertStringContainsString('Cubre a Ausente Calendario · 1ºA', $covers->text());
+        self::assertSame('div', $covers->nodeName());
+    }
+
+    /** Un id que no existe, o de alguien dado de baja, es un 404: no el calendario propio con otro título. */
+    public function testAnUnknownOrInactiveTeacherIsNotFound(): void
+    {
+        $gone = (new User())->setFullName('Ya No Está')->setEmail('baja.cal@educa.madrid.org')->setActive(false);
+        $this->em->persist($gone);
+        $this->em->flush();
+
+        $this->client->loginUser($this->director());
+        $this->client->request('GET', '/calendario?vista=semana&docente=999999');
+        self::assertResponseStatusCodeSame(404);
+
+        $this->client->request('GET', '/calendario?vista=semana&docente='.$gone->getId());
+        self::assertResponseStatusCodeSame(404);
+    }
+
+    /**
+     * Someone in dirección: a role that reads the Administración area, which is what
+     * {@see \App\Service\MeetingAccess::isLeadership()} counts as equipo directivo.
+     *
+     * @return User the persisted director
+     */
+    private function director(): User
+    {
+        $role = (new Role())->setCode('direccion')->setName('Dirección')->setLevel(Area::ADMINISTRATION, PermissionLevel::READ);
+        $this->em->persist($role);
+        $director = (new User())->setFullName('Directora Calendario')->setEmail('directora.cal@educa.madrid.org')->addAssignedRole($role);
+        $this->em->persist($director);
+        $this->em->flush();
+
+        return $director;
     }
 }

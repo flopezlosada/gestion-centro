@@ -2,10 +2,13 @@
 {% import '_macros/calendar.html.twig' as cal %}
 
 <div class="calendar-dayview">
-    <div class="calendar-dayview-actions">
-        {# Alta rápida del propio día (botón visible, no el "+" de hover de la rejilla). #}
-        {{ cal.add_menu(day, 'inline') }}
-    </div>
+    {# Alta rápida del propio día (botón visible, no el "+" de hover de la rejilla). En el horario de
+       otra persona no se crea nada: lo que se creara sería del que mira, no suyo. #}
+    {% if viewedTeacher is null %}
+        <div class="calendar-dayview-actions">
+            {{ cal.add_menu(day, 'inline') }}
+        </div>
+    {% endif %}
 
     {% if day.nonLective %}
         <p class="calendar-dayview-flag calendar-dayview-flag--nonlective">
@@ -28,7 +31,12 @@
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5"/></svg>
                     </span>
                     <div class="agenda-body">
-                        <a href="{{ path('lesson_plan', { fecha: day.date|date('Y-m-d', false), tramo: c.slotIndex }) }}" class="agenda-title">{{ c.ordinal }}ª hora · {{ c.groups|join(', ') }}{% if c.subjects is not empty %} · {{ c.subjects|join(', ') }}{% endif %}</a>
+                        {% set classTitle %}{{ c.ordinal }}ª hora · {{ c.groups|join(', ') }}{% if c.subjects is not empty %} · {{ c.subjects|join(', ') }}{% endif %}{% endset %}
+                        {% if viewedTeacher is null %}
+                            <a href="{{ path('lesson_plan', { fecha: day.date|date('Y-m-d', false), tramo: c.slotIndex }) }}" class="agenda-title">{{ classTitle }}</a>
+                        {% else %}
+                            <span class="agenda-title">{{ classTitle }}</span>
+                        {% endif %}
                         <span class="agenda-meta">Clase · sin horario del curso</span>
                     </div>
                 </li>

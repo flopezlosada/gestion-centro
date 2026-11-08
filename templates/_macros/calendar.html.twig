@@ -114,9 +114,10 @@
 #}
 {% macro timeline_block(pos, compact = false) %}
     {% set b = pos.block %}
-    <a class="cal-block{{ compact ? ' cal-block--compact' }} cal-block--{{ b.kind }} {{ b.colorClass }}{{ b.flagged ? ' is-flagged' }}" style="top: {{ pos.top }}%; height: {{ pos.height }}%; left: {{ pos.left }}%; width: {{ pos.width }}%" href="{{ b.href }}" title="{{ b.startsAt|date('H:i') }}–{{ b.endsAt|date('H:i') }} · {{ b.title }}{% if b.subtitle %} · {{ b.subtitle }}{% endif %}">
+    {%- set tag = b.href ? 'a' : 'div' -%}
+    <{{ tag }} class="cal-block{{ compact ? ' cal-block--compact' }} cal-block--{{ b.kind }} {{ b.colorClass }}{{ b.flagged ? ' is-flagged' }}" style="top: {{ pos.top }}%; height: {{ pos.height }}%; left: {{ pos.left }}%; width: {{ pos.width }}%"{% if b.href %} href="{{ b.href }}"{% endif %} title="{{ b.startsAt|date('H:i') }}–{{ b.endsAt|date('H:i') }} · {{ b.title }}{% if b.subtitle %} · {{ b.subtitle }}{% endif %}">
         <span class="cal-block__time">{{ b.startsAt|date('H:i') }}–{{ b.endsAt|date('H:i') }}</span>
         <span class="cal-block__title">{{ b.title }}</span>
         {% if b.subtitle %}<span class="cal-block__subtitle">{{ b.subtitle }}</span>{% endif %}
-    </a>
+    </{{ tag }}>
 {% endmacro %}
