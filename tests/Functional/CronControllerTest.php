@@ -146,5 +146,10 @@ final class CronControllerTest extends WebTestCase
             $runs,
             'El borrado de ausencias es diario y viaja en este endpoint: si no, en esta vía no se borraría ninguna.'
         );
+        self::assertArrayHasKey(
+            CentreCronManifest::CRON_PURGE_FAMILY_ACCOUNTS,
+            $runs,
+            'El borrado de cuentas de familias de cursos pasados viaja en este endpoint: si no, en esta vía no se borraría ninguna.'
+        );
     }
 }

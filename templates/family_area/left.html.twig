@@ -1,0 +1,16 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Cuenta borrada · {{ app_organization_name }}{% endblock %}
+
+{% block shell %}
+    <div class="auth">
+        <div class="auth-card">
+            <div class="brand-mark brand-mark--lg">{{ include('partials/_brand_mark.html.twig', { size: 76, wordmark: true }) }}</div>
+
+            <p class="eyebrow">Espacio de familias</p>
+            <h1>Cuenta borrada</h1>
+            <p class="auth-lead">Hemos borrado tu cuenta y tus datos: tu nombre, tu correo, las actividades a las que te habías apuntado y los días en que podías venir. Gracias por colaborar.</p>
+            <p class="auth-hint">Si más adelante quieres volver, pídele al centro que te dé de alta de nuevo.</p>
+        </div>
+    </div>
+{% endblock %}

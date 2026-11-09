@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Repository;
 
-use App\Entity\PrivacyNotice;
 use App\Entity\PrivacyNoticeAck;
+use App\Entity\StaffPrivacyNotice;
 use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
@@ -24,11 +24,11 @@ class PrivacyNoticeAckRepository extends ServiceEntityRepository
      * Whether a person has read one version.
      *
      * @param User          $user   the person
-     * @param PrivacyNotice $notice the version
+     * @param StaffPrivacyNotice $notice the version
      *
      * @return bool true if they acknowledged that version
      */
-    public function hasAcknowledged(User $user, PrivacyNotice $notice): bool
+    public function hasAcknowledged(User $user, StaffPrivacyNotice $notice): bool
     {
         return null !== $this->findOneBy(['user' => $user, 'notice' => $notice]);
     }
@@ -37,11 +37,11 @@ class PrivacyNoticeAckRepository extends ServiceEntityRepository
      * How many ACTIVE people have read one version, for the admin screen. Inactive accounts cannot sign
      * in, so they could never read it and would only make the count look worse than it is.
      *
-     * @param PrivacyNotice $notice the version
+     * @param StaffPrivacyNotice $notice the version
      *
      * @return int the number of active people who acknowledged it
      */
-    public function countActiveReaders(PrivacyNotice $notice): int
+    public function countActiveReaders(StaffPrivacyNotice $notice): int
     {
         return (int) $this->createQueryBuilder('a')
             ->select('COUNT(a.id)')

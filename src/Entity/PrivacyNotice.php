@@ -10,18 +10,22 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
- * One published version of the data-protection information the staff must read (art. 13 GDPR).
+ * One published version of the data-protection information, for one audience: the staff
+ * ({@see StaffPrivacyNotice}) or the families who volunteer ({@see FamilyPrivacyNotice}). Each audience
+ * has its own text and its own current version, and the proof each one leaves points at its own type, so
+ * a member of staff can never be recorded as having read the families' text, nor the other way round.
  *
  * Immutable on purpose: every acknowledgement points at the exact text that person read, so a row is
  * never edited — a change, even a typo, is published as a new version and everyone reads it again. The
  * current version is simply the latest one ({@see PrivacyNoticeRepository::findCurrent()}).
  *
- * It is information, not consent: a public school processes its staff's data under a legal obligation
- * and a public-interest task, so there is nothing to "accept" — only proof that people were informed.
  */
 #[ORM\Entity(repositoryClass: PrivacyNoticeRepository::class)]
 #[ORM\Table(name: 'privacy_notice')]
-class PrivacyNotice implements Auditable
+#[ORM\InheritanceType('SINGLE_TABLE')]
+#[ORM\DiscriminatorColumn(name: 'audience', type: 'string', length: 20)]
+#[ORM\DiscriminatorMap(['staff' => StaffPrivacyNotice::class, 'families' => FamilyPrivacyNotice::class])]
+abstract class PrivacyNotice implements Auditable
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]

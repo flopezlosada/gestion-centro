@@ -16,7 +16,7 @@ use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
 /**
- * Keeps a signed-in person on the data-protection reading screen until they have read the version in
+ * Keeps a signed-in member of staff on the data-protection reading screen until they have read the version in
  * force. Checked on every request, not only at sign-in: a new version published while someone is
  * already working has to reach them too, and a session can last all day.
  *
@@ -71,7 +71,7 @@ final class PrivacyNoticeGateSubscriber implements EventSubscriberInterface
             return;
         }
 
-        $current = $this->notices->findCurrent();
+        $current = $this->notices->findCurrentForStaff();
         if (null === $current) {
             return;
         }

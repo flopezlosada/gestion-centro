@@ -6,6 +6,8 @@ namespace App\Tests\Functional;
 
 use App\Contract\AuditRedacted;
 use App\Entity\AuditLog;
+use App\Entity\FamilyConsent;
+use App\Entity\FamilyPrivacyNotice;
 use App\Entity\OneOffFamilyActivity;
 use App\Family\FamilySessions;
 use App\Entity\FamilyAvailability;
@@ -46,6 +48,8 @@ final class FamilyAreaTest extends WebTestCase
     private KernelBrowser $client;
     private EntityManagerInterface $em;
     private int $organizers = 0;
+    /** The families' text in force, already accepted by every family {@see family()} creates. */
+    private FamilyPrivacyNotice $familyNotice;
 
     protected function setUp(): void
     {
@@ -54,6 +58,12 @@ final class FamilyAreaTest extends WebTestCase
         self::getContainer()->get(AppSettings::class)->setFamilyActivitiesEnabled(true);
         // A Tuesday: the dates below, relative to it, fall Monday to Friday whatever day CI runs on.
         self::mockTime(self::TODAY.' 08:00');
+        // Without a families' text no family gets past the consent screen (FamilyConsentTest); here every
+        // family has accepted it, so the tests reach what they are about.
+        $publisher = $this->user('dpd@centro.test');
+        $this->familyNotice = new FamilyPrivacyNotice('Responsable: el centro', 'Información completa', $publisher, new \DateTimeImmutable());
+        $this->em->persist($this->familyNotice);
+        $this->em->flush();
     }
 
     public function testWithTheModuleOffNothingOfTheFamiliesAreaAnswers(): void
@@ -200,7 +210,10 @@ final class FamilyAreaTest extends WebTestCase
         $this->client->request('GET', '/familias');
         self::assertResponseIsSuccessful();
 
-        $this->em->remove($this->em->find(FamilyVolunteer::class, $family->getId()));
+        // Cleared first: the family's consent, still in the identity map, would point at a removed account.
+        $id = $family->getId();
+        $this->em->clear();
+        $this->em->remove($this->em->find(FamilyVolunteer::class, $id));
         $this->em->flush();
 
         $this->client->request('GET', '/familias');
@@ -909,12 +922,13 @@ final class FamilyAreaTest extends WebTestCase
     /**
      * @param string $email the address
      *
-     * @return FamilyVolunteer a persisted (not yet flushed) family account
+     * @return FamilyVolunteer a persisted (not yet flushed) family account, which has accepted the families' text
      */
     private function family(string $email): FamilyVolunteer
     {
         $family = (new FamilyVolunteer())->setFullName('Familia '.explode('@', $email)[0])->setEmail($email);
         $this->em->persist($family);
+        $this->em->persist(new FamilyConsent($family, $this->familyNotice, new \DateTimeImmutable()));
 
         return $family;
     }

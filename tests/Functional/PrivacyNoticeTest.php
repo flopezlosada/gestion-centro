@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
-use App\Entity\PrivacyNotice;
 use App\Entity\PrivacyNoticeAck;
 use App\Entity\Role;
+use App\Entity\StaffPrivacyNotice;
 use App\Entity\User;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -156,7 +156,7 @@ final class PrivacyNoticeTest extends WebTestCase
 
         self::assertResponseRedirects('/admin/proteccion-datos');
         $this->em->clear();
-        $notices = $this->em->getRepository(PrivacyNotice::class)->findBy([], ['id' => 'ASC']);
+        $notices = $this->em->getRepository(StaffPrivacyNotice::class)->findBy([], ['id' => 'ASC']);
         self::assertCount(2, $notices);
         self::assertSame('Primera', $notices[0]->getSummary());
         self::assertSame('Segunda', $notices[1]->getSummary());
@@ -200,11 +200,11 @@ final class PrivacyNoticeTest extends WebTestCase
      * @param User   $publisher who publishes it
      * @param string $summary   its short text
      *
-     * @return PrivacyNotice the persisted version
+     * @return StaffPrivacyNotice the persisted version
      */
-    private function publish(User $publisher, string $summary): PrivacyNotice
+    private function publish(User $publisher, string $summary): StaffPrivacyNotice
     {
-        $notice = new PrivacyNotice($summary, 'Información completa', $publisher, new \DateTimeImmutable());
+        $notice = new StaffPrivacyNotice($summary, 'Información completa', $publisher, new \DateTimeImmutable());
         $this->em->persist($notice);
         $this->em->flush();
 

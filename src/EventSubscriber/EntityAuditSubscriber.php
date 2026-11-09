@@ -40,6 +40,13 @@ final class EntityAuditSubscriber
      */
     private array $pending = [];
 
+    /**
+     * Who made the changes of the current flush, taken in onFlush: by postFlush a family that has just
+     * removed its own account has lost its id (executeDeletions() nulls it), and would be recorded as
+     * nobody in particular.
+     */
+    private ?string $actor = null;
+
     /** True while writing log rows, so the resulting flush does not recurse into this listener. */
     private bool $persisting = false;
 
@@ -61,6 +68,7 @@ final class EntityAuditSubscriber
         // Never carry over records from a previous flush: if the owning flush threw between onFlush
         // and postFlush, those records describe changes that never hit the database.
         $this->pending = [];
+        $this->actor = AuditActor::of($this->security->getUser());
 
         $em = $args->getObjectManager();
         $uow = $em->getUnitOfWork();
@@ -127,7 +135,7 @@ final class EntityAuditSubscriber
         $records = $this->pending;
         $this->pending = [];
         $em = $args->getObjectManager();
-        $actor = AuditActor::of($this->security->getUser());
+        $actor = $this->actor;
         // A deliberate change may carry a human reason set by the controller (e.g. why a guardia was
         // reassigned). Consumed once, so it tags only this flush's entries and never leaks onward.
         $reason = $this->auditContext->consumeReason();

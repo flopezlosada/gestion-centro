@@ -1352,6 +1352,16 @@ main:has(> .flash) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-ancho
 .family-area__bar .brand-name { font-family: var(--font-display); font-size: 17px; }
 .family-area__who { display: inline-flex; gap: 14px; align-items: baseline; color: var(--text-muted); font-size: 14px; }
 .family-area__page { width: 100%; max-width: 1120px; margin: 0 auto; }
+/* Pie discreto, pero siempre ahí: la información y darse de baja, a un clic desde cualquier página. */
+.family-area__foot {
+    display: flex; justify-content: center; align-items: baseline; gap: 20px; flex-wrap: wrap;
+    margin-top: auto; padding: 16px 24px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-muted);
+}
+.family-area__foot a { color: inherit; }
+.family-area__leave {
+    padding: 0; border: 0; background: none; font: inherit; color: inherit; text-decoration: underline; cursor: pointer;
+}
+.family-area__leave:hover, .family-area__foot a:hover { color: var(--text); }
 
 /* ---- Calendario semanal de actividades con familias -------------------- */
 /* La semana de guardias (.week-days, .week-chip) con lo propio de una sesión: el título manda aunque la
@@ -1509,6 +1519,7 @@ a.family-chip:not(.week-chip--accent):hover, a.family-chip:not(.week-chip--accen
 
 .privacy-sheet__foot { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--border); text-align: center; }
 .privacy-sheet__foot .btn { width: 100%; padding: 13px; font-size: 15px; }
+.privacy-sheet__foot form + form { margin-top: 10px; }
 .privacy-sheet__note { margin: 14px auto 0; max-width: 52ch; font-size: 13px; line-height: 1.5; color: var(--text-muted); }
 .privacy-sheet__exit { display: inline-block; margin-top: 12px; font-size: 13px; color: var(--text-faint); }
 .privacy-sheet__exit:hover { color: var(--text); }
