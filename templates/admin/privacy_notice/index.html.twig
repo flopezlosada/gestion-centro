@@ -20,13 +20,13 @@
     </div>
 
     <nav class="tabs" aria-label="Para quién es el texto">
-        <a class="{{ not families ? 'is-active' }}" href="{{ path('admin_privacy_notice_index') }}"{{ not families ? ' aria-current="page"' }}>Personal</a>
-        <a class="{{ families ? 'is-active' }}" href="{{ path('admin_privacy_notice_index', { para: 'familias' }) }}"{{ families ? ' aria-current="page"' }}>Familias</a>
+        <a class="tab{{ not families ? ' is-active' }}" href="{{ path('admin_privacy_notice_index') }}"{{ not families ? ' aria-current="page"' }}>Personal</a>
+        <a class="tab{{ families ? ' is-active' }}" href="{{ path('admin_privacy_notice_index', { para: 'familias' }) }}"{{ families ? ' aria-current="page"' }}>Familias</a>
     </nav>
 
     <div class="card">
         {% if current %}
-            <h2>Versión en vigor</h2>
+            <h2>Versión en vigor {{ families ? 'para las familias' : 'para el personal' }}</h2>
             {% if families %}
                 <p>Publicada el {{ current.publishedAt|date('d/m/Y \\a \\l\\a\\s H:i') }}{% if current.publishedBy %} por {{ current.publishedBy.fullName }}{% endif %}. La han aceptado <strong>{{ readers }} de {{ audienceSize }}</strong> familias con cuenta.</p>
                 <p><a href="{{ path('family_privacy_public') }}">Ver cómo se muestra</a></p>
@@ -51,7 +51,7 @@
               : 'Al publicar, todo el personal tendrá que volver a leerla y pulsar «Entendido» antes de seguir. ¿Publicar?' }}">
         <input type="hidden" name="_token" value="{{ csrf_token('privacy_notice_publish') }}">
         {% if families %}<input type="hidden" name="para" value="familias">{% endif %}
-        <h2>{{ current ? 'Publicar una versión nueva' : 'Publicar la primera versión' }}</h2>
+        <h2>{{ current ? 'Publicar una versión nueva' : 'Publicar la primera versión' }} {{ families ? 'para las familias' : 'para el personal' }}</h2>
         <p class="help">Una versión publicada no se edita; cualquier cambio, aunque sea una errata, es una versión nueva.</p>
 
         <div class="field">
