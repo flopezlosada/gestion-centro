@@ -1,0 +1,19 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Protección de datos · Espacio de familias · {{ app_organization_name }}{% endblock %}
+
+{% block shell %}
+    <main class="privacy-page">
+        <article class="privacy-sheet">
+            {% if notice %}
+                {{ include('privacy_notice/_head.html.twig', { lead: 'Qué datos de las familias colaboradoras usa el centro en su espacio, para qué y con qué derechos.' }) }}
+                {{ include('privacy_notice/_text.html.twig', { open: true }) }}
+            {% else %}
+                {{ include('privacy_notice/_head.html.twig', { lead: 'El centro todavía no ha publicado la información sobre protección de datos para familias.' }) }}
+            {% endif %}
+            <footer class="privacy-sheet__foot">
+                <a class="btn secondary" href="{{ path('family_home') }}">Ir al espacio de familias</a>
+            </footer>
+        </article>
+    </main>
+{% endblock %}

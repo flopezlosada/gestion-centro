@@ -21,5 +21,16 @@
             {{ include('partials/_flashes.html.twig') }}
             {% block body %}{% endblock %}
         </main>
+        {% if app.user %}
+            {# Retirar el consentimiento tiene que ser tan fácil como darlo: a un botón desde cualquier página. #}
+            <footer class="family-area__foot">
+                <a href="{{ path('family_privacy_public') }}">Protección de datos</a>
+                <form method="post" action="{{ path('family_leave') }}"
+                      data-confirm="Se borrarán tu cuenta y tus datos (las actividades a las que te has apuntado y los días en que puedes venir), y ya no podrás entrar. ¿Darte de baja?">
+                    <input type="hidden" name="_token" value="{{ csrf_token('family_leave') }}">
+                    <button class="family-area__leave" type="submit">Darme de baja</button>
+                </form>
+            </footer>
+        {% endif %}
     </div>
 {% endblock %}

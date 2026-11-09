@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit;
 
-use App\Entity\PrivacyNotice;
+use App\Entity\StaffPrivacyNotice;
 use App\Entity\User;
 use PHPUnit\Framework\TestCase;
 
@@ -51,7 +51,7 @@ final class PrivacyNoticeTest extends TestCase
      */
     public function testTheBodySplitsIntoParagraphsAtBlankLines(): void
     {
-        $notice = new PrivacyNotice('Resumen', "Primero\nsigue el primero\r\n  \r\nSegundo\n\n\nTercero", new User(), new \DateTimeImmutable());
+        $notice = new StaffPrivacyNotice('Resumen', "Primero\nsigue el primero\r\n  \r\nSegundo\n\n\nTercero", new User(), new \DateTimeImmutable());
 
         self::assertSame(["Primero\nsigue el primero", 'Segundo', 'Tercero'], $notice->bodyParagraphs());
     }
@@ -59,10 +59,10 @@ final class PrivacyNoticeTest extends TestCase
     /**
      * @param string $summary the summary text
      *
-     * @return PrivacyNotice a version with that summary
+     * @return StaffPrivacyNotice a version with that summary
      */
-    private function notice(string $summary): PrivacyNotice
+    private function notice(string $summary): StaffPrivacyNotice
     {
-        return new PrivacyNotice($summary, 'Completa', new User(), new \DateTimeImmutable());
+        return new StaffPrivacyNotice($summary, 'Completa', new User(), new \DateTimeImmutable());
     }
 }

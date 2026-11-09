@@ -6,6 +6,7 @@ namespace App\Repository;
 
 use App\Entity\FamilyVolunteer;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
@@ -38,5 +39,24 @@ class FamilyVolunteerRepository extends ServiceEntityRepository
     public function findOneByEmail(string $email): ?FamilyVolunteer
     {
         return $this->findOneBy(['email' => strtolower(trim($email))]);
+    }
+
+    /**
+     * Deletes, in one statement, every account created before that instant. Its signups, days available
+     * and consents go with it through ON DELETE CASCADE in the database, so nothing is loaded first. A bulk
+     * statement leaves no row in the activity trail: the cron run records how many went.
+     *
+     * @param \DateTimeImmutable $instant the first creation instant that is kept
+     *
+     * @return int how many accounts were deleted
+     */
+    public function deleteCreatedBefore(\DateTimeImmutable $instant): int
+    {
+        return (int) $this->getEntityManager()->createQueryBuilder()
+            ->delete(FamilyVolunteer::class, 'f')
+            ->where('f.createdAt < :instant')
+            ->setParameter('instant', $instant, Types::DATETIME_IMMUTABLE)
+            ->getQuery()
+            ->execute();
     }
 }

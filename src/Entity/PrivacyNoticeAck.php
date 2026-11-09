@@ -28,19 +28,19 @@ class PrivacyNoticeAck
     private User $user;
 
     /** RESTRICT: a version somebody has read cannot be deleted, or the proof would point at nothing. */
-    #[ORM\ManyToOne(targetEntity: PrivacyNotice::class)]
+    #[ORM\ManyToOne(targetEntity: StaffPrivacyNotice::class)]
     #[ORM\JoinColumn(name: 'notice_id', referencedColumnName: 'id', nullable: false, onDelete: 'RESTRICT')]
-    private PrivacyNotice $notice;
+    private StaffPrivacyNotice $notice;
 
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $acknowledgedAt;
 
     /**
      * @param User               $user           who read it
-     * @param PrivacyNotice      $notice         the version they read
+     * @param StaffPrivacyNotice $notice         the version they read
      * @param \DateTimeImmutable $acknowledgedAt when they said so
      */
-    public function __construct(User $user, PrivacyNotice $notice, \DateTimeImmutable $acknowledgedAt)
+    public function __construct(User $user, StaffPrivacyNotice $notice, \DateTimeImmutable $acknowledgedAt)
     {
         $this->user = $user;
         $this->notice = $notice;
@@ -64,9 +64,9 @@ class PrivacyNoticeAck
     }
 
     /**
-     * @return PrivacyNotice the version they read
+     * @return StaffPrivacyNotice the version they read
      */
-    public function getNotice(): PrivacyNotice
+    public function getNotice(): StaffPrivacyNotice
     {
         return $this->notice;
     }

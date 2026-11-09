@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use App\Entity\PrivacyNotice;
 use App\Entity\PrivacyNoticeAck;
+use App\Entity\StaffPrivacyNotice;
 use App\Entity\User;
 use App\EventSubscriber\PrivacyNoticeGateSubscriber;
 use App\Repository\PrivacyNoticeAckRepository;
@@ -32,7 +32,7 @@ final class PrivacyNoticeController extends AbstractController
     #[Route('', name: 'privacy_notice_public', methods: ['GET'])]
     public function public(PrivacyNoticeRepository $notices): Response
     {
-        return $this->render('privacy_notice/public.html.twig', ['notice' => $notices->findCurrent()]);
+        return $this->render('privacy_notice/public.html.twig', ['notice' => $notices->findCurrentForStaff()]);
     }
 
     /**
@@ -42,7 +42,7 @@ final class PrivacyNoticeController extends AbstractController
     #[Route('/leer', name: 'privacy_notice_read', methods: ['GET'])]
     public function read(Request $request, #[CurrentUser] User $user, PrivacyNoticeRepository $notices, PrivacyNoticeAckRepository $acks): Response
     {
-        $notice = $notices->findCurrent();
+        $notice = $notices->findCurrentForStaff();
         $back = self::safeBack($request->query->getString('volver'));
         if (null === $notice || $acks->hasAcknowledged($user, $notice)) {
             return $this->redirect($back ?? $this->generateUrl('app_homepage'));
@@ -63,8 +63,9 @@ final class PrivacyNoticeController extends AbstractController
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
 
+        // Only a staff version: the families' text shares the table, and its id posted here must not pass.
         $notice = $notices->find($request->request->getInt('version'));
-        if (!$notice instanceof PrivacyNotice) {
+        if (!$notice instanceof StaffPrivacyNotice) {
             throw $this->createNotFoundException();
         }
 
