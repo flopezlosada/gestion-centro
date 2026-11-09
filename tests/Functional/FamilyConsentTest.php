@@ -248,7 +248,9 @@ final class FamilyConsentTest extends WebTestCase
     public function testTheFamiliesTextDoesNotStopTheStaff(): void
     {
         $this->publish('Solo para familias');
-        $this->client->loginUser($this->user('profe@centro.test'));
+        $teacher = $this->user('profe@centro.test');
+        $this->em->flush();
+        $this->client->loginUser($teacher);
 
         $this->client->request('GET', '/tareas');
 
@@ -262,8 +264,9 @@ final class FamilyConsentTest extends WebTestCase
     {
         $role = (new Role())->setCode('ROLE_ADMIN')->setName('Administración del sistema')->setAdmin(true);
         $this->em->persist($role);
-        $this->client->loginUser($this->user('admin@centro.test')->addAssignedRole($role));
+        $admin = $this->user('admin@centro.test')->addAssignedRole($role);
         $this->em->flush();
+        $this->client->loginUser($admin);
 
         $this->client->request('GET', '/admin/proteccion-datos?para=familias');
         $this->client->submitForm('Publicar', ['summary' => 'Para familias', 'body' => 'Completa']);

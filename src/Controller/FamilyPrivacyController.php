@@ -18,6 +18,7 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
 use Symfony\Component\Security\Http\Attribute\CurrentUser;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
@@ -100,12 +101,13 @@ final class FamilyPrivacyController extends AbstractController
      * Deletes the family's account, and with it its signups, its days available and its consents (all
      * hang from it with ON DELETE CASCADE). The same as the centre removing it, done by the family.
      *
-     * No sign-out is needed: the families' firewall reloads the account on every request, so the next one
-     * finds it gone and drops the session (and the "Recordarme" cookie with it). The page that says so is
-     * rendered here, without a redirect that would need the account.
+     * The session is emptied of the account here and now: left in it, the next request would try to reload
+     * an account whose id Doctrine has just nulled, and fail instead of finding it gone. A "Recordarme"
+     * cookie left behind names an account that no longer exists, and is refused and cleared on its next use.
+     * The page that says so is rendered here, without a redirect that would need the account.
      */
     #[Route('/baja', name: 'family_leave', methods: ['POST'])]
-    public function leave(Request $request, #[CurrentUser] FamilyVolunteer $family, EntityManagerInterface $em): Response
+    public function leave(Request $request, #[CurrentUser] FamilyVolunteer $family, EntityManagerInterface $em, TokenStorageInterface $tokens): Response
     {
         if (!$this->isCsrfTokenValid('family_leave', (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
@@ -113,6 +115,7 @@ final class FamilyPrivacyController extends AbstractController
 
         $em->remove($family);
         $em->flush();
+        $tokens->setToken(null);
 
         return $this->render('family_area/left.html.twig');
     }

@@ -210,7 +210,10 @@ final class FamilyAreaTest extends WebTestCase
         $this->client->request('GET', '/familias');
         self::assertResponseIsSuccessful();
 
-        $this->em->remove($this->em->find(FamilyVolunteer::class, $family->getId()));
+        // Cleared first: the family's consent, still in the identity map, would point at a removed account.
+        $id = $family->getId();
+        $this->em->clear();
+        $this->em->remove($this->em->find(FamilyVolunteer::class, $id));
         $this->em->flush();
 
         $this->client->request('GET', '/familias');
