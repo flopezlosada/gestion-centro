@@ -7,6 +7,7 @@ namespace App\Form;
 use App\Entity\CopyRequest;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /**
  * Form-backing object for a {@see CopyRequest}. A DTO, like the rest of the project's forms: an empty
@@ -21,17 +22,14 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class CopyRequestFormData
 {
     /**
-     * How many copies of each thing to print, in the order of {@see \App\Entity\GuardiaCover::getPrintableDocuments()}
+     * What to print of each thing, in the order of {@see \App\Entity\GuardiaCover::getPrintableDocuments()}
      * — one entry per file, or a single one when there is no file (or in a standalone order). Each file
-     * gets its own number: the exercises go one per pupil, the answer key once.
+     * gets its own number (the exercises go one per pupil, the answer key once) and can be left out.
      *
-     * @var array<int, int|null>
+     * @var array<int, CopyRequestLineData>
      */
-    #[Assert\All([
-        new Assert\NotNull(message: 'Indica cuántas copias hacen falta.'),
-        new Assert\Range(min: 1, max: 500, notInRangeMessage: 'El número de copias debe estar entre {{ min }} y {{ max }}.'),
-    ])]
-    public array $copies = [null];
+    #[Assert\Valid]
+    public array $lines;
 
     public ?string $notes = null;
 
@@ -42,6 +40,11 @@ final class CopyRequestFormData
 
     /** The document to print; only asked for in a standalone order. */
     public ?UploadedFile $document = null;
+
+    public function __construct()
+    {
+        $this->lines = [new CopyRequestLineData()];
+    }
 
     /**
      * Prefills the same number of copies for each of the things to print.
@@ -54,25 +57,51 @@ final class CopyRequestFormData
     public static function forCount(int $count, ?int $copies): self
     {
         $data = new self();
-        $data->copies = array_fill(0, max(1, $count), $copies);
+        $data->lines = array_map(static fn (): CopyRequestLineData => CopyRequestLineData::printing($copies), range(1, max(1, $count)));
 
         return $data;
     }
 
     /**
-     * Writes the submitted values onto the order, one line per entry of {@see $copies}, each with the file
-     * at the same position, if any. Call only on valid data.
+     * Positions of the lines that go in the order, so the caller only prepares (copies to storage) the files
+     * that will actually be printed.
      *
-     * @param CopyRequest                                       $order the order to fill in
-     * @param list<array{path: string|null, name: string|null}> $files the files to print, in the order of
-     *                                                                 {@see $copies}; shorter (even empty)
-     *                                                                 when some lines carry no file
+     * @return list<int> zero-based positions, in order
+     */
+    public function printedPositions(): array
+    {
+        return array_keys(array_filter(array_values($this->lines), static fn (CopyRequestLineData $line): bool => $line->print));
+    }
+
+    /**
+     * An order with every file left out is no order: at least one has to be ticked.
+     *
+     * @param ExecutionContextInterface $context the validation context
+     */
+    #[Assert\Callback]
+    public function validateSomethingToPrint(ExecutionContextInterface $context): void
+    {
+        if ([] === $this->printedPositions()) {
+            $context->buildViolation('Marca al menos un archivo para imprimir.')->atPath('lines')->addViolation();
+        }
+    }
+
+    /**
+     * Writes the submitted values onto the order, one line per ticked entry of {@see $lines}, each with the
+     * file at the same position, if any. Lines left out are skipped. Call only on valid data.
+     *
+     * @param CopyRequest                                             $order the order to fill in
+     * @param array<int, array{path: string|null, name: string|null}> $files the files to print, keyed by their
+     *                                                                       position in {@see $lines}; missing
+     *                                                                       when a line carries no file
      *
      * @throws \LogicException when applied to data that did not pass validation
      */
     public function applyTo(CopyRequest $order, array $files = []): void
     {
-        foreach (array_values($this->copies) as $i => $copies) {
+        $lines = array_values($this->lines);
+        foreach ($this->printedPositions() as $i) {
+            $copies = $lines[$i]->copies;
             if (null === $copies) {
                 throw new \LogicException('El encargo se aplica solo tras validarse: falta el número de copias.');
             }

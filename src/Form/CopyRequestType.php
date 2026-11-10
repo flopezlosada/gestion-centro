@@ -9,7 +9,6 @@ use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\FileType;
 use Symfony\Component\Form\Extension\Core\Type\FormType;
 use Symfony\Component\Form\Extension\Core\Type\HiddenType;
-use Symfony\Component\Form\Extension\Core\Type\IntegerType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
@@ -23,8 +22,10 @@ use Symfony\Component\Validator\Constraints as Assert;
  * to print and what it is for are already known. A standalone order ({@code standalone: true}) also
  * asks for the document and for a one-line description, because nothing else can supply them.
  *
- * The number of copies is always required, one per file when there are several — an order that does not say how many is useless to whoever
- * stands at the photocopier, which was the centre's own open question.
+ * The number of copies is always required, one per file when there are several — an order that does not
+ * say how many is useless to whoever stands at the photocopier, which was the centre's own open question.
+ * With several files each can be left out: a bank task may bring the answer key or a picture nobody
+ * wants on paper.
  *
  * @extends AbstractType<CopyRequestFormData>
  */
@@ -49,22 +50,25 @@ final class CopyRequestType extends AbstractType
                 ]);
         }
 
-        // Una casilla por archivo, rotulada con su nombre: cada uno lleva sus copias. Sin archivos (o en un
-        // encargo suelto), una sola, «Número de copias».
-        $copies = $builder->create('copies', FormType::class, ['label' => false]);
+        // Una fila por archivo, rotulada con su nombre: cada uno lleva sus copias y, si hay más de uno, se
+        // puede dejar fuera. Sin archivos (o en un encargo suelto), una sola, «Número de copias».
+        $lines = $builder->create('lines', FormType::class, ['label' => false]);
         $files = $options['file_names'];
+        $choosable = \count($files) > 1;
         foreach ([] !== $files ? $files : [null] as $i => $name) {
-            $copies->add((string) $i, IntegerType::class, [
-                'label' => null !== $name ? sprintf('Copias de «%s»', $name) : 'Número de copias',
-                'attr' => ['min' => 1, 'max' => 500, 'inputmode' => 'numeric'],
-                'help' => 0 === $i ? 'Obligatorio: sin el número de copias el encargo no se puede preparar.' : null,
+            $lines->add((string) $i, CopyRequestLineType::class, [
+                'file_name' => $name,
+                'choosable' => $choosable,
+                'copies_help' => 0 === $i ? ($choosable
+                    ? 'Marca los archivos que hay que imprimir y cuántas copias de cada uno.'
+                    : 'Obligatorio: sin el número de copias el encargo no se puede preparar.') : null,
             ]);
         }
 
         $builder
             // Huella de los archivos con los que se pintó el formulario: el controlador la compara al enviar.
             ->add('files', HiddenType::class, ['mapped' => false, 'data' => $options['files_signature']])
-            ->add($copies)
+            ->add($lines)
             ->add('notes', TextareaType::class, [
                 'label' => 'Indicaciones',
                 'required' => false,

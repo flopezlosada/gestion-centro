@@ -5239,6 +5239,11 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 .copy-file .bank-doc { flex: 1; min-width: 0; margin-top: 0; }
 .copy-file__copies { flex: none; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted); }
 .form-row .copy-file__copies input[type="number"] { width: 5.5em; text-align: right; }
+/* Con varios archivos, cada uno se puede dejar fuera: el que no se imprime se apaga, y su número no cuenta. */
+.copy-file__print { flex: none; display: flex; align-items: center; cursor: pointer; }
+.copy-file__print input[type="checkbox"] { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
+.copy-file:has(.copy-file__print input:not(:checked)) .bank-doc,
+.copy-file:has(.copy-file__print input:not(:checked)) .copy-file__copies { opacity: .45; }
 /* Coger tarea del banco desde la propia línea del parte: dos acciones pequeñas en la celda de tarea. */
 .bank-pick { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-left: 8px; }
 /* Copias por clase en el alta de ausencia: mismo apilado que el adjunto de al lado. */
