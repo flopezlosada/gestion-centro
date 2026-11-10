@@ -308,6 +308,7 @@
                                         {% elseif cover.roomName %}
                                             <span class="parte-card__room">· {{ cover.roomName }}</span>
                                         {% endif %}
+                                        {% if cover.subjectName %}<span class="parte-card__subject">{{ cover.subjectName }}</span>{% endif %}
                                         <div class="parte-card__absent">Falta: {{ cover.absentTeacher.fullName }}</div>
                                     </div>
                                     {# Lo que contó quien cubrió: la coordinación resuelve desde esta pantalla, así
@@ -365,13 +366,15 @@
                     {# ================= ESCRITORIO: la tabla ================= #}
                     <table class="parte-table">
                         <thead>
-                            <tr><th>Grupo · Aula</th><th>Docente ausente</th><th>Tarea para el grupo</th><th>Cubre</th><th></th></tr>
+                            <tr><th>Grupo · Materia · Aula</th><th>Docente ausente</th><th>Tarea para el grupo</th><th>Cubre</th><th></th></tr>
                         </thead>
                         <tbody>
                             {% for cover in covers %}
                                 <tr class="{{ cover.notCovered ? 'is-not-covered' }}{{ cover.assignedGuardia is null ? ' is-uncovered' }}">
                                     <td>
                                         <strong>{{ cover.groupName ?? '—' }}</strong>
+                                        {# La materia que tocaba: con ella se elige la tarea del banco. #}
+                                        {% if cover.subjectName %}<span class="parte-subject">{{ cover.subjectName }}</span>{% endif %}
                                         {% if cover.grouping %}
                                             {# El aula de la agrupación manda sobre la del horario: es donde
                                                la clase ocurre de verdad, y es lo que hay que leer aquí. #}
