@@ -1471,6 +1471,9 @@ a.family-chip:not(.week-chip--accent):hover, a.family-chip:not(.week-chip--accen
 .auth-card .auth-or { color: var(--text-muted); font-size: 14px; margin: 18px 0 10px; }
 .auth-card .auth-remember { margin-top: 16px; font-size: 14.5px; }
 .auth-card .auth-hint { text-align: left; color: var(--text-muted); font-size: 13px; margin: 4px 0 0 26px; }
+/* "Recordarme" goes above the button it applies to: no gap over it when it opens the form, room under it. */
+.auth-card form > .auth-remember:first-child { margin-top: 0; }
+.auth-card .auth-hint + .btn { margin-top: 20px; }
 /* =============================================================================
    Protección de datos — una hoja para LEER, no un formulario: la medida de línea de un texto, la
    información básica como ficha (etiqueta · texto) y el botón al pie, después de lo leído.

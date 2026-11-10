@@ -21,10 +21,12 @@
 
             {# One form, two ways in. SSO is the main one where it is configured; the e-mail link is
                always there too, because SSO depends on the Educamadrid domain letting the app in.
-               A single form lets one "Recordarme" checkbox serve both: the SSO button submits it
-               by GET to /connect/google (formaction), the other button by POST for the link. #}
+               The SSO button submits the form by GET to /connect/google (formaction), the other by POST
+               for the link. "Recordarme" is asked here only for SSO, above its button; whoever comes by
+               the link is asked on the page the link opens, on the device that will stay signed in. #}
             <form id="login-form" method="post" action="{{ path('login') }}" novalidate>
                 {% if google_sso_enabled %}
+                    {{ include('security/_remember_me.html.twig') }}
                     <button class="btn" type="submit" formaction="{{ path('connect_google') }}" formmethod="get" formnovalidate data-sso>Entrar con cuenta institucional</button>
                     <p class="auth-or">Si no puedes, te enviamos un enlace a tu correo</p>
                 {% endif %}
@@ -33,8 +35,6 @@
                     <input type="email" id="email" name="email" required {{ google_sso_enabled ? '' : 'autofocus' }} inputmode="email" autocomplete="email">
                 </div>
                 <button class="btn{{ google_sso_enabled ? ' secondary' }}" type="submit" data-magic-link>Enviar enlace de acceso</button>
-                <label class="choice auth-remember"><input type="checkbox" name="_remember_me" value="1"> Recordarme en este dispositivo</label>
-                <p class="auth-hint">Seguirás dentro 30 días. No lo marques en un ordenador compartido.</p>
             </form>
 
             <a class="auth-secondary" href="{{ path('privacy_notice_public') }}">Protección de datos</a>

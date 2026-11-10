@@ -41,7 +41,7 @@ class SecurityController extends AbstractController
     /**
      * Shows the e-mail form and, on submit, sends a magic login link to a known user.
      *
-     * The "Recordarme" checkbox travels inside the link ({@see LoginLinkMailer::send()}).
+     * "Recordarme" is not asked here for the link: the page the link opens asks it ({@see check()}).
      */
     #[Route('/login', name: 'login', methods: ['GET', 'POST'])]
     public function login(Request $request, UserRepository $users, LoginLinkMailer $linkMailer, AuthenticationUtils $authenticationUtils): Response
@@ -79,7 +79,7 @@ class SecurityController extends AbstractController
         $user = $users->findActiveByEmail($email);
 
         if (null !== $user) {
-            $linkMailer->send($user, $request->request->getBoolean('_remember_me'), 'la aplicación');
+            $linkMailer->send($user, 'la aplicación');
         }
 
         // Always show the same confirmation, even if the e-mail is unknown, so the page does
@@ -91,7 +91,8 @@ class SecurityController extends AbstractController
      * Target of the magic link. Opening it only shows an "Entrar" button that posts back to the same
      * address, link parameters included; the login_link authenticator intercepts that POST, so it never
      * reaches this method. A visit alone does not spend the link: mail scanners and phones that open
-     * it twice would otherwise use it up before or alongside the person.
+     * it twice would otherwise use it up before or alongside the person. The same form asks "Recordarme",
+     * on the device that is about to sign in.
      */
     #[Route('/login/check', name: 'login_check', methods: ['GET', 'POST'])]
     public function check(Request $request): Response

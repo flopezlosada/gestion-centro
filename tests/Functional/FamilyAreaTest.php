@@ -109,6 +109,42 @@ final class FamilyAreaTest extends WebTestCase
     }
 
     /**
+     * The families' link page asks "Recordarme" too, and ticking it leaves the families' own cookie, which
+     * only travels under /familias.
+     */
+    public function testTickingRememberMeOnTheLinkPageRemembersTheFamily(): void
+    {
+        $this->family('marta.movil@gmail.test');
+        $this->em->flush();
+        $this->client->request('POST', '/familias/entrar', ['email' => 'marta.movil@gmail.test']);
+        self::assertStringNotContainsString('_remember_me', $this->sentLink());
+
+        $this->follow($this->sentLink(), rememberMe: true);
+
+        self::assertResponseRedirects('/familias');
+        $jar = $this->client->getCookieJar();
+        self::assertNotNull($jar->get('REMEMBERME_FAMILY', '/familias'));
+        // Looked up from "/", a cookie scoped to /familias is not found: proves it does not reach staff pages.
+        self::assertNull($jar->get('REMEMBERME_FAMILY'), 'la cookie de familias solo viaja bajo /familias');
+        self::assertNull($jar->get('REMEMBERME'), 'entrar como familia no recuerda al personal');
+    }
+
+    /**
+     * Without ticking "Recordarme" the family is signed in for the session only: no cookie is left behind.
+     */
+    public function testEnteringWithoutTickingLeavesNoFamilyCookie(): void
+    {
+        $this->family('marta.sala@gmail.test');
+        $this->em->flush();
+        $this->client->request('POST', '/familias/entrar', ['email' => 'marta.sala@gmail.test']);
+
+        $this->follow($this->sentLink());
+
+        self::assertResponseRedirects('/familias');
+        self::assertNull($this->client->getCookieJar()->get('REMEMBERME_FAMILY', '/familias'));
+    }
+
+    /**
      * The sign-in log is a file kept for days, out of reach of removing the account: a family's address
      * is masked in it, in the accepted line and in the raw address of a refused one.
      */
@@ -889,12 +925,13 @@ final class FamilyAreaTest extends WebTestCase
     /**
      * Opens a sign-in link and presses its "Entrar" button, as the person does.
      *
-     * @param string $link the link from the e-mail
+     * @param string $link       the link from the e-mail
+     * @param bool   $rememberMe whether "Recordarme" is ticked before pressing
      */
-    private function follow(string $link): void
+    private function follow(string $link, bool $rememberMe = false): void
     {
         $this->client->request('GET', $link);
-        $this->client->submitForm('Entrar');
+        $this->client->submitForm('Entrar', ['_remember_me' => $rememberMe]);
     }
 
     /**
