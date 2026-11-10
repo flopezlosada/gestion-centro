@@ -77,6 +77,21 @@ final class GuardiaParteCopiesTest extends WebTestCase
         self::assertSame(['Pedir fotocopias', 'Pedir fotocopias'], $links->each(static fn (Crawler $a): string => $a->text()));
     }
 
+    /**
+     * The subject that was due is on every line: the bank task is chosen by it, and without it the parte
+     * only said the group and the room.
+     */
+    public function testTheParteShowsTheSubjectOfEachLine(): void
+    {
+        $this->loginAsCoordination();
+        $this->coverWithBankTask(withDocument: false);
+
+        $crawler = $this->parte();
+
+        self::assertSame('Matemáticas', $crawler->filter('.parte-card__subject')->text());
+        self::assertSame('Matemáticas', $crawler->filter('.parte-table .parte-subject')->text());
+    }
+
     public function testOrderingFromTheParteComesBackToTheParte(): void
     {
         $this->loginAsCoordination();
