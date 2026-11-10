@@ -50,6 +50,7 @@ use App\Support\GuardiaDate;
 use App\Util\SchoolYear;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Clock\ClockInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
@@ -86,7 +87,7 @@ final class GuardiaController extends AbstractController
      * first — they are the ones that need action — and the coverage figures head the panel.
      */
     #[Route('', name: 'guardia_index', methods: ['GET'])]
-    public function index(Request $request, ScheduleEntryRepository $schedule, GuardiaCoverRepository $covers, AbsenceRepository $absences, GuardiaSupportRepository $support, SpacePlanAssignmentRepository $activities, AcademicYearRepository $years, UserRepository $users, GuardiaScheduler $scheduler): Response
+    public function index(Request $request, ScheduleEntryRepository $schedule, GuardiaCoverRepository $covers, AbsenceRepository $absences, GuardiaSupportRepository $support, SpacePlanAssignmentRepository $activities, AcademicYearRepository $years, UserRepository $users, GuardiaScheduler $scheduler, CopyRequestRepository $copyRequests, ClockInterface $clock, TeacherGuardiaDay $day): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
@@ -165,6 +166,10 @@ final class GuardiaController extends AbstractController
             // judge it (their Bachillerato group has finished lessons — the timetable does not know).
             'supportPicker' => $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS) ? $users->findBy([], ['fullName' => 'ASC']) : [],
             'teachingHere' => $year instanceof AcademicYear ? $schedule->lectiveGroupsByTeacherAt($year, $weekday, $slotIndex) : [],
+            // Pedir las fotocopias desde la misma línea donde se coge la tarea del banco: antes el parte la
+            // asignaba y decía «pide las fotocopias» sin un botón para hacerlo, y no se pedían.
+            'copiesOrdered' => $copyRequests->orderStateByCover($parte),
+            'slotOver' => $day->isSlotOver($date, $slotIndex, array_column($slots, null, 'index'), $clock->now()),
         ]);
     }
 

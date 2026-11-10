@@ -73,4 +73,36 @@ final readonly class TeacherGuardiaDay
             'counts' => ['assigned' => \count($items), 'pending' => $pending, 'withTask' => $withTask],
         ];
     }
+
+    /**
+     * Whether a period of ANY day is already over: a past day is, a future one is not, and today it is
+     * over only when its end time is known and past — the same rule as {@see self::forDay()}, for a
+     * screen that is not looking at today (the parte can be opened on any date).
+     *
+     * The period times are only TIMES: {@see \App\Repository\ScheduleEntryRepository::slotTimes()} dates
+     * them with the process's today, not the clock's, so the end is put back on the given day before
+     * comparing — otherwise a mocked or a late clock would compare against the wrong day.
+     *
+     * @param \DateTimeImmutable                                                          $date      the day of the period
+     * @param int                                                                         $slotIndex the period
+     * @param array<int, array{startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}> $slotTimes period times by slot index
+     * @param \DateTimeImmutable                                                          $now       the current instant
+     *
+     * @return bool true once nothing done for that period can still serve anyone
+     */
+    public function isSlotOver(\DateTimeImmutable $date, int $slotIndex, array $slotTimes, \DateTimeImmutable $now): bool
+    {
+        // El día y las horas del horario son de la zona del centro; el reloj puede venir en otra (UTC).
+        $now = $now->setTimezone($date->getTimezone());
+        $day = $date->format('Y-m-d');
+        $today = $now->format('Y-m-d');
+        if ($day !== $today) {
+            return $day < $today;
+        }
+
+        $endsAt = $slotTimes[$slotIndex]['endsAt'] ?? null;
+
+        return null !== $endsAt
+            && new \DateTimeImmutable($day.' '.$endsAt->format('H:i:s'), $date->getTimezone()) < $now;
+    }
 }

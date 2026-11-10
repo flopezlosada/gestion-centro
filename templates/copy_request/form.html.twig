@@ -99,7 +99,7 @@
             {#- El contenedor no tiene fila propia. -#}
             {% do form.copies.setRendered %}
             {{ f.fields([form.notes]) }}
-            {{ f.actions(cover ? path('guardia_cover_show', { id: cover.id }) : path('copy_request_index'), 'Enviar a fotocopias') }}
+            {{ f.actions(cancelUrl ?? path('copy_request_index'), 'Enviar a fotocopias') }}
         {{ form_end(form) }}
     </div>
 {% endblock %}

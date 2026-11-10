@@ -81,6 +81,37 @@ class CopyRequestRepository extends ServiceEntityRepository
     }
 
     /**
+     * Which of these guardias already have copies ordered, and whether any of those orders reached the
+     * copy room, in ONE query: the parte asks it of every line it paints, and one
+     * {@see self::findForCover()} per line would be a query each. "Sent" matters because an order whose
+     * e-mail never left is not a request conserjería has: saying just «pedidas» would stop anyone retrying.
+     *
+     * @param GuardiaCover[] $covers the parte lines
+     *
+     * @return array<int, bool> cover id → whether at least one of its orders was sent; covers with no order are absent
+     */
+    public function orderStateByCover(array $covers): array
+    {
+        if ([] === $covers) {
+            return [];
+        }
+
+        /** @var list<array{cover: int|string, sent: int|string}> $rows */
+        $rows = $this->createQueryBuilder('r')
+            ->select('IDENTITY(r.cover) AS cover', 'MAX(CASE WHEN r.sentAt IS NULL THEN 0 ELSE 1 END) AS sent')
+            ->where('r.cover IN (:covers)')
+            ->setParameter('covers', $covers)
+            ->groupBy('r.cover')
+            ->getQuery()
+            ->getArrayResult();
+
+        return array_combine(
+            array_map(static fn (array $r): int => (int) $r['cover'], $rows),
+            array_map(static fn (array $r): bool => 1 === (int) $r['sent'], $rows),
+        );
+    }
+
+    /**
      * The orders already placed for one guardia, oldest first — so the screen can say "ya se pidieron
      * 25 copias" instead of letting someone order the same thing twice.
      *

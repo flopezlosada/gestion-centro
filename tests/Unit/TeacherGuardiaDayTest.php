@@ -7,6 +7,7 @@ namespace App\Tests\Unit;
 use App\Entity\GuardiaCover;
 use App\Entity\User;
 use App\Guardia\TeacherGuardiaDay;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -110,5 +111,43 @@ final class TeacherGuardiaDayTest extends TestCase
         self::assertSame([], $view['items']);
         self::assertNull($view['next']);
         self::assertSame(['assigned' => 0, 'pending' => 0, 'withTask' => 0], $view['counts']);
+    }
+
+    /**
+     * @return iterable<string, array{string, int, string, bool}>
+     */
+    public static function slotOverCases(): iterable
+    {
+        // [día de la guardia, tramo, ahora, ¿ya pasó?] con el 2º tramo de 09:20 a 10:15.
+        yield 'antes de empezar' => ['2026-03-10', 1, '2026-03-10 09:00', false];
+        yield 'a mitad de la hora sigue sirviendo' => ['2026-03-10', 1, '2026-03-10 09:50', false];
+        yield 'justo al acabar todavía no' => ['2026-03-10', 1, '2026-03-10 10:15', false];
+        yield 'un minuto después ya pasó' => ['2026-03-10', 1, '2026-03-10 10:16', true];
+        yield 'un día anterior ya pasó, sea la hora que sea' => ['2026-03-09', 1, '2026-03-10 08:00', true];
+        yield 'un día que viene no ha pasado' => ['2026-03-11', 1, '2026-03-10 23:00', false];
+        yield 'un tramo sin hora conocida no se da por pasado' => ['2026-03-10', 7, '2026-03-10 23:00', false];
+    }
+
+    #[DataProvider('slotOverCases')]
+    public function testWhetherAPeriodIsOver(string $date, int $slot, string $now, bool $over): void
+    {
+        self::assertSame($over, $this->day->isSlotOver(new \DateTimeImmutable($date), $slot, $this->slotTimes(), new \DateTimeImmutable($now)));
+    }
+
+    public function testTheSlotTimesAreReadAsHoursOfTheGivenDayNotOfTheDayTheyCarry(): void
+    {
+        // Las horas del horario llegan fechadas con el día del PROCESO (aquí el 10). Mirando el 20 a las
+        // 11:00, el 2º tramo ya acabó: comparar con la fecha que traen daría otra respuesta.
+        self::assertTrue($this->day->isSlotOver(new \DateTimeImmutable('2026-03-20'), 1, $this->slotTimes(), new \DateTimeImmutable('2026-03-20 11:00')));
+        self::assertFalse($this->day->isSlotOver(new \DateTimeImmutable('2026-03-20'), 2, $this->slotTimes(), new \DateTimeImmutable('2026-03-20 11:00')));
+    }
+
+    public function testAClockInAnotherZoneIsReadInTheCentresZone(): void
+    {
+        // 09:30 UTC son las 10:30 en Madrid (marzo, UTC+1): el 2º tramo (hasta las 10:15) ya pasó.
+        $madrid = new \DateTimeZone('Europe/Madrid');
+        $now = new \DateTimeImmutable('2026-03-10 09:30', new \DateTimeZone('UTC'));
+
+        self::assertTrue($this->day->isSlotOver(new \DateTimeImmutable('2026-03-10', $madrid), 1, $this->slotTimes(), $now));
     }
 }
