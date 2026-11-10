@@ -8,14 +8,17 @@ use App\Entity\Absence;
 use App\Entity\AcademicYear;
 use App\Entity\Department;
 use App\Entity\GuardiaCover;
+use App\Entity\GuardiaSupport;
 use App\Entity\Notification;
 use App\Entity\Role;
 use App\Entity\ScheduleEntry;
+use App\Entity\TimeSlot;
 use App\Entity\User;
 use App\Enum\AbsenceRetention;
 use App\Enum\Area;
 use App\Enum\PermissionLevel;
 use App\Enum\ScheduleActivityKind;
+use App\Enum\TimeSlotKind;
 use App\Enum\Weekday;
 use App\Guardia\AbsencePurger;
 use App\Guardia\TeacherGuardiaWeek;
@@ -106,6 +109,25 @@ final class GuardiaPageTest extends WebTestCase
             ->setStartsAt(new \DateTimeImmutable('08:25'))
             ->setEndsAt(new \DateTimeImmutable('09:20'))
             ->setKind(ScheduleActivityKind::GUARDIA);
+        $this->em->persist($entry);
+
+        return $entry;
+    }
+
+    /**
+     * A lesson in the timetable, with no room or subject — as many real Peñalara rows come.
+     */
+    private function lessonEntry(AcademicYear $year, User $teacher, \DateTimeImmutable $date, int $slot, string $group, string $from, string $to): ScheduleEntry
+    {
+        $entry = (new ScheduleEntry())
+            ->setAcademicYear($year)
+            ->setTeacher($teacher)
+            ->setWeekday(Weekday::from((int) $date->format('N')))
+            ->setSlotIndex($slot)
+            ->setStartsAt(new \DateTimeImmutable($from))
+            ->setEndsAt(new \DateTimeImmutable($to))
+            ->setKind(ScheduleActivityKind::LECTIVE)
+            ->setGroupName($group);
         $this->em->persist($entry);
 
         return $entry;
@@ -992,6 +1014,107 @@ final class GuardiaPageTest extends WebTestCase
         self::assertResponseIsSuccessful();
         self::assertSelectorTextContains('main', '1 guardia(s) generada(s) para Docente Test.');
         self::assertCount(1, $this->em->getRepository(Absence::class)->findAll());
+    }
+
+    /**
+     * Quien falta todo el día también falta a su hora de guardia, aunque esa hora no tenga todavía nada
+     * asignado. La pantalla solo ofrecía sus clases y las guardias ya repartidas, así que la ausencia se
+     * guardaba sin esa hora y, si después faltaba alguien más en ella, la guardia le caía a quien no estaba.
+     * Es el caso del centro: apuntada primero la falta de quien está de guardia a 1.ª, y luego la de quien
+     * da clase a esa hora. Se envía el formulario TAL COMO SE PINTA, para que lo que se prueba sea lo que
+     * marca la pantalla y no unas horas escritas a mano.
+     */
+    public function testAnAbsenceSpansTheGuardiaHourSoALaterGuardiaIsNotHandedToSomebodyAway(): void
+    {
+        $this->login();
+        $date = new \DateTimeImmutable('thursday next week');
+        $year = $this->academicYear(SchoolYear::current($date));
+        $this->em->persist($year);
+        $onGuardia = $this->user('Maria Cristina Sanz Alves', 'cristina.sanz@centro.test');
+        $this->guardiaEntry($year, $onGuardia, $date, 0);
+        $this->lessonEntry($year, $onGuardia, $date, 2, 'E3B', '10:15', '11:10');
+        $teaching = $this->user('Natalia Rodríguez Mora', 'natalia@centro.test');
+        $this->lessonEntry($year, $teaching, $date, 0, 'E1A', '08:25', '09:20');
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/ausencia/nueva?date='.$date->format('Y-m-d').'&teacher='.$onGuardia->getId());
+        self::assertResponseIsSuccessful();
+        $dutyBox = $crawler->filter('.field--duty-hours input[name="slots[]"]');
+        self::assertCount(1, $dutyBox, 'su hora de guardia se ofrece');
+        self::assertSame('0', $dutyBox->attr('value'));
+        self::assertNull($dutyBox->attr('data-absence-class'), 'no cuenta como guardia a generar');
+        self::assertCount(1, $crawler->filter('input[name="slots[]"][data-absence-class]'), 'solo la clase cuenta');
+        $this->client->submit($crawler->selectButton('Generar y repartir guardias')->form());
+        self::assertResponseRedirects();
+
+        $crawler = $this->client->request('GET', '/guardias/ausencia/nueva?date='.$date->format('Y-m-d').'&teacher='.$teaching->getId());
+        $this->client->submit($crawler->selectButton('Generar y repartir guardias')->form());
+        self::assertResponseRedirects();
+
+        $this->em->clear();
+        $absence = $this->em->getRepository(Absence::class)->findOneBy(['absentTeacher' => $onGuardia->getId()]);
+        self::assertInstanceOf(Absence::class, $absence);
+        self::assertSame([0, 2], $absence->getSlotIndexes(), 'la hora de guardia viene marcada de partida');
+        $cover = $this->em->getRepository(GuardiaCover::class)->findOneBy(['absentTeacher' => $teaching->getId(), 'slotIndex' => 0]);
+        self::assertInstanceOf(GuardiaCover::class, $cover);
+        self::assertNull($cover->getAssignedGuardia(), 'la única de guardia a esa hora está ausente: queda sin cubrir');
+    }
+
+    /**
+     * Un día en que solo le toca guardia ya no responde «no tiene nada que registrar»: hay algo, sacarle del
+     * reparto. Y al registrarlo dice que la ausencia queda guardada, no que ha fallado.
+     */
+    public function testADayWithOnlyAGuardiaHourCanBeRegistered(): void
+    {
+        $this->login();
+        $date = new \DateTimeImmutable('thursday next week');
+        $year = $this->academicYear(SchoolYear::current($date));
+        $this->em->persist($year);
+        $onGuardia = $this->user('Solo Guardia', 'solo.guardia@centro.test');
+        $this->guardiaEntry($year, $onGuardia, $date, 4);
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/ausencia/nueva?date='.$date->format('Y-m-d').'&teacher='.$onGuardia->getId());
+        self::assertResponseIsSuccessful();
+        self::assertSelectorNotExists('.empty-state');
+        self::assertCount(1, $crawler->filter('.field--duty-hours input[name="slots[]"][value="4"]'));
+        $this->client->submit($crawler->selectButton('Registrar la ausencia')->form());
+        $this->client->followRedirect();
+
+        self::assertSelectorTextContains('main', 'Ausencia de Solo Guardia registrada; no se generó ninguna guardia. 1 hora(s) sin clase: no se le asignará guardia en ellas.');
+        $this->em->clear();
+        $absence = $this->em->getRepository(Absence::class)->findOneBy(['absentTeacher' => $onGuardia->getId()]);
+        self::assertInstanceOf(Absence::class, $absence);
+        self::assertSame([4], $absence->getSlotIndexes());
+        self::assertCount(0, $this->em->getRepository(GuardiaCover::class)->findAll(), 'una hora de guardia no genera guardia');
+    }
+
+    /**
+     * El reparto también tira de quien se apuntó a mano como apoyo ese día, así que esa hora se ofrece igual
+     * que una de guardia, con la hora del marco horario. El recreo NO: Peñalara mete las guardias de recreo
+     * como celdas de guardia, y el recreo ya tiene su casilla propia con la consecuencia contraria.
+     */
+    public function testTheFormOffersASupportSignUpButNotABreakGuardia(): void
+    {
+        $this->login();
+        $date = new \DateTimeImmutable('thursday next week');
+        $year = $this->academicYear(SchoolYear::current($date));
+        $this->em->persist($year);
+        foreach ([[4, '11:35', '12:30', TimeSlotKind::LECTIVE], [3, '11:10', '11:35', TimeSlotKind::BREAK_TIME]] as [$index, $from, $to, $kind]) {
+            $this->em->persist((new TimeSlot())->setAcademicYear($year)->setSlotIndex($index)
+                ->setStartsAt(new \DateTimeImmutable($from))->setEndsAt(new \DateTimeImmutable($to))->setKind($kind));
+        }
+        $teacher = $this->user('Apoyo Puntual', 'apoyo@centro.test');
+        $this->guardiaEntry($year, $teacher, $date, 3);
+        $this->em->persist((new GuardiaSupport())->setTeacher($teacher)->setDate($date)->setSlotIndex(4)->setNote(null));
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/ausencia/nueva?date='.$date->format('Y-m-d').'&teacher='.$teacher->getId());
+        self::assertResponseIsSuccessful();
+        $offered = $crawler->filter('.field--duty-hours input[name="slots[]"]')->each(static fn (Crawler $box): string => (string) $box->attr('value'));
+        self::assertSame(['4'], $offered, 'el apoyo se ofrece; el recreo no');
+        self::assertStringContainsString('11:35–12:30', $crawler->filter('.field--duty-hours')->text());
+        self::assertStringContainsString('Apoyo puntual', $crawler->filter('.field--duty-hours')->text());
     }
 
     /**

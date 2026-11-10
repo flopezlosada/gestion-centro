@@ -10,9 +10,11 @@
             return;
         }
         var out = form.querySelector('[data-absence-count]');
-        var boxes = form.querySelectorAll('input[name="slots[]"]');
+        // Solo las CLASES: son las que generan guardia. Las horas de guardia y las guardias que iba a
+        // cubrir también van en slots[], pero no generan ninguna y contarlas inflaba el diálogo.
+        var boxes = form.querySelectorAll('input[data-absence-class]');
         if (!out || !boxes.length) {
-            return; // Un día sin clases (solo el recreo): no hay nada que contar.
+            return; // Un día sin clases: no hay nada que contar.
         }
 
         function render() {
@@ -29,6 +31,12 @@
                 : 'No se generará ninguna guardia.';
             // El recreo no genera guardia: si está marcado, lo que sale de aquí es el aviso al equipo
             // directivo, y hay que decirlo o el diálogo describe mal lo que se va a hacer.
+            // Lo que no depende de las clases (guardias que se le retiran, horas de guardia) lo pinta la
+            // plantilla; se conserva tal cual para que recontar no lo borre del diálogo.
+            var extra = form.getAttribute('data-confirm-extra');
+            if (extra) {
+                texto += ' ' + extra;
+            }
             var recreo = form.querySelector('input[name="misses_break"]');
             if (recreo && recreo.checked) {
                 texto += ' Su recreo se queda sin vigilar: se avisará al equipo directivo.';
