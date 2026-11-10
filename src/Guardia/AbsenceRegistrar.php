@@ -118,6 +118,12 @@ final class AbsenceRegistrar
         $skippedFree = 0;
         $skippedExisting = 0;
         foreach ($spanned as $slotIndex) {
+            // A period marked "sin cobertura" stays recorded as away but never becomes a cover: that is the
+            // point of it. The other periods of the same day are ordinary and get theirs.
+            if ($absence->isUncoveredSlot($slotIndex)) {
+                ++$skippedExisting;
+                continue;
+            }
             // A period may hold several classes at once (a multi-group activity in the assembly hall);
             // it is still ONE guardia to cover, so all its groups/rooms fold into a single cover.
             $lessons = $this->timetable->forTeacherAt($year, $teacher, $date, $slotIndex);
@@ -180,6 +186,93 @@ final class AbsenceRegistrar
         $this->breakGaps->announce($breaks['fresh']);
 
         return new AbsenceRegistrationResult($createdSlots, $skippedFree, $skippedExisting, $breaks['gaps'], $relievedSlots);
+    }
+
+    /**
+     * Marks several teachers away on one day WITHOUT COVER, in one go: the equipo directivo's tool for a day
+     * when much of the claustro is away at once (see {@see Absence::getUncoveredSlotIndexes()}).
+     *
+     * Each teacher's absence gains the given periods (or every period they are booked for) as "sin
+     * cobertura", always cut down to the periods the timetable books them for: a period with nothing in it
+     * is not an absence. No parte line is created for those classes, so nobody's guardia balance grows that
+     * day. They are still taken off any guardia already assigned to them in those periods, and those periods
+     * go back to the rota — which can no longer pick them, because being away is a stored fact. No recreo gap
+     * is recorded either: the centre does not want the day's unwatched zones reported one by one.
+     *
+     * A period ALREADY registered as an ordinary absence is left alone: its cover exists and may already be
+     * assigned. A teacher whose every period was like that is reported as already away.
+     *
+     * Every absence rides in ONE flush, so a concurrent registration colliding on the (teacher, day) UNIQUE
+     * aborts the whole batch and nothing is written — see {@see register()} for why it cannot be retried in
+     * place. The timetable is read once per teacher: about sixty small reads on a screen used a few times a
+     * year, which is not worth a batch query of its own.
+     *
+     * @param AcademicYear       $year        the course the date falls into (supplies the timetable)
+     * @param list<User>         $teachers    the teachers away
+     * @param \DateTimeImmutable $date        the day
+     * @param list<int>|null     $slotIndexes the periods, or null for each teacher's whole booked day
+     *
+     * @return UncoveredAbsenceResult who was marked and who was not
+     *
+     * @throws UniqueConstraintViolationException when somebody registers one of those absences at the same time
+     */
+    public function registerWithoutCover(AcademicYear $year, array $teachers, \DateTimeImmutable $date, ?array $slotIndexes): UncoveredAbsenceResult
+    {
+        $weekday = Weekday::from((int) $date->format('N'));
+        $existing = $this->absences->findByTeachersAndDate($teachers, $date);
+
+        $marked = [];
+        $alreadyAway = [];
+        $notBooked = [];
+        foreach ($teachers as $teacher) {
+            $booked = $this->schedule->bookedSlotsFor($year, $teacher, $weekday);
+            $slots = null === $slotIndexes ? $booked : array_values(array_intersect($booked, $slotIndexes));
+            if ([] === $slots) {
+                $notBooked[] = $teacher;
+                continue;
+            }
+            $absence = $existing[$teacher->getId()] ?? null;
+            if (null === $absence) {
+                $absence = (new Absence())->setAbsentTeacher($teacher)->setDate($date);
+                $this->em->persist($absence);
+            }
+            $fresh = $absence->addUncoveredSlotIndexes($slots);
+            if ([] === $fresh) {
+                $alreadyAway[] = $teacher;
+                continue;
+            }
+            $marked[] = ['teacher' => $teacher, 'slots' => $fresh];
+        }
+        $this->em->flush();
+
+        $toAssign = [];
+        foreach ($marked as ['teacher' => $teacher, 'slots' => $slots]) {
+            $toAssign = [...$toAssign, ...$this->relieveOwnGuardias($teacher, $date, $slots)];
+        }
+        $toAssign = array_values(array_unique($toAssign));
+        sort($toAssign);
+        foreach ($toAssign as $slotIndex) {
+            $this->scheduler->autoAssign($year, $date, $slotIndex);
+        }
+
+        return new UncoveredAbsenceResult(array_column($marked, 'teacher'), $alreadyAway, $notBooked);
+    }
+
+    /**
+     * Undoes a "sin cobertura" mark — a teacher ticked by mistake. Its periods go; the ordinary periods of
+     * the same day stay; an absence left with no period at all is removed, or it would keep the teacher out
+     * of the rota for nothing. The guardias the mark took off them are not handed back: by then the parte has
+     * been reassigned and the coordinator decides.
+     *
+     * @param Absence $absence the absence carrying the mark
+     */
+    public function removeWithoutCover(Absence $absence): void
+    {
+        $absence->removeUncoveredSlotIndexes();
+        if ([] === $absence->getSlotIndexes()) {
+            $this->em->remove($absence);
+        }
+        $this->em->flush();
     }
 
     /**

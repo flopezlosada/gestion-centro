@@ -43,6 +43,7 @@ use App\Service\AppSettings;
 use App\Service\FileUploader;
 use App\Service\GuardiaAssignmentNotifier;
 use App\Service\GuardiaIncidentNotifier;
+use App\Service\MeetingAccess;
 use App\Support\AuditContext;
 use App\Support\DocumentUpload;
 use App\Support\GuardiaActivityPresenter;
@@ -87,7 +88,7 @@ final class GuardiaController extends AbstractController
      * first — they are the ones that need action — and the coverage figures head the panel.
      */
     #[Route('', name: 'guardia_index', methods: ['GET'])]
-    public function index(Request $request, ScheduleEntryRepository $schedule, GuardiaCoverRepository $covers, AbsenceRepository $absences, GuardiaSupportRepository $support, SpacePlanAssignmentRepository $activities, AcademicYearRepository $years, UserRepository $users, GuardiaScheduler $scheduler, CopyRequestRepository $copyRequests, ClockInterface $clock, TeacherGuardiaDay $day): Response
+    public function index(Request $request, ScheduleEntryRepository $schedule, GuardiaCoverRepository $covers, AbsenceRepository $absences, GuardiaSupportRepository $support, SpacePlanAssignmentRepository $activities, AcademicYearRepository $years, UserRepository $users, GuardiaScheduler $scheduler, CopyRequestRepository $copyRequests, ClockInterface $clock, TeacherGuardiaDay $day, MeetingAccess $access, #[CurrentUser] User $user): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::GUARDIAS);
 
@@ -144,6 +145,8 @@ final class GuardiaController extends AbstractController
         $bySlot = $covers->coverageBySlotOn($date);
 
         return $this->render('guardia/index.html.twig', [
+            // «Ausencias sin cobertura» es solo del equipo directivo, no de la coordinación de guardias.
+            'canMarkWithoutCover' => $access->isLeadership($user, $this->isGranted('ROLE_ADMIN')),
             'date' => $date,
             'weekday' => $weekday,
             'schoolYear' => $schoolYear,

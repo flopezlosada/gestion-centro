@@ -195,6 +195,11 @@
                 {% endif %}
                 {% if canWrite %}
                     <a class="parte-anchor__ghost" href="{{ path('guardia_absence_new', { date: date|date('Y-m-d', false) }) }}">＋ Apuntar ausencia</a>
+                {% endif %}
+                {% if canMarkWithoutCover %}
+                    <a class="parte-anchor__ghost" href="{{ path('guardia_uncovered_new', { date: date|date('Y-m-d', false) }) }}">Ausencias sin cobertura</a>
+                {% endif %}
+                {% if canWrite %}
                     {% if uncovered > 0 %}
                         <form method="post" action="{{ path('guardia_auto_assign') }}" class="inline-form">
                             <input type="hidden" name="_token" value="{{ csrf_token('guardia_auto_assign') }}">
