@@ -5041,42 +5041,68 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 .bank-how > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-sm); }
 .bank-how p { margin: 8px 0 0; max-width: 72ch; font-size: 13px; line-height: 1.55; color: var(--text-muted); }
 
-/* ---- Tarjeta de ficha ------------------------------------------------------ */
-.bank-grid { display: grid; gap: 14px; }
-.bank-card {
-    display: flex; flex-direction: column;
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius-lg); padding: 18px 20px;
+/* ---- Carpetas del banco: nivel ▸ materia ▸ fichas en fila -------------------
+   Una cuadrícula de tarjetas no dejaba ver qué hay de cada curso: el centro busca "algo de Matemáticas
+   para 1º de ESO", así que el listado se lee como un árbol de carpetas. <details> nativo, sin JS. */
+.bank-folders { display: flex; flex-direction: column; gap: 10px; }
+.bank-folder { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.bank-folder__head, .bank-subfolder__head {
+    display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none;
 }
-.bank-card:hover { border-color: var(--border-strong); }
-/* Una sola acción plena por pantalla: la sugerida. El realce es del contenedor, no del botón, para
-   que se lea como "esta es la que te propongo" y no como "esta es más importante". */
-.bank-card.is-suggested { border: 1.5px solid var(--accent); box-shadow: var(--shadow-hero); }
-.bank-card.is-retired { opacity: .62; }
-.bank-card__top { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 28px; margin-bottom: 8px; }
-.bank-card__origin { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
-.bank-card__from { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
-.bank-card__flag {
+.bank-folder__head::-webkit-details-marker, .bank-subfolder__head::-webkit-details-marker { display: none; }
+.bank-folder__head::marker, .bank-subfolder__head::marker { content: ""; }
+/* La flecha de plegado, a la derecha y girando: el icono de carpeta ya dice "esto se abre". */
+.bank-folder__head::after, .bank-subfolder__head::after {
+    content: ""; flex: none; width: 7px; height: 7px; margin: 0 4px 3px 4px;
+    border-right: 2px solid var(--text-faint); border-bottom: 2px solid var(--text-faint);
+    transform: rotate(45deg); transition: transform .15s ease;
+}
+.bank-folder:not([open]) > .bank-folder__head::after,
+.bank-subfolder:not([open]) > .bank-subfolder__head::after { transform: rotate(-45deg); margin-bottom: 0; }
+.bank-folder__head:focus-visible, .bank-subfolder__head:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; border-radius: var(--radius); }
+.bank-folder__head { padding: 14px 18px; }
+.bank-folder__head:hover .bank-folder__name, .bank-subfolder__head:hover .bank-subfolder__name { color: var(--accent-ink); }
+.bank-folder[open] > .bank-folder__head { border-bottom: 1px solid var(--separator); }
+.bank-folder__icon { flex: none; width: 19px; height: 19px; color: var(--accent-ink); }
+.bank-folder__name, .bank-subfolder__name { margin: 0; }
+.bank-folder__name { font-family: var(--font-display); font-weight: 500; font-size: 18px; line-height: 1.25; color: var(--text); }
+.bank-folder__count, .bank-subfolder__count { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); white-space: nowrap; }
+.bank-subfolder + .bank-subfolder { border-top: 1px solid var(--separator); }
+.bank-subfolder__head { padding: 11px 18px 11px 47px; }
+.bank-subfolder__name { font-size: 14px; font-weight: 600; color: var(--text); }
+.bank-list { list-style: none; margin: 0; padding: 0 18px 10px 47px; }
+
+/* ---- Ficha, en fila -------------------------------------------------------- */
+.bank-item { display: flex; align-items: flex-start; gap: 14px; padding: 12px 0; border-top: 1px solid var(--separator); }
+/* Una sola acción plena por pantalla: la sugerida. El realce es de la fila, no del botón, para que se
+   lea como "esta es la que te propongo" y no como "esta es más importante". */
+.bank-item.is-suggested {
+    margin: 4px -12px; padding: 12px; border: 1.5px solid var(--accent);
+    border-radius: var(--radius); box-shadow: var(--shadow-hero);
+}
+.bank-item.is-suggested + .bank-item { border-top: 0; }
+.bank-item.is-retired { opacity: .62; }
+.bank-item.is-done-by-group .bank-item__title, .bank-item.is-done-by-group .bank-item__desc { color: var(--text-muted); }
+.bank-item__main { flex: 1; min-width: 0; }
+.bank-item__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.bank-item__title { font-family: var(--font-display); font-weight: 500; font-size: 17px; line-height: 1.3; margin: 0; }
+.bank-item__flag {
     font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: .08em;
     text-transform: uppercase; padding: 3px 9px; border-radius: 999px;
     color: var(--accent-ink); background: var(--accent-weak); border: 1px solid var(--accent-weak-border);
 }
-.bank-card__flag--muted { color: var(--text-muted); background: var(--surface-sunken); border-color: var(--border); }
-/* Que el grupo ya la hizo tiene que verse al pasar la vista: en gris se perdía entre la procedencia.
-   El color de aviso va en la etiqueta y la tarjeta se apaga un poco; elegirla sigue estando permitido. */
-.bank-card__flag--done { color: var(--warning-text); background: var(--warning-weak); border-color: var(--warning-border); }
-.bank-card.is-done-by-group { background: var(--bg); }
-.bank-card.is-done-by-group .bank-card__title, .bank-card.is-done-by-group .bank-card__desc { color: var(--text-muted); }
-.bank-card__title { font-family: var(--font-display); font-weight: 500; font-size: 20px; line-height: 1.25; margin: 0; }
-.bank-card__desc { margin: 7px 0 0; font-size: 13.5px; line-height: 1.55; color: var(--text); }
-/* margin-top:auto en el pie (y no flex:1 en la descripción): alinea los pies de las tarjetas de una
-   misma fila TAMBIÉN cuando alguna no tiene descripción. */
-.bank-card__foot {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    margin-top: auto; padding-top: 13px; border-top: 1px solid var(--separator);
-}
-.bank-card__meta { margin: 0; font-family: var(--font-mono); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--text-faint); }
-.bank-card__use { flex: none; }
+.bank-item__flag--muted { color: var(--text-muted); background: var(--surface-sunken); border-color: var(--border); }
+/* Que el grupo ya la hizo tiene que verse al pasar la vista: el color de aviso va en la etiqueta y la
+   fila se apaga un poco; elegirla sigue estando permitido. */
+.bank-item__flag--done { color: var(--warning-text); background: var(--warning-weak); border-color: var(--warning-border); }
+.bank-item__desc { margin: 4px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--text); }
+.bank-item__docs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.bank-item__docs .bank-doc { margin-top: 0; padding: 5px 10px 5px 6px; gap: 8px; max-width: 100%; }
+.bank-item__docs .bank-doc__icon { width: 24px; height: 24px; }
+.bank-item .bank-nodoc { display: inline-flex; margin-top: 8px; padding: 6px 10px; }
+.bank-item__meta { margin: 8px 0 0; font-family: var(--font-mono); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--text-faint); }
+.bank-item__side { flex: none; display: flex; align-items: center; gap: 4px; }
+.bank-item__use { flex: none; }
 /* "Usar esta" del resto: acento como TEXTO, no como relleno. Misma acción, un peso menos. */
 .bank-use--soft { background: transparent; color: var(--accent-ink); border-color: var(--accent-weak-border); }
 .bank-use--soft:hover { background: var(--accent-weak); border-color: var(--accent); color: var(--accent-ink); }
@@ -5167,10 +5193,6 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 .bank-empty__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
 .bank-empty__escape { margin-top: 18px; font-size: 13px; font-weight: 600; }
 
-/* Dos columnas solo cuando la tarjeta no se estrecha: por debajo, una sola. */
-@media (min-width: 900px) {
-    .bank-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
 @media (max-width: 760px) {
     .bank-anchor { margin: -22px -16px 18px; padding: 12px 20px 16px; flex-direction: column; align-items: stretch; }
     .bank-anchor__cover { font-size: 20px; }
@@ -5186,12 +5208,15 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
     /* Eligiendo desde el móvil, "+ Añadir tarea" no es lo que se ha venido a hacer y se comía una línea
        entera entre la entradilla y los filtros. Sigue a un toque desde el banco por el menú. */
     .page-head__actions--aside { display: none; }
-    .bank-card { padding: 16px 17px; }
-    .bank-card__title { font-size: 19px; }
-    /* La acción a ancho completo y por debajo de la meta: objetivo de pulgar de 44px. */
-    .bank-card__foot { flex-direction: column; align-items: stretch; gap: 12px; }
-    .bank-card__use, .bank-card__use .btn { width: 100%; }
-    .bank-card__use .btn { padding: 13px; font-size: 14.5px; }
+    /* Sin la sangría de escritorio: en el móvil cada píxel de ancho es del título. */
+    .bank-folder__head { padding: 13px 14px; }
+    .bank-subfolder__head { padding: 10px 14px 10px 43px; }
+    .bank-list { padding: 0 14px 8px; }
+    /* La acción a ancho completo y por debajo de la ficha: objetivo de pulgar de 44px. */
+    .bank-item { flex-wrap: wrap; }
+    .bank-item__side { width: 100%; justify-content: flex-end; }
+    .bank-item__use { flex: 1; }
+    .bank-item__use .btn { width: 100%; padding: 13px; font-size: 14.5px; }
 }
 
 /* La tarea del banco es una tarjeta normal, no un aviso: llevaba filete rojo y la etiqueta "Del banco" en

@@ -206,7 +206,7 @@ final class GuardiaTaskBankTest extends WebTestCase
         $this->client->request('GET', '/guardias/banco');
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('.bank-grid', 'Ficha de fracciones');
+        self::assertSelectorTextContains('.bank-folders', 'Ficha de fracciones');
     }
 
     public function testTheLevelFilterNarrowsTheListing(): void
@@ -220,8 +220,35 @@ final class GuardiaTaskBankTest extends WebTestCase
         $crawler = $this->client->request('GET', '/guardias/banco?nivel=eso3');
 
         self::assertResponseIsSuccessful();
-        self::assertStringContainsString('Ficha de fracciones', $crawler->filter('.bank-grid')->text());
-        self::assertStringNotContainsString('Comentario de texto', $crawler->filter('.bank-grid')->text());
+        self::assertStringContainsString('Ficha de fracciones', $crawler->filter('.bank-folders')->text());
+        self::assertStringNotContainsString('Comentario de texto', $crawler->filter('.bank-folders')->text());
+    }
+
+    /**
+     * El catálogo se lee como carpetas de nivel y, dentro, de materia: es como se busca una ficha. Con
+     * varios niveles vienen todas plegadas; la ficha sigue en la página, solo que dentro de su carpeta.
+     */
+    public function testTheCatalogueIsFoldersOfLevelAndSubject(): void
+    {
+        $maths = $this->department();
+        $this->login();
+        $this->bankItem($maths, EducationLevel::ESO_1, 'Fracciones', 'Matemáticas');
+        $this->bankItem($maths, EducationLevel::ESO_1, 'Dictado', 'Lengua');
+        $this->bankItem($maths, EducationLevel::BACH_2, 'Comentario de texto', 'Lengua');
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/banco');
+
+        self::assertResponseIsSuccessful();
+        $levels = $crawler->filter('.bank-folder');
+        self::assertCount(2, $levels);
+        self::assertStringContainsString('1º de ESO', $levels->eq(0)->filter('.bank-folder__head')->text());
+        self::assertStringContainsString('2 fichas', $levels->eq(0)->filter('.bank-folder__head')->text());
+        self::assertStringContainsString('2º de Bachillerato', $levels->eq(1)->filter('.bank-folder__head')->text());
+        // Materias por orden alfabético, como el catálogo.
+        self::assertSame(['Lengua', 'Matemáticas'], $levels->eq(0)->filter('.bank-subfolder__name')->each(static fn (Crawler $c): string => $c->text()));
+        self::assertStringContainsString('Fracciones', $levels->eq(0)->filter('.bank-subfolder')->eq(1)->text());
+        self::assertCount(0, $crawler->filter('.bank-folder[open]'), 'con varios niveles, todos plegados');
     }
 
     public function testTheSubjectFilterIsExact(): void
@@ -234,7 +261,7 @@ final class GuardiaTaskBankTest extends WebTestCase
         $this->bankItem($maths, EducationLevel::ESO_3, 'Análisis sintáctico', 'Lengua');
         $this->em->flush();
 
-        $text = $this->client->request('GET', '/guardias/banco?nivel=eso3&materia=Matem%C3%A1ticas')->filter('.bank-grid')->text();
+        $text = $this->client->request('GET', '/guardias/banco?nivel=eso3&materia=Matem%C3%A1ticas')->filter('.bank-folders')->text();
 
         self::assertStringContainsString('Ficha de fracciones', $text);
         self::assertStringNotContainsString('Análisis sintáctico', $text);
@@ -254,7 +281,7 @@ final class GuardiaTaskBankTest extends WebTestCase
         $crawler = $this->client->request('GET', '/guardias/banco?para='.$cover->getId());
 
         self::assertResponseIsSuccessful();
-        $text = $crawler->filter('.bank-grid')->text();
+        $text = $crawler->filter('.bank-folders')->text();
         self::assertStringContainsString('Ficha de fracciones', $text);
         self::assertStringNotContainsString('Análisis sintáctico', $text);
     }
@@ -271,7 +298,7 @@ final class GuardiaTaskBankTest extends WebTestCase
         $cover = $this->cover($absent, $guardia, group: 'E4D');
         $this->em->flush();
 
-        $text = $this->client->request('GET', '/guardias/banco?para='.$cover->getId())->filter('.bank-grid')->text();
+        $text = $this->client->request('GET', '/guardias/banco?para='.$cover->getId())->filter('.bank-folders')->text();
 
         self::assertStringContainsString('Para todo el nivel', $text);
         self::assertStringNotContainsString('Solo para A y C', $text);
@@ -289,7 +316,7 @@ final class GuardiaTaskBankTest extends WebTestCase
         $cover = $this->cover($absent, $guardia, group: 'E4A, E4B, E4C');
         $this->em->flush();
 
-        $text = $this->client->request('GET', '/guardias/banco?para='.$cover->getId())->filter('.bank-grid')->text();
+        $text = $this->client->request('GET', '/guardias/banco?para='.$cover->getId())->filter('.bank-folders')->text();
 
         // El grupo lleva las letras A, B y C: la tarea de A sí le vale.
         self::assertStringContainsString('Solo para A', $text);
@@ -331,11 +358,11 @@ final class GuardiaTaskBankTest extends WebTestCase
         $crawler = $this->client->request('GET', '/guardias/banco?para='.$cover->getId());
 
         self::assertResponseIsSuccessful();
-        $cards = $crawler->filter('.bank-card');
+        $cards = $crawler->filter('.bank-item');
         self::assertStringContainsString('Sin estrenar', $cards->eq(0)->text());
         self::assertStringContainsString('Muy usada', $cards->eq(1)->text());
         self::assertStringContainsString('Sugerida', $cards->eq(0)->text(), 'la primera de las menos usadas es la que se propone');
-        self::assertCount(1, $crawler->filter('.bank-card.is-suggested'), 'solo se propone una');
+        self::assertCount(1, $crawler->filter('.bank-item.is-suggested'), 'solo se propone una');
     }
 
     /**
@@ -360,7 +387,7 @@ final class GuardiaTaskBankTest extends WebTestCase
         $crawler = $this->client->request('GET', '/guardias/banco?para='.$cover->getId());
 
         self::assertResponseIsSuccessful();
-        $card = static fn (string $title): Crawler => $crawler->filter('.bank-card')->reduce(static fn (Crawler $c): bool => str_contains($c->text(), $title));
+        $card = static fn (string $title): Crawler => $crawler->filter('.bank-item')->reduce(static fn (Crawler $c): bool => str_contains($c->text(), $title));
         $expectedDay = $this->year->getTerm1Start()->format('d/m');
         self::assertStringContainsString('Ya la hizo E4D el '.$expectedDay, $card('Ya hecha')->text());
         self::assertStringNotContainsString('Ya la hizo', $card('La hizo otro grupo')->text());
@@ -385,7 +412,7 @@ final class GuardiaTaskBankTest extends WebTestCase
         $coverId = (int) $cover->getId();
 
         $crawler = $this->client->request('GET', '/guardias/banco?para='.$coverId);
-        self::assertStringContainsString('Nueva para el grupo', $crawler->filter('.bank-card.is-suggested')->text());
+        self::assertStringContainsString('Nueva para el grupo', $crawler->filter('.bank-item.is-suggested')->text());
 
         $token = (string) $crawler->filter('input[name="_token"]')->first()->attr('value');
         $this->client->request('POST', '/guardias/banco/asignar/'.$coverId, ['_token' => $token]);
@@ -426,7 +453,7 @@ final class GuardiaTaskBankTest extends WebTestCase
         $crawler = $this->client->request('GET', '/guardias/banco');
 
         self::assertResponseIsSuccessful();
-        self::assertCount(0, $crawler->filter('.bank-card.is-suggested'));
+        self::assertCount(0, $crawler->filter('.bank-item.is-suggested'));
     }
 
     public function testRetiringATaskTakesItOutOfTheOfferWithoutLosingIt(): void
@@ -443,7 +470,7 @@ final class GuardiaTaskBankTest extends WebTestCase
         $token = (string) $crawler->filter('form[action="/guardias/banco/'.$itemId.'/retirar"] input[name="_token"]')->attr('value');
         $this->client->request('POST', '/guardias/banco/'.$itemId.'/retirar', ['_token' => $token]);
 
-        self::assertResponseRedirects('/guardias/banco?nivel=eso4');
+        self::assertResponseRedirects('/guardias/banco?nivel=eso4&abierta='.$itemId.'#ficha-'.$itemId);
         $this->em->clear();
         $reloaded = $this->em->getRepository(GuardiaTaskBankItem::class)->find($itemId);
         self::assertInstanceOf(GuardiaTaskBankItem::class, $reloaded, 'retirar no borra');
@@ -468,7 +495,32 @@ final class GuardiaTaskBankTest extends WebTestCase
         $token = (string) $crawler->filter('form[action="/guardias/banco/'.$itemId.'/retirar"] input[name="_token"]')->attr('value');
         $this->client->request('POST', '/guardias/banco/'.$itemId.'/retirar', ['_token' => $token, 'para' => (string) $coverId]);
 
-        self::assertResponseRedirects('/guardias/banco?para='.$coverId);
+        self::assertResponseRedirects('/guardias/banco?para='.$coverId.'&abierta='.$itemId.'#ficha-'.$itemId);
+    }
+
+    /**
+     * Retirar, volver a ofrecer o editar devuelven al listado con la ficha a la vista: abiertas sus
+     * carpetas y solo esas, aunque haya otras materias en su nivel.
+     */
+    public function testTheTaskJustTouchedComesBackUnfolded(): void
+    {
+        $maths = $this->department();
+        $this->login();
+        $this->bankItem($maths, EducationLevel::ESO_1, 'Fracciones', 'Matemáticas');
+        $touched = $this->bankItem($maths, EducationLevel::ESO_1, 'Dictado', 'Lengua');
+        $this->bankItem($maths, EducationLevel::BACH_2, 'Comentario de texto', 'Lengua');
+        $this->em->flush();
+        $touchedId = (int) $touched->getId();
+
+        $crawler = $this->client->request('GET', '/guardias/banco?abierta='.$touchedId);
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(1, $crawler->filter('.bank-folder[open]'));
+        // Dentro del nivel abierto, solo la materia de la ficha (la de Bachillerato, única de su nivel,
+        // también viene abierta, pero dentro de una carpeta cerrada).
+        $openSubfolders = $crawler->filter('.bank-folder[open] .bank-subfolder[open]');
+        self::assertCount(1, $openSubfolders);
+        self::assertCount(1, $openSubfolders->filter('#ficha-'.$touchedId));
     }
 
     public function testARetiredTaskIsListedWithoutTheActionToUseIt(): void
@@ -484,8 +536,8 @@ final class GuardiaTaskBankTest extends WebTestCase
 
         $crawler = $this->client->request('GET', '/guardias/banco?para='.$cover->getId().'&retiradas=1');
 
-        self::assertStringContainsString('Tarea retirada', $crawler->filter('.bank-grid')->text());
-        self::assertCount(0, $crawler->filter('.bank-card__use'), 'una ficha retirada no se ofrece');
+        self::assertStringContainsString('Tarea retirada', $crawler->filter('.bank-folders')->text());
+        self::assertCount(0, $crawler->filter('.bank-item__use'), 'una ficha retirada no se ofrece');
     }
 
     public function testRetiredTasksAreHiddenUnlessAskedFor(): void
@@ -499,7 +551,7 @@ final class GuardiaTaskBankTest extends WebTestCase
         self::assertSelectorExists('.empty-state', 'una tarea retirada no se ofrece para las guardias');
 
         $crawler = $this->client->request('GET', '/guardias/banco?retiradas=1');
-        self::assertStringContainsString('Tarea retirada', $crawler->filter('.bank-grid')->text());
+        self::assertStringContainsString('Tarea retirada', $crawler->filter('.bank-folders')->text());
     }
 
     public function testATeacherAddsATaskToTheBank(): void
