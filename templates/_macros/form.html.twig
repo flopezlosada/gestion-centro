@@ -187,7 +187,9 @@
 #}
 {% macro actions(cancelUrl, submitLabel = 'Guardar') %}
     <div class="form-actions">
-        <button class="btn" type="submit">{{ submitLabel }}</button>
+        {#- data-busy-label: form-once.js pone este texto mientras el envío está en camino. Aquí sí cabe:
+            el botón es solo texto. En uno de icono (la casilla de una tarea) rompería la forma. -#}
+        <button class="btn" type="submit" data-busy-label="Enviando…">{{ submitLabel }}</button>
         <a class="btn secondary" href="{{ cancelUrl }}">Cancelar</a>
     </div>
 {% endmacro %}
