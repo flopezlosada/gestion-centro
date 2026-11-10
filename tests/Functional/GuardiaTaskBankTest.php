@@ -249,6 +249,10 @@ final class GuardiaTaskBankTest extends WebTestCase
         self::assertSame(['Lengua', 'Matemáticas'], $levels->eq(0)->filter('.bank-subfolder__name')->each(static fn (Crawler $c): string => $c->text()));
         self::assertStringContainsString('Fracciones', $levels->eq(0)->filter('.bank-subfolder')->eq(1)->text());
         self::assertCount(0, $crawler->filter('.bank-folder[open]'), 'con varios niveles, todos plegados');
+        // La clave con la que bank-folders.js recuerda cada carpeta entre filtros: nivel y nivel|materia,
+        // la misma sea cual sea el listado en que aparezca.
+        self::assertSame('eso1', $levels->eq(0)->attr('data-fold-key'));
+        self::assertSame(['eso1|Lengua', 'eso1|Matemáticas'], $levels->eq(0)->filter('.bank-subfolder')->each(static fn (Crawler $c): ?string => $c->attr('data-fold-key')));
     }
 
     public function testTheSubjectFilterIsExact(): void
