@@ -454,8 +454,10 @@ final class AbsenceRegistrarTest extends KernelTestCase
 
         $this->registrar->removeWithoutCover($absence);
 
-        self::assertSame([0], $this->absenceFor($this->absent)?->getSlotIndexes());
-        self::assertSame([], $this->absenceFor($this->absent)?->getUncoveredSlotIndexes());
+        $kept = $this->absenceFor($this->absent);
+        self::assertNotNull($kept);
+        self::assertSame([0], $kept->getSlotIndexes());
+        self::assertSame([], $kept->getUncoveredSlotIndexes());
         self::assertCount(1, $this->coversFor($this->absent));
     }
 
