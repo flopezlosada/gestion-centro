@@ -87,23 +87,19 @@ final class GuardiaTaskBankController extends AbstractController
         $subject = null !== $cover
             ? $cover->getSubjectName()
             : (trim((string) $request->query->get('materia')) ?: null);
-        // Eligiendo para una guardia, el DEPARTAMENTO viene sugerido del profesor ausente: la tarea del
-        // grupo es de su materia, así que su departamento es quien la habrá dejado. Es una sugerencia, no
-        // una jaula — "Todos" sigue ahí—, y solo se aplica si el filtro no viene ya en la URL (si alguien
-        // lo cambió a mano, manda su elección).
-        $suggestedDepartment = null !== $cover ? $cover->getAbsentTeacher()->getUnit() : null;
-        $departmentId = $request->query->has('depto')
-            ? ((int) $request->query->get('depto') ?: null)
-            : $suggestedDepartment?->getId();
+        // El DEPARTAMENTO solo filtra si alguien lo elige: nunca se deduce del docente ausente. La materia
+        // ya acota la guardia, y el departamento del ausente no tiene por qué ser el que dejó la ficha
+        // (Atención Educativa la da profesorado de cualquiera). Deducirlo vaciaba la lista mientras
+        // «Una al azar» del parte, que no lo lleva, sí encontraba tarea.
+        $departmentId = $request->query->getInt('depto') ?: null;
         $includeRetired = $request->query->getBoolean('retiradas');
 
         // Eligiendo para una clase manda el reparto (menos usadas primero, como el sorteo); navegando el
         // catálogo manda encontrar la estantería (por nivel y materia).
         $picking = null !== $cover;
         $items = $bank->findFiltered($year, $level, $subject, $cover?->getGroupName(), $departmentId, $includeRetired, $picking);
-        // Si el departamento SUGERIDO (el del profesor ausente) deja la pantalla vacía pero sin él hay
-        // trabajo que encaja, hay que decirlo: un vacío provocado por un filtro que el usuario no puso es
-        // un vacío que no se puede explicar.
+        // Si el filtro de departamento deja la pantalla vacía pero sin él hay trabajo que encaja, hay que
+        // decirlo y ofrecer quitarlo.
         $hiddenByDepartment = 0;
         if ([] === $items && null !== $departmentId) {
             $hiddenByDepartment = \count($bank->findFiltered($year, $level, $subject, $cover?->getGroupName(), null, $includeRetired, $picking));
