@@ -5210,11 +5210,12 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
     .page-head__actions--aside { display: none; }
     /* Sin la sangría de escritorio: en el móvil cada píxel de ancho es del título. */
     .bank-folder__head { padding: 13px 14px; }
-    .bank-subfolder__head { padding: 10px 14px 10px 43px; }
+    .bank-subfolder__head { padding: 10px 14px; }
     .bank-list { padding: 0 14px 8px; }
-    /* La acción a ancho completo y por debajo de la ficha: objetivo de pulgar de 44px. */
-    .bank-item { flex-wrap: wrap; }
-    .bank-item__side { width: 100%; justify-content: flex-end; }
+    /* «Usar esta» a ancho completo y por debajo de la ficha: objetivo de pulgar de 44px. Solo cuando
+       está: el ⋯ suelto se queda arriba a la derecha, sin gastar una línea por fila. */
+    .bank-item:has(.bank-item__use) { flex-wrap: wrap; }
+    .bank-item:has(.bank-item__use) .bank-item__side { width: 100%; justify-content: flex-end; }
     .bank-item__use { flex: 1; }
     .bank-item__use .btn { width: 100%; padding: 13px; font-size: 14.5px; }
 }
