@@ -4893,6 +4893,9 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 .classcard:has(input[type="checkbox"]:not(:checked)) .classcard__state--asiste { display: inline; }
 /* Sin falta no hay guardia que cubrir, así que la tarea de esa hora no procede. */
 .classcard:has(input[type="checkbox"]:not(:checked)) .classcard__task { display: none; }
+/* Las horas de GUARDIA del formulario de ausencia, a la vista distintas de las clases: sin relleno y con
+   borde naranja, el mismo código que la guardia en la leyenda del calendario anual. */
+.classcard--duty { background: transparent; border-color: var(--accent-weak-border); }
 
 /* ============================================================================
    DOCUMENTO PUBLICABLE DE ESPACIOS

@@ -154,10 +154,11 @@
                            pasa a otro compañero. Sin esta sección, quien ese día solo tenía guardias veía «no
                            hay nada que registrar» y su grupo se quedaba esperando a alguien que no iba a venir. #}
                         <div class="form-row field--own-guardias">
-                            <label class="eyebrow">Guardias que iba a cubrir</label>
+                            <div class="classes-head"><h2 class="classes-head__title">Guardias que iba a cubrir</h2></div>
+                            <p class="classes-help">Al registrar la ausencia se le <strong>retiran</strong> estas guardias y el grupo se reparte entre quien sí esté. Desmárcala si va a venir a hacerla igualmente.</p>
                             <ul class="classcards">
                                 {% for g in ownGuardias %}
-                                    <li class="classcard">
+                                    <li class="classcard classcard--duty">
                                         <label class="classcard__pick">
                                             <input type="checkbox" name="slots[]" value="{{ g.slotIndex }}" checked>
                                             <span class="classcard__box" aria-hidden="true">
@@ -178,7 +179,6 @@
                                     </li>
                                 {% endfor %}
                             </ul>
-                            <p class="field-help">Al registrar la ausencia se le <strong>retiran</strong> estas guardias y el grupo se reparte entre quien sí esté. Desmárcala si va a venir a hacerla igualmente.</p>
                         </div>
                     {% endif %}
 
@@ -188,10 +188,11 @@
                            ausencia solo abarcaba sus clases, y una falta que llegara después en una de estas
                            horas se le asignaba a alguien que no estaba en el centro. #}
                         <div class="form-row field--duty-hours">
-                            <label class="eyebrow">{{ dutyHours|length == 1 ? 'Hora de guardia' : 'Horas de guardia' }}</label>
+                            <div class="classes-head"><h2 class="classes-head__title">{{ dutyHours|length == 1 ? 'Hora de guardia' : 'Horas de guardia' }}</h2></div>
+                            <p class="classes-help">Marcada, esa hora <strong>no se le asigna</strong> ninguna guardia aunque falte alguien más tarde. Desmárcala si va a venir a hacerla.</p>
                             <ul class="classcards">
                                 {% for d in dutyHours %}
-                                    <li class="classcard">
+                                    <li class="classcard classcard--duty">
                                         <label class="classcard__pick">
                                             <input type="checkbox" name="slots[]" value="{{ d.slotIndex }}" checked>
                                             <span class="classcard__box" aria-hidden="true">
@@ -209,7 +210,6 @@
                                     </li>
                                 {% endfor %}
                             </ul>
-                            <p class="field-help">Marcada, esa hora <strong>no se le asigna</strong> ninguna guardia aunque falte alguien más tarde. Desmárcala si va a venir a hacerla.</p>
                         </div>
                     {% endif %}
 
@@ -221,7 +221,7 @@
                            Pueden ser DOS (el grande y el corto), y faltar a los dos son dos voluntarios que
                            buscar, no uno. #}
                         <div class="form-row field--break">
-                            <label class="eyebrow">{{ breakDuties|length == 1 ? 'Guardia de recreo' : 'Guardias de recreo' }}</label>
+                            <div class="classes-head"><h2 class="classes-head__title">{{ breakDuties|length == 1 ? 'Guardia de recreo' : 'Guardias de recreo' }}</h2></div>
                             <label class="choice">
                                 <input type="checkbox" name="misses_break" value="1" checked>
                                 También falta
