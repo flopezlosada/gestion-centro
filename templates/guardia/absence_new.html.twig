@@ -63,14 +63,26 @@
             {# Paso 2 · clases reales de ese día del docente elegido. #}
             {% if selectedTeacher is null %}
                 <p class="muted step-hint">Elige un docente para ver sus clases del {{ weekday.label|lower }}.</p>
-            {% elseif dayClasses is empty and breakDuties is empty and ownGuardias is empty %}
+            {% elseif dayClasses is empty and breakDuties is empty and ownGuardias is empty and dutyHours is empty %}
                 <div class="empty-state">
                     <h2>No tiene nada el {{ weekday.label|lower }}</h2>
                     <p>Ese día no da ninguna clase, no le toca guardia y no tiene guardia de recreo, así que no hay nada que registrar. Prueba con otro día.</p>
                 </div>
             {% else %}
+                {# El diálogo de confirmación suma TODAS las consecuencias: elegir una sola callaba, p. ej., el aviso
+                   del recreo a un día con hora de guardia. La parte que no depende de las clases marcadas va en
+                   data-confirm-extra para que absence-form.js la conserve al recontar. #}
+                {% set confirmExtra = [
+                    ownGuardias is not empty ? 'Se le retirarán las guardias que iba a cubrir y se repartirán entre el resto.' : null,
+                    dutyHours is not empty ? 'No se le asignará ninguna guardia en las horas que falta.' : null,
+                ]|filter(m => m is not null)|join(' ') %}
+                {% set confirmAll = [
+                    dayClasses is not empty ? 'Se generarán ' ~ dayClasses|length ~ ' guardia' ~ (dayClasses|length == 1 ? '' : 's') ~ ' y se avisará a quienes las cubran.' : null,
+                    confirmExtra is not empty ? confirmExtra : null,
+                    breakDuties is not empty ? 'Se avisará al equipo directivo de que su recreo se queda sin vigilar.' : null,
+                ]|filter(m => m is not null)|join(' ') %}
                 <form method="post" action="{{ path('guardia_absence_create') }}" class="absence-form" enctype="multipart/form-data" data-absence-form
-                      data-confirm="{% if dayClasses is empty and ownGuardias is not empty %}Se le retirarán las guardias que iba a cubrir y se repartirán entre el resto. ¿Continuar?{% elseif dayClasses is empty %}Se avisará al equipo directivo de que su recreo se queda sin vigilar. ¿Continuar?{% else %}Se generarán {{ dayClasses|length }} guardia{{ dayClasses|length == 1 ? '' : 's' }} y se avisará a quienes las cubran. ¿Continuar?{% endif %}">
+                      data-confirm="{{ confirmAll }} ¿Continuar?" data-confirm-extra="{{ confirmExtra }}">
                     <input type="hidden" name="_token" value="{{ csrf_token('guardia_absence_create') }}">
                     <input type="hidden" name="absent_teacher" value="{{ selectedTeacher }}">
                     <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
@@ -89,7 +101,7 @@
                             {% set label = c.groupCount > 1 ? (c.room ?? 'la actividad') : (c.groups|first|default('el grupo')) %}
                             <li class="classcard">
                                 <label class="classcard__pick">
-                                    <input type="checkbox" name="slots[]" value="{{ c.slotIndex }}" checked>
+                                    <input type="checkbox" name="slots[]" value="{{ c.slotIndex }}" checked data-absence-class>
                                     <span class="classcard__box" aria-hidden="true">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-11"/></svg>
                                     </span>
@@ -167,6 +179,37 @@
                                 {% endfor %}
                             </ul>
                             <p class="field-help">Al registrar la ausencia se le <strong>retiran</strong> estas guardias y el grupo se reparte entre quien sí esté. Desmárcala si va a venir a hacerla igualmente.</p>
+                        </div>
+                    {% endif %}
+
+                    {% if dutyHours is not empty %}
+                        {# Sus horas de guardia SIN nada asignado todavía. No generan guardia (no hay grupo que
+                           cubrir), pero si falta tiene que salir del reparto de esas horas: sin esta sección la
+                           ausencia solo abarcaba sus clases, y una falta que llegara después en una de estas
+                           horas se le asignaba a alguien que no estaba en el centro. #}
+                        <div class="form-row field--duty-hours">
+                            <label class="eyebrow">{{ dutyHours|length == 1 ? 'Hora de guardia' : 'Horas de guardia' }}</label>
+                            <ul class="classcards">
+                                {% for d in dutyHours %}
+                                    <li class="classcard">
+                                        <label class="classcard__pick">
+                                            <input type="checkbox" name="slots[]" value="{{ d.slotIndex }}" checked>
+                                            <span class="classcard__box" aria-hidden="true">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-11"/></svg>
+                                            </span>
+                                            <span class="classcard__what">
+                                                <span class="classcard__time">{% if d.startsAt is not null and d.endsAt is not null %}{{ d.startsAt|date('H:i', false) }}–{{ d.endsAt|date('H:i', false) }}{% else %}{{ d.slotIndex + 1 }}.ª hora{% endif %}</span>
+                                                <span class="classcard__group"><strong>{{ d.band.label ?? 'Guardia' }}</strong></span>
+                                                <span class="classcard__state">
+                                                    <span class="classcard__state--falta">Falta esta hora · no se le asignará guardia</span>
+                                                    <span class="classcard__state--asiste">Sí estará · sigue en el reparto</span>
+                                                </span>
+                                            </span>
+                                        </label>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                            <p class="field-help">Marcada, esa hora <strong>no se le asigna</strong> ninguna guardia aunque falte alguien más tarde. Desmárcala si va a venir a hacerla.</p>
                         </div>
                     {% endif %}
 

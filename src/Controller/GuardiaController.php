@@ -11,6 +11,7 @@ use App\Entity\GuardiaCover;
 use App\Entity\GuardiaSupport;
 use App\Entity\ScheduleEntry;
 use App\Entity\Substitution;
+use App\Entity\TimeSlot;
 use App\Entity\User;
 use App\Enum\Area;
 use App\Enum\GuardiaDutyBand;
@@ -716,7 +717,7 @@ final class GuardiaController extends AbstractController
      * picker is limited to themselves. Reachable prefilled with {@code ?teacher=<id>} for a coordinator.
      */
     #[Route('/ausencia/nueva', name: 'guardia_absence_new', methods: ['GET'])]
-    public function newAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, ScheduleEntryRepository $schedule, AcademicYearRepository $years, BreakDutyGapRegistrar $breakGaps, TimeSlotRepository $timeSlots, GuardiaCoverRepository $covers, AppSettings $settings): Response
+    public function newAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, ScheduleEntryRepository $schedule, AcademicYearRepository $years, BreakDutyGapRegistrar $breakGaps, TimeSlotRepository $timeSlots, GuardiaCoverRepository $covers, GuardiaSupportRepository $support, AppSettings $settings): Response
     {
         $canManage = $this->isGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $date = $this->dateFromRequest($request);
@@ -758,6 +759,27 @@ final class GuardiaController extends AbstractController
         // something to register — the group they were covering needs handing over to somebody else.
         $ownGuardias = $selected instanceof User ? $covers->findAssignedTo($selected, $date) : [];
 
+        // Every hour that day that puts them in the guardia pool and has nothing assigned yet: their rota
+        // and collaborator cells and any one-off support sign-up — the same two sources the rota reads
+        // ({@see GuardiaScheduler}). Ticked, the absence spans them and the rota leaves them
+        // out; without them the absence only spanned the lessons, so a guardia that came up LATER in one
+        // of those hours went to somebody who was not at the centre. An hour already listed elsewhere (a
+        // lesson, a guardia they hold) is not offered twice, and neither is a recreo: Peñalara books the
+        // break guardias as guardia cells, and the recreo has its own tick with the opposite consequence.
+        $breakSlots = $timeSlots->findBreaksByYear($year instanceof AcademicYear ? $year : null);
+        $dutyHours = ($selected instanceof User && $year instanceof AcademicYear)
+            ? $this->dutyHoursBySlot(
+                $schedule->dutyDayFor($year, $selected, $weekday),
+                array_values(array_filter($support->findForDate($date), static fn (GuardiaSupport $s): bool => $s->getTeacher() === $selected)),
+                $timeSlots->findByYear($year),
+                [
+                    ...array_map(static fn (array $c): int => $c['slotIndex'], $dayClasses),
+                    ...array_map(static fn (GuardiaCover $c): int => $c->getSlotIndex(), $ownGuardias),
+                    ...array_map(static fn (TimeSlot $t): int => $t->getSlotIndex(), $breakSlots),
+                ],
+            )
+            : [];
+
         return $this->render('guardia/absence_new.html.twig', [
             'date' => $date,
             'weekday' => $weekday,
@@ -770,7 +792,8 @@ final class GuardiaController extends AbstractController
             'dayClasses' => $dayClasses,
             'breakDuties' => $breakDuties,
             'ownGuardias' => $ownGuardias,
-            'breakSlots' => $timeSlots->findBreaksByYear($year instanceof AcademicYear ? $year : null),
+            'dutyHours' => $dutyHours,
+            'breakSlots' => $breakSlots,
             'keptFrom' => $keptFrom,
         ]);
     }
@@ -784,6 +807,59 @@ final class GuardiaController extends AbstractController
     private function refuseBeforePlazo(AppSettings $settings, \DateTimeImmutable $keptFrom): void
     {
         $this->addFlash('error', sprintf('Las ausencias se borran al pasar %s, así que no se puede apuntar una anterior al %s.', $settings->getAbsenceRetention()->label(), $keptFrom->format('d/m/Y')));
+    }
+
+    /**
+     * One row per hour that puts the teacher in the guardia pool, for the "apuntar ausencia" list, earliest
+     * first, leaving out the periods the screen already offers elsewhere. When one period has several
+     * sources (a rota cell and a support sign-up, say) the row takes the most binding band, in the order
+     * the rota opens them ({@see GuardiaDutyBand::inPriorityOrder()}).
+     *
+     * A support sign-up has no times of its own, so they are read off the centre's time frame; a period
+     * the frame does not know comes without times and the screen shows its number instead.
+     *
+     * @param ScheduleEntry[]  $entries      the teacher's guardia and collaborator cells that weekday
+     * @param GuardiaSupport[] $supports     the teacher's one-off support sign-ups that day
+     * @param TimeSlot[]       $frame        the course's periods, to time the support sign-ups
+     * @param list<int>        $alreadyShown the periods offered elsewhere on the screen, or that are a recreo
+     *
+     * @return list<array{slotIndex: int, band: GuardiaDutyBand, startsAt: ?\DateTimeImmutable, endsAt: ?\DateTimeImmutable}> one row per period, earliest first
+     */
+    private function dutyHoursBySlot(array $entries, array $supports, array $frame, array $alreadyShown): array
+    {
+        $times = [];
+        foreach ($frame as $slot) {
+            $times[$slot->getSlotIndex()] = $slot;
+        }
+
+        $rows = [
+            ...array_map(static fn (ScheduleEntry $e): array => [
+                'slotIndex' => $e->getSlotIndex(),
+                'band' => ScheduleActivityKind::COLLABORATOR === $e->getKind() ? GuardiaDutyBand::COLLABORATOR : GuardiaDutyBand::GUARDIA,
+                'startsAt' => $e->getStartsAt(),
+                'endsAt' => $e->getEndsAt(),
+            ], $entries),
+            ...array_map(static fn (GuardiaSupport $s): array => [
+                'slotIndex' => $s->getSlotIndex(),
+                'band' => GuardiaDutyBand::SUPPORT,
+                'startsAt' => ($times[$s->getSlotIndex()] ?? null)?->getStartsAt(),
+                'endsAt' => ($times[$s->getSlotIndex()] ?? null)?->getEndsAt(),
+            ], $supports),
+        ];
+
+        $bySlot = [];
+        foreach ($rows as $row) {
+            $i = $row['slotIndex'];
+            if (\in_array($i, $alreadyShown, true)) {
+                continue;
+            }
+            if (!isset($bySlot[$i]) || $row['band']->rank() < $bySlot[$i]['band']->rank()) {
+                $bySlot[$i] = $row;
+            }
+        }
+        ksort($bySlot);
+
+        return array_values($bySlot);
     }
 
     /**
@@ -996,25 +1072,34 @@ final class GuardiaController extends AbstractController
             ? sprintf(' Se han retirado %d guardia(s) que %s iba a cubrir, y se han vuelto a repartir.', $result->relievedCount(), $teacher->getFullName())
             : '';
 
-        if (0 === $result->createdCount()) {
-            if ('' !== $breakNote || '' !== $relievedNote) {
-                $this->addFlash('warning', sprintf('No se generó ninguna guardia para %s (no da clase esas horas o ya estaban en el parte).%s%s', $teacher->getFullName(), $relievedNote, $breakNote));
+        // Hours with no lesson that were ticked — guardia hours, mostly, and the ones just relieved. They
+        // generate nothing, but they are NOT ignored: the absence spans them and keeps the teacher out of
+        // the rota, which is what has to be said ("omitidas" read as the opposite).
+        $freeNote = $result->skippedFree > 0
+            ? sprintf(' %d hora(s) sin clase: no se le asignará guardia en ellas.', $result->skippedFree)
+            : '';
+        $existingNote = $result->skippedExisting > 0
+            ? sprintf(' %d ya estaba(n) en el parte.', $result->skippedExisting)
+            : '';
 
-                return;
-            }
-            $this->addFlash('error', sprintf('No se generó ninguna guardia para %s: no da clase esas horas o ya estaban en el parte.', $teacher->getFullName()));
+        if ($result->createdCount() > 0) {
+            $this->addFlash('success', sprintf('%d guardia(s) generada(s) para %s.', $result->createdCount(), $teacher->getFullName()).$freeNote.$existingNote.$relievedNote.$breakNote);
 
             return;
         }
 
-        $msg = sprintf('%d guardia(s) generada(s) para %s.', $result->createdCount(), $teacher->getFullName());
-        if ($result->skippedFree > 0) {
-            $msg .= sprintf(' %d hora(s) libre(s) omitida(s).', $result->skippedFree);
+        // Nothing new for the parte, but the absence itself was recorded. A warning when it moved
+        // somebody else's day (a guardia taken back, a recreo left unwatched); a plain success otherwise.
+        if ('' !== $freeNote || '' !== $relievedNote || '' !== $breakNote) {
+            $this->addFlash(
+                '' !== $relievedNote || '' !== $breakNote ? 'warning' : 'success',
+                sprintf('Ausencia de %s registrada; no se generó ninguna guardia.', $teacher->getFullName()).$freeNote.$existingNote.$relievedNote.$breakNote,
+            );
+
+            return;
         }
-        if ($result->skippedExisting > 0) {
-            $msg .= sprintf(' %d ya estaba(n) en el parte.', $result->skippedExisting);
-        }
-        $this->addFlash('success', $msg.$relievedNote.$breakNote);
+
+        $this->addFlash('error', sprintf('No se generó ninguna guardia para %s: no da clase esas horas o ya estaban en el parte.', $teacher->getFullName()));
     }
 
     /**

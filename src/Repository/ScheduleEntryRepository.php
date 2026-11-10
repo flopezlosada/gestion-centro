@@ -198,15 +198,48 @@ class ScheduleEntryRepository extends ServiceEntityRepository
      */
     public function lectiveDayFor(AcademicYear $year, User $teacher, Weekday $weekday): array
     {
+        return $this->dayOfKindsFor($year, $teacher, $weekday, [ScheduleActivityKind::LECTIVE]);
+    }
+
+    /**
+     * The teacher's guardia and collaborator hours on a weekday of a course, earliest period first — the
+     * hours that put them in the guardia pool ({@see dutyPoolAt()}). The "apuntar ausencia" screen lists
+     * them so a teacher away all day is taken out of the pool for those hours too: without them the
+     * absence only spanned the lessons, and a guardia that came up later in one of those hours could be
+     * handed to somebody who was not at the centre.
+     *
+     * @param AcademicYear $year    the course whose timetable to read
+     * @param User         $teacher the (absent) teacher
+     * @param Weekday      $weekday the weekday
+     *
+     * @return ScheduleEntry[] the guardia and collaborator entries that day, earliest period first
+     */
+    public function dutyDayFor(AcademicYear $year, User $teacher, Weekday $weekday): array
+    {
+        return $this->dayOfKindsFor($year, $teacher, $weekday, [ScheduleActivityKind::GUARDIA, ScheduleActivityKind::COLLABORATOR]);
+    }
+
+    /**
+     * The teacher's entries of the given kinds on a weekday of a course, earliest period first.
+     *
+     * @param AcademicYear               $year    the course whose timetable to read
+     * @param User                       $teacher the teacher
+     * @param Weekday                    $weekday the weekday
+     * @param list<ScheduleActivityKind> $kinds   the kinds of entry to keep
+     *
+     * @return ScheduleEntry[] the matching entries, earliest period first
+     */
+    private function dayOfKindsFor(AcademicYear $year, User $teacher, Weekday $weekday, array $kinds): array
+    {
         return $this->createQueryBuilder('s')
             ->andWhere('s.academicYear = :year')
             ->andWhere('s.teacher = :teacher')
             ->andWhere('s.weekday = :weekday')
-            ->andWhere('s.kind = :lective')
+            ->andWhere('s.kind IN (:kinds)')
             ->setParameter('year', $year)
             ->setParameter('teacher', $teacher)
             ->setParameter('weekday', $weekday)
-            ->setParameter('lective', ScheduleActivityKind::LECTIVE)
+            ->setParameter('kinds', $kinds)
             ->orderBy('s.slotIndex', 'ASC')
             ->getQuery()
             ->getResult();
