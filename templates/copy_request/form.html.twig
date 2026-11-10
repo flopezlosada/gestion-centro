@@ -69,35 +69,42 @@
             {{ form_errors(form) }}
             {% if form.context is defined %}{{ f.fields([form.context, form.document]) }}{% endif %}
             {% if files is not empty %}
-                {#- Una fila por archivo: lo que es (con su «Ver») y, al lado, cuántas copias. El rótulo de
-                    cada casilla («Copias de «ficha.pdf»») queda para el lector de pantalla: a la vista ya
-                    está el archivo en la misma fila. -#}
-                {% set first = form.copies[0] %}
+                {#- Una fila por archivo: si se imprime (solo con varios), lo que es (con su «Ver») y, al lado,
+                    cuántas copias. Los rótulos de casilla y número quedan para el lector de pantalla: a la
+                    vista ya está el archivo en la misma fila. -#}
+                {% set first = form.lines[0].copies %}
                 <div class="form-row" role="group" aria-labelledby="copy-files-title">
                     <label id="copy-files-title">{{ files|length > 1 ? 'Copias de cada archivo' : 'Número de copias' }}</label>
                     <p class="help" id="{{ first.vars.id }}_help">{{ first.vars.help }}</p>
+                    {{ form_errors(form.lines) }}
                     <ul class="copy-files">
                         {% for file in files %}
-                            {% set field = form.copies[loop.index0] %}
+                            {% set line = form.lines[loop.index0] %}
                             <li>
                                 <div class="copy-file">
+                                    {% if line.print is defined %}
+                                        <label class="copy-file__print" for="{{ line.print.vars.id }}">
+                                            <span class="visually-hidden">{{ line.print.vars.label }}</span>
+                                            {{ form_widget(line.print) }}
+                                        </label>
+                                    {% endif %}
                                     {{ include('_partials/document_link.html.twig', file) }}
-                                    <label class="copy-file__copies" for="{{ field.vars.id }}">
-                                        <span class="visually-hidden">{{ field.vars.label }}</span>
-                                        {{ form_widget(field) }}
+                                    <label class="copy-file__copies" for="{{ line.copies.vars.id }}">
+                                        <span class="visually-hidden">{{ line.copies.vars.label }}</span>
+                                        {{ form_widget(line.copies) }}
                                         <span aria-hidden="true">copias</span>
                                     </label>
                                 </div>
-                                {{ form_errors(field) }}
+                                {{ form_errors(line.copies) }}
                             </li>
                         {% endfor %}
                     </ul>
                 </div>
             {% else %}
-                {{ f.fields(form.copies) }}
+                {{ f.fields([form.lines[0].copies]) }}
             {% endif %}
             {#- El contenedor no tiene fila propia. -#}
-            {% do form.copies.setRendered %}
+            {% do form.lines.setRendered %}
             {{ f.fields([form.notes]) }}
             {{ f.actions(cancelUrl ?? path('copy_request_index'), 'Enviar a fotocopias') }}
         {{ form_end(form) }}

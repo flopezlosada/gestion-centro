@@ -93,7 +93,7 @@ final class GuardiaParteCopiesTest extends WebTestCase
 
         $this->client->request('POST', (string) $url, ['copy_request' => [
             'files' => (string) $crawler->filter('input[name="copy_request[files]"]')->attr('value'),
-            'copies' => ['25'],
+            'lines' => [['copies' => '25']],
             '_token' => (string) $crawler->filter('input[name="copy_request[_token]"]')->attr('value'),
         ]]);
 

@@ -170,10 +170,12 @@ final class CopyRequestController extends AbstractController
                     ->setRequestedBy($user)
                     ->setCover($cover)
                     ->setBankItem($bankItem);
+                // Solo se guarda copia de los archivos marcados: los que se dejan fuera no van a conserjería.
+                $printed = array_intersect_key($documents, array_flip($data->printedPositions()));
                 $data->applyTo($order, array_map(fn (array $d): array => [
                     'path' => $this->snapshotDocument($d['path'], $uploader),
                     'name' => $d['name'],
-                ], $documents));
+                ], $printed));
 
                 return $order;
             }, $em, $mailer, $back);

@@ -172,12 +172,12 @@ final class CopyRequestTest extends WebTestCase
         $crawler = $this->client->request('GET', '/fotocopias/guardia/'.$coverId);
         self::assertResponseIsSuccessful();
         // The bank task's usual number of copies is prefilled, but stays editable.
-        self::assertSame('28', $crawler->filter('input[name="copy_request[copies][0]"]')->attr('value'));
+        self::assertSame('28', $crawler->filter('input[name="copy_request[lines][0][copies]"]')->attr('value'));
 
         $token = (string) $crawler->filter('input[name="copy_request[_token]"]')->attr('value');
         $this->client->request('POST', '/fotocopias/guardia/'.$coverId, ['copy_request' => [
             'files' => (string) $crawler->filter('input[name="copy_request[files]"]')->attr('value'),
-            'copies' => ['30'],
+            'lines' => [['copies' => '30']],
             'notes' => 'A doble cara',
             '_token' => $token,
         ]]);
@@ -215,7 +215,7 @@ final class CopyRequestTest extends WebTestCase
         $crawler = $this->client->request('GET', '/fotocopias/guardia/'.$cover->getId());
 
         self::assertResponseIsSuccessful();
-        self::assertSame('31', $crawler->filter('input[name="copy_request[copies][0]"]')->attr('value'));
+        self::assertSame('31', $crawler->filter('input[name="copy_request[lines][0][copies]"]')->attr('value'));
     }
 
     /**
@@ -234,20 +234,20 @@ final class CopyRequestTest extends WebTestCase
 
         $crawler = $this->client->request('GET', '/fotocopias/guardia/'.$coverId);
         self::assertResponseIsSuccessful();
-        self::assertSame('28', $crawler->filter('input[name="copy_request[copies][0]"]')->attr('value'));
-        self::assertSame('28', $crawler->filter('input[name="copy_request[copies][1]"]')->attr('value'));
-        self::assertSelectorTextContains('label[for="copy_request_copies_1"]', 'solucionario.pdf');
+        self::assertSame('28', $crawler->filter('input[name="copy_request[lines][0][copies]"]')->attr('value'));
+        self::assertSame('28', $crawler->filter('input[name="copy_request[lines][1][copies]"]')->attr('value'));
+        self::assertSelectorTextContains('label[for="copy_request_lines_1_copies"]', 'solucionario.pdf');
         // Cada archivo sale una vez, en su fila y con sus copias al lado, no también en una lista aparte.
         $rows = $crawler->filter('.copy-files .copy-file');
         self::assertSame(['ficha.pdf', 'solucionario.pdf'], $rows->each(static fn (Crawler $row): string => $row->filter('.bank-doc__name')->text()));
-        self::assertCount(1, $rows->eq(1)->filter('input[name="copy_request[copies][1]"]'));
+        self::assertCount(1, $rows->eq(1)->filter('input[name="copy_request[lines][1][copies]"]'));
         self::assertCount(2, $crawler->filter('a.bank-doc'));
         self::assertStringContainsString('con los documentos adjuntos', $crawler->filter('.lead')->text());
 
         $token = (string) $crawler->filter('input[name="copy_request[_token]"]')->attr('value');
         $this->client->request('POST', '/fotocopias/guardia/'.$coverId, ['copy_request' => [
             'files' => (string) $crawler->filter('input[name="copy_request[files]"]')->attr('value'),
-            'copies' => ['28', '1'],
+            'lines' => [['print' => '1', 'copies' => '28'], ['print' => '1', 'copies' => '1']],
             '_token' => $token,
         ]]);
 
@@ -264,6 +264,76 @@ final class CopyRequestTest extends WebTestCase
         // Copia propia del encargo: no apunta al fichero del banco, que su departamento puede cambiar.
         $bankPaths = array_map(static fn ($d) => $d->getPath(), $cover->getBankItem()?->getDocuments() ?? []);
         self::assertSame([], array_intersect($bankPaths, array_map(static fn ($l) => $l->getPath(), $order->getLines())));
+    }
+
+    /**
+     * Con varios archivos, quien pide elige cuáles se imprimen: el que se deja fuera no va al encargo, ni
+     * al correo, aunque su casilla de copias venga vacía o con un número.
+     */
+    public function testAFileLeftOutIsNotOrdered(): void
+    {
+        $user = $this->login('guardia@centro.test');
+        $coverId = $this->coverWithTwoFiles($user);
+
+        $crawler = $this->client->request('GET', '/fotocopias/guardia/'.$coverId);
+        self::assertResponseIsSuccessful();
+        self::assertSame('checked', $crawler->filter('input[name="copy_request[lines][1][print]"]')->attr('checked'));
+
+        // Sin `print` en la fila 1: así llega una casilla desmarcada.
+        $this->client->request('POST', '/fotocopias/guardia/'.$coverId, ['copy_request' => [
+            'files' => (string) $crawler->filter('input[name="copy_request[files]"]')->attr('value'),
+            'lines' => [['print' => '1', 'copies' => '28'], ['copies' => '']],
+            '_token' => (string) $crawler->filter('input[name="copy_request[_token]"]')->attr('value'),
+        ]]);
+
+        self::assertResponseRedirects('/fotocopias');
+        self::assertEmailCount(1);
+        $email = self::getMailerMessage();
+        self::assertInstanceOf(Email::class, $email);
+        self::assertCount(1, $email->getAttachments());
+
+        $order = $this->onlyOrder();
+        self::assertSame([28], array_map(static fn ($l) => $l->getCopies(), $order->getLines()));
+        self::assertSame(['ficha.pdf'], array_map(static fn ($l) => $l->getName(), $order->getLines()));
+    }
+
+    /**
+     * Dejar fuera todos los archivos no es un encargo: vuelve el formulario y no sale nada.
+     */
+    public function testLeavingEveryFileOutIsRefused(): void
+    {
+        $user = $this->login('guardia@centro.test');
+        $coverId = $this->coverWithTwoFiles($user);
+
+        $crawler = $this->client->request('GET', '/fotocopias/guardia/'.$coverId);
+        $this->client->request('POST', '/fotocopias/guardia/'.$coverId, ['copy_request' => [
+            'files' => (string) $crawler->filter('input[name="copy_request[files]"]')->attr('value'),
+            'lines' => [['copies' => '28'], ['copies' => '1']],
+            '_token' => (string) $crawler->filter('input[name="copy_request[_token]"]')->attr('value'),
+        ]]);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertSelectorTextContains('body', 'Marca al menos un archivo para imprimir.');
+        self::assertEmailCount(0);
+        self::assertCount(0, $this->em->getRepository(CopyRequest::class)->findAll());
+    }
+
+    /**
+     * Una guardia con una tarea del banco de dos archivos: la ficha y el solucionario.
+     *
+     * @param User $user who covers the guardia
+     *
+     * @return int the cover's id
+     */
+    private function coverWithTwoFiles(User $user): int
+    {
+        $cover = $this->coverWithBankTask($user, suggestedCopies: 28);
+        $uploader = self::getContainer()->get(FileUploader::class);
+        $cover->getBankItem()?->addDocument($uploader->store('ejercicios', 'guardia-task-bank', 'pdf'), 'ficha.pdf')
+            ->addDocument($uploader->store('soluciones', 'guardia-task-bank', 'pdf'), 'solucionario.pdf');
+        $this->em->flush();
+
+        return (int) $cover->getId();
     }
 
     /**
@@ -289,7 +359,7 @@ final class CopyRequestTest extends WebTestCase
 
         $this->client->request('POST', '/fotocopias/guardia/'.$coverId, ['copy_request' => [
             'files' => (string) $crawler->filter('input[name="copy_request[files]"]')->attr('value'),
-            'copies' => ['28', '1'],
+            'lines' => [['print' => '1', 'copies' => '28'], ['print' => '1', 'copies' => '1']],
             '_token' => (string) $crawler->filter('input[name="copy_request[_token]"]')->attr('value'),
         ]]);
 
@@ -325,7 +395,7 @@ final class CopyRequestTest extends WebTestCase
         $token = (string) $crawler->filter('input[name="copy_request[_token]"]')->attr('value');
         $this->client->request('POST', '/fotocopias/guardia/'.$coverId, ['copy_request' => [
             'files' => (string) $crawler->filter('input[name="copy_request[files]"]')->attr('value'),
-            'copies' => [''],
+            'lines' => [['copies' => '']],
             '_token' => $token,
         ]]);
 
@@ -358,7 +428,7 @@ final class CopyRequestTest extends WebTestCase
             $this->client->request(
                 'POST',
                 '/fotocopias/nuevo',
-                ['copy_request' => ['context' => 'Examen de 2º ESO B', 'copies' => ['25'], '_token' => $token], '_once' => $once],
+                ['copy_request' => ['context' => 'Examen de 2º ESO B', 'lines' => [['copies' => '25']], '_token' => $token], '_once' => $once],
                 ['copy_request' => ['document' => new UploadedFile($path, $fileName, null, null, true)]],
             );
         };
@@ -438,7 +508,7 @@ final class CopyRequestTest extends WebTestCase
         $token = (string) $crawler->filter('input[name="copy_request[_token]"]')->attr('value');
         $this->client->request('POST', '/fotocopias/nuevo', ['copy_request' => [
             'context' => 'Algo',
-            'copies' => ['10'],
+            'lines' => [['copies' => '10']],
             '_token' => $token,
         ]]);
 
