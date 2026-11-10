@@ -15,7 +15,8 @@ use Symfony\Component\Mime\Email;
 /**
  * The login page must be reachable without authentication (it is the entry point). The magic-link
  * form is always offered, also next to SSO: SSO depends on the Educamadrid domain letting the app
- * in, and the day it does not, the e-mail link is the way in. One "Recordarme" checkbox serves both.
+ * in, and the day it does not, the e-mail link is the way in. "Recordarme" is asked where each way signs
+ * in: above the SSO button on the login page, and on the page the e-mail link opens.
  */
 final class LoginPageTest extends WebTestCase
 {
@@ -46,7 +47,8 @@ final class LoginPageTest extends WebTestCase
         self::assertResponseIsSuccessful();
         self::assertSelectorExists('form#login-form');
         self::assertSelectorNotExists('[data-sso]');
-        self::assertSelectorExists('input[type="checkbox"][name="_remember_me"]');
+        // Without SSO the only way in is the link, and the link's own page asks "Recordarme".
+        self::assertSelectorNotExists('input[name="_remember_me"]');
     }
 
     public function testWithSsoConfiguredBothEntriesAreOffered(): void
@@ -58,7 +60,9 @@ final class LoginPageTest extends WebTestCase
         self::assertSelectorExists('form#login-form button[data-sso][formaction="/connect/google"][formmethod="get"]');
         self::assertSelectorExists('form#login-form input[name="email"]');
         self::assertSelectorExists('form#login-form button[data-magic-link]');
+        // Above the SSO button, so it is seen before pressing it.
         self::assertSelectorExists('form#login-form input[type="checkbox"][name="_remember_me"]');
+        self::assertSelectorExists('form#login-form .auth-remember ~ button[data-sso]');
     }
 
     public function testWithSsoConfiguredTheMagicLinkIsStillSent(): void
@@ -72,38 +76,63 @@ final class LoginPageTest extends WebTestCase
         self::assertEmailCount(1, null, 'con SSO configurado el enlace se sigue mandando');
     }
 
-    public function testTheLinkCarriesTheRememberMeChoiceOnlyWhenTicked(): void
+    /**
+     * Ticking the box on the login page does not put the choice in the e-mailed link.
+     */
+    public function testTheLinkNeverCarriesTheRememberMeChoice(): void
     {
+        // Symfony reads the parameter from the query before the posted form: one in the link would
+        // override the checkbox on the page the link opens.
         $client = static::createClient();
         $this->user($client, 'recordar@educa.madrid.org');
 
         $client->request('POST', '/login', ['email' => 'recordar@educa.madrid.org', '_remember_me' => '1']);
-        self::assertStringContainsString('&_remember_me=1', $this->sentLink());
 
-        $client->request('POST', '/login', ['email' => 'recordar@educa.madrid.org']);
         self::assertStringNotContainsString('_remember_me', $this->sentLink());
     }
 
-    public function testFollowingARememberedLinkLeavesTheRememberMeCookie(): void
+    /**
+     * The page the link opens offers "Recordarme", unticked, before the "Entrar" button.
+     */
+    public function testTheLinkPageAsksRememberMeUntickedAboveTheButton(): void
+    {
+        // Unticked: a shared staff-room computer keeps the idle timeout unless someone asks otherwise.
+        $client = static::createClient();
+        $this->user($client, 'pregunta@educa.madrid.org');
+        $client->request('POST', '/login', ['email' => 'pregunta@educa.madrid.org']);
+
+        $client->request('GET', $this->sentLink());
+
+        self::assertSelectorExists('form[method="post"] input[type="checkbox"][name="_remember_me"]:not([checked])');
+        self::assertSelectorExists('form[method="post"] .auth-remember ~ button[type="submit"]');
+    }
+
+    /**
+     * Ticking "Recordarme" on the link page leaves the remember-me cookie on that device.
+     */
+    public function testTickingRememberMeOnTheLinkPageLeavesTheRememberMeCookie(): void
     {
         $client = static::createClient();
         $this->user($client, 'movil@educa.madrid.org');
 
-        $client->request('POST', '/login', ['email' => 'movil@educa.madrid.org', '_remember_me' => '1']);
-        $this->follow($client, $this->sentLink());
+        $client->request('POST', '/login', ['email' => 'movil@educa.madrid.org']);
+        $this->follow($client, $this->sentLink(), rememberMe: true);
 
         self::assertResponseRedirects();
         self::assertNotNull($client->getCookieJar()->get('REMEMBERME'), 'marcada la casilla, el dispositivo queda recordado');
     }
 
-    public function testFollowingAPlainLinkLeavesNoRememberMeCookie(): void
+    /**
+     * Entering from the link page without ticking leaves no remember-me cookie.
+     */
+    public function testEnteringWithoutTickingLeavesNoRememberMeCookie(): void
     {
         // The shared staff-room computer: without the checkbox the session is the only way in, so
-        // the idle timeout still closes it.
+        // the idle timeout still closes it. Ticking it on the login page no longer counts for the link.
         $client = static::createClient();
         $this->user($client, 'sala@educa.madrid.org');
 
-        $client->request('POST', '/login', ['email' => 'sala@educa.madrid.org']);
+        $client->request('POST', '/login', ['email' => 'sala@educa.madrid.org', '_remember_me' => '1']);
         $this->follow($client, $this->sentLink());
 
         self::assertResponseRedirects();
@@ -263,11 +292,12 @@ final class LoginPageTest extends WebTestCase
      * back to the link's own address, so the server parameters go with the press.
      *
      * @param array<string, string> $server
+     * @param bool                  $rememberMe whether "Recordarme" is ticked before pressing
      */
-    private function follow(KernelBrowser $client, string $link, array $server = []): void
+    private function follow(KernelBrowser $client, string $link, array $server = [], bool $rememberMe = false): void
     {
         $client->request('GET', $link);
-        $client->submitForm('Entrar', serverParameters: $server);
+        $client->submitForm('Entrar', ['_remember_me' => $rememberMe], serverParameters: $server);
     }
 
     /**

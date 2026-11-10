@@ -12,6 +12,7 @@
                 <p class="auth-lead">Vas a entrar como <strong>{{ email }}</strong>.</p>
             {% endif %}
             <form method="post" action="{{ action }}">
+                {{ include('security/_remember_me.html.twig') }}
                 <button type="submit" class="btn">Entrar</button>
             </form>
         </div>

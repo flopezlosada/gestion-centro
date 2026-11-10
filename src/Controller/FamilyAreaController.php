@@ -262,7 +262,7 @@ final class FamilyAreaController extends AbstractController
 
         $family = $families->findOneByEmail($email);
         if (null !== $family) {
-            $linkMailer->send($family, $request->request->getBoolean('_remember_me'), 'el espacio de familias');
+            $linkMailer->send($family, 'el espacio de familias');
         }
 
         return $this->render('security/link_sent.html.twig', ['email' => $email, 'back_route' => 'family_login']);

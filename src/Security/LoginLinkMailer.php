@@ -30,20 +30,17 @@ final class LoginLinkMailer
     /**
      * Sends the link.
      *
-     * The "Recordarme" choice travels inside the link as the remember-me parameter, because the cookie is
-     * set wherever the link is followed. It sits outside the signed part of the URL, which is fine: it only
-     * decides whether the person who legitimately follows the link stays signed in on that device.
+     * The link carries no "Recordarme" choice: it is asked on the page the link opens, on the device that
+     * will stay signed in, which is often not the one that asked for the link. It must stay out of the URL,
+     * too: Symfony reads the remember-me parameter from the query before the posted form, so one in the
+     * link would override the checkbox on that page.
      *
-     * @param UserInterface $account    who signs in; their identifier is their e-mail address
-     * @param bool          $rememberMe whether to stay signed in on the device that follows the link
-     * @param string        $where      what the link opens, to complete "Entra en …" in the message
+     * @param UserInterface $account who signs in; their identifier is their e-mail address
+     * @param string        $where   what the link opens, to complete "Entra en …" in the message
      */
-    public function send(UserInterface $account, bool $rememberMe, string $where): void
+    public function send(UserInterface $account, string $where): void
     {
         $url = $this->loginLinkHandler->createLoginLink($account)->getUrl();
-        if ($rememberMe) {
-            $url .= '&_remember_me=1';
-        }
 
         $this->mailer->send((new Email())
             ->from($this->mailerFrom)
