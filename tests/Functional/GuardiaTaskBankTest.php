@@ -290,6 +290,28 @@ final class GuardiaTaskBankTest extends WebTestCase
         self::assertStringNotContainsString('Análisis sintáctico', $text);
     }
 
+    /**
+     * Atención Educativa la imparte profesorado de cualquier departamento, y la ficha la deja otro: la
+     * lista no se filtra por el departamento del ausente, igual que «Una al azar» del parte no lo hace.
+     * Si no, la lista salía vacía mientras el sorteo sí asignaba tarea.
+     */
+    public function testPickingDoesNotNarrowToTheAbsentTeachersDepartment(): void
+    {
+        $orientation = $this->department('Orientación');
+        $absent = (new User())->setFullName('Ausente')->setEmail('ausente@centro.test')->setUnit($this->department('Tecnología'));
+        $this->em->persist($absent);
+        $guardia = $this->login('guardia@centro.test');
+        $this->bankItem($orientation, EducationLevel::ESO_1, 'Debate sobre convivencia', 'Atención Educativa');
+        $cover = $this->cover($absent, $guardia, group: 'E1A', subject: 'Atención Educativa');
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/banco?para='.$cover->getId());
+
+        self::assertResponseIsSuccessful();
+        self::assertStringContainsString('Debate sobre convivencia', $crawler->filter('.bank-folders')->text());
+        self::assertCount(0, $crawler->filter('.bank-anchor__actions input[name="depto"]'), 'the draw is not narrowed either');
+    }
+
     public function testATaskLimitedToSomeSectionsIsNotOfferedToAnotherGroup(): void
     {
         $maths = $this->department();
