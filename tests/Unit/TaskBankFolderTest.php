@@ -96,11 +96,13 @@ final class TaskBankFolderTest extends TestCase
     }
 
     /**
-     * A listing narrowed to one level shows that level unfolded.
+     * A listing narrowed to one level shows that level unfolded, and every subject in it.
      */
     public function testTheOnlyLevelComesUnfolded(): void
     {
-        // Filtrado a un nivel, una carpeta cerrada sola en la pantalla sería un clic sin elección.
+        // Filtrado a un nivel, una carpeta cerrada sola en la pantalla sería un clic sin elección. Y sus
+        // materias, abiertas todas: si no, un filtro que añade una materia (ver retiradas) plegaba la que
+        // se estaba leyendo y parecía que la pantalla había escondido esas fichas.
         $folders = TaskBankFolder::group([
             $this->task(EducationLevel::ESO_3, 'Matemáticas', 'Fracciones'),
             $this->task(EducationLevel::ESO_3, 'Lengua', 'Dictado'),
@@ -108,7 +110,8 @@ final class TaskBankFolderTest extends TestCase
 
         self::assertCount(1, $folders);
         self::assertTrue($folders[0]->open);
-        self::assertFalse($folders[0]->subjects[0]->open);
+        self::assertTrue($folders[0]->subjects[0]->open);
+        self::assertTrue($folders[0]->subjects[1]->open);
     }
 
     /**

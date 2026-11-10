@@ -14,7 +14,9 @@ use App\Enum\EducationLevel;
  *
  * What comes unfolded is decided here, not in the template: a folder that is the only one of its kind
  * opens (a filtered listing would otherwise be a single closed folder to click), and so does whatever
- * holds the task the screen suggests, which would be hidden otherwise.
+ * holds the task the screen suggests, which would be hidden otherwise. With a single level on screen
+ * every subject in it opens too: otherwise a filter that adds a subject (showing the retired ones, say)
+ * folds the one being read, and the screen looks as if it had hidden those tasks.
  */
 final readonly class TaskBankFolder
 {
@@ -63,7 +65,7 @@ final readonly class TaskBankFolder
                 static fn (string|int $subject, array $tasks, bool $holds): TaskBankSubjectFolder => new TaskBankSubjectFolder(
                     (string) $subject, // una materia que fuese un número llegaría como clave entera
                     $tasks,
-                    $onlySubject || $holds,
+                    $onlyLevel || $onlySubject || $holds,
                 ),
                 array_keys($bySubject),
                 array_values($bySubject),
