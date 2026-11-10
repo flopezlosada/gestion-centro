@@ -123,6 +123,24 @@
     {% endif %}
 {% endmacro %}
 
+{#
+   Pedir las fotocopias de la tarea sin salir del parte. «Una al azar» asigna la ficha del banco y vuelve
+   aquí, y el aviso dice «pide las fotocopias»: sin este enlace el único botón estaba dentro de «Ver», y no
+   se pedían. Mismas reglas que en la ficha de la guardia: el mismo voter que exige la ruta, nada que pedir
+   si no hay documento, y nada si la guardia no ocurrió o su hora ya pasó. `sent` dice lo ya pedido (null:
+   nada; true: al menos uno llegó a conserjería; false: ninguno salió), para no pedirlo dos veces ni dar por
+   pedido un correo que no se fue. Lleva `volver=parte`: al acabar, de vuelta a esta hora del parte.
+#}
+{% macro copies_pick(cover, sent, slotOver) %}
+    {% if not slotOver and not cover.notCovered and cover.printableDocuments is not empty
+          and is_granted(constant('App\\Security\\Voter\\GuardiaCoverVoter::WORK_ON_TASK'), cover) %}
+        {% if sent is same as(false) %}
+            <span class="badge badge--warning" title="Se pidieron, pero el correo a conserjería no salió: reenvíalo desde Fotocopias">Fotocopias sin enviar</span>
+        {% endif %}
+        <a class="link-action{{ sent is not null ? ' link-action--soft' }}" href="{{ path('copy_request_for_cover', { cover: cover.id, volver: 'parte' }) }}">{{ sent ? 'Fotocopias pedidas · pedir más' : (sent is null ? 'Pedir fotocopias' : 'Pedir otra vez') }}</a>
+    {% endif %}
+{% endmacro %}
+
 {% block body %}
     {% import _self as parte %}
     {% set slotActual = slots|filter(s => s.index == slotIndex)|first %}
@@ -321,6 +339,7 @@
                                     {% if cover.hasBankTask %}
                                         <span class="parte-card__taskdesc">Ficha del banco · {{ cover.bankItem.title|excerpt(60) }}</span>
                                     {% endif %}
+                                    {{ parte.copies_pick(cover, copiesOrdered[cover.id] ?? null, slotOver) }}
                                     {% if not cover.hasTask %}
                                         {{ parte.bank_pick(cover, canWrite) }}
                                     {% endif %}
@@ -379,6 +398,7 @@
                                                     {% if cover.taskDescription %}<span title="{{ cover.taskDescription }}">{{ cover.taskDescription|excerpt(60) }}</span>{% endif %}
                                                 </span>
                                             </span>
+                                            {{ parte.copies_pick(cover, copiesOrdered[cover.id] ?? null, slotOver) }}
                                         {% else %}
                                             <span class="parte-notask">Sin tarea</span>
                                             {{ parte.bank_pick(cover, canWrite) }}

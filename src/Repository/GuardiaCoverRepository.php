@@ -94,7 +94,8 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     }
 
     /**
-     * The parte lines for a date and period, absent teacher and assigned guardia eager-loaded.
+     * The parte lines for a date and period, with everything the parte paints on each line eager-loaded:
+     * absent teacher, assigned guardia, absence, grouping, and the bank task with its documents.
      *
      * @param \DateTimeImmutable $date      the day
      * @param int                $slotIndex the period index within the day
@@ -104,15 +105,17 @@ class GuardiaCoverRepository extends ServiceEntityRepository
     public function findForParte(\DateTimeImmutable $date, int $slotIndex): array
     {
         return $this->createQueryBuilder('c')
-            ->addSelect('absent', 'guardia', 'absence', 'grouping', 'bank')
+            ->addSelect('absent', 'guardia', 'absence', 'grouping', 'bank', 'bankDoc')
             ->join('c.absentTeacher', 'absent')
             ->leftJoin('c.assignedGuardia', 'guardia')
             ->join('c.absence', 'absence')
             // Grouping joined too: the parte reads it on every line (to say which room the class actually
             // happens in), so lazy-loading it would be a query per line.
             ->leftJoin('c.grouping', 'grouping')
-            // Y por lo mismo la tarea del banco: el parte pinta su título en cada línea que la tiene.
+            // Y por lo mismo la tarea del banco: el parte pinta su título en cada línea que la tiene, y
+            // mira si tiene documentos para ofrecer las fotocopias.
             ->leftJoin('c.bankItem', 'bank')
+            ->leftJoin('bank.documents', 'bankDoc')
             ->andWhere('c.date = :date')
             ->andWhere('c.slotIndex = :slot')
             ->setParameter('date', $date, 'date_immutable')

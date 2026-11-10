@@ -119,13 +119,19 @@ final class CopyRequestController extends AbstractController
     public function forCover(GuardiaCover $cover, Request $request, #[CurrentUser] User $user, EntityManagerInterface $em, CopyShopMailer $mailer, CopyRequestRepository $requests, ScheduleEntryRepository $schedule, AcademicYearRepository $years, FileUploader $uploader, SubmissionOnce $once): Response
     {
         $this->denyAccessUnlessGranted(GuardiaCoverVoter::WORK_ON_TASK, $cover);
+        // Desde el parte se vuelve al parte, a esa misma hora: la coordinación va línea a línea, y acabar en
+        // la lista de fotocopias le haría volver a buscar la hora en cada una.
+        $back = 'parte' === $request->query->get('volver')
+            ? $this->generateUrl('guardia_index', ['date' => $cover->getDate()->format('Y-m-d'), 'slot' => $cover->getSlotIndex()])
+            : null;
+        $guardiaUrl = $back ?? $this->generateUrl('guardia_cover_show', ['id' => $cover->getId()]);
 
         $documents = $cover->getPrintableDocuments();
         // Sin esto saldría a conserjería un encargo sin nada que imprimir.
         if (null !== $cover->getTaskDocumentPurgedAt() && [] === $documents) {
             $this->addFlash('error', 'El documento de esta guardia ya se borró: no hay nada que fotocopiar.');
 
-            return $this->redirectToRoute('guardia_cover_show', ['id' => $cover->getId()]);
+            return $this->redirect($guardiaUrl);
         }
 
         // Un archivo que ya no está en disco dejaría su casilla de copias sin adjunto y el correo contaría
@@ -134,7 +140,7 @@ final class CopyRequestController extends AbstractController
         if ([] !== $missing) {
             $this->addFlash('error', sprintf('«%s» ya no está disponible: revisa la tarea antes de pedir fotocopias.', implode('», «', array_column($missing, 'name'))));
 
-            return $this->redirectToRoute('guardia_cover_show', ['id' => $cover->getId()]);
+            return $this->redirect($guardiaUrl);
         }
 
         $bankItem = $cover->getBankItem();
@@ -170,7 +176,7 @@ final class CopyRequestController extends AbstractController
                 ], $documents));
 
                 return $order;
-            }, $em, $mailer);
+            }, $em, $mailer, $back);
         }
 
         return $this->render('copy_request/form.html.twig', [
@@ -178,6 +184,7 @@ final class CopyRequestController extends AbstractController
             'cover' => $cover,
             'previous' => $requests->findForCover($cover),
             'recipient' => $mailer->recipient(),
+            'cancelUrl' => $guardiaUrl,
         ]);
     }
 
@@ -300,15 +307,17 @@ final class CopyRequestController extends AbstractController
      * @param \Closure(): CopyRequest $build   builds the order to place
      * @param EntityManagerInterface  $em      the entity manager
      * @param CopyShopMailer          $mailer  the copy-room mailer
+     * @param string|null             $doneUrl where to land afterwards, or null for the orders list
      *
-     * @return Response the redirect to the orders list
+     * @return Response the redirect to $doneUrl or to the orders list
      */
-    private function placeOrder(Request $request, SubmissionOnce $once, \Closure $build, EntityManagerInterface $em, CopyShopMailer $mailer): Response
+    private function placeOrder(Request $request, SubmissionOnce $once, \Closure $build, EntityManagerInterface $em, CopyShopMailer $mailer, ?string $doneUrl = null): Response
     {
+        $done = $doneUrl ?? $this->generateUrl('copy_request_index');
         if (!$once->claim($request)) {
             $this->addFlash('success', 'El encargo ya estaba enviado: este segundo envío no se ha repetido.');
 
-            return $this->redirectToRoute('copy_request_index');
+            return $this->redirect($done);
         }
 
         try {
@@ -336,7 +345,7 @@ final class CopyRequestController extends AbstractController
             $this->addFlash('warning', 'El encargo queda registrado, pero no se pudo enviar el correo. Reenvíalo desde la lista o avisa a conserjería.');
         }
 
-        return $this->redirectToRoute('copy_request_index');
+        return $this->redirect($done);
     }
 
     /**
