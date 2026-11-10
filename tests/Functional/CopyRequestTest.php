@@ -451,7 +451,8 @@ final class CopyRequestTest extends WebTestCase
         self::assertEmailCount(0, null, 'el segundo envío no manda otro correo');
         $this->client->followRedirect();
         self::assertAnySelectorTextContains('.flash.warning', 'no se ha repetido');
-        self::assertSelectorNotExists('.flash.success', 'no se dice que salió: el segundo envío no lo sabe');
+        // El aviso verde del primero, si salió, sí aparece: ése lo sabe. El segundo no afirma nada.
+        self::assertSelectorTextNotContains('body', 'ya estaba enviado');
 
         $this->onlyOrder();
     }
