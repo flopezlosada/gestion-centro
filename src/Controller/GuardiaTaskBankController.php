@@ -13,6 +13,7 @@ use App\Enum\Area;
 use App\Enum\EducationLevel;
 use App\Form\GuardiaTaskBankFormData;
 use App\Form\GuardiaTaskBankItemType;
+use App\Guardia\TaskBankFolder;
 use App\Repository\AcademicYearRepository;
 use App\Repository\DepartmentRepository;
 use App\Repository\GuardiaCoverRepository;
@@ -107,26 +108,31 @@ final class GuardiaTaskBankController extends AbstractController
         if ([] === $items && null !== $departmentId) {
             $hiddenByDepartment = \count($bank->findFiltered($year, $level, $subject, $cover?->getGroupName(), null, $includeRetired, $picking));
         }
-        // Lo que ese grupo ya hizo en otras guardias: se avisa en la tarjeta y ni se sugiere ni se sortea.
+        // Lo que ese grupo ya hizo en otras guardias: se avisa en la fila y ni se sugiere ni se sortea.
         $doneByGroup = $this->doneByGroup($cover, $covers);
+
+        // La ficha que la pantalla ofrece por defecto: la primera de las menos usadas, que es
+        // exactamente una de las que el sorteo podría dar. Solo existe eligiendo para una clase y
+        // solo si el sorteo es posible (nivel y materia conocidos): sin eso, "sugerida" sería
+        // una etiqueta sin criterio detrás.
+        $suggestedId = $picking && null !== $level && null !== $subject
+            // Entre las que están en oferta, como el sorteo: si no, una retirada sin estrenar podía
+            // dejar la pantalla sin sugerida mientras el sorteo sí repetía una ya hecha.
+            ? self::firstActiveId(GuardiaTaskBankItemRepository::withoutDoneByGroup(
+                array_values(array_filter($items, static fn (GuardiaTaskBankItem $i): bool => $i->isActive())),
+                array_keys($doneByGroup),
+            ))
+            : null;
 
         return $this->render('guardia/bank/index.html.twig', [
             'noCourse' => null,
             'course' => $year->getSchoolYear(),
             'items' => $items,
+            // El listado en carpetas de nivel y materia, abiertas las de la sugerida o, si no hay, las de
+            // la ficha que se acaba de tocar (retirar o editar vuelven aquí: no debe quedar plegada).
+            'folders' => TaskBankFolder::group($items, $suggestedId ?? ($request->query->getInt('abierta') ?: null)),
             'hiddenByDepartment' => $hiddenByDepartment,
-            // La ficha que la pantalla ofrece por defecto: la primera de las menos usadas, que es
-            // exactamente una de las que el sorteo podría dar. Solo existe eligiendo para una clase y
-            // solo si el sorteo es posible (nivel y materia conocidos): sin eso, "sugerida" sería
-            // una etiqueta sin criterio detrás.
-            'suggestedId' => $picking && null !== $level && null !== $subject
-                // Entre las que están en oferta, como el sorteo: si no, una retirada sin estrenar podía
-                // dejar la pantalla sin sugerida mientras el sorteo sí repetía una ya hecha.
-                ? self::firstActiveId(GuardiaTaskBankItemRepository::withoutDoneByGroup(
-                    array_values(array_filter($items, static fn (GuardiaTaskBankItem $i): bool => $i->isActive())),
-                    array_keys($doneByGroup),
-                ))
-                : null,
+            'suggestedId' => $suggestedId,
             'doneByGroup' => $doneByGroup,
             // Which rows offer an "editar": resolved here rather than in the template, which cannot ask
             // the chain of command, and so that nobody is shown a link that would 403.
@@ -175,7 +181,21 @@ final class GuardiaTaskBankController extends AbstractController
             'para' => $coverId > 0 ? $coverId : null,
             'nivel' => $coverId > 0 ? null : $item->getLevel()->value,
             'retiradas' => $request->request->getBoolean('retiradas') ? '1' : null,
+            ...self::backToItem($item),
         ]));
+    }
+
+    /**
+     * The query parameters that bring the listing back to one task: its folders unfolded and the page
+     * scrolled to its row, so whoever just retired or edited it sees the result where they left it.
+     *
+     * @param GuardiaTaskBankItem $item the task just touched
+     *
+     * @return array{abierta: int|null, _fragment: string} the route parameters to merge
+     */
+    private static function backToItem(GuardiaTaskBankItem $item): array
+    {
+        return ['abierta' => $item->getId(), '_fragment' => 'ficha-'.$item->getId()];
     }
 
     /**
@@ -421,7 +441,7 @@ final class GuardiaTaskBankController extends AbstractController
             $em->flush();
             $this->addFlash('success', 'Tarea guardada en el banco.');
 
-            return $this->redirectToRoute('guardia_bank_index', ['nivel' => $item->getLevel()->value]);
+            return $this->redirectToRoute('guardia_bank_index', ['nivel' => $item->getLevel()->value, ...self::backToItem($item)]);
         }
 
         return $this->render('guardia/bank/form.html.twig', [
