@@ -40,7 +40,7 @@
                             <td>
                                 {% for slot in absence.slotIndexes %}
                                     {% set times = row.slotTimes[slot] ?? null %}
-                                    {% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}{{ slot + 1 }}ª{% endif %}{{ not loop.last ? ', ' }}
+                                    {% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}{{ slot + 1 }}ª{% endif %}{% if absence.isUncoveredSlot(slot) %} <span class="muted">sin cobertura</span>{% endif %}{{ not loop.last ? ', ' }}
                                 {% else %}
                                     <span class="muted">Sin horas en su horario</span>
                                 {% endfor %}

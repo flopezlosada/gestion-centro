@@ -357,6 +357,110 @@ final class AbsenceRegistrarTest extends KernelTestCase
         self::assertSame([0, 2], $absence->getSlotIndexes(), 'the second pass must not erase the first');
     }
 
+    public function testWithoutCoverRecordsTheDayButCreatesNoCover(): void
+    {
+        $result = $this->registrar->registerWithoutCover($this->year, [$this->absent], new \DateTimeImmutable(self::MONDAY), null);
+
+        self::assertSame([$this->absent], $result->marked);
+        self::assertSame([], $this->coversFor($this->absent), 'no parte line, so nobody adds load that day');
+        $absence = $this->absenceFor($this->absent);
+        self::assertNotNull($absence);
+        self::assertSame([0, 2], $absence->getSlotIndexes(), 'the whole booked day, so the rota knows they are away');
+        self::assertSame([0, 2], $absence->getUncoveredSlotIndexes());
+    }
+
+    public function testWithoutCoverOnlyKeepsThePeriodsTheTeacherIsBookedFor(): void
+    {
+        // Slot 1 is free for Ana and slot 5 does not exist in her day: neither is an absence.
+        $this->registrar->registerWithoutCover($this->year, [$this->absent], new \DateTimeImmutable(self::MONDAY), [0, 1, 5]);
+
+        self::assertSame([0], $this->absenceFor($this->absent)?->getUncoveredSlotIndexes());
+    }
+
+    public function testWithoutCoverTakesTheTeacherOffAGuardiaTheyWereAlreadyCovering(): void
+    {
+        // Ana is away normally at slot 0 and g1, on call then, gets her class; then g1 is marked without cover.
+        $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), [0]);
+        self::assertSame($this->g1->getId(), $this->coversFor($this->absent)[0]->getAssignedGuardia()?->getId());
+
+        $this->registrar->registerWithoutCover($this->year, [$this->g1], new \DateTimeImmutable(self::MONDAY), null);
+
+        self::assertNull($this->coversFor($this->absent)[0]->getAssignedGuardia(), 'g1 is away now and nobody else is on call at slot 0');
+    }
+
+    public function testWithoutCoverLeavesThePeriodsAlreadyRegisteredAsOrdinaryAlone(): void
+    {
+        // Ana reported the morning herself; dirección then marks her whole day.
+        $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), [0]);
+
+        $result = $this->registrar->registerWithoutCover($this->year, [$this->absent], new \DateTimeImmutable(self::MONDAY), null);
+
+        self::assertSame([$this->absent], $result->marked);
+        self::assertSame([0], array_keys($this->coversFor($this->absent)), 'the existing cover is not orphaned, no new one appears');
+        self::assertSame([2], $this->absenceFor($this->absent)?->getUncoveredSlotIndexes());
+    }
+
+    public function testWithoutCoverReportsATeacherWhoseEveryPeriodWasAlreadyAway(): void
+    {
+        $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), null);
+
+        $result = $this->registrar->registerWithoutCover($this->year, [$this->absent, $this->g2], new \DateTimeImmutable(self::MONDAY), null);
+
+        self::assertSame([$this->absent], $result->alreadyAway);
+        self::assertSame([$this->g2], $result->marked, 'the rest of the batch still goes through');
+        self::assertCount(2, $this->coversFor($this->absent));
+    }
+
+    public function testWithoutCoverReportsATeacherNotBookedInThosePeriods(): void
+    {
+        $idle = $this->user('Iván Sin Horario', 'idle@educa.madrid.org');
+        $this->em->flush();
+
+        $result = $this->registrar->registerWithoutCover($this->year, [$idle, $this->absent], new \DateTimeImmutable(self::MONDAY), [1]);
+
+        self::assertSame([$idle, $this->absent], $result->notBooked, 'Ana is free at slot 1, Iván has no timetable');
+        self::assertNull($this->absenceFor($idle), 'an empty absence would only be an orphan');
+        self::assertNull($this->absenceFor($this->absent));
+    }
+
+    public function testAPartialStrikeDoesNotSwallowAGenuineAbsenceLaterThatDay(): void
+    {
+        $this->registrar->registerWithoutCover($this->year, [$this->absent], new \DateTimeImmutable(self::MONDAY), [0]);
+
+        $result = $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), [0, 2]);
+
+        self::assertSame([2], $result->createdSlots, 'the afternoon class still needs its guardia');
+        self::assertSame([2], array_keys($this->coversFor($this->absent)));
+        self::assertSame([0, 2], $this->absenceFor($this->absent)?->getSlotIndexes());
+    }
+
+    public function testRemovingTheMarkDeletesAnAbsenceLeftWithNoPeriod(): void
+    {
+        $this->registrar->registerWithoutCover($this->year, [$this->absent], new \DateTimeImmutable(self::MONDAY), null);
+        $absence = $this->absenceFor($this->absent);
+        self::assertNotNull($absence);
+
+        $this->registrar->removeWithoutCover($absence);
+
+        self::assertNull($this->absenceFor($this->absent), 'otherwise the teacher stays out of the rota for nothing');
+    }
+
+    public function testRemovingTheMarkKeepsTheOrdinaryPeriodsOfTheDay(): void
+    {
+        $this->registrar->register($this->year, $this->absent, new \DateTimeImmutable(self::MONDAY), [0]);
+        $this->registrar->registerWithoutCover($this->year, [$this->absent], new \DateTimeImmutable(self::MONDAY), null);
+        $absence = $this->absenceFor($this->absent);
+        self::assertNotNull($absence);
+
+        $this->registrar->removeWithoutCover($absence);
+
+        $kept = $this->absenceFor($this->absent);
+        self::assertNotNull($kept);
+        self::assertSame([0], $kept->getSlotIndexes());
+        self::assertSame([], $kept->getUncoveredSlotIndexes());
+        self::assertCount(1, $this->coversFor($this->absent));
+    }
+
     /**
      * The absence row of a teacher on the test's Monday, if any.
      *

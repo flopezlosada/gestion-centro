@@ -7,6 +7,7 @@ namespace App\Repository;
 use App\Entity\Absence;
 use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
@@ -32,6 +33,33 @@ class AbsenceRepository extends ServiceEntityRepository
     public function findForTeacherAndDate(User $teacher, \DateTimeImmutable $date): ?Absence
     {
         return $this->findOneBy(['absentTeacher' => $teacher, 'date' => $date]);
+    }
+
+    /**
+     * The absences of several teachers on one day, in a single query, keyed by teacher id — the batch
+     * counterpart of {@see findForTeacherAndDate()} for marking many teachers at once.
+     *
+     * @param list<User>         $teachers the teachers
+     * @param \DateTimeImmutable $date     the day
+     *
+     * @return array<int, Absence> teacher id → their absence that day; teachers with none are absent from the map
+     */
+    public function findByTeachersAndDate(array $teachers, \DateTimeImmutable $date): array
+    {
+        if ([] === $teachers) {
+            return [];
+        }
+
+        /** @var list<Absence> $rows */
+        $rows = $this->createQueryBuilder('a')
+            ->andWhere('a.absentTeacher IN (:teachers)')
+            ->andWhere('a.date = :date')
+            ->setParameter('teachers', $teachers)
+            ->setParameter('date', $date, Types::DATE_IMMUTABLE)
+            ->getQuery()
+            ->getResult();
+
+        return array_column(array_map(static fn (Absence $a): array => ['id' => (int) $a->getAbsentTeacher()->getId(), 'absence' => $a], $rows), 'absence', 'id');
     }
 
     /**

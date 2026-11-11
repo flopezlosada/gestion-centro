@@ -1,0 +1,89 @@
+{% extends 'app_shell.html.twig' %}
+
+{% block title %}Ausencias sin cobertura{% endblock %}
+
+{% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span><a href="{{ path('guardia_index') }}">Guardias</a><span class="sep">/</span>Ausencias sin cobertura{% endblock %}
+
+{% block bottomnav %}{% endblock %}
+
+{% block body %}
+    <div class="formtop">
+        <a class="formtop__cancel" href="{{ path('guardia_index', { date: date|date('Y-m-d', false) }) }}">Cancelar</a>
+        <span class="formtop__title">Ausencias sin cobertura</span>
+        <span class="formtop__spacer"></span>
+    </div>
+
+    <div class="formscreen">
+        {% if teachers is empty %}
+            <div class="empty-state">
+                <h2>No hay horario importado para el curso {{ schoolYear }}</h2>
+                <p>Sin el horario del curso no hay claustro que marcar.</p>
+            </div>
+        {% else %}
+            {# Cambiar el día solo recarga la pantalla (GET); lo marcado se envía en el formulario de abajo. #}
+            <form method="get" action="{{ path('guardia_uncovered_new') }}">
+                <div class="pickfield">
+                    <label class="eyebrow" for="uncovered_date">Día</label>
+                    <div class="pickrow pickrow--select">
+                        <input type="date" id="uncovered_date" name="date" value="{{ date|date('Y-m-d', false) }}" onchange="this.form.submit()">
+                    </div>
+                </div>
+                <noscript><button type="submit" class="btn secondary">Cambiar día</button></noscript>
+            </form>
+
+            {% if marked is not empty %}
+                <div class="pickfield">
+                    <span class="eyebrow">Ya sin cobertura este día ({{ marked|length }})</span>
+                    <ul class="pick-list">
+                        {% for absence in marked %}
+                            <li class="pick-option">
+                                <span class="pick-option__body"><span class="pick-option__name">{{ absence.absentTeacher.fullName }}</span></span>
+                                <form method="post" action="{{ path('guardia_uncovered_remove', { id: absence.id }) }}" class="inline-form">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('guardia_uncovered_remove' ~ absence.id) }}">
+                                    <button type="submit" class="btn tertiary">Quitar</button>
+                                </form>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endif %}
+
+            <form method="post" action="{{ path('guardia_uncovered_create') }}">
+                <input type="hidden" name="_token" value="{{ csrf_token('guardia_uncovered_create') }}">
+                <input type="hidden" name="date" value="{{ date|date('Y-m-d', false) }}">
+
+                <p class="classes-help">Los marcados constan como ausentes: no se les asignan guardias y sus clases no generan huecos ni cuentan en el reparto. No se guarda el motivo.</p>
+
+                <div class="pickfield">
+                    <span class="eyebrow">Horas</span>
+                    <p class="muted">Sin marcar ninguna, el día entero de cada docente.</p>
+                    <div class="pick-list">
+                        {% for index, slot in slots %}
+                            <label class="pick-option">
+                                <input class="pick-option__input" type="checkbox" name="slots[]" value="{{ index }}">
+                                <span class="pick-option__body"><span class="pick-option__name">{{ slot.startsAt|date('H:i', false) }}–{{ slot.endsAt|date('H:i', false) }}</span></span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="pickfield">
+                    <span class="eyebrow">Docentes ({{ teachers|length }})</span>
+                    <button type="button" class="btn tertiary" data-check-all="teachers[]" hidden>Marcar a todos</button>
+                    <div class="pick-list">
+                        {% for teacher in teachers %}
+                            <label class="pick-option">
+                                <input class="pick-option__input" type="checkbox" name="teachers[]" value="{{ teacher.id }}">
+                                <span class="pick-option__body"><span class="pick-option__name">{{ teacher.fullName }}</span></span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-lg btn-lg--primary">Marcar sin cobertura</button>
+            </form>
+        {% endif %}
+    </div>
+
+    <script src="{{ asset_ver('/js/check-all.js') }}"></script>
+{% endblock %}

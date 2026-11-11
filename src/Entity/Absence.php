@@ -32,6 +32,15 @@ use Doctrine\ORM\Mapping as ORM;
  * they are edited AFTER the fact. They used to change without leaving a trace, on an entity every cover
  * of the day hangs off. Its trail is shown on each of those covers' "modificar guardia" screen, which is
  * the only place it would be looked for.
+ *
+ * Some of its periods can be WITHOUT COVER ({@see $uncoveredSlotIndexes}): the teacher is away, so the rota
+ * must not hand them anything, but those classes produce no parte lines. That is the equipo directivo's tool for a day
+ * when a large part of the claustro is away at once. Registered as ordinary absences, those classes become a
+ * flood of covers that the few teachers present carry, and the equitable engine — which picks whoever has
+ * covered least so far — then makes the returning teachers pay that balance back for weeks. Still no reason
+ * is recorded: it says only "no cover", never why. Per period and not per day, because the row is per day:
+ * a teacher on a partial strike in the morning can still be genuinely away in the afternoon, and that class
+ * needs its cover.
  */
 #[ORM\Entity(repositoryClass: AbsenceRepository::class)]
 #[ORM\Table(name: 'guardia_absence')]
@@ -63,6 +72,15 @@ class Absence implements Auditable
      */
     #[ORM\Column(name: 'slot_indexes', type: Types::JSON)]
     private array $slotIndexes = [];
+
+    /**
+     * The periods the teacher is away WITHOUT COVER, ascending — always a subset of {@see $slotIndexes},
+     * which only {@see addUncoveredSlotIndexes()} and {@see removeUncoveredSlotIndexes()} can keep true.
+     *
+     * @var list<int>
+     */
+    #[ORM\Column(name: 'uncovered_slot_indexes', type: Types::JSON)]
+    private array $uncoveredSlotIndexes = [];
 
     public function getId(): ?int
     {
@@ -113,9 +131,7 @@ class Absence implements Auditable
      */
     public function addSlotIndexes(array $slotIndexes): static
     {
-        $merged = array_values(array_unique(array_merge($this->slotIndexes, $slotIndexes)));
-        sort($merged);
-        $this->slotIndexes = $merged;
+        $this->slotIndexes = self::sorted([...$this->slotIndexes, ...$slotIndexes]);
 
         return $this;
     }
@@ -130,5 +146,72 @@ class Absence implements Auditable
     public function coversSlot(int $slotIndex): bool
     {
         return \in_array($slotIndex, $this->slotIndexes, true);
+    }
+
+    /**
+     * The periods away without cover, ascending.
+     *
+     * @return list<int> the period indexes
+     */
+    public function getUncoveredSlotIndexes(): array
+    {
+        return $this->uncoveredSlotIndexes;
+    }
+
+    /**
+     * Whether the given period is away without cover, so it must produce no parte line.
+     *
+     * @param int $slotIndex the period index
+     *
+     * @return bool true when that period is marked "sin cobertura"
+     */
+    public function isUncoveredSlot(int $slotIndex): bool
+    {
+        return \in_array($slotIndex, $this->uncoveredSlotIndexes, true);
+    }
+
+    /**
+     * Adds periods away without cover. A period the absence already spans is left as it is: it was registered
+     * as an ordinary absence and may already have its cover, which this must not orphan.
+     *
+     * @param list<int> $slotIndexes the periods to add
+     *
+     * @return list<int> the periods that actually became "sin cobertura"
+     */
+    public function addUncoveredSlotIndexes(array $slotIndexes): array
+    {
+        $fresh = array_values(array_diff(array_unique($slotIndexes), $this->slotIndexes));
+        sort($fresh);
+        $this->addSlotIndexes($fresh);
+        $this->uncoveredSlotIndexes = self::sorted([...$this->uncoveredSlotIndexes, ...$fresh]);
+
+        return $fresh;
+    }
+
+    /**
+     * Takes back every period away without cover — the undo for a teacher ticked by mistake. Ordinary
+     * periods stay; when none is left the absence is empty and the caller should remove it.
+     */
+    public function removeUncoveredSlotIndexes(): static
+    {
+        $this->slotIndexes = array_values(array_diff($this->slotIndexes, $this->uncoveredSlotIndexes));
+        $this->uncoveredSlotIndexes = [];
+
+        return $this;
+    }
+
+    /**
+     * Sorted, without repeats.
+     *
+     * @param list<int> $values the period indexes
+     *
+     * @return list<int> the same, sorted and unique
+     */
+    private static function sorted(array $values): array
+    {
+        $unique = array_values(array_unique($values));
+        sort($unique);
+
+        return $unique;
     }
 }
