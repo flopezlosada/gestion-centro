@@ -304,6 +304,11 @@ final class CopyRequestController extends AbstractController
      * (the second press with a slow connection) would be a second e-mail to conserjería, and building it
      * first would leave behind the copy of the document it stores.
      *
+     * The repeat cannot tell whether the first one reached the copy room: it only knows the token is spent.
+     * The second press usually comes BECAUSE the first is stuck on a mail server that does not answer, and
+     * that one can still end unsent. So the repeat lands on the orders list, which shows each order sent or
+     * not with its «Reintentar envío», and never claims it went out.
+     *
      * @param Request                 $request the form submission, with its one-use token
      * @param SubmissionOnce          $once    the one-use token guard
      * @param \Closure(): CopyRequest $build   builds the order to place
@@ -311,15 +316,14 @@ final class CopyRequestController extends AbstractController
      * @param CopyShopMailer          $mailer  the copy-room mailer
      * @param string|null             $doneUrl where to land afterwards, or null for the orders list
      *
-     * @return Response the redirect to $doneUrl or to the orders list
+     * @return Response the redirect to $doneUrl, or to the orders list (always, for a repeat)
      */
     private function placeOrder(Request $request, SubmissionOnce $once, \Closure $build, EntityManagerInterface $em, CopyShopMailer $mailer, ?string $doneUrl = null): Response
     {
-        $done = $doneUrl ?? $this->generateUrl('copy_request_index');
         if (!$once->claim($request)) {
-            $this->addFlash('success', 'El encargo ya estaba enviado: este segundo envío no se ha repetido.');
+            $this->addFlash('warning', 'Este envío ya se había hecho y no se ha repetido. Comprueba aquí abajo si el encargo llegó a conserjería.');
 
-            return $this->redirect($done);
+            return $this->redirectToRoute('copy_request_index');
         }
 
         try {
@@ -347,7 +351,7 @@ final class CopyRequestController extends AbstractController
             $this->addFlash('warning', 'El encargo queda registrado, pero no se pudo enviar el correo. Reenvíalo desde la lista o avisa a conserjería.');
         }
 
-        return $this->redirect($done);
+        return $this->redirect($doneUrl ?? $this->generateUrl('copy_request_index'));
     }
 
     /**

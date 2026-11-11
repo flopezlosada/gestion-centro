@@ -450,8 +450,39 @@ final class CopyRequestTest extends WebTestCase
         self::assertResponseRedirects('/fotocopias');
         self::assertEmailCount(0, null, 'el segundo envío no manda otro correo');
         $this->client->followRedirect();
-        self::assertAnySelectorTextContains('.flash.success', 'no se ha repetido');
+        self::assertAnySelectorTextContains('.flash.warning', 'no se ha repetido');
+        // El aviso verde del primero, si salió, sí aparece: ése lo sabe. El segundo no afirma nada.
+        self::assertSelectorTextNotContains('body', 'ya estaba enviado');
 
+        $this->onlyOrder();
+    }
+
+    /**
+     * El segundo clic desde el parte no vuelve al parte: va a la lista, la única pantalla que dice si el
+     * primero llegó a salir (el segundo clic suele venir de un servidor de correo que no contesta).
+     */
+    public function testASecondPressFromTheParteLandsOnTheOrdersList(): void
+    {
+        $user = $this->login('guardia@centro.test');
+        $coverId = (int) $this->coverWithBankTask($user, suggestedCopies: 28)->getId();
+        $url = '/fotocopias/guardia/'.$coverId.'?volver=parte';
+
+        $crawler = $this->client->request('GET', $url);
+        $form = ['copy_request' => [
+            'files' => (string) $crawler->filter('input[name="copy_request[files]"]')->attr('value'),
+            'lines' => [['copies' => '30']],
+            '_token' => (string) $crawler->filter('input[name="copy_request[_token]"]')->attr('value'),
+        ], '_once' => (string) $crawler->filter('input[name="_once"]')->attr('value')];
+
+        $this->client->request('POST', $url, $form);
+        self::assertResponseRedirects();
+        self::assertStringStartsWith('/guardias', (string) $this->client->getResponse()->headers->get('Location'), 'el primero vuelve al parte');
+        self::assertEmailCount(1);
+        self::assertTrue($this->onlyOrder()->isSent());
+
+        $this->client->request('POST', $url, $form);
+        self::assertResponseRedirects('/fotocopias');
+        self::assertEmailCount(0, null, 'el segundo envío no manda otro correo');
         $this->onlyOrder();
     }
 
