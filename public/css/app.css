@@ -857,6 +857,8 @@ a.badge:hover { border-color: currentColor; }
 /* La semana de ausencias en PDF (/ausencias): el día y el botón en una fila, que se parte en móvil. */
 .week-pdf { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 16px; }
 .week-pdf .field { margin: 0; }
+/* La ayuda va en su propia fila, bajo campo y botón: dentro del .field, el flex-end bajaba el botón hasta su altura. */
+.week-pdf__help { flex: 0 0 100%; margin: 0; }
 .document-editor trix-editor, trix-editor.rich-text-editor {
     min-height: 340px;
     border: 1px solid var(--border-strong);
