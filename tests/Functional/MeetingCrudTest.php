@@ -111,6 +111,25 @@ final class MeetingCrudTest extends WebTestCase
         self::assertSelectorTextNotContains('body', 'Convocar reunión');
     }
 
+    /**
+     * «Marcar a todos» (check-all.js) busca las casillas por su name exacto: si el botón y las casillas dejan
+     * de coincidir, el botón no aparece y nada falla en voz alta. Este test es ese contrato.
+     */
+    public function testTheConveneFormOffersCheckingEveryoneOnTheAttendeeBoxes(): void
+    {
+        $coordinator = $this->user('Lucía Coordina', 'lucia.meet@centro.test');
+        $project = $this->project($coordinator, [$this->user('Pedro Miembro', 'pedro3.meet@centro.test')]);
+        $this->em->flush();
+        $this->client->loginUser($coordinator);
+
+        $crawler = $this->client->request('GET', '/reuniones/nueva?proyecto='.$project->getId());
+
+        self::assertResponseIsSuccessful();
+        $name = $crawler->filter('button[data-check-all]')->attr('data-check-all');
+        self::assertSame('meeting_form[attendees][]', $name);
+        self::assertGreaterThan(1, $crawler->filter('input[type="checkbox"][name="'.$name.'"]')->count());
+    }
+
     public function testCoordinatorConvenesWithTheProjectTeachersAlreadyTicked(): void
     {
         $coordinator = $this->user('Lucía Coordina', 'lucia.meet@centro.test');

@@ -27,7 +27,14 @@
             };
             button.addEventListener('click', function () {
                 var check = !boxes.every(function (box) { return box.checked; });
-                boxes.forEach(function (box) { box.checked = check; });
+                boxes.forEach(function (box) {
+                    if (box.checked !== check) {
+                        box.checked = check;
+                        // Marcar por código no dispara «change»: sin él, quien escucha la lista (el buscador
+                        // de personas, que solo enseña las marcadas; el contador de asistencia) no se entera.
+                        box.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
                 sync();
             });
             boxes.forEach(function (box) { box.addEventListener('change', sync); });

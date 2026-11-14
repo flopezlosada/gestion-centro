@@ -45,6 +45,9 @@
                 <div class="form-row">
                     {{ form_label(form.attendees) }}
                     {% if form.attendees.vars.help %}<p class="help">{{ form.attendees.vars.help }}</p>{% endif %}
+                    {#- Para convocar al claustro entero (la hora RED, un claustro) sin marcar a ochenta personas una
+                        a una. Llega oculto: check-all.js lo enseña solo si hay JS que lo haga funcionar. -#}
+                    <p><button type="button" class="btn tertiary btn-sm" data-check-all="{{ form.attendees.vars.full_name }}[]" hidden>Marcar a todos</button></p>
                     {{ f.pick_list(form.attendees, 'No hay nadie a quien puedas convocar: pídele a dirección que te ponga el profesorado del proyecto.', true) }}
                     {{ form_errors(form.attendees) }}
                 </div>
@@ -61,6 +64,7 @@
 
 {% block page_scripts %}
     <script src="{{ asset_ver('/js/meeting-form.js') }}"></script>
+    <script src="{{ asset_ver('/js/check-all.js') }}"></script>
     <script src="{{ asset_ver('/vendor/trix/trix.umd.min.js') }}"></script>
     <script src="{{ asset_ver('/js/rich-text.js') }}"></script>
 {% endblock %}
