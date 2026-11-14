@@ -82,6 +82,15 @@ class Absence implements Auditable
     #[ORM\Column(name: 'uncovered_slot_indexes', type: Types::JSON)]
     private array $uncoveredSlotIndexes = [];
 
+    /**
+     * Whether EVERY pass that wrote this absence came from the absent teacher. Only then may they take it
+     * back themselves ({@see \App\Controller\GuardiaController::withdrawAbsence()}): the row is one per day
+     * and passes merge into it, so a teacher who reported 1st period by mistake must not, by withdrawing
+     * it, also wipe the afternoon a coordinator added. Rows written before this existed read as false.
+     */
+    #[ORM\Column(name: 'self_reported', options: ['default' => false])]
+    private bool $selfReported = false;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -109,6 +118,29 @@ class Absence implements Auditable
         $this->date = $date;
 
         return $this;
+    }
+
+    /**
+     * Records who wrote one pass of this absence. It stays self-reported only while every pass came from
+     * the absent teacher; a single pass by anybody else (or by nobody, as a seeding command) settles it.
+     *
+     * @param User|null $reporter  who registered this pass, or null when no person did
+     * @param bool      $firstPass whether this pass created the absence
+     */
+    public function noteReporter(?User $reporter, bool $firstPass): static
+    {
+        $byTeacher = null !== $reporter && null !== $reporter->getId() && $reporter->getId() === $this->absentTeacher->getId();
+        $this->selfReported = $byTeacher && ($firstPass || $this->selfReported);
+
+        return $this;
+    }
+
+    /**
+     * Whether every pass that wrote this absence came from the absent teacher.
+     */
+    public function isSelfReported(): bool
+    {
+        return $this->selfReported;
     }
 
     /**

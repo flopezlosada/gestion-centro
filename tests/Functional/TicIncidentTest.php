@@ -10,18 +10,21 @@ use App\Entity\User;
 use App\Enum\Area;
 use App\Enum\IncidentStatus;
 use App\Enum\PermissionLevel;
+use App\Tests\Support\MintsSessionCsrfTokens;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 /**
  * El registro de incidencias TIC. Lo que se comprueba aquí es sobre todo la asimetría del permiso:
- * AVISAR lo puede hacer cualquiera (quien se encuentra la avería es quien tenía clase ahí) y RESOLVER
- * solo quien lleva TIC. Y que un equipo de uso individual no arrastra un grupo, que es la contradicción
- * que el centro pidió evitar.
+ * AVISAR y CERRAR lo puede hacer cualquiera (quien se encuentra la avería es quien tenía clase ahí, y
+ * quien la arregla al momento lo dice), y LLEVAR LA COLA (cogerla, reabrirla) solo quien lleva TIC. Y
+ * que un equipo de uso individual no arrastra un grupo, que es la contradicción que el centro pidió evitar.
  */
 final class TicIncidentTest extends WebTestCase
 {
+    use MintsSessionCsrfTokens;
+
     private KernelBrowser $client;
     private EntityManagerInterface $em;
 
@@ -101,41 +104,137 @@ final class TicIncidentTest extends WebTestCase
         self::assertNull($incident->getGroupName(), 'un equipo individual no arrastra un grupo');
     }
 
-    public function testOnlyTicCanResolveAnIncident(): void
+    /**
+     * Cerrarla es de cualquiera: quien lo arregló al momento (no tiene por qué ser quien avisó) o quien la
+     * abrió por error, para que TIC no se desplace en balde. Queda su nombre y lo que hizo.
+     */
+    public function testAnyTeacherCanCloseAnOpenIncident(): void
     {
-        $teacher = $this->user('profe@centro.test');
-        $tic = $this->user('tic@centro.test', true);
-        $incident = (new TicIncident())->setEquipment('Proyector')->setDescription('No da señal.')->setReportedBy($teacher);
+        $reporter = $this->user('pili@centro.test');
+        $fixer = $this->user('juan@centro.test');
+        $incident = (new TicIncident())->setEquipment('Proyector')->setDescription('No da señal.')->setReportedBy($reporter);
         $this->em->persist($incident);
         $this->em->flush();
         $id = (int) $incident->getId();
 
-        // Quien avisó no ve el bloque de gestionar…
-        $this->client->loginUser($teacher);
-        $this->client->request('GET', '/incidencias/'.$id);
-        self::assertResponseIsSuccessful();
-        self::assertSelectorNotExists('form[action$="/estado"]');
-
-        // …y si lo intenta a pelo, tampoco.
-        $this->client->request('POST', '/incidencias/'.$id.'/estado', ['estado' => 'resolved', 'nota' => 'ya está']);
-        self::assertResponseStatusCodeSame(403);
-
-        // Coordinación TIC sí.
-        $this->client->loginUser($tic);
+        $this->client->loginUser($fixer);
         $crawler = $this->client->request('GET', '/incidencias/'.$id);
+        self::assertResponseIsSuccessful();
+        self::assertCount(1, $crawler->filter('button[name="estado"][value="resolved"]'));
+        self::assertCount(0, $crawler->filter('button[name="estado"][value="in_progress"]'), 'cogerla es de TIC');
         $token = $crawler->filter('form[action$="/estado"] input[name="_token"]')->attr('value');
-        $this->client->request('POST', '/incidencias/'.$id.'/estado', [
-            '_token' => $token,
-            'estado' => 'resolved',
-            'nota' => 'Cambiado el cable HDMI.',
-        ]);
+        $this->client->request('POST', '/incidencias/'.$id.'/estado', ['_token' => $token, 'estado' => 'resolved', 'nota' => 'Estaba desenchufado.']);
 
         self::assertResponseRedirects();
         $this->em->clear();
         $reloaded = $this->em->getRepository(TicIncident::class)->find($id);
         self::assertNotNull($reloaded);
         self::assertSame(IncidentStatus::RESOLVED, $reloaded->getStatus());
-        self::assertSame('Cambiado el cable HDMI.', $reloaded->getResolutionNote());
+        self::assertSame('Estaba desenchufado.', $reloaded->getResolutionNote());
+        self::assertSame('juan@centro.test', $reloaded->getResolvedBy()?->getEmail());
+    }
+
+    /**
+     * Llevar la cola sigue siendo de TIC: cogerla y reabrirla. Con token válido, para que el 403 sea por el
+     * permiso y no por el token.
+     */
+    public function testOnlyTicTakesOnOrReopensAnIncident(): void
+    {
+        $teacher = $this->user('profe@centro.test');
+        $tic = $this->user('tic@centro.test', true);
+        $open = (new TicIncident())->setEquipment('Proyector')->setDescription('No da señal.')->setReportedBy($teacher);
+        $closed = (new TicIncident())->setEquipment('Pizarra')->setDescription('No toca.')->setReportedBy($teacher)
+            ->moveTo(IncidentStatus::RESOLVED, $tic, 'Calibrada.');
+        $this->em->persist($open);
+        $this->em->persist($closed);
+        $this->em->flush();
+
+        $this->client->loginUser($teacher);
+        $post = function (TicIncident $incident, string $status): void {
+            $id = (int) $incident->getId();
+            $token = $this->mintCsrfToken($this->client, '/incidencias/'.$id, 'tic_incident_move'.$id);
+            $this->client->request('POST', '/incidencias/'.$id.'/estado', ['_token' => $token, 'estado' => $status, 'nota' => 'otra cosa']);
+        };
+
+        $post($open, 'in_progress');
+        self::assertResponseStatusCodeSame(403);
+        $post($closed, 'open');
+        self::assertResponseStatusCodeSame(403);
+        $this->client->request('GET', '/incidencias/'.$closed->getId());
+        self::assertSelectorNotExists('form[action$="/estado"]');
+
+        $this->client->loginUser($tic);
+        $post($closed, 'open');
+        self::assertResponseRedirects();
+        $this->em->clear();
+        self::assertSame(IncidentStatus::OPEN, $this->em->getRepository(TicIncident::class)->find($closed->getId())?->getStatus());
+    }
+
+    /**
+     * Quien no es de TIC también puede cerrar una que TIC ya había cogido (la arregló antes de que llegaran),
+     * y TIC cierra las suyas como siempre.
+     */
+    public function testAnyoneClosesOneInProgressAndTicClosesItsOwn(): void
+    {
+        $teacher = $this->user('profe@centro.test');
+        $tic = $this->user('tic@centro.test', true);
+        $taken = (new TicIncident())->setEquipment('Proyector')->setDescription('No da señal.')->setReportedBy($teacher)
+            ->moveTo(IncidentStatus::IN_PROGRESS, $tic, '');
+        $open = (new TicIncident())->setEquipment('Pizarra')->setDescription('No toca.')->setReportedBy($teacher);
+        $this->em->persist($taken);
+        $this->em->persist($open);
+        $this->em->flush();
+
+        $close = function (User $who, TicIncident $incident, string $note): void {
+            $id = (int) $incident->getId();
+            $this->client->loginUser($who);
+            $token = $this->mintCsrfToken($this->client, '/incidencias/'.$id, 'tic_incident_move'.$id);
+            $this->client->request('POST', '/incidencias/'.$id.'/estado', ['_token' => $token, 'estado' => 'resolved', 'nota' => $note]);
+            self::assertResponseRedirects();
+        };
+        $close($teacher, $taken, 'Era el cable; ya va.');
+        $close($tic, $open, 'Calibrada.');
+
+        $this->em->clear();
+        $repository = $this->em->getRepository(TicIncident::class);
+        foreach ([[$taken, 'profe@centro.test', 'Era el cable; ya va.'], [$open, 'tic@centro.test', 'Calibrada.']] as [$incident, $by, $note]) {
+            $reloaded = $repository->find($incident->getId());
+            self::assertNotNull($reloaded);
+            self::assertSame(IncidentStatus::RESOLVED, $reloaded->getStatus());
+            self::assertSame($by, $reloaded->getResolvedBy()?->getEmail());
+            self::assertSame($note, $reloaded->getResolutionNote());
+        }
+    }
+
+    /**
+     * Con la página vieja abierta, otra persona la cerró mientras tanto: se explica con un aviso en vez de
+     * un 403, y el primer cierre se queda como estaba. También si quien reenvía es TIC: su nombre y su nota
+     * no deben borrar los del docente que la arregló.
+     */
+    public function testClosingOneAlreadyClosedFromAStalePageKeepsTheFirstClosure(): void
+    {
+        $teacher = $this->user('profe@centro.test');
+        $tic = $this->user('tic@centro.test', true);
+        $closed = (new TicIncident())->setEquipment('Pizarra')->setDescription('No toca.')->setReportedBy($teacher)
+            ->moveTo(IncidentStatus::RESOLVED, $tic, 'Calibrada.');
+        $this->em->persist($closed);
+        $this->em->flush();
+        $id = (int) $closed->getId();
+
+        foreach ([$teacher, $this->user('tic2@centro.test', true)] as $who) {
+            $this->em->flush();
+            $this->client->loginUser($who);
+            $token = $this->mintCsrfToken($this->client, '/incidencias/'.$id, 'tic_incident_move'.$id);
+            $this->client->request('POST', '/incidencias/'.$id.'/estado', ['_token' => $token, 'estado' => 'resolved', 'nota' => 'Ya va.']);
+
+            self::assertResponseRedirects('/incidencias/'.$id);
+            $this->client->followRedirect();
+            self::assertSelectorTextContains('.flash', 'Ya estaba cerrada');
+        }
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(TicIncident::class)->find($id);
+        self::assertNotNull($reloaded);
+        self::assertSame('Calibrada.', $reloaded->getResolutionNote());
         self::assertSame('tic@centro.test', $reloaded->getResolvedBy()?->getEmail());
     }
 

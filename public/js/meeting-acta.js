@@ -2,7 +2,7 @@
  * El acta en la ficha de una reunión: lo que la lista de asistencia y la subida de un acta hacen con JS.
  *
  *  - Recuento en vivo («X de N asistieron») y su barra, al marcar o desmarcar (también con «Marcar a todos»,
- *    de check-all.js, que cambia las casillas sin disparar `change`).
+ *    de check-all.js, que dispara `change` en cada casilla que cambia).
  *  - Buscador por nombre en listas largas: llega oculto ([data-roll-search-box]) y solo se enseña aquí.
  *  - El nombre del archivo elegido para subir, que el botón «Elegir archivo…» no enseña por sí solo.
  *  - Avisar, al publicar un borrador, de que hay cambios sin guardar que no irán en lo enviado.
@@ -33,12 +33,6 @@
             }
         };
         roll.addEventListener('change', refresh);
-        // «Marcar a todos» cambia las casillas desde su propio manejador, que corre antes que este.
-        roll.addEventListener('click', function (event) {
-            if (event.target.closest('[data-check-all]')) {
-                refresh();
-            }
-        });
 
         var searchBox = roll.querySelector('[data-roll-search-box]');
         var search = roll.querySelector('[data-roll-search]');

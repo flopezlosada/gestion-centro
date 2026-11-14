@@ -92,6 +92,39 @@ final readonly class TeacherGuardiaDay
      */
     public function isSlotOver(\DateTimeImmutable $date, int $slotIndex, array $slotTimes, \DateTimeImmutable $now): bool
     {
+        return self::isPast($date, $slotTimes[$slotIndex]['endsAt'] ?? null, $now, false);
+    }
+
+    /**
+     * Whether a period of ANY day has already begun — the twin of {@see self::isSlotOver()} on the start
+     * time. A period of today whose time the timetable does not know counts as begun: this answers "may it
+     * still be undone without anyone having acted on it", and when in doubt the safe answer is no.
+     *
+     * @param \DateTimeImmutable                                                          $date      the day of the period
+     * @param int                                                                         $slotIndex the period
+     * @param array<int, array{startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}> $slotTimes period times by slot index
+     * @param \DateTimeImmutable                                                          $now       the current instant
+     *
+     * @return bool true once the period has started (or today's start time is unknown)
+     */
+    public function hasSlotStarted(\DateTimeImmutable $date, int $slotIndex, array $slotTimes, \DateTimeImmutable $now): bool
+    {
+        return self::isPast($date, $slotTimes[$slotIndex]['startsAt'] ?? null, $now, true);
+    }
+
+    /**
+     * Whether an instant of a day is already behind us: a past day is, a future one is not, and today it
+     * depends on the time of day.
+     *
+     * @param \DateTimeImmutable      $date        the day
+     * @param \DateTimeImmutable|null $time        the time of day (only its H:i:s is read), or null if unknown
+     * @param \DateTimeImmutable      $now         the current instant
+     * @param bool                    $unknownToday what to answer for today when the time is unknown
+     *
+     * @return bool true once that instant has passed
+     */
+    private static function isPast(\DateTimeImmutable $date, ?\DateTimeImmutable $time, \DateTimeImmutable $now, bool $unknownToday): bool
+    {
         // El día y las horas del horario son de la zona del centro; el reloj puede venir en otra (UTC).
         $now = $now->setTimezone($date->getTimezone());
         $day = $date->format('Y-m-d');
@@ -100,9 +133,8 @@ final readonly class TeacherGuardiaDay
             return $day < $today;
         }
 
-        $endsAt = $slotTimes[$slotIndex]['endsAt'] ?? null;
-
-        return null !== $endsAt
-            && new \DateTimeImmutable($day.' '.$endsAt->format('H:i:s'), $date->getTimezone()) < $now;
+        return null === $time
+            ? $unknownToday
+            : new \DateTimeImmutable($day.' '.$time->format('H:i:s'), $date->getTimezone()) < $now;
     }
 }

@@ -105,18 +105,41 @@ final class GuardiaAssignmentNotifier implements ResetInterface
      */
     public function notifyRelieved(GuardiaCover $cover, User $previous): void
     {
+        $this->tellNoLongerYours($cover, $previous, 'Coordinación ha cambiado');
+    }
+
+    /**
+     * Notifica al profesor asignado que su guardia ha DESAPARECIDO: la línea del parte se ha borrado, porque
+     * la ausencia se anuló o coordinación quitó esa línea. Distinto de {@see self::notifyRelieved()}: allí
+     * la clase sigue necesitando a alguien; aquí ya no hay nada que cubrir. Sin este aviso el afectado se
+     * presentaría en un aula donde no le espera nadie. Si el tramo ya terminó no se avisa (ver la clase).
+     *
+     * @param GuardiaCover $cover    the cover just deleted (already flushed, still readable in memory)
+     * @param User         $previous the teacher who was going to cover it
+     */
+    public function notifyCancelled(GuardiaCover $cover, User $previous): void
+    {
+        $this->tellNoLongerYours($cover, $previous, 'Se ha anulado');
+    }
+
+    /**
+     * The one message both ways of losing a guardia send, told apart only by what happened to it. Silent
+     * once the period is over (see the class).
+     *
+     * @param GuardiaCover $cover    the cover concerned
+     * @param User         $previous the teacher who was going to cover it
+     * @param string       $what     what happened, as the start of the sentence ("Se ha anulado")
+     */
+    private function tellNoLongerYours(GuardiaCover $cover, User $previous, string $what): void
+    {
         if ($this->isOver($cover)) {
             return;
         }
 
-        $title = sprintf('Ya no tienes la guardia del %s', $cover->getDate()->format('d/m/Y'));
-        $body = sprintf(
-            'Coordinación ha cambiado la guardia del %s que ibas a cubrir (%s): ya no tienes que hacerla.',
-            $cover->getDate()->format('d/m/Y'),
-            self::whatIsCovered($cover),
-        );
+        $day = $cover->getDate()->format('d/m/Y');
+        $body = sprintf('%s la guardia del %s que ibas a cubrir (%s): ya no tienes que hacerla.', $what, $day, self::whatIsCovered($cover));
 
-        $this->dispatcher->dispatch($previous, 'guardia.relieved', $title, $body);
+        $this->dispatcher->dispatch($previous, 'guardia.relieved', sprintf('Ya no tienes la guardia del %s', $day), $body);
     }
 
     /**
