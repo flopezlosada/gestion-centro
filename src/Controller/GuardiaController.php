@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Agenda\MyClasses;
+use App\Entity\Absence;
 use App\Entity\AcademicYear;
 use App\Entity\AuditLog;
 use App\Entity\GuardiaCover;
@@ -288,7 +289,7 @@ final class GuardiaController extends AbstractController
      * per Tuesday of the year.
      */
     #[Route('/mias', name: 'guardia_mine', methods: ['GET'])]
-    public function mine(#[CurrentUser] User $user, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years, TeacherGuardiaDay $day, TeacherGuardiaWeek $week, BreakDutyAssignmentRepository $breakDuties, TimeSlotRepository $timeSlots, MyClasses $myClasses): Response
+    public function mine(#[CurrentUser] User $user, GuardiaCoverRepository $covers, ScheduleEntryRepository $schedule, AcademicYearRepository $years, TeacherGuardiaDay $day, TeacherGuardiaWeek $week, BreakDutyAssignmentRepository $breakDuties, TimeSlotRepository $timeSlots, MyClasses $myClasses, AbsenceRepository $absences, ClockInterface $clock): Response
     {
         $today = new \DateTimeImmutable('today');
         $now = new \DateTimeImmutable('now');
@@ -321,6 +322,16 @@ final class GuardiaController extends AbstractController
                 : [],
             'breakSlots' => $timeSlots->findBreaksByYear($year instanceof AcademicYear ? $year : null),
             'todayWeekday' => Weekday::from((int) $today->format('N')),
+            // Lo que has apuntado tú, para poder volver a encontrarlo y anularlo si fue un error: sin esta
+            // lista la única forma de dar con tu ausencia era buscar tus líneas hora a hora en el parte.
+            'myAbsences' => array_map(
+                fn (Absence $absence): array => [
+                    'absence' => $absence,
+                    'slots' => $absence->getSlotIndexes(),
+                    'withdrawable' => $this->isWithdrawable($absence, $slotTimes, $day, $clock->now()),
+                ],
+                $absences->findUpcomingForTeacher($user, $today),
+            ),
         ]);
     }
 
@@ -927,7 +938,7 @@ final class GuardiaController extends AbstractController
      * count twice for whoever did them, once archived and once live.
      */
     #[Route('/ausencia', name: 'guardia_absence_create', methods: ['POST'])]
-    public function createAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, AcademicYearRepository $years, AbsenceRegistrar $registrar, FileUploader $uploader, AppSettings $settings): Response
+    public function createAbsence(Request $request, #[CurrentUser] User $user, UserRepository $users, AcademicYearRepository $years, AbsenceRegistrar $registrar, FileUploader $uploader, AppSettings $settings, AbsenceRepository $absences, ScheduleEntryRepository $schedule, TeacherGuardiaDay $day, ClockInterface $clock): Response
     {
         $this->assertCsrf($request, 'guardia_absence_create');
 
@@ -998,7 +1009,7 @@ final class GuardiaController extends AbstractController
         // escrito ni media fila (la primera descarga del flush es la que revienta) y la segunda pasada
         // encontrará la ausencia ya creada y le colgará las horas que falten.
         try {
-            $result = $registrar->register($year, $teacher, $date, $slotIndexes, $taskBySlot, $missesBreak);
+            $result = $registrar->register($year, $teacher, $date, $slotIndexes, $taskBySlot, $missesBreak, $user);
         } catch (UniqueConstraintViolationException) {
             // Los documentos ya están subidos y no los referencia nada: fuera, o se quedan ahí para siempre.
             foreach ($taskBySlot as $task) {
@@ -1020,6 +1031,12 @@ final class GuardiaController extends AbstractController
         }
 
         $this->flashRegistration($teacher, $result);
+        // Dónde deshacerla, dicho en el momento en que alguien se da cuenta de que se ha equivocado. Solo si de
+        // verdad se puede: ya empezada, completada por otra persona o sin nada guardado, sería una promesa falsa.
+        $saved = $absences->findForTeacherAndDate($teacher, $date);
+        if ($saved instanceof Absence && $this->isWithdrawable($saved, $this->slotTimes($schedule, $year), $day, $clock->now())) {
+            $this->addFlash('success', 'Si te has equivocado, puedes anularla en «Mis guardias» hasta que empiece su primera hora.');
+        }
 
         // When the only consequence was an unwatched recreo, the parte has nothing new to show: land on
         // the gaps screen, which is where somebody has to go looking for a volunteer.
@@ -1490,10 +1507,82 @@ final class GuardiaController extends AbstractController
     }
 
     /**
-     * Deletes a parte line.
+     * Withdraws one's OWN absence, reported by mistake: its parte lines, the recreos it left unwatched and
+     * the absence go, and whoever was going to cover those lines is told.
+     *
+     * Only the absent teacher, and only while none of its periods has started: until then nobody has acted
+     * on it, so taking it back is a correction. Once a period has begun a guardia teacher may already be in
+     * the room, and from there it is the coordination's call (they delete line by line from the parte). An
+     * absence carrying a "sin cobertura" mark is not theirs alone either: the equipo directivo put it there.
+     * Anyone else gets a 404, not a 403: whose absences exist is nobody else's business. A missing id gets a
+     * flash instead (the usual cause is a second click once the first already withdrew it); ids are
+     * sequential, so that tells nobody anything they could not guess.
+     *
+     * @param int $id the absence id
+     */
+    #[Route('/ausencia/{id}/anular', name: 'guardia_absence_withdraw', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function withdrawAbsence(int $id, Request $request, #[CurrentUser] User $user, AbsenceRepository $absences, AcademicYearRepository $years, ScheduleEntryRepository $schedule, TeacherGuardiaDay $day, AbsenceRegistrar $registrar, ClockInterface $clock): Response
+    {
+        $absence = $absences->find($id);
+        if (!$absence instanceof Absence) {
+            // Lo normal es un segundo clic con la red lenta: la primera ya la anuló. Un 404 lo leería como error.
+            $this->addFlash('success', 'Esa ausencia ya no existe: ya estaba anulada.');
+
+            return $this->redirectToRoute('guardia_mine');
+        }
+        if ($absence->getAbsentTeacher()->getId() !== $user->getId()) {
+            throw $this->createNotFoundException();
+        }
+        $this->assertCsrf($request, 'guardia_absence_withdraw'.$id);
+
+        $year = $years->findBySchoolYear(SchoolYear::current($absence->getDate()));
+        if (!$year instanceof AcademicYear) {
+            $this->addFlash('error', sprintf('No hay horario importado para el curso %s: pídele a coordinación de guardias que la anule.', SchoolYear::current($absence->getDate())));
+
+            return $this->redirectToRoute('guardia_mine');
+        }
+        if (!$this->isWithdrawable($absence, $this->slotTimes($schedule, $year), $day, $clock->now())) {
+            $this->addFlash('error', 'Esta ausencia ya no se puede anular desde aquí: ya ha empezado, o la apuntó o completó otra persona. Pídeselo a coordinación de guardias.');
+
+            return $this->redirectToRoute('guardia_mine');
+        }
+
+        $label = $absence->getDate()->format('d/m/Y');
+        $registrar->withdraw($year, $absence);
+        $this->addFlash('success', sprintf('Ausencia del %s anulada. Si alguien iba a cubrirte, ya le ha llegado el aviso.', $label));
+
+        return $this->redirectToRoute('guardia_mine');
+    }
+
+    /**
+     * Whether the absent teacher may still take back their own absence: they wrote all of it (no pass by a
+     * coordinator nor a "sin cobertura" mark of the equipo directivo, which is never self-reported) and
+     * none of its periods has begun. An absence with no period at all (only the recreo) is judged by its day.
+     *
+     * @param Absence                                                                     $absence   the absence
+     * @param array<int, array{startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}> $slotTimes period times by slot index
+     * @param TeacherGuardiaDay                                                           $day       where "has it started" is answered
+     * @param \DateTimeImmutable                                                          $now       the current instant
+     *
+     * @return bool true while it can still be withdrawn by its owner
+     */
+    private function isWithdrawable(Absence $absence, array $slotTimes, TeacherGuardiaDay $day, \DateTimeImmutable $now): bool
+    {
+        if (!$absence->isSelfReported() || [] !== $absence->getUncoveredSlotIndexes()) {
+            return false;
+        }
+        $first = $absence->getSlotIndexes()[0] ?? null;
+
+        return null === $first
+            ? $absence->getDate()->format('Y-m-d') > $now->setTimezone($absence->getDate()->getTimezone())->format('Y-m-d')
+            : !$day->hasSlotStarted($absence->getDate(), $first, $slotTimes, $now);
+    }
+
+    /**
+     * Deletes a parte line, and tells whoever was going to cover it.
      */
     #[Route('/{id}/borrar', name: 'guardia_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function delete(GuardiaCover $cover, Request $request, EntityManagerInterface $em, GuardiaCoverRepository $covers, FileUploader $uploader): Response
+    public function delete(GuardiaCover $cover, Request $request, EntityManagerInterface $em, GuardiaCoverRepository $covers, FileUploader $uploader, GuardiaAssignmentNotifier $notifier): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::GUARDIAS);
         $this->assertCsrf($request, 'guardia_delete'.$cover->getId());
@@ -1502,6 +1591,7 @@ final class GuardiaController extends AbstractController
         $slotIndex = $cover->getSlotIndex();
         $absence = $cover->getAbsence();
         $documentPath = $cover->getTaskDocumentPath();
+        $assigned = $cover->getAssignedGuardia();
 
         // The delete proper: if THIS fails the line is untouched, so the error message is honest.
         try {
@@ -1515,7 +1605,11 @@ final class GuardiaController extends AbstractController
 
         // The line is gone and committed. Best-effort cleanup — a hiccup here does not undo the delete,
         // so it must not report failure: drop the uploaded document, and the absence too if this was its
-        // last period, so neither an orphan file nor an orphan (private) reason lingers.
+        // last period, so neither an orphan file nor an orphan (private) reason lingers. Whoever was going to
+        // cover it is told, or they would turn up at a room where nobody needs them.
+        if (null !== $assigned) {
+            $notifier->notifyCancelled($cover, $assigned);
+        }
         if (null !== $documentPath) {
             $uploader->remove($documentPath);
         }

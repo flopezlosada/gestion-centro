@@ -6,6 +6,9 @@ namespace App\Tests\Functional;
 
 use App\Entity\Absence;
 use App\Entity\AcademicYear;
+use App\Entity\BreakDutyAssignment;
+use App\Entity\BreakDutyGap;
+use App\Entity\BreakZone;
 use App\Entity\Department;
 use App\Entity\GuardiaCover;
 use App\Entity\GuardiaSupport;
@@ -16,6 +19,7 @@ use App\Entity\TimeSlot;
 use App\Entity\User;
 use App\Enum\AbsenceRetention;
 use App\Enum\Area;
+use App\Enum\BreakPeriod;
 use App\Enum\PermissionLevel;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\TimeSlotKind;
@@ -26,6 +30,7 @@ use App\Service\FileUploader;
 use App\Tests\Support\MintsSessionCsrfTokens;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Clock\Test\ClockSensitiveTrait;
@@ -1013,7 +1018,10 @@ final class GuardiaPageTest extends WebTestCase
         $this->client->followRedirect();
         self::assertResponseIsSuccessful();
         self::assertSelectorTextContains('main', '1 guardia(s) generada(s) para Docente Test.');
-        self::assertCount(1, $this->em->getRepository(Absence::class)->findAll());
+        self::assertSelectorTextContains('main', 'puedes anularla en «Mis guardias»');
+        $absences = $this->em->getRepository(Absence::class)->findAll();
+        self::assertCount(1, $absences);
+        self::assertTrue($absences[0]->isSelfReported(), 'la apuntó el propio docente');
     }
 
     /**
@@ -1441,5 +1449,237 @@ final class GuardiaPageTest extends WebTestCase
         self::assertCount(2, $crawler->filter('.day-strip__row'));
         // La que estás mirando no se enlaza a sí misma.
         self::assertCount(1, $crawler->filter('.day-strip__row[href]'));
+    }
+
+    /**
+     * The absence of the teacher on that day, marked as written by them alone — what a real self-reported
+     * absence looks like after {@see \App\Guardia\AbsenceRegistrar::register()}.
+     */
+    private function ownAbsence(User $teacher, \DateTimeImmutable $date): Absence
+    {
+        $absence = $this->absences[spl_object_id($teacher).'|'.$date->format('Y-m-d')];
+        $absence->noteReporter($teacher, true);
+
+        return $absence;
+    }
+
+    /**
+     * POSTs the withdrawal of an absence with a token minted for the session, so a refusal is the rule's
+     * and never the token's.
+     */
+    private function withdraw(int $absenceId): void
+    {
+        $this->client->request('POST', '/guardias/ausencia/'.$absenceId.'/anular', [
+            '_token' => $this->mintCsrfToken($this->client, '/guardias/mias', 'guardia_absence_withdraw'.$absenceId),
+        ]);
+    }
+
+    /**
+     * Quien apunta su propia falta por error la encuentra en «Mis guardias» y la anula él mismo, sin pasar
+     * por coordinación: se van sus líneas del parte, el documento que dejó y la ausencia, y a quien iba a
+     * cubrirle le llega el aviso de que ya no hay guardia (si no, se presentaría en un aula vacía).
+     */
+    public function testATeacherWithdrawsTheirOwnAbsenceAndWhoeverCoveredIsTold(): void
+    {
+        $teacher = $this->login(coordinator: false);
+        $date = new \DateTimeImmutable('monday next week');
+        $year = $this->academicYear(SchoolYear::current($date));
+        $this->em->persist($year);
+        $this->lessonEntry($year, $teacher, $date, 0, '2ºB', '08:25', '09:20');
+        $covering = $this->user('Rosa Cubre Pérez', 'rosa.cubre@centro.test');
+        $first = $this->cover($date, 0, $teacher, $covering);
+        $this->cover($date, 1, $teacher, null, false, '3ºA');
+        $uploader = self::getContainer()->get(FileUploader::class);
+        $document = $uploader->store('%PDF-1.4 tarea', 'guardia-tasks', 'pdf');
+        $first->setTaskDocumentPath($document)->setTaskDocumentName('tarea.pdf');
+        $this->ownAbsence($teacher, $date);
+        $this->em->flush();
+        $absenceId = (int) $this->ownAbsence($teacher, $date)->getId();
+
+        $crawler = $this->client->request('GET', '/guardias/mias');
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('#mis-ausencias', $date->format('d/m'));
+        self::assertSelectorTextContains('#mis-ausencias', '08:25');
+        $action = '/guardias/ausencia/'.$absenceId.'/anular';
+        $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action)]);
+
+        self::assertResponseRedirects('/guardias/mias');
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('main', 'Ausencia del '.$date->format('d/m/Y').' anulada.');
+        self::assertSelectorNotExists('#mis-ausencias');
+        $this->em->clear();
+        self::assertCount(0, $this->em->getRepository(Absence::class)->findAll());
+        self::assertCount(0, $this->em->getRepository(GuardiaCover::class)->findAll());
+        self::assertFileDoesNotExist($uploader->absolutePath($document));
+        $notice = $this->notificationFor('rosa.cubre@centro.test');
+        self::assertStringContainsString('Se ha anulado la guardia', (string) $notice->getBody());
+        self::assertStringContainsString('ya no tienes que hacerla', (string) $notice->getBody());
+
+        // Un segundo clic con la red lenta llega cuando ya no existe: se dice, no se contesta con un 404.
+        $this->client->request('POST', $action, ['_token' => $this->tokenFrom($crawler, $action)]);
+        self::assertResponseRedirects('/guardias/mias');
+    }
+
+    /**
+     * La guardia que su falta le quitó y nadie pudo coger sigue esperando: al anular, el reparto vuelve a
+     * pasar y puede volver a ser suya, porque ya no consta ausente.
+     */
+    public function testWithdrawingRunsTheSplitAgainForAGuardiaNobodyCouldTake(): void
+    {
+        $teacher = $this->login(coordinator: false);
+        $date = new \DateTimeImmutable('wednesday next week');
+        $year = $this->academicYear(SchoolYear::current($date));
+        $this->em->persist($year);
+        $this->guardiaEntry($year, $teacher, $date, 0);
+        $other = $this->user('Otro Ausente', 'otro.ausente@centro.test');
+        $this->lessonEntry($year, $other, $date, 0, '1ºC', '08:25', '09:20');
+        $waiting = $this->cover($date, 0, $other, null, false, '1ºC');
+        // Su falta abarcaba su hora de guardia, que no genera línea: por eso la de 1ºC se quedó sin nadie.
+        $absence = (new Absence())->setAbsentTeacher($teacher)->setDate($date)->addSlotIndexes([0]);
+        $absence->noteReporter($teacher, true);
+        $this->em->persist($absence);
+        $this->em->flush();
+        $absenceId = (int) $absence->getId();
+
+        $this->withdraw($absenceId);
+
+        self::assertResponseRedirects('/guardias/mias');
+        self::assertSame($teacher->getId(), $this->reload((int) $waiting->getId())->getAssignedGuardia()?->getId());
+    }
+
+    /**
+     * Anular la falta también retira el aviso de «recreo sin vigilar» que había dejado ese día, salvo que el
+     * equipo directivo ya hubiera encontrado a alguien: eso ya está hablado y se respeta.
+     */
+    public function testWithdrawingAnAbsenceDropsTheRecreoGapUnlessAVolunteerIsFound(): void
+    {
+        $teacher = $this->login(coordinator: false);
+        $date = new \DateTimeImmutable('tuesday next week');
+        $year = $this->academicYear(SchoolYear::current($date));
+        $this->em->persist($year);
+        $zone = (new BreakZone())->setName('Zona de prueba al anular')->setWeight(1);
+        $this->em->persist($zone);
+        $first = (new BreakDutyAssignment())->setAcademicYear($year)->setTeacher($teacher)->setWeekday(Weekday::TUESDAY)->setZone($zone)->setPeriod(BreakPeriod::FIRST);
+        $second = (new BreakDutyAssignment())->setAcademicYear($year)->setTeacher($teacher)->setWeekday(Weekday::TUESDAY)->setZone($zone)->setPeriod(BreakPeriod::SECOND);
+        $this->em->persist($first);
+        $this->em->persist($second);
+        $this->em->persist((new BreakDutyGap())->setAssignment($first)->setDate($date));
+        $this->em->persist((new BreakDutyGap())->setAssignment($second)->setDate($date)->setVolunteer($this->user('Voluntaria Patio', 'voluntaria@centro.test')));
+        $this->cover($date, 0, $teacher);
+        $this->ownAbsence($teacher, $date);
+        $this->em->flush();
+
+        $this->withdraw((int) $this->ownAbsence($teacher, $date)->getId());
+
+        self::assertResponseRedirects('/guardias/mias');
+        $this->em->clear();
+        $gaps = $this->em->getRepository(BreakDutyGap::class)->findAll();
+        self::assertCount(1, $gaps, 'la del recreo sin nadie se va');
+        self::assertSame('voluntaria@centro.test', $gaps[0]->getVolunteer()?->getEmail(), 'la que ya tiene voluntaria se queda');
+    }
+
+    /**
+     * Hoy, en cuanto empieza su primera hora, puede que ya haya alguien en el aula: deshacerla ya no es
+     * corregir un error, y lo decide coordinación. La pantalla no ofrece el botón y el servidor lo rechaza.
+     * Con el reloj fijo, porque lo que se prueba es la hora del día y no la fecha.
+     */
+    public function testAnAbsenceWhoseFirstPeriodHasBegunTodayCannotBeWithdrawn(): void
+    {
+        self::mockTime('2027-03-10 08:30');
+        $teacher = $this->login(coordinator: false);
+        $date = new \DateTimeImmutable('2027-03-10');
+        $year = $this->academicYear(SchoolYear::current($date));
+        $this->em->persist($year);
+        $this->lessonEntry($year, $teacher, $date, 0, '2ºB', '08:25', '09:20');
+        $this->cover($date, 0, $teacher);
+        $this->ownAbsence($teacher, $date);
+        $this->em->flush();
+        $absenceId = (int) $this->ownAbsence($teacher, $date)->getId();
+
+        $crawler = $this->client->request('GET', '/guardias/mias');
+        self::assertCount(0, $crawler->filter('#mis-ausencias form'), 'no se ofrece');
+        $this->withdraw($absenceId);
+
+        self::assertResponseRedirects('/guardias/mias');
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('main', 'ya no se puede anular desde aquí');
+        $this->em->clear();
+        self::assertCount(1, $this->em->getRepository(Absence::class)->findAll());
+        self::assertCount(1, $this->em->getRepository(GuardiaCover::class)->findAll());
+    }
+
+    /**
+     * La fila es una por día y las pasadas se suman: si coordinación completó la falta (la tarde, una baja),
+     * anularla borraría también lo suyo. Igual con las horas «sin cobertura» del equipo directivo.
+     *
+     * @return iterable<string, array{bool}>
+     */
+    public static function notOnlyTheirs(): iterable
+    {
+        yield 'coordinación añadió horas' => [false];
+        yield 'el equipo directivo marcó horas sin cobertura' => [true];
+    }
+
+    #[DataProvider('notOnlyTheirs')]
+    public function testAnAbsenceSomebodyElseAddedToCannotBeWithdrawnByItsOwner(bool $withoutCover): void
+    {
+        $teacher = $this->login(coordinator: false);
+        $date = new \DateTimeImmutable('monday next week');
+        $this->em->persist($this->academicYear(SchoolYear::current($date)));
+        $this->cover($date, 0, $teacher);
+        $absence = $this->ownAbsence($teacher, $date);
+        if ($withoutCover) {
+            $absence->addUncoveredSlotIndexes([3]);
+        } else {
+            $this->cover($date, 4, $teacher);
+            $absence->noteReporter($this->user('Coordina Guardias', 'coordina@centro.test'), false);
+        }
+        $this->em->flush();
+
+        $crawler = $this->client->request('GET', '/guardias/mias');
+        self::assertSelectorTextContains('#mis-ausencias', 'pídeselo a coordinación');
+        self::assertCount(0, $crawler->filter('#mis-ausencias form'));
+        $this->withdraw((int) $absence->getId());
+
+        self::assertResponseRedirects('/guardias/mias');
+        $this->em->clear();
+        self::assertCount(1, $this->em->getRepository(Absence::class)->findAll());
+    }
+
+    /**
+     * La falta de otra persona no es tuya: ni se anula ni se confirma que existe (404, no 403).
+     */
+    public function testSomebodyElsesAbsenceIsNotFound(): void
+    {
+        $this->login();
+        $other = $this->user('Otra Persona', 'otra@centro.test');
+        $date = new \DateTimeImmutable('monday next week');
+        $this->cover($date, 0, $other);
+        $this->ownAbsence($other, $date);
+        $this->em->flush();
+
+        $this->withdraw((int) $this->ownAbsence($other, $date)->getId());
+
+        self::assertResponseStatusCodeSame(404);
+        $this->em->clear();
+        self::assertCount(1, $this->em->getRepository(Absence::class)->findAll());
+    }
+
+    /**
+     * Borrar una línea desde el parte también avisa a quien la iba a cubrir: antes desaparecía sin decírselo.
+     */
+    public function testDeletingAParteLineTellsWhoeverWasCoveringIt(): void
+    {
+        $this->login();
+        $date = new \DateTimeImmutable('monday next week');
+        $covering = $this->user('Jesús Cubre Gil', 'jesus.cubre@centro.test');
+        $cover = $this->cover($date, 0, $this->user('Ausente Parte', 'ausente@centro.test'), $covering);
+        $this->em->flush();
+        $action = '/guardias/'.$cover->getId().'/borrar';
+
+        $this->client->request('POST', $action, ['_token' => $this->mintCsrfToken($this->client, '/guardias/mias', 'guardia_delete'.$cover->getId())]);
+
+        self::assertResponseRedirects();
+        self::assertStringContainsString('Se ha anulado la guardia', (string) $this->notificationFor('jesus.cubre@centro.test')->getBody());
     }
 }

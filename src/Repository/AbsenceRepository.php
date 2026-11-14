@@ -98,6 +98,30 @@ class AbsenceRepository extends ServiceEntityRepository
     }
 
     /**
+     * A teacher's own absences from a day onwards, soonest first — what "Mis guardias" lists so whoever
+     * reported one by mistake can find it again and take it back.
+     *
+     * @param User               $teacher the absent teacher
+     * @param \DateTimeImmutable $from    the first day to include
+     *
+     * @return list<Absence> their absences, earliest day first
+     */
+    public function findUpcomingForTeacher(User $teacher, \DateTimeImmutable $from): array
+    {
+        /** @var list<Absence> $absences */
+        $absences = $this->createQueryBuilder('a')
+            ->andWhere('a.absentTeacher = :teacher')
+            ->andWhere('a.date >= :from')
+            ->setParameter('teacher', $teacher)
+            ->setParameter('from', $from, Types::DATE_IMMUTABLE)
+            ->orderBy('a.date', 'ASC')
+            ->getQuery()
+            ->getResult();
+
+        return $absences;
+    }
+
+    /**
      * Every absence from a day onwards, the most recent day first and, within a day, by teacher name.
      *
      * The teacher is fetched in the same query, so listing them does not cost one more per row.
