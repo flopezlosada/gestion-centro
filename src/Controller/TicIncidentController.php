@@ -24,8 +24,10 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
  *
  * The permission is asymmetric on purpose: REPORTING is open to anybody with an account, because the
  * person who finds the projector dead is whoever had class there and making them ask someone else to
- * file it is how faults stop being reported at all. DEALING with them — taking one on, closing it —
- * needs write access on {@see Area::TIC}, which is what the TIC coordination holds.
+ * file it is how faults stop being reported at all. CLOSING one is open too: whoever fixed it on the spot,
+ * or filed it by mistake, says so (with what was done, and their name on it) so the TIC coordination does
+ * not walk across the building for nothing. MANAGING the queue — taking one on, reopening it — needs write
+ * access on {@see Area::TIC}, which is what the TIC coordination holds.
  */
 #[Route('/incidencias')]
 final class TicIncidentController extends AbstractController
@@ -83,13 +85,13 @@ final class TicIncidentController extends AbstractController
     }
 
     /**
-     * Moves an incident along: take it on, close it (with what was done) or reopen it. Reserved to
-     * whoever handles TIC — reporting is everybody's, fixing is not.
+     * Moves an incident along: take it on, close it (with what was done) or reopen it. Closing one not yet
+     * closed is anybody's (see the class); taking it on and reopening are the TIC coordination's. A closure
+     * is never overwritten: closing one already closed changes nothing, whoever sends it.
      */
     #[Route('/{id}/estado', name: 'tic_incident_move', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function move(TicIncident $incident, Request $request, #[CurrentUser] User $user, EntityManagerInterface $entityManager): Response
     {
-        $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::TIC);
         if (!$this->isCsrfTokenValid('tic_incident_move'.$incident->getId(), (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
@@ -97,6 +99,16 @@ final class TicIncidentController extends AbstractController
         $status = IncidentStatus::tryFrom((string) $request->request->get('estado'));
         if (null === $status) {
             throw $this->createNotFoundException('Ese estado no existe.');
+        }
+        if (IncidentStatus::RESOLVED !== $status) {
+            $this->denyAccessUnlessGranted(AreaVoter::WRITE, Area::TIC);
+        }
+        if (IncidentStatus::RESOLVED === $status && IncidentStatus::RESOLVED === $incident->getStatus()) {
+            // Página vieja (alguien la cerró mientras tanto) o un segundo envío. Para nadie, TIC incluida, se
+            // pisa el cierre que ya hay: su nota y su nombre son el registro. Para corregirlo, se reabre.
+            $this->addFlash('warning', 'Ya estaba cerrada: no se ha cambiado nada.');
+
+            return $this->redirectToRoute('tic_incident_show', ['id' => $incident->getId()]);
         }
 
         $note = trim((string) $request->request->get('nota'));

@@ -13,8 +13,8 @@ namespace App\Enum;
  * instead (see {@see \App\Service\TaskVisibility}), not by this matrix. Matrix-gated areas today are
  * the administration back-office, the guardia coordination screen (managing the daily parte), the
  * space management module (the room catalogue and, from there on, room changes), the copy room's
- * queue of orders and the TIC incident register — where REPORTING one is open to everybody and the
- * permission only gates dealing with them.
+ * queue of orders and the TIC incident register — where REPORTING one, and closing one fixed on the spot,
+ * is open to everybody and the permission only gates managing the queue (taking one on, reopening it).
  *
  * {@see self::FOTOCOPIAS} follows that same TIC shape, and that is the reason it exists as an area at
  * all: PLACING an order is open to the whole claustro (the menu entry has no gate), and the permission
