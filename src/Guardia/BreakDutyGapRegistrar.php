@@ -11,8 +11,10 @@ use App\Entity\User;
 use App\Enum\Weekday;
 use App\Repository\BreakDutyAssignmentRepository;
 use App\Repository\BreakDutyGapRepository;
+use App\Repository\TimeSlotRepository;
 use App\Service\BreakDutyGapNotifier;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Clock\ClockInterface;
 
 /**
  * What happens to a recreo when the teacher on the rota is away: nothing is reassigned — the centre has
@@ -35,6 +37,9 @@ final class BreakDutyGapRegistrar
         private readonly BreakDutyGapRepository $gaps,
         private readonly BreakDutyGapNotifier $notifier,
         private readonly EntityManagerInterface $em,
+        private readonly TimeSlotRepository $timeSlots,
+        private readonly TeacherGuardiaDay $day,
+        private readonly ClockInterface $clock,
     ) {
     }
 
@@ -82,6 +87,39 @@ final class BreakDutyGapRegistrar
         }
 
         return ['gaps' => $gaps, 'fresh' => $fresh];
+    }
+
+    /**
+     * Takes back the recreos a teacher's absence had left unattended, because the absence itself is being
+     * withdrawn — they will be in the patio after all. One absence per teacher and day, so the gaps of
+     * their duties that day are exactly the ones it recorded.
+     *
+     * Two kinds stay: a recreo that has already begun (whatever happened in it happened, and the record is
+     * what the equipo directivo acted on), and one that already has a volunteer (it is arranged and that
+     * person told; a second adult in the patio harms nobody, silently dropping the arrangement would). A
+     * recreo whose time the marco horario does not know counts as begun if it is today.
+     *
+     * Like {@see record()}, it does NOT flush: it rides in the caller's flush with the rest of the undo.
+     *
+     * @param AcademicYear       $year    the course the date falls into (whose rota to read)
+     * @param User               $teacher the teacher whose absence is withdrawn
+     * @param \DateTimeImmutable $date    the day
+     */
+    public function forget(AcademicYear $year, User $teacher, \DateTimeImmutable $date): void
+    {
+        $breaks = $this->timeSlots->findBreaksByYear($year);
+        $now = $this->clock->now();
+        foreach ($this->dutiesOn($year, $teacher, $date) as $duty) {
+            $gap = $this->gaps->findForAssignmentAndDate($duty, $date);
+            if (null === $gap || null !== $gap->getVolunteer()) {
+                continue;
+            }
+            $break = $breaks[$duty->getPeriod()->position()] ?? null;
+            $times = null !== $break ? [0 => ['startsAt' => $break->getStartsAt(), 'endsAt' => $break->getEndsAt()]] : [];
+            if (!$this->day->hasSlotStarted($date, 0, $times, $now)) {
+                $this->em->remove($gap);
+            }
+        }
     }
 
     /**

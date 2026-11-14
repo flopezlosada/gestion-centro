@@ -134,6 +134,31 @@ final class TeacherGuardiaDayTest extends TestCase
         self::assertSame($over, $this->day->isSlotOver(new \DateTimeImmutable($date), $slot, $this->slotTimes(), new \DateTimeImmutable($now)));
     }
 
+    /**
+     * @return iterable<string, array{string, int, string, bool}>
+     */
+    public static function slotStartedCases(): iterable
+    {
+        // [día, tramo, ahora, ¿ya empezó?] con el 2º tramo de 09:20 a 10:15.
+        yield 'un minuto antes no' => ['2026-03-10', 1, '2026-03-10 09:19', false];
+        yield 'justo a la hora todavía no' => ['2026-03-10', 1, '2026-03-10 09:20', false];
+        yield 'un minuto después sí' => ['2026-03-10', 1, '2026-03-10 09:21', true];
+        yield 'un día anterior sí' => ['2026-03-09', 2, '2026-03-10 07:00', true];
+        yield 'un día que viene no' => ['2026-03-11', 0, '2026-03-10 23:00', false];
+        // Al revés que isSlotOver: la pregunta es «¿se puede deshacer aún?», y ante la duda, no.
+        yield 'hoy sin hora conocida cuenta como empezado' => ['2026-03-10', 7, '2026-03-10 07:00', true];
+        yield 'otro día sin hora conocida responde por la fecha' => ['2026-03-11', -1, '2026-03-10 23:00', false];
+    }
+
+    /**
+     * Whether a period has begun, the twin of {@see testWhetherAPeriodIsOver()} on the start time.
+     */
+    #[DataProvider('slotStartedCases')]
+    public function testWhetherAPeriodHasStarted(string $date, int $slot, string $now, bool $started): void
+    {
+        self::assertSame($started, $this->day->hasSlotStarted(new \DateTimeImmutable($date), $slot, $this->slotTimes(), new \DateTimeImmutable($now)));
+    }
+
     public function testTheSlotTimesAreReadAsHoursOfTheGivenDayNotOfTheDayTheyCarry(): void
     {
         // Las horas del horario llegan fechadas con el día del PROCESO (aquí el 10). Mirando el 20 a las

@@ -55,6 +55,43 @@
 
     {{ include('guardia/_upcoming.html.twig') }}
 
+    {# Las ausencias que has apuntado, para poder deshacer una puesta por error. Solo mientras no ha empezado
+       ninguna de sus horas: después puede que ya haya alguien en el aula y lo decide coordinación. #}
+    {% if myAbsences is not empty %}
+        <section class="card" id="mis-ausencias">
+            <h2>Tus ausencias</h2>
+            <table class="worklist">
+                <thead><tr><th scope="col">Día</th><th scope="col">Horas</th><th scope="col"><span class="visually-hidden">Acciones</span></th></tr></thead>
+                <tbody>
+                    {% for row in myAbsences %}
+                        {% set absence = row.absence %}
+                        <tr>
+                            <td><strong>{{ weekdayNames[absence.date|date('N', false)] }} {{ absence.date|date('d/m', false) }}</strong></td>
+                            <td class="mono">
+                                {%- for slot in row.slots -%}
+                                    {{ slotTimes[slot] is defined ? slotTimes[slot].startsAt|date('H:i', false) : (slot + 1) ~ 'ª' }}{{ not loop.last ? ', ' }}
+                                {%- else -%}
+                                    Solo el recreo
+                                {%- endfor -%}
+                            </td>
+                            <td class="row-actions">
+                                {% if row.withdrawable %}
+                                    <form method="post" action="{{ path('guardia_absence_withdraw', { id: absence.id }) }}" data-confirm="¿Anular tu ausencia del {{ absence.date|date('d/m/Y', false) }}? Se borran sus líneas del parte y, si alguien iba a cubrirte, le llega un aviso. Si pediste fotocopias, avisa a conserjería.">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('guardia_absence_withdraw' ~ absence.id) }}">
+                                        <button type="submit" class="link-quiet">Anular</button>
+                                    </form>
+                                {% else %}
+                                    <span class="help">Ya no se puede anular aquí: pídeselo a coordinación.</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <p class="help">Si apuntaste una ausencia por error, anúlala aquí antes de que empiece su primera hora.</p>
+        </section>
+    {% endif %}
+
     {# La guardia de recreo NO es una fila más del día: es fija todo el curso, así que se cuenta una vez
        como un hecho permanente ("los martes, patio") y no una vez por cada martes del año. Va fuera del
        if de arriba porque el profesor la tiene igual haya o no guardias de sustitución hoy. #}

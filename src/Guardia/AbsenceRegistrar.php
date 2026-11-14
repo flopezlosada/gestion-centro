@@ -12,6 +12,7 @@ use App\Enum\Weekday;
 use App\Repository\AbsenceRepository;
 use App\Repository\GuardiaCoverRepository;
 use App\Repository\ScheduleEntryRepository;
+use App\Service\FileUploader;
 use App\Service\GuardiaAssignmentNotifier;
 use App\Space\EffectiveLesson;
 use App\Space\EffectiveTimetable;
@@ -49,6 +50,7 @@ final class AbsenceRegistrar
         private readonly BreakDutyGapRegistrar $breakGaps,
         private readonly GuardiaAssignmentNotifier $notifier,
         private readonly EntityManagerInterface $em,
+        private readonly FileUploader $uploader,
     ) {
     }
 
@@ -66,6 +68,9 @@ final class AbsenceRegistrar
      * @param bool               $missesBreakDuty whether the absence also covers the recreo: told, not
      *                                         inferred, because a recreo is nobody's teaching period and
      *                                         so cannot be read off the periods ticked
+     * @param User|null          $reportedBy  who registers this pass (null for no person, e.g. seeding):
+     *                                         only an absence the teacher wrote entirely themself can be
+     *                                         withdrawn by them ({@see Absence::noteReporter()})
      *
      * @return AbsenceRegistrationResult what was created and what was skipped — a period counts as
      *                                   skipped-free both when the timetable leaves it free and when an
@@ -84,7 +89,7 @@ final class AbsenceRegistrar
      *                                           a enviarlo" — see
      *                                           {@see \App\Controller\GuardiaController::createAbsence()}
      */
-    public function register(AcademicYear $year, User $teacher, \DateTimeImmutable $date, ?array $slotIndexes, array $taskBySlot = [], bool $missesBreakDuty = false): AbsenceRegistrationResult
+    public function register(AcademicYear $year, User $teacher, \DateTimeImmutable $date, ?array $slotIndexes, array $taskBySlot = [], bool $missesBreakDuty = false, ?User $reportedBy = null): AbsenceRegistrationResult
     {
         $weekday = Weekday::from((int) $date->format('N'));
         // An all-day absence spans every period the teacher is booked in, guardia hours included — not
@@ -99,6 +104,7 @@ final class AbsenceRegistrar
         if ($absenceIsNew) {
             $absence = (new Absence())->setAbsentTeacher($teacher)->setDate($date);
         }
+        $absence->noteReporter($reportedBy, $absenceIsNew);
 
         // The absence spans these periods whether or not any of them produces a cover, and it is stored
         // even when none does — that is the whole fix. A teacher away only during their guardia hours
@@ -273,6 +279,46 @@ final class AbsenceRegistrar
             $this->em->remove($absence);
         }
         $this->em->flush();
+    }
+
+    /**
+     * Withdraws a whole absence reported by mistake: its parte lines, the recreos it left unwatched and the
+     * absence itself go in ONE flush, so a failure leaves everything as it was. Afterwards, best effort, the
+     * teachers who were going to cover those lines are told and the documents left for the groups deleted.
+     *
+     * The guardias the absence took off the teacher are not handed back by hand: where somebody else took
+     * them, that person was told and keeps them. But one the rota could not hand to anyone is still waiting,
+     * so the split runs again on the absence's periods — the teacher is no longer away and may be picked.
+     *
+     * @param AcademicYear $year    the course the absence falls into (whose recreo rota to read)
+     * @param Absence      $absence the absence to withdraw
+     */
+    public function withdraw(AcademicYear $year, Absence $absence): void
+    {
+        $lines = $this->covers->findBy(['absence' => $absence]);
+        $date = $absence->getDate();
+        $slots = $absence->getSlotIndexes();
+        $assignedTo = array_map(static fn (GuardiaCover $cover): ?User => $cover->getAssignedGuardia(), $lines);
+        $documents = array_values(array_filter(array_map(static fn (GuardiaCover $cover): ?string => $cover->getTaskDocumentPath(), $lines)));
+
+        foreach ($lines as $cover) {
+            $this->em->remove($cover);
+        }
+        $this->breakGaps->forget($year, $absence->getAbsentTeacher(), $date);
+        $this->em->remove($absence);
+        $this->em->flush();
+
+        foreach ($lines as $i => $cover) {
+            if (null !== $assignedTo[$i]) {
+                $this->notifier->notifyCancelled($cover, $assignedTo[$i]);
+            }
+        }
+        foreach ($documents as $path) {
+            $this->uploader->remove($path);
+        }
+        foreach ($slots as $slotIndex) {
+            $this->scheduler->autoAssign($year, $date, $slotIndex);
+        }
     }
 
     /**
