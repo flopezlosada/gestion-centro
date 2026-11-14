@@ -56,10 +56,10 @@ final class RoleFixtures extends AbstractGoldenFixture
             // /admin/roles, sin abrirle el resto de Espacios.
             ->setLevel(Area::RESERVAS_FIJAS, PermissionLevel::WRITE)
             // Incidencias TIC: bus factor. El rol TIC ya llega por ser superusuario, así que esto es para
-            // que cerrar una avería no dependa de que esté esa única persona. Tiene que estar aquí Y en
-            // `Version20260803180000`: la migración arregla las bases ya poblada (producción), y esta
-            // fixture es la que ve un entorno nuevo — si solo estuviera en una, dev y prod darían
-            // permisos distintos y el 403 aparecería en el sitio donde nadie lo busca.
+            // que llevar la cola de averías (cogerlas, reabrirlas) no dependa de que esté esa única
+            // persona. Tiene que estar aquí Y en `Version20260803180000`: la migración arregla las bases
+            // ya poblada (producción), y esta fixture es la que ve un entorno nuevo — si solo estuviera en
+            // una, dev y prod darían permisos distintos y el 403 aparecería en el sitio donde nadie lo busca.
             ->setLevel(Area::TIC, PermissionLevel::WRITE)
             ->setHierarchyLevel(40)
             ->setCanConvene(true);
