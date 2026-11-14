@@ -1537,6 +1537,36 @@ a.family-chip:not(.week-chip--accent):hover, a.family-chip:not(.week-chip--accen
     .privacy-more > summary svg { transition: none; }
 }
 
+/* «Volver» de la app instalada: oculto en el navegador (ya trae su botón atrás) y visible solo en modo
+   app (display-mode, o la marca de iOS que pone js/app-back.js). Sin margen negativo a propósito: va
+   antes de los avisos flash y un margen negativo los montaría encima del título. */
+.app-back { display: none; }
+@media (display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui) {
+    .app-back { display: inline-flex; }
+}
+.is-standalone .app-back { display: inline-flex; }
+.app-back {
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 14px;
+    padding: 6px 0;
+    color: var(--text-muted);
+    font-size: 14px;
+    text-decoration: none;
+}
+.app-back:hover { color: var(--text); }
+/* Donde la ficha ya trae su «volver» (backbar, visible solo en móvil), el de la app sobraría: dos botones
+   iguales seguidos. En escritorio la backbar esconde el suyo, así que ahí el de la app se queda. */
+@media (max-width: 760px) {
+    main:has(.backbar__back) > .app-back { display: none; }
+}
+/* Visible, el «Volver» pasa a ser lo primero del main y las anclas a sangre, que suben con margen negativo
+   dando por hecho que lo son, se le meterían encima: misma guarda que con un flash delante. */
+@media (display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui) {
+    main:has(> .app-back) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-anchor) { margin-top: 0; }
+}
+.is-standalone main:has(> .app-back) :is(.parte-anchor, .bank-anchor, .rooms-anchor, .recreo-anchor) { margin-top: 0; }
+
 /* =============================================================================
    Responsive: la barra lateral colapsa a una nav horizontal en móvil
    ============================================================================= */

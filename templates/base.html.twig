@@ -29,6 +29,12 @@
                     var theme = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
                     document.documentElement.setAttribute('data-theme', theme);
                 } catch (e) { document.documentElement.setAttribute('data-theme', 'light'); }
+                // App instalada en iOS: no siempre casa con la media query display-mode, así que su marca
+                // propia se pasa a una clase (ver .app-back en app.css). Aquí y no al final del body: si no,
+                // el «Volver» aparecería tras el primer pintado y empujaría la página.
+                if (window.navigator.standalone === true) {
+                    document.documentElement.classList.add('is-standalone');
+                }
             })();
         </script>
 
@@ -48,6 +54,7 @@
         {% block javascripts %}
             <script src="{{ asset_ver('/js/theme.js') }}"></script>
             <script src="{{ asset_ver('/js/nav.js') }}"></script>
+            <script src="{{ asset_ver('/js/app-back.js') }}"></script>
             <script src="{{ asset_ver('/js/responsive-tables.js') }}"></script>
             {# select-menu antes de table-tools: éste invoca window.enhanceSelectMenus para su filtro. #}
             <script src="{{ asset_ver('/js/select-menu.js') }}"></script>
