@@ -282,6 +282,12 @@
             </header>
 
             <main class="page">
+                {# «Volver» para la app INSTALADA (pantalla de inicio): ahí no hay botón atrás del navegador y,
+                   en móvil, tampoco la ruta de la cabecera. Solo se ve en ese modo (app.css, .app-back); el
+                   destino es el padre de la ruta (js/app-back.js), y si no hay ruta, Inicio. #}
+                {% if route != 'app_homepage' %}
+                    <a class="app-back" href="{{ path('app_homepage') }}" data-app-back><span aria-hidden="true">←</span> Volver</a>
+                {% endif %}
                 {# Invitación a activar los avisos push en este dispositivo. Oculta por defecto; push.js la
                    muestra solo si el navegador lo soporta, no está bloqueado ni ya suscrito, y no se ha
                    descartado. El permiso del navegador exige un click, así que es un botón, no un prompt. #}
