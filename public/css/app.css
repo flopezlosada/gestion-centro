@@ -854,6 +854,9 @@ a.badge:hover { border-color: currentColor; }
 .field-help--lead { color: var(--text); margin: 0 0 6px; }
 /* Aviso de fichero rechazado en cliente (file-size-guard.js), antes de que el servidor lo vea siquiera. */
 .field-help--error { color: var(--danger-text); }
+/* La semana de ausencias en PDF (/ausencias): el día y el botón en una fila, que se parte en móvil. */
+.week-pdf { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 16px; }
+.week-pdf .field { margin: 0; }
 .document-editor trix-editor, trix-editor.rich-text-editor {
     min-height: 340px;
     border: 1px solid var(--border-strong);

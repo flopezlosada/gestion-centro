@@ -1,0 +1,9 @@
+{#- Las horas de una ausencia («08:30–09:25, 10:20–11:15»), o «1ª» si el curso no tiene horario cargado.
+    Lo comparten la pantalla y el PDF semanal. Recibe `row` = { absence, slotTimes }. -#}
+{% set absence = row.absence %}
+{% for slot in absence.slotIndexes %}
+    {% set times = row.slotTimes[slot] ?? null %}
+    {% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}{{ slot + 1 }}ª{% endif %}{% if absence.isUncoveredSlot(slot) %} <span class="muted">sin cobertura</span>{% endif %}{{ not loop.last ? ', ' }}
+{% else %}
+    <span class="muted">Sin horas en su horario</span>
+{% endfor %}

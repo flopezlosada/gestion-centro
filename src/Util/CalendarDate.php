@@ -34,6 +34,19 @@ final class CalendarDate
     }
 
     /**
+     * The Monday of the week a day falls in, at midnight. By subtracting the ISO day number and not with
+     * `modify('monday this week')`, whose Sunday is not obvious at a glance.
+     *
+     * @param \DateTimeImmutable $day any day
+     *
+     * @return \DateTimeImmutable the Monday of its week
+     */
+    public static function mondayOf(\DateTimeImmutable $day): \DateTimeImmutable
+    {
+        return $day->setTime(0, 0)->modify('-'.((int) $day->format('N') - 1).' days');
+    }
+
+    /**
      * The given day at the given time of day. Only the hour and minute of $time are read: a form's time
      * field hands over a whole instant whose date part is meaningless (it may be today, or the epoch),
      * so the day always comes from $day.
