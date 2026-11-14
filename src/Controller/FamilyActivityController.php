@@ -70,7 +70,7 @@ final class FamilyActivityController extends AbstractController
         $all = $this->isGranted('ROLE_ADMIN');
         $visible = static fn (FamilyActivity $a): bool => $all || $a->isOrganizedBy($user);
         $asked = CalendarDate::parse($request->query->getString('semana'), $today->getTimezone());
-        $monday = null === $asked ? FamilySessions::currentMonday($today) : FamilySessions::mondayOf($asked);
+        $monday = null === $asked ? FamilySessions::currentMonday($today) : CalendarDate::mondayOf($asked);
 
         return $this->render('family_activity/index.html.twig', [
             'monday' => $monday,

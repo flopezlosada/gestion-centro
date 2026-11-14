@@ -16,6 +16,17 @@
        pase a tiempo a RAÍCES deja de estar aquí, y un correo con nombres sería una copia fuera del plazo. #}
     <p class="help">Cada ausencia se borra de aquí pasado el plazo de {{ retention.label }}: apúntala en RAÍCES antes.</p>
 
+    {# La semana en PDF para apuntarla en RAÍCES. Un formulario GET y no un enlace: cualquier día vale para
+       elegir su semana, y sin JS funciona igual. #}
+    <form class="card week-pdf" method="get" action="{{ path('absence_week_pdf') }}">
+        <div class="field">
+            <label for="semana">Semana en PDF</label>
+            <input type="date" id="semana" name="semana" value="{{ thisWeek|date('Y-m-d', false) }}" min="{{ keptFrom|date('Y-m-d', false) }}" required>
+            <p class="field-help">Elige cualquier día: sale su semana, de lunes a viernes.</p>
+        </div>
+        <button type="submit" class="btn secondary">Descargar PDF</button>
+    </form>
+
     <div class="card">
         {% if rows is empty %}
             <div class="empty-state">
@@ -37,14 +48,7 @@
                         <tr>
                             <td>{{ absence.date|date('d/m/Y', false) }}</td>
                             <td>{{ absence.absentTeacher.fullName }}</td>
-                            <td>
-                                {% for slot in absence.slotIndexes %}
-                                    {% set times = row.slotTimes[slot] ?? null %}
-                                    {% if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}{{ slot + 1 }}ª{% endif %}{% if absence.isUncoveredSlot(slot) %} <span class="muted">sin cobertura</span>{% endif %}{{ not loop.last ? ', ' }}
-                                {% else %}
-                                    <span class="muted">Sin horas en su horario</span>
-                                {% endfor %}
-                            </td>
+                            <td>{% include 'absence/_slots.html.twig' with { row: row } only %}</td>
                         </tr>
                     {% endfor %}
                 </tbody>

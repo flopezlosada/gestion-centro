@@ -12,6 +12,7 @@ use App\Entity\OneOffFamilyActivity;
 use App\Entity\WeeklyFamilyActivity;
 use App\Enum\Weekday;
 use App\Repository\FamilyActivityRepository;
+use App\Util\CalendarDate;
 use App\Util\SchoolYear;
 use Symfony\Contracts\Service\ResetInterface;
 
@@ -59,18 +60,6 @@ final class FamilySessions implements ResetInterface
     }
 
     /**
-     * The Monday of the week a day falls in, at midnight.
-     *
-     * @param \DateTimeImmutable $day any day
-     *
-     * @return \DateTimeImmutable the Monday of its week
-     */
-    public static function mondayOf(\DateTimeImmutable $day): \DateTimeImmutable
-    {
-        return $day->setTime(0, 0)->modify('-'.((int) $day->format('N') - 1).' days');
-    }
-
-    /**
      * The Monday of the week a calendar opens on by default. Over the weekend that is the coming week: the
      * one just gone has nothing left to sign up for or to prepare. Every screen of the module uses it, so a
      * family and a teacher looking on the same day see the same week.
@@ -81,7 +70,7 @@ final class FamilySessions implements ResetInterface
      */
     public static function currentMonday(\DateTimeImmutable $now): \DateTimeImmutable
     {
-        return self::mondayOf((int) $now->format('N') > 5 ? $now->modify('+2 days') : $now);
+        return CalendarDate::mondayOf((int) $now->format('N') > 5 ? $now->modify('+2 days') : $now);
     }
 
     /**
@@ -160,7 +149,7 @@ final class FamilySessions implements ResetInterface
      */
     public function nextOf(WeeklyFamilyActivity $activity, \DateTimeImmutable $now): ?FamilySession
     {
-        $monday = self::mondayOf($now);
+        $monday = CalendarDate::mondayOf($now);
         foreach (range(0, self::NEXT_SESSION_WEEKS - 1) as $week) {
             foreach ($activity->weekdays() as $weekday) {
                 $day = $monday->modify('+'.$week.' weeks +'.($weekday->value - 1).' days');

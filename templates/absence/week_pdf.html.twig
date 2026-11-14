@@ -1,0 +1,45 @@
+{#
+   Las ausencias de una semana en PDF, día a día, para apuntarlas en RAÍCES. Sobre la base de los documentos
+   del centro (pdf/base.html.twig). Salen los cinco días aunque alguno esté vacío: «nadie» también es una
+   respuesta al repasar la semana.
+#}
+{% extends 'pdf/base.html.twig' %}
+
+{% block title %}Ausencias del profesorado · semana del {{ monday|date('d/m/Y', false) }}{% endblock %}
+
+{% block kind %}Ausencias del profesorado{% endblock %}
+
+{% block styles %}
+        /* Que el día no se quede solo al pie de una página con su lista en la siguiente. */
+        h2 { page-break-after: avoid; }
+        table.week { width: 100%; border-collapse: collapse; margin-top: 2pt; }
+        table.week td { padding: 3pt 4pt; vertical-align: top; border-bottom: .4pt solid #ddd; }
+        table.week td.who { width: 42%; }
+        .muted { color: #777; }
+        .foot { margin-top: 18pt; font-size: 8.5pt; color: #555; }
+{% endblock %}
+
+{% block body %}
+    <h1>Semana del {{ monday|date('d/m/Y', false) }} al {{ friday|date('d/m/Y', false) }}</h1>
+
+    {% for day in days %}
+        <h2>{{ day.weekday.label }} {{ day.date|date('d/m/Y', false) }}</h2>
+        {% if day.beforeKept %}
+            <p class="none">Fuera del plazo durante el que se guardan las ausencias ({{ retention.label }}): ya se borraron.</p>
+        {% elseif day.rows is empty %}
+            <p class="none">Nadie.</p>
+        {% else %}
+            <table class="week">
+                {% for row in day.rows %}
+                    <tr>
+                        <td class="who">{{ row.absence.absentTeacher.fullName }}</td>
+                        <td>{% include 'absence/_slots.html.twig' with { row: row } only %}</td>
+                    </tr>
+                {% endfor %}
+            </table>
+        {% endif %}
+    {% endfor %}
+
+    {# Este papel es una copia con nombres fuera de la aplicación: que diga cuándo se sacó y qué hacer con él. #}
+    <p class="foot">Generado el {{ generatedAt|date('d/m/Y \\a \\l\\a\\s H:i', false) }}. Documento de trabajo para apuntar las ausencias en RAÍCES: destrúyelo cuando estén apuntadas.</p>
+{% endblock %}

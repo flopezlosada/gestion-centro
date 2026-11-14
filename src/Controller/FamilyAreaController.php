@@ -64,7 +64,7 @@ final class FamilyAreaController extends AbstractController
     {
         $now = $this->clock->now();
         $asked = CalendarDate::parse($request->query->getString('semana'), $now->getTimezone());
-        $monday = null === $asked ? FamilySessions::currentMonday($now) : FamilySessions::mondayOf($asked);
+        $monday = null === $asked ? FamilySessions::currentMonday($now) : CalendarDate::mondayOf($asked);
 
         return $this->render('family_area/home.html.twig', [
             'monday' => $monday,
@@ -396,6 +396,6 @@ final class FamilyAreaController extends AbstractController
      */
     private function backToWeekOf(FamilySession $session): Response
     {
-        return $this->redirectToRoute('family_home', ['semana' => FamilySessions::mondayOf($session->day)->format('Y-m-d')]);
+        return $this->redirectToRoute('family_home', ['semana' => CalendarDate::mondayOf($session->day)->format('Y-m-d')]);
     }
 }

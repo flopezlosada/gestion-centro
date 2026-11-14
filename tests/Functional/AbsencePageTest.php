@@ -16,6 +16,7 @@ use App\Enum\PermissionLevel;
 use App\Enum\ScheduleActivityKind;
 use App\Enum\Weekday;
 use App\Service\AppSettings;
+use App\Tests\Integration\AbsenceListingTest;
 use App\Util\SchoolYear;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -159,6 +160,79 @@ final class AbsencePageTest extends WebTestCase
         self::assertResponseIsSuccessful();
         self::assertCount(0, $crawler->filter('table'));
         self::assertCount(1, $crawler->filter('.empty-state'));
+    }
+
+    /** The weekly PDF has the list's gate: neither a plain teacher nor whoever reads the parte gets it. */
+    public function testTheWeeklyPdfHasTheSameGateAsTheList(): void
+    {
+        foreach ([null, Area::GUARDIAS] as $area) {
+            $this->loginWith($area);
+            $this->client->request('GET', '/ausencias/semana.pdf');
+            self::assertResponseStatusCodeSame(403);
+        }
+    }
+
+    /**
+     * Any day gives its week, Monday first in the file name, as a download nothing on the way keeps; and with
+     * no day, the current week. A Wednesday with somebody away, so the hours are drawn inside the PDF too.
+     * What each day lists is tested in {@see AbsenceListingTest}: Dompdf writes the text as glyphs, so it
+     * cannot be read back from the bytes here.
+     */
+    public function testDownloadsTheWeekOfTheDayAskedOrTheCurrentOne(): void
+    {
+        self::mockTime('2026-11-11 10:00');
+        $this->absence($this->teacher('Ana Ausente'), new \DateTimeImmutable('2026-11-11'), [0, 1]);
+        $this->loginWith(Area::AUSENCIAS);
+
+        foreach (['?semana=2026-11-03' => '2026-11-02', '?semana=2026-11-15' => '2026-11-09', '' => '2026-11-09'] as $query => $monday) {
+            $this->client->request('GET', '/ausencias/semana.pdf'.$query);
+
+            self::assertResponseIsSuccessful($query);
+            $response = $this->client->getResponse();
+            self::assertSame('application/pdf', $response->headers->get('Content-Type'));
+            self::assertStringStartsWith('%PDF-', (string) $response->getContent());
+            self::assertSame('attachment; filename=ausencias-semana-'.$monday.'.pdf', $response->headers->get('Content-Disposition'));
+            self::assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
+        }
+    }
+
+    /** A week already past the plazo still downloads: its days say they were deleted, without failing. */
+    public function testAWeekPastThePlazoStillDownloads(): void
+    {
+        self::mockTime('2026-11-11 10:00');
+        $this->loginWith(Area::AUSENCIAS);
+
+        $this->client->request('GET', '/ausencias/semana.pdf?semana=2026-10-05');
+
+        self::assertResponseIsSuccessful();
+        self::assertStringStartsWith('%PDF-', (string) $this->client->getResponse()->getContent());
+    }
+
+    /** A day that is not a real date, or not written as Y-m-d, is a 404 and not some other week. */
+    public function testADayThatDoesNotExistIsNotFound(): void
+    {
+        $this->loginWith(Area::AUSENCIAS);
+
+        foreach (['2026-02-30', 'la-semana-pasada', '09/11/2026'] as $asked) {
+            $this->client->request('GET', '/ausencias/semana.pdf?semana='.urlencode($asked));
+            self::assertResponseStatusCodeSame(404, $asked);
+        }
+    }
+
+    /** The list offers the PDF of a week, this one by default, and not before the plazo. */
+    public function testTheListOffersTheWeekAsPdf(): void
+    {
+        self::mockTime('2026-11-15 10:00');
+        $this->loginWith(Area::AUSENCIAS);
+
+        $crawler = $this->client->request('GET', '/ausencias');
+
+        $form = $crawler->filter('form[action="/ausencias/semana.pdf"]');
+        self::assertCount(1, $form);
+        $input = $form->filter('input[name="semana"]');
+        // A Sunday: its week started the Monday before.
+        self::assertSame('2026-11-09', $input->attr('value'));
+        self::assertSame('2026-10-18', $input->attr('min'));
     }
 
     /**

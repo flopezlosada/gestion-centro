@@ -4,17 +4,18 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use App\Entity\Absence;
 use App\Enum\Area;
-use App\Repository\AbsenceRepository;
-use App\Repository\AcademicYearRepository;
-use App\Repository\ScheduleEntryRepository;
+use App\Guardia\AbsenceListing;
 use App\Security\Voter\AreaVoter;
 use App\Service\AppSettings;
-use App\Util\SchoolYear;
+use App\Service\PdfRenderer;
+use App\Util\CalendarDate;
 use Psr\Clock\ClockInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\HeaderUtils;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 use Symfony\Component\Routing\Attribute\Route;
 
 /**
@@ -32,31 +33,65 @@ use Symfony\Component\Routing\Attribute\Route;
 final class AbsenceController extends AbstractController
 {
     /**
+     * @param AbsenceListing $listing  the absences as the administrative staff read them
+     * @param AppSettings    $settings where the centre's plazo is kept
+     * @param ClockInterface $clock    today, for the plazo and the default week
+     */
+    public function __construct(
+        private readonly AbsenceListing $listing,
+        private readonly AppSettings $settings,
+        private readonly ClockInterface $clock,
+    ) {
+    }
+
+    /**
      * The absences kept, the most recent day first.
      */
     #[Route('', name: 'absence_index', methods: ['GET'])]
-    public function index(AbsenceRepository $absences, AcademicYearRepository $years, ScheduleEntryRepository $schedule, AppSettings $settings, ClockInterface $clock): Response
+    public function index(): Response
     {
         $this->denyAccessUnlessGranted(AreaVoter::READ, Area::AUSENCIAS);
 
-        $retention = $settings->getAbsenceRetention();
-        $kept = $absences->findFrom($retention->keptFrom($clock->now()));
-
-        // The plazo can straddle two courses (late September looks back into June), and each has its own
-        // timetable: the periods' times are read once per course, not once per row.
-        $timesByCourse = [];
-        $rows = array_map(static function (Absence $absence) use (&$timesByCourse, $years, $schedule): array {
-            $course = SchoolYear::current($absence->getDate());
-
-            return [
-                'absence' => $absence,
-                'slotTimes' => $timesByCourse[$course] ??= $schedule->slotTimes($years->findBySchoolYear($course)),
-            ];
-        }, $kept);
+        $today = $this->clock->now();
 
         return $this->render('absence/index.html.twig', [
-            'rows' => $rows,
-            'retention' => $retention,
+            'rows' => $this->listing->kept($today),
+            'retention' => $this->settings->getAbsenceRetention(),
+            'keptFrom' => $this->listing->keptFrom($today),
+            'thisWeek' => CalendarDate::mondayOf($today),
         ]);
+    }
+
+    /**
+     * One week of absences as a PDF, day by day, to record them in RAICES with the list at hand. Any day of
+     * the week can be given (`?semana=Y-m-d`); without one, the current week. Only what the centre still
+     * keeps ({@see AbsenceListing::week()}).
+     */
+    #[Route('/semana.pdf', name: 'absence_week_pdf', methods: ['GET'])]
+    public function weekPdf(Request $request, PdfRenderer $pdf): Response
+    {
+        $this->denyAccessUnlessGranted(AreaVoter::READ, Area::AUSENCIAS);
+
+        $today = $this->clock->now();
+        $asked = $request->query->getString('semana');
+        $day = '' === $asked ? $today : CalendarDate::parse($asked, $today->getTimezone());
+        if (null === $day) {
+            throw $this->createNotFoundException('Esa fecha no existe.');
+        }
+
+        $week = $this->listing->week($day, $today);
+        $response = new Response($pdf->render('absence/week_pdf.html.twig', $week + [
+            'retention' => $this->settings->getAbsenceRetention(),
+            'generatedAt' => $today,
+        ]));
+        $response->headers->set('Content-Type', 'application/pdf');
+        $response->headers->set('Content-Disposition', HeaderUtils::makeDisposition(
+            ResponseHeaderBag::DISPOSITION_ATTACHMENT,
+            \sprintf('ausencias-semana-%s.pdf', $week['monday']->format('Y-m-d')),
+        ));
+        // Names and days of absence: not to be kept by any cache on the way, nor by the browser's.
+        $response->headers->set('Cache-Control', 'no-store, private');
+
+        return $response;
     }
 }

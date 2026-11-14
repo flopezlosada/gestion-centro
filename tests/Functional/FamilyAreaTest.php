@@ -21,6 +21,7 @@ use App\Enum\Weekday;
 use App\Service\AppSettings;
 use App\Tests\Support\BuildsTheCentresTimetable;
 use App\Tests\Support\MintsSessionCsrfTokens;
+use App\Util\CalendarDate;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Handler\TestHandler;
 use Monolog\LogRecord;
@@ -1018,7 +1019,7 @@ final class FamilyAreaTest extends WebTestCase
      */
     private function weekOf(OneOffFamilyActivity $activity): string
     {
-        return '/familias?semana='.FamilySessions::mondayOf($activity->getStartAt())->format('Y-m-d');
+        return '/familias?semana='.CalendarDate::mondayOf($activity->getStartAt())->format('Y-m-d');
     }
 
     /**

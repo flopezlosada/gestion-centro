@@ -122,26 +122,31 @@ class AbsenceRepository extends ServiceEntityRepository
     }
 
     /**
-     * Every absence from a day onwards, the most recent day first and, within a day, by teacher name.
+     * Every absence from a day onwards (up to another one, when given), the most recent day first and,
+     * within a day, by teacher name.
      *
      * The teacher is fetched in the same query, so listing them does not cost one more per row.
      *
-     * @param \DateTimeImmutable $from the oldest day to include
+     * @param \DateTimeImmutable      $from  the oldest day to include
+     * @param \DateTimeImmutable|null $until the first day NOT to include, or null for no end
      *
      * @return list<Absence> the absences, newest day first
      */
-    public function findFrom(\DateTimeImmutable $from): array
+    public function findFrom(\DateTimeImmutable $from, ?\DateTimeImmutable $until = null): array
     {
-        /** @var list<Absence> $absences */
-        $absences = $this->createQueryBuilder('a')
+        $query = $this->createQueryBuilder('a')
             ->addSelect('t')
             ->innerJoin('a.absentTeacher', 't')
             ->andWhere('a.date >= :from')
             ->setParameter('from', $from, 'date_immutable')
             ->orderBy('a.date', 'DESC')
-            ->addOrderBy('t.fullName', 'ASC')
-            ->getQuery()
-            ->getResult();
+            ->addOrderBy('t.fullName', 'ASC');
+        if (null !== $until) {
+            $query->andWhere('a.date < :until')->setParameter('until', $until, 'date_immutable');
+        }
+
+        /** @var list<Absence> $absences */
+        $absences = $query->getQuery()->getResult();
 
         return $absences;
     }
