@@ -22,9 +22,9 @@
         <div class="field">
             <label for="semana">Semana en PDF</label>
             <input type="date" id="semana" name="semana" value="{{ thisWeek|date('Y-m-d', false) }}" min="{{ keptFrom|date('Y-m-d', false) }}" required>
-            <p class="field-help">Elige cualquier día: sale su semana, de lunes a viernes.</p>
         </div>
         <button type="submit" class="btn secondary">Descargar PDF</button>
+        <p class="field-help week-pdf__help">Elige cualquier día: sale su semana, de lunes a viernes.</p>
     </form>
 
     <div class="card">
