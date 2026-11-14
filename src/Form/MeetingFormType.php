@@ -151,10 +151,11 @@ final class MeetingFormType extends AbstractType
                 'multiple' => true,
                 'expanded' => true,
                 // El departamento de cada persona viaja a su casilla para que la lista distinga a dos
-                // compañeros de nombre parecido sin salir de la pantalla.
+                // compañeros de nombre parecido sin salir de la pantalla. data-teacher marca a quien es
+                // docente: «Marcar a todo el profesorado» (check-all.js) deja fuera a quien no lo es.
                 'choice_attr' => static fn (User $person): array => [
                     'data-description' => $person->getUnit()?->getName() ?? 'Sin departamento',
-                ],
+                ] + ($person->holdsRoleCode('teacher') ? ['data-teacher' => ''] : []),
                 'help' => 'Quien esté en la lista recibe un aviso con el día, la hora y el lugar. Tu nombre viene marcado: quítalo si convocas pero no vas a asistir.',
             ]);
     }

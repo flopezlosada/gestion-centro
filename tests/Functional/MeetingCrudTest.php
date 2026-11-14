@@ -37,7 +37,7 @@ final class MeetingCrudTest extends WebTestCase
         $this->em = self::getContainer()->get(EntityManagerInterface::class);
 
         $this->maths = (new Department())->setCode('maths-meet')->setName('Matemáticas');
-        $this->teacher = (new Role())->setCode('teacher-meet')->setName('Docente')->setPerDepartment(true);
+        $this->teacher = (new Role())->setCode('teacher')->setName('Docente')->setPerDepartment(true);
         $this->em->persist($this->maths);
         $this->em->persist($this->teacher);
     }
@@ -128,6 +128,30 @@ final class MeetingCrudTest extends WebTestCase
         $name = $crawler->filter('button[data-check-all]')->attr('data-check-all');
         self::assertSame('meeting_form[attendees][]', $name);
         self::assertGreaterThan(1, $crawler->filter('input[type="checkbox"][name="'.$name.'"]')->count());
+    }
+
+    /**
+     * «Marcar a todo el profesorado» solo marca a quien es docente: la casilla de quien no lo es (administración,
+     * secretaría, TIC) no lleva data-teacher y check-all.js la deja como esté.
+     */
+    public function testOnlyTeachersCarryTheMarkTheCheckAllButtonLooksFor(): void
+    {
+        $coordinator = $this->user('Lucía Coordina', 'lucia.meet@centro.test');
+        $teacher = $this->user('Pedro Docente', 'pedro3.meet@centro.test');
+        $technician = (new User())->setFullName('Tomás Técnico')->setEmail('tomas.meet@centro.test')->setUnit($this->maths);
+        $this->em->persist($technician);
+        $project = $this->project($coordinator, [$teacher]);
+        $this->em->flush();
+        $this->client->loginUser($coordinator);
+
+        $crawler = $this->client->request('GET', '/reuniones/nueva?proyecto='.$project->getId());
+
+        self::assertResponseIsSuccessful();
+        self::assertSame('data-teacher', $crawler->filter('button[data-check-all]')->attr('data-check-all-only'));
+        $box = static fn (User $person): string => sprintf('input[type="checkbox"][value="%d"]', $person->getId());
+        self::assertCount(1, $crawler->filter($box($teacher).'[data-teacher]'));
+        self::assertCount(1, $crawler->filter($box($technician)));
+        self::assertCount(0, $crawler->filter($box($technician).'[data-teacher]'));
     }
 
     public function testCoordinatorConvenesWithTheProjectTeachersAlreadyTicked(): void

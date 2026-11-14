@@ -52,8 +52,9 @@ class UserRepository extends ServiceEntityRepository
 
     /**
      * Every active person, by full name. The widest people list an admin may pick from (e.g. who to
-     * convene to a meeting); the scoped screens use {@see findActiveInUnits()} instead. The department comes
-     * in the same query: the lists show it under each name, and lazily it was one query per person.
+     * convene to a meeting); the scoped screens use {@see findActiveInUnits()} instead. The department and the
+     * roles come in the same query: the lists show the department under each name and tell teachers apart by
+     * role, and lazily each was one query per person.
      *
      * @return User[] the active users, ordered by name
      */
@@ -62,6 +63,8 @@ class UserRepository extends ServiceEntityRepository
         return $this->createQueryBuilder('u')
             ->leftJoin('u.unit', 'unit')
             ->addSelect('unit')
+            ->leftJoin('u.assignedRoles', 'heldRole')
+            ->addSelect('heldRole')
             ->andWhere('u.active = true')
             ->orderBy('u.fullName', 'ASC')
             ->getQuery()

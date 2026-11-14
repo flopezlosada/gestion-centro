@@ -1,6 +1,7 @@
 /**
  * «Marcar a todos» para una lista de casillas: un <button data-check-all="nombre[]" hidden> marca todas las
  * casillas con ese name dentro de su mismo formulario. Si ya estaban todas marcadas, las desmarca.
+ * Con data-check-all-only="data-algo" solo cuenta las casillas que lleven ese atributo; el resto no se toca.
  *
  * Mejora progresiva: el botón llega oculto y solo se enseña aquí, así que sin JavaScript no aparece un
  * botón que no hace nada; las casillas se marcan igual una a una.
@@ -14,8 +15,10 @@
             if (!form) {
                 return;
             }
+            var only = button.getAttribute('data-check-all-only');
             var boxes = Array.prototype.filter.call(form.elements, function (el) {
-                return el.type === 'checkbox' && el.name === button.getAttribute('data-check-all');
+                return el.type === 'checkbox' && el.name === button.getAttribute('data-check-all')
+                    && (!only || el.hasAttribute(only));
             });
             if (boxes.length < 2) {
                 return;
