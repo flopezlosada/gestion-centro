@@ -30,6 +30,7 @@ final readonly class AgendaEntry
     public const string KIND_BREAK_DUTY = 'break_duty';
     public const string KIND_CLASS = 'class';
     public const string KIND_DUTY = 'duty';
+    public const string KIND_BOOKING = 'booking';
 
     private function __construct(
         // One of the self::KIND_* constants.
@@ -45,6 +46,7 @@ final readonly class AgendaEntry
         public ?BreakDutyAssignment $breakDuty = null,
         public ?ClassSession $class = null,
         public ?DutySlot $duty = null,
+        public ?BookedSpan $booking = null,
     ) {
     }
 
@@ -167,5 +169,19 @@ final readonly class AgendaEntry
     public static function fromDuty(DutySlot $duty): self
     {
         return new self(self::KIND_DUTY, $duty->startsAt, false, null, null, duty: $duty);
+    }
+
+    /**
+     * Wraps what the viewer has booked of a room or piece of material on a day, keyed by the instant the first
+     * hour starts (the day itself without a timetable frame). Never "done": a booking is not ticked off, it is
+     * used or annulled on the booking screen.
+     *
+     * @param BookedSpan $span the booked hours of that thing that day
+     *
+     * @return self the agenda entry
+     */
+    public static function fromBooking(BookedSpan $span): self
+    {
+        return new self(self::KIND_BOOKING, $span->startsAt ?? $span->day, false, null, null, booking: $span);
     }
 }

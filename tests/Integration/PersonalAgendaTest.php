@@ -6,7 +6,9 @@ namespace App\Tests\Integration;
 
 use App\Agenda\AgendaEntry;
 use App\Agenda\PersonalAgenda;
+use App\Entity\Booking;
 use App\Entity\Department;
+use App\Entity\Material;
 use App\Entity\Role;
 use App\Entity\Task;
 use App\Entity\TaskResponsibility;
@@ -203,5 +205,30 @@ final class PersonalAgendaTest extends KernelTestCase
             $this->taskTitles($this->agenda->bucketsFor($artsHead, $this->today)['today']),
             'la memoria de Matemáticas no es de la jefa de Plástica',
         );
+    }
+
+    /**
+     * Lo que has reservado entra en la agenda como UNA línea por cosa y día (dos horas seguidas no son dos
+     * citas), en la cesta de hoy o de la semana, y lo de más allá de siete días no entra.
+     */
+    public function testMyBookingsAreOneLinePerThingAndDayAndOnlyThisWeek(): void
+    {
+        $user = $this->user();
+        $cart = (new Material())->setName('Dora Maar');
+        $this->em->persist($cart);
+        $this->em->persist(Booking::forMaterial($user, $cart, $this->today, 1, 'Examen'));
+        $this->em->persist(Booking::forMaterial($user, $cart, $this->today, 2, 'Examen'));
+        $this->em->persist(Booking::forMaterial($user, $cart, $this->today->modify('+3 days'), 1, 'Proyecto'));
+        $this->em->persist(Booking::forMaterial($user, $cart, $this->today->modify('+20 days'), 1, 'Lejano'));
+        $this->em->flush();
+
+        $buckets = $this->agenda->bucketsFor($user, $this->today);
+
+        $isBooking = static fn (AgendaEntry $e): bool => AgendaEntry::KIND_BOOKING === $e->kind;
+        $todayLines = array_values(array_filter($buckets['today'], $isBooking));
+        self::assertCount(1, $todayLines);
+        self::assertSame([1, 2], $todayLines[0]->booking?->slotIndexes);
+        self::assertCount(1, array_filter($buckets['week'], $isBooking));
+        self::assertCount(0, array_filter($buckets['later'], $isBooking), 'más allá de la semana no entra');
     }
 }
