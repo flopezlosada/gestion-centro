@@ -10,28 +10,27 @@
     {{ ordinals[index] ?? (index + 1) }}ª{% if times %} <span class="mono muted">{{ times.startsAt|date('H:i', false) }}</span>{% endif %}
 {%- endmacro %}
 
-{# Las reservas fijas en curso, una fila cada una. Con `puedeCrear` lleva el botón de terminarla. #}
-{% macro lista(series, ordinals, diasCortos, puedeCrear, vacio) %}
+{# Las reservas fijas en curso, una tarjeta cada una. `conRecurso` pone delante de quién la tiene qué cosa es (en
+   la lista de todas); con `puedeCrear` lleva el botón de terminarla. #}
+{% macro lista(series, ordinals, diasCortos, puedeCrear, vacio, conRecurso = false) %}
     {% if series is empty %}
         <p class="muted">{{ vacio }}</p>
     {% else %}
-        <ul class="incident-list">
+        <ul class="fixed-series">
             {% for s in series %}
-                <li class="incident">
-                    <div class="incident__main">
-                        <span class="incident__head">
-                            <span class="incident__what">{{ s.resourceName }}</span>
-                            <span class="muted">· {{ s.holderName }}</span>
-                        </span>
-                        <span class="incident__where">
+                <li class="fixed-series__item">
+                    <span class="fixed-series__dot" aria-hidden="true"></span>
+                    <div class="fixed-series__main">
+                        <strong>{% if conRecurso %}{{ s.resourceName }} <span class="fixed-series__holder">· {{ s.holderName }}</span>{% else %}{{ s.holderName }}{% endif %}</strong>
+                        <span class="fixed-series__pattern">
                             {% for weekday, slots in s.pattern %}{{ diasCortos[weekday] }} {{ slots|map(i => (ordinals[i] ?? (i + 1)) ~ 'ª')|join(', ') }}{{ not loop.last ? ' · ' }}{% endfor %}
                         </span>
-                        <span class="incident__where">Del {{ s.startsOn|date('d/m/Y', false) }} al {{ s.endsOn|date('d/m/Y', false) }} · {{ s.purpose }}{% if s.createdBy %} · la creó {{ s.createdBy.fullName }}{% endif %}</span>
+                        <span class="fixed-series__until">Del {{ s.startsOn|date('d/m/Y', false) }} al {{ s.endsOn|date('d/m/Y', false) }} · {{ s.purpose }}{% if s.createdBy %} · la creó {{ s.createdBy.fullName }}{% endif %}</span>
                     </div>
                     {% if puedeCrear %}
                         <form method="post" action="{{ path('booking_series_end', { id: s.id }) }}" data-confirm="¿Terminar esta reserva fija? Desde hoy {{ s.resourceName }} queda libre esas horas; lo pasado se conserva.">
                             <input type="hidden" name="_token" value="{{ csrf_token('booking_series_end' ~ s.id) }}">
-                            <button type="submit" class="link-danger">Terminar</button>
+                            <button type="submit" class="btn btn--ghost">Terminar</button>
                         </form>
                     {% endif %}
                 </li>
@@ -56,7 +55,7 @@
     {{ include('booking/_tabs.html.twig', { active: 'fijas' }) }}
 
     {% if not puedeCrear %}
-        <div class="card">{{ _self.lista(series, ordinals, diasCortos, false, 'No hay ninguna reserva fija en curso.') }}</div>
+        {{ _self.lista(series, ordinals, diasCortos, false, 'No hay ninguna reserva fija en curso.', true) }}
     {% else %}
         <div class="fixed-new">
             {% if errors is not empty %}
@@ -227,7 +226,7 @@
                     {% set ofSelected = selected is null ? series : series|filter(x => (x.room ? 'room:' ~ x.room.id : 'material:' ~ x.material.id) == selectedKey) %}
                     <section class="fixed-existing" aria-labelledby="existentes">
                         <h2 id="existentes">{{ selected is null ? 'Reservas fijas en curso' : 'Reservas fijas de ' ~ selected.name }}</h2>
-                        <div class="card">{{ _self.lista(ofSelected, ordinals, diasCortos, true, selected is null ? 'No hay ninguna reserva fija en curso.' : 'Ninguna todavía.') }}</div>
+                        {{ _self.lista(ofSelected, ordinals, diasCortos, true, selected is null ? 'No hay ninguna reserva fija en curso.' : 'Ninguna todavía.', selected is null) }}
                     </section>
                 </div>
             </div>
