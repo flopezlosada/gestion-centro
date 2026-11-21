@@ -1,0 +1,27 @@
+{# La barra «Vas a reservar», compartida por el día y la semana. Las casillas de la rejilla se asocian a
+   este formulario con form="reservar" (no pueden estar DENTRO: la rejilla lleva sus propios formularios de
+   «Anular», y un formulario no se anida en otro). Sin JavaScript queda siempre visible; con él,
+   booking-grid.js la esconde hasta que hay algo marcado y escribe aquí qué se ha marcado. #}
+<form method="post" action="{{ path('booking_new') }}" id="reservar" class="booking-bar" data-booking-bar>
+    <input type="hidden" name="_token" value="{{ csrf_token('booking_new') }}">
+    <p class="booking-bar__what"><strong>Vas a reservar</strong> <span data-booking-summary>las horas libres que hayas marcado (de una sola cosa y un solo día).</span></p>
+    <div class="booking-bar__fields">
+        <div class="field">
+            <label for="motivo">¿Para qué?</label>
+            <input type="text" id="motivo" name="motivo" maxlength="200" required placeholder="Grabación del podcast, examen de recuperación…">
+        </div>
+        {#- Los grupos del horario, varios a la vez. Sin horario importado no hay lista y el campo no sale. -#}
+        {% if groupNames is not empty %}
+            <div class="field">
+                <label for="grupos">Grupos <span class="muted">(si es para alguno)</span></label>
+                <select id="grupos" name="grupos[]" multiple>
+                    {% for g in groupNames %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+                </select>
+            </div>
+        {% endif %}
+        <div class="form-actions">
+            <button type="button" class="btn secondary" data-booking-clear hidden>Quitar</button>
+            <button type="submit" class="btn">Reservar</button>
+        </div>
+    </div>
+</form>

@@ -1,0 +1,5 @@
+{#- El nombre de una cosa en la primera columna: con dónde está y, si es un carro contado, cuántos equipos lleva. -#}
+<strong>{{ r.name }}</strong>
+{% if r.keptAt is defined %}
+    {% if r.keptAt or r.deviceCount %}<span class="bgrid__sub">{{ r.keptAt }}{% if r.keptAt and r.deviceCount %} · {% endif %}{% if r.deviceCount %}{{ r.deviceCount }} {{ r.deviceCount == 1 ? 'equipo' : 'equipos' }}{% endif %}</span>{% endif %}
+{% endif %}

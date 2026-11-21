@@ -1,0 +1,65 @@
+{# Las celdas de la rejilla, en un sitio para que el día y la semana pinten lo mismo. #}
+
+{# Quién tiene una cosa: «Fija · titular» en una reserva fija, y para qué y con qué grupo en una suelta. #}
+{% macro holder(b) -%}
+    {{ b.holderName }}{% if b.groupName %} · {{ b.groupName }}{% endif %}
+{%- endmacro %}
+
+{# Una celda de la rejilla DEL DÍA: con texto y no solo con color, que en una fila de cuarenta cosas el
+   color solo no se lee (y quien no distingue colores no lo lee nunca). #}
+{% macro day(c, hour, what) %}
+    {% set b = c.booking %}
+    {% if c.state == 'free' %}
+        <label class="bcell bcell--free">
+            <input type="checkbox" name="celdas[]" value="{{ c.value }}" form="reservar" data-what="{{ what }}" data-hour="{{ hour }}">
+            <span class="visually-hidden">{{ what }} · {{ hour }}: </span>
+            <span class="bcell__hour" aria-hidden="true">{{ hour }}</span>
+            <span class="bcell__main">Libre</span>
+        </label>
+    {% elseif c.state == 'past' %}
+        <div class="bcell bcell--past"><span class="visually-hidden">{{ what }} · {{ hour }}: </span><span class="bcell__hour" aria-hidden="true">{{ hour }}</span><span class="bcell__main">Libre</span></div>
+    {% elseif c.state == 'class' %}
+        <div class="bcell bcell--class"><span class="visually-hidden">{{ what }} · {{ hour }}: </span><span class="bcell__hour" aria-hidden="true">{{ hour }}</span><span class="bcell__main">Clase</span><span class="bcell__sub">del horario</span></div>
+    {% else %}
+        <div class="bcell bcell--{{ c.state }}">
+            <span class="visually-hidden">{{ what }} · {{ hour }}: </span>
+            <span class="bcell__hour" aria-hidden="true">{{ hour }}</span>
+            {% if c.state == 'fixed' %}
+                <span class="bcell__main">Fija · {{ b.holderName }}</span>
+                <span class="bcell__sub">{{ b.purpose }}</span>
+            {% else %}
+                <span class="bcell__main">{{ c.state == 'mine' ? 'Tuyo' : b.holderName }}</span>
+                <span class="bcell__sub">{{ b.purpose }}{% if b.groupName %} · {{ b.groupName }}{% endif %}</span>
+            {% endif %}
+            {#- Un día de una reserva fija se LIBERA (la serie sigue los demás días); una suelta se anula. -#}
+            {% if b.mayBeReleasedBy(app.user) or is_granted('ROLE_ADMIN') %}
+                <form method="post" action="{{ path('booking_delete', { id: b.id }) }}" data-confirm="{{ b.series ? '¿Liberar este día? La reserva fija sigue el resto de semanas.' : '¿Anular esta reserva?' }}">
+                    <input type="hidden" name="_token" value="{{ csrf_token('booking_delete' ~ b.id) }}">
+                    <button type="submit" class="bcell__act">{{ b.series ? 'Liberar' : 'Anular' }}</button>
+                </form>
+            {% endif %}
+        </div>
+    {% endif %}
+{% endmacro %}
+
+{# Un cuadro de la rejilla de la SEMANA. Libre: se marca (y se reserva ahí mismo). Ocupado: un botón que
+   cuenta qué es (booking-grid.js lo enseña encima de la rejilla; sin JS queda el title). `what` es la
+   frase «cosa · día · hora» que lo identifica. #}
+{% macro week(c, what) %}
+    {% set b = c.booking %}
+    {% if c.state == 'free' %}
+        <label class="wcell wcell--free" title="{{ what }}: libre">
+            <input type="checkbox" name="celdas[]" value="{{ c.value }}" form="reservar" data-what="{{ what }}" data-hour="">
+            <span class="visually-hidden">{{ what }}: libre</span>
+        </label>
+    {% elseif c.state == 'closed' %}
+        <span class="wcell wcell--closed" title="{{ what }}: día no lectivo"></span>
+    {% elseif c.state == 'past' %}
+        <span class="wcell wcell--past" title="{{ what }}: libre (ya pasó)"></span>
+    {% elseif c.state == 'class' %}
+        <button type="button" class="wcell wcell--class" data-booking-info="{{ what }}: clase del horario. Ese espacio no se reserva a esa hora." title="{{ what }}: clase del horario"><span class="visually-hidden">{{ what }}: clase del horario</span></button>
+    {% else %}
+        {% set info = what ~ ': ' ~ (c.state == 'mine' ? 'lo tienes tú' : (c.state == 'fixed' ? 'reserva fija de ' ~ b.holderName : 'lo tiene ' ~ b.holderName)) ~ ' («' ~ b.purpose ~ '»).' ~ (c.state == 'fixed' ? ' Se libera un día desde «Por día».' : (c.state == 'mine' ? ' Lo anulas desde «Por día».' : ' Elige otra hora u otra cosa.')) %}
+        <button type="button" class="wcell wcell--{{ c.state }}" data-booking-info="{{ info }}" title="{{ info }}"><span class="visually-hidden">{{ info }}</span></button>
+    {% endif %}
+{% endmacro %}

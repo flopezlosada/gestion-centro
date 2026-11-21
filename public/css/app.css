@@ -6052,27 +6052,108 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 /* =============================================================================
    Reservas — varias horas de una vez
    ============================================================================= */
-.booking-hours { border: 0; padding: 0; margin: 0 0 10px; display: flex; flex-wrap: wrap; gap: 8px; }
-.booking-hours legend { font-weight: 600; margin-bottom: 6px; padding: 0; }
 .booking-hour { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 13.5px; }
 .booking-hour:has(input:checked) { border-color: var(--accent); }
-
-/* Lo reservado un día, en bloques por hora: mismo formato de cabecera de grupo que «Aulas libres»
-   (.rooms-tier__head), pero sin acoplar las dos pantallas a una clase compartida — si un tercer sitio
-   necesita este mismo patrón, ENTONCES se extrae. */
-.booking-slot + .booking-slot { margin-top: 22px; }
-.booking-slot__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0 0 11px; font-weight: 400; }
-.booking-slot__label {
-    font-family: var(--font-mono); font-size: 11px; font-weight: 600;
-    letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted);
-}
-.booking-slot__count { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
 
 /* La semana de reservas: una tabla ancha con scroll propio, para que en el móvil no desborde la página. */
 .table-scroll { overflow-x: auto; }
 .booking-week { min-width: 640px; }
 .booking-week th[scope="row"] { white-space: nowrap; }
 .booking-week td { vertical-align: top; font-size: 13px; }
+
+/* ---- Rejilla de reservas: cosa × hora (día) y cosa × día × hora (semana) ---------------------------
+   Todo con los tokens de color existentes: nada de hex sueltos, para que el tema oscuro funcione solo. */
+.booking-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; margin: 0 0 14px; background: var(--surface-sidebar); border-radius: 14px; align-self: flex-start; width: fit-content; max-width: 100%; }
+.booking-tabs a { padding: 10px 14px; border-radius: 12px; color: var(--text-muted); text-decoration: none; font-weight: 500; }
+.booking-tabs a:hover { background: var(--surface-sunken); color: var(--text); }
+.booking-tabs a.is-active { background: var(--surface); box-shadow: 0 0 0 1px var(--border); color: var(--text); }
+.booking-days { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.booking-daystrip { display: flex; flex-wrap: wrap; gap: 6px; }
+.booking-daystrip a { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 76px; min-height: 44px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); text-decoration: none; font-weight: 500; font-size: 13px; }
+.booking-daystrip a:hover { border-color: var(--border-strong); }
+.booking-daystrip a.is-active { background: var(--accent-weak); border-color: var(--accent-ink); color: var(--accent-ink); font-weight: 600; }
+.booking-daystrip a[aria-label] { min-width: 44px; }
+.booking-daystrip .mono { font-size: 11px; opacity: .75; }
+.booking-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+.booking-chips a { padding: 8px 12px; min-height: 36px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface); color: var(--text); text-decoration: none; font-size: 13px; font-weight: 500; }
+.booking-chips a.is-active { background: var(--accent-weak); border-color: var(--accent-weak-border); color: var(--accent-ink); }
+.booking-chips .mono { font-size: 11px; opacity: .7; }
+.booking-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; list-style: none; padding: 0; margin: 0 0 12px; font-size: 12px; color: var(--text-muted); }
+.booking-legend li { display: flex; align-items: center; gap: 6px; }
+.bkey { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--border-strong); display: inline-block; }
+.bkey--free { background: var(--surface-alt); }
+.bkey--sel { background: var(--accent); border-color: var(--accent-ink); }
+.bkey--mine { background: var(--success); border-color: var(--success); }
+.bkey--booked { background: var(--border-strong); }
+.bkey--fixed { background: var(--review); border-color: var(--review); }
+.bkey--class { background: repeating-linear-gradient(135deg, var(--text-faint) 0 3px, var(--text-tenue) 3px 6px); }
+
+.booking-grid { padding: 8px; }
+.bgrid { border-collapse: separate; border-spacing: 6px; width: 100%; min-width: 900px; }
+.bgrid th { text-align: left; font-weight: 500; }
+.bgrid thead th { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; }
+.bgrid thead .mono { display: block; text-transform: none; letter-spacing: 0; }
+.bgrid tbody th { min-width: 150px; vertical-align: middle; }
+.bgrid__sub { display: block; font-size: 11.5px; font-weight: 400; color: var(--text-faint); }
+.bgrid td { padding: 0; vertical-align: top; }
+.bcell { box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 1px; width: 100%; min-height: 52px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 10px; font-size: 12px; line-height: 1.25; text-align: left; position: relative; }
+.bcell__hour { display: none; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint); }
+.bcell__main { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bcell__sub { font-size: 11px; opacity: .85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bcell--free { background: var(--surface-alt); color: var(--text-faint); cursor: pointer; }
+.bcell--free .bcell__main { font-weight: 500; }
+.bcell--free:hover { background: var(--accent-weak); border-color: var(--accent-weak-border); color: var(--accent-ink); }
+.bcell--free:has(input:checked) { background: var(--accent); border-color: var(--accent-ink); color: var(--on-accent); }
+.bcell--free:has(input:checked) .bcell__main { font-weight: 600; }
+.bcell--free:has(input:focus-visible) { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+.bcell--free input, .wcell--free input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.bcell--past { background: var(--surface-alt); color: var(--text-faint); opacity: .55; }
+.bcell--booked { background: var(--surface-sunken); color: var(--text); }
+.bcell--mine { background: var(--success-weak); color: var(--success-text); border-color: var(--success); }
+.bcell--fixed { background: var(--review-weak); color: var(--review-text); }
+.bcell--class { background: repeating-linear-gradient(135deg, var(--surface-sunken) 0 6px, var(--separator) 6px 12px); color: var(--text-muted); }
+.bcell form { margin: 2px 0 0; }
+.bcell__act { padding: 0; border: 0; background: none; color: var(--danger-text); font: inherit; font-size: 11px; text-decoration: underline; cursor: pointer; }
+
+.bweek { border-collapse: separate; border-spacing: 0 4px; min-width: 760px; }
+.bweek th { text-align: left; font-weight: 500; }
+.bweek thead th { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; }
+.bweek__day { border-left: 10px solid transparent; }
+.bweek__h { font-size: 10px; text-align: center; padding: 0; }
+.bweek td { padding: 0 2px; }
+.bweek td.bweek__first { padding-left: 12px; }
+.bweek tbody th { min-width: 150px; }
+.wcell { box-sizing: border-box; display: block; position: relative; width: 26px; height: 26px; padding: 0; border: 1px solid transparent; border-radius: 6px; }
+button.wcell { cursor: pointer; }
+.wcell--free { background: var(--surface-alt); border-color: var(--border-strong); cursor: pointer; }
+.wcell--free:hover { background: var(--accent-weak); border-color: var(--accent-weak-border); }
+.wcell--free:has(input:checked) { background: var(--accent); border-color: var(--accent-ink); }
+.wcell--free:has(input:focus-visible), button.wcell:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+.wcell--booked { background: var(--border-strong); }
+.wcell--mine { background: var(--success); }
+.wcell--fixed { background: var(--review); }
+.wcell--class { background: repeating-linear-gradient(135deg, var(--text-faint) 0 3px, var(--text-tenue) 3px 6px); }
+.wcell--closed, .wcell--past { background: var(--surface-sunken); opacity: .5; }
+.wcell--on { outline: 3px solid var(--text); outline-offset: 2px; }
+.booking-info { margin: 0 0 12px; padding: 12px 16px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface); font-size: 14px; }
+
+/* La barra «Vas a reservar»: naranja suave y no oscura (a la gente del centro le desentonaba un bloque negro). */
+.booking-bar { position: sticky; bottom: 0; z-index: 5; margin: 14px 0; padding: 14px 18px; border: 1px solid var(--accent-weak-border); border-radius: 16px; background: var(--accent-weak); box-shadow: 0 -4px 16px rgba(0, 0, 0, .08); }
+.booking-bar[hidden], .booking-bar .btn[hidden] { display: none; }
+.booking-bar__what { margin: 0 0 10px; color: var(--accent-ink); }
+.booking-bar__fields { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
+.booking-bar__fields .field { flex: 1 1 240px; margin: 0; }
+.booking-bar__fields .form-actions { margin: 0; }
+
+/* En el móvil la fila de cada cosa pasa a tarjeta con sus horas en rejilla, sin desplazamiento lateral. */
+@media (max-width: 760px) {
+    .bgrid { min-width: 0; border-spacing: 0; }
+    .bgrid thead { display: none; }
+    .bgrid, .bgrid tbody, .bgrid tr, .bgrid th, .bgrid td { display: block; }
+    .bgrid tr { margin: 0 0 14px; padding: 10px; border: 1px solid var(--border); border-radius: 14px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .bgrid tbody th { grid-column: 1 / -1; min-width: 0; }
+    .bcell__hour { display: block; }
+}
 
 /* Opciones de un toque (programar una clase): el chip del banco de tareas con la radio dentro, oculta pero
    accesible por teclado; el chip entero es la zona que se pulsa, que en el móvil es lo que importa. */

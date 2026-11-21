@@ -63,7 +63,11 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
 final class BookingController extends AbstractController
 {
     /**
-     * El día: qué hay reservado, por quién y para qué, y desde aquí se reserva.
+     * El día en forma de rejilla: una fila por cosa reservable y una columna por hora, con lo que hay en
+     * cada celda (libre, tuyo, de otra persona, fijo o clase del horario). Se reserva pinchando las horas
+     * libres de UNA misma cosa; el envío lo recibe {@see create()}.
+     *
+     * El filtro de tipo ({@code tipo}) solo quita filas: nunca cambia lo que hay en las que quedan.
      */
     #[Route('', name: 'booking_index', methods: ['GET'])]
     public function index(
@@ -76,139 +80,147 @@ final class BookingController extends AbstractController
         AcademicYearRepository $years,
         ScheduleEntryRepository $schedule,
         RoomOccupancy $occupancy,
+        SchoolCalendar $calendar,
     ): Response {
-        $availability = $this->resolveAvailability($request, $bookings, $rooms, $materials, $timeSlots, $years, $occupancy);
-        $day = $availability['day'];
+        $day = CalendarDate::parse($request->query->getString('fecha'), new \DateTimeZone(date_default_timezone_get()))
+            ?? new \DateTimeImmutable('today');
+        $year = $years->findBySchoolYear(SchoolYear::current($day));
+        $periods = $timeSlots->lectiveTimesWithFallback($year);
+        $slotIds = self::validSlots($periods['slots']);
+
+        $catalogue = $this->catalogue($request, $rooms, $materials);
+        $cells = $this->cellMap($catalogue['shown'], [$day], $slotIds, $year, $bookings, $occupancy, $calendar, $user, false);
 
         return $this->render('booking/index.html.twig', [
             'day' => $day,
-            // Un día ya pasado se puede MIRAR (para eso está el selector), pero no se reserva: la pantalla
-            // esconde el formulario y {@see create()} rechaza el POST, para que las dos cosas no discrepen.
+            'monday' => self::mondayOf($day),
             'isPast' => $day < new \DateTimeImmutable('today'),
-            'bookings' => $availability['dayBookings'],
-            'bookingsBySlot' => self::bySlot($availability['dayBookings']),
-            // Sin lo del propio DÍA: ya está arriba, con su "Anular" — repetirlo aquí abajo era la misma
-            // reserva dos veces en la misma pantalla.
+            'rows' => self::rows($catalogue['shown'], $cells, $day),
+            'type' => $catalogue['type'],
+            'counts' => $catalogue['counts'],
+            'hasCatalogue' => 0 < $catalogue['counts']['todo'],
+            'slotIds' => $slotIds,
+            'slotTimes' => $periods['slots'],
+            'periodsBorrowedFrom' => $periods['borrowedFrom'],
+            // Lo del propio día ya está en la rejilla, con su «Anular»: aquí solo lo de otros días.
             'mine' => array_values(array_filter(
                 $bookings->findUpcomingFor($user, new \DateTimeImmutable('today')),
                 static fn (Booking $b): bool => $b->getDate() != $day,
             )),
-            // El catálogo entero: decide si hay algo que reservar HOY, sea cual sea la hora.
-            'hasCatalogue' => [] !== $availability['allRooms'] || [] !== $availability['allMaterials'],
-            'selectedSlots' => $availability['selectedSlots'],
-            'rooms' => $availability['freeRooms'],
-            'materials' => $availability['freeMaterials'],
-            'slotTimes' => $availability['periods']['slots'],
-            'periodsBorrowedFrom' => $availability['periods']['borrowedFrom'],
-            'groupNames' => self::knownGroups($schedule, $availability['year']),
+            'groupNames' => self::knownGroups($schedule, $year),
         ]);
     }
 
     /**
-     * El mismo bloque que {@see index()} pinta bajo el selector de horas (el desplegable de recursos y el
-     * formulario de reserva), pero SOLO ese bloque, sin el resto de la página: es lo que
-     * {@code public/js/booking-hours.js} pide por `fetch` cada vez que se marca o desmarca una hora, para no
-     * recargar la pantalla entera por un filtro. Sin JavaScript esto no se usa nunca: el formulario de horas
-     * hace un GET normal a {@see index()}, que ya sabe pintarse entero.
-     */
-    #[Route('/disponibilidad', name: 'booking_availability', methods: ['GET'])]
-    public function availability(
-        Request $request,
-        BookingRepository $bookings,
-        RoomRepository $rooms,
-        MaterialRepository $materials,
-        TimeSlotRepository $timeSlots,
-        AcademicYearRepository $years,
-        ScheduleEntryRepository $schedule,
-        RoomOccupancy $occupancy,
-    ): Response {
-        $availability = $this->resolveAvailability($request, $bookings, $rooms, $materials, $timeSlots, $years, $occupancy);
-
-        return $this->render('booking/_availability.html.twig', [
-            'day' => $availability['day'],
-            'selectedSlots' => $availability['selectedSlots'],
-            'rooms' => $availability['freeRooms'],
-            'materials' => $availability['freeMaterials'],
-            'groupNames' => self::knownGroups($schedule, $availability['year']),
-        ]);
-    }
-
-    /**
-     * Lo que hace falta para responder "qué está libre" un día y unas horas dadas: el marco horario del
-     * curso, lo ya reservado, el catálogo entero, y el catálogo filtrado a lo libre en TODAS las horas
-     * pedidas. Compartido por {@see index()} (la página entera) y {@see availability()} (el fragmento que
-     * pide el fetch de las horas), para que las dos vean exactamente el mismo "libre" sin mantener la
-     * regla en dos sitios. "Libre" es sin reserva Y, para un espacio, sin clase en el horario.
+     * El catálogo reservable, filtrado por tipo: lo que se ve ({@code shown}), el tipo efectivo y cuántas
+     * cosas hay de cada tipo (para los contadores de los chips, que cuentan SIEMPRE el catálogo entero).
      *
-     * @return array{day: \DateTimeImmutable, year: ?AcademicYear, periods: array{slots: array<int, array{startsAt: \DateTimeImmutable, endsAt: \DateTimeImmutable}>, borrowedFrom: string|null}, dayBookings: list<Booking>, allRooms: list<Room>, allMaterials: list<Material>, selectedSlots: list<int>, freeRooms: list<Room>, freeMaterials: list<Material>}
+     * @param Request            $request   the request ({@code tipo}: todo, material or espacios)
+     * @param RoomRepository     $rooms     the rooms
+     * @param MaterialRepository $materials the material
+     *
+     * @return array{shown: list<Room|Material>, type: string, counts: array{todo: int, material: int, espacios: int}}
      */
-    private function resolveAvailability(
-        Request $request,
-        BookingRepository $bookings,
-        RoomRepository $rooms,
-        MaterialRepository $materials,
-        TimeSlotRepository $timeSlots,
-        AcademicYearRepository $years,
-        RoomOccupancy $occupancy,
-    ): array {
-        $day = CalendarDate::parse($request->query->getString('fecha'), new \DateTimeZone(date_default_timezone_get()))
-            ?? new \DateTimeImmutable('today');
-
-        $year = $years->findBySchoolYear(SchoolYear::current($day));
-        // Las horas del día salen del MARCO horario y no de las clases del horario, y con el respaldo del
-        // curso anterior cuando el nuevo aún no se ha importado: ver el javadoc del método. Antes se leían
-        // de las celdas de ScheduleEntry, así que un curso recién empezado no tenía ninguna y la pantalla
-        // caía a «1ª a 6ª hora» seguidas — una numeración que NO es la del centro, donde los tramos 3 y 6
-        // son los recreos.
-        $periods = $timeSlots->lectiveTimesWithFallback($year);
-        $dayBookings = $bookings->findForDay($day);
-
-        // Solo lo que se puede reservar: un aula retirada del catálogo, una cámara rota o un espacio que
-        // el centro no abre a reservas (laboratorios, gimnasio, pistas) no se ofrecen.
+    private function catalogue(Request $request, RoomRepository $rooms, MaterialRepository $materials): array
+    {
         $allRooms = $rooms->findReservable();
         $allMaterials = $materials->findActive();
-
-        // Las horas son un filtro aparte, no un campo más del formulario: sin ellas no hay forma de saber qué
-        // está libre (un aula puede estar cogida a 1ª y libre a 3ª), así que hasta que se eligen se ve el
-        // catálogo entero. Se resuelven por GET, como la fecha, para que filtrar funcione sin JavaScript. Se
-        // pueden marcar VARIAS (o el día entero): lo que se ofrece es lo que está libre en TODAS ellas, que
-        // es lo que hace falta para reservarlo de una vez.
-        $selectedSlots = $this->requestedSlots($request->query, self::validSlots($periods['slots']));
-
-        $freeRooms = $allRooms;
-        $freeMaterials = $allMaterials;
-        if ([] !== $selectedSlots) {
-            $bookedRoomIds = [];
-            $bookedMaterialIds = [];
-            foreach ($dayBookings as $booking) {
-                if (!\in_array($booking->getSlotIndex(), $selectedSlots, true)) {
-                    continue;
-                }
-                if (null !== $booking->getRoom()) {
-                    $bookedRoomIds[$booking->getRoom()->getId()] = true;
-                }
-                if (null !== $booking->getMaterial()) {
-                    $bookedMaterialIds[$booking->getMaterial()->getId()] = true;
-                }
-            }
-            foreach (self::roomsInClass($occupancy, $year, $day, $selectedSlots) as $inClass) {
-                $bookedRoomIds += $inClass;
-            }
-            $freeRooms = array_values(array_filter($allRooms, static fn (Room $r): bool => !isset($bookedRoomIds[$r->getId()])));
-            $freeMaterials = array_values(array_filter($allMaterials, static fn (Material $m): bool => !isset($bookedMaterialIds[$m->getId()])));
+        $type = $request->query->getString('tipo', 'todo');
+        if (!\in_array($type, ['todo', 'material', 'espacios'], true)) {
+            $type = 'todo';
         }
 
         return [
-            'day' => $day,
-            'year' => $year,
-            'periods' => $periods,
-            'dayBookings' => $dayBookings,
-            'allRooms' => $allRooms,
-            'allMaterials' => $allMaterials,
-            'selectedSlots' => $selectedSlots,
-            'freeRooms' => $freeRooms,
-            'freeMaterials' => $freeMaterials,
+            'shown' => match ($type) {
+                'material' => $allMaterials,
+                'espacios' => $allRooms,
+                default => [...$allMaterials, ...$allRooms],
+            },
+            'type' => $type,
+            'counts' => ['todo' => \count($allRooms) + \count($allMaterials), 'material' => \count($allMaterials), 'espacios' => \count($allRooms)],
         ];
+    }
+
+    /**
+     * Qué hay en cada celda (cosa × día × hora) para unos días: una sola consulta de reservas para todo el
+     * rango y una del horario por día lectivo, no una por celda. Lo compartido por el día y la semana, para
+     * que los dos pinten exactamente lo mismo.
+     *
+     * Estados: {@code free}, {@code past} (libre pero de un día ya pasado: se ve, no se pincha),
+     * {@code booked} (otra persona), {@code mine}, {@code fixed} (reserva fija), {@code class} (el horario
+     * tiene clase en ese espacio) y {@code closed} (día no lectivo, solo si {@code $markNonLective}).
+     *
+     * @param list<Room|Material>      $resources      the things on screen
+     * @param list<\DateTimeImmutable> $days           the days on screen (consecutive)
+     * @param list<int>                $slotIds         the periods on screen
+     * @param AcademicYear|null        $year            the course
+     * @param bool                     $markNonLective  whether a non-teaching day is shown closed
+     *
+     * @return array<string, array<string, array<int, array{state: string, booking: ?Booking, value: string}>>> resource key → day → period → cell
+     */
+    private function cellMap(array $resources, array $days, array $slotIds, ?AcademicYear $year, BookingRepository $bookings, RoomOccupancy $occupancy, SchoolCalendar $calendar, User $user, bool $markNonLective): array
+    {
+        $today = new \DateTimeImmutable('today');
+        $booked = [];
+        foreach ($bookings->findForRange($days[0], $days[\count($days) - 1]) as $booking) {
+            $booked[$booking->getDate()->format('Y-m-d')][$booking->getSlotIndex()][self::keyOf($booking->getRoom() ?? $booking->getMaterial())] = $booking;
+        }
+        $hasRooms = [] !== array_filter($resources, static fn (Room|Material $r): bool => $r instanceof Room);
+
+        $map = [];
+        foreach ($days as $day) {
+            $dayKey = $day->format('Y-m-d');
+            $closed = $markNonLective && !$calendar->isLective($day);
+            $inClass = $hasRooms && !$closed ? self::roomsInClass($occupancy, $year, $day, $slotIds) : [];
+            foreach ($resources as $resource) {
+                $key = self::keyOf($resource);
+                foreach ($slotIds as $slot) {
+                    $booking = $booked[$dayKey][$slot][$key] ?? null;
+                    $state = match (true) {
+                        null !== $booking && null !== $booking->getSeries() => 'fixed',
+                        null !== $booking && $booking->isOwnedBy($user) => 'mine',
+                        null !== $booking => 'booked',
+                        $closed => 'closed',
+                        $resource instanceof Room && isset($inClass[$slot][$resource->getId()]) => 'class',
+                        $day < $today => 'past',
+                        default => 'free',
+                    };
+                    $map[$key][$dayKey][$slot] = ['state' => $state, 'booking' => $booking, 'value' => $key.':'.$dayKey.':'.$slot];
+                }
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * Las filas de la rejilla de UN día: cada cosa con sus celdas por hora.
+     *
+     * @param list<Room|Material> $resources the things on screen
+     * @param array<string, array<string, array<int, array{state: string, booking: ?Booking, value: string}>>> $cells {@see cellMap()}
+     * @param \DateTimeImmutable  $day       the day
+     *
+     * @return list<array{resource: Room|Material, cells: array<int, array{state: string, booking: ?Booking, value: string}>}>
+     */
+    private static function rows(array $resources, array $cells, \DateTimeImmutable $day): array
+    {
+        return array_map(
+            static fn (Room|Material $r): array => ['resource' => $r, 'cells' => $cells[self::keyOf($r)][$day->format('Y-m-d')]],
+            $resources,
+        );
+    }
+
+    /**
+     * El lunes de la semana de un día, retrocediendo con el número de día (N: 1 lunes … 7 domingo) y NO con
+     * {@code modify('monday this week')}: un domingo es del lunes ANTERIOR y la resta lo dice sin ambigüedad.
+     *
+     * @param \DateTimeImmutable $day any day
+     *
+     * @return \DateTimeImmutable the Monday of its week
+     */
+    private static function mondayOf(\DateTimeImmutable $day): \DateTimeImmutable
+    {
+        return $day->modify('-'.((int) $day->format('N') - 1).' days');
     }
 
     /**
@@ -264,100 +276,47 @@ final class BookingController extends AbstractController
     }
 
     /**
-     * La SEMANA de lunes a viernes con lo que queda libre a cada hora: «el lunes a 1ª, tales aulas; a 2ª,
-     * tales otras», que es lo que pidió el profesorado para planificar sin ir día a día. Se ve por
-     * espacios, por material o por una cosa concreta (el carro de portátiles), y cada hueco libre enlaza
-     * a la pantalla del día con esa hora ya marcada, que es donde se reserva.
+     * La SEMANA de lunes a viernes: una fila por cosa y, por día, un cuadro por hora. Todos los cuadros se
+     * pinchan: uno libre se marca y se reserva ahí mismo (con la barra de reserva, igual que en el día); uno
+     * ocupado dice qué es, cuándo y de quién.
      *
-     * Abierta a todo el mundo, como la del día: dice qué está libre, no quién tiene qué (eso es el
-     * seguimiento, con su permiso). En una cosa concreta sí se dice «cogido», sin nombre.
+     * Abierta a todo el mundo, como la del día: dice quién tiene qué porque el día también lo dice.
      */
     #[Route('/semana', name: 'booking_week', methods: ['GET'])]
     public function week(
         Request $request,
+        #[CurrentUser] User $user,
         BookingRepository $bookings,
         RoomRepository $rooms,
         MaterialRepository $materials,
         TimeSlotRepository $timeSlots,
         AcademicYearRepository $years,
+        ScheduleEntryRepository $schedule,
         SchoolCalendar $calendar,
         RoomOccupancy $occupancy,
     ): Response {
         $anchor = CalendarDate::parse($request->query->getString('fecha'), new \DateTimeZone(date_default_timezone_get()))
             ?? new \DateTimeImmutable('today');
-        // Mismo retroceso por número de día que el seguimiento (ver allí por qué no 'monday this week').
-        $monday = $anchor->modify('-'.((int) $anchor->format('N') - 1).' days');
+        $monday = self::mondayOf($anchor);
         $days = array_map(static fn (int $i): \DateTimeImmutable => $monday->modify("+{$i} days"), range(0, 4));
         $year = $years->findBySchoolYear(SchoolYear::current($monday));
         $periods = $timeSlots->lectiveTimesWithFallback($year);
+        $slotIds = self::validSlots($periods['slots']);
 
-        $allRooms = $rooms->findReservable();
-        $allMaterials = $materials->findActive();
-        // Por defecto, espacios y material juntos: separados, quien había reservado material abría la
-        // semana en «espacios», lo veía todo libre y creía que su reserva no estaba.
-        $view = $request->query->getString('ver', 'todo');
-        [$kind, $id] = array_pad(explode(':', $view, 2), 2, '');
-        $single = match ($kind) {
-            'room' => array_values(array_filter($allRooms, static fn (Room $r): bool => $r->getId() === (int) $id))[0] ?? null,
-            'material' => array_values(array_filter($allMaterials, static fn (Material $m): bool => $m->getId() === (int) $id))[0] ?? null,
-            default => null,
-        };
-        if (null === $single && !\in_array($view, ['todo', 'espacios', 'material'], true)) {
-            $view = 'todo';
-        }
-        $candidates = match (true) {
-            null !== $single => [$single],
-            'espacios' === $view => $allRooms,
-            'material' === $view => $allMaterials,
-            default => [...$allRooms, ...$allMaterials],
-        };
-
-        // Lo cogido, por día y hora, en una sola consulta para toda la semana.
-        $taken = [];
-        foreach ($bookings->findForRange($days[0], $days[4]) as $booking) {
-            $taken[$booking->getDate()->format('Y-m-d')][$booking->getSlotIndex()][self::keyOf($booking->getRoom() ?? $booking->getMaterial())] = true;
-        }
-        // Y lo que tiene clase en el horario, que tampoco está libre. Solo si se miran espacios: el material
-        // no está en el horario, y así la vista de un carro no lee la semana del horario para nada.
-        if ('material' !== $view && !($single instanceof Material)) {
-            foreach (array_filter($days, $calendar->isLective(...)) as $day) {
-                foreach (self::roomsInClass($occupancy, $year, $day, array_keys($periods['slots'])) as $slot => $roomIds) {
-                    foreach (array_keys($roomIds) as $roomId) {
-                        $taken[$day->format('Y-m-d')][$slot]['room:'.$roomId] = true;
-                    }
-                }
-            }
-        }
-
-        $grid = [];
-        $lective = [];
-        foreach ($days as $day) {
-            $key = $day->format('Y-m-d');
-            $lective[$key] = $calendar->isLective($day);
-            foreach (array_keys($periods['slots']) as $slot) {
-                $free = array_values(array_filter(
-                    $candidates,
-                    static fn (Room|Material $r): bool => !isset($taken[$key][$slot][self::keyOf($r)]),
-                ));
-                $grid[$slot][$key] = [
-                    'free' => $free,
-                    'taken' => array_values(array_filter($candidates, static fn (Room|Material $r): bool => !\in_array($r, $free, true))),
-                ];
-            }
-        }
+        $catalogue = $this->catalogue($request, $rooms, $materials);
 
         return $this->render('booking/week.html.twig', [
             'monday' => $monday,
             'days' => $days,
-            'lective' => $lective,
-            'grid' => $grid,
-            'view' => $view,
-            'single' => $single,
-            'rooms' => $allRooms,
-            'materials' => $allMaterials,
+            'resources' => $catalogue['shown'],
+            'cells' => $this->cellMap($catalogue['shown'], $days, $slotIds, $year, $bookings, $occupancy, $calendar, $user, true),
+            'type' => $catalogue['type'],
+            'counts' => $catalogue['counts'],
+            'hasCatalogue' => 0 < $catalogue['counts']['todo'],
+            'slotIds' => $slotIds,
             'slotTimes' => $periods['slots'],
             'periodsBorrowedFrom' => $periods['borrowedFrom'],
-            'today' => new \DateTimeImmutable('today'),
+            'groupNames' => self::knownGroups($schedule, $year),
         ]);
     }
 
@@ -373,14 +332,29 @@ final class BookingController extends AbstractController
             throw $this->createAccessDeniedException('Token CSRF inválido.');
         }
 
-        $day = CalendarDate::parse($request->request->getString('fecha'), new \DateTimeZone(date_default_timezone_get()));
+        // Lo que llega de la rejilla son celdas ({@see pickedCells()}); sin ellas, los campos sueltos de
+        // siempre (día, recurso y horas), que siguen valiendo para quien envíe el formulario a mano.
+        $rawCells = $request->request->all()['celdas'] ?? [];
+        // Un escalar en vez de una lista (celdas=x) es un POST a mano: se rechaza con el mismo aviso, no con un 400.
+        $cells = \is_array($rawCells) ? array_values(array_filter($rawCells, 'is_string')) : ['?'];
+        $picked = [] !== $cells ? self::pickedCells($cells) : null;
+        if ([] !== $cells && null === $picked) {
+            $this->addFlash('error', 'Marca horas de una sola cosa y de un solo día.');
+
+            return $this->back(null);
+        }
+        $input = null !== $picked
+            ? new InputBag(['fecha' => $picked['day'], 'recurso' => $picked['resource'], 'tramos' => $picked['slots']])
+            : $request->request;
+
+        $day = CalendarDate::parse($input->getString('fecha'), new \DateTimeZone(date_default_timezone_get()));
         // Contra el MISMO marco horario que ofrece la pantalla: con varias horas por envío, sin esto un POST
         // a mano podía sembrar reservas en tramos que no existen.
         $slots = null !== $day
-            ? $this->requestedSlots($request->request, self::validSlots($timeSlots->lectiveTimesWithFallback($years->findBySchoolYear(SchoolYear::current($day)))['slots']))
+            ? $this->requestedSlots($input, self::validSlots($timeSlots->lectiveTimesWithFallback($years->findBySchoolYear(SchoolYear::current($day)))['slots']))
             : [];
         $purpose = trim($request->request->getString('motivo'));
-        [$kind, $id] = array_pad(explode(':', $request->request->getString('recurso'), 2), 2, '');
+        [$kind, $id] = array_pad(explode(':', $input->getString('recurso'), 2), 2, '');
 
         if (null === $day || [] === $slots || '' === $purpose) {
             $this->addFlash('error', 'Elige el día, la hora y di para qué lo necesitas.');
@@ -524,6 +498,28 @@ final class BookingController extends AbstractController
     }
 
     /**
+     * Lo que dicen las celdas marcadas en la rejilla. Cada una es {@code tipo:id:AAAA-MM-DD:hora}
+     * ({@code material:9:2026-11-23:3}); todas tienen que ser de la MISMA cosa y del MISMO día, porque una
+     * reserva es una cosa en un día a varias horas. Con otra mezcla no se adivina qué quiso reservar: se
+     * rechaza entera.
+     *
+     * @param list<string> $cells the cells ticked
+     *
+     * @return array{resource: string, day: string, slots: list<string>}|null the single resource, day and periods, or null when mixed or malformed
+     */
+    private static function pickedCells(array $cells): ?array
+    {
+        $parts = array_map(static fn (string $c): array => array_pad(explode(':', $c, 4), 4, ''), $cells);
+        $resources = array_unique(array_map(static fn (array $p): string => $p[0].':'.$p[1], $parts));
+        $days = array_unique(array_column($parts, 2));
+        if (1 !== \count($resources) || 1 !== \count($days)) {
+            return null;
+        }
+
+        return ['resource' => $resources[0], 'day' => $days[0], 'slots' => array_column($parts, 3)];
+    }
+
+    /**
      * Los grupos del horario del curso: lo que ofrece el desplegable de grupos y, en {@see create()}, lo
      * único que se acepta. La misma lista que los planes de espacios ({@see SpacePlanController}), para
      * que un grupo se llame igual en todas partes. Sin curso, ninguno: el campo no se ofrece.
@@ -565,26 +561,8 @@ final class BookingController extends AbstractController
     }
 
     /**
-     * Lo reservado un día, agrupado por hora: la pantalla lo pinta en bloques por tramo, no como una
-     * lista plana, que con dos o tres reservas sueltas en todo el día se veía casi vacía.
-     *
-     * @param list<Booking> $dayBookings ya vienen ordenadas por tramo ({@see BookingRepository::findForDay})
-     *
-     * @return array<int, list<Booking>> las reservas, agrupadas por índice de tramo en el mismo orden
-     */
-    private static function bySlot(array $dayBookings): array
-    {
-        $bySlot = [];
-        foreach ($dayBookings as $booking) {
-            $bySlot[$booking->getSlotIndex()][] = $booking;
-        }
-
-        return $bySlot;
-    }
-
-    /**
-     * The periods asked for, as a list of period indexes: several as {@code tramos[]} (the checkboxes), or
-     * one as {@code tramo} (the older links and the single-hour form). A value that is not a real period
+     * The periods asked for, as a list of period indexes: several as {@code tramos[]} (hand-made POSTs), or
+     * one as {@code tramo} (a hand-made single-hour POST). A value that is not a real period
      * is dropped instead of pretending an hour that does not exist; the indexes are not consecutive (the
      * recreos take one too), so it is membership that is checked, not a range.
      *

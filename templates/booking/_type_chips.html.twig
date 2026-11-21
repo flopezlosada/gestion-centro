@@ -1,0 +1,7 @@
+{# Filtro por tipo: solo quita filas. Enlaces y no casillas para que funcione sin JavaScript. `route` es la
+   pantalla a la que se vuelve y `params` lo que no cambia (la fecha). #}
+<nav class="booking-chips" aria-label="Qué mostrar">
+    {% for key, label in { todo: 'Todo', material: 'Material', espacios: 'Espacios' } %}
+        <a href="{{ path(route, params|merge({ tipo: key })) }}" class="{{ type == key ? 'is-active' }}"{{ type == key ? ' aria-current="true"' }}>{{ label }} <span class="mono">{{ counts[key] }}</span></a>
+    {% endfor %}
+</nav>

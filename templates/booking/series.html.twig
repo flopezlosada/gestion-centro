@@ -23,6 +23,8 @@
         </div>
     </div>
 
+    {{ include('booking/_tabs.html.twig', { active: 'fijas' }) }}
+
     <div class="card">
         {% if series is empty %}
             <p class="muted">No hay ninguna reserva fija en curso.</p>
