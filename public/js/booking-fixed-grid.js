@@ -124,8 +124,9 @@
                 })[0];
                 var date = chosen ? chosen.getAttribute('data-date') : null;
                 if (custom) {
-                    // Sin chip con fecha (p. ej. sin curso dado de alta) el campo se queda a la vista.
-                    custom.hidden = !date;
+                    // Con una fecha de chip el campo sobra; «Otra fecha» (o ningún chip con fecha, p. ej. sin curso
+                    // dado de alta) lo deja a la vista.
+                    custom.hidden = null !== date;
                 }
                 if (date) {
                     to.value = date;
