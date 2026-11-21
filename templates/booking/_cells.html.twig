@@ -18,7 +18,8 @@
     {% elseif c.state == 'class' %}
         <div class="bcell bcell--class"><span class="bcell__pill" aria-hidden="true">{{ label }}</span><span class="bcell__main"><span class="visually-hidden">{{ what }} a {{ label }}: </span>Clase</span><span class="bcell__sub">del horario</span></div>
     {% else %}
-        <div class="bcell bcell--{{ c.state }}">
+        {% set detail = c.state == 'fixed' ? (b.holderName ~ ': ' ~ b.purpose) : [b.groupName, b.purpose]|filter(v => v)|join(' · ') %}
+        <div class="bcell bcell--{{ c.state }}" title="{{ detail }}">
             <span class="bcell__pill" aria-hidden="true">{{ label }}</span>
             <span class="visually-hidden">{{ what }} a {{ label }}: </span>
             {% if c.state == 'fixed' %}
@@ -26,7 +27,7 @@
                 <span class="bcell__sub">{{ b.holderName }}</span>
             {% else %}
                 <span class="bcell__main">{{ c.state == 'mine' ? 'Tuyo' : b.holderName }}</span>
-                <span class="bcell__sub">{{ b.groupName ?: b.purpose }}</span>
+                <span class="bcell__sub">{{ detail }}</span>
             {% endif %}
             {#- Lo tuyo se anula en «Tus reservas». Aquí solo lo que no sale allí: liberar un día de una fija
                 (su titular o su jefatura) o anular lo de otra persona siendo admin. -#}
