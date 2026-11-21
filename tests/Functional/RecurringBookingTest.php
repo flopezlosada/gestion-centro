@@ -101,7 +101,7 @@ final class RecurringBookingTest extends WebTestCase
         $this->em->flush();
 
         $this->client->loginUser($manager);
-        $crawler = $this->client->request('GET', '/reservas/fijas');
+        $crawler = $this->client->request('GET', '/reservas/fijas?recurso=material:'.$cart->getId());
         $option = $crawler->filter('input[name="titular_persona"][value="'.$mar->getId().'"]')->closest('.pick-option');
         self::assertNotNull($option);
         self::assertSame('Tecnología', trim($option->filter('.pick-option__desc')->text()));
@@ -331,6 +331,84 @@ final class RecurringBookingTest extends WebTestCase
         self::assertCount(0, $this->em->getRepository(Booking::class)->findAll());
     }
 
+    /**
+     * La rejilla de una cosa: lo que tiene clase no se puede marcar, lo que ya tiene reservas se puede marcar
+     * pero lo dice (con sus días, para que la pantalla los compare con las fechas), y lo libre es una casilla.
+     */
+    public function testTheGridOfARoomBlocksItsClassesAndNamesWhatIsAlreadyBooked(): void
+    {
+        [$monday] = self::stretch();
+        $manager = $this->manager();
+        $room = (new Room())->setCode('AINF2')->setName('AINF2')->setKind(RoomKind::COMPUTER_ROOM)->setReservable(true);
+        $this->em->persist($room);
+        $today = new \DateTimeImmutable('today');
+        $year = $this->course($today);
+        if (SchoolYear::current($monday) !== SchoolYear::current($today)) {
+            $this->course($monday);
+        }
+        $this->em->persist((new ScheduleEntry())
+            ->setAcademicYear($year)->setTeacher($this->user('sara2@centro.test'))
+            ->setWeekday(Weekday::MONDAY)->setSlotIndex(1)
+            ->setStartsAt(new \DateTimeImmutable('09:20'))->setEndsAt(new \DateTimeImmutable('10:15'))
+            ->setKind(ScheduleActivityKind::LECTIVE)
+            ->setGroupName('E2 BC')->setSubjectName('Tecnología')
+            ->setRoomName('AINF2')->setRoom($room));
+        $this->em->persist(Booking::forRoom($this->user('ana2@centro.test'), $room, $monday->modify('+9 days'), 2, 'Examen'));
+        $this->em->flush();
+
+        $this->client->loginUser($manager);
+        $crawler = $this->client->request('GET', '/reservas/fijas?recurso=room:'.$room->getId());
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(0, $crawler->filter('input[name="franjas[]"][value="1:1"]'), 'con clase no se marca');
+        self::assertCount(1, $crawler->filter('.fcell--class'));
+        self::assertStringContainsString('Clase de E2 BC', (string) $crawler->filter('.fcell--class')->attr('title'));
+        self::assertCount(1, $crawler->filter('input[name="franjas[]"][value="1:3"]'), 'a otra hora está libre');
+        $booked = $crawler->filter('input[name="franjas[]"][value="3:2"]')->closest('label');
+        self::assertNotNull($booked);
+        self::assertStringContainsString($monday->modify('+9 days')->format('Y-m-d'), (string) $booked->attr('data-clashes'));
+        self::assertStringContainsString('Examen', (string) $booked->attr('data-clashes'));
+    }
+
+    /** Una reserva en un día que luego se declara festivo no choca con nada: la rejilla no la cuenta. */
+    public function testABookingOnADayThatIsNoLongerTeachingIsNotAClash(): void
+    {
+        [$monday] = self::stretch();
+        $manager = $this->manager();
+        $cart = $this->material('Dora Maar');
+        $today = new \DateTimeImmutable('today');
+        $this->course($today);
+        if (SchoolYear::current($monday) !== SchoolYear::current($today)) {
+            $this->course($monday);
+        }
+        $holiday = $monday->modify('+9 days');
+        $this->em->persist(Booking::forMaterial($this->user('ana3@centro.test'), $cart, $holiday, 2, 'Examen'));
+        $this->em->persist((new NonLectiveDay())->setDate($holiday)->setDescription('Fiesta local'));
+        $this->em->flush();
+
+        $this->client->loginUser($manager);
+        $crawler = $this->client->request('GET', '/reservas/fijas?recurso=material:'.$cart->getId());
+
+        self::assertResponseIsSuccessful();
+        self::assertCount(1, $crawler->filter('input[name="franjas[]"][value="3:2"]'));
+        self::assertCount(0, $crawler->filter('[data-clashes]'));
+    }
+
+    /** Sin elegir qué se reserva no hay rejilla ni formulario, pero sí la lista de cosas para elegir. */
+    public function testWithoutAChosenResourceThereIsOnlyTheListToPickFrom(): void
+    {
+        $manager = $this->manager();
+        $cart = $this->material('Dora Maar');
+        $this->em->flush();
+
+        $this->client->loginUser($manager);
+        $crawler = $this->client->request('GET', '/reservas/fijas');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorNotExists('form[action="/reservas/fijas/nueva"]');
+        self::assertCount(1, $crawler->filter('a.fixed-res[href*="'.$cart->getId().'"]'));
+    }
+
     public function testWithoutThePermissionThereIsNoFormAndPostingIsRefused(): void
     {
         $teacher = $this->user('profe@centro.test');
@@ -458,7 +536,8 @@ final class RecurringBookingTest extends WebTestCase
      */
     private function postSeries(array $fields): void
     {
-        $crawler = $this->client->request('GET', '/reservas/fijas');
+        // El formulario solo sale con una cosa elegida: se pide con la que se va a enviar.
+        $crawler = $this->client->request('GET', '/reservas/fijas?recurso='.urlencode((string) ($fields['recurso'] ?? '')));
         $token = (string) $crawler->filter('form[action="/reservas/fijas/nueva"] input[name="_token"]')->attr('value');
         $this->client->request('POST', '/reservas/fijas/nueva', ['_token' => $token] + $fields);
     }
