@@ -112,6 +112,33 @@
             }
         }
 
+        // «Hasta»: «Fin de curso» fija la fecha del final del curso y esconde el campo; «Otra fecha» lo enseña.
+        // Sin JavaScript el campo está siempre a la vista y es lo único que lee el servidor.
+        var until = form.querySelector('[data-until]');
+        if (until && to) {
+            var custom = until.querySelector('[data-until-custom]');
+            var kinds = Array.prototype.slice.call(until.querySelectorAll('input[name="hasta_tipo"]'));
+            var applyUntil = function () {
+                var chosen = kinds.filter(function (kind) {
+                    return kind.checked;
+                })[0];
+                var yearEnd = until.getAttribute('data-year-end');
+                // Sin fecha de fin de curso no hay nada que fijar: el campo se queda a la vista.
+                var wholeYear = '' !== yearEnd && (!chosen || 'curso' === chosen.value);
+                if (custom) {
+                    custom.hidden = wholeYear;
+                }
+                if (wholeYear) {
+                    to.value = yearEnd;
+                }
+                refresh();
+            };
+            kinds.forEach(function (kind) {
+                kind.addEventListener('change', applyUntil);
+            });
+            applyUntil();
+        }
+
         // El día entero: las casillas de su fila, sin las que tienen clase (esas no tienen casilla).
         form.querySelectorAll('[data-pick-day]').forEach(function (button) {
             button.hidden = false;

@@ -394,8 +394,8 @@ final class RecurringBookingTest extends WebTestCase
         self::assertCount(0, $crawler->filter('[data-clashes]'));
     }
 
-    /** Sin elegir qué se reserva no hay rejilla ni formulario, pero sí la lista de cosas para elegir. */
-    public function testWithoutAChosenResourceThereIsOnlyTheListToPickFrom(): void
+    /** Sin elegir qué se reserva, la pantalla abre ya con la primera cosa (carros antes que aulas) y su rejilla. */
+    public function testWithoutAChosenResourceTheFirstOneIsOpened(): void
     {
         $manager = $this->manager();
         $cart = $this->material('Dora Maar');
@@ -405,8 +405,43 @@ final class RecurringBookingTest extends WebTestCase
         $crawler = $this->client->request('GET', '/reservas/fijas');
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorNotExists('form[action="/reservas/fijas/nueva"]');
+        self::assertSame('material:'.$cart->getId(), $crawler->filter('form[action="/reservas/fijas/nueva"] input[name="recurso"]')->attr('value'));
         self::assertCount(1, $crawler->filter('a.fixed-res[href*="'.$cart->getId().'"]'));
+        self::assertSelectorTextContains('#existentes', 'Dora Maar');
+    }
+
+    /** Debajo del formulario solo salen las fijas de la cosa elegida, no las de las demás. */
+    public function testTheSeriesListedAreOnlyThoseOfTheChosenResource(): void
+    {
+        $manager = $this->manager();
+        $ada = $this->material('Ada Lovelace');
+        $emy = $this->material('Emy Noether');
+        $technology = $this->department('Tecnología');
+        $today = new \DateTimeImmutable('today');
+        $this->em->persist(new RecurringBooking($manager, $ada, $technology, $today, $today->modify('+30 days'), [1 => [1]], 'Prácticas de Ada'));
+        $this->em->flush();
+
+        $this->client->loginUser($manager);
+        $own = $this->client->request('GET', '/reservas/fijas?recurso=material:'.$ada->getId());
+        self::assertStringContainsString('Prácticas de Ada', $own->filter('#existentes')->ancestors()->first()->text());
+
+        $other = $this->client->request('GET', '/reservas/fijas?recurso=material:'.$emy->getId());
+        self::assertStringNotContainsString('Prácticas de Ada', $other->filter('#existentes')->ancestors()->first()->text());
+        self::assertStringContainsString('Ninguna todavía.', $other->filter('#existentes')->ancestors()->first()->text());
+    }
+
+    /** Una cosa pedida que no existe no se cambia por otra en silencio: la pantalla se queda sin elegir. */
+    public function testAnUnknownResourceIsNotReplacedByAnother(): void
+    {
+        $manager = $this->manager();
+        $this->material('Dora Maar');
+        $this->em->flush();
+
+        $this->client->loginUser($manager);
+        $this->client->request('GET', '/reservas/fijas?recurso=material:999999');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorNotExists('form[action="/reservas/fijas/nueva"]');
     }
 
     public function testWithoutThePermissionThereIsNoFormAndPostingIsRefused(): void
@@ -479,7 +514,7 @@ final class RecurringBookingTest extends WebTestCase
         $id = (int) $series->getId();
 
         $this->client->loginUser($manager);
-        $crawler = $this->client->request('GET', '/reservas/fijas');
+        $crawler = $this->client->request('GET', '/reservas/fijas?recurso=material:'.$cart->getId());
         $this->client->submit($crawler->filter('form[action="/reservas/fijas/'.$id.'/terminar"]')->form());
         self::assertResponseRedirects('/reservas/fijas');
 

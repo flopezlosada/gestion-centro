@@ -10,6 +10,36 @@
     {{ ordinals[index] ?? (index + 1) }}ª{% if times %} <span class="mono muted">{{ times.startsAt|date('H:i', false) }}</span>{% endif %}
 {%- endmacro %}
 
+{# Las reservas fijas en curso, una fila cada una. Con `puedeCrear` lleva el botón de terminarla. #}
+{% macro lista(series, ordinals, diasCortos, puedeCrear, vacio) %}
+    {% if series is empty %}
+        <p class="muted">{{ vacio }}</p>
+    {% else %}
+        <ul class="incident-list">
+            {% for s in series %}
+                <li class="incident">
+                    <div class="incident__main">
+                        <span class="incident__head">
+                            <span class="incident__what">{{ s.resourceName }}</span>
+                            <span class="muted">· {{ s.holderName }}</span>
+                        </span>
+                        <span class="incident__where">
+                            {% for weekday, slots in s.pattern %}{{ diasCortos[weekday] }} {{ slots|map(i => (ordinals[i] ?? (i + 1)) ~ 'ª')|join(', ') }}{{ not loop.last ? ' · ' }}{% endfor %}
+                        </span>
+                        <span class="incident__where">Del {{ s.startsOn|date('d/m/Y', false) }} al {{ s.endsOn|date('d/m/Y', false) }} · {{ s.purpose }}{% if s.createdBy %} · la creó {{ s.createdBy.fullName }}{% endif %}</span>
+                    </div>
+                    {% if puedeCrear %}
+                        <form method="post" action="{{ path('booking_series_end', { id: s.id }) }}" data-confirm="¿Terminar esta reserva fija? Desde hoy {{ s.resourceName }} queda libre esas horas; lo pasado se conserva.">
+                            <input type="hidden" name="_token" value="{{ csrf_token('booking_series_end' ~ s.id) }}">
+                            <button type="submit" class="link-danger">Terminar</button>
+                        </form>
+                    {% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+{% endmacro %}
+
 {% block body %}
     {% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'] %}
     {% set diasCortos = ['', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie'] %}
@@ -25,39 +55,10 @@
 
     {{ include('booking/_tabs.html.twig', { active: 'fijas' }) }}
 
-    <div class="card">
-        {% if series is empty %}
-            <p class="muted">No hay ninguna reserva fija en curso.</p>
-        {% else %}
-            <ul class="incident-list">
-                {% for s in series %}
-                    <li class="incident">
-                        <div class="incident__main">
-                            <span class="incident__head">
-                                <span class="incident__what">{{ s.resourceName }}</span>
-                                <span class="muted">· {{ s.holderName }}</span>
-                            </span>
-                            <span class="incident__where">
-                                {% for weekday, slots in s.pattern %}{{ diasCortos[weekday] }} {{ slots|map(i => (ordinals[i] ?? (i + 1)) ~ 'ª')|join(', ') }}{{ not loop.last ? ' · ' }}{% endfor %}
-                            </span>
-                            <span class="incident__where">Del {{ s.startsOn|date('d/m/Y', false) }} al {{ s.endsOn|date('d/m/Y', false) }} · {{ s.purpose }}{% if s.createdBy %} · la creó {{ s.createdBy.fullName }}{% endif %}</span>
-                        </div>
-                        {% if puedeCrear %}
-                            <form method="post" action="{{ path('booking_series_end', { id: s.id }) }}" data-confirm="¿Terminar esta reserva fija? Desde hoy {{ s.resourceName }} queda libre esas horas; lo pasado se conserva.">
-                                <input type="hidden" name="_token" value="{{ csrf_token('booking_series_end' ~ s.id) }}">
-                                <button type="submit" class="link-danger">Terminar</button>
-                            </form>
-                        {% endif %}
-                    </li>
-                {% endfor %}
-            </ul>
-        {% endif %}
-    </div>
-
-    {% if puedeCrear %}
-        <div class="card fixed-new">
-            <div class="page-head"><div><h2>Nueva reserva fija</h2></div></div>
-
+    {% if not puedeCrear %}
+        <div class="card">{{ _self.lista(series, ordinals, diasCortos, false, 'No hay ninguna reserva fija en curso.') }}</div>
+    {% else %}
+        <div class="fixed-new">
             {% if errors is not empty %}
                 <div class="flash error" role="alert">
                     {% for e in errors %}<p>{{ e }}</p>{% endfor %}
@@ -81,7 +82,7 @@
                     <p id="paso1" class="eyebrow">1 · Qué</p>
                     {% for m in materials %}
                         {% set on = selectedKey == 'material:' ~ m.id %}
-                        <a href="{{ path('booking_series_index', { recurso: 'material:' ~ m.id }) }}" class="fixed-res{{ on ? ' is-on' }}"{{ on ? ' aria-current="true"' }}>{{ include('booking/_material_label.html.twig') }}</a>
+                        <a href="{{ path('booking_series_index', { recurso: 'material:' ~ m.id }) }}" class="fixed-res{{ on ? ' is-on' }}"{{ on ? ' aria-current="true"' }}>{{ m.name }}{% set where = [m.keptAt, m.deviceCount ? m.deviceCount ~ (m.deviceCount == 1 ? ' equipo' : ' equipos')]|filter(v => v) %}{% if where is not empty %}<small>{{ where|join(' · ') }}</small>{% endif %}</a>
                     {% endfor %}
                     {% for r in rooms %}
                         {% set on = selectedKey == 'room:' ~ r.id %}
@@ -94,12 +95,12 @@
                         <p class="muted">Elige a la izquierda qué quieres reservar: aquí saldrán sus horas de la semana.</p>
                     {% else %}
                         {% set franjas = sent.franjas ?? [] %}
-                        <form method="post" action="{{ path('booking_series_new') }}" class="stack-form" data-fixed-form>
+                        <form method="post" action="{{ path('booking_series_new') }}" class="fixed-steps" data-fixed-form>
                             <input type="hidden" name="_token" value="{{ csrf_token('booking_series_new') }}">
                             <input type="hidden" name="recurso" value="{{ selectedKey }}">
 
-                            <fieldset class="field">
-                                <legend>2 · Sus horas cada semana: {{ selected.name }}</legend>
+                            <fieldset class="card fixed-step">
+                                <legend class="fixed-step__legend"><span class="eyebrow">2 · Sus horas cada semana</span><span class="fixed-step__title">{{ selected.name }}</span></legend>
                                 <p class="help">Marca las horas una a una (o el día entero). Lo que tiene clase no se puede marcar; si ya hay reservas ese día, te lo decimos antes de guardar.</p>
                                 <div class="table-scroll">
                                     <table class="fixed-grid">
@@ -145,8 +146,10 @@
                                 y luego solo esa lista: las ochenta personas en un desplegable detrás de los departamentos no
                                 se veían. La otra lista la esconde el CSS (:has); sin él se ven las dos y manda el tipo. -#}
                             {% set holderKind = sent.titular_tipo ?? '' %}
+                            <div class="card fixed-step">
+                            <p class="eyebrow">3 · Para quién y hasta cuándo</p>
                             <fieldset class="field holder-picker">
-                                <legend>3 · ¿Para quién?</legend>
+                                <legend>Es de</legend>
                                 <div class="pick-chips">
                                     <label class="pick-chip"><input type="radio" name="titular_tipo" value="user" required{{ holderKind == 'user' ? ' checked' }}> Una persona</label>
                                     <label class="pick-chip"><input type="radio" name="titular_tipo" value="dept"{{ holderKind == 'dept' ? ' checked' }}> Un departamento</label>
@@ -183,10 +186,22 @@
                                 <label for="desde">Desde</label>
                                 <input type="date" id="desde" name="desde" required value="{{ sent.desde ?? today|date('Y-m-d', false) }}">
                             </div>
-                            <div class="field">
-                                <label for="hasta">Hasta</label>
-                                <input type="date" id="hasta" name="hasta" required value="{{ sent.hasta ?? (defaultTo ? defaultTo|date('Y-m-d', false) : '') }}">
-                                <p class="help">Por defecto, hasta el final del curso.</p>
+                            {#- «Hasta» como el diseño: o el final del curso, o una fecha. El servidor solo lee `hasta`; los chips
+                                son una comodidad (con JavaScript fijan la fecha de fin de curso y esconden el campo). -#}
+                            {% set yearEnd = defaultTo ? defaultTo|date('Y-m-d', false) : '' %}
+                            {% set untilCustom = '' == yearEnd or (sent.hasta ?? yearEnd) != yearEnd %}
+                            <fieldset class="field" data-until data-year-end="{{ yearEnd }}">
+                                <legend>Hasta</legend>
+                                <div class="pick-chips">
+                                    <label class="pick-chip"><input type="radio" name="hasta_tipo" value="curso"{{ untilCustom ? '' : ' checked' }}> Fin de curso</label>
+                                    <label class="pick-chip"><input type="radio" name="hasta_tipo" value="otra"{{ untilCustom ? ' checked' }}> Otra fecha</label>
+                                </div>
+                                <div data-until-custom>
+                                    <label for="hasta" class="visually-hidden">Fecha del último día</label>
+                                    <input type="date" id="hasta" name="hasta" required value="{{ sent.hasta ?? yearEnd }}">
+                                </div>
+                                <p class="help">Como mucho, hasta el final del curso.</p>
+                            </fieldset>
                             </div>
 
                             <div class="flash error" role="alert" data-fixed-clashes hidden></div>
@@ -199,6 +214,13 @@
                         </form>
                         <script src="{{ asset_ver('/js/booking-fixed-grid.js') }}"></script>
                     {% endif %}
+
+                    {#- Las fijas de la cosa elegida (o todas, si no hay ninguna elegida), debajo de donde se crea. -#}
+                    {% set ofSelected = selected is null ? series : series|filter(x => (x.room ? 'room:' ~ x.room.id : 'material:' ~ x.material.id) == selectedKey) %}
+                    <section class="fixed-existing" aria-labelledby="existentes">
+                        <h2 id="existentes">{{ selected is null ? 'Reservas fijas en curso' : 'Reservas fijas de ' ~ selected.name }}</h2>
+                        <div class="card">{{ _self.lista(ofSelected, ordinals, diasCortos, true, selected is null ? 'No hay ninguna reserva fija en curso.' : 'Ninguna todavía.') }}</div>
+                    </section>
                 </div>
             </div>
         </div>

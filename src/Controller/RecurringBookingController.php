@@ -219,7 +219,15 @@ final class RecurringBookingController extends AbstractController
         // La cosa elegida (en el enlace de la lista, o la que se envió y falló): su rejilla de horas.
         // Solo quien puede crear ve la rejilla: sin el permiso son seis consultas para nada.
         $picked = $sent['recurso'] ?? null;
-        $selected = \is_string($picked) && $this->isGranted(AreaVoter::WRITE, Area::RESERVAS_FIJAS) ? self::resource($picked, $rooms, $materials) : null;
+        $reservableRooms = $rooms->findReservable();
+        $activeMaterials = $materials->findActive();
+        $canCreate = $this->isGranted(AreaVoter::WRITE, Area::RESERVAS_FIJAS);
+        $selected = \is_string($picked) && $canCreate ? self::resource($picked, $rooms, $materials) : null;
+        // Sin nada elegido la pantalla no abre vacía: enseña ya la primera cosa (carros antes que aulas), como
+        // el diseño. Una cosa pedida que no existe NO se sustituye por otra: se queda sin elegir.
+        if (null === $selected && $canCreate && (!\is_string($picked) || '' === $picked)) {
+            $selected = $activeMaterials[0] ?? $reservableRooms[0] ?? null;
+        }
 
         return $this->render('booking/series.html.twig', [
             'series' => $series->findCurrent($today),
@@ -230,8 +238,8 @@ final class RecurringBookingController extends AbstractController
                 default => '',
             },
             'grid' => null !== $selected ? $this->grid->forResource($selected, $year, $today, $slotIndexes) : [],
-            'rooms' => $rooms->findReservable(),
-            'materials' => $materials->findActive(),
+            'rooms' => $reservableRooms,
+            'materials' => $activeMaterials,
             'users' => $users->findActive(),
             'departments' => $departments->findActiveDepartments(),
             'slotIndexes' => $slotIndexes,
