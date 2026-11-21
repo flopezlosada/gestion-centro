@@ -78,16 +78,19 @@
             <div class="fixed-layout">
                 {#- Paso 1: qué. Enlaces y no un desplegable: cada cosa es una dirección (se puede compartir) y la
                     rejilla de sus horas se pinta en el servidor, sin JavaScript. -#}
-                <nav class="fixed-resources" aria-labelledby="paso1">
+                <nav class="fixed-resources" aria-labelledby="paso1" data-resource-filter>
                     <p id="paso1" class="eyebrow">1 · Qué</p>
-                    {% for m in materials %}
-                        {% set on = selectedKey == 'material:' ~ m.id %}
-                        <a href="{{ path('booking_series_index', { recurso: 'material:' ~ m.id }) }}" class="fixed-res{{ on ? ' is-on' }}"{{ on ? ' aria-current="true"' }}>{{ m.name }}{% set where = [m.keptAt, m.deviceCount ? m.deviceCount ~ (m.deviceCount == 1 ? ' equipo' : ' equipos')]|filter(v => v) %}{% if where is not empty %}<small>{{ where|join(' · ') }}</small>{% endif %}</a>
+                    <input type="search" class="fixed-resources__search" placeholder="Buscar un carro, un aula…" aria-label="Buscar entre las cosas que se pueden reservar" autocomplete="off" hidden>
+                    {% for group in groups %}
+                        <div class="fixed-resources__group" data-resource-group>
+                            <p class="fixed-resources__heading">{{ group.label }}</p>
+                            {% for r in group.items %}
+                                {% set on = selectedKey == r.key %}
+                                <a href="{{ path('booking_series_index', { recurso: r.key }) }}" class="fixed-res{{ on ? ' is-on' }}"{{ on ? ' aria-current="true"' }} data-resource>{{ r.name }}{% if r.where %}<small>{{ r.where }}</small>{% endif %}</a>
+                            {% endfor %}
+                        </div>
                     {% endfor %}
-                    {% for r in rooms %}
-                        {% set on = selectedKey == 'room:' ~ r.id %}
-                        <a href="{{ path('booking_series_index', { recurso: 'room:' ~ r.id }) }}" class="fixed-res{{ on ? ' is-on' }}"{{ on ? ' aria-current="true"' }}>{{ r.name }}</a>
-                    {% endfor %}
+                    <p class="muted fixed-resources__none" data-resource-none hidden>Nada coincide con lo que has escrito.</p>
                 </nav>
 
                 <div class="fixed-main">
@@ -147,12 +150,13 @@
                                 se veían. La otra lista la esconde el CSS (:has); sin él se ven las dos y manda el tipo. -#}
                             {% set holderKind = sent.titular_tipo ?? '' %}
                             <div class="card fixed-step">
-                            <p class="eyebrow">3 · Para quién y hasta cuándo</p>
-                            <fieldset class="field holder-picker">
+                                <p class="eyebrow">3 · Para quién y hasta cuándo</p>
+                                <div class="fixed-step__row">
+                            <fieldset class="field holder-picker fixed-step__col">
                                 <legend>Es de</legend>
                                 <div class="pick-chips">
-                                    <label class="pick-chip"><input type="radio" name="titular_tipo" value="user" required{{ holderKind == 'user' ? ' checked' }}> Una persona</label>
-                                    <label class="pick-chip"><input type="radio" name="titular_tipo" value="dept"{{ holderKind == 'dept' ? ' checked' }}> Un departamento</label>
+                                    <label class="pick-chip"><input type="radio" name="titular_tipo" value="dept" required{{ holderKind == 'dept' ? ' checked' }}> Un departamento</label>
+                                    <label class="pick-chip"><input type="radio" name="titular_tipo" value="user"{{ holderKind == 'user' ? ' checked' }}> Una persona</label>
                                 </div>
                                 <div class="holder-picker__kind" data-holder-kind="user">
                                     <div class="pick-list" data-pick-search="Busca a la persona por nombre o departamento…">
@@ -176,40 +180,41 @@
                                     <p class="help">Puede liberar un día su jefatura de departamento.</p>
                                 </div>
                             </fieldset>
-
-                            <div class="field">
-                                <label for="motivo">¿Para qué?</label>
-                                <input type="text" id="motivo" name="motivo" maxlength="200" required value="{{ sent.motivo ?? '' }}" placeholder="Clases de Tecnología, programación de 4º…">
-                            </div>
-
-                            <div class="field">
-                                <label for="desde">Desde</label>
-                                <input type="date" id="desde" name="desde" required value="{{ sent.desde ?? today|date('Y-m-d', false) }}">
-                            </div>
-                            {#- «Hasta» como el diseño: o el final del curso, o una fecha. El servidor solo lee `hasta`; los chips
-                                son una comodidad (con JavaScript fijan la fecha de fin de curso y esconden el campo). -#}
-                            {% set yearEnd = defaultTo ? defaultTo|date('Y-m-d', false) : '' %}
-                            {% set untilCustom = '' == yearEnd or (sent.hasta ?? yearEnd) != yearEnd %}
-                            <fieldset class="field" data-until data-year-end="{{ yearEnd }}">
-                                <legend>Hasta</legend>
-                                <div class="pick-chips">
-                                    <label class="pick-chip"><input type="radio" name="hasta_tipo" value="curso"{{ untilCustom ? '' : ' checked' }}> Fin de curso</label>
-                                    <label class="pick-chip"><input type="radio" name="hasta_tipo" value="otra"{{ untilCustom ? ' checked' }}> Otra fecha</label>
+                                    <div class="field fixed-step__col fixed-step__col--wide">
+                                        <label for="motivo">Para qué</label>
+                                        <input type="text" id="motivo" name="motivo" maxlength="200" required value="{{ sent.motivo ?? '' }}" placeholder="Clases de Tecnología, programación de 4º…">
+                                    </div>
                                 </div>
-                                <div data-until-custom>
-                                    <label for="hasta" class="visually-hidden">Fecha del último día</label>
-                                    <input type="date" id="hasta" name="hasta" required value="{{ sent.hasta ?? yearEnd }}">
+
+                                {#- «Hasta» como el diseño: o el final del curso, o una fecha. El servidor solo lee `hasta`; los chips
+                                    son una comodidad (con JavaScript fijan la fecha de fin de curso y esconden el campo). -#}
+                                {% set yearEnd = defaultTo ? defaultTo|date('Y-m-d', false) : '' %}
+                                {% set untilCustom = '' == yearEnd or (sent.hasta ?? yearEnd) != yearEnd %}
+                                <div class="fixed-step__row fixed-step__row--dates">
+                                    <div class="field">
+                                        <label for="desde">Desde</label>
+                                        <input type="date" id="desde" name="desde" required value="{{ sent.desde ?? today|date('Y-m-d', false) }}">
+                                    </div>
+                                    <fieldset class="field" data-until data-year-end="{{ yearEnd }}">
+                                        <legend>Hasta</legend>
+                                        <div class="pick-chips">
+                                            <label class="pick-chip"><input type="radio" name="hasta_tipo" value="curso"{{ untilCustom ? '' : ' checked' }}> Fin de curso</label>
+                                            <label class="pick-chip"><input type="radio" name="hasta_tipo" value="otra"{{ untilCustom ? ' checked' }}> Otra fecha</label>
+                                            <span data-until-custom>
+                                                <label for="hasta" class="visually-hidden">Fecha del último día</label>
+                                                <input type="date" id="hasta" name="hasta" required value="{{ sent.hasta ?? yearEnd }}">
+                                            </span>
+                                        </div>
+                                    </fieldset>
                                 </div>
-                                <p class="help">Como mucho, hasta el final del curso.</p>
-                            </fieldset>
-                            </div>
 
-                            <div class="flash error" role="alert" data-fixed-clashes hidden></div>
+                                <div class="flash error" role="alert" data-fixed-clashes hidden></div>
 
-                            <p class="help">Si algún día ya lo tiene otra persona, o el horario tiene clase en esa aula a esa hora, no se reserva nada y se te dice qué choca.</p>
-                            <p data-fixed-summary aria-live="polite"></p>
-                            <div class="form-actions">
-                                <button type="submit" class="btn" data-fixed-submit>Crear reserva fija</button>
+                                <div class="fixed-step__foot">
+                                    <p class="fixed-step__summary" data-fixed-summary aria-live="polite"></p>
+                                    <button type="submit" class="btn" data-fixed-submit>Crear reserva fija</button>
+                                </div>
+                                <p class="help">Si algún día ya lo tiene otra persona, o el horario tiene clase en esa aula a esa hora, no se reserva nada y se te dice qué choca. Como mucho, hasta el final del curso.</p>
                             </div>
                         </form>
                         <script src="{{ asset_ver('/js/booking-fixed-grid.js') }}"></script>
@@ -224,5 +229,6 @@
                 </div>
             </div>
         </div>
+        <script src="{{ asset_ver('/js/fixed-resource-filter.js') }}"></script>
     {% endif %}
 {% endblock %}

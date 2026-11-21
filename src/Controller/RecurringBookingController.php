@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Booking\BookingClash;
+use App\Booking\BookableCatalogue;
 use App\Booking\FixedBookingGrid;
 use App\Booking\RecurringBookingScheduler;
 use App\Entity\Department;
@@ -226,7 +227,7 @@ final class RecurringBookingController extends AbstractController
         // Sin nada elegido la pantalla no abre vacía: enseña ya la primera cosa (carros antes que aulas), como
         // el diseño. Una cosa pedida que no existe NO se sustituye por otra: se queda sin elegir.
         if (null === $selected && $canCreate && (!\is_string($picked) || '' === $picked)) {
-            $selected = $activeMaterials[0] ?? $reservableRooms[0] ?? null;
+            $selected = array_values(BookableCatalogue::groups($activeMaterials, $reservableRooms))[0]['items'][0] ?? null;
         }
 
         return $this->render('booking/series.html.twig', [
@@ -238,8 +239,7 @@ final class RecurringBookingController extends AbstractController
                 default => '',
             },
             'grid' => null !== $selected ? $this->grid->forResource($selected, $year, $today, $slotIndexes) : [],
-            'rooms' => $reservableRooms,
-            'materials' => $activeMaterials,
+            'groups' => self::pickerGroups($activeMaterials, $reservableRooms),
             'users' => $users->findActive(),
             'departments' => $departments->findActiveDepartments(),
             'slotIndexes' => $slotIndexes,
@@ -254,6 +254,38 @@ final class RecurringBookingController extends AbstractController
             'sent' => $sent,
             'today' => $today,
         ], new Response(null, $status));
+    }
+
+    /**
+     * The catalogue as the "what" list shows it: each group with its things as a key (the one the address and
+     * the form use), a name and, for material, where it is kept and how many devices it carries.
+     *
+     * @param list<Material> $materials the active material
+     * @param list<Room>     $rooms     the reservable rooms
+     *
+     * @return array<string, array{label: string, items: list<array{key: string, name: string, where: string}>}>
+     */
+    private static function pickerGroups(array $materials, array $rooms): array
+    {
+        return array_map(
+            static fn (array $group): array => [
+                'label' => $group['label'],
+                'items' => array_map(
+                    static fn (Room|Material $thing): array => $thing instanceof Material
+                        ? [
+                            'key' => 'material:'.$thing->getId(),
+                            'name' => $thing->getName(),
+                            'where' => implode(' · ', array_filter([
+                                $thing->getKeptAt(),
+                                null !== $thing->getDeviceCount() && 0 !== $thing->getDeviceCount() ? $thing->getDeviceCount().(1 === $thing->getDeviceCount() ? ' equipo' : ' equipos') : null,
+                            ])),
+                        ]
+                        : ['key' => 'room:'.$thing->getId(), 'name' => $thing->getName(), 'where' => ''],
+                    $group['items'],
+                ),
+            ],
+            BookableCatalogue::groups($materials, $rooms),
+        );
     }
 
     /**

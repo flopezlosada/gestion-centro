@@ -6060,14 +6060,27 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 
 /* ---- Reserva fija: lista de cosas a la izquierda y rejilla día × hora ---------------------------- */
 .fixed-layout { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
-.fixed-resources { flex: 1 1 220px; max-width: 280px; display: flex; flex-direction: column; gap: 4px; padding: 16px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; }
+.fixed-resources { flex: 0 1 300px; display: flex; flex-direction: column; gap: 4px; padding: 16px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; }
+.fixed-resources__search { margin: 0 4px 8px; min-height: 40px; }
+.fixed-resources__search[hidden], .fixed-resources__group[hidden], .fixed-resources__none[hidden], .fixed-res[hidden] { display: none; }
+.fixed-resources__group { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.fixed-resources__heading { margin: 8px 8px 4px; font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
+.fixed-resources__none { margin: 4px 8px; }
 .fixed-resources .eyebrow { margin: 0 8px 8px; }
-.fixed-main { flex: 999 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.fixed-main { flex: 1 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
 .fixed-steps { display: flex; flex-direction: column; gap: 20px; }
 .fixed-step { margin: 0; border-radius: 20px; }
 .fixed-step__legend { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 0; margin-bottom: 8px; }
 .fixed-step__legend .eyebrow, .fixed-step > .eyebrow { margin: 0; }
 .fixed-step__title { font-family: var(--font-display); font-size: 22px; font-weight: 500; }
+.fixed-step { display: flex; flex-direction: column; gap: 16px; }
+.fixed-step__row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px 24px; }
+.fixed-step__col { flex: 1 1 260px; min-width: 0; margin: 0; }
+.fixed-step__col--wide { flex: 2 1 260px; }
+.fixed-step__row--dates .pick-chips { align-items: center; margin-bottom: 0; }
+.fixed-step__row--dates [data-until-custom][hidden] { display: none; }
+.fixed-step__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding-top: 14px; border-top: 1px solid var(--separator); }
+.fixed-step__summary { flex: 1 1 280px; margin: 0; }
 .fixed-existing { display: flex; flex-direction: column; gap: 10px; }
 .fixed-existing h2 { margin: 0; font-family: var(--font-display); font-weight: 500; font-size: 20px; }
 .fixed-res small { display: block; font-family: var(--font-mono); font-size: 11px; font-weight: 500; color: var(--text-muted); }
