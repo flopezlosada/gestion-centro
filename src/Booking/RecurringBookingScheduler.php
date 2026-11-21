@@ -59,14 +59,7 @@ final readonly class RecurringBookingScheduler
         $clashes = [...$this->timetableClashes($series, $year, $weekdays)];
         foreach ($this->bookings->findForResourceBetween($resource, $series->getStartsOn(), $series->getEndsOn()) as $taken) {
             if (isset($wanted[$taken->getDate()->format('Y-m-d').'#'.$taken->getSlotIndex()])) {
-                $clashes[] = new BookingClash(
-                    $taken->getDate(),
-                    Weekday::from((int) $taken->getDate()->format('N')),
-                    $taken->getSlotIndex(),
-                    null !== $taken->getSeries()
-                        ? sprintf('Reserva fija de %s', $taken->holderName())
-                        : sprintf('Reservado por %s: %s', $taken->holderName(), $taken->getPurpose()),
-                );
+                $clashes[] = BookingClash::forBooking($taken);
             }
         }
 
@@ -106,11 +99,7 @@ final readonly class RecurringBookingScheduler
             foreach ($slots as $slot) {
                 foreach ($bySlot[$slot] ?? [] as $entry) {
                     if ($entry->getRoom() === $room) {
-                        $clashes[] = new BookingClash(null, $weekday, $slot, sprintf(
-                            'Clase de %s con %s en el horario',
-                            $entry->getGroupName() ?? $entry->getSubjectName() ?? 'un grupo',
-                            $entry->getTeacher()->getFullName(),
-                        ));
+                        $clashes[] = BookingClash::forLesson($weekday, $slot, $entry);
                     }
                 }
             }

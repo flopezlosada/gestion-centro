@@ -55,7 +55,7 @@
     </div>
 
     {% if puedeCrear %}
-        <div class="card">
+        <div class="card fixed-new">
             <div class="page-head"><div><h2>Nueva reserva fija</h2></div></div>
 
             {% if errors is not empty %}
@@ -74,110 +74,133 @@
                 </div>
             {% endif %}
 
-            {% set franjas = sent.franjas ?? [] %}
-            <form method="post" action="{{ path('booking_series_new') }}" class="stack-form">
-                <input type="hidden" name="_token" value="{{ csrf_token('booking_series_new') }}">
+            <div class="fixed-layout">
+                {#- Paso 1: qué. Enlaces y no un desplegable: cada cosa es una dirección (se puede compartir) y la
+                    rejilla de sus horas se pinta en el servidor, sin JavaScript. -#}
+                <nav class="fixed-resources" aria-labelledby="paso1">
+                    <p id="paso1" class="eyebrow">1 · Qué</p>
+                    {% for m in materials %}
+                        {% set on = selectedKey == 'material:' ~ m.id %}
+                        <a href="{{ path('booking_series_index', { recurso: 'material:' ~ m.id }) }}" class="fixed-res{{ on ? ' is-on' }}"{{ on ? ' aria-current="true"' }}>{{ include('booking/_material_label.html.twig') }}</a>
+                    {% endfor %}
+                    {% for r in rooms %}
+                        {% set on = selectedKey == 'room:' ~ r.id %}
+                        <a href="{{ path('booking_series_index', { recurso: 'room:' ~ r.id }) }}" class="fixed-res{{ on ? ' is-on' }}"{{ on ? ' aria-current="true"' }}>{{ r.name }}</a>
+                    {% endfor %}
+                </nav>
 
-                <div class="field">
-                    <label for="recurso">¿Qué se reserva?</label>
-                    <select id="recurso" name="recurso" required>
-                        <option value="">— Elige —</option>
-                        {% if materials is not empty %}
-                            <optgroup label="Material">
-                                {% for m in materials %}<option value="material:{{ m.id }}"{{ (sent.recurso ?? '') == 'material:' ~ m.id ? ' selected' }}>{{ include('booking/_material_label.html.twig') }}</option>{% endfor %}
-                            </optgroup>
-                        {% endif %}
-                        {% if rooms is not empty %}
-                            <optgroup label="Espacios">
-                                {% for r in rooms %}<option value="room:{{ r.id }}"{{ (sent.recurso ?? '') == 'room:' ~ r.id ? ' selected' }}>{{ r.name }}</option>{% endfor %}
-                            </optgroup>
-                        {% endif %}
-                    </select>
-                </div>
+                <div class="fixed-main">
+                    {% if selected is null %}
+                        <p class="muted">Elige a la izquierda qué quieres reservar: aquí saldrán sus horas de la semana.</p>
+                    {% else %}
+                        {% set franjas = sent.franjas ?? [] %}
+                        <form method="post" action="{{ path('booking_series_new') }}" class="stack-form" data-fixed-form>
+                            <input type="hidden" name="_token" value="{{ csrf_token('booking_series_new') }}">
+                            <input type="hidden" name="recurso" value="{{ selectedKey }}">
 
-                {#- Persona O departamento: un carro de Tecnología no es de quien dé la clase ese año. Primero el tipo
-                    y luego solo esa lista: las ochenta personas en un desplegable detrás de los departamentos no
-                    se veían. La otra lista la esconde el CSS (:has); sin él se ven las dos y manda el tipo. -#}
-                {% set holderKind = sent.titular_tipo ?? '' %}
-                <fieldset class="field holder-picker">
-                    <legend>¿Para quién?</legend>
-                    <div class="pick-chips">
-                        <label class="pick-chip"><input type="radio" name="titular_tipo" value="user" required{{ holderKind == 'user' ? ' checked' }}> Una persona</label>
-                        <label class="pick-chip"><input type="radio" name="titular_tipo" value="dept"{{ holderKind == 'dept' ? ' checked' }}> Un departamento</label>
-                    </div>
-                    <div class="holder-picker__kind" data-holder-kind="user">
-                        <div class="pick-list" data-pick-search="Busca a la persona por nombre o departamento…">
-                            {% for u in users %}
-                                <label class="pick-option">
-                                    <input type="radio" class="pick-option__input" name="titular_persona" value="{{ u.id }}"{{ (sent.titular_persona ?? '') == u.id ~ '' ? ' checked' }}>
-                                    <span class="pick-option__body">
-                                        <span class="pick-option__name">{{ u.fullName }}</span>
-                                        <span class="pick-option__desc">{{ u.unit ? u.unit.name : 'Sin departamento' }}</span>
-                                    </span>
-                                </label>
-                            {% endfor %}
-                        </div>
-                    </div>
-                    <div class="holder-picker__kind" data-holder-kind="dept">
-                        <label for="titular_departamento" class="visually-hidden">Departamento</label>
-                        <select id="titular_departamento" name="titular_departamento">
-                            <option value="">— Elige el departamento —</option>
-                            {% for d in departments %}<option value="{{ d.id }}"{{ (sent.titular_departamento ?? '') == d.id ~ '' ? ' selected' }}>{{ d.name }}</option>{% endfor %}
-                        </select>
-                        <p class="help">Puede liberar un día su jefatura de departamento.</p>
-                    </div>
-                </fieldset>
+                            <fieldset class="field">
+                                <legend>2 · Sus horas cada semana: {{ selected.name }}</legend>
+                                <p class="help">Marca las horas una a una (o el día entero). Lo que tiene clase no se puede marcar; si ya hay reservas ese día, te lo decimos antes de guardar.</p>
+                                <div class="table-scroll">
+                                    <table class="fixed-grid">
+                                        <thead>
+                                            <tr>
+                                                <th scope="col">Día</th>
+                                                {% for index in slotIndexes %}<th scope="col">{{ _self.hora(ordinals, slotTimes, index) }}</th>{% endfor %}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for w in weekdays %}
+                                                <tr>
+                                                    <th scope="row">
+                                                        {{ dias[w.value] }}
+                                                        <button type="button" class="fixed-dayhead" data-pick-day hidden>marcar el día</button>
+                                                    </th>
+                                                    {% for index in slotIndexes %}
+                                                        {% set cell = grid[w.value][index] %}
+                                                        <td>
+                                                            {% if cell.lesson %}
+                                                                <div class="fcell fcell--class" title="{{ cell.lesson.what }}"><span class="visually-hidden">{{ dias[w.value] }} a {{ ordinals[index] ?? (index + 1) }}ª: </span><span class="fcell__main">Clase</span><span class="fcell__sub">del horario</span></div>
+                                                            {% else %}
+                                                                {% set value = w.value ~ ':' ~ index %}
+                                                                {% set known = cell.bookings|map(c => { d: c.date|date('Y-m-d', false), t: dias[c.weekday.value] ~ ' ' ~ c.date|date('d/m/Y', false) ~ ' a ' ~ (ordinals[index] ?? (index + 1)) ~ 'ª: ' ~ c.what }) %}
+                                                                <label class="fcell fcell--free"{% if known is not empty %} data-clashes="{{ known|json_encode }}"{% endif %}>
+                                                                    <input type="checkbox" name="franjas[]" value="{{ value }}"{{ value in franjas ? ' checked' }}>
+                                                                    <span class="visually-hidden">{{ dias[w.value] }} a {{ ordinals[index] ?? (index + 1) }}ª</span>
+                                                                    <span class="fcell__off" aria-hidden="true">+</span>
+                                                                    <span class="fcell__on" aria-hidden="true">✓ {{ ordinals[index] ?? (index + 1) }}ª</span>
+                                                                    {% if known is not empty %}<span class="fcell__sub">ya hay reservas</span>{% endif %}
+                                                                </label>
+                                                            {% endif %}
+                                                        </td>
+                                                    {% endfor %}
+                                                </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </fieldset>
 
-                <div class="field">
-                    <label for="desde">Desde</label>
-                    <input type="date" id="desde" name="desde" required value="{{ sent.desde ?? today|date('Y-m-d', false) }}">
-                </div>
-                <div class="field">
-                    <label for="hasta">Hasta</label>
-                    <input type="date" id="hasta" name="hasta" required value="{{ sent.hasta ?? (defaultTo ? defaultTo|date('Y-m-d', false) : '') }}">
-                    <p class="help">Por defecto, hasta el final del curso.</p>
-                </div>
-
-                <fieldset class="field">
-                    <legend>¿Qué horas, cada semana?</legend>
-                    <div class="table-scroll">
-                        <table class="booking-week">
-                            <thead>
-                                <tr>
-                                    <th scope="col">Hora</th>
-                                    {% for w in weekdays %}<th scope="col">{{ dias[w.value] }}</th>{% endfor %}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for index in slotIndexes %}
-                                    <tr>
-                                        <th scope="row">{{ _self.hora(ordinals, slotTimes, index) }}</th>
-                                        {% for w in weekdays %}
-                                            {% set value = w.value ~ ':' ~ index %}
-                                            <td>
-                                                <label class="booking-hour">
-                                                    <input type="checkbox" name="franjas[]" value="{{ value }}"{{ value in franjas ? ' checked' }}>
-                                                    <span class="visually-hidden">{{ dias[w.value] }} a {{ ordinals[index] ?? (index + 1) }}ª</span>
-                                                </label>
-                                            </td>
+                            {#- Persona O departamento: un carro de Tecnología no es de quien dé la clase ese año. Primero el tipo
+                                y luego solo esa lista: las ochenta personas en un desplegable detrás de los departamentos no
+                                se veían. La otra lista la esconde el CSS (:has); sin él se ven las dos y manda el tipo. -#}
+                            {% set holderKind = sent.titular_tipo ?? '' %}
+                            <fieldset class="field holder-picker">
+                                <legend>3 · ¿Para quién?</legend>
+                                <div class="pick-chips">
+                                    <label class="pick-chip"><input type="radio" name="titular_tipo" value="user" required{{ holderKind == 'user' ? ' checked' }}> Una persona</label>
+                                    <label class="pick-chip"><input type="radio" name="titular_tipo" value="dept"{{ holderKind == 'dept' ? ' checked' }}> Un departamento</label>
+                                </div>
+                                <div class="holder-picker__kind" data-holder-kind="user">
+                                    <div class="pick-list" data-pick-search="Busca a la persona por nombre o departamento…">
+                                        {% for u in users %}
+                                            <label class="pick-option">
+                                                <input type="radio" class="pick-option__input" name="titular_persona" value="{{ u.id }}"{{ (sent.titular_persona ?? '') == u.id ~ '' ? ' checked' }}>
+                                                <span class="pick-option__body">
+                                                    <span class="pick-option__name">{{ u.fullName }}</span>
+                                                    <span class="pick-option__desc">{{ u.unit ? u.unit.name : 'Sin departamento' }}</span>
+                                                </span>
+                                            </label>
                                         {% endfor %}
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </fieldset>
+                                    </div>
+                                </div>
+                                <div class="holder-picker__kind" data-holder-kind="dept">
+                                    <label for="titular_departamento" class="visually-hidden">Departamento</label>
+                                    <select id="titular_departamento" name="titular_departamento">
+                                        <option value="">— Elige el departamento —</option>
+                                        {% for d in departments %}<option value="{{ d.id }}"{{ (sent.titular_departamento ?? '') == d.id ~ '' ? ' selected' }}>{{ d.name }}</option>{% endfor %}
+                                    </select>
+                                    <p class="help">Puede liberar un día su jefatura de departamento.</p>
+                                </div>
+                            </fieldset>
 
-                <div class="field">
-                    <label for="motivo">¿Para qué?</label>
-                    <input type="text" id="motivo" name="motivo" maxlength="200" required value="{{ sent.motivo ?? '' }}" placeholder="Clases de Tecnología, programación de 4º…">
-                </div>
+                            <div class="field">
+                                <label for="motivo">¿Para qué?</label>
+                                <input type="text" id="motivo" name="motivo" maxlength="200" required value="{{ sent.motivo ?? '' }}" placeholder="Clases de Tecnología, programación de 4º…">
+                            </div>
 
-                <p class="help">Si algún día ya lo tiene otra persona, o el horario tiene clase en esa aula a esa hora, no se reserva nada y se te dice qué choca.</p>
-                <div class="form-actions">
-                    <button type="submit" class="btn">Crear reserva fija</button>
+                            <div class="field">
+                                <label for="desde">Desde</label>
+                                <input type="date" id="desde" name="desde" required value="{{ sent.desde ?? today|date('Y-m-d', false) }}">
+                            </div>
+                            <div class="field">
+                                <label for="hasta">Hasta</label>
+                                <input type="date" id="hasta" name="hasta" required value="{{ sent.hasta ?? (defaultTo ? defaultTo|date('Y-m-d', false) : '') }}">
+                                <p class="help">Por defecto, hasta el final del curso.</p>
+                            </div>
+
+                            <div class="flash error" role="alert" data-fixed-clashes hidden></div>
+
+                            <p class="help">Si algún día ya lo tiene otra persona, o el horario tiene clase en esa aula a esa hora, no se reserva nada y se te dice qué choca.</p>
+                            <p data-fixed-summary aria-live="polite"></p>
+                            <div class="form-actions">
+                                <button type="submit" class="btn" data-fixed-submit>Crear reserva fija</button>
+                            </div>
+                        </form>
+                        <script src="{{ asset_ver('/js/booking-fixed-grid.js') }}"></script>
+                    {% endif %}
                 </div>
-            </form>
+            </div>
         </div>
     {% endif %}
 {% endblock %}

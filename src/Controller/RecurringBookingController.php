@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Booking\BookingClash;
+use App\Booking\FixedBookingGrid;
 use App\Booking\RecurringBookingScheduler;
 use App\Entity\Department;
 use App\Entity\Material;
@@ -52,11 +53,16 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
 #[Route('/reservas/fijas')]
 final class RecurringBookingController extends AbstractController
 {
+    public function __construct(private readonly FixedBookingGrid $grid)
+    {
+    }
+
     /**
      * Las reservas fijas vigentes y, con el permiso, el formulario para crear una.
      */
     #[Route('', name: 'booking_series_index', methods: ['GET'])]
     public function index(
+        Request $request,
         RecurringBookingRepository $series,
         RoomRepository $rooms,
         MaterialRepository $materials,
@@ -65,7 +71,7 @@ final class RecurringBookingController extends AbstractController
         TimeSlotRepository $timeSlots,
         AcademicYearRepository $years,
     ): Response {
-        return $this->renderPage($series, $rooms, $materials, $users, $departments, $timeSlots, $years, [], []);
+        return $this->renderPage($series, $rooms, $materials, $users, $departments, $timeSlots, $years, [], [], ['recurso' => self::queryKey($request)]);
     }
 
     /**
@@ -210,8 +216,20 @@ final class RecurringBookingController extends AbstractController
         $periods = $timeSlots->lectiveTimesWithFallback($year);
         $slotIndexes = BookingController::validSlots($periods['slots']);
 
+        // La cosa elegida (en el enlace de la lista, o la que se envió y falló): su rejilla de horas.
+        // Solo quien puede crear ve la rejilla: sin el permiso son seis consultas para nada.
+        $picked = $sent['recurso'] ?? null;
+        $selected = \is_string($picked) && $this->isGranted(AreaVoter::WRITE, Area::RESERVAS_FIJAS) ? self::resource($picked, $rooms, $materials) : null;
+
         return $this->render('booking/series.html.twig', [
             'series' => $series->findCurrent($today),
+            'selected' => $selected,
+            'selectedKey' => match (true) {
+                $selected instanceof Room => 'room:'.$selected->getId(),
+                $selected instanceof Material => 'material:'.$selected->getId(),
+                default => '',
+            },
+            'grid' => null !== $selected ? $this->grid->forResource($selected, $year, $today, $slotIndexes) : [],
             'rooms' => $rooms->findReservable(),
             'materials' => $materials->findActive(),
             'users' => $users->findActive(),
@@ -228,6 +246,21 @@ final class RecurringBookingController extends AbstractController
             'sent' => $sent,
             'today' => $today,
         ], new Response(null, $status));
+    }
+
+    /**
+     * The resource asked for in the address ({@code ?recurso=room:3}), or '' when there is none or it is not
+     * text ({@code ?recurso[]=x} must not be a 400: it is just no choice).
+     *
+     * @param Request $request the request
+     *
+     * @return string the key as written
+     */
+    private static function queryKey(Request $request): string
+    {
+        $key = $request->query->all()['recurso'] ?? '';
+
+        return \is_string($key) ? $key : '';
     }
 
     /**
