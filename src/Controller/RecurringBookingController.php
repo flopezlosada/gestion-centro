@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use App\Booking\BookingClash;
 use App\Booking\BookableCatalogue;
+use App\Booking\BookingClash;
 use App\Booking\FixedBookingGrid;
 use App\Booking\RecurringBookingScheduler;
 use App\Entity\Department;
@@ -152,12 +152,12 @@ final class RecurringBookingController extends AbstractController
             // CERRADO tras un flush que lanza (ver BookingController::create()): solo cabe avisar y volver.
             $this->addFlash('error', 'Justo ahora alguien ha reservado uno de esos días. No se ha reservado nada: vuelve a intentarlo y verás qué choca.');
 
-            return $this->redirectToRoute('booking_series_index');
+            return $this->redirectToRoute('booking_series_index', ['recurso' => self::keyOf($resource)]);
         }
 
         $this->addFlash('success', sprintf('Reserva fija creada: %s para %s, %d horas en total.', $recurring->resourceName(), $recurring->holderName(), \count($plan->bookings)));
 
-        return $this->redirectToRoute('booking_series_index');
+        return $this->redirectToRoute('booking_series_index', ['recurso' => self::keyOf($resource)]);
     }
 
     /**
@@ -173,11 +173,13 @@ final class RecurringBookingController extends AbstractController
         }
 
         $today = new \DateTimeImmutable('today');
+        // Se vuelve a la cosa que se acaba de tocar, no a la primera de la lista. La clave se saca antes de borrar.
+        $back = ['recurso' => self::keyOf($recurring->getRoom() ?? $recurring->getMaterial())];
         // Ya terminada (un enlace viejo, otra pestaña): no queda nada que liberar.
         if ($recurring->getEndsOn() < $today) {
             $this->addFlash('success', 'Esa reserva fija ya estaba terminada.');
 
-            return $this->redirectToRoute('booking_series_index');
+            return $this->redirectToRoute('booking_series_index', $back);
         }
         if ($recurring->getStartsOn() >= $today) {
             // Sin ningún día pasado no hay rastro que guardar; sus reservas se van con ella (ON DELETE CASCADE).
@@ -189,7 +191,7 @@ final class RecurringBookingController extends AbstractController
         $entityManager->flush();
         $this->addFlash('success', sprintf('Reserva fija de %s terminada: desde hoy está libre.', $recurring->resourceName()));
 
-        return $this->redirectToRoute('booking_series_index');
+        return $this->redirectToRoute('booking_series_index', $back);
     }
 
     /**
@@ -233,11 +235,7 @@ final class RecurringBookingController extends AbstractController
         return $this->render('booking/series.html.twig', [
             'series' => $series->findCurrent($today),
             'selected' => $selected,
-            'selectedKey' => match (true) {
-                $selected instanceof Room => 'room:'.$selected->getId(),
-                $selected instanceof Material => 'material:'.$selected->getId(),
-                default => '',
-            },
+            'selectedKey' => self::keyOf($selected),
             'grid' => null !== $selected ? $this->grid->forResource($selected, $year, $today, $slotIndexes) : [],
             'groups' => self::pickerGroups($activeMaterials, $reservableRooms),
             'users' => $users->findActive(),
@@ -259,6 +257,22 @@ final class RecurringBookingController extends AbstractController
     }
 
     /**
+     * The key a resource goes by in the address and the form ("room:12" / "material:3"), or '' for none.
+     *
+     * @param Room|Material|null $resource the resource
+     *
+     * @return string the key
+     */
+    private static function keyOf(Room|Material|null $resource): string
+    {
+        return match (true) {
+            $resource instanceof Room => 'room:'.$resource->getId(),
+            $resource instanceof Material => 'material:'.$resource->getId(),
+            default => '',
+        };
+    }
+
+    /**
      * The catalogue as the "what" list shows it: each group with its things as a key (the one the address and
      * the form use), a name and, for material, where it is kept and how many devices it carries.
      *
@@ -275,14 +289,14 @@ final class RecurringBookingController extends AbstractController
                 'items' => array_map(
                     static fn (Room|Material $thing): array => $thing instanceof Material
                         ? [
-                            'key' => 'material:'.$thing->getId(),
+                            'key' => self::keyOf($thing),
                             'name' => $thing->getName(),
                             'where' => implode(' · ', array_filter([
                                 $thing->getKeptAt(),
                                 null !== $thing->getDeviceCount() && 0 !== $thing->getDeviceCount() ? $thing->getDeviceCount().(1 === $thing->getDeviceCount() ? ' equipo' : ' equipos') : null,
                             ])),
                         ]
-                        : ['key' => 'room:'.$thing->getId(), 'name' => $thing->getName(), 'where' => ''],
+                        : ['key' => self::keyOf($thing), 'name' => $thing->getName(), 'where' => ''],
                     $group['items'],
                 ),
             ],

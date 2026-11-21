@@ -67,7 +67,7 @@ final class RecurringBookingTest extends WebTestCase
             'motivo' => 'Clases de Tecnología',
         ]);
 
-        self::assertResponseRedirects('/reservas/fijas');
+        $this->assertRedirectsToResource('material:'.$cart->getId());
         $this->em->clear();
         $days = array_map(
             static fn (Booking $b): string => $b->getDate()->format('Y-m-d').'#'.$b->getSlotIndex(),
@@ -120,7 +120,7 @@ final class RecurringBookingTest extends WebTestCase
             'motivo' => 'Clases de Tecnología',
         ]);
 
-        self::assertResponseRedirects('/reservas/fijas');
+        $this->assertRedirectsToResource('material:'.$cart->getId());
         $this->em->clear();
         $series = $this->em->getRepository(RecurringBooking::class)->findAll();
         self::assertCount(1, $series);
@@ -301,7 +301,7 @@ final class RecurringBookingTest extends WebTestCase
             'motivo' => 'Programación',
         ]);
 
-        self::assertResponseRedirects('/reservas/fijas');
+        $this->assertRedirectsToResource('room:'.$room->getId());
         $this->em->clear();
         self::assertCount(1, $this->em->getRepository(Booking::class)->findAll());
     }
@@ -479,7 +479,7 @@ final class RecurringBookingTest extends WebTestCase
             'franjas' => ['1:1'],
             'motivo' => 'Programación',
         ]);
-        self::assertResponseRedirects('/reservas/fijas');
+        $this->assertRedirectsToResource('material:'.$cart->getId());
 
         $day = $monday->format('Y-m-d');
         $this->client->loginUser($other);
@@ -516,7 +516,7 @@ final class RecurringBookingTest extends WebTestCase
         $this->client->loginUser($manager);
         $crawler = $this->client->request('GET', '/reservas/fijas?recurso=material:'.$cart->getId());
         $this->client->submit($crawler->filter('form[action="/reservas/fijas/'.$id.'/terminar"]')->form());
-        self::assertResponseRedirects('/reservas/fijas');
+        $this->assertRedirectsToResource('material:'.$cart->getId());
 
         $this->em->clear();
         $ended = $this->em->getRepository(RecurringBooking::class)->find($id);
@@ -548,6 +548,13 @@ final class RecurringBookingTest extends WebTestCase
      * The course of a day, without breaks inside it (the same shape as {@see BookingTest}): a break would
      * turn the stretch into non-teaching days depending on when the suite runs.
      */
+    /** Tras crear o terminar una serie se vuelve a la pantalla de ESA cosa, no a la primera de la lista. */
+    private function assertRedirectsToResource(string $key): void
+    {
+        self::assertResponseRedirects();
+        self::assertSame('/reservas/fijas?recurso='.$key, urldecode((string) $this->client->getResponse()->headers->get('Location')));
+    }
+
     private function course(\DateTimeImmutable $day): AcademicYear
     {
         $start = (int) substr(SchoolYear::current($day), 0, 4);

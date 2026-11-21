@@ -187,7 +187,7 @@
 
                                 {#- «Desde … hasta» como el diseño: la serie empieza el día de la pantalla y el tope se elige con chips.
                                     El servidor solo lee `desde` y `hasta`; los chips son una comodidad (con JavaScript fijan la fecha
-                                    y esconden el campo; sin él, el campo está siempre a la vista). -#}
+                                    y esconden el campo; sin él los chips no se ven y el campo de fecha, sí, que es lo único que lee el servidor). -#}
                                 {% set diasLargos = ['', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'] %}
                                 {% set meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'] %}
                                 {% set mesesLargos = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'] %}
@@ -200,9 +200,9 @@
                                     <legend>Desde el {{ diasLargos[desde|date('N', false)] }} {{ desde|date('j', false) }} de {{ mesesLargos[desde|date('n', false) - 1] }} hasta</legend>
                                     <input type="hidden" id="desde" name="desde" value="{{ desde }}">
                                     <div class="pick-chips">
-                                        {% if yearEnd %}<label class="pick-chip"><input type="radio" name="hasta_tipo" value="curso" data-date="{{ yearEnd }}"{{ hasta == yearEnd ? ' checked' }}> Fin de curso ({{ yearEnd|date('j', false) }} {{ meses[yearEnd|date('n', false) - 1] }})</label>{% endif %}
-                                        {% if xmasEnd %}<label class="pick-chip"><input type="radio" name="hasta_tipo" value="navidad" data-date="{{ xmasEnd }}"{{ hasta == xmasEnd and hasta != yearEnd ? ' checked' }}> Navidad ({{ xmasEnd|date('j', false) }} {{ meses[xmasEnd|date('n', false) - 1] }})</label>{% endif %}
-                                        <label class="pick-chip"><input type="radio" name="hasta_tipo" value="otra"{{ untilCustom ? ' checked' }}> Otra fecha</label>
+                                        {% if yearEnd %}<label class="pick-chip" hidden><input type="radio" name="hasta_tipo" value="curso" data-date="{{ yearEnd }}"{{ hasta == yearEnd ? ' checked' }}> Fin de curso ({{ yearEnd|date('j', false) }} {{ meses[yearEnd|date('n', false) - 1] }})</label>{% endif %}
+                                        {% if xmasEnd %}<label class="pick-chip" hidden><input type="radio" name="hasta_tipo" value="navidad" data-date="{{ xmasEnd }}"{{ hasta == xmasEnd and hasta != yearEnd ? ' checked' }}> Navidad ({{ xmasEnd|date('j', false) }} {{ meses[xmasEnd|date('n', false) - 1] }})</label>{% endif %}
+                                        <label class="pick-chip" hidden><input type="radio" name="hasta_tipo" value="otra"{{ untilCustom ? ' checked' }}> Otra fecha</label>
                                         <span data-until-custom>
                                             <label for="hasta" class="visually-hidden">Fecha del último día</label>
                                             <input type="date" id="hasta" name="hasta" required value="{{ hasta }}">

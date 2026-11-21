@@ -6083,6 +6083,7 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 .fixed-step .pick-chips { align-items: center; margin-bottom: 0; gap: 8px; }
 /* Chips y campos de texto de la misma altura, para que las filas no queden descuadradas. */
 .fixed-step .pick-chip { min-height: 44px; box-sizing: border-box; }
+.fixed-step .pick-chip[hidden] { display: none; }
 .fixed-step .holder-picker, .fixed-step__until, .fixed-step .field { display: flex; flex-direction: column; gap: 10px; }
 .fixed-step .holder-picker__kind .help { margin-top: 8px; }
 .fixed-step .help { margin: 0; }

@@ -118,6 +118,10 @@
         if (until && to) {
             var custom = until.querySelector('[data-until-custom]');
             var kinds = Array.prototype.slice.call(until.querySelectorAll('input[name="hasta_tipo"]'));
+            // Los chips nacen ocultos: sin JavaScript no harían nada, porque el servidor solo lee la fecha.
+            until.querySelectorAll('.pick-chip[hidden]').forEach(function (chip) {
+                chip.hidden = false;
+            });
             var applyUntil = function () {
                 var chosen = kinds.filter(function (kind) {
                     return kind.checked;
