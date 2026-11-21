@@ -183,11 +183,24 @@
             return -1;
         }
 
+        // Opens upwards when the panel would not fit below the button but fits (or has more room) above:
+        // a menu in a bar fixed to the bottom of the screen would otherwise hang off the viewport.
+        function placePanel() {
+            wrap.classList.remove('is-up');
+            var box = wrap.getBoundingClientRect();
+            var height = panel.offsetHeight;
+            var below = window.innerHeight - box.bottom;
+            if (height > below && box.top > below) {
+                wrap.classList.add('is-up');
+            }
+        }
+
         function open() {
             closeOthers(wrap);
             panel.hidden = false;
             wrap.classList.add('is-open');
             button.setAttribute('aria-expanded', 'true');
+            placePanel();
             if (searchInput) {
                 searchInput.value = '';
                 filterOptions();
