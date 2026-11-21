@@ -6060,8 +6060,49 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 
 /* ---- Reserva fija: lista de cosas a la izquierda y rejilla día × hora ---------------------------- */
 .fixed-layout { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
-.fixed-resources { flex: 1 1 200px; max-width: 280px; display: flex; flex-direction: column; gap: 2px; }
-.fixed-main { flex: 999 1 420px; min-width: 0; }
+.fixed-resources { flex: 0 1 300px; display: flex; flex-direction: column; gap: 4px; padding: 16px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; }
+.fixed-resources__search { margin: 0 4px 8px; min-height: 40px; }
+.fixed-resources__search[hidden], .fixed-resources__group[hidden], .fixed-resources__none[hidden], .fixed-res[hidden] { display: none; }
+.fixed-resources__group { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.fixed-resources__heading { margin: 8px 8px 4px; font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
+.fixed-resources__none { margin: 4px 8px; }
+.fixed-resources .eyebrow { margin: 0 8px 8px; }
+.fixed-main { flex: 1 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.fixed-steps { display: flex; flex-direction: column; gap: 20px; }
+.fixed-step { margin: 0; border-radius: 20px; }
+.fixed-step__legend { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 0; margin-bottom: 8px; }
+.fixed-step__legend .eyebrow, .fixed-step > .eyebrow { margin: 0; }
+.fixed-step__title { font-family: var(--font-display); font-size: 22px; font-weight: 500; }
+.fixed-step { display: flex; flex-direction: column; gap: 22px; }
+.fixed-step__row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px 24px; }
+.fixed-step__col { flex: 1 1 260px; min-width: 0; margin: 0; }
+.fixed-step__col--wide { flex: 2 1 260px; }
+.fixed-step fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+/* El rótulo de un campo aquí es una frase corriente, no la etiqueta en mayúsculas de mono del resto de formularios. */
+.fixed-step legend, .fixed-step .field > label:not(:has(input)) { display: block; padding: 0; margin: 0 0 8px; font-family: var(--font-body); font-size: 13px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--text-muted); }
+.fixed-step .pick-chips { align-items: center; margin-bottom: 0; gap: 8px; }
+/* Chips y campos de texto de la misma altura, para que las filas no queden descuadradas. */
+.fixed-step .pick-chip { min-height: 44px; box-sizing: border-box; }
+.fixed-step .pick-chip[hidden] { display: none; }
+.fixed-step .holder-picker, .fixed-step__until, .fixed-step .field { display: flex; flex-direction: column; gap: 10px; }
+.fixed-step .holder-picker__kind .help { margin-top: 8px; }
+.fixed-step .help { margin: 0; }
+.fixed-step [data-until-custom][hidden] { display: none; }
+.fixed-step__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding-top: 14px; border-top: 1px solid var(--separator); }
+.fixed-step__summary { flex: 1 1 280px; margin: 0; }
+.fixed-series { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.fixed-series__item { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; }
+.fixed-series__dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--review); }
+.fixed-series__main { flex: 1 1 260px; display: flex; flex-direction: column; gap: 2px; }
+.fixed-series__main strong { font-weight: 600; }
+.fixed-series__holder { font-weight: 400; color: var(--text-muted); }
+.fixed-series__pattern { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
+.fixed-series__until { font-size: 13px; color: var(--text-muted); }
+.fixed-series form { margin: 0; }
+.fixed-existing { display: flex; flex-direction: column; gap: 10px; }
+.fixed-existing h2 { margin: 0; font-family: var(--font-display); font-weight: 500; font-size: 20px; }
+.fixed-res small { display: block; font-family: var(--font-mono); font-size: 11px; font-weight: 500; color: var(--text-muted); }
+.fixed-res.is-on small { color: var(--accent-ink); }
 .fixed-res { display: block; padding: 10px 12px; border: 1px solid transparent; border-radius: 12px; color: var(--text); text-decoration: none; font-weight: 500; }
 .fixed-res:hover { background: var(--surface-sunken); }
 .fixed-res.is-on { background: var(--accent-weak); border-color: var(--accent-weak-border); color: var(--accent-ink); }

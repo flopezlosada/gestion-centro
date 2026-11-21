@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Booking\BookableCatalogue;
 use App\Entity\AcademicYear;
 use App\Entity\Booking;
 use App\Entity\Material;
 use App\Entity\Room;
 use App\Entity\User;
 use App\Enum\Area;
-use App\Enum\RoomKind;
 use App\Repository\AcademicYearRepository;
 use App\Repository\BookingRepository;
 use App\Repository\MaterialRepository;
@@ -125,21 +125,11 @@ final class BookingController extends AbstractController
      */
     private function catalogue(Request $request, RoomRepository $rooms, MaterialRepository $materials): array
     {
-        $allMaterials = $materials->findActive();
-        $allRooms = $rooms->findReservable();
-        $groups = [
-            'carros' => array_values(array_filter($allMaterials, static fn (Material $m): bool => null !== $m->getDeviceCount())),
-            'informatica' => array_values(array_filter($allRooms, static fn (Room $r): bool => RoomKind::COMPUTER_ROOM === $r->getKind())),
-            'material' => array_values(array_filter($allMaterials, static fn (Material $m): bool => null === $m->getDeviceCount())),
-            'espacios' => array_values(array_filter($allRooms, static fn (Room $r): bool => RoomKind::COMPUTER_ROOM !== $r->getKind())),
-        ];
-        $labels = ['carros' => 'Carros de portátiles', 'informatica' => 'Aulas de informática', 'material' => 'Otro material', 'espacios' => 'Otros espacios'];
+        $groups = BookableCatalogue::groups($materials->findActive(), $rooms->findReservable());
 
-        $chips = ['todo' => ['label' => 'Todo', 'count' => \count($allMaterials) + \count($allRooms)]];
-        foreach ($groups as $key => $items) {
-            if ([] !== $items) {
-                $chips[$key] = ['label' => $labels[$key], 'count' => \count($items)];
-            }
+        $chips = ['todo' => ['label' => 'Todo', 'count' => array_sum(array_map(static fn (array $g): int => \count($g['items']), $groups))]];
+        foreach ($groups as $key => $group) {
+            $chips[$key] = ['label' => $group['label'], 'count' => \count($group['items'])];
         }
         $type = $request->query->getString('tipo', 'todo');
         if (!isset($chips[$type])) {
@@ -147,7 +137,7 @@ final class BookingController extends AbstractController
         }
 
         return [
-            'shown' => 'todo' === $type ? [...$groups['carros'], ...$groups['informatica'], ...$groups['material'], ...$groups['espacios']] : $groups[$type],
+            'shown' => 'todo' === $type ? array_merge([], ...array_column($groups, 'items')) : $groups[$type]['items'],
             'type' => $type,
             'chips' => $chips,
             'total' => $chips['todo']['count'],

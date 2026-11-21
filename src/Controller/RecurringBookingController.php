@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Booking\BookableCatalogue;
 use App\Booking\BookingClash;
 use App\Booking\FixedBookingGrid;
 use App\Booking\RecurringBookingScheduler;
@@ -151,12 +152,12 @@ final class RecurringBookingController extends AbstractController
             // CERRADO tras un flush que lanza (ver BookingController::create()): solo cabe avisar y volver.
             $this->addFlash('error', 'Justo ahora alguien ha reservado uno de esos días. No se ha reservado nada: vuelve a intentarlo y verás qué choca.');
 
-            return $this->redirectToRoute('booking_series_index');
+            return $this->redirectToRoute('booking_series_index', ['recurso' => self::keyOf($resource)]);
         }
 
         $this->addFlash('success', sprintf('Reserva fija creada: %s para %s, %d horas en total.', $recurring->resourceName(), $recurring->holderName(), \count($plan->bookings)));
 
-        return $this->redirectToRoute('booking_series_index');
+        return $this->redirectToRoute('booking_series_index', ['recurso' => self::keyOf($resource)]);
     }
 
     /**
@@ -172,11 +173,13 @@ final class RecurringBookingController extends AbstractController
         }
 
         $today = new \DateTimeImmutable('today');
+        // Se vuelve a la cosa que se acaba de tocar, no a la primera de la lista. La clave se saca antes de borrar.
+        $back = ['recurso' => self::keyOf($recurring->getRoom() ?? $recurring->getMaterial())];
         // Ya terminada (un enlace viejo, otra pestaña): no queda nada que liberar.
         if ($recurring->getEndsOn() < $today) {
             $this->addFlash('success', 'Esa reserva fija ya estaba terminada.');
 
-            return $this->redirectToRoute('booking_series_index');
+            return $this->redirectToRoute('booking_series_index', $back);
         }
         if ($recurring->getStartsOn() >= $today) {
             // Sin ningún día pasado no hay rastro que guardar; sus reservas se van con ella (ON DELETE CASCADE).
@@ -188,7 +191,7 @@ final class RecurringBookingController extends AbstractController
         $entityManager->flush();
         $this->addFlash('success', sprintf('Reserva fija de %s terminada: desde hoy está libre.', $recurring->resourceName()));
 
-        return $this->redirectToRoute('booking_series_index');
+        return $this->redirectToRoute('booking_series_index', $back);
     }
 
     /**
@@ -219,19 +222,22 @@ final class RecurringBookingController extends AbstractController
         // La cosa elegida (en el enlace de la lista, o la que se envió y falló): su rejilla de horas.
         // Solo quien puede crear ve la rejilla: sin el permiso son seis consultas para nada.
         $picked = $sent['recurso'] ?? null;
-        $selected = \is_string($picked) && $this->isGranted(AreaVoter::WRITE, Area::RESERVAS_FIJAS) ? self::resource($picked, $rooms, $materials) : null;
+        $reservableRooms = $rooms->findReservable();
+        $activeMaterials = $materials->findActive();
+        $canCreate = $this->isGranted(AreaVoter::WRITE, Area::RESERVAS_FIJAS);
+        $selected = \is_string($picked) && $canCreate ? self::resource($picked, $rooms, $materials) : null;
+        // Sin nada elegido la pantalla no abre vacía: enseña ya la primera cosa (carros antes que aulas), como
+        // el diseño. Una cosa pedida que no existe NO se sustituye por otra: se queda sin elegir.
+        if (null === $selected && $canCreate && (!\is_string($picked) || '' === $picked)) {
+            $selected = array_values(BookableCatalogue::groups($activeMaterials, $reservableRooms))[0]['items'][0] ?? null;
+        }
 
         return $this->render('booking/series.html.twig', [
             'series' => $series->findCurrent($today),
             'selected' => $selected,
-            'selectedKey' => match (true) {
-                $selected instanceof Room => 'room:'.$selected->getId(),
-                $selected instanceof Material => 'material:'.$selected->getId(),
-                default => '',
-            },
+            'selectedKey' => self::keyOf($selected),
             'grid' => null !== $selected ? $this->grid->forResource($selected, $year, $today, $slotIndexes) : [],
-            'rooms' => $rooms->findReservable(),
-            'materials' => $materials->findActive(),
+            'groups' => self::pickerGroups($activeMaterials, $reservableRooms),
             'users' => $users->findActive(),
             'departments' => $departments->findActiveDepartments(),
             'slotIndexes' => $slotIndexes,
@@ -241,11 +247,61 @@ final class RecurringBookingController extends AbstractController
             'slotTimes' => $periods['slots'],
             'weekdays' => Weekday::schoolWeek(),
             'defaultTo' => $year?->getYearEnd(),
+            // El último día de las clases antes de Navidad: el tope más usado después del fin de curso, y solo si no ha pasado.
+            'christmasEnd' => null !== $year && $year->getTerm1End() >= $today ? $year->getTerm1End() : null,
             'errors' => $errors,
             'clashes' => $clashes,
             'sent' => $sent,
             'today' => $today,
         ], new Response(null, $status));
+    }
+
+    /**
+     * The key a resource goes by in the address and the form ("room:12" / "material:3"), or '' for none.
+     *
+     * @param Room|Material|null $resource the resource
+     *
+     * @return string the key
+     */
+    private static function keyOf(Room|Material|null $resource): string
+    {
+        return match (true) {
+            $resource instanceof Room => 'room:'.$resource->getId(),
+            $resource instanceof Material => 'material:'.$resource->getId(),
+            default => '',
+        };
+    }
+
+    /**
+     * The catalogue as the "what" list shows it: each group with its things as a key (the one the address and
+     * the form use), a name and, for material, where it is kept and how many devices it carries.
+     *
+     * @param list<Material> $materials the active material
+     * @param list<Room>     $rooms     the reservable rooms
+     *
+     * @return array<string, array{label: string, items: list<array{key: string, name: string, where: string}>}>
+     */
+    private static function pickerGroups(array $materials, array $rooms): array
+    {
+        return array_map(
+            static fn (array $group): array => [
+                'label' => $group['label'],
+                'items' => array_map(
+                    static fn (Room|Material $thing): array => $thing instanceof Material
+                        ? [
+                            'key' => self::keyOf($thing),
+                            'name' => $thing->getName(),
+                            'where' => implode(' · ', array_filter([
+                                $thing->getKeptAt(),
+                                null !== $thing->getDeviceCount() && 0 !== $thing->getDeviceCount() ? $thing->getDeviceCount().(1 === $thing->getDeviceCount() ? ' equipo' : ' equipos') : null,
+                            ])),
+                        ]
+                        : ['key' => self::keyOf($thing), 'name' => $thing->getName(), 'where' => ''],
+                    $group['items'],
+                ),
+            ],
+            BookableCatalogue::groups($materials, $rooms),
+        );
     }
 
     /**

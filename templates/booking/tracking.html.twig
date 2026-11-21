@@ -17,22 +17,32 @@
     {{ include('booking/_tabs.html.twig', { active: 'seguimiento' }) }}
 
     {# Semana a semana, no día a día: una avería se descubre días después de causarse, así que la pantalla
-       tiene que abarcar más de lo que abarca la de reservar. Mismo selector de fecha que /reservas —
-       date-field.js lo realza— y aquí SÍ hay flecha hacia atrás: mirar el pasado es justo para lo que está. #}
-    <div class="toolbar">
-        <nav class="scope-toggle" aria-label="Semana">
-            <a href="{{ path('booking_tracking', { fecha: monday|date_modify('-7 days')|date('Y-m-d', false) }) }}">← Semana anterior</a>
-            <a href="{{ path('booking_tracking') }}" class="{{ 'now'|date('Y-m-d', false) >= monday|date('Y-m-d', false) and 'now'|date('Y-m-d', false) <= sunday|date('Y-m-d', false) ? 'is-active' }}">Esta semana</a>
-            <a href="{{ path('booking_tracking', { fecha: monday|date_modify('+7 days')|date('Y-m-d', false) }) }}">Semana siguiente →</a>
-        </nav>
-        <form method="get" action="{{ path('booking_tracking') }}">
-            <label for="fecha" class="visually-hidden">Ir a la semana de un día</label>
-            <input type="date" id="fecha" name="fecha" value="{{ monday|date('Y-m-d', false) }}" onchange="this.form.submit()">
-            <noscript><button type="submit" class="btn secondary">Ir</button></noscript>
-        </form>
-    </div>
+       tiene que abarcar más de lo que abarca la de reservar. El selector es el mismo cuadro que en /reservas
+       (flechas, rango, «otra fecha» —date-field.js lo realza—) y aquí SÍ hay flecha hacia atrás: mirar el
+       pasado es justo para lo que está. #}
+    {% set meses = ['', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'] %}
+    {% set hoy = 'now'|date('Y-m-d', false) %}
+    {% set esEstaSemana = hoy >= monday|date('Y-m-d', false) and hoy <= sunday|date('Y-m-d', false) %}
+    <section class="booking-when" aria-label="Semana">
+        <div class="booking-when__row">
+            <span class="booking-when__label">Semana</span>
+            <a class="booking-when__arrow" href="{{ path('booking_tracking', { fecha: monday|date_modify('-7 days')|date('Y-m-d', false) }) }}" aria-label="Semana anterior">←</a>
+            <span class="booking-when__range">{{ monday|date('j', false) }}{% if monday|date('n', false) != sunday|date('n', false) %} de {{ meses[monday|date('n', false)] }}{% endif %} – {{ sunday|date('j', false) }} de {{ meses[sunday|date('n', false)] }}</span>
+            <a class="booking-when__arrow" href="{{ path('booking_tracking', { fecha: monday|date_modify('+7 days')|date('Y-m-d', false) }) }}" aria-label="Semana siguiente">→</a>
+            <div class="booking-chips">
+                <a href="{{ path('booking_tracking') }}" class="{{ esEstaSemana ? 'is-active' }}"{{ esEstaSemana ? ' aria-current="date"' }}>Esta semana</a>
+            </div>
+            <form method="get" action="{{ path('booking_tracking') }}" class="booking-when__date">
+                <label for="fecha">Otra fecha</label>
+                <input type="date" id="fecha" name="fecha" value="{{ monday|date('Y-m-d', false) }}" onchange="this.form.submit()">
+                <noscript><button type="submit" class="btn secondary">Ir</button></noscript>
+            </form>
+        </div>
+    </section>
 
-    <h2 class="home-section__title">Del {{ monday|date('d/m/Y', false) }} al {{ sunday|date('d/m/Y', false) }}</h2>
+    <p class="help">
+        {% if bookings is empty %}Ninguna reserva de lunes a domingo.{% else %}{{ bookings|length }} {{ bookings|length == 1 ? 'reserva' : 'reservas' }} de lunes a domingo. Busca o filtra por cosa, tipo o persona para saber a quién preguntar.{% endif %}
+    </p>
 
     <div class="card">
         {% if bookings is empty %}
@@ -70,7 +80,7 @@
                                aquí: esta columna filtra por el texto entero de la celda, y «Tecnología (fija)»
                                saldría como otra persona distinta de «Tecnología». #}
                             <td>{{ b.holderName }}</td>
-                            <td class="muted">{{ b.purpose }}{% if b.series %} · reserva fija{% endif %}</td>
+                            <td class="muted">{{ b.purpose }}{% if b.series %} <span class="badge">Fija</span>{% endif %}</td>
                         </tr>
                     {% endfor %}
                 </tbody>

@@ -112,6 +112,37 @@
             }
         }
 
+        // «Hasta»: «Fin de curso» y «Navidad» fijan su fecha (data-date) y esconden el campo; «Otra fecha» lo
+        // enseña. Sin JavaScript el campo está siempre a la vista y es lo único que lee el servidor.
+        var until = form.querySelector('[data-until]');
+        if (until && to) {
+            var custom = until.querySelector('[data-until-custom]');
+            var kinds = Array.prototype.slice.call(until.querySelectorAll('input[name="hasta_tipo"]'));
+            // Los chips nacen ocultos: sin JavaScript no harían nada, porque el servidor solo lee la fecha.
+            until.querySelectorAll('.pick-chip[hidden]').forEach(function (chip) {
+                chip.hidden = false;
+            });
+            var applyUntil = function () {
+                var chosen = kinds.filter(function (kind) {
+                    return kind.checked;
+                })[0];
+                var date = chosen ? chosen.getAttribute('data-date') : null;
+                if (custom) {
+                    // Con una fecha de chip el campo sobra; «Otra fecha» (o ningún chip con fecha, p. ej. sin curso
+                    // dado de alta) lo deja a la vista.
+                    custom.hidden = null !== date;
+                }
+                if (date) {
+                    to.value = date;
+                }
+                refresh();
+            };
+            kinds.forEach(function (kind) {
+                kind.addEventListener('change', applyUntil);
+            });
+            applyUntil();
+        }
+
         // El día entero: las casillas de su fila, sin las que tienen clase (esas no tienen casilla).
         form.querySelectorAll('[data-pick-day]').forEach(function (button) {
             button.hidden = false;
