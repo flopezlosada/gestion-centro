@@ -10,6 +10,7 @@ use App\Entity\Material;
 use App\Entity\Room;
 use App\Entity\User;
 use App\Enum\Area;
+use App\Enum\RoomKind;
 use App\Repository\AcademicYearRepository;
 use App\Repository\BookingRepository;
 use App\Repository\MaterialRepository;
@@ -97,48 +98,81 @@ final class BookingController extends AbstractController
             'isPast' => $day < new \DateTimeImmutable('today'),
             'rows' => self::rows($catalogue['shown'], $cells, $day),
             'type' => $catalogue['type'],
-            'counts' => $catalogue['counts'],
-            'hasCatalogue' => 0 < $catalogue['counts']['todo'],
+            'chips' => $catalogue['chips'],
+            'hasCatalogue' => 0 < $catalogue['total'],
             'slotIds' => $slotIds,
+            'breaksAfter' => self::breaksAfter($slotIds),
             'slotTimes' => $periods['slots'],
             'periodsBorrowedFrom' => $periods['borrowedFrom'],
-            // Lo del propio día ya está en la rejilla, con su «Anular»: aquí solo lo de otros días.
-            'mine' => array_values(array_filter(
-                $bookings->findUpcomingFor($user, new \DateTimeImmutable('today')),
-                static fn (Booking $b): bool => $b->getDate() != $day,
-            )),
+            'mine' => $bookings->findUpcomingFor($user, new \DateTimeImmutable('today')),
             'groupNames' => self::knownGroups($schedule, $year),
         ]);
     }
 
     /**
-     * El catálogo reservable, filtrado por tipo: lo que se ve ({@code shown}), el tipo efectivo y cuántas
-     * cosas hay de cada tipo (para los contadores de los chips, que cuentan SIEMPRE el catálogo entero).
+     * El catálogo reservable, filtrado por tipo: lo que se ve ({@code shown}), el tipo efectivo y los chips
+     * que se ofrecen con cuántas cosas hay de cada tipo (siempre del catálogo ENTERO: filtrar solo quita
+     * filas). Un tipo sin nada no sale de chip: un botón que no lleva a ningún sitio es ruido.
      *
-     * @param Request            $request   the request ({@code tipo}: todo, material or espacios)
+     * Los tipos son los que el centro maneja al hablar: los carros de portátiles (material con equipos
+     * contados), las aulas de informática, el resto del material y el resto de espacios.
+     *
+     * @param Request            $request   the request ({@code tipo})
      * @param RoomRepository     $rooms     the rooms
      * @param MaterialRepository $materials the material
      *
-     * @return array{shown: list<Room|Material>, type: string, counts: array{todo: int, material: int, espacios: int}}
+     * @return array{shown: list<Room|Material>, type: string, chips: array<string, array{label: string, count: int}>, total: int}
      */
     private function catalogue(Request $request, RoomRepository $rooms, MaterialRepository $materials): array
     {
-        $allRooms = $rooms->findReservable();
         $allMaterials = $materials->findActive();
+        $allRooms = $rooms->findReservable();
+        $groups = [
+            'carros' => array_values(array_filter($allMaterials, static fn (Material $m): bool => null !== $m->getDeviceCount())),
+            'informatica' => array_values(array_filter($allRooms, static fn (Room $r): bool => RoomKind::COMPUTER_ROOM === $r->getKind())),
+            'material' => array_values(array_filter($allMaterials, static fn (Material $m): bool => null === $m->getDeviceCount())),
+            'espacios' => array_values(array_filter($allRooms, static fn (Room $r): bool => RoomKind::COMPUTER_ROOM !== $r->getKind())),
+        ];
+        $labels = ['carros' => 'Carros de portátiles', 'informatica' => 'Aulas de informática', 'material' => 'Otro material', 'espacios' => 'Otros espacios'];
+
+        $chips = ['todo' => ['label' => 'Todo', 'count' => \count($allMaterials) + \count($allRooms)]];
+        foreach ($groups as $key => $items) {
+            if ([] !== $items) {
+                $chips[$key] = ['label' => $labels[$key], 'count' => \count($items)];
+            }
+        }
         $type = $request->query->getString('tipo', 'todo');
-        if (!\in_array($type, ['todo', 'material', 'espacios'], true)) {
+        if (!isset($chips[$type])) {
             $type = 'todo';
         }
 
         return [
-            'shown' => match ($type) {
-                'material' => $allMaterials,
-                'espacios' => $allRooms,
-                default => [...$allMaterials, ...$allRooms],
-            },
+            'shown' => 'todo' === $type ? [...$groups['carros'], ...$groups['informatica'], ...$groups['material'], ...$groups['espacios']] : $groups[$type],
             'type' => $type,
-            'counts' => ['todo' => \count($allRooms) + \count($allMaterials), 'material' => \count($allMaterials), 'espacios' => \count($allRooms)],
+            'chips' => $chips,
+            'total' => $chips['todo']['count'],
         ];
+    }
+
+    /**
+     * Las horas tras las que va un recreo: las del marco que no tienen a la siguiente lectiva pegada. Los
+     * recreos también ocupan índice (en el centro son el 3 y el 6), así que un salto en la numeración ES un
+     * recreo; no hace falta preguntárselo otra vez a la base de datos.
+     *
+     * @param list<int> $slotIds the teaching periods, ascending
+     *
+     * @return array<int, true> the periods followed by a recreo
+     */
+    private static function breaksAfter(array $slotIds): array
+    {
+        $breaks = [];
+        foreach ($slotIds as $i => $slot) {
+            if (isset($slotIds[$i + 1]) && $slotIds[$i + 1] > $slot + 1) {
+                $breaks[$slot] = true;
+            }
+        }
+
+        return $breaks;
     }
 
     /**
@@ -311,10 +345,11 @@ final class BookingController extends AbstractController
             'resources' => $catalogue['shown'],
             'cells' => $this->cellMap($catalogue['shown'], $days, $slotIds, $year, $bookings, $occupancy, $calendar, $user, true),
             'type' => $catalogue['type'],
-            'counts' => $catalogue['counts'],
-            'hasCatalogue' => 0 < $catalogue['counts']['todo'],
+            'chips' => $catalogue['chips'],
+            'hasCatalogue' => 0 < $catalogue['total'],
             'slotIds' => $slotIds,
             'slotTimes' => $periods['slots'],
+            'mine' => $bookings->findUpcomingFor($user, new \DateTimeImmutable('today')),
             'periodsBorrowedFrom' => $periods['borrowedFrom'],
             'groupNames' => self::knownGroups($schedule, $year),
         ]);

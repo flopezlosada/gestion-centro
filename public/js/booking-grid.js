@@ -33,24 +33,36 @@
             });
         }
 
+        /** «Cosa · día» de una casilla, partido en la cosa y el día. */
+        function partsOf(box) {
+            var pieces = box.getAttribute('data-what').split(' · ');
+            return { title: pieces[0], day: pieces.slice(1).join(' · ') };
+        }
+
         function refresh() {
             if (!bar) {
                 return;
             }
             var chosen = ticked();
             bar.hidden = 0 === chosen.length;
+            bar.classList.add('is-floating');
             var clear = bar.querySelector('[data-booking-clear]');
             if (clear) {
                 clear.hidden = 0 === chosen.length;
             }
-            var summary = bar.querySelector('[data-booking-summary]');
-            if (summary && chosen.length) {
-                var hours = chosen.map(function (box) {
-                    return box.getAttribute('data-hour');
-                }).filter(Boolean);
-                summary.textContent = chosen[0].getAttribute('data-what')
-                    + (hours.length ? ': ' + hours.join(', ') : ' (' + chosen.length + (1 === chosen.length ? ' hora' : ' horas') + ')');
+            var submit = bar.querySelector('[data-booking-submit]');
+            if (submit) {
+                submit.textContent = chosen.length > 1 ? 'Reservar ' + chosen.length + ' horas' : 'Reservar';
             }
+            if (!chosen.length) {
+                return;
+            }
+            var parts = partsOf(chosen[0]);
+            var hours = chosen.map(function (box) {
+                return box.getAttribute('data-hour').replace(/\s*hora$/, '');
+            });
+            bar.querySelector('[data-booking-title]').textContent = parts.title;
+            bar.querySelector('[data-booking-summary]').textContent = parts.day + ' · ' + hours.join(', ');
         }
 
         boxes.forEach(function (box) {
@@ -80,17 +92,39 @@
         }
 
         if (info) {
+            var fields = {
+                title: info.querySelector('[data-info-title]'),
+                when: info.querySelector('[data-info-when]'),
+                what: info.querySelector('[data-info-what]'),
+                more: info.querySelector('[data-info-more]'),
+                dot: info.querySelector('[data-info-dot]')
+            };
+
+            function closeInfo() {
+                info.hidden = true;
+                document.querySelectorAll('.wcell--on').forEach(function (on) {
+                    on.classList.remove('wcell--on');
+                });
+            }
+
             document.addEventListener('click', function (event) {
                 var cell = event.target.closest ? event.target.closest('[data-booking-info]') : null;
                 if (!cell) {
                     return;
                 }
-                info.textContent = cell.getAttribute('data-booking-info');
+                closeInfo();
+                fields.title.textContent = cell.getAttribute('data-title');
+                fields.when.textContent = cell.getAttribute('data-when');
+                fields.what.textContent = cell.getAttribute('data-what');
+                fields.more.textContent = cell.getAttribute('data-more');
+                fields.dot.className = 'booking-info__dot booking-info__dot--' + cell.getAttribute('data-state');
                 info.hidden = false;
-                document.querySelectorAll('.wcell--on').forEach(function (on) {
-                    on.classList.remove('wcell--on');
-                });
                 cell.classList.add('wcell--on');
+            });
+            info.querySelector('[data-info-close]').addEventListener('click', closeInfo);
+            // Marcar un cuadro libre cierra el recuadro: lo que se está haciendo ya es otra cosa.
+            boxes.forEach(function (box) {
+                box.addEventListener('change', closeInfo);
             });
         }
     });

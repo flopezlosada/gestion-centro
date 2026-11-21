@@ -1,0 +1,35 @@
+{# El cuadro «Cuándo y qué»: la semana (o el día dentro de ella), «otra fecha» y los chips de tipo. `route` es
+   booking_index o booking_week. En el día hay una tira Lun–Vie; en la semana, el rango. #}
+{% set dias = ['', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie'] %}
+{% set mesesLargo = ['', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'] %}
+{% set meses = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'] %}
+{% set focus = (focus ?? monday)|date('Y-m-d', false) %}
+<section class="booking-when" aria-label="Cuándo y qué">
+    <div class="booking-when__row">
+        <span class="booking-when__label">Semana</span>
+        <a class="booking-when__arrow" href="{{ path(route, { fecha: monday|date_modify('-7 days')|date('Y-m-d', false), tipo: type }) }}" aria-label="Semana anterior">←</a>
+        {% if route == 'booking_index' %}
+            <nav class="booking-daystrip" aria-label="Día">
+                {% for i in 0..4 %}
+                    {% set d = monday|date_modify('+' ~ i ~ ' days') %}
+                    {% set dStr = d|date('Y-m-d', false) %}
+                    <a href="{{ path('booking_index', { fecha: dStr, tipo: type }) }}" class="{{ dStr == focus ? 'is-active' }}"{{ dStr == focus ? ' aria-current="date"' }}>{{ dias[i + 1] }}<small>{{ d|date('j', false) }} {{ meses[d|date('n', false)] }}</small></a>
+                {% endfor %}
+            </nav>
+        {% else %}
+            {% set fin = monday|date_modify('+4 days') %}
+            <span class="booking-when__range">{{ monday|date('j', false) }}{% if monday|date('n', false) != fin|date('n', false) %} de {{ mesesLargo[monday|date('n', false)] }}{% endif %} – {{ fin|date('j', false) }} de {{ mesesLargo[fin|date('n', false)] }}</span>
+        {% endif %}
+        <a class="booking-when__arrow" href="{{ path(route, { fecha: monday|date_modify('+7 days')|date('Y-m-d', false), tipo: type }) }}" aria-label="Semana siguiente">→</a>
+        <form method="get" action="{{ path(route) }}" class="booking-when__date">
+            <input type="hidden" name="tipo" value="{{ type }}">
+            <label for="fecha">Otra fecha</label>
+            <input type="date" id="fecha" name="fecha" value="{{ focus }}" onchange="this.form.submit()">
+            <noscript><button type="submit" class="btn secondary">Ir</button></noscript>
+        </form>
+    </div>
+    <div class="booking-when__row">
+        <span class="booking-when__label">Qué</span>
+        {{ include('booking/_type_chips.html.twig', { route: route, params: { fecha: focus } }) }}
+    </div>
+</section>

@@ -558,8 +558,12 @@ final class BookingTest extends WebTestCase
         self::assertCount(1, $crawler->filter('input[value="material:'.$camera->getId().':'.$weekday.':0"]'), 'lo libre se marca ahí mismo');
         self::assertCount(0, $crawler->filter('input[value="material:'.$radio->getId().':'.$weekday.':0"]'));
 
-        $crawler = $this->client->request('GET', '/reservas/semana?fecha='.$weekday.'&tipo=espacios');
-        self::assertCount(0, $crawler->filter('table.bweek .wcell--mine'), 'el filtro por tipo solo quita filas');
+        // Un tipo que no existe en el catálogo (aquí no hay carros) no deja la pantalla vacía: vuelve a «Todo».
+        $crawler = $this->client->request('GET', '/reservas/semana?fecha='.$weekday.'&tipo=carros');
+        self::assertCount(1, $crawler->filter('table.bweek .wcell--mine'));
+
+        $crawler = $this->client->request('GET', '/reservas/semana?fecha='.$weekday.'&tipo=material');
+        self::assertCount(2, $crawler->filter('table.bweek tbody tr'));
     }
 
     /**
@@ -698,8 +702,8 @@ final class BookingTest extends WebTestCase
         self::assertNull($stored->getGroupName());
     }
 
-    /** Lo tuyo de ESE día ya está en los bloques de arriba: abajo solo sale lo de otros días. */
-    public function testYourBookingsOfTheDayAreNotRepeatedBelow(): void
+    /** «Tus reservas» lista todo lo tuyo por venir, también lo de hoy, y la rejilla lo marca como tuyo. */
+    public function testYourUpcomingBookingsAreListedBelowAndMarkedInTheGrid(): void
     {
         $teacher = $this->user('mias@centro.test');
         $radio = $this->material('Radio');
@@ -711,9 +715,29 @@ final class BookingTest extends WebTestCase
         $this->client->loginUser($teacher);
         $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay());
 
-        self::assertSelectorTextContains('.bcell--mine', 'El mismo día');
-        $below = $crawler->filter('.incident-list')->text();
+        self::assertCount(1, $crawler->filter('.bcell--mine'));
+        $below = $crawler->filter('.booking-mine')->text();
         self::assertStringContainsString('Al día siguiente', $below);
-        self::assertStringNotContainsString('El mismo día', $below);
+        self::assertStringContainsString('El mismo día', $below);
+    }
+
+    /** Los chips de tipo separan carros, aulas de informática, otro material y otros espacios, y solo quitan filas. */
+    public function testTypeChipsSplitTheCatalogueAndOnlyRemoveRows(): void
+    {
+        $teacher = $this->user('chips@centro.test');
+        $this->material('Carro Uno')->setDeviceCount(20);
+        $this->material('Radio');
+        $this->room('INF1', RoomKind::COMPUTER_ROOM, reservable: true);
+        $this->room('AULA 1', RoomKind::CLASSROOM, reservable: true);
+        $this->em->flush();
+
+        $this->client->loginUser($teacher);
+        $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay());
+        self::assertCount(4, $crawler->filter('.bgrid tbody tr'));
+        self::assertSame(['Todo 4', 'Carros de portátiles 1', 'Aulas de informática 1', 'Otro material 1', 'Otros espacios 1'], $crawler->filter('.booking-chips a')->each(static fn ($a): string => trim((string) preg_replace('/\s+/', ' ', $a->text()))));
+
+        $crawler = $this->client->request('GET', '/reservas?fecha='.self::futureDay().'&tipo=carros');
+        self::assertCount(1, $crawler->filter('.bgrid tbody tr'));
+        self::assertSelectorTextContains('.bgrid tbody', 'Carro Uno');
     }
 }

@@ -6,78 +6,59 @@
 
 {% block body %}
     {% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'] %}
-    {% set lunes = monday|date('Y-m-d', false) %}
 
     <div class="page-head">
         <div>
             <p class="eyebrow">Espacios y material</p>
-            <h1>Toda la semana</h1>
-            <p class="lead">Cada cosa con sus cinco días de un vistazo. Pincha un cuadro libre para reservarlo aquí mismo; pincha uno ocupado para ver qué es y de quién.</p>
+            <h1>Reservar</h1>
+            <p class="lead">La semana entera, como el cuadrante en papel. Pincha cualquier cuadro para ver qué hay. Los libres se marcan y se reservan aquí mismo.</p>
         </div>
     </div>
 
     {{ include('booking/_tabs.html.twig', { active: 'semana' }) }}
 
-    <div class="toolbar">
-        <nav class="scope-toggle" aria-label="Semana">
-            <a href="{{ path('booking_week', { fecha: monday|date_modify('-7 days')|date('Y-m-d', false), tipo: type }) }}">← Anterior</a>
-            <a href="{{ path('booking_week', { tipo: type }) }}">Esta semana</a>
-            <a href="{{ path('booking_week', { fecha: monday|date_modify('+7 days')|date('Y-m-d', false), tipo: type }) }}">Siguiente →</a>
-        </nav>
-        <form method="get" action="{{ path('booking_week') }}">
-            <input type="hidden" name="tipo" value="{{ type }}">
-            <label for="fecha" class="visually-hidden">Otra fecha</label>
-            <input type="date" id="fecha" name="fecha" value="{{ lunes }}" onchange="this.form.submit()">
-            <noscript><button type="submit" class="btn secondary">Ir</button></noscript>
-        </form>
-    </div>
-
-    <h2 class="home-section__title">Del {{ monday|date('d/m/Y', false) }} al {{ monday|date_modify('+4 days')|date('d/m/Y', false) }}</h2>
-
     {% if not hasCatalogue %}
         <div class="card"><p class="muted">No hay nada que reservar todavía.</p></div>
     {% else %}
-        {{ include('booking/_type_chips.html.twig', { route: 'booking_week', params: { fecha: lunes } }) }}
-
-        <ul class="booking-legend" aria-label="Leyenda">
-            <li><i class="bkey bkey--free"></i>Libre</li>
-            <li><i class="bkey bkey--sel"></i>Lo que estás eligiendo</li>
-            <li><i class="bkey bkey--mine"></i>Tuyo</li>
-            <li><i class="bkey bkey--booked"></i>De otra persona</li>
-            <li><i class="bkey bkey--fixed"></i>Reserva fija</li>
-            <li><i class="bkey bkey--class"></i>Clase del horario</li>
-        </ul>
+        {{ include('booking/_when_what.html.twig', { route: 'booking_week' }) }}
+        {{ include('booking/_legend.html.twig') }}
 
         {% if periodsBorrowedFrom %}
             <p class="help">Horas del curso {{ periodsBorrowedFrom }}: el horario de este curso todavía no está importado.</p>
         {% endif %}
 
         {#- Lo que dice el cuadro ocupado que se pincha: encima de la rejilla y no en una ventana, para no
-            tapar lo que se está mirando. -#}
-        <p class="booking-info" data-booking-info-box role="status" hidden></p>
+            tapar lo que se está mirando. booking-grid.js lo rellena. -#}
+        <div class="booking-info" data-booking-info-box role="status" hidden>
+            <span class="booking-info__dot" data-info-dot></span>
+            <div class="booking-info__who"><strong data-info-title></strong><span class="mono" data-info-when></span></div>
+            <div class="booking-info__what"><strong data-info-what></strong><span data-info-more></span></div>
+            <button type="button" class="btn secondary" data-info-close>Cerrar</button>
+        </div>
 
         <div class="table-scroll card booking-grid">
             <table class="bweek">
                 <caption class="visually-hidden">Reservas de la semana, una fila por cosa y cinco días con una casilla por hora</caption>
                 <thead>
                     <tr>
-                        <th scope="col" rowspan="2">Qué</th>
-                        {% for day in days %}<th scope="colgroup" colspan="{{ slotIds|length }}" class="bweek__day">{{ dias[loop.index] }} <span class="mono">{{ day|date('d/m', false) }}</span></th>{% endfor %}
+                        <th scope="col" rowspan="2">Recurso</th>
+                        {% for day in days %}<th scope="colgroup" colspan="{{ slotIds|length }}" class="bweek__day">{{ dias[loop.index] }} <span class="mono">{{ day|date('j/n', false) }}</span></th>{% endfor %}
                     </tr>
                     <tr>
-                        {% for day in days %}{% for slot in slotIds %}<th scope="col" class="bweek__h" >{{ loop.index }}<span class="visually-hidden">ª hora{{ slotTimes[slot] is defined ? ' (' ~ slotTimes[slot].startsAt|date('H:i', false) ~ '–' ~ slotTimes[slot].endsAt|date('H:i', false) ~ ')' }}</span></th>{% endfor %}{% endfor %}
+                        {% for day in days %}{% for slot in slotIds %}<th scope="col" class="bweek__h{{ loop.first ? ' bweek__first' }}">{{ loop.index }}<span class="visually-hidden">ª hora{{ slotTimes[slot] is defined ? ' (' ~ slotTimes[slot].startsAt|date('H:i', false) ~ '–' ~ slotTimes[slot].endsAt|date('H:i', false) ~ ')' }}</span></th>{% endfor %}{% endfor %}
                     </tr>
                 </thead>
                 <tbody>
                     {% for r in resources %}
                         {% set key = (r.keptAt is defined ? 'material:' : 'room:') ~ r.id %}
                         <tr>
-                            <th scope="row">{{ include('booking/_resource_name.html.twig', { r: r }) }}</th>
+                            <th scope="row">{{ r.name }}</th>
                             {% for day in days %}
                                 {% set dStr = day|date('Y-m-d', false) %}
+                                {% set diaNombre = dias[loop.index] %}
                                 {% for slot in slotIds %}
-                                    {% set t = slotTimes[slot] is defined ? slotTimes[slot].startsAt|date('H:i', false) ~ '–' ~ slotTimes[slot].endsAt|date('H:i', false) : (loop.index ~ 'ª hora') %}
-                                    <td class="{{ loop.first ? 'bweek__first' }}">{{ grid.week(cells[key][dStr][slot], r.name ~ ' · ' ~ dias[loop.parent.loop.index] ~ ' ' ~ day|date('d/m', false) ~ ' · ' ~ t) }}</td>
+                                    {% set ord = loop.index ~ 'ª' %}
+                                    <td class="{{ loop.first ? 'bweek__first' }}">{{ grid.week(cells[key][dStr][slot], r.name ~ ', ' ~ diaNombre|lower ~ ' a la ' ~ ord, r.name, diaNombre ~ ' ' ~ day|date('j/n', false) ~ ' · ' ~ ord ~ ' hora') }}</td>
                                 {% endfor %}
                             {% endfor %}
                         </tr>
@@ -88,6 +69,8 @@
 
         {{ include('booking/_reserve_bar.html.twig') }}
     {% endif %}
+
+    {{ include('booking/_mine.html.twig') }}
 
     <script src="{{ asset_ver('/js/booking-grid.js') }}"></script>
 {% endblock %}

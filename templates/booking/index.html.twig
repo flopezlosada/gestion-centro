@@ -4,49 +4,20 @@
 {% block title %}Reservas · {{ app_organization_name }}{% endblock %}
 {% block breadcrumb %}<a href="{{ path('app_homepage') }}">Inicio</a><span class="sep">/</span>Reservas{% endblock %}
 
-{# Cómo se nombra la hora de una reserva: la de RELOJ cuando se conoce el marco horario, y el ordinal del
-   tramo solo como último recurso. El índice del tramo no es su ordinal en el día —los recreos también
-   ocupan índice— y «8ª hora» no le dice nada a nadie. #}
-{% macro hora(slotTimes, index) %}
-    {%- set times = slotTimes[index] ?? null -%}
-    {%- if times %}{{ times.startsAt|date('H:i', false) }}–{{ times.endsAt|date('H:i', false) }}{% else %}{{ index + 1 }}ª hora{% endif -%}
-{% endmacro %}
-
 {% block body %}
     {% set dias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] %}
+    {% set meses = ['', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'] %}
     {% set diaStr = day|date('Y-m-d', false) %}
-    {% set hoyStr = 'now'|date('Y-m-d', false) %}
 
     <div class="page-head">
         <div>
             <p class="eyebrow">Espacios y material</p>
             <h1>Reservar</h1>
-            <p class="lead">Pincha en las horas libres de lo que necesites. Puedes marcar varias horas de la misma cosa el mismo día. Quien lo pide primero lo tiene, y aquí se ve quién.</p>
+            <p class="lead">Pincha en las horas libres de lo que necesites. Puedes marcar varias horas seguidas de la misma cosa.</p>
         </div>
     </div>
 
     {{ include('booking/_tabs.html.twig', { active: 'dia' }) }}
-
-    {# La tira de la semana: un toque por día. El selector de fecha es la mejora progresiva de siempre (un
-       <form method="get"> que se envía al cambiar; date-field.js lo cambia por el calendario en español). Va
-       FUERA de cualquier grupo con overflow:hidden: el calendario que monta es un popover absoluto. #}
-    <div class="toolbar booking-days">
-        <nav class="booking-daystrip" aria-label="Día">
-            <a href="{{ path('booking_index', { fecha: monday|date_modify('-7 days')|date('Y-m-d', false), tipo: type }) }}" aria-label="Semana anterior">←</a>
-            {% for i in 0..4 %}
-                {% set d = monday|date_modify('+' ~ i ~ ' days') %}
-                {% set dStr = d|date('Y-m-d', false) %}
-                <a href="{{ path('booking_index', { fecha: dStr, tipo: type }) }}" class="{{ dStr == diaStr ? 'is-active' }}"{{ dStr == diaStr ? ' aria-current="date"' }}>{{ dias[i + 1] }} <span class="mono">{{ d|date('d/m', false) }}</span></a>
-            {% endfor %}
-            <a href="{{ path('booking_index', { fecha: monday|date_modify('+7 days')|date('Y-m-d', false), tipo: type }) }}" aria-label="Semana siguiente">→</a>
-        </nav>
-        <form method="get" action="{{ path('booking_index') }}">
-            <input type="hidden" name="tipo" value="{{ type }}">
-            <label for="fecha" class="visually-hidden">Otra fecha</label>
-            <input type="date" id="fecha" name="fecha" value="{{ diaStr }}" onchange="this.form.submit()">
-            <noscript><button type="submit" class="btn secondary">Ir</button></noscript>
-        </form>
-    </div>
 
     {% if not hasCatalogue %}
         <div class="card">
@@ -54,18 +25,8 @@
             <p class="muted">No hay nada que reservar todavía. El material lo da de alta administración, en «Material»; los espacios se abren a reservas {% if puedeEspacios %}en <a href="{{ path('space_room_classify') }}">Clasificar los espacios</a>{% else %}desde <strong>Espacios → Catálogo</strong>{% endif %}.</p>
         </div>
     {% else %}
-        {{ include('booking/_type_chips.html.twig', { route: 'booking_index', params: { fecha: diaStr } }) }}
-
-        <ul class="booking-legend" aria-label="Leyenda">
-            <li><i class="bkey bkey--free"></i>Libre</li>
-            <li><i class="bkey bkey--sel"></i>Lo que estás eligiendo</li>
-            <li><i class="bkey bkey--mine"></i>Tuyo</li>
-            <li><i class="bkey bkey--booked"></i>De otra persona</li>
-            <li><i class="bkey bkey--fixed"></i>Reserva fija</li>
-            <li><i class="bkey bkey--class"></i>Clase del horario</li>
-        </ul>
-
-        <h2 class="home-section__title">{{ dias[day|date('N', false)] }} {{ day|date('d/m/Y', false) }}</h2>
+        {{ include('booking/_when_what.html.twig', { route: 'booking_index', focus: day }) }}
+        {{ include('booking/_legend.html.twig') }}
 
         {% if periodsBorrowedFrom %}
             <p class="help">Horas del curso {{ periodsBorrowedFrom }}: el horario de este curso todavía no está importado. Se guarda el tramo, no la hora, así que si el horario nuevo mueve los timbres las reservas ya hechas se verán con las horas nuevas.</p>
@@ -76,58 +37,38 @@
             <p class="help">Este día ya ha pasado: se ve lo que hubo, pero no se reserva. <a href="{{ path('booking_index', { tipo: type }) }}">Volver a hoy</a>.</p>
         {% endif %}
 
-        {% if rows is empty %}
-            <div class="card"><p class="muted">No hay nada de este tipo.</p></div>
-        {% else %}
-            <div class="table-scroll card booking-grid">
-                <table class="bgrid">
-                    <caption class="visually-hidden">Reservas del {{ day|date('d/m/Y', false) }}, una fila por cosa y una columna por hora</caption>
-                    <thead>
+        <div class="table-scroll card booking-grid">
+            <table class="bgrid">
+                <caption>{{ dias[day|date('N', false)] }} {{ day|date('j', false) }} de {{ meses[day|date('n', false)] }}</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Recurso</th>
+                        {% for slot in slotIds %}
+                            <th scope="col">{{ loop.index }}ª{% if slotTimes[slot] is defined %}<span class="mono">{{ slotTimes[slot].startsAt|date('G:i', false) }}</span>{% endif %}</th>
+                            {% if breaksAfter[slot] is defined %}<th scope="col" class="bgrid__break"><span class="mono">R</span></th>{% endif %}
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
                         <tr>
-                            <th scope="col">Qué</th>
+                            <th scope="row">{{ include('booking/_resource_name.html.twig', { r: row.resource }) }}</th>
                             {% for slot in slotIds %}
-                                <th scope="col">{{ loop.index }}ª <span class="mono">{{ _self.hora(slotTimes, slot) }}</span></th>
+                                <td>{{ grid.day(row.cells[slot], loop.index ~ 'ª', row.resource.name ~ ' · ' ~ dias[day|date('N', false)] ~ ' ' ~ day|date('j', false) ~ ' ' ~ meses[day|date('n', false)]|slice(0, 3)) }}</td>
+                                {% if breaksAfter[slot] is defined %}<td class="bgrid__break" aria-hidden="true"><span></span></td>{% endif %}
                             {% endfor %}
                         </tr>
-                    </thead>
-                    <tbody>
-                        {% for row in rows %}
-                            <tr>
-                                <th scope="row">{{ include('booking/_resource_name.html.twig', { r: row.resource }) }}</th>
-                                {% for slot in slotIds %}
-                                    <td>{{ grid.day(row.cells[slot], _self.hora(slotTimes, slot), row.resource.name ~ ' · ' ~ dias[day|date('N', false)] ~ ' ' ~ day|date('d/m', false)) }}</td>
-                                {% endfor %}
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% endif %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
 
         {% if not isPast %}
             {{ include('booking/_reserve_bar.html.twig') }}
         {% endif %}
     {% endif %}
 
-    {% if mine is not empty %}
-        <div class="card">
-            <div class="page-head"><div><h2>Lo que tienes reservado otros días</h2></div></div>
-            <ul class="incident-list">
-                {% for b in mine %}
-                    <li class="incident">
-                        <a class="incident__main" href="{{ path('booking_index', { fecha: b.date|date('Y-m-d', false) }) }}">
-                            <span class="incident__head"><span class="incident__what">{{ b.resourceName }}</span></span>
-                            <span class="incident__where">{{ b.date|date('d/m/Y', false) }} · {{ _self.hora(slotTimes, b.slotIndex) }} · {{ b.purpose }}</span>
-                        </a>
-                        <form method="post" action="{{ path('booking_delete', { id: b.id }) }}" data-confirm="¿Anular esta reserva?">
-                            <input type="hidden" name="_token" value="{{ csrf_token('booking_delete' ~ b.id) }}">
-                            <button type="submit" class="link-danger">Anular</button>
-                        </form>
-                    </li>
-                {% endfor %}
-            </ul>
-        </div>
-    {% endif %}
+    {{ include('booking/_mine.html.twig') }}
 
     <script src="{{ asset_ver('/js/booking-grid.js') }}"></script>
 {% endblock %}

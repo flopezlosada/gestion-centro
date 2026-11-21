@@ -1,0 +1,21 @@
+{# «Tus reservas»: lo que tienes cogido de hoy en adelante, con su Anular. Las fijas no salen aquí: su
+   titular libera un día desde la rejilla. #}
+{% set dias = ['', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] %}
+<section class="booking-mine" aria-label="Tus reservas">
+    <h2>Tus reservas</h2>
+    {% if mine is empty %}
+        <p class="muted">No tienes ninguna reserva por venir.</p>
+    {% else %}
+        {% for b in mine %}
+            <div class="booking-mine__row">
+                <a class="booking-mine__when" href="{{ path('booking_index', { fecha: b.date|date('Y-m-d', false) }) }}">{{ dias[b.date|date('N', false)] }} {{ b.date|date('d/m', false) }} · {{ b.slotIndex in slotTimes|keys ? slotTimes[b.slotIndex].startsAt|date('H:i', false) ~ '–' ~ slotTimes[b.slotIndex].endsAt|date('H:i', false) : (b.slotIndex + 1) ~ 'ª hora' }}</a>
+                <strong>{{ b.resourceName }}</strong>
+                <span class="muted">{{ b.purpose }}{% if b.groupName %} · {{ b.groupName }}{% endif %}</span>
+                <form method="post" action="{{ path('booking_delete', { id: b.id }) }}" data-confirm="¿Anular esta reserva?">
+                    <input type="hidden" name="_token" value="{{ csrf_token('booking_delete' ~ b.id) }}">
+                    <button type="submit" class="btn secondary">Anular</button>
+                </form>
+            </div>
+        {% endfor %}
+    {% endif %}
+</section>
