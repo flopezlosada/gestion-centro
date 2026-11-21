@@ -90,7 +90,7 @@ final class BookingController extends AbstractController
         $slotIds = self::validSlots($periods['slots']);
 
         $catalogue = $this->catalogue($request, $rooms, $materials);
-        $cells = $this->cellMap($catalogue['shown'], [$day], $slotIds, $year, $bookings, $occupancy, $calendar, $user, false);
+        $cells = $this->cellMap($catalogue['shown'], [$day], $slotIds, $year, $bookings, $occupancy, $calendar, $user);
 
         return $this->render('booking/index.html.twig', [
             'day' => $day,
@@ -182,17 +182,16 @@ final class BookingController extends AbstractController
      *
      * Estados: {@code free}, {@code past} (libre pero de un día ya pasado: se ve, no se pincha),
      * {@code booked} (otra persona), {@code mine}, {@code fixed} (reserva fija), {@code class} (el horario
-     * tiene clase en ese espacio) y {@code closed} (día no lectivo, solo si {@code $markNonLective}).
+     * tiene clase en ese espacio) y {@code closed} (día no lectivo: fin de semana, vacaciones o día marcado por el centro).
      *
      * @param list<Room|Material>      $resources      the things on screen
      * @param list<\DateTimeImmutable> $days           the days on screen (consecutive)
      * @param list<int>                $slotIds         the periods on screen
      * @param AcademicYear|null        $year            the course
-     * @param bool                     $markNonLective  whether a non-teaching day is shown closed
      *
      * @return array<string, array<string, array<int, array{state: string, booking: ?Booking, value: string}>>> resource key → day → period → cell
      */
-    private function cellMap(array $resources, array $days, array $slotIds, ?AcademicYear $year, BookingRepository $bookings, RoomOccupancy $occupancy, SchoolCalendar $calendar, User $user, bool $markNonLective): array
+    private function cellMap(array $resources, array $days, array $slotIds, ?AcademicYear $year, BookingRepository $bookings, RoomOccupancy $occupancy, SchoolCalendar $calendar, User $user): array
     {
         $today = new \DateTimeImmutable('today');
         $booked = [];
@@ -204,7 +203,7 @@ final class BookingController extends AbstractController
         $map = [];
         foreach ($days as $day) {
             $dayKey = $day->format('Y-m-d');
-            $closed = $markNonLective && !$calendar->isLective($day);
+            $closed = !$calendar->isLective($day);
             $inClass = $hasRooms && !$closed ? self::roomsInClass($occupancy, $year, $day, $slotIds) : [];
             foreach ($resources as $resource) {
                 $key = self::keyOf($resource);
@@ -343,7 +342,7 @@ final class BookingController extends AbstractController
             'monday' => $monday,
             'days' => $days,
             'resources' => array_map(static fn (Room|Material $r): array => ['resource' => $r, 'key' => self::keyOf($r)], $catalogue['shown']),
-            'cells' => $this->cellMap($catalogue['shown'], $days, $slotIds, $year, $bookings, $occupancy, $calendar, $user, true),
+            'cells' => $this->cellMap($catalogue['shown'], $days, $slotIds, $year, $bookings, $occupancy, $calendar, $user),
             'type' => $catalogue['type'],
             'chips' => $catalogue['chips'],
             'hasCatalogue' => 0 < $catalogue['total'],
@@ -361,7 +360,7 @@ final class BookingController extends AbstractController
      * mismo idioma y no hay una tercera forma de nombrar las cosas.
      */
     #[Route('/nueva', name: 'booking_new', methods: ['POST'])]
-    public function create(Request $request, #[CurrentUser] User $user, RoomRepository $rooms, MaterialRepository $materials, BookingRepository $bookings, TimeSlotRepository $timeSlots, AcademicYearRepository $years, ScheduleEntryRepository $schedule, EntityManagerInterface $entityManager, RoomOccupancy $occupancy): Response
+    public function create(Request $request, #[CurrentUser] User $user, RoomRepository $rooms, MaterialRepository $materials, BookingRepository $bookings, TimeSlotRepository $timeSlots, AcademicYearRepository $years, ScheduleEntryRepository $schedule, EntityManagerInterface $entityManager, RoomOccupancy $occupancy, SchoolCalendar $calendar): Response
     {
         if (!$this->isCsrfTokenValid('booking_new', (string) $request->request->get('_token'))) {
             throw $this->createAccessDeniedException('Token CSRF inválido.');
@@ -414,6 +413,14 @@ final class BookingController extends AbstractController
         // es tarde, pero es del día de hoy y es asunto de quien reserva, no del programa.
         if ($day < new \DateTimeImmutable('today')) {
             $this->addFlash('error', 'Ese día ya ha pasado: elige hoy o un día por venir.');
+
+            return $this->back($day, $view);
+        }
+
+        // Ni fines de semana, ni vacaciones, ni días no lectivos: la rejilla los pinta cerrados, y aquí se
+        // comprueba también porque un enlace con ?fecha= o un POST a mano llegan hasta ellos.
+        if (!$calendar->isLective($day)) {
+            $this->addFlash('error', 'Ese día no es lectivo: no se puede reservar.');
 
             return $this->back($day, $view);
         }

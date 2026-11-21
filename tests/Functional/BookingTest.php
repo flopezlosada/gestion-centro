@@ -94,7 +94,12 @@ final class BookingTest extends WebTestCase
      */
     private static function futureDay(): string
     {
-        return (new \DateTimeImmutable('today'))->modify('+30 days')->format('Y-m-d');
+        // Un día lectivo (de lunes a viernes): un sábado o domingo no se reserva.
+        $day = (new \DateTimeImmutable('today'))->modify('+30 days');
+
+        $weekday = (int) $day->format('N');
+
+        return ($weekday >= 6 ? $day->modify('+'.(8 - $weekday).' days') : $day)->format('Y-m-d');
     }
 
     /**
@@ -509,6 +514,27 @@ final class BookingTest extends WebTestCase
             $this->client->request('POST', '/reservas/nueva', ['_token' => $token, 'celdas' => $cells, 'motivo' => 'Basura']);
             self::assertResponseRedirects();
         }
+
+        $this->em->clear();
+        self::assertCount(0, $this->em->getRepository(Booking::class)->findAll());
+    }
+
+    /** Un sábado no se reserva: ni enlazando la fecha a mano ni con un POST. */
+    public function testASaturdayCannotBeBooked(): void
+    {
+        $teacher = $this->user('sabado@centro.test');
+        $radio = $this->material('Radio');
+        $this->em->flush();
+        $saturday = (new \DateTimeImmutable('saturday next week'))->modify('+3 weeks')->format('Y-m-d');
+        self::assertSame('6', (new \DateTimeImmutable($saturday))->format('N'));
+
+        $this->client->loginUser($teacher);
+        $crawler = $this->client->request('GET', '/reservas?fecha='.$saturday);
+        self::assertResponseIsSuccessful();
+        self::assertCount(0, $crawler->filter('input[name="celdas[]"]'), 'no hay casillas que marcar');
+
+        $this->bookCells(['material:'.$radio->getId().':'.$saturday.':0'], 'Sábado');
+        self::assertResponseRedirects();
 
         $this->em->clear();
         self::assertCount(0, $this->em->getRepository(Booking::class)->findAll());
