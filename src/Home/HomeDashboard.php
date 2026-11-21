@@ -263,7 +263,7 @@ final readonly class HomeDashboard
                 // Un recordatorio de todo el día no tiene hora: es un "por hacer", y vive en el otro bloque.
                 AgendaEntry::KIND_EVENT => null !== $entry->event && !$entry->event->isAllDay() ? $entry->event->getStartAt() : null,
                 // Una reserva sin marco horario no sabe su hora, pero cuenta igual: se pinta con su ordinal.
-                AgendaEntry::KIND_BOOKING => $entry->booking?->startsAt ?? $entry->date,
+                AgendaEntry::KIND_BOOKING => $entry->booking->startsAt ?? $entry->date,
                 default => null,
             };
             if (null === $startsAt) {
