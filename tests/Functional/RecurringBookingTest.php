@@ -80,9 +80,9 @@ final class RecurringBookingTest extends WebTestCase
         ], $days, 'dos lunes y un miércoles: el otro miércoles es festivo');
 
         $this->client->request('GET', '/reservas?fecha='.$monday->format('Y-m-d'));
-        self::assertSelectorTextContains('[data-booking-day-list]', 'Dora Maar');
-        self::assertSelectorTextContains('[data-booking-day-list]', 'Tecnología');
-        self::assertSelectorTextContains('[data-booking-day-list]', 'Fija');
+        self::assertSelectorTextContains('.bgrid tbody', 'Dora Maar');
+        self::assertSelectorTextContains('.bcell--fixed', 'Tecnología');
+        self::assertSelectorTextContains('.bcell--fixed', 'Fija');
     }
 
     /**
@@ -261,10 +261,9 @@ final class RecurringBookingTest extends WebTestCase
         self::assertSelectorTextContains('.flash.error', 'Clase de E2 BC con Sara Test en el horario');
 
         $day = $monday->format('Y-m-d');
-        $crawler = $this->client->request('GET', '/reservas?fecha='.$day.'&tramos[]=1');
-        self::assertCount(0, $crawler->filter('option[value="room:'.$room->getId().'"]'), 'a 2ª tiene clase');
-        $crawler = $this->client->request('GET', '/reservas?fecha='.$day.'&tramos[]=2');
-        self::assertStringContainsString('room:'.$room->getId(), $crawler->filter('#recurso')->html(), 'a 3ª está libre');
+        $crawler = $this->client->request('GET', '/reservas?fecha='.$day);
+        self::assertCount(0, $crawler->filter('input[value="room:'.$room->getId().':'.$day.':1"]'), 'a 2ª tiene clase');
+        self::assertCount(1, $crawler->filter('input[value="room:'.$room->getId().':'.$day.':2"]'), 'a 3ª está libre');
 
         // Y a mano tampoco: el servidor lo rechaza aunque no se ofrezca.
         $token = (string) $crawler->filter('form[action="/reservas/nueva"] input[name="_token"]')->attr('value');
@@ -372,11 +371,11 @@ final class RecurringBookingTest extends WebTestCase
         $day = $monday->format('Y-m-d');
         $this->client->loginUser($other);
         $this->client->request('GET', '/reservas?fecha='.$day);
-        self::assertSelectorNotExists('[data-booking-day-list] form[action$="/anular"]');
+        self::assertSelectorNotExists('.bgrid form[action$="/anular"]');
 
         $this->client->loginUser($mar);
         $crawler = $this->client->request('GET', '/reservas?fecha='.$day);
-        $this->client->submit($crawler->filter('[data-booking-day-list] form[action$="/anular"]')->form());
+        $this->client->submit($crawler->filter('.bgrid form[action$="/anular"]')->form());
         $this->client->followRedirect();
         self::assertSelectorTextContains('.flash.success', 'la reserva fija sigue');
 

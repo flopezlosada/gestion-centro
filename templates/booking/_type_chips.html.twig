@@ -1,0 +1,7 @@
+{# Filtro por tipo: solo quita filas. Enlaces y no casillas para que funcione sin JavaScript. `route` es la
+   pantalla a la que se vuelve y `params` lo que no cambia (la fecha). #}
+<nav class="booking-chips" aria-label="Qué mostrar">
+    {% for key, chip in chips %}
+        <a href="{{ path(route, params|merge({ tipo: key })) }}" class="{{ type == key ? 'is-active' }}"{{ type == key ? ' aria-current="true"' }}>{{ chip.label }} <span class="mono">{{ chip.count }}</span></a>
+    {% endfor %}
+</nav>

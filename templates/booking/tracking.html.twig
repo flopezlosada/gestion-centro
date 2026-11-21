@@ -14,6 +14,8 @@
         </div>
     </div>
 
+    {{ include('booking/_tabs.html.twig', { active: 'seguimiento' }) }}
+
     {# Semana a semana, no día a día: una avería se descubre días después de causarse, así que la pantalla
        tiene que abarcar más de lo que abarca la de reservar. Mismo selector de fecha que /reservas —
        date-field.js lo realza— y aquí SÍ hay flecha hacia atrás: mirar el pasado es justo para lo que está. #}

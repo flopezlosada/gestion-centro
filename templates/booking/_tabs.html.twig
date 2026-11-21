@@ -1,0 +1,16 @@
+{# Las secciones de reservas, siempre a la vista: antes «Reservas fijas» solo se enlazaba desde la barra de
+   /reservas y el seguimiento solo desde el menú, y no se encontraban. «Seguimiento» solo sale a quien lo
+   puede abrir (escritura en Espacios): para el resto sería un enlace a un 403. `active` es una de
+   dia, semana, fijas o seguimiento. #}
+<nav class="booking-tabs" aria-label="Secciones de reservas">
+    <a href="{{ path('booking_index') }}"{{ active == 'dia' ? ' class="is-active" aria-current="page"' }}>Por día</a>
+    <a href="{{ path('booking_week') }}" class="booking-tabs__week{{ active == 'semana' ? ' is-active' }}"{{ active == 'semana' ? ' aria-current="page"' }}>Toda la semana</a>
+    <a href="{{ path('booking_series_index') }}"{{ active == 'fijas' ? ' class="is-active" aria-current="page"' }}>Reservas fijas</a>
+    {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ESPACIOS')) %}
+        <a href="{{ path('booking_tracking') }}"{{ active == 'seguimiento' ? ' class="is-active" aria-current="page"' }}>Seguimiento</a>
+    {% endif %}
+    {#- Solo donde está la lista (el día y la semana): en las otras pantallas el ancla no llevaría a ningún sitio. -#}
+    {% if mine is defined and mine is not empty %}
+        <a href="#tus-reservas" class="booking-tabs__mine">Tus reservas · {{ mine|length }}</a>
+    {% endif %}
+</nav>

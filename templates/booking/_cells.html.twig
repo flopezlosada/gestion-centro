@@ -1,0 +1,78 @@
+{# Las celdas de la rejilla, en un sitio para que el día y la semana pinten lo mismo. #}
+
+{# Una celda de la rejilla DEL DÍA. Con TEXTO y no solo con color: en una fila de cuarenta cosas el color
+   solo no se lee (y quien no distingue colores no lo lee nunca). `label` es el ordinal de la hora («2ª»),
+   `what` la frase «cosa · día» que la identifica para quien usa lector de pantalla. En el móvil la celda
+   es una píldora con solo el ordinal (el resto queda para el lector); en escritorio, el texto. #}
+{% macro day(c, label, what) %}
+    {% set b = c.booking %}
+    {% if c.state == 'free' %}
+        <label class="bcell bcell--free">
+            <input type="checkbox" name="celdas[]" value="{{ c.value }}" form="reservar" data-what="{{ what }}" data-hour="{{ label }}">
+            <span class="bcell__pill" aria-hidden="true">{{ label }}</span>
+            <span class="bcell__main bcell__off"><span class="visually-hidden">{{ what }} a {{ label }}: </span>Libre</span>
+            <span class="bcell__main bcell__on" aria-hidden="true">✓ {{ label }}</span>
+        </label>
+    {% elseif c.state == 'past' %}
+        <div class="bcell bcell--past"><span class="bcell__pill" aria-hidden="true">{{ label }}</span><span class="bcell__main"><span class="visually-hidden">{{ what }} a {{ label }}: </span>Libre</span></div>
+    {% elseif c.state == 'closed' %}
+        <div class="bcell bcell--closed"><span class="bcell__pill" aria-hidden="true">{{ label }}</span><span class="bcell__main"><span class="visually-hidden">{{ what }} a {{ label }}: </span>No lectivo</span></div>
+    {% elseif c.state == 'class' %}
+        <div class="bcell bcell--class"><span class="bcell__pill" aria-hidden="true">{{ label }}</span><span class="bcell__main"><span class="visually-hidden">{{ what }} a {{ label }}: </span>Clase</span><span class="bcell__sub">del horario</span></div>
+    {% else %}
+        {% set detail = c.state == 'fixed' ? (b.holderName ~ ': ' ~ b.purpose) : [b.groupName, b.purpose]|filter(v => v)|join(' · ') %}
+        <div class="bcell bcell--{{ c.state }}" title="{{ detail }}">
+            <span class="bcell__pill" aria-hidden="true">{{ label }}</span>
+            <span class="visually-hidden">{{ what }} a {{ label }}: </span>
+            {% if c.state == 'fixed' %}
+                <span class="bcell__main">Fija</span>
+                <span class="bcell__sub">{{ b.holderName }}</span>
+            {% else %}
+                <span class="bcell__main">{{ c.state == 'mine' ? 'Tuyo' : b.holderName }}</span>
+                <span class="bcell__sub">{{ detail }}</span>
+            {% endif %}
+            {#- Lo tuyo se anula en «Tus reservas». Aquí solo lo que no sale allí: liberar un día de una fija
+                (su titular o su jefatura) o anular lo de otra persona siendo admin. -#}
+            {% if c.state != 'mine' and (b.mayBeReleasedBy(app.user) or is_granted('ROLE_ADMIN')) %}
+                <form method="post" action="{{ path('booking_delete', { id: b.id }) }}" data-confirm="{{ b.series ? '¿Liberar este día? La reserva fija sigue el resto de semanas.' : '¿Anular esta reserva?' }}">
+                    <input type="hidden" name="_token" value="{{ csrf_token('booking_delete' ~ b.id) }}">
+                    <button type="submit" class="bcell__act">{{ b.series ? 'Liberar este día' : 'Anular' }}</button>
+                </form>
+            {% endif %}
+        </div>
+    {% endif %}
+{% endmacro %}
+
+{# Un cuadro de la rejilla de la SEMANA. Libre: se marca (y se reserva ahí mismo). Ocupado: un botón que
+   cuenta qué es (booking-grid.js lo enseña encima de la rejilla; sin JS queda el title). `what` es la
+   frase «cosa, día a la 2ª» que lo identifica; title, when, headline y more alimentan el recuadro. #}
+{% macro week(c, what, title, when) %}
+    {% set b = c.booking %}
+    {% if c.state == 'free' %}
+        <label class="wcell wcell--free" title="{{ what }}: libre">
+            <input type="checkbox" name="celdas[]" value="{{ c.value }}" form="reservar" data-what="{{ title }} · {{ when|split(' · ')[0] }}" data-hour="{{ when|split(' · ')[1] }}">
+            <span class="visually-hidden">{{ what }}: libre</span>
+        </label>
+    {% elseif c.state == 'closed' %}
+        <span class="wcell wcell--closed" title="{{ what }}: día no lectivo"></span>
+    {% elseif c.state == 'past' %}
+        <span class="wcell wcell--past" title="{{ what }}: libre (ya pasó)"></span>
+    {% else %}
+        {% set headline = {
+            class: 'Clase del horario',
+            mine: 'Reservado por ti',
+            fixed: 'Reserva fija de ' ~ (b ? b.holderName : ''),
+            booked: 'Reservado por ' ~ (b ? b.holderName : ''),
+        }[c.state] %}
+        {% set more = {
+            class: 'Hay clase en este espacio a esa hora. Sale del horario.',
+            mine: (b ? 'Para: ' ~ (b.groupName ?: b.purpose) : '') ~ '. Puedes anularlo en «Tus reservas».',
+            fixed: (b ? b.purpose : '') ~ '. Se repite cada semana; su titular puede liberar un día suelto.',
+            booked: (b ? 'Para ' ~ b.purpose ~ (b.groupName ? ' (' ~ b.groupName ~ ')') : '') ~ '. Si lo necesitas, habla con esa persona.',
+        }[c.state] %}
+        <button type="button" class="wcell wcell--{{ c.state }}" title="{{ what }}: {{ headline }}"
+                data-booking-info data-state="{{ c.state }}" data-title="{{ title }}" data-when="{{ when }}" data-what="{{ headline }}" data-more="{{ more }}">
+            <span class="visually-hidden">{{ what }}: {{ headline }}</span>
+        </button>
+    {% endif %}
+{% endmacro %}
