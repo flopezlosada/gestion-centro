@@ -9,4 +9,8 @@
     {% if is_granted(constant('App\\Security\\Voter\\AreaVoter::WRITE'), constant('App\\Enum\\Area::ESPACIOS')) %}
         <a href="{{ path('booking_tracking') }}"{{ active == 'seguimiento' ? ' class="is-active" aria-current="page"' }}>Seguimiento</a>
     {% endif %}
+    {#- Solo donde está la lista (el día y la semana): en las otras pantallas el ancla no llevaría a ningún sitio. -#}
+    {% if mine is defined and mine is not empty %}
+        <a href="#tus-reservas" class="booking-tabs__mine">Tus reservas · {{ mine|length }}</a>
+    {% endif %}
 </nav>

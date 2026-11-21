@@ -1,7 +1,7 @@
 {# «Tus reservas»: lo que tienes cogido de hoy en adelante, con su Anular. Las fijas no salen aquí: su
    titular libera un día desde la rejilla. #}
 {% set dias = ['', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] %}
-<section class="booking-mine" aria-label="Tus reservas">
+<section class="booking-mine" id="tus-reservas" aria-label="Tus reservas">
     <h2>Tus reservas</h2>
     {% if mine is empty %}
         <p class="muted">No tienes ninguna reserva por venir.</p>

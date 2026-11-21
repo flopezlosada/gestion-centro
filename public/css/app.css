@@ -6067,6 +6067,7 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 .booking-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; margin: 0 0 16px; background: var(--surface-sidebar); border-radius: 14px; width: fit-content; max-width: 100%; }
 .booking-tabs a { padding: 10px 14px; border: 1px solid transparent; border-radius: 12px; color: var(--text-muted); text-decoration: none; font-weight: 500; }
 .booking-tabs a:hover { background: var(--surface-sunken); color: var(--text); }
+.booking-tabs .booking-tabs__mine { margin-left: 8px; color: var(--accent-ink); background: var(--accent-weak); border-color: var(--accent-weak-border); }
 .booking-tabs a.is-active { background: var(--surface); border-color: var(--border); box-shadow: 0 1px 0 var(--border); color: var(--text); }
 
 /* «Cuándo y qué»: un solo cuadro con dos filas rotuladas. */
