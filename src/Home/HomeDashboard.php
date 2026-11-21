@@ -262,19 +262,25 @@ final readonly class HomeDashboard
                 AgendaEntry::KIND_MEETING => $entry->meeting?->getStartAt(),
                 // Un recordatorio de todo el día no tiene hora: es un "por hacer", y vive en el otro bloque.
                 AgendaEntry::KIND_EVENT => null !== $entry->event && !$entry->event->isAllDay() ? $entry->event->getStartAt() : null,
+                // Una reserva sin marco horario no sabe su hora, pero cuenta igual: se pinta con su ordinal.
+                AgendaEntry::KIND_BOOKING => $entry->booking?->startsAt ?? $entry->date,
                 default => null,
             };
             if (null === $startsAt) {
                 continue;
             }
-            $endsAt = AgendaEntry::KIND_MEETING === $entry->kind
-                ? $entry->meeting?->getEndAt()
-                : $entry->event?->getEndAt();
+            $endsAt = match ($entry->kind) {
+                AgendaEntry::KIND_MEETING => $entry->meeting?->getEndAt(),
+                AgendaEntry::KIND_BOOKING => $entry->booking?->endsAt,
+                default => $entry->event?->getEndAt(),
+            };
             $rows[] = [
                 'entry' => $entry,
-                'startsAt' => $startsAt,
-                'minutesUntil' => $minutesUntil($startsAt),
-                'over' => ($endsAt ?? $startsAt) < $now,
+                // Sin marco horario una reserva no tiene hora que enseñar (su «hora» de ordenar es medianoche) y,
+                // sin hora de fin, no se da por pasada.
+                'startsAt' => AgendaEntry::KIND_BOOKING === $entry->kind ? $entry->booking?->startsAt : $startsAt,
+                'minutesUntil' => $minutesUntil(AgendaEntry::KIND_BOOKING === $entry->kind ? $entry->booking?->startsAt : $startsAt),
+                'over' => AgendaEntry::KIND_BOOKING === $entry->kind && null === $endsAt ? false : ($endsAt ?? $startsAt) < $now,
             ];
         }
 
@@ -283,9 +289,12 @@ final readonly class HomeDashboard
         $markedNow = false;
         $timeline = [];
         foreach ($rows as $row) {
+            // Una reserva sin hora conocida se ordena a medianoche: no puede ser «lo próximo», o taparía a una
+            // reunión con hora real que viene después.
+            $untimedBooking = AgendaEntry::KIND_BOOKING === $row['entry']->kind && null === $row['startsAt'];
             $state = match (true) {
                 $row['over'] => 'past',
-                !$markedNow => 'now',
+                !$markedNow && !$untimedBooking => 'now',
                 default => 'future',
             };
             $markedNow = $markedNow || 'now' === $state;

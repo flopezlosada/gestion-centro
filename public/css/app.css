@@ -3558,6 +3558,7 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 .panel-row__icon svg { width: 15px; height: 15px; }
 .panel-row__icon--guardia { background: var(--accent-weak); color: var(--accent-ink); }
 .panel-row__icon--meeting { background: var(--review-weak); color: var(--review-text); }
+.panel-row__icon--booking { background: var(--success-weak); color: var(--success-text); }
 .panel-row__icon--personal { background: var(--personal-weak); color: var(--personal-icon); }
 .panel-row__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .panel-row__title { font-size: 13.5px; font-weight: 500; color: var(--text); }
@@ -3581,6 +3582,7 @@ details.lesson-edit > .lesson-form { padding: 20px 22px 22px; }
 .day-row__kind { flex: none; width: 8px; height: 8px; border-radius: 2px; margin-top: 6px; }
 .day-row__kind--guardia { border-radius: 999px; background: var(--accent); }
 .day-row__kind--meeting { background: var(--review); }
+.day-row__kind--booking { border-radius: 2px; background: var(--success); }
 .day-row__kind--personal { background: var(--personal); }
 /* La clase: un filete hueco y tenue, lo más callado de la línea — es la rutina del día, no algo que atender. */
 .day-row__kind--class { background: transparent; box-shadow: inset 0 0 0 1.5px var(--text-muted); }
