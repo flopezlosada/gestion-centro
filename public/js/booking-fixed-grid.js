@@ -112,8 +112,8 @@
             }
         }
 
-        // «Hasta»: «Fin de curso» fija la fecha del final del curso y esconde el campo; «Otra fecha» lo enseña.
-        // Sin JavaScript el campo está siempre a la vista y es lo único que lee el servidor.
+        // «Hasta»: «Fin de curso» y «Navidad» fijan su fecha (data-date) y esconden el campo; «Otra fecha» lo
+        // enseña. Sin JavaScript el campo está siempre a la vista y es lo único que lee el servidor.
         var until = form.querySelector('[data-until]');
         if (until && to) {
             var custom = until.querySelector('[data-until-custom]');
@@ -122,14 +122,13 @@
                 var chosen = kinds.filter(function (kind) {
                     return kind.checked;
                 })[0];
-                var yearEnd = until.getAttribute('data-year-end');
-                // Sin fecha de fin de curso no hay nada que fijar: el campo se queda a la vista.
-                var wholeYear = '' !== yearEnd && (!chosen || 'curso' === chosen.value);
+                var date = chosen ? chosen.getAttribute('data-date') : null;
                 if (custom) {
-                    custom.hidden = wholeYear;
+                    // Sin chip con fecha (p. ej. sin curso dado de alta) el campo se queda a la vista.
+                    custom.hidden = !date;
                 }
-                if (wholeYear) {
-                    to.value = yearEnd;
+                if (date) {
+                    to.value = date;
                 }
                 refresh();
             };

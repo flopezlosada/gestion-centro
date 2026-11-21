@@ -148,7 +148,7 @@
                             {#- Persona O departamento: un carro de Tecnología no es de quien dé la clase ese año. Primero el tipo
                                 y luego solo esa lista: las ochenta personas en un desplegable detrás de los departamentos no
                                 se veían. La otra lista la esconde el CSS (:has); sin él se ven las dos y manda el tipo. -#}
-                            {% set holderKind = sent.titular_tipo ?? '' %}
+                            {% set holderKind = sent.titular_tipo ?? 'dept' %}
                             <div class="card fixed-step">
                                 <p class="eyebrow">3 · Para quién y hasta cuándo</p>
                                 <div class="fixed-step__row">
@@ -186,27 +186,30 @@
                                     </div>
                                 </div>
 
-                                {#- «Hasta» como el diseño: o el final del curso, o una fecha. El servidor solo lee `hasta`; los chips
-                                    son una comodidad (con JavaScript fijan la fecha de fin de curso y esconden el campo). -#}
+                                {#- «Desde … hasta» como el diseño: la serie empieza el día de la pantalla y el tope se elige con chips.
+                                    El servidor solo lee `desde` y `hasta`; los chips son una comodidad (con JavaScript fijan la fecha
+                                    y esconden el campo; sin él, el campo está siempre a la vista). -#}
+                                {% set diasLargos = ['', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'] %}
+                                {% set meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'] %}
+                                {% set mesesLargos = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'] %}
+                                {% set desde = sent.desde ?? today|date('Y-m-d', false) %}
                                 {% set yearEnd = defaultTo ? defaultTo|date('Y-m-d', false) : '' %}
-                                {% set untilCustom = '' == yearEnd or (sent.hasta ?? yearEnd) != yearEnd %}
-                                <div class="fixed-step__row fixed-step__row--dates">
-                                    <div class="field">
-                                        <label for="desde">Desde</label>
-                                        <input type="date" id="desde" name="desde" required value="{{ sent.desde ?? today|date('Y-m-d', false) }}">
+                                {% set xmasEnd = christmasEnd ? christmasEnd|date('Y-m-d', false) : '' %}
+                                {% set hasta = sent.hasta ?? yearEnd %}
+                                {% set untilCustom = (hasta != yearEnd or '' == yearEnd) and (hasta != xmasEnd or '' == xmasEnd) %}
+                                <fieldset class="fixed-step__until" data-until>
+                                    <legend>Desde el {{ diasLargos[desde|date('N', false)] }} {{ desde|date('j', false) }} de {{ mesesLargos[desde|date('n', false) - 1] }} hasta</legend>
+                                    <input type="hidden" id="desde" name="desde" value="{{ desde }}">
+                                    <div class="pick-chips">
+                                        {% if yearEnd %}<label class="pick-chip"><input type="radio" name="hasta_tipo" value="curso" data-date="{{ yearEnd }}"{{ hasta == yearEnd ? ' checked' }}> Fin de curso ({{ yearEnd|date('j', false) }} {{ meses[yearEnd|date('n', false) - 1] }})</label>{% endif %}
+                                        {% if xmasEnd %}<label class="pick-chip"><input type="radio" name="hasta_tipo" value="navidad" data-date="{{ xmasEnd }}"{{ hasta == xmasEnd and hasta != yearEnd ? ' checked' }}> Navidad ({{ xmasEnd|date('j', false) }} {{ meses[xmasEnd|date('n', false) - 1] }})</label>{% endif %}
+                                        <label class="pick-chip"><input type="radio" name="hasta_tipo" value="otra"{{ untilCustom ? ' checked' }}> Otra fecha</label>
+                                        <span data-until-custom>
+                                            <label for="hasta" class="visually-hidden">Fecha del último día</label>
+                                            <input type="date" id="hasta" name="hasta" required value="{{ hasta }}">
+                                        </span>
                                     </div>
-                                    <fieldset class="field" data-until data-year-end="{{ yearEnd }}">
-                                        <legend>Hasta</legend>
-                                        <div class="pick-chips">
-                                            <label class="pick-chip"><input type="radio" name="hasta_tipo" value="curso"{{ untilCustom ? '' : ' checked' }}> Fin de curso</label>
-                                            <label class="pick-chip"><input type="radio" name="hasta_tipo" value="otra"{{ untilCustom ? ' checked' }}> Otra fecha</label>
-                                            <span data-until-custom>
-                                                <label for="hasta" class="visually-hidden">Fecha del último día</label>
-                                                <input type="date" id="hasta" name="hasta" required value="{{ sent.hasta ?? yearEnd }}">
-                                            </span>
-                                        </div>
-                                    </fieldset>
-                                </div>
+                                </fieldset>
 
                                 <div class="flash error" role="alert" data-fixed-clashes hidden></div>
 

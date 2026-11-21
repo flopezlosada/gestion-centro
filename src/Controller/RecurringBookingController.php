@@ -249,6 +249,8 @@ final class RecurringBookingController extends AbstractController
             'slotTimes' => $periods['slots'],
             'weekdays' => Weekday::schoolWeek(),
             'defaultTo' => $year?->getYearEnd(),
+            // El último día de las clases antes de Navidad: el tope más usado después del fin de curso, y solo si no ha pasado.
+            'christmasEnd' => null !== $year && $year->getTerm1End() >= $today ? $year->getTerm1End() : null,
             'errors' => $errors,
             'clashes' => $clashes,
             'sent' => $sent,
