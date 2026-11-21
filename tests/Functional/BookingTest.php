@@ -514,6 +514,22 @@ final class BookingTest extends WebTestCase
         self::assertCount(0, $this->em->getRepository(Booking::class)->findAll());
     }
 
+    /** Una hora que no existe junto a otra válida rechaza el envío entero: no se reserva «lo que cuadra». */
+    public function testACellWithAnUnknownHourSavesNothingNotEvenTheValidOne(): void
+    {
+        $teacher = $this->user('parcial@centro.test');
+        $radio = $this->material('Radio');
+        $this->em->flush();
+        $key = 'material:'.$radio->getId().':'.self::futureDay();
+
+        $this->client->loginUser($teacher);
+        $this->client->request('POST', '/reservas/nueva', ['_token' => $this->tokenFromScreen(), 'celdas' => [$key.':0', $key.':99'], 'motivo' => 'Parcial']);
+        self::assertResponseRedirects();
+
+        $this->em->clear();
+        self::assertCount(0, $this->em->getRepository(Booking::class)->findAll());
+    }
+
     /** Quien reserva un carro ve cuántos equipos lleva; lo que no es un juego de equipos no dice nada. */
     public function testATrolleySaysHowManyDevicesItCarries(): void
     {
@@ -554,7 +570,7 @@ final class BookingTest extends WebTestCase
         $crawler = $this->client->request('GET', '/reservas/semana?fecha='.$weekday);
         self::assertResponseIsSuccessful();
         self::assertCount(1, $crawler->filter('table.bweek .wcell--mine'), 'lo reservado se ve como tuyo');
-        self::assertStringContainsString('lo tienes tú', (string) $crawler->filter('table.bweek .wcell--mine')->attr('data-booking-info'));
+        self::assertStringContainsString('Reservado por ti', (string) $crawler->filter('table.bweek .wcell--mine')->attr('data-what'));
         self::assertCount(1, $crawler->filter('input[value="material:'.$camera->getId().':'.$weekday.':0"]'), 'lo libre se marca ahí mismo');
         self::assertCount(0, $crawler->filter('input[value="material:'.$radio->getId().':'.$weekday.':0"]'));
 

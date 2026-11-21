@@ -64,7 +64,7 @@
         </div>
 
         {% if not isPast %}
-            {{ include('booking/_reserve_bar.html.twig') }}
+            {{ include('booking/_reserve_bar.html.twig', { view: 'dia' }) }}
         {% endif %}
     {% endif %}
 

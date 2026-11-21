@@ -49,10 +49,11 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for r in resources %}
-                        {% set key = (r.keptAt is defined ? 'material:' : 'room:') ~ r.id %}
+                    {% for row in resources %}
+                        {% set r = row.resource %}
+                        {% set key = row.key %}
                         <tr>
-                            <th scope="row">{{ r.name }}</th>
+                            <th scope="row">{{ include('booking/_resource_name.html.twig', { r: r }) }}</th>
                             {% for day in days %}
                                 {% set dStr = day|date('Y-m-d', false) %}
                                 {% set diaNombre = dias[loop.index] %}
@@ -67,7 +68,7 @@
             </table>
         </div>
 
-        {{ include('booking/_reserve_bar.html.twig') }}
+        {{ include('booking/_reserve_bar.html.twig', { view: 'semana' }) }}
     {% endif %}
 
     {{ include('booking/_mine.html.twig') }}

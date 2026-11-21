@@ -4,6 +4,7 @@
    él, booking-grid.js la esconde hasta que hay algo marcado, la flota abajo y escribe qué se ha marcado. #}
 <form method="post" action="{{ path('booking_new') }}" id="reservar" class="booking-bar" data-booking-bar aria-label="Confirmar reserva">
     <input type="hidden" name="_token" value="{{ csrf_token('booking_new') }}">
+    <input type="hidden" name="vista" value="{{ view }}">
     <div class="booking-bar__what">
         <span class="booking-bar__eyebrow">Vas a reservar</span>
         <strong data-booking-title>Marca horas libres de una sola cosa y un solo día</strong>

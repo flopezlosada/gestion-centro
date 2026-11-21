@@ -342,7 +342,7 @@ final class BookingController extends AbstractController
         return $this->render('booking/week.html.twig', [
             'monday' => $monday,
             'days' => $days,
-            'resources' => $catalogue['shown'],
+            'resources' => array_map(static fn (Room|Material $r): array => ['resource' => $r, 'key' => self::keyOf($r)], $catalogue['shown']),
             'cells' => $this->cellMap($catalogue['shown'], $days, $slotIds, $year, $bookings, $occupancy, $calendar, $user, true),
             'type' => $catalogue['type'],
             'chips' => $catalogue['chips'],
@@ -370,13 +370,15 @@ final class BookingController extends AbstractController
         // Lo que llega de la rejilla son celdas ({@see pickedCells()}); sin ellas, los campos sueltos de
         // siempre (día, recurso y horas), que siguen valiendo para quien envíe el formulario a mano.
         $rawCells = $request->request->all()['celdas'] ?? [];
-        // Un escalar en vez de una lista (celdas=x) es un POST a mano: se rechaza con el mismo aviso, no con un 400.
+        // Un escalar en vez de una lista (celdas=x) es un POST a mano: aviso y nada guardado, no un 400.
         $cells = \is_array($rawCells) ? array_values(array_filter($rawCells, 'is_string')) : ['?'];
+        $view = 'semana' === $request->request->getString('vista') ? 'semana' : 'dia';
         $picked = [] !== $cells ? self::pickedCells($cells) : null;
         if ([] !== $cells && null === $picked) {
             $this->addFlash('error', 'Marca horas de una sola cosa y de un solo día.');
 
-            return $this->back(null);
+            // Vuelve al día de la primera celda (no al de hoy) para no perder lo que se estaba mirando.
+            return $this->back(CalendarDate::parse(explode(':', $cells[0], 4)[2] ?? '', new \DateTimeZone(date_default_timezone_get())), $view);
         }
         $input = null !== $picked
             ? new InputBag(['fecha' => $picked['day'], 'recurso' => $picked['resource'], 'tramos' => $picked['slots']])
@@ -394,7 +396,15 @@ final class BookingController extends AbstractController
         if (null === $day || [] === $slots || '' === $purpose) {
             $this->addFlash('error', 'Elige el día, la hora y di para qué lo necesitas.');
 
-            return $this->back($day);
+            return $this->back($day, $view);
+        }
+
+        // Todas o ninguna: una hora marcada que no existe no se descarta en silencio mientras se reservan
+        // las demás.
+        if (null !== $picked && \count($slots) !== \count(array_unique($picked['slots']))) {
+            $this->addFlash('error', 'Alguna de las horas marcadas no existe. No se ha reservado nada.');
+
+            return $this->back($day, $view);
         }
 
         // El pasado no se reserva. Comprobado aquí y no solo escondiendo el formulario: se llega a un día
@@ -405,7 +415,7 @@ final class BookingController extends AbstractController
         if ($day < new \DateTimeImmutable('today')) {
             $this->addFlash('error', 'Ese día ya ha pasado: elige hoy o un día por venir.');
 
-            return $this->back($day);
+            return $this->back($day, $view);
         }
 
         // Los límites se comprueban AQUÍ y no solo con el maxlength del formulario: esta acción no pasa
@@ -414,7 +424,7 @@ final class BookingController extends AbstractController
         if (mb_strlen($purpose) > 200) {
             $this->addFlash('error', 'El motivo es demasiado largo.');
 
-            return $this->back($day);
+            return $this->back($day, $view);
         }
 
         // Los grupos salen de un desplegable con los del horario, así que uno que no esté en esa lista solo
@@ -423,12 +433,12 @@ final class BookingController extends AbstractController
         if ([] !== array_diff($groups, self::knownGroups($schedule, $years->findBySchoolYear(SchoolYear::current($day))))) {
             $this->addFlash('error', 'Alguno de esos grupos no está en el horario del curso.');
 
-            return $this->back($day);
+            return $this->back($day, $view);
         }
         if (mb_strlen(implode(', ', $groups)) > 255) {
             $this->addFlash('error', 'Son demasiados grupos para una reserva: si es para todo un nivel, di cuál en el motivo.');
 
-            return $this->back($day);
+            return $this->back($day, $view);
         }
 
         // Lo que la pantalla no ofrece no es una regla hasta que se comprueba aquí: sin esto se podía
@@ -441,7 +451,7 @@ final class BookingController extends AbstractController
         if (!$bookable) {
             $this->addFlash('error', 'Elige qué quieres reservar: eso no está disponible.');
 
-            return $this->back($day);
+            return $this->back($day, $view);
         }
 
         // Un aula con clase a esa hora no se ofrece, y aquí se comprueba de nuevo: se llega igual con un enlace
@@ -454,7 +464,7 @@ final class BookingController extends AbstractController
             if ([] !== $inClass) {
                 $this->addFlash('error', sprintf('No se ha reservado nada: el horario tiene clase en %s a %s.', $room->getName(), 1 === \count($inClass) ? 'esa hora' : 'alguna de esas horas'));
 
-                return $this->back($day);
+                return $this->back($day, $view);
             }
         }
 
@@ -475,7 +485,7 @@ final class BookingController extends AbstractController
                 default => sprintf('No se ha reservado nada: %s lo ha reservado otra persona a alguna de esas horas. Quita esa hora o elige otra cosa.', $taken[0]->resourceName()),
             });
 
-            return $this->back($day);
+            return $this->back($day, $view);
         }
 
         try {
@@ -497,12 +507,12 @@ final class BookingController extends AbstractController
             // fallará con "The EntityManager is closed".
             $this->addFlash('error', 'Justo antes lo ha reservado otra persona. Mira el día y elige otra hora.');
 
-            return $this->back($day);
+            return $this->back($day, $view);
         }
 
         $this->addFlash('success', 1 === \count($slots) ? 'Reservado.' : sprintf('Reservado a %d horas.', \count($slots)));
 
-        return $this->back($day);
+        return $this->back($day, $view);
     }
 
     /**
@@ -660,14 +670,16 @@ final class BookingController extends AbstractController
     }
 
     /**
-     * Back to the day that was being worked on, so a booking does not send you to today.
+     * Back to the day that was being worked on, so a booking does not send you to today, and to the
+     * screen it was made from (the day or the week).
      *
-     * @param \DateTimeImmutable|null $day the day to return to, or null for today
+     * @param \DateTimeImmutable|null $day  the day to return to, or null for today
+     * @param string                  $view 'semana' to return to the week, anything else for the day
      *
      * @return Response the redirect
      */
-    private function back(?\DateTimeImmutable $day): Response
+    private function back(?\DateTimeImmutable $day, string $view = 'dia'): Response
     {
-        return $this->redirectToRoute('booking_index', null !== $day ? ['fecha' => $day->format('Y-m-d')] : []);
+        return $this->redirectToRoute('semana' === $view ? 'booking_week' : 'booking_index', null !== $day ? ['fecha' => $day->format('Y-m-d')] : []);
     }
 }
